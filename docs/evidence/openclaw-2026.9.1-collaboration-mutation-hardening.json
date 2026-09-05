@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.1-collaboration-mutation-hardening-certification",
+  "generatedAt": "2026-09-05T15:25:01Z",
+  "certifiedCodeHead": "aecb6516f29507c2079f2bbf5bfc5e43deff479b",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "startingHead": "566d45d1c35f183e46d683887d044e1e8fc94b97",
+    "openClaw": {
+      "release": "2026.9.1",
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.9.1",
+      "gatewayProtocolPackage": "2026.9.1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+    },
+    "upstreamDescriptor": {
+      "source": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+      "sha256": "ac8a04b028d76b4a42b027bdb23c8f6b14dd3623b0b309d8bcb72f1ecb7ae32b"
+    }
+  },
+  "mutationClassifier": {
+    "sharedImplementation": "classifyNativeMutationError",
+    "dispositions": ["definite-rejection", "ambiguous-outcome"],
+    "definiteKinds": ["auth", "conflict", "malformed-response", "rate-limited", "scope-limited", "unsupported"],
+    "requestSent": "NativeGatewayRequestError.sent is preserved; sent=false is a definite rejection and sent=true remains subject to structured classification.",
+    "messageSubstringDeliveryProof": false,
+    "blindRetry": false
+  },
+  "affectedMutations": {
+    "session.members.add": {
+      "nativeSuccess": "succeeded",
+      "definiteRejection": "failed; no reconciliation read",
+      "ambiguous": "one session.members.list read; success requires beforePresent=false and afterPresent=true",
+      "preExistingDesiredState": "unknown"
+    },
+    "session.members.remove": {
+      "nativeSuccess": "succeeded",
+      "definiteRejection": "failed; no reconciliation read",
+      "ambiguous": "one session.members.list read; success requires beforePresent=true and afterPresent=false",
+      "preExistingDesiredState": "unknown"
+    },
+    "session.visibility.set": {
+      "nativeSuccess": "succeeded",
+      "definiteRejection": "failed; no reconciliation read",
+      "ambiguous": "one sessions.describe read; success requires visibilityBefore!=requested and visibilityAfter=requested",
+      "preExistingDesiredState": "unknown"
+    },
+    "sessions.assignOwner": {
+      "nativeSuccess": "succeeded",
+      "definiteRejection": "failed; no reconciliation read",
+      "ambiguous": "one session.members.list read; success requires ownerBefore!=target and ownerAfter=target",
+      "preExistingDesiredState": "unknown"
+    },
+    "users.setRole": {
+      "nativeSuccess": "succeeded",
+      "definiteRejection": "failed; no reconciliation read",
+      "ambiguous": "one users.list read; success requires roleBefore!=requested and roleAfter=requested",
+      "preExistingDesiredState": "unknown"
+    }
+  },
+  "reconciliation": {
+    "sharedExecutionService": "lib/openclaw/application/native-mutation-service.ts",
+    "mutationCallsOnFailure": 1,
+    "maximumReconciliationReads": 1,
+    "definiteRejectionReconciliation": false,
+    "ambiguousUnverifiedOutcome": "unknown",
+    "unknownRetryable": false,
+    "causalProof": "A matching postcondition is accepted only when known pre-state differs from the requested state; unavailable pre-state is inconclusive."
+  },
+  "apiTruthfulness": {
+    "definiteRejection": {
+      "outcome": "failed",
+      "httpStatus": "4xx by normalized native kind",
+      "message": "native sanitized rejection reason"
+    },
+    "ambiguousUnresolved": {
+      "outcome": "unknown",
+      "httpStatus": 409,
+      "retryable": false,
+      "message": "OpenClaw may have applied this change, but AgentOS could not verify the final native state. Refresh the session before making another change."
+    },
+    "unknownUsesRejectionWording": false
+  },
+  "auditTruthfulness": {
+    "nativeSuccess": "succeeded",
+    "ambiguousProven": "succeeded",
+    "definiteRejection": "failed",
+    "ambiguousUnresolved": "unknown",
+    "operationNames": [
+      "session.member.add",
+      "session.member.remove",
+      "session.visibility.set",
+      "session.assign-owner",
+      "users.openclaw.set-role"
+    ]
+  },
+  "authorization": {
+    "unchanged": true,
+    "sessionsCollaborate": { "owner": true, "member": false, "service": false, "internalService": false },
+    "openClawRolesManage": "owner-only",
+    "nativeScopes": {
+      "session.members.add": "operator.write",
+      "session.members.remove": "operator.write",
+      "session.visibility.set": "operator.write",
+      "sessions.assignOwner": "operator.write",
+      "users.setRole": "operator.admin"
+    },
+    "gatewayRemainsFinalAuthority": true
+  },
+  "runtimeCertification": {
+    "target": "OpenClaw 2026.9.1 disposable exact contract",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "definiteRejection": "PASS — deterministic structured native rejection and sent=false fixtures",
+    "ambiguousDeliveryFixture": "PASS — deterministic sent=true timeout fixture",
+    "memberReconciliation": "PASS — deterministic pre/post membership fixtures",
+    "visibilityReconciliation": "PASS — deterministic pre/post visibility fixtures",
+    "ownerReconciliation": "PASS — deterministic pre/post owner fixtures",
+    "nativeRoleReconciliation": "PASS — shared execution path and role pre-state contract",
+    "liveMutation": "SKIPPED — no disposable native human profile was available; no real profile was mutated",
+    "cleanup": "PASS — no disposable native state was created by this hardening certification"
+  },
+  "performance": {
+    "successPath": "one captured pre-state read plus one native mutation; no post-read on native success",
+    "ambiguousPath": "one native mutation plus at most one authoritative reconciliation read",
+    "retryCount": 0,
+    "rootDashboardNewRpcCount": 0,
+    "fanOut": false
+  },
+  "security": {
+    "sharedServiceIdentityUnchanged": true,
+    "productPermissionsUnchanged": true,
+    "centralRedaction": true,
+    "secretsExposed": false,
+    "rawGatewayErrorsExposed": false,
+    "browserCallsGatewayDirectly": false,
+    "cliFallback": false
+  },
+  "validation": {
+    "focusedTests": "28 passed, 0 failed",
+    "fullSuite": "1308 passed, 0 failed",
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "architectureSafeguards": {
+    "newIdentitySystem": false,
+    "perHumanCredentialStore": false,
+    "localSessionAcl": false,
+    "collaborationDatabase": false,
+    "newPolling": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "cliFallback": false,
+    "rawGatewayFromReact": false,
+    "openClawVersionChanged": false,
+    "phase8Functionality": false
+  },
+  "remainingRisks": [
+    "Live definite-denial and native role mutation against a disposable verified human profile remain intentionally unrun because no such profile was available.",
+    "Ambiguous delivery is certified deterministically; the harness does not intentionally damage a real Gateway after dispatch.",
+    "Native method availability and target authorization remain subject to the exact live Gateway state after the pre-state read."
+  ]
+}
