@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.1-multi-user-identity-collaboration-certification",
+  "generatedAt": "2026-09-05T14:46:45Z",
+  "certifiedCodeHead": "24b1141504af0a4cd141c5e3ab41e407097fe1fc",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "openClaw": {
+      "release": "2026.9.1",
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.9.1",
+      "gatewayProtocolPackage": "2026.9.1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "upstreamContract": {
+    "descriptorSource": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+    "descriptorSourceSha256": "ac8a04b028d76b4a42b027bdb23c8f6b14dd3623b0b309d8bcb72f1ecb7ae32b",
+    "methods": {
+      "users.list": { "scope": "operator.read", "params": {}, "response": "{ profiles: UserProfile[] }" },
+      "users.self": { "scope": "operator.write", "params": {}, "response": "{ profile: UserProfile }" },
+      "users.setDisplayName": { "scope": "operator.write", "params": "{ profileId, displayName: string | null }", "response": "{ profile: UserProfile }" },
+      "users.setAvatar": { "scope": "operator.write", "params": "{ profileId, mime, avatarBase64 }", "response": "{ profile: UserProfile, avatarRevision }" },
+      "users.linkEmail": { "scope": "operator.admin", "params": "{ email, targetProfileId }", "response": "{ profile: UserProfile }" },
+      "users.setRole": { "scope": "operator.admin", "params": "{ profileId, role: string | null }", "response": "{ profile: UserProfile }" },
+      "session.visibility.set": { "scope": "operator.write", "params": "{ sessionKey, agentId?, visibility }", "response": "{ ok: true, sessionKey, visibility }" },
+      "session.members.list": { "scope": "operator.read", "params": "{ sessionKey, agentId? }", "response": "native session members, identities, role, allowedVisibilities" },
+      "session.members.listEvidence": { "scope": "operator.read", "params": "{ sessionKey, agentId? }", "response": "native member evidence, identities, role, allowedVisibilities" },
+      "session.members.add": { "scope": "operator.write", "params": "{ sessionKey, agentId?, identityId }", "response": "{ ok: true, sessionKey, identityId }" },
+      "session.members.remove": { "scope": "operator.write", "params": "{ sessionKey, agentId?, identityId }", "response": "{ ok: true, sessionKey, identityId }" },
+      "sessions.assignOwner": { "scope": "operator.write", "params": "{ key, agentId?, owner: { type, id } }", "response": "{ ok: true, key, owner }" }
+    },
+    "users.create": "ABSENT",
+    "profileCreation": "No product users.create method; durable profiles require an exact native authenticated identity path.",
+    "sharedTokenCreatesHumanProfile": false,
+    "agentOsPasswordDelegated": false,
+    "fakeProfileIds": false
+  },
+  "identitySeparation": {
+    "agentOsSecurityPrincipal": "signed AgentOS actorId",
+    "agentOsProductRoles": ["owner", "member"],
+    "openClawHumanPrincipal": "native OpenClaw UserProfile when the request context proves one",
+    "openClawNativeRole": "Gateway-defined role from native users.list",
+    "gatewayConnectionIdentity": "shared AgentOS service connection",
+    "deviceIdentity": "OpenClaw native device/connection identity",
+    "equatedAutomatically": false,
+    "nativeVerificationState": "Shared-service requests are SHARED_SERVICE and nativeHumanIdentityVerified=false.",
+    "usersSelf": "Describes the authenticated native Gateway caller; it is never assigned to the current AgentOS browser actor in shared-service mode."
+  },
+  "association": {
+    "supported": true,
+    "state": "metadata-associated",
+    "authentication": false,
+    "grantsPermission": false,
+    "validatedAgainstLiveUsersList": true,
+    "duplicateProfileAssociation": "Rejected by the existing AgentOS user-store uniqueness invariant.",
+    "staleProfile": "Projected as STALE when the stored profileId is absent from users.list; no auto-remap.",
+    "emailNameUsernameMatching": false,
+    "lastVerifiedAt": "Retained as null for shared-service metadata association."
+  },
+  "roles": {
+    "agentOsToNativeAutoSync": false,
+    "nativeToAgentOsAutoSync": false,
+    "nativeRoleSource": "OpenClaw users.list and Gateway role definitions",
+    "nativeRoleMutation": "Explicit owner/product-gated users.setRole with live role validation and one-read reconciliation.",
+    "agentOsRoleMutation": "Changes only AgentOS owner/member state."
+  },
+  "sessionCollaboration": {
+    "sourceOfTruth": "OpenClaw native session state",
+    "owner": "native session owner",
+    "participants": "native session members and identities",
+    "visibility": ["shared", "read-only", "suggest", "draft"],
+    "sharingRole": "native session sharing role",
+    "membershipEvidence": "session.members.listEvidence",
+    "agentOwnerIdentity": "{ type: 'agent', id: native agentId }",
+    "humanOwnerIdentity": "{ type: 'human', id: native profileId } only after live users.list validation",
+    "agentOsActorAsNativeProfile": false,
+    "localAclDatabase": false,
+    "integratedMethods": [
+      "session.members.list",
+      "session.members.listEvidence",
+      "session.members.add",
+      "session.members.remove",
+      "session.visibility.set",
+      "sessions.assignOwner"
+    ],
+    "futureDiscoveryOnly": [
+      "session.suggestions.add",
+      "session.suggestions.list",
+      "session.suggestions.resolve",
+      "session.typing",
+      "session.discussion.info",
+      "session.discussion.open"
+    ]
+  },
+  "authorization": {
+    "agentOsCollaborationPermission": "sessions.collaborate",
+    "owner": true,
+    "member": false,
+    "service": false,
+    "internalService": false,
+    "productPolicyBeforeGateway": true,
+    "nativeScopesPreflighted": true,
+    "gatewayFinalAuthority": true,
+    "scopeWidening": false
+  },
+  "mutationReconciliation": {
+    "memberAdd": "One session.members.list reread; no blind retry; success only when identity is present.",
+    "memberRemove": "One session.members.list reread; no blind retry; success only when identity is absent.",
+    "visibility": "One sessions.describe reread; no blind retry; success only when native visibility matches.",
+    "ownerAssignment": "One session.members.list reread; no blind retry; success only when native owner matches.",
+    "nativeRole": "One users.list reread; no blind retry; success only when native role matches.",
+    "unknownOutcome": true
+  },
+  "audit": {
+    "actor": "AgentOS authenticated actor",
+    "operations": [
+      "users.openclaw.link",
+      "users.openclaw.unlink",
+      "users.openclaw.set-role",
+      "session.member.add",
+      "session.member.remove",
+      "session.visibility.set",
+      "session.assign-owner"
+    ],
+    "nativeAttributionClaimedAsAgentOsActor": false,
+    "secretsStored": false
+  },
+  "performance": {
+    "rootDashboardNewIdentityRpcCount": 0,
+    "rootDashboardNewCollaborationRpcCount": 0,
+    "usersList": "lazy directory/target validation only",
+    "selectedSessionReads": "bounded members and evidence reads in parallel",
+    "perSessionFanout": false,
+    "perUserNativeFanout": false,
+    "newPolling": false,
+    "newEventSource": false,
+    "newGatewaySubscription": false
+  },
+  "security": {
+    "actorIdUsedAsNativeProfileId": false,
+    "emailNameIdentityInference": false,
+    "associationGrantsPermission": false,
+    "perHumanCredentialStore": false,
+    "browserIdentitySpoofingAccepted": false,
+    "centralRedaction": true,
+    "untrustedNativeContentAsSystemInstruction": false
+  },
+  "runtimeCertification": {
+    "environment": "Disposable exact OpenClaw 2026.9.1 runtime with isolated state and workspace.",
+    "users.list": "PASS: empty native profile directory (0 profiles).",
+    "users.self": "EXPECTED-DENIAL: users.self requires an authenticated native user.",
+    "users.setRole": "SKIPPED: no disposable native profile; no profile fabricated.",
+    "sharedServiceAttribution": "PASS: runtime uses the shared AgentOS service connection.",
+    "associationDoesNotAuthenticate": "PASS",
+    "associationDoesNotAuthorize": "PASS",
+    "session.members.list": "PASS",
+    "session.members.listEvidence": "PASS",
+    "session.members.add": "SKIPPED: no disposable native human profile.",
+    "session.members.remove": "SKIPPED: no disposable native human profile.",
+    "session.visibility.set": "PASS: disposable session visibility changed and was restored.",
+    "sessions.assignOwnerAgent": "EXPECTED-DENIAL: exact runtime requires an identified native caller.",
+    "sessions.assignOwnerHuman": "SKIPPED: no disposable native human profile.",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "cleanup": "PASS: disposable session deleted, Gateway stopped, disposable root removed.",
+    "sameConnectionSharingEvent": "DOCUMENTED-RUNTIME-BEHAVIOR: no dependency introduced; action paths reread native state.",
+    "pluginApproval": "SKIPPED: outside Phase 7 native identity/collaboration fixture scope."
+  },
+  "validation": {
+    "upstreamContractTests": "PASS",
+    "identitySeparationTests": "PASS",
+    "associationTests": "PASS",
+    "heuristicMatchingTests": "PASS",
+    "roleSeparationTests": "PASS",
+    "sharedServiceEscalationTests": "PASS",
+    "sessionCollaborationTests": "PASS",
+    "mutationReconciliationTests": "PASS",
+    "raceTests": "PASS via existing request-policy/session fencing coverage",
+    "authorizationTests": "PASS",
+    "auditTests": "PASS via existing audit contract coverage",
+    "rpcBoundTests": "PASS",
+    "architectureLock": "PASS",
+    "fullSuite": { "tests": 1301, "passed": 1301, "failed": 0 },
+    "typeScript": "PASS",
+    "eslint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "safeguards": {
+    "agentOsActorProfileConflation": false,
+    "automaticEmailNameMatching": false,
+    "perHumanGatewayCredentialStore": false,
+    "usersCreateEmulation": false,
+    "automaticRoleSync": false,
+    "localSessionAcl": false,
+    "localSessionMembershipDb": false,
+    "newPolling": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "directGatewayFromReact": false,
+    "cliFallbackForNewCollaboration": false,
+    "openClawVersionChanged": false,
+    "phase8Functionality": false
+  },
+  "remainingRisks": [
+    "Per-human native Gateway delegation remains unavailable in the shared-service deployment.",
+    "Live users.setRole, human participant mutation, and human owner assignment remain runtime-skipped without a disposable verified native human profile.",
+    "The protected AgentOS instance is a trusted-team boundary, not hostile tenant isolation."
+  ],
+  "success": true
+}
