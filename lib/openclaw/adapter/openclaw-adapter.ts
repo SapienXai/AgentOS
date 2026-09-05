@@ -143,6 +143,8 @@ export interface OpenClawAdapter {
   capture?(): OpenClawAdapter;
   /** Identity used to prevent answers crossing a Gateway reconnect. */
   getConnectionIdentity?(): { client: OpenClawGatewayClient; connectionId: string | null };
+  /** Read the official transport generation without creating a new connection. */
+  getNativeConnectionGeneration?(): number | null;
   invalidateReadCache?(): void;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
   getNativeHealth?(options?: OpenClawCommandOptions & { probe?: boolean }): Promise<OpenClawHealthPayload>;
@@ -237,6 +239,11 @@ export interface OpenClawAdapter {
   resolveNativePluginApproval?(input: OpenClawNativePluginApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   listQuestions?(options?: OpenClawCommandOptions): Promise<OpenClawQuestionListPayload>;
   resolveQuestion?(input: OpenClawQuestionResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawQuestionResolvePayload>;
+  subscribeNativeRuntimeEvents?(
+    input: OpenClawRuntimeEventSubscriptionInput,
+    callbacks: OpenClawGatewayEventCallbacks,
+    options?: OpenClawCommandOptions
+  ): Promise<OpenClawGatewayEventSubscription>;
   subscribeRuntimeEvents(
     input: OpenClawRuntimeEventSubscriptionInput,
     callbacks: OpenClawGatewayEventCallbacks,
@@ -338,6 +345,10 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       client,
       connectionId: client.getDiagnostics?.()?.operatorIdentity?.connectionId ?? null
     };
+  }
+
+  getNativeConnectionGeneration() {
+    return this.getClient().getNativeConnectionGeneration?.() ?? null;
   }
 
   invalidateReadCache() {
@@ -781,6 +792,18 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     options: OpenClawCommandOptions = {}
   ) {
     return this.getClient().subscribeRuntimeEvents(input, callbacks, options);
+  }
+
+  subscribeNativeRuntimeEvents(
+    input: OpenClawRuntimeEventSubscriptionInput,
+    callbacks: OpenClawGatewayEventCallbacks,
+    options: OpenClawCommandOptions = {}
+  ) {
+    const client = this.getClient();
+    if (!client.subscribeNativeRuntimeEvents) {
+      return Promise.reject(new Error("Native OpenClaw lifecycle observation is unavailable."));
+    }
+    return client.subscribeNativeRuntimeEvents(input, callbacks, options);
   }
 
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {

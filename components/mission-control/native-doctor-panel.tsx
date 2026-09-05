@@ -18,10 +18,12 @@ export function NativeDoctorPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<"restart" | "update" | null>(null);
+  const [operationNotice, setOperationNotice] = useState<string | null>(null);
 
   const load = useCallback(async (probe = false) => {
     setLoading(true);
     setError(null);
+    setOperationNotice(null);
     try {
       const response = await fetch(`/api/openclaw/native-doctor${probe ? "?probe=1" : ""}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as {
@@ -55,6 +57,7 @@ export function NativeDoctorPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme
     if (!confirmed) return;
     setAction(kind);
     setError(null);
+    setOperationNotice(null);
     try {
       const response = await fetch("/api/openclaw/native-doctor", {
         method: "POST",
@@ -66,11 +69,25 @@ export function NativeDoctorPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme
           ...(kind === "restart" ? { reason: "AgentOS operator recovery" } : {})
         })
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string; result?: { message?: string } } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        result?: {
+          message?: string;
+          outcome?: string;
+          verification?: { status?: string };
+        };
+      } | null;
+      if (payload?.result?.verification?.status === "unknown" || payload?.result?.outcome === "unknown") {
+        setOperationNotice(payload.result.message || "OpenClaw may have applied the operation, but AgentOS could not verify the final state.");
+        return;
+      }
       if (!response.ok) {
         throw new Error(payload?.error || payload?.result?.message || "Native OpenClaw operation failed.");
       }
-      await load(true);
+      setOperationNotice(payload?.result?.message || "Native OpenClaw operation completed.");
+      if (payload?.result?.verification?.status === "verified") {
+        await load(true);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Native OpenClaw operation failed.");
     } finally {
@@ -158,6 +175,7 @@ export function NativeDoctorPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme
       </div>
 
       {error ? <p className={cn("mt-2 text-xs", surfaceTheme === "light" ? "text-rose-700" : "text-rose-300")}>{error}</p> : null}
+      {operationNotice ? <p className={cn("mt-2 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>{operationNotice}</p> : null}
     </div>
   );
 }

@@ -26,6 +26,29 @@ The exact native scopes are preserved: health and diagnostics reads use
 use `operator.admin`, while suspension status uses `operator.read`. Gateway
 authorization remains final.
 
+### Phase 6.1 — Truthfulness and recovery reconciliation
+
+The exact OpenClaw 2026.9.1 descriptor protects `update.status` with
+`operator.admin`, even though the method is read-shaped. AgentOS therefore
+keeps the health, status, diagnostics, and config portions of Doctor usable for
+read-capable operators while projecting update status as forbidden/unavailable
+when the native admin scope is not present. A failed observation is never
+treated as proof that the runtime or update is unavailable.
+
+Native `update.run` payload status is authoritative over the outer RPC
+transport result: `ok`, `error`, and `skipped` remain distinct, and managed or
+external supervisor handoffs remain non-terminal. Restart/update acceptance is
+not verification. For disruptive operations AgentOS records the pre-operation
+native generation and identity, waits once on the existing official reconnect
+owner, then performs bounded fresh native health/status/config/update reads.
+Missing reconnect or identity/config evidence remains unknown; AgentOS does not
+retry the operation or start another reconnect loop.
+
+The certification harness compares AgentOS expectations with the pinned
+OpenClaw source descriptor itself, not only with an AgentOS mirror. The online
+Doctor path remains native-only and uses the existing product permission,
+native scope preflight, request policy, and Gateway authorization layers.
+
 ## Truthful projection
 
 Reachability is not the same as health. A successful health response with

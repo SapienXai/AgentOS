@@ -405,6 +405,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     };
   }
 
+  getNativeConnectionGeneration() {
+    return this.connection.getGeneration();
+  }
+
   private recordNativeFailure(operation: string, error: unknown) {
     const normalized = normalizeClientError(error);
     this.lastNativeFailure = {
@@ -2514,6 +2518,32 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       this.recordGatewayFallback("runtime.subscribe", error);
       return this.fallback.subscribeRuntimeEvents(input, callbacks, options);
     }
+  }
+
+  subscribeNativeRuntimeEvents(
+    input: OpenClawRuntimeEventSubscriptionInput,
+    callbacks: OpenClawGatewayEventCallbacks,
+    options: OpenClawCommandOptions = {}
+  ) {
+    if (options.forceCli || this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      throw new OpenClawGatewayClientError(
+        "Native OpenClaw lifecycle observation is unavailable when the CLI client is forced.",
+        "unsupported"
+      );
+    }
+    return this.subscribeNativeEvents(
+      {
+        subscribeSessions: input.includeSessions ?? false,
+        subscribeTasks: input.includeTasks,
+        subscribeArtifacts: input.includeArtifacts,
+        subscribeApprovals: input.includeApprovals,
+        sessionKeys: input.sessionKeys,
+        taskIds: input.taskIds,
+        artifactIds: input.artifactIds
+      },
+      callbacks,
+      options
+    );
   }
 
   async callNative<TPayload>(

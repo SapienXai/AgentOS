@@ -1649,6 +1649,8 @@ export type OpenClawUpdateStatusPayload = Record<string, unknown> & {
 
 export interface OpenClawGatewayClient {
   getDiagnostics?(): OpenClawGatewayClientDiagnostics;
+  /** Current official transport generation; this never creates a connection. */
+  getNativeConnectionGeneration?(): number;
   /** Invalidate AgentOS request-policy reads after a native upstream event. */
   invalidateReadCache?(): void;
   getOperatorIdentity?(options?: OpenClawCommandOptions): Promise<OpenClawOperatorIdentity>;
@@ -1754,6 +1756,12 @@ export interface OpenClawGatewayClient {
   resolveNativePluginApproval?(input: OpenClawNativePluginApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   listQuestions?(options?: OpenClawCommandOptions): Promise<OpenClawQuestionListPayload>;
   resolveQuestion?(input: OpenClawQuestionResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawQuestionResolvePayload>;
+  /** Native-only lifecycle observation; unlike subscribeRuntimeEvents, no CLI fallback is allowed. */
+  subscribeNativeRuntimeEvents?(
+    input: OpenClawRuntimeEventSubscriptionInput,
+    callbacks: OpenClawGatewayEventCallbacks,
+    options?: OpenClawCommandOptions
+  ): Promise<OpenClawGatewayEventSubscription>;
   subscribeRuntimeEvents(
     input: OpenClawRuntimeEventSubscriptionInput,
     callbacks: OpenClawGatewayEventCallbacks,

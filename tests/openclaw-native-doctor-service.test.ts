@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  auditResultForNativeDoctorMutation,
   confirmationMatches,
   executeNativeDoctorMutation,
-  getNativeDoctorSnapshot
+  getNativeDoctorSnapshot,
+  normalizeNativeUpdateRunOutcome,
+  reconcileNativeDoctorMutation,
+  verifyFreshRestartState
 } from "@/lib/openclaw/application/native-doctor-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 
 function createAdapter(overrides: Partial<OpenClawAdapter> = {}) {
@@ -42,8 +47,8 @@ function createAdapter(overrides: Partial<OpenClawAdapter> = {}) {
             return {
               requestedRole: "operator",
               role: "operator",
-              requestedScopes: ["operator.read"],
-              grantedScopes: ["operator.read"],
+              requestedScopes: ["operator.admin", "operator.read"],
+              grantedScopes: ["operator.admin", "operator.read"],
               grantedScopesKnown: true,
               deviceId: "device",
               connectionId: "connection-1",
@@ -123,6 +128,40 @@ test("native read failures become unknown while unsupported native methods are u
   assert.equal(unavailable.runtime.reachable, false);
 });
 
+test("Doctor keeps read-only surfaces when update.status is forbidden", async () => {
+  const snapshot = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      getConnectionIdentity() {
+        return {
+          connectionId: "connection-read-only",
+          client: {
+            async getOperatorIdentity() {
+              return {
+                requestedRole: "operator",
+                role: "operator",
+                requestedScopes: ["operator.read"],
+                grantedScopes: ["operator.read"],
+                grantedScopesKnown: true,
+                deviceId: "device",
+                connectionId: "connection-read-only",
+                authenticated: true,
+                source: "native-handshake" as const
+              };
+            }
+          } as OpenClawGatewayClient
+        };
+      },
+      async getNativeUpdateStatus() {
+        throw new Error("update.status must not be called without operator.admin");
+      }
+    })
+  });
+
+  assert.equal(snapshot.runtime.status, "healthy");
+  assert.equal(snapshot.update.readStatus, "forbidden");
+  assert.equal(snapshot.update.status, "unavailable");
+});
+
 test("native mutation routing does not retry or use a CLI fallback", async () => {
   const calls: string[] = [];
   const adapter = createAdapter({
@@ -132,7 +171,7 @@ test("native mutation routing does not retry or use a CLI fallback", async () =>
     },
     async runNativeUpdate() {
       calls.push("update.run");
-      return { status: "skipped", reason: "restart-unavailable" };
+      return { ok: true, result: { status: "skipped", reason: "restart-unavailable" }, restart: null, handoff: null };
     }
   });
 
@@ -143,8 +182,135 @@ test("native mutation routing does not retry or use a CLI fallback", async () =>
   const update = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
 
   assert.equal(restart.outcome, "accepted");
-  assert.equal(update.outcome, "succeeded");
+  assert.equal(update.outcome, "skipped");
   assert.deepEqual(calls, ["restart:safe", "update.run"]);
+});
+
+test("native update result status wins over successful RPC transport", () => {
+  const skipped = normalizeNativeUpdateRunOutcome({
+    ok: true,
+    result: { status: "skipped", reason: "external-supervisor-update-required" },
+    restart: null,
+    handoff: null
+  });
+  const failed = normalizeNativeUpdateRunOutcome({
+    ok: true,
+    result: { status: "error", reason: "restart-disabled" },
+    restart: null,
+    handoff: null
+  });
+  const succeeded = normalizeNativeUpdateRunOutcome({
+    ok: true,
+    result: { status: "ok" },
+    restart: null,
+    handoff: null
+  });
+
+  assert.equal(skipped.outcome, "skipped");
+  assert.equal(failed.outcome, "failed");
+  assert.equal(succeeded.outcome, "succeeded");
+});
+
+test("unknown Doctor mutation outcomes are audited as unknown", () => {
+  assert.equal(auditResultForNativeDoctorMutation("unknown"), "unknown");
+  assert.equal(auditResultForNativeDoctorMutation("failed"), "failed");
+  assert.equal(auditResultForNativeDoctorMutation("skipped"), "succeeded");
+});
+
+test("accepted restart becomes verified only after a fresh native generation", async () => {
+  let generation = 1;
+  let subscriptionClosed = false;
+  const adapter = createAdapter({
+    getNativeConnectionGeneration() {
+      return generation;
+    },
+    async requestNativeGatewayRestart() {
+      return { ok: true, status: "scheduled" };
+    },
+    async subscribeNativeRuntimeEvents(_input, callbacks) {
+      generation = 2;
+      await callbacks.onReconnected?.({ generation });
+      return {
+        reconnectManagedByClient: true,
+        close() {
+          subscriptionClosed = true;
+        }
+      };
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "gateway.restart.request" }, { adapter });
+  assert.equal(mutation.outcome, "accepted");
+  assert.equal(mutation.verification.status, "not-required");
+
+  const reconciled = await reconcileNativeDoctorMutation(mutation, { before, adapter });
+  assert.equal(reconciled.verification.status, "verified");
+  assert.equal(reconciled.reconciliation, "confirmed");
+  assert.equal(subscriptionClosed, true);
+});
+
+test("restart verification rejects the old generation and a different native identity", async () => {
+  const before = await getNativeDoctorSnapshot({ adapter: createAdapter({
+    getNativeConnectionGeneration() { return 1; }
+  }) });
+  const oldState = await getNativeDoctorSnapshot({ adapter: createAdapter({
+    getNativeConnectionGeneration() { return 1; }
+  }) });
+  assert.equal(verifyFreshRestartState(before, oldState, 1).status, "unknown");
+
+  const differentIdentity = {
+    ...oldState,
+    identity: { ...oldState.identity, deviceId: "different-device" }
+  };
+  assert.equal(verifyFreshRestartState(before, differentIdentity, 2).status, "unknown");
+});
+
+test("restart verification requires matching config hashes when config applied restart was the reason", async () => {
+  const before = await getNativeDoctorSnapshot({ adapter: createAdapter({
+    getNativeConnectionGeneration() { return 1; },
+    async getConfigSnapshot() {
+      return { valid: true, configRevisionHash: "revision-2", appliedConfigHash: "revision-1" };
+    }
+  }) });
+  const afterApplied = await getNativeDoctorSnapshot({ adapter: createAdapter({
+    getNativeConnectionGeneration() { return 2; },
+    async getConfigSnapshot() {
+      return { valid: true, configRevisionHash: "revision-2", appliedConfigHash: "revision-2" };
+    }
+  }) });
+  const afterMismatch = await getNativeDoctorSnapshot({ adapter: createAdapter({
+    getNativeConnectionGeneration() { return 2; },
+    async getConfigSnapshot() {
+      return { valid: true, configRevisionHash: "revision-2", appliedConfigHash: "revision-1" };
+    }
+  }) });
+
+  assert.equal(verifyFreshRestartState(before, afterApplied, 2).status, "verified");
+  assert.equal(verifyFreshRestartState(before, afterMismatch, 2).status, "unknown");
+});
+
+test("skipped and failed native updates do not enter reconnect verification", async () => {
+  let subscribed = false;
+  const adapter = createAdapter({
+    async subscribeNativeRuntimeEvents() {
+      subscribed = true;
+      throw new Error("skipped update must not subscribe");
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const skipped = normalizeNativeUpdateRunOutcome({
+    ok: true,
+    result: { status: "skipped", reason: "restart-disabled" },
+    restart: null
+  });
+  const failed = normalizeNativeUpdateRunOutcome({
+    ok: false,
+    result: { status: "error", reason: "not-openclaw-root" },
+    restart: null
+  });
+  assert.equal((await reconcileNativeDoctorMutation(skipped, { before, adapter })).outcome, "skipped");
+  assert.equal((await reconcileNativeDoctorMutation(failed, { before, adapter })).outcome, "failed");
+  assert.equal(subscribed, false);
 });
 
 test("ambiguous native mutations are surfaced without a blind retry", async () => {

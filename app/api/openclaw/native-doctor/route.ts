@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
+  auditResultForNativeDoctorMutation,
   buildNativeDoctorConfirmation,
   confirmationMatches,
   executeNativeDoctorMutation,
-  getNativeDoctorSnapshot
+  getNativeDoctorSnapshot,
+  reconcileNativeDoctorMutation
 } from "@/lib/openclaw/application/native-doctor-service";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -79,7 +82,8 @@ export async function POST(request: Request) {
   if ("response" in permission) return permission.response;
 
   try {
-    const current = await getNativeDoctorSnapshot();
+    const adapter = getOpenClawAdapter();
+    const current = await getNativeDoctorSnapshot({ adapter });
     if (input.action !== "gateway.suspend.status") {
       if (!confirmationMatches(input.confirmation, buildNativeDoctorConfirmation(current))) {
         return NextResponse.json(
@@ -89,7 +93,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const result = await executeNativeDoctorMutation(
+    const mutation = await executeNativeDoctorMutation(
       input.action === "update.run"
         ? { action: input.action, input: input.note === undefined ? undefined : { note: input.note } }
         : input.action === "update.hold"
@@ -109,17 +113,20 @@ export async function POST(request: Request) {
                 ? { action: input.action, input: { suspensionId: input.suspensionId } }
                 : { action: input.action, input: { suspensionId: input.suspensionId } }
     );
+    const result = input.action === "gateway.restart.request" || input.action === "update.run"
+      ? await reconcileNativeDoctorMutation(mutation, { before: current, adapter })
+      : mutation;
 
     await recordAgentOsAuditEvent({
       actor: permission.actor,
       operation: `openclaw.${input.action}`,
       targetKind: "gateway",
       targetId: current.identity.connectionId ?? "current-gateway",
-      result: result.outcome === "failed" || result.outcome === "unknown" ? "failed" : "succeeded"
+      result: auditResultForNativeDoctorMutation(result.outcome)
     }).catch(() => {});
 
     return NextResponse.json(redactSecrets({ result }), {
-      status: result.outcome === "failed" ? 400 : result.outcome === "unknown" ? 409 : 200,
+      status: result.outcome === "failed" ? 400 : result.outcome === "unknown" || result.verification.status === "unknown" ? 409 : 200,
       headers: { "Cache-Control": "no-store" }
     });
   } catch (error) {

@@ -3,8 +3,10 @@ import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
+  auditResultForNativeDoctorMutation,
   executeNativeDoctorMutation,
-  getNativeDoctorSnapshot
+  getNativeDoctorSnapshot,
+  reconcileNativeDoctorMutation
 } from "@/lib/openclaw/application/native-doctor-service";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -70,10 +72,11 @@ export async function POST(request: Request) {
         action: "gateway.restart.request",
         input: { reason: "AgentOS operator requested restart", skipDeferral: false }
       });
-      if (nativeResult.outcome === "failed" || nativeResult.outcome === "unknown") {
+      const reconciledResult = await reconcileNativeDoctorMutation(nativeResult, { before: nativeDoctor });
+      if (reconciledResult.outcome === "failed" || reconciledResult.outcome === "unknown" || reconciledResult.verification.status === "unknown") {
         return NextResponse.json(
-          { error: nativeResult.message, nativeResult },
-          { status: nativeResult.outcome === "unknown" ? 409 : 400 }
+          { error: reconciledResult.message, nativeResult: reconciledResult },
+          { status: reconciledResult.outcome === "unknown" || reconciledResult.verification.status === "unknown" ? 409 : 400 }
         );
       }
       await recordAgentOsAuditEvent({
@@ -81,12 +84,11 @@ export async function POST(request: Request) {
         operation: "gateway.restart.request",
         targetKind: "gateway",
         targetId: nativeDoctor.identity.connectionId,
-        result: "succeeded"
+        result: auditResultForNativeDoctorMutation(reconciledResult.outcome)
       }).catch(() => {});
       return NextResponse.json({
-        message: "Native Gateway restart requested.",
-        nativeResult,
-        snapshot: redactSecrets(currentSnapshot)
+        message: reconciledResult.verification.status === "verified" ? "Native Gateway restart verified." : "Native Gateway restart requested.",
+        nativeResult: reconciledResult
       });
     }
 
