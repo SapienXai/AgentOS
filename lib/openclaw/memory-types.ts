@@ -1,6 +1,5 @@
 import type {
   OpenClawMemoryDreamAction,
-  OpenClawMemoryDreamActionPayload,
   OpenClawMemoryDreamDiaryPayload,
   OpenClawMemorySearchResult,
   OpenClawMemoryStatusPayload
@@ -18,6 +17,8 @@ export type WorkerMemoryIssueCode =
   | "runtime_unavailable"
   | "native_method_unavailable"
   | "native_read_failed"
+  | "mutation_rejected"
+  | "mutation_outcome_unknown"
   | "unknown";
 
 export type WorkerMemoryIssue = {
@@ -88,8 +89,37 @@ export type WorkerMemoryDreamDiaryResponse = {
 };
 
 export type WorkerMemoryAction = OpenClawMemoryDreamAction;
-export type WorkerMemoryActionResponse = OpenClawMemoryDreamActionPayload & {
-  projection: WorkerMemoryProjection;
+export type WorkerMemoryMutationOutcome = "succeeded" | "failed" | "unknown";
+export type WorkerMemoryReconciliationStatus = "not-attempted" | "confirmed" | "inconclusive" | "read-failed";
+
+export type WorkerMemoryActionResponse = {
+  agentId: string;
+  action: WorkerMemoryAction;
+  outcome: WorkerMemoryMutationOutcome;
+  retryable: false;
+  message: string;
+  projection: WorkerMemoryProjection | null;
+  reconciliation: {
+    attempted: boolean;
+    status: WorkerMemoryReconciliationStatus;
+    readMethods: string[];
+  };
+  result: {
+    found?: boolean;
+    scannedFiles?: number;
+    written?: number;
+    replaced?: number;
+    removedEntries?: number;
+    removedShortTermEntries?: number;
+    changed?: boolean;
+    archivedDreamsDiary?: boolean;
+    archivedSessionCorpus?: boolean;
+    archivedSessionIngestion?: boolean;
+    warnings?: string[];
+    dedupedEntries?: number;
+    keptEntries?: number;
+  } | null;
+  issue: WorkerMemoryIssue | null;
 };
 
 export type NativeMemoryPayloads = {

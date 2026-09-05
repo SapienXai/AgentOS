@@ -1,7 +1,11 @@
 import "server-only";
 
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import {
+  classifyNativeMutationError,
+  NativeGatewayError,
+  normalizeClientError
+} from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   OpenClawCommandOptions,
   OpenClawMemoryDreamActionPayload,
@@ -210,7 +214,7 @@ export async function runWorkerMemoryAction(
   const method = MEMORY_ACTION_METHODS[action];
   const operation = adapter[method];
   if (typeof operation !== "function") {
-    throw new Error(`OpenClaw native memory action ${action} is unavailable.`);
+    throw new NativeGatewayError(`OpenClaw native memory action ${action} is unavailable.`, { kind: "unsupported" });
   }
   return (operation as (input: { agentId: string }, commandOptions?: OpenClawCommandOptions) => Promise<OpenClawMemoryDreamActionPayload>).call(
     adapter,
@@ -219,11 +223,194 @@ export async function runWorkerMemoryAction(
   );
 }
 
+export async function executeWorkerMemoryAction(
+  agentId: string,
+  action: WorkerMemoryAction,
+  options: { adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions } = {}
+): Promise<WorkerMemoryActionResponse> {
+  try {
+    const actionResult = await runWorkerMemoryAction(agentId, action, options);
+    const projection = await getWorkerMemoryProjection(agentId, options);
+    return buildMemoryActionResponse(actionResult, projection);
+  } catch (error) {
+    const classification = classifyNativeMutationError(error);
+    if (classification.disposition === "definite-rejection") {
+      return buildFailedMemoryActionResponse(agentId, action, classification.message);
+    }
+
+    const reconciliation = await reconcileAmbiguousMemoryAction(agentId, action, options);
+    if (reconciliation.status === "confirmed") {
+      return buildReconciledMemoryActionResponse(agentId, action, reconciliation);
+    }
+
+    return buildUnknownMemoryActionResponse(agentId, action, reconciliation);
+  }
+}
+
 export function buildMemoryActionResponse(
   action: OpenClawMemoryDreamActionPayload,
   projection: WorkerMemoryProjection
 ): WorkerMemoryActionResponse {
-  return { ...action, projection };
+  return {
+    agentId: action.agentId,
+    action: action.action,
+    outcome: "succeeded",
+    retryable: false,
+    message: "OpenClaw applied the native memory action.",
+    projection,
+    reconciliation: {
+      attempted: false,
+      status: "not-attempted",
+      readMethods: []
+    },
+    result: summarizeMemoryActionResult(action),
+    issue: null
+  };
+}
+
+type MemoryActionReconciliation = {
+  status: "confirmed" | "inconclusive" | "read-failed";
+  readMethods: string[];
+  projection: WorkerMemoryProjection | null;
+};
+
+async function reconcileAmbiguousMemoryAction(
+  agentId: string,
+  action: WorkerMemoryAction,
+  options: { adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions }
+): Promise<MemoryActionReconciliation> {
+  if (action === "reset" || action === "backfill" || action === "dedupeDreamDiary") {
+    const diary = await readWorkerDreamDiary(agentId, options);
+    if (diary.status !== "available") {
+      return {
+        status: "read-failed",
+        readMethods: ["doctor.memory.dreamDiary"],
+        projection: null
+      };
+    }
+    if (action === "reset" && diary.found === false) {
+      return {
+        status: "confirmed",
+        readMethods: ["doctor.memory.dreamDiary"],
+        projection: null
+      };
+    }
+    return {
+      status: "inconclusive",
+      readMethods: ["doctor.memory.dreamDiary"],
+      projection: null
+    };
+  }
+
+  const projection = await getWorkerMemoryProjection(agentId, options);
+  if (projection.source !== "native") {
+    return {
+      status: "read-failed",
+      readMethods: ["doctor.memory.status"],
+      projection
+    };
+  }
+  if (action === "resetGroundedShortTerm" && projection.dreaming?.shortTermCount === 0) {
+    return {
+      status: "confirmed",
+      readMethods: ["doctor.memory.status"],
+      projection
+    };
+  }
+  return {
+    status: "inconclusive",
+    readMethods: ["doctor.memory.status"],
+    projection
+  };
+}
+
+function buildFailedMemoryActionResponse(agentId: string, action: WorkerMemoryAction, message: string): WorkerMemoryActionResponse {
+  return {
+    agentId,
+    action,
+    outcome: "failed",
+    retryable: false,
+    message: redactSecretText(message || "OpenClaw rejected the native memory action."),
+    projection: null,
+    reconciliation: {
+      attempted: false,
+      status: "not-attempted",
+      readMethods: []
+    },
+    result: null,
+    issue: {
+      code: "mutation_rejected",
+      message: redactSecretText(message || "OpenClaw rejected the native memory action."),
+      severity: "error"
+    }
+  };
+}
+
+function buildReconciledMemoryActionResponse(
+  agentId: string,
+  action: WorkerMemoryAction,
+  reconciliation: MemoryActionReconciliation
+): WorkerMemoryActionResponse {
+  return {
+    agentId,
+    action,
+    outcome: "succeeded",
+    retryable: false,
+    message: "OpenClaw may have delayed the response, but the native postcondition was confirmed.",
+    projection: reconciliation.projection,
+    reconciliation: {
+      attempted: true,
+      status: reconciliation.status,
+      readMethods: reconciliation.readMethods
+    },
+    result: null,
+    issue: null
+  };
+}
+
+function buildUnknownMemoryActionResponse(
+  agentId: string,
+  action: WorkerMemoryAction,
+  reconciliation: MemoryActionReconciliation
+): WorkerMemoryActionResponse {
+  const message = "OpenClaw may have applied this action, but AgentOS could not verify the final state. Refresh diagnostics before deciding what to do next.";
+  return {
+    agentId,
+    action,
+    outcome: "unknown",
+    retryable: false,
+    message,
+    projection: reconciliation.projection,
+    reconciliation: {
+      attempted: true,
+      status: reconciliation.status,
+      readMethods: reconciliation.readMethods
+    },
+    result: null,
+    issue: {
+      code: "mutation_outcome_unknown",
+      message,
+      severity: "warning"
+    }
+  };
+}
+
+function summarizeMemoryActionResult(action: OpenClawMemoryDreamActionPayload) {
+  return {
+    ...(action.found === undefined ? {} : { found: action.found }),
+    ...(action.scannedFiles === undefined ? {} : { scannedFiles: action.scannedFiles }),
+    ...(action.written === undefined ? {} : { written: action.written }),
+    ...(action.replaced === undefined ? {} : { replaced: action.replaced }),
+    ...(action.removedEntries === undefined ? {} : { removedEntries: action.removedEntries }),
+    ...(action.removedShortTermEntries === undefined ? {} : { removedShortTermEntries: action.removedShortTermEntries }),
+    ...(action.changed === undefined ? {} : { changed: action.changed }),
+    ...(action.archivedDreamsDiary === undefined ? {} : { archivedDreamsDiary: action.archivedDreamsDiary }),
+    ...(action.archivedSessionCorpus === undefined ? {} : { archivedSessionCorpus: action.archivedSessionCorpus }),
+    ...(action.archivedSessionIngestion === undefined ? {} : { archivedSessionIngestion: action.archivedSessionIngestion }),
+    ...(action.warnings === undefined ? {} : { warnings: action.warnings.map((warning) => redactSecretText(warning)) }),
+    ...(action.dedupedEntries === undefined ? {} : { dedupedEntries: action.dedupedEntries }),
+    ...(action.keptEntries === undefined ? {} : { keptEntries: action.keptEntries })
+  };
 }
 
 function normalizeSearchResult(result: OpenClawMemorySearchResult): WorkerMemorySearchResult {

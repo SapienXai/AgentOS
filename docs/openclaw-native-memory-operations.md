@@ -73,3 +73,22 @@ primary certification proof. Live memory mutation certification is performed
 only with an isolated authenticated disposable runtime. If that fixture is
 not safely available, live provider-dependent cases remain explicitly skipped;
 the user Gateway and real memory state are never used.
+
+## Phase 5.1 hardening
+
+Worker-bound memory reads and searches are fenced by the current worker identity
+and a per-operation request generation. Switching workers clears all projected
+health, diary, search, action, loading, and error state; stale read responses
+are aborted where possible and cannot repopulate the new worker. Native writes
+are intentionally not canceled after dispatch, but their late responses are
+discarded when the worker or newer logical operation has changed.
+
+Memory mutation outcomes are `succeeded`, `failed`, or `unknown`. A definite
+native rejection is reported as failed. A transport failure after dispatch is
+not retried: AgentOS performs one bounded, operation-specific reread only when
+OpenClaw exposes a reliable postcondition. Reset diary can be confirmed by an
+empty native diary, and grounded short-term reset by a native zero count. Other
+ambiguous maintenance writes remain unknown when their final state cannot be
+proven. The API and existing audit system preserve that uncertainty, and the
+UI asks the operator to refresh diagnostics rather than presenting a failed
+mutation or an automatic retry path.

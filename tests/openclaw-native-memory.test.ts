@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   buildMemoryActionResponse,
+  executeWorkerMemoryAction,
   getWorkerMemoryProjection,
   normalizeWorkerMemoryProjection,
   normalizeWorkerMemorySearch,
@@ -13,12 +14,20 @@ import {
 } from "@/lib/openclaw/application/native-memory-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import {
+  classifyNativeMutationError,
+  NativeGatewayRequestError
+} from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   OpenClawGatewayClient,
   OpenClawMemoryDreamActionPayload,
   OpenClawMemoryStatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import type { OpenClawGatewayTransport } from "@/lib/openclaw/client/native-ws-gateway-types";
+import {
+  createNativeMemoryLoaderState,
+  NativeMemoryRequestLedger
+} from "@/lib/openclaw/memory-loader-state";
 
 const healthyStatus: OpenClawMemoryStatusPayload = {
   agentId: "worker-1",
@@ -181,6 +190,7 @@ test("native memory actions route through the typed adapter and return a reread 
   const projection = normalizeWorkerMemoryProjection(healthyStatus);
   const response = buildMemoryActionResponse(action, projection);
   assert.equal(response.action, "reset");
+  assert.ok(response.projection);
   assert.equal(response.projection.agentId, "worker-1");
 });
 
@@ -231,6 +241,138 @@ test("normalization rejects empty memory search queries before native access", a
     /query is required/
   );
   assert.deepEqual(normalizeWorkerMemorySearch([], "worker-1", "local", "fts-only", false).results, []);
+});
+
+test("memory loader state resets every worker-bound value on an agent change", () => {
+  const state = createNativeMemoryLoaderState("worker-b");
+  assert.deepEqual(state, {
+    agentId: "worker-b",
+    projection: null,
+    diary: null,
+    searchResult: null,
+    isLoadingStatus: false,
+    isLoadingDiary: false,
+    isSearching: false,
+    activeAction: null,
+    actionResult: null,
+    error: null
+  });
+});
+
+test("memory loader request ledger fences cross-worker and older same-worker responses", () => {
+  const ledger = new NativeMemoryRequestLedger("worker-a");
+  const statusA = ledger.begin("status", "worker-a");
+  ledger.switchAgent("worker-b");
+  assert.equal(ledger.isCurrent(statusA, "worker-b"), false);
+
+  const searchA = ledger.begin("search", "worker-b");
+  const searchB = ledger.begin("search", "worker-b");
+  assert.equal(ledger.isCurrent(searchA, "worker-b"), false);
+  assert.equal(ledger.isCurrent(searchB, "worker-b"), true);
+});
+
+test("native mutation classification uses structured transport certainty", () => {
+  const timeout = new NativeGatewayRequestError("request timed out", "doctor.memory.resetDreamDiary", true, { kind: "timeout" });
+  const forbidden = new NativeGatewayRequestError("forbidden", "doctor.memory.resetDreamDiary", true, { kind: "scope-limited" });
+  assert.equal(classifyNativeMutationError(timeout).disposition, "ambiguous-outcome");
+  assert.equal(classifyNativeMutationError(forbidden).disposition, "definite-rejection");
+  assert.equal(classifyNativeMutationError(new Error("request timed out")).disposition, "ambiguous-outcome");
+});
+
+test("ambiguous reset reconciles through one native diary read without retry", async () => {
+  let mutationCalls = 0;
+  let diaryReads = 0;
+  const result = await executeWorkerMemoryAction("worker-1", "reset", {
+    adapter: adapter({
+      async resetNativeMemoryDreamDiary() {
+        mutationCalls += 1;
+        throw new NativeGatewayRequestError("request timed out", "doctor.memory.resetDreamDiary", true, { kind: "timeout" });
+      },
+      async getNativeMemoryDreamDiary() {
+        diaryReads += 1;
+        return { agentId: "worker-1", found: false, path: "" };
+      }
+    })
+  });
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciliation.status, "confirmed");
+  assert.deepEqual(result.reconciliation.readMethods, ["doctor.memory.dreamDiary"]);
+  assert.equal(result.retryable, false);
+  assert.equal(mutationCalls, 1);
+  assert.equal(diaryReads, 1);
+});
+
+test("ambiguous reset stays unknown when the native postcondition is inconclusive", async () => {
+  let mutationCalls = 0;
+  const result = await executeWorkerMemoryAction("worker-1", "reset", {
+    adapter: adapter({
+      async resetNativeMemoryDreamDiary() {
+        mutationCalls += 1;
+        throw new NativeGatewayRequestError("connection closed", "doctor.memory.resetDreamDiary", true, { kind: "unreachable" });
+      },
+      async getNativeMemoryDreamDiary() {
+        return { agentId: "worker-1", found: true, path: "", content: "still present" };
+      }
+    })
+  });
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.issue?.code, "mutation_outcome_unknown");
+  assert.equal(result.retryable, false);
+  assert.equal(mutationCalls, 1);
+});
+
+test("ambiguous grounded short-term reset confirms a zero native count", async () => {
+  const result = await executeWorkerMemoryAction("worker-1", "resetGroundedShortTerm", {
+    adapter: adapter({
+      async resetNativeGroundedShortTerm() {
+        throw new NativeGatewayRequestError("request timed out", "doctor.memory.resetGroundedShortTerm", true, { kind: "timeout" });
+      },
+      async getNativeMemoryDoctorStatus() {
+        return {
+          ...healthyStatus,
+          dreaming: { ...healthyStatus.dreaming!, shortTermCount: 0 }
+        };
+      }
+    })
+  });
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciliation.status, "confirmed");
+  assert.equal(result.projection?.dreaming?.shortTermCount, 0);
+});
+
+test("definite native rejection does not run a postcondition guess", async () => {
+  let diaryReads = 0;
+  const result = await executeWorkerMemoryAction("worker-1", "reset", {
+    adapter: adapter({
+      async resetNativeMemoryDreamDiary() {
+        throw new NativeGatewayRequestError("missing scope", "doctor.memory.resetDreamDiary", true, { kind: "scope-limited" });
+      },
+      async getNativeMemoryDreamDiary() {
+        diaryReads += 1;
+        return { agentId: "worker-1", found: false, path: "" };
+      }
+    })
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.issue?.code, "mutation_rejected");
+  assert.equal(result.reconciliation.attempted, false);
+  assert.equal(diaryReads, 0);
+});
+
+test("missing native mutation methods are definite unsupported failures", async () => {
+  let diaryReads = 0;
+  const result = await executeWorkerMemoryAction("worker-1", "reset", {
+    adapter: adapter({
+      async getNativeMemoryDreamDiary() {
+        diaryReads += 1;
+        return { agentId: "worker-1", found: false, path: "" };
+      }
+    })
+  });
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.issue?.code, "mutation_rejected");
+  assert.equal(result.reconciliation.attempted, false);
+  assert.equal(diaryReads, 0);
 });
 
 function createTransport(

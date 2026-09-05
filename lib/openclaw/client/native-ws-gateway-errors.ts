@@ -28,6 +28,15 @@ export type OpenClawGatewayClientErrorKind =
   | "unreachable"
   | "unknown";
 
+export type NativeMutationErrorDisposition = "definite-rejection" | "ambiguous-outcome";
+
+export type NativeMutationErrorClassification = {
+  disposition: NativeMutationErrorDisposition;
+  kind: OpenClawGatewayClientErrorKind;
+  requestSent: boolean | null;
+  message: string;
+};
+
 export class NativeGatewayError extends Error {
   readonly kind: OpenClawGatewayClientErrorKind;
 
@@ -129,6 +138,51 @@ export function normalizeClientError(error: unknown) {
   return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(message), classifyGatewayError(message, error), {
     cause: error
   });
+}
+
+/**
+ * Classify a native mutation without treating message text as delivery proof.
+ * Request errors carry the official transport's sent bit; all unstructured
+ * transport failures remain ambiguous so callers reconcile instead of retrying.
+ */
+export function classifyNativeMutationError(error: unknown): NativeMutationErrorClassification {
+  const normalized = normalizeClientError(error);
+  const requestSent = error instanceof NativeGatewayRequestError ? error.sent : null;
+
+  if (error instanceof NativeGatewayRequestError && !error.sent) {
+    return {
+      disposition: "definite-rejection",
+      kind: normalized.kind,
+      requestSent,
+      message: normalized.message
+    };
+  }
+
+  const hasStructuredKind = error instanceof NativeGatewayError || error instanceof OpenClawGatewayClientError;
+  if (hasStructuredKind && isDefiniteNativeRejection(normalized.kind)) {
+    return {
+      disposition: "definite-rejection",
+      kind: normalized.kind,
+      requestSent,
+      message: normalized.message
+    };
+  }
+
+  return {
+    disposition: "ambiguous-outcome",
+    kind: normalized.kind,
+    requestSent,
+    message: normalized.message
+  };
+}
+
+function isDefiniteNativeRejection(kind: OpenClawGatewayClientErrorKind) {
+  return kind === "auth"
+    || kind === "conflict"
+    || kind === "malformed-response"
+    || kind === "rate-limited"
+    || kind === "scope-limited"
+    || kind === "unsupported";
 }
 
 export function classifyGatewayError(message: string, cause?: unknown): OpenClawGatewayClientErrorKind {

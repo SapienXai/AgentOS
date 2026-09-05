@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  buildMemoryActionResponse,
-  getWorkerMemoryProjection,
-  runWorkerMemoryAction
+  executeWorkerMemoryAction
 } from "@/lib/openclaw/application/native-memory-service";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
@@ -52,34 +50,30 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
   });
   if ("response" in preflight) return preflight.response;
 
-  try {
-    const actionResult = await runWorkerMemoryAction(agentId, input.action, {
-      commandOptions: preflight.commandOptions
-    });
-    const projection = await getWorkerMemoryProjection(agentId, {
-      commandOptions: preflight.commandOptions
-    });
-    await recordAgentOsAuditEvent({
-      actor: preflight.actor,
-      operation: `memory.${input.action}`,
-      targetKind: "agent-memory",
-      targetId: agentId,
-      result: "succeeded"
-    }).catch(() => {});
-    return NextResponse.json(redactSecrets(buildMemoryActionResponse(actionResult, projection)), {
+  const actionResult = await executeWorkerMemoryAction(agentId, input.action, {
+    commandOptions: preflight.commandOptions
+  });
+  const auditResult = actionResult.outcome === "succeeded"
+    ? "succeeded"
+    : actionResult.outcome === "unknown"
+      ? "unknown"
+      : "failed";
+  await recordAgentOsAuditEvent({
+    actor: preflight.actor,
+    operation: `memory.${input.action}`,
+    targetKind: "agent-memory",
+    targetId: agentId,
+    result: auditResult
+  }).catch(() => {});
+
+  if (actionResult.outcome === "succeeded") {
+    return NextResponse.json(redactSecrets(actionResult), {
       headers: { "Cache-Control": "no-store" }
     });
-  } catch (error) {
-    await recordAgentOsAuditEvent({
-      actor: preflight.actor,
-      operation: `memory.${input.action}`,
-      targetKind: "agent-memory",
-      targetId: agentId,
-      result: "failed"
-    }).catch(() => {});
-    return NextResponse.json(
-      { error: redactErrorMessage(error, "Native memory action failed. No automatic retry was attempted.") },
-      { status: 400, headers: { "Cache-Control": "no-store" } }
-    );
   }
+
+  return NextResponse.json(redactSecrets(actionResult), {
+    status: actionResult.outcome === "unknown" ? 409 : 400,
+    headers: { "Cache-Control": "no-store" }
+  });
 }

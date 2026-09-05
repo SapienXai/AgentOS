@@ -2522,7 +2522,7 @@ function MemoryHistoryPanel({
         </Button>
         <p className="mt-2 text-[10px] leading-4 text-[var(--ce-text-subtle)]">Session transcript editing is not exposed by the current OpenClaw context API.</p>
       </section>
-      <NativeOpenClawMemoryPanel agentId={agentId} />
+      <NativeOpenClawMemoryPanel key={agentId ?? "none"} agentId={agentId} />
     </div>
   );
 }
@@ -2536,6 +2536,7 @@ function NativeOpenClawMemoryPanel({ agentId }: { agentId: string | null }) {
     isLoadingDiary,
     isSearching,
     activeAction,
+    actionResult,
     error,
     loadStatus,
     loadDiary,
@@ -2582,12 +2583,23 @@ function NativeOpenClawMemoryPanel({ agentId }: { agentId: string | null }) {
     }
 
     try {
-      await runAction(action, requiresConfirmation);
-      toast.success(`${label} completed.`, {
-        description: "OpenClaw memory state was reread after the native action."
-      });
-      if (action === "backfill" || action === "dedupeDreamDiary" || action === "reset") {
-        setDiaryOpen(false);
+      const result = await runAction(action, requiresConfirmation);
+      if (!result) return;
+      if (result.outcome === "succeeded") {
+        toast.success(`${label} completed.`, {
+          description: result.message
+        });
+        if (action === "backfill" || action === "dedupeDreamDiary" || action === "reset") {
+          setDiaryOpen(false);
+        }
+      } else if (result.outcome === "unknown") {
+        toast.message(`${label} outcome could not be verified.`, {
+          description: result.message
+        });
+      } else {
+        toast.error(`${label} was rejected.`, {
+          description: result.message
+        });
       }
     } catch {
       // The hook keeps the native error visible in the panel.
@@ -2624,7 +2636,7 @@ function NativeOpenClawMemoryPanel({ agentId }: { agentId: string | null }) {
           onClick={() => void loadStatus().catch(() => {})}
         >
           {isLoadingStatus ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 h-3.5 w-3.5" />}
-          Refresh status
+          Refresh diagnostics
         </Button>
       </div>
 
@@ -2646,6 +2658,8 @@ function NativeOpenClawMemoryPanel({ agentId }: { agentId: string | null }) {
           {issue.message}
         </p>
       ))}
+      {actionResult?.outcome === "unknown" ? <p className="mt-2 rounded-[8px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-warning-text)]">{actionResult.message}</p> : null}
+      {actionResult?.outcome === "failed" ? <p className="mt-2 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-danger-text)]">{actionResult.message}</p> : null}
       {error ? <p className="mt-2 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-danger-text)]">{error}</p> : null}
 
       <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.75fr)]">
