@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.1-cloud-environment-mutation-hardening-certification",
+  "generatedAt": "2026-09-05T17:51:57Z",
+  "certifiedCodeHead": "9f1877e2a0fde88f937262d3631d3e6ceac596d7",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "startingHead": "4d5e9f8b9416fa59627de7ea6d1c18304e730db0",
+    "openClaw": {
+      "release": "2026.9.1",
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.9.1",
+      "gatewayProtocolPackage": "2026.9.1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+    },
+    "upstreamDescriptor": {
+      "source": "pinned OpenClaw 2026.9.1 public environment protocol and descriptor evidence",
+      "descriptorSha256": "ac8a04b028d76b4a42b027bdb23c8f6b14dd3623b0b309d8bcb72f1ecb7ae32b",
+      "installedProtocolArtifactSha256": "3566cf3f3c8412b9a4a9c70d7f46446f4a28e980766cc8a199d7ceced52d09a0"
+    }
+  },
+  "upstreamIdentityContract": {
+    "workerProfileId": "The create request field profileId selects a configured worker profile.",
+    "providerId": "The public worker summary field identifies the underlying provider implementation.",
+    "environmentId": "The public environment summary id identifies the native environment.",
+    "idempotencyKey": "The create request accepts a native idempotencyKey; it is not returned as a public operation identity in the list/status/create summary contract.",
+    "publicEnvironmentSummary": {
+      "exposesProfileId": false,
+      "exposesProviderId": true,
+      "workerFields": ["providerId", "leaseId", "state", "ageMs", "idleMs", "attachedSessionIds", "tunnelStatus", "error", "desktop", "desktopApps"],
+      "identityFields": ["id"],
+      "terminalWorkerState": "destroyed",
+      "destroyedStatusMapping": "native worker.state=destroyed may be returned with status=unavailable"
+    },
+    "publicProfileProjection": {
+      "fields": ["id", "providerId", "trust", "executionMode", "executionModes", "machines"],
+      "profileProviderMappingIsCreateCausality": false
+    },
+    "profileEqualsProviderAssumption": false
+  },
+  "environmentCreate": {
+    "nativeMethod": "environments.create",
+    "idempotencyOwner": "OpenClaw",
+    "idempotencyKeyGeneratedBy": "AgentOS server generates one key and sends it once to OpenClaw",
+    "internalOpenClawEnvironmentIdAlgorithmCopied": false,
+    "normalSuccess": "Native response is returned as succeeded without speculative reread.",
+    "definiteRejection": "failed; no reconciliation read and no retry.",
+    "ambiguousOutcome": "One authoritative environments.list reread is performed, but the public 2026.9.1 contract does not expose enough create identity for causal proof, so outcome is unknown.",
+    "providerIdUsedAsCreateIdentity": false,
+    "profileProviderMappingUsedAsCausalProof": false,
+    "sameProviderConcurrentCreates": "Safe against false success; a same-provider new row remains unknown without exact operation identity.",
+    "coincidentalProfileProviderEquality": "Cannot produce reconciled success.",
+    "sourceStatusRequirement": "A topology reread with sourceStatus unknown/unavailable cannot prove create identity.",
+    "blindRetry": false,
+    "maximumMutationCalls": 1,
+    "maximumReconciliationReads": 1,
+    "browserControlsOperationIdentity": false
+  },
+  "environmentDestroy": {
+    "nativeMethod": "environments.destroy",
+    "preState": ["environmentId", "type", "status", "worker.state"],
+    "normalSuccess": "Native response is returned as succeeded without speculative reread.",
+    "definiteRejection": "failed; no reconciliation success and no retry.",
+    "ambiguousOutcome": "One authoritative environments.list reread with causal post-state verification.",
+    "absentRow": "Reconciled success only when reread sourceStatus is available and the target was not already destroyed.",
+    "retainedDestroyedRow": "Reconciled success when the same native environment id transitions from non-terminal to worker.state=destroyed, including status=unavailable.",
+    "destroying": "unknown; non-terminal.",
+    "failed": "unknown; not treated as successful destruction.",
+    "orphaned": "unknown; not treated as successful destruction.",
+    "unchangedState": "unknown.",
+    "preExistingDestroyedState": "unknown under ambiguous delivery; the existing terminal state cannot prove causality.",
+    "gatewayOrLocalTarget": "Rejected before native mutation.",
+    "blindRetry": false,
+    "maximumMutationCalls": 1,
+    "maximumReconciliationReads": 1
+  },
+  "authoritativeTopology": {
+    "canonicalRead": "environments.list",
+    "sourceStatusAvailableRequiredForAbsenceProof": true,
+    "unknownEmptyProjectionMeansAbsent": false,
+    "unavailableEmptyProjectionMeansAbsent": false,
+    "localCacheUsedAsAuthority": false
+  },
+  "mutationTruthfulness": {
+    "sharedClassifier": "classifyNativeMutationError via executeNativeMutation",
+    "definiteRejection": "failed",
+    "ambiguousDelivery": "No retry; one bounded authoritative reread; causal proof or unknown.",
+    "unknownRetryable": false,
+    "messageSubstringUsedAsDeliveryProof": false,
+    "createAndDestroyMutationCallsPerAction": 1,
+    "createAndDestroyReconciliationReadsPerAmbiguousAction": 1
+  },
+  "audit": {
+    "nativeSuccess": "succeeded",
+    "causallyReconciledSuccess": "succeeded",
+    "definiteRejection": "failed",
+    "ambiguousWithoutProof": "unknown",
+    "localLifecycleAuthorityAdded": false
+  },
+  "existingPhase8Regressions": {
+    "environmentTopology": "PASS",
+    "nodes": "PASS",
+    "destinationEligibility": "PASS",
+    "automaticPlacement": "PASS",
+    "dispatch": "PASS",
+    "move": "PASS",
+    "reclaim": "PASS",
+    "dynamicAuthorization": "PASS",
+    "sharedServiceProductPolicy": "PASS",
+    "events": "PASS",
+    "raceSafety": "PASS",
+    "rpcBounds": "PASS"
+  },
+  "runtimeCertification": {
+    "target": "OpenClaw 2026.9.1 exact public contract and deterministic official-client fixtures",
+    "environmentsCreateLive": "SKIPPED — no zero-risk disposable cloud provider was available; no cloud infrastructure was created.",
+    "environmentsDestroyLive": "SKIPPED — no disposable worker environment was available; no user environment was touched.",
+    "createIdentityDeterministicTests": "PASS — provider mismatch, coincidental equality, same-provider concurrency, multiple new rows, and no public identity all remain unknown.",
+    "concurrentCreateDeterministicTests": "PASS",
+    "destroyedRowDeterministicTests": "PASS — retained status=unavailable plus worker.state=destroyed is recognized after a causal transition.",
+    "topologyUnavailableDeterministicTests": "PASS",
+    "noBlindRetry": "PASS",
+    "realUserGatewayTouched": false,
+    "paidCloudInfrastructureCreated": false,
+    "cleanup": "PASS — no disposable native cloud state was created."
+  },
+  "performance": {
+    "createNormalSuccessReads": 0,
+    "destroyNormalSuccessReads": 1,
+    "ambiguousCreateReads": 1,
+    "ambiguousDestroyReads": 1,
+    "rootDashboardNewEnvironmentRpcCount": 0,
+    "fanOutAdded": false
+  },
+  "security": {
+    "agentosCreateRegistry": false,
+    "localIdempotencyDatabase": false,
+    "providerRegistry": false,
+    "cloudSdk": false,
+    "credentialsStored": false,
+    "privateKeysStored": false,
+    "browserControlsIdempotency": false,
+    "cliFallback": false,
+    "rawGatewayFromReact": false,
+    "secretsInEvidence": false
+  },
+  "validation": {
+    "focusedPhase81Tests": "24 passed, 0 failed",
+    "profileProviderSeparationTests": "PASS",
+    "createIdentityTests": "PASS",
+    "concurrentCreateTests": "PASS",
+    "createAmbiguityTests": "PASS",
+    "destroyRetainedRowTests": "PASS",
+    "destroyCausalityTests": "PASS",
+    "topologyAuthorityTests": "PASS",
+    "mutationTruthfulnessTests": "PASS",
+    "noBlindRetryTests": "PASS",
+    "rpcBoundTests": "PASS",
+    "architectureLock": "PASS",
+    "fullSuite": "1333 passed, 0 failed",
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS",
+    "notes": [
+      "Build/package output contained only existing Browserslist and Tailwind utility advisories.",
+      "Validation was rerun against clean Commit A before evidence-only Commit B.",
+      "No user Gateway runtime or paid cloud provider was used."
+    ]
+  },
+  "architectureSafeguards": {
+    "agentosCreateRegistry": false,
+    "localIdempotencyDatabase": false,
+    "openClawInternalIdDerivationCopied": false,
+    "cloudProviderSdk": false,
+    "environmentLifecycleDatabase": false,
+    "scheduler": false,
+    "placementDatabase": false,
+    "newPolling": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "cliFallback": false,
+    "openClawVersionChanged": false,
+    "phase9Functionality": false
+  },
+  "remainingRisks": [
+    "Ambiguous create remains unknown when OpenClaw 2026.9.1 public responses do not expose operation identity sufficient for causal proof.",
+    "Live cloud create/destroy remain skipped because no zero-risk disposable provider fixture exists.",
+    "Native environment state can change between preflight, mutation, and reconciliation; OpenClaw remains final authority."
+  ]
+}
