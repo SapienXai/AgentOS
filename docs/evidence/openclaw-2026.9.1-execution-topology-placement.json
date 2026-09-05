@@ -1,0 +1,353 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.1-execution-topology-placement-certification",
+  "generatedAt": "2026-09-05T17:16:28Z",
+  "certifiedCodeHead": "8c645a01e7fcdb36dacc41078c8aad1156191d33",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "startingHead": "9fcc6c5590a057393f8ae52596d92e4a17e5c208",
+    "openClaw": {
+      "release": "2026.9.1",
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.9.1",
+      "gatewayProtocolPackage": "2026.9.1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+    },
+    "upstreamDescriptor": {
+      "source": "pinned OpenClaw 2026.9.1 gateway protocol/core descriptor evidence",
+      "descriptorSha256": "ac8a04b028d76b4a42b027bdb23c8f6b14dd3623b0b309d8bcb72f1ecb7ae32b",
+      "installedProtocolArtifactSha256": "3566cf3f3c8412b9a4a9c70d7f46446f4a28e980766cc8a199d7ceced52d09a0"
+    }
+  },
+  "ownership": {
+    "openClaw": [
+      "node identity and pairing",
+      "environment inventory and lifecycle",
+      "session-host eligibility",
+      "worker profiles and slots",
+      "capacity and placement selection",
+      "dispatch, move, reclaim, and cloud worker lifecycle",
+      "native placement truth"
+    ],
+    "agentos": [
+      "normalized execution topology projection",
+      "destination selection UX",
+      "product authorization",
+      "typed native action routing",
+      "operator audit",
+      "bounded mutation reconciliation"
+    ],
+    "authoritativeLocalStores": {
+      "nodeRegistry": false,
+      "environmentRegistry": false,
+      "capacityDatabase": false,
+      "placementDatabase": false,
+      "workerLifecycleDatabase": false,
+      "scheduler": false
+    }
+  },
+  "nativeMethodInventory": {
+    "node.list": {
+      "scope": "operator.read",
+      "authorization": "static",
+      "params": "native node-list request",
+      "result": "native nodes collection",
+      "productIntegration": "bounded diagnostic inventory; not a second product registry",
+      "authority": "OpenClaw"
+    },
+    "node.describe": {
+      "scope": "operator.read",
+      "authorization": "static",
+      "params": "{ nodeId }",
+      "result": "native node detail",
+      "productIntegration": "lazy selected-node detail",
+      "authority": "OpenClaw"
+    },
+    "node.pair.list": {
+      "scope": "operator.pairing",
+      "authorization": "static",
+      "params": "native pairing-list request",
+      "result": "native pairing records",
+      "productIntegration": "existing advanced pairing surface only",
+      "authority": "OpenClaw"
+    },
+    "node.pair.approve": {
+      "scope": "operator.pairing",
+      "authorization": "static",
+      "params": "native pairing approval target",
+      "result": "native pairing result",
+      "productIntegration": "existing advanced pairing surface only",
+      "authority": "OpenClaw"
+    },
+    "node.pair.reject": {
+      "scope": "operator.pairing",
+      "authorization": "static",
+      "params": "native pairing rejection target",
+      "result": "native pairing result",
+      "productIntegration": "existing advanced pairing surface only",
+      "authority": "OpenClaw"
+    },
+    "node.pair.remove": {
+      "scope": "operator.pairing",
+      "authorization": "static",
+      "params": "native paired-node target",
+      "result": "native pairing result",
+      "productIntegration": "existing advanced pairing surface only",
+      "authority": "OpenClaw"
+    },
+    "node.rename": {
+      "scope": "operator.pairing",
+      "authorization": "static",
+      "params": "native node identifier and display name",
+      "result": "native pairing/node result",
+      "productIntegration": "typed existing management boundary; not added as Phase 8 UX",
+      "authority": "OpenClaw"
+    },
+    "node.invoke": {
+      "scope": "dynamic",
+      "authorization": "dynamic",
+      "params": "native node command and target payload",
+      "result": "native invocation result/event",
+      "productIntegration": "internal typed boundary only; no generic invoke UI",
+      "authority": "OpenClaw"
+    },
+    "environments.list": {
+      "scope": "operator.read",
+      "authorization": "static",
+      "params": "{}",
+      "result": "{ environments, profiles? }",
+      "productIntegration": "canonical lazy execution-topology read",
+      "authority": "OpenClaw"
+    },
+    "environments.status": {
+      "scope": "operator.read",
+      "authorization": "static",
+      "params": "{ environmentId }",
+      "result": "native environment summary/status",
+      "productIntegration": "selected-environment detail read",
+      "authority": "OpenClaw"
+    },
+    "environments.create": {
+      "scope": "operator.admin",
+      "authorization": "static control-plane write",
+      "params": "{ profileId, idempotencyKey }",
+      "result": "native environment summary",
+      "productIntegration": "explicit typed action only when advertised and authorized",
+      "authority": "OpenClaw"
+    },
+    "environments.destroy": {
+      "scope": "operator.admin",
+      "authorization": "static control-plane write",
+      "params": "{ environmentId, force? }",
+      "result": "native environment summary",
+      "productIntegration": "explicit typed destructive action; Gateway local is rejected",
+      "authority": "OpenClaw"
+    },
+    "sessions.dispatch": {
+      "scope": "dynamic",
+      "authorization": "dynamic control-plane write",
+      "params": "{ key, agentId?, deviceId?, autoDevice?, profileId?, machineClass? }",
+      "result": "native placement/result",
+      "productIntegration": "typed automatic, device, or configured profile destination",
+      "authority": "OpenClaw"
+    },
+    "sessions.move": {
+      "scope": "dynamic",
+      "authorization": "dynamic control-plane write",
+      "params": "{ key, agentId?, expected: { generation, environmentId, ownerEpoch }, target }",
+      "result": "native placement/result",
+      "productIntegration": "selected-session move action with native expectations",
+      "authority": "OpenClaw"
+    },
+    "sessions.reclaim": {
+      "scope": "operator.write",
+      "authorization": "static control-plane write",
+      "params": "{ key, agentId? }",
+      "result": "native placement/reclaim result",
+      "productIntegration": "advanced typed recovery action",
+      "authority": "OpenClaw"
+    }
+  },
+  "environmentProjection": {
+    "canonicalSource": "environments.list",
+    "nativeIdsPreserved": true,
+    "gatewayLocal": "native environment id gateway, type local, sessionHost preserved",
+    "nodeEnvironments": "native node/environment records remain distinct from diagnostic node reads",
+    "workerEnvironments": "native worker profile, lifecycle, slots, trust, and attachment facts preserved",
+    "readFailure": "unknown/unavailable projection, never an authoritative empty inventory",
+    "partialDetailFailure": "valid inventory retained; selected detail becomes unknown",
+    "nativeStrings": "labels, issues, capabilities, and host diagnostics treated as data"
+  },
+  "environmentStatusAndEligibility": {
+    "nativeStatusPreserved": true,
+    "productMapping": {
+      "available": ["available"],
+      "starting": ["starting", "requested", "provisioning", "bootstrapping", "syncing"],
+      "stopping": ["stopping", "draining", "destroying"],
+      "unavailable": ["unavailable", "offline", "disconnected", "destroyed"],
+      "error": ["error", "failed", "orphaned"],
+      "unknown": ["unrecognized native state"]
+    },
+    "eligibleDestination": "sessionHost=true and normalized status=available; worker environments also require ready, attached, or idle native worker state",
+    "connectedNonSessionHost": "not eligible",
+    "lastSeen": "informational only; not current connectivity",
+    "capacity": "native workerSlots only; no AgentOS placement calculation",
+    "trust": "native persistent/disposable value preserved"
+  },
+  "nodeProjection": {
+    "inventory": "node.list",
+    "detail": "node.describe, lazy only",
+    "presence": "native connected/last-seen facts",
+    "capabilities": "native capabilities, workerBundle, and invocableCommands",
+    "hostStats": "native bounded diagnostics where present",
+    "issues": "native issue facts preserved without speculative reinterpretation",
+    "genericNodeInvokeUi": false,
+    "pairingEquivalentToEligibleEnvironment": false
+  },
+  "placement": {
+    "source": "native sessions.get/session placement metadata",
+    "fallbackLocationHint": "execNode is retained only as an unknown location hint when rich placement is absent",
+    "currentPlacement": "native state, generation, environmentId, profileId, deviceId, and activeOwnerEpoch",
+    "requestedDestinationSeparate": true,
+    "acceptanceIsVerifiedPlacement": false,
+    "automatic": "native sessions.dispatch with autoDevice=true; OpenClaw chooses placement",
+    "explicitDestinations": ["eligible device", "configured worker profile", "gateway for move"],
+    "moveExpectations": ["generation", "environmentId", "ownerEpoch"]
+  },
+  "automaticPlacement": {
+    "owner": "OpenClaw",
+    "agentosRanking": false,
+    "agentosLoadBalancing": false,
+    "agentosScheduler": false,
+    "nativePolicyPreserved": true,
+    "displayWording": "Automatic — OpenClaw managed"
+  },
+  "mutationTruthfulness": {
+    "sharedClassifier": "classifyNativeMutationError via executeNativeMutation",
+    "definiteRejection": "failed; no reconciliation success and no retry",
+    "ambiguousOutcome": "one mutation call, at most one authoritative reread, transition proof required",
+    "preExistingTargetState": "matching pre-state plus ambiguous delivery is unknown unless native response gives stronger exact proof",
+    "maximumMutationCalls": 1,
+    "maximumReconciliationReads": 1,
+    "unknownRetryable": false,
+    "affectedOperations": [
+      "sessions.dispatch",
+      "sessions.move",
+      "sessions.reclaim",
+      "environments.create",
+      "environments.destroy"
+    ],
+    "createIdentity": "server-generated native idempotency key, passed once to native create",
+    "destroySafety": "explicit confirmation, live target validation, no Gateway/local destroy target"
+  },
+  "productAuthorization": {
+    "topologyRead": "runtime.use plus native operator.read preflight",
+    "placementMutation": "sessions.place, owner-only in shared-service policy, plus native dynamic preflight",
+    "environmentLifecycle": "existing lifecycle.manage owner-level policy plus native operator.admin preflight",
+    "owner": { "sessions.place": true, "lifecycle.manage": true },
+    "member": { "sessions.place": false, "lifecycle.manage": false },
+    "service": { "sessions.place": false, "lifecycle.manage": false },
+    "internalService": { "sessions.place": false, "lifecycle.manage": false },
+    "productPolicyBeforeSharedGateway": true,
+    "gatewayFinalAuthority": true,
+    "browserTargetValidation": "server validates live native topology/profile inventory"
+  },
+  "eventsAndRefresh": {
+    "existingBridgeReused": true,
+    "eventFamilies": ["node.event", "sessions.changed", "session.operation"],
+    "topologyInvalidation": "relevant native node/session events invalidate bounded topology/detail projections",
+    "selectedPlacementRefresh": "existing live refresh generation is reused by selected-session inspector",
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "newPolling": false,
+    "reconnectOwnerChanged": false,
+    "staleResponseFencing": "AbortController and selection-bound requests prevent old environment/session detail from overwriting a new selection"
+  },
+  "performance": {
+    "rootDashboardNewEnvironmentRpcCount": 0,
+    "rootDashboardNewNodeRpcCount": 0,
+    "rootDashboardNewPlacementRpcCount": 0,
+    "topologyInitialRead": "one environments.list",
+    "selectedEnvironmentDetail": "at most one environments.status or node.describe for the selected detail",
+    "nodeDescribePerList": 0,
+    "placementPerSessionList": 0,
+    "organizationWideFanOut": false,
+    "perSessionFanOut": false,
+    "perNodeFanOut": false,
+    "ambiguousMutationReads": "at most one authoritative reread"
+  },
+  "runtimeCertification": {
+    "target": "OpenClaw 2026.9.1 exact package and pinned source contract",
+    "environments.list": "PASS — deterministic official-client/protocol fixture; live isolated runtime SKIPPED — no disposable exact 2026.9.1 Gateway was available",
+    "environments.status": "PASS — exact schema/application contract; live isolated runtime SKIPPED",
+    "node.list": "PASS — deterministic official-client/protocol fixture; live isolated runtime SKIPPED",
+    "node.describe": "PASS — deterministic official-client/protocol fixture; live isolated runtime SKIPPED",
+    "nodePairingDisposableFixture": "SKIPPED — no safe disposable paired node",
+    "sessions.dispatch": "PASS — deterministic exact native transport, target validation, and bounded reconciliation; live SKIPPED — no safe disposable placement target",
+    "sessions.move": "PASS — deterministic exact native payload and generation/environment/owner-epoch reconciliation; live SKIPPED — no safe second placement",
+    "sessions.reclaim": "PASS — deterministic exact native method and bounded reconciliation; live SKIPPED — no safe disposable placement state",
+    "environments.create": "PASS — deterministic native idempotency/reconciliation contract; live SKIPPED — no configured zero-risk provider",
+    "environments.destroy": "PASS — deterministic confirmation/type/reconciliation contract; live SKIPPED — no disposable worker environment",
+    "realUserGatewayTouched": false,
+    "realPersonalDeviceTouched": false,
+    "paidCloudInfrastructureCreated": false,
+    "cleanup": "PASS — no disposable user state, device pairing, or cloud environment was created"
+  },
+  "security": {
+    "arbitraryNodeCommandExposed": false,
+    "remoteShellAdded": false,
+    "cloudCredentialsStored": false,
+    "privateKeysStored": false,
+    "browserTargetTrustedWithoutValidation": false,
+    "nodeControlledTextTreatedAsInstructions": false,
+    "centralRedaction": true,
+    "rawGatewayFromReact": false,
+    "onlineCliFallbackForPhase8": false,
+    "secretsInEvidence": false
+  },
+  "validation": {
+    "focusedPhase8Tests": "13 passed, 0 failed",
+    "fullSuite": "1322 passed, 0 failed",
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS",
+    "notes": [
+      "Production/package builds emitted only existing Browserslist and Tailwind utility advisories.",
+      "Validation was run against Commit A before evidence-only Commit B.",
+      "No user Gateway runtime certification was attempted because the available local Gateway was not the pinned disposable 2026.9.1 target."
+    ]
+  },
+  "architectureSafeguards": {
+    "agentosScheduler": false,
+    "nodeDatabase": false,
+    "environmentDatabase": false,
+    "placementDatabase": false,
+    "capacityPlanner": false,
+    "cloudProviderSdk": false,
+    "sshProvisioning": false,
+    "workerLifecycleEngine": false,
+    "genericNodeInvokeUi": false,
+    "remoteShell": false,
+    "newPolling": false,
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "onlineCliFallback": false,
+    "directRawGatewayFromReact": false,
+    "openClawVersionChanged": false,
+    "postPhase8Functionality": false
+  },
+  "remainingRisks": [
+    "Live external-node dispatch/move/reclaim was not exercised because no safe disposable paired session-host node or second placement existed.",
+    "Live cloud environment create/destroy was not exercised because no zero-risk configured provider was available; no paid infrastructure was created.",
+    "Native target eligibility and authorization can change after picker validation and remain subject to the final Gateway decision."
+  ]
+}
