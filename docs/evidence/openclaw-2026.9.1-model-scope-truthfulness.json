@@ -1,0 +1,247 @@
+{
+  "phase": "Phase 4.1 — Model Scope Truthfulness & Inheritance Hardening",
+  "startingHead": "328fe92c411ded79c20a28be829c57954e5cdc39",
+  "certifiedCodeHead": "007e838481ddc5d82cecca2bbed70829d62cd9be",
+  "branch": "main",
+  "openclaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1"
+  },
+  "ownership": {
+    "openclaw": [
+      "model catalog and native catalog views",
+      "provider and auth-profile identity",
+      "availability and readiness",
+      "default, worker, and session model configuration",
+      "fallback order and runtime model resolution",
+      "session override provenance",
+      "native authorization"
+    ],
+    "agentos": [
+      "workforce model projection",
+      "configured versus effective wording",
+      "selection UX and product permissions",
+      "audit metadata"
+    ],
+    "authoritativeLocalRegistries": {
+      "model": false,
+      "provider": false,
+      "credential": false,
+      "fallback": false,
+      "sessionModel": false
+    }
+  },
+  "sessionOverrideProvenance": {
+    "nativeField": "sessions.list[].modelOverrideSource",
+    "user": "explicit session override; accepted independently of worker model assignment",
+    "auto": "native automatic or temporary selection; not a user override",
+    "null": "native inherited state; not a user override",
+    "missing": "not enough native provenance; bounded legacy compatibility inference only where the existing contract requires it",
+    "workerExplicitModelRequired": false,
+    "modelIdentity": "native session model/provider and stable session/worker identity"
+  },
+  "automaticWorkerInheritance": {
+    "workerAutomatic": true,
+    "explicitSessionOverrideVisible": true,
+    "inheritedWorkerBaselineAllowed": true,
+    "resetAction": "sessions.patch with model=null",
+    "authoritativeReread": true,
+    "copiedDefaultModel": false,
+    "ambiguousMutation": "no blind retry; reread native session state and reconcile"
+  },
+  "modelTruthLevels": {
+    "configured": "native default, worker, or explicit session configuration",
+    "ready": "native models.list availability is explicitly true",
+    "effectiveRuntime": "concrete native session/runtime model evidence only",
+    "workerConfiguredReadyWithoutSession": {
+      "configuredModelId": "preserved",
+      "configuredStatus": "ready when native availability is true",
+      "effectiveModelId": null,
+      "effectiveStatus": "unknown"
+    },
+    "defaultConfiguredReadyWithoutRuntime": {
+      "configuredStatus": "ready when native availability is true",
+      "effectiveModelId": null,
+      "effectiveStatus": "unknown"
+    },
+    "sessionNativeModel": "may populate effectiveModelId/effectiveProvider when sessions.list reports it",
+    "fallbackInference": false,
+    "sessionSelectionRewrittenToLatest": false
+  },
+  "selectionProjection": {
+    "defaultConfiguredField": "configuredModelId",
+    "workerConfiguredField": "configuredModelId",
+    "sessionConfiguredField": "configuredModelId when modelOverrideSource=user",
+    "effectiveRuntimeField": "effectiveModelId/effectiveProvider",
+    "automatic": "native inheritance; no pseudo-model ID",
+    "unknown": "effective runtime is not claimed without native session/runtime evidence"
+  },
+  "pickerMutationParity": {
+    "workerPickerView": "default",
+    "sessionPickerView": "default",
+    "sessionMutationValidationView": "default",
+    "canonicalRule": "the shared AgentOS selectability helper requires native availability=true; the mutation service rereads current OpenClaw facts",
+    "stableStateParity": true,
+    "frontendAuthoritative": false,
+    "catalogPresenceAloneSelectable": false,
+    "availabilityRules": {
+      "READY": "available=true",
+      "NEEDS_AUTH": "unavailableReason=missing-auth",
+      "AUTH_FAILED": "unavailableReason=auth-failed",
+      "COOLDOWN": "unavailableReason=cooldown",
+      "MISSING": "native model absent or configured reference has no matching ready row",
+      "DISABLED": "native disabled semantics preserved; not selectable unless native availability is true",
+      "DEPRECATED": "native deprecated semantics preserved; not selectable unless native availability is true",
+      "UNKNOWN": "availability not reported; not selectable"
+    }
+  },
+  "integratedMethods": {
+    "models.list": {
+      "scope": "operator.read",
+      "view": "default for worker/session selection and validation",
+      "productIntegrated": true
+    },
+    "models.authStatus": {
+      "scope": "operator.read",
+      "productIntegrated": true
+    },
+    "models.authLogout": {
+      "scope": "operator.admin",
+      "productIntegrated": true
+    },
+    "agents.list": {
+      "scope": "operator.read",
+      "productIntegrated": true
+    },
+    "agents.update": {
+      "scope": "operator.admin",
+      "productIntegrated": true
+    },
+    "sessions.list": {
+      "scope": "operator.read",
+      "productIntegrated": true
+    },
+    "sessions.patch": {
+      "scope": "operator.write for the model-only envelope",
+      "model": "string for explicit override or null for inherit",
+      "productIntegrated": true
+    },
+    "config.patch": {
+      "scope": "native config authorization",
+      "productIntegrated": true
+    }
+  },
+  "rpcBounds": {
+    "rootDashboardExtraModelAccountRpcCount": 0,
+    "workerSelector": "one lazy catalog read plus existing worker state; no request per model/provider",
+    "sessionSelector": "one lazy catalog read plus bounded session state; no request per model/provider",
+    "sessionReset": "bounded native sessions.list reconciliation",
+    "rpcPerModel": false,
+    "rpcPerProvider": false,
+    "organizationWideFanout": false,
+    "newPolling": false,
+    "newGatewaySubscription": false,
+    "requestCoalescing": true
+  },
+  "runtimeCertification": {
+    "environment": {
+      "status": "SKIPPED",
+      "reason": "No isolated authenticated disposable OpenClaw Gateway was available; the user's Gateway and real sessions were intentionally not touched."
+    },
+    "automaticWorkerExplicitSessionOverride": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "Exact contract and deterministic service tests cover native user provenance and model=null clearing; live proof requires an isolated authenticated session."
+    },
+    "sessionResetInherit": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "No disposable authenticated session was created."
+    },
+    "configuredVsEffective": {
+      "status": "PASS",
+      "proof": "Deterministic projections keep ready configured worker/default models out of effectiveModelId without native session/runtime evidence."
+    },
+    "sessionEffectiveModel": {
+      "status": "PASS",
+      "proof": "Deterministic projection accepts the native sessions.list model/provider as effective session evidence."
+    },
+    "pickerMutationParity": {
+      "status": "PASS",
+      "proof": "Picker reads and session mutation validation use the same native models.list view=default and shared readiness semantics."
+    },
+    "realProviderOAuth": {
+      "status": "SKIPPED",
+      "reason": "Interactive provider authentication was not attempted."
+    },
+    "personalAccountInventory": {
+      "status": "SKIPPED",
+      "reason": "Real provider account state was not accessed."
+    },
+    "cleanup": {
+      "status": "PASS",
+      "result": "No disposable runtime, session, account, credential, or user state was created or mutated."
+    }
+  },
+  "validation": {
+    "focusedModelTests": {
+      "status": "PASS",
+      "tests": 21,
+      "failures": 0
+    },
+    "fullSuite": {
+      "status": "PASS",
+      "command": "pnpm test",
+      "tests": 1257,
+      "failures": 0
+    },
+    "typecheck": { "status": "PASS", "command": "pnpm typecheck" },
+    "eslint": { "status": "PASS", "command": "pnpm lint" },
+    "productionBuild": { "status": "PASS", "command": "pnpm build" },
+    "releaseConsistency": { "status": "PASS", "command": "pnpm check:release" },
+    "packageBuild": { "status": "PASS", "command": "pnpm build:agentos-package" },
+    "pack": { "status": "PASS", "command": "pnpm pack:agentos" },
+    "packageSmoke": { "status": "PASS", "command": "pnpm smoke:agentos-package" },
+    "gitDiffCheck": { "status": "PASS", "command": "git diff --check" }
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "providerCredentialsAccessed": false,
+    "centralRedactionUsed": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true,
+    "rawGatewayCallsFromReact": false,
+    "realUserGatewayTouched": false
+  },
+  "architectureSafeguards": {
+    "authoritativeModelRegistryAdded": false,
+    "authoritativeProviderRegistryAdded": false,
+    "credentialDatabaseAdded": false,
+    "customOAuthAdded": false,
+    "agentosFallbackEngineAdded": false,
+    "missionModelScopeAdded": false,
+    "localSessionModelAuthorityAdded": false,
+    "newPollingAdded": false,
+    "newGatewaySubscriptionAdded": false,
+    "newReconnectOwnerAdded": false,
+    "directRawGatewayCallsFromReactAdded": false,
+    "openclawVersionChanged": false,
+    "phase5FunctionalityAdded": false
+  },
+  "twoSha": {
+    "implementationCommit": "007e838481ddc5d82cecca2bbed70829d62cd9be",
+    "implementationMessage": "fix(openclaw): harden model scope truth and inheritance",
+    "evidenceMessage": "docs(openclaw): record model scope truth certification",
+    "evidencePointsToImplementationCommit": true
+  },
+  "remainingRisks": [
+    "Interactive real-provider OAuth and live personal-account inventory remain intentionally untested without disposable authenticated provider state.",
+    "Provider-specific native availability and authentication statuses may expose additional exact detail when an authenticated provider is present.",
+    "OpenClaw 2026.9.1 does not provide Mission model scope or a dedicated account/profile selector; AgentOS continues to leave those unsupported rather than simulate them.",
+    "Live worker/session inheritance mutation proof remains skipped because an isolated authenticated disposable Gateway was not available."
+  ]
+}
