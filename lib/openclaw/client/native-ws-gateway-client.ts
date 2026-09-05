@@ -62,6 +62,10 @@ import {
   normalizeModelStatusPayload,
   normalizeModelsPayload,
   normalizePluginsPayload,
+  memoryDreamActionPayloadSchema,
+  memoryDreamDiaryPayloadSchema,
+  memorySearchPayloadSchema,
+  memoryStatusPayloadSchema,
   parseGatewayPayload,
   parseObjectGatewayPayload,
   rememberStatusUpdateRegistry,
@@ -171,6 +175,12 @@ import type {
   OpenClawListSessionsInput,
   OpenClawLogsTailInput,
   OpenClawLogsTailPayload,
+  OpenClawMemoryAgentInput,
+  OpenClawMemoryDreamActionPayload,
+  OpenClawMemoryDreamDiaryPayload,
+  OpenClawMemorySearchInput,
+  OpenClawMemorySearchPayload,
+  OpenClawMemoryStatusPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
   OpenClawQuestionListPayload,
@@ -1068,6 +1078,105 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getSessionUsageLogs(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
     return this.gatewaySurfaceCall("sessionUsage", "sessions.usage.logs", input, options);
+  }
+
+  /** Native-only memory.search; the product surface never falls back to CLI. */
+  searchMemory(input: OpenClawMemorySearchInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawMemorySearchPayload>(
+      "memory.search",
+      {
+        ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
+        query: input.query,
+        ...(input.maxResults === undefined ? {} : { maxResults: input.maxResults }),
+        ...(input.minScore === undefined ? {} : { minScore: input.minScore })
+      },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemorySearchPayload>("memory.search", memorySearchPayloadSchema, payload)
+    );
+  }
+
+  getNativeMemoryDoctorStatus(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryStatusPayload>(
+      "doctor.memory.status",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryStatusPayload>("doctor.memory.status", memoryStatusPayloadSchema, payload)
+    );
+  }
+
+  getNativeMemoryDreamDiary(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamDiaryPayload>(
+      "doctor.memory.dreamDiary",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamDiaryPayload>("doctor.memory.dreamDiary", memoryDreamDiaryPayloadSchema, payload)
+    );
+  }
+
+  backfillNativeMemoryDreamDiary(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamActionPayload>(
+      "doctor.memory.backfillDreamDiary",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamActionPayload>("doctor.memory.backfillDreamDiary", memoryDreamActionPayloadSchema, payload)
+    );
+  }
+
+  resetNativeMemoryDreamDiary(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamActionPayload>(
+      "doctor.memory.resetDreamDiary",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamActionPayload>("doctor.memory.resetDreamDiary", memoryDreamActionPayloadSchema, payload)
+    );
+  }
+
+  resetNativeGroundedShortTerm(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamActionPayload>(
+      "doctor.memory.resetGroundedShortTerm",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamActionPayload>("doctor.memory.resetGroundedShortTerm", memoryDreamActionPayloadSchema, payload)
+    );
+  }
+
+  repairNativeDreamingArtifacts(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamActionPayload>(
+      "doctor.memory.repairDreamingArtifacts",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamActionPayload>("doctor.memory.repairDreamingArtifacts", memoryDreamActionPayloadSchema, payload)
+    );
+  }
+
+  dedupeNativeDreamDiary(
+    input: OpenClawMemoryAgentInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawMemoryDreamActionPayload>(
+      "doctor.memory.dedupeDreamDiary",
+      { ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}) },
+      options,
+      (payload) => parseGatewayPayload<OpenClawMemoryDreamActionPayload>("doctor.memory.dedupeDreamDiary", memoryDreamActionPayloadSchema, payload)
+    );
   }
 
   getMemoryDoctorStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {

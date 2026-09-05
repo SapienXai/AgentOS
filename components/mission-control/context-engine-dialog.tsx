@@ -26,6 +26,7 @@ import {
   Plus,
   Puzzle,
   RotateCcw,
+  Search,
   Save,
   Sparkles,
   TerminalSquare,
@@ -43,11 +44,13 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { applyContextEngineDraftState, useContextEngineDraft } from "@/components/mission-control/use-context-engine-draft";
 import { useContextEngineLoader } from "@/components/mission-control/use-context-engine-loader";
+import { useNativeMemoryLoader } from "@/components/mission-control/use-native-memory-loader";
 import type {
   ContextEngineBudgetItem,
   ContextEngineEffectiveContextSection,
@@ -63,6 +66,10 @@ import {
   formatRelativeTime,
   formatTokens
 } from "@/lib/openclaw/presenters";
+import type {
+  WorkerMemoryAction,
+  WorkerMemoryHealthStatus
+} from "@/lib/openclaw/memory-types";
 import { cn } from "@/lib/utils";
 
 type ContextEngineTab = "overview" | "project" | "skills" | "memory" | "attachments" | "preview";
@@ -628,6 +635,7 @@ export function ContextEngineDialog({
             ) : (
               <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:p-3 lg:pb-4">
                 <SecondaryTabPanel
+                  agentId={agentId}
                   tab={activeTab}
                   snapshot={engineSnapshot}
                   files={projectFiles}
@@ -1436,6 +1444,7 @@ function ExpandedFileEditorDialog({
 }
 
 function SecondaryTabPanel({
+  agentId,
   tab,
   snapshot,
   files,
@@ -1447,6 +1456,7 @@ function SecondaryTabPanel({
   onConfigureCapabilities,
   onOpenMemoryFile
 }: {
+  agentId: string | null;
   tab: ContextEngineTab;
   snapshot: ContextEngineSnapshot | null;
   files: ContextEngineFile[];
@@ -1500,6 +1510,7 @@ function SecondaryTabPanel({
     return (
       <InfoPanel title="Memory & History" subtitle="Durable memory files and latest session context state.">
         <MemoryHistoryPanel
+          agentId={agentId}
           files={memoryFiles}
           snapshot={snapshot}
           onOpenFile={onOpenMemoryFile}
@@ -2408,11 +2419,13 @@ function CapabilityList({ title, values, emptyLabel = "No values available." }: 
 }
 
 function MemoryHistoryPanel({
+  agentId,
   files,
   snapshot,
   onOpenFile,
   onNavigate
 }: {
+  agentId: string | null;
   files: ContextEngineFile[];
   snapshot: ContextEngineSnapshot | null;
   onOpenFile: (file: ContextEngineFile, mode: InspectorMode) => void;
@@ -2509,6 +2522,237 @@ function MemoryHistoryPanel({
         </Button>
         <p className="mt-2 text-[10px] leading-4 text-[var(--ce-text-subtle)]">Session transcript editing is not exposed by the current OpenClaw context API.</p>
       </section>
+      <NativeOpenClawMemoryPanel agentId={agentId} />
+    </div>
+  );
+}
+
+function NativeOpenClawMemoryPanel({ agentId }: { agentId: string | null }) {
+  const {
+    projection,
+    diary,
+    searchResult,
+    isLoadingStatus,
+    isLoadingDiary,
+    isSearching,
+    activeAction,
+    error,
+    loadStatus,
+    loadDiary,
+    search,
+    runAction
+  } = useNativeMemoryLoader(agentId);
+  const [query, setQuery] = useState("");
+  const [diaryOpen, setDiaryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!agentId) {
+      return;
+    }
+
+    void loadStatus().catch(() => {});
+  }, [agentId, loadStatus]);
+
+  const submitSearch = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!query.trim()) {
+      return;
+    }
+
+    try {
+      await search(query);
+    } catch {
+      // The hook keeps the user-facing error in its state.
+    }
+  }, [query, search]);
+
+  const openDiary = useCallback(async () => {
+    try {
+      await loadDiary();
+    } catch {
+      return;
+    }
+    setDiaryOpen(true);
+  }, [loadDiary]);
+
+  const runMemoryAction = useCallback(async (action: WorkerMemoryAction, label: string) => {
+    const requiresConfirmation = action !== "backfill";
+    if (requiresConfirmation && !window.confirm(`${label} changes native OpenClaw memory state. Continue?`)) {
+      return;
+    }
+
+    try {
+      await runAction(action, requiresConfirmation);
+      toast.success(`${label} completed.`, {
+        description: "OpenClaw memory state was reread after the native action."
+      });
+      if (action === "backfill" || action === "dedupeDreamDiary" || action === "reset") {
+        setDiaryOpen(false);
+      }
+    } catch {
+      // The hook keeps the native error visible in the panel.
+    }
+  }, [runAction]);
+
+  const canRunActions = projection?.source === "native";
+  const actionButtons: Array<{ action: WorkerMemoryAction; label: string }> = [
+    { action: "backfill", label: "Backfill diary" },
+    { action: "repairDreamingArtifacts", label: "Repair dreaming" },
+    { action: "dedupeDreamDiary", label: "Dedupe diary" },
+    { action: "reset", label: "Reset diary" },
+    { action: "resetGroundedShortTerm", label: "Reset short-term" }
+  ];
+
+  return (
+    <section className="col-span-full rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-[var(--ce-accent)]" />
+            <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">OpenClaw native memory</h4>
+            {projection ? <MemoryHealthBadge status={projection.status} /> : null}
+          </div>
+          <p className="mt-1 text-[11px] leading-4 text-[var(--ce-text-muted)]">
+            Native memory health, search, and dreaming maintenance. Context Engine files above remain an AgentOS workspace projection.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-8 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel-strong)] px-2.5 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
+          disabled={!agentId || isLoadingStatus}
+          onClick={() => void loadStatus().catch(() => {})}
+        >
+          {isLoadingStatus ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 h-3.5 w-3.5" />}
+          Refresh status
+        </Button>
+      </div>
+
+      {projection ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <MemoryMetric label="Provider" value={projection.provider ?? "Unknown"} />
+          <MemoryMetric label="Embeddings" value={projection.embedding.ready === true ? "Ready" : projection.embedding.ready === false ? "Unavailable" : "Unknown"} />
+          <MemoryMetric label="Dreaming" value={projection.dreaming?.enabled === true ? "Enabled" : projection.dreaming?.enabled === false ? "Disabled" : "Unknown"} />
+        </div>
+      ) : (
+        <p className="mt-3 rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-2.5 py-2 text-[11px] text-[var(--ce-text-muted)]">
+          {isLoadingStatus ? "Reading native OpenClaw memory health…" : "Native memory health has not been read yet."}
+        </p>
+      )}
+
+      {projection?.explanation ? <p className="mt-2 text-[11px] leading-4 text-[var(--ce-text-muted)]">{projection.explanation}</p> : null}
+      {projection?.issues.slice(0, 3).map((issue) => (
+        <p key={`${issue.code}-${issue.message}`} className="mt-2 rounded-[8px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-warning-text)]">
+          {issue.message}
+        </p>
+      ))}
+      {error ? <p className="mt-2 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-danger-text)]">{error}</p> : null}
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.75fr)]">
+        <div className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-2.5">
+          <div className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5 text-[var(--ce-blue)]" />
+            <h5 className="text-xs font-semibold text-[var(--ce-text-strong)]">Search native memory</h5>
+          </div>
+          <form className="mt-2 flex gap-2" onSubmit={submitSearch}>
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search this worker's memory"
+              aria-label="Search this worker's memory"
+              className="h-8 border-[var(--ce-border)] bg-[var(--ce-panel)] px-2.5 text-xs text-[var(--ce-text)] placeholder:text-[var(--ce-text-subtle)]"
+              disabled={!agentId || isSearching}
+            />
+            <Button
+              type="submit"
+              className="h-8 shrink-0 rounded-[7px] bg-violet-600 px-2.5 text-[11px] text-white hover:bg-violet-500"
+              disabled={!query.trim() || !agentId || isSearching}
+            >
+              {isSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Search"}
+            </Button>
+          </form>
+          {searchResult?.warning ? <p className="mt-2 text-[11px] text-[var(--ce-warning-text)]">{searchResult.warning}</p> : null}
+          {searchResult?.issue ? <p className="mt-2 text-[11px] text-[var(--ce-warning-text)]">{searchResult.issue.message}</p> : null}
+          {searchResult && searchResult.results.length > 0 ? (
+            <div className="mt-2 space-y-1.5">
+              {searchResult.results.slice(0, 5).map((result) => (
+                <div key={`${result.path}:${result.startLine}:${result.endLine}`} className="rounded-[7px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[11px] font-medium text-[var(--ce-text-strong)]">{result.path}:{result.startLine}</span>
+                    <span className="shrink-0 text-[10px] text-[var(--ce-text-subtle)]">{result.score.toFixed(3)}</span>
+                  </div>
+                  <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-[var(--ce-text-muted)]">{result.snippet}</p>
+                </div>
+              ))}
+            </div>
+          ) : searchResult?.status === "available" ? (
+            <p className="mt-2 text-[11px] text-[var(--ce-text-subtle)]">No matching native memory entries.</p>
+          ) : null}
+        </div>
+
+        <div className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h5 className="text-xs font-semibold text-[var(--ce-text-strong)]">Dream diary</h5>
+              <p className="mt-0.5 text-[10px] text-[var(--ce-text-muted)]">Read the native diary without editing its content here.</p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-8 shrink-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2.5 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
+              disabled={!agentId || isLoadingDiary}
+              onClick={() => void openDiary()}
+            >
+              {isLoadingDiary ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Eye className="mr-1.5 h-3.5 w-3.5" />}
+              {diaryOpen ? "Refresh diary" : "Open diary"}
+            </Button>
+          </div>
+          {diaryOpen && diary ? (
+            diary.found && diary.content ? (
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-[7px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-2.5 text-[10px] leading-4 text-[var(--ce-text)]">{diary.content}</pre>
+            ) : (
+              <p className="mt-2 rounded-[7px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2.5 py-2 text-[11px] text-[var(--ce-text-muted)]">No native dream diary was found.</p>
+            )
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {actionButtons.map(({ action, label }) => (
+          <Button
+            key={action}
+            type="button"
+            variant="secondary"
+            className="h-8 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel-strong)] px-2.5 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
+            disabled={!canRunActions || activeAction !== null}
+            title={canRunActions ? `Run native action: ${label}` : "Native memory status must be available before maintenance actions can run."}
+            onClick={() => void runMemoryAction(action, label)}
+          >
+            {activeAction === action ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Wrench className="mr-1.5 h-3.5 w-3.5" />}
+            {label}
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MemoryHealthBadge({ status }: { status: WorkerMemoryHealthStatus }) {
+  const copy: Record<WorkerMemoryHealthStatus, string> = {
+    healthy: "Healthy",
+    "needs-attention": "Needs attention",
+    degraded: "Degraded",
+    unavailable: "Unavailable",
+    unknown: "Unknown"
+  };
+  return <Badge className="rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel-strong)] text-[10px] text-[var(--ce-text)]">{copy[status]}</Badge>;
+}
+
+function MemoryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--ce-text-subtle)]">{label}</p>
+      <p className="mt-1 truncate text-xs font-medium text-[var(--ce-text-strong)]">{value}</p>
     </div>
   );
 }

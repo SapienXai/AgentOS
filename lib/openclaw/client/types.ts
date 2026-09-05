@@ -542,6 +542,131 @@ export type OpenClawSkillLibraryReceipt = {
   nextAction: string;
 };
 
+/** Exact OpenClaw 2026.9.1 memory.search result shape. */
+export type OpenClawMemorySearchResult = {
+  path: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+  vectorScore?: number;
+  textScore?: number;
+  snippet: string;
+  source: "memory" | "sessions";
+  importance?: number;
+  triggers?: string;
+  projectKey?: string;
+  originClass?: string;
+  citation?: string;
+  provenance?: {
+    originClass: "owner" | "agent" | "untrusted" | "system";
+    sessionKind: "interactive" | "cron" | "heartbeat" | "subagent" | "unknown";
+    observedAt: number;
+    supersedesKey?: string;
+  };
+};
+
+export type OpenClawMemorySearchPayload = {
+  agentId: string;
+  provider: string;
+  searchMode: "hybrid" | "fts-only";
+  results: OpenClawMemorySearchResult[];
+  stale?: true;
+  warning?: string;
+  action?: string;
+};
+
+export type OpenClawMemoryEmbeddingPayload = {
+  ok: boolean;
+  error?: string;
+  checked?: boolean;
+  cached?: boolean;
+  checkedAtMs?: number;
+  cacheExpiresAtMs?: number;
+};
+
+export type OpenClawMemoryStatusPayload = {
+  agentId: string;
+  provider?: string;
+  embedding: OpenClawMemoryEmbeddingPayload;
+  embeddingRuntime?: {
+    engine: "llama.cpp";
+    state: "ready" | "failed";
+    backend?: "metal" | "cpu";
+    buildInfo?: string;
+    model?: { id: string; path?: string };
+    capabilities?: { vision: boolean; draft: boolean };
+    endpoints?: Record<string, "ready" | "unavailable">;
+    loadError?: string;
+  };
+  dreaming?: {
+    enabled: boolean;
+    timezone?: string;
+    verboseLogging: boolean;
+    storageMode: "inline" | "separate" | "both";
+    separateReports: boolean;
+    shortTermCount: number;
+    recallSignalCount: number;
+    dailySignalCount: number;
+    groundedSignalCount: number;
+    totalSignalCount: number;
+    phaseSignalCount: number;
+    lightPhaseHitCount: number;
+    remPhaseHitCount: number;
+    promotedTotal: number;
+    promotedToday: number;
+    lastPromotedAt?: string;
+    storeError?: string;
+    phaseSignalError?: string;
+    phases?: Record<string, Record<string, unknown>>;
+  };
+};
+
+export type OpenClawMemoryDreamDiaryPayload = {
+  agentId: string;
+  found: boolean;
+  path: string;
+  content?: string;
+  updatedAtMs?: number;
+};
+
+export type OpenClawMemoryDreamAction =
+  | "backfill"
+  | "reset"
+  | "resetGroundedShortTerm"
+  | "repairDreamingArtifacts"
+  | "dedupeDreamDiary";
+
+export type OpenClawMemoryDreamActionPayload = {
+  agentId: string;
+  action: OpenClawMemoryDreamAction;
+  path?: string;
+  found?: boolean;
+  scannedFiles?: number;
+  written?: number;
+  replaced?: number;
+  removedEntries?: number;
+  removedShortTermEntries?: number;
+  changed?: boolean;
+  archiveDir?: string;
+  archivedDreamsDiary?: boolean;
+  archivedSessionCorpus?: boolean;
+  archivedSessionIngestion?: boolean;
+  warnings?: string[];
+  dedupedEntries?: number;
+  keptEntries?: number;
+};
+
+export type OpenClawMemorySearchInput = {
+  agentId?: string;
+  query: string;
+  maxResults?: number;
+  minScore?: number;
+};
+
+export type OpenClawMemoryAgentInput = {
+  agentId?: string;
+};
+
 export type OpenClawPluginListPayload = {
   plugins: Array<{
     id: string;
@@ -1532,6 +1657,15 @@ export interface OpenClawGatewayClient {
   getSessionUsage?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getSessionUsageTimeseries?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getSessionUsageLogs?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  /** Native-only Phase 5 memory operations. The CLI client intentionally does not implement these. */
+  searchMemory?(input: OpenClawMemorySearchInput, options?: OpenClawCommandOptions): Promise<OpenClawMemorySearchPayload>;
+  getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
+  getNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamDiaryPayload>;
+  backfillNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  resetNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  resetNativeGroundedShortTerm?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  repairNativeDreamingArtifacts?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  dedupeNativeDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
   getMemoryDoctorStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getMemoryDreamDiary?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   listAgentFiles?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;

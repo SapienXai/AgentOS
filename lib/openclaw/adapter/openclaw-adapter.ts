@@ -70,6 +70,12 @@ import type {
   OpenClawListSessionsInput,
   OpenClawLogsTailInput,
   OpenClawLogsTailPayload,
+  OpenClawMemoryAgentInput,
+  OpenClawMemoryDreamActionPayload,
+  OpenClawMemoryDreamDiaryPayload,
+  OpenClawMemorySearchInput,
+  OpenClawMemorySearchPayload,
+  OpenClawMemoryStatusPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
   OpenClawPluginListPayload,
@@ -179,8 +185,16 @@ export interface OpenClawAdapter {
     getUsageCost?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getSessionUsage?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getSessionUsageTimeseries?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
-    getSessionUsageLogs?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
-    getMemoryDoctorStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  getSessionUsageLogs?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  searchMemory?(input: OpenClawMemorySearchInput, options?: OpenClawCommandOptions): Promise<OpenClawMemorySearchPayload>;
+  getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
+  getNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamDiaryPayload>;
+  backfillNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  resetNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  resetNativeGroundedShortTerm?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  repairNativeDreamingArtifacts?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  dedupeNativeDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
+  getMemoryDoctorStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getMemoryDreamDiary?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     listAgentFiles?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getAgentFile?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
@@ -509,6 +523,70 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     const client = this.getClient();
     return client.getSessionUsageLogs?.(input, options) ??
       client.call<OpenClawGatewaySurfacePayload>("sessions.usage.logs", input, options);
+  }
+
+  searchMemory(input: OpenClawMemorySearchInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.searchMemory) {
+      return Promise.reject(new Error("OpenClaw native memory.search is unavailable."));
+    }
+    return client.searchMemory(input, options);
+  }
+
+  getNativeMemoryDoctorStatus(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.getNativeMemoryDoctorStatus) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.status is unavailable."));
+    }
+    return client.getNativeMemoryDoctorStatus(input, options);
+  }
+
+  getNativeMemoryDreamDiary(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.getNativeMemoryDreamDiary) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.dreamDiary is unavailable."));
+    }
+    return client.getNativeMemoryDreamDiary(input, options);
+  }
+
+  backfillNativeMemoryDreamDiary(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.backfillNativeMemoryDreamDiary) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.backfillDreamDiary is unavailable."));
+    }
+    return client.backfillNativeMemoryDreamDiary(input, options);
+  }
+
+  resetNativeMemoryDreamDiary(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.resetNativeMemoryDreamDiary) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.resetDreamDiary is unavailable."));
+    }
+    return client.resetNativeMemoryDreamDiary(input, options);
+  }
+
+  resetNativeGroundedShortTerm(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.resetNativeGroundedShortTerm) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.resetGroundedShortTerm is unavailable."));
+    }
+    return client.resetNativeGroundedShortTerm(input, options);
+  }
+
+  repairNativeDreamingArtifacts(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.repairNativeDreamingArtifacts) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.repairDreamingArtifacts is unavailable."));
+    }
+    return client.repairNativeDreamingArtifacts(input, options);
+  }
+
+  dedupeNativeDreamDiary(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.dedupeNativeDreamDiary) {
+      return Promise.reject(new Error("OpenClaw native doctor.memory.dedupeDreamDiary is unavailable."));
+    }
+    return client.dedupeNativeDreamDiary(input, options);
   }
 
   getMemoryDoctorStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {

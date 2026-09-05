@@ -29,6 +29,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   usageCost: "usage",
   sessionUsage: "usage",
   memoryDoctor: "memory",
+  memorySearch: "memory",
   messaging: "channels",
   secrets: "secrets",
   wizard: "secrets",
@@ -105,6 +106,7 @@ const operationRequiredScopes: Partial<Record<string, string[]>> = {
   execApprovals: ["operator.approvals"],
   pluginApprovals: ["operator.approvals"],
   questions: ["operator.questions"],
+  memorySearch: ["operator.read"],
   talkConfig: ["operator.read"],
   talkSession: ["operator.talk"],
   talkClient: ["operator.talk"],
@@ -157,6 +159,10 @@ const methodProbes: Record<string, ContractProbe> = {
   "doctor.memory.status": {
     params: {},
     validate: isObjectRecord
+  },
+  "memory.search": {
+    params: { query: "__agentos_contract_probe__", maxResults: 1 },
+    validate: (payload) => Array.isArray(readObject(payload)?.results)
   },
   "diagnostics.stability": {
     params: {},
@@ -414,6 +420,11 @@ function resolveRequiredScopes(operationId: string, supportedMethod: string | nu
     ["exec.approvals.get", "exec.approvals.set", "exec.approvals.node.get", "exec.approvals.node.set"].includes(supportedMethod)
   ) {
     return ["operator.admin"];
+  }
+  if (operationId === "memoryDoctor" && supportedMethod) {
+    return supportedMethod === "doctor.memory.status" || supportedMethod === "doctor.memory.dreamDiary"
+      ? ["operator.read"]
+      : ["operator.write"];
   }
   return operationRequiredScopes[operationId] ?? [];
 }

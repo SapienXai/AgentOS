@@ -106,7 +106,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
       "doctor.memory.resetGroundedShortTerm",
       "doctor.memory.repairDreamingArtifacts",
       "doctor.memory.dedupeDreamDiary",
-      "doctor.memory.remHarness"
+      "memory.search"
     ]
   },
   {

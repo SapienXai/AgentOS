@@ -14,6 +14,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "usageCost"
   | "sessionUsage"
   | "memoryDoctor"
+  | "memorySearch"
   | "logsTail"
   | "messaging"
   | "configSchemaLookup"
@@ -169,10 +170,31 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "doctor.memory.resetDreamDiary",
       "doctor.memory.resetGroundedShortTerm",
       "doctor.memory.repairDreamingArtifacts",
-      "doctor.memory.dedupeDreamDiary",
-      "doctor.memory.remHarness"
+      "doctor.memory.dedupeDreamDiary"
     ],
-    baseline: "optional"
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns native memory health and maintenance. AgentOS consumes the exact status, diary, and bounded repair/reset methods without CLI fallback.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: [
+      "doctor.memory.status",
+      "doctor.memory.dreamDiary",
+      "doctor.memory.backfillDreamDiary",
+      "doctor.memory.resetDreamDiary",
+      "doctor.memory.resetGroundedShortTerm",
+      "doctor.memory.repairDreamingArtifacts",
+      "doctor.memory.dedupeDreamDiary"
+    ]
+  },
+  {
+    id: "memorySearch",
+    label: "Memory search",
+    methods: ["memory.search"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns memory search, ranking, and provenance. AgentOS only presents the native result set.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["memory.search"]
   },
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"], baseline: "required" },
   { id: "messaging", label: "Operator messaging", methods: ["send", "push.test"], baseline: "optional" },
@@ -590,7 +612,7 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
   "doctor.memory.resetGroundedShortTerm",
   "doctor.memory.repairDreamingArtifacts",
   "doctor.memory.dedupeDreamDiary",
-  "doctor.memory.remHarness",
+  "memory.search",
   "environments.list",
   "environments.status",
   "exec.approval.get",

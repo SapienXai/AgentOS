@@ -224,6 +224,112 @@ export const skillLibraryActivatePayloadSchema = z.object({
   sessionActivation: z.literal("next-turn")
 }).passthrough();
 
+const memorySearchResultSchema = z.object({
+  path: z.string(),
+  startLine: z.number().int().nonnegative(),
+  endLine: z.number().int().nonnegative(),
+  score: z.number(),
+  vectorScore: z.number().optional(),
+  textScore: z.number().optional(),
+  snippet: z.string(),
+  source: z.enum(["memory", "sessions"]),
+  importance: z.number().optional(),
+  triggers: z.string().optional(),
+  projectKey: z.string().optional(),
+  originClass: z.string().optional(),
+  citation: z.string().optional(),
+  provenance: z.object({
+    originClass: z.enum(["owner", "agent", "untrusted", "system"]),
+    sessionKind: z.enum(["interactive", "cron", "heartbeat", "subagent", "unknown"]),
+    observedAt: z.number(),
+    supersedesKey: z.string().optional()
+  }).passthrough().optional()
+}).passthrough();
+
+export const memorySearchPayloadSchema = z.object({
+  agentId: z.string(),
+  provider: z.string(),
+  searchMode: z.enum(["hybrid", "fts-only"]),
+  results: z.array(memorySearchResultSchema),
+  stale: z.literal(true).optional(),
+  warning: z.string().optional(),
+  action: z.string().optional()
+}).passthrough();
+
+const memoryEmbeddingPayloadSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  checked: z.boolean().optional(),
+  cached: z.boolean().optional(),
+  checkedAtMs: z.number().optional(),
+  cacheExpiresAtMs: z.number().optional()
+}).passthrough();
+
+export const memoryStatusPayloadSchema = z.object({
+  agentId: z.string(),
+  provider: z.string().optional(),
+  embedding: memoryEmbeddingPayloadSchema,
+  embeddingRuntime: z.object({
+    engine: z.literal("llama.cpp"),
+    state: z.enum(["ready", "failed"]),
+    backend: z.enum(["metal", "cpu"]).optional(),
+    buildInfo: z.string().optional(),
+    model: z.object({ id: z.string(), path: z.string().optional() }).passthrough().optional(),
+    capabilities: z.object({ vision: z.boolean(), draft: z.boolean() }).passthrough().optional(),
+    endpoints: z.record(z.string(), z.enum(["ready", "unavailable"])).optional(),
+    loadError: z.string().optional()
+  }).passthrough().optional(),
+  dreaming: z.object({
+    enabled: z.boolean(),
+    timezone: z.string().optional(),
+    verboseLogging: z.boolean(),
+    storageMode: z.enum(["inline", "separate", "both"]),
+    separateReports: z.boolean(),
+    shortTermCount: z.number().int().nonnegative(),
+    recallSignalCount: z.number().int().nonnegative(),
+    dailySignalCount: z.number().int().nonnegative(),
+    groundedSignalCount: z.number().int().nonnegative(),
+    totalSignalCount: z.number().int().nonnegative(),
+    phaseSignalCount: z.number().int().nonnegative(),
+    lightPhaseHitCount: z.number().int().nonnegative(),
+    remPhaseHitCount: z.number().int().nonnegative(),
+    promotedTotal: z.number().int().nonnegative(),
+    promotedToday: z.number().int().nonnegative(),
+    lastPromotedAt: z.string().optional(),
+    storeError: z.string().optional(),
+    phaseSignalError: z.string().optional(),
+    phases: z.record(z.string(), z.record(z.string(), z.unknown())).optional()
+  }).passthrough().optional()
+}).passthrough();
+
+export const memoryDreamDiaryPayloadSchema = z.object({
+  agentId: z.string(),
+  found: z.boolean(),
+  path: z.string(),
+  content: z.string().optional(),
+  updatedAtMs: z.number().optional()
+}).passthrough();
+
+export const memoryDreamActionPayloadSchema = z.object({
+  agentId: z.string(),
+  action: z.enum(["backfill", "reset", "resetGroundedShortTerm", "repairDreamingArtifacts", "dedupeDreamDiary"]),
+  path: z.string().optional(),
+  found: z.boolean().optional(),
+  scannedFiles: z.number().int().nonnegative().optional(),
+  written: z.number().int().nonnegative().optional(),
+  replaced: z.number().int().nonnegative().optional(),
+  removedEntries: z.number().int().nonnegative().optional(),
+  removedShortTermEntries: z.number().int().nonnegative().optional(),
+  changed: z.boolean().optional(),
+  archiveDir: z.string().optional(),
+  archivedDreamsDiary: z.boolean().optional(),
+  archivedSessionCorpus: z.boolean().optional(),
+  archivedSessionIngestion: z.boolean().optional(),
+  warnings: z.array(z.string()).optional(),
+  dedupedEntries: z.number().int().nonnegative().optional(),
+  keptEntries: z.number().int().nonnegative().optional()
+}).passthrough();
+
 export const pluginsPayloadSchema = z
   .object({
     plugins: z

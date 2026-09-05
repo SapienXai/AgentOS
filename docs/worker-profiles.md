@@ -36,6 +36,15 @@ The native Skills Library is read through `skills.library.list` and
 revision IDs are preserved. An existing session is never silently rewritten
 to a newer revision.
 
+The Memory & History surface keeps two facts separate: AgentOS Context Engine
+memory files are workspace-sidecar context configuration, while the OpenClaw
+native memory panel reads `memory.search` and `doctor.memory.*` directly through
+the application service. Native memory health, search results, diary content,
+and maintenance outcomes are projections of current OpenClaw state; AgentOS
+does not create a local memory registry or vector store. When the native read
+cannot be verified, the panel says so rather than treating the worker's memory
+as unavailable.
+
 ## Account and browser boundaries
 
 Connected accounts are AgentOS access-rule references. Browser profiles are visible through OpenClaw, but OpenClaw does not provide a typed browser-profile selection parameter for agent mission dispatch. The Worker Profile UI therefore reports this state honestly and never claims to assign a browser session to an agent.

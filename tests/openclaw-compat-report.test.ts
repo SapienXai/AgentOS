@@ -318,6 +318,7 @@ function createCompatibilityGateway(
   gateway.route("sessions.usage.timeseries", (_frame, context) => context.respond({ points: [] }));
   gateway.route("sessions.usage.logs", (_frame, context) => context.respond({ logs: [] }));
   gateway.route("doctor.memory.status", (_frame, context) => context.respond({ ok: true }));
+  gateway.route("memory.search", (_frame, context) => context.respond({ agentId: "main", provider: "local", searchMode: "fts-only", results: [] }));
   gateway.route("diagnostics.stability", (_frame, context) => context.respond({ ok: true }));
   gateway.route("gateway.identity.get", (_frame, context) => context.respond({ id: "gateway-test" }));
   gateway.route("users.list", (_frame, context) => context.respond({ profiles: [] }));
