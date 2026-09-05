@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-native-memory-certification",
+  "phase": "Phase 5 — Native Memory Operations",
+  "certifiedCodeHead": "82f3df9f19c381525d0a1c08864f1ba4aeb9461a",
+  "repository": "SapienXai/AgentOS",
+  "branch": "main",
+  "openClaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1",
+    "exactPackageBuild": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+    "exactPackageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+  },
+  "ownership": {
+    "memoryStorage": "OpenClaw",
+    "memoryIndexing": "OpenClaw",
+    "embeddingRuntime": "OpenClaw",
+    "dreamingArtifacts": "OpenClaw",
+    "memoryProjection": "AgentOS",
+    "operatorPermissions": "AgentOS",
+    "auditMetadata": "AgentOS"
+  },
+  "nativeContract": {
+    "readMethods": {
+      "memory.search": {
+        "scope": "operator.read",
+        "params": {
+          "agentId": "optional",
+          "query": "required non-empty string",
+          "maxResults": "optional finite number, normalized to 1-50",
+          "minScore": "optional finite number"
+        },
+        "response": "agentId, provider, searchMode, results, optional stale/warning/action"
+      },
+      "doctor.memory.status": {
+        "scope": "operator.read",
+        "params": { "agentId": "optional", "probe": "native default", "deep": "native default" },
+        "response": "agentId, optional provider, embedding, optional embeddingRuntime and dreaming"
+      },
+      "doctor.memory.dreamDiary": {
+        "scope": "operator.read",
+        "params": { "agentId": "optional" },
+        "response": "agentId, found, path, optional content and updatedAtMs"
+      }
+    },
+    "mutationMethods": {
+      "doctor.memory.backfillDreamDiary": "operator.write",
+      "doctor.memory.resetDreamDiary": "operator.write",
+      "doctor.memory.resetGroundedShortTerm": "operator.write",
+      "doctor.memory.repairDreamingArtifacts": "operator.write",
+      "doctor.memory.dedupeDreamDiary": "operator.write"
+    },
+    "removedMethod": "doctor.memory.remHarness is not exposed or reintroduced",
+    "cliFallback": false
+  },
+  "productIntegration": {
+    "integratedMethods": [
+      "memory.search",
+      "doctor.memory.status",
+      "doctor.memory.dreamDiary",
+      "doctor.memory.backfillDreamDiary",
+      "doctor.memory.resetDreamDiary",
+      "doctor.memory.resetGroundedShortTerm",
+      "doctor.memory.repairDreamingArtifacts",
+      "doctor.memory.dedupeDreamDiary"
+    ],
+    "legacyCompatibilityKeptSeparate": [
+      "doctor.memory.status generic legacy diagnostics",
+      "doctor.memory.dreamDiary generic legacy diagnostics"
+    ],
+    "notProductIntegrated": [
+      "skills.library.save",
+      "skills.library.upload",
+      "skills.library.import",
+      "doctor.memory.remHarness"
+    ],
+    "nativeOnlyAdapter": true,
+    "rawGatewayCallsFromReact": false
+  },
+  "projection": {
+    "healthStatuses": ["healthy", "needs-attention", "degraded", "unavailable", "unknown"],
+    "readResultStatuses": ["available", "unavailable", "unknown"],
+    "issueCodes": [
+      "embedding_unavailable",
+      "embedding_not_checked",
+      "dreaming_store_error",
+      "dreaming_phase_error",
+      "runtime_unavailable",
+      "native_method_unavailable",
+      "native_read_failed",
+      "unknown"
+    ],
+    "nativeUnavailable": "Explicit native method/runtime absence is unavailable.",
+    "observationFailure": "Transport, timeout, malformed response, or authorization/read failure is unknown.",
+    "persistence": "No AgentOS memory registry, vector store, or authoritative projection persistence."
+  },
+  "apiAndUx": {
+    "routes": [
+      "GET /api/agents/:agentId/memory",
+      "POST /api/agents/:agentId/memory/search",
+      "GET /api/agents/:agentId/memory/diary",
+      "POST /api/agents/:agentId/memory/actions"
+    ],
+    "placement": "Existing Worker Profile Context Engine memory surface",
+    "search": "Bounded native search with result provenance and redaction",
+    "health": "Native embedding/dreaming status with honest degraded and unknown states",
+    "diary": "Lazy native diary read with explicit not-found state",
+    "actions": "Native-first action followed by authoritative status reread; destructive operations require confirmation",
+    "contextEngineBoundary": "Existing AgentOS workspace-file projection remains separate from OpenClaw native memory",
+    "newTopLevelNavigation": false
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "secretsRequestedOrStored": false,
+    "centralRedaction": true,
+    "skillOrMemoryContentTrustedAsSystemInstruction": false,
+    "agentOsProductPermissions": true,
+    "nativeScopesEnforced": true,
+    "gatewayFinalAuthorization": true,
+    "blindMutationRetry": false,
+    "userGatewayTouched": false,
+    "realCredentialsAccessed": false
+  },
+  "performance": {
+    "workerProfileMemoryReads": "Lazy on the existing memory surface",
+    "rootDashboardExtraMemoryRpcCount": 0,
+    "perResultRpcFanout": false,
+    "perProviderRpcFanout": false,
+    "requestPolicyReused": true,
+    "newPollingDaemon": false,
+    "newEventTransport": false,
+    "newReconnectOwner": false,
+    "certificationRpcCounts": {
+      "doctor.memory.status": 1,
+      "memory.search": 1,
+      "doctor.memory.dreamDiary": 1,
+      "doctor.memory.backfillDreamDiary": 1,
+      "doctor.memory.resetGroundedShortTerm": 1,
+      "doctor.memory.repairDreamingArtifacts": 1,
+      "doctor.memory.dedupeDreamDiary": 1,
+      "doctor.memory.resetDreamDiary": 1
+    }
+  },
+  "runtimeCertification": {
+    "runtime": {
+      "packageMode": "exact-openclaw-package-fixture",
+      "gatewayPlacement": "disposable-loopback",
+      "gatewayVersion": "2026.9.1",
+      "nativeTransport": true,
+      "stateIsolation": true,
+      "configIsolation": true,
+      "userGatewayUntouched": true,
+      "realCredentialsAccessed": false
+    },
+    "methods": {
+      "memory.search": { "status": "PASS", "result": "hybrid:0" },
+      "doctor.memory.status": { "status": "PASS", "result": "native-memory-unavailable-or-unconfigured" },
+      "doctor.memory.dreamDiary": { "status": "PASS", "result": "not-found" },
+      "doctor.memory.backfillDreamDiary": { "status": "PASS", "result": "backfill" },
+      "doctor.memory.resetDreamDiary": { "status": "PASS", "result": "reset" },
+      "doctor.memory.resetGroundedShortTerm": { "status": "PASS", "result": "resetGroundedShortTerm" },
+      "doctor.memory.repairDreamingArtifacts": { "status": "PASS", "result": "repairDreamingArtifacts" },
+      "doctor.memory.dedupeDreamDiary": { "status": "PASS", "result": "dedupeDreamDiary" }
+    },
+    "observations": {
+      "explicitNativeUnavailable": "PASS — exact runtime reported memory embedding unavailable/unconfigured without a credential fixture",
+      "readFailureIsNotUnavailable": "PASS — deterministic adapter test projects native read failure as unknown",
+      "redaction": "PASS — deterministic payload test removes token value from result content",
+      "noCliFallback": "PASS"
+    },
+    "authorization": {
+      "readScope": "PASS",
+      "writeScope": "PASS",
+      "insufficientScopeDenied": "SKIPPED — separate read-only mutation fixture was not required to exercise the exact native methods",
+      "gatewayFinalAuthority": true
+    },
+    "providerDependentMemoryFixture": "SKIPPED — no real provider credentials were accessed; native unavailable/unconfigured behavior was certified instead",
+    "cleanup": {
+      "gatewayStopped": true,
+      "disposableStateRemoved": true,
+      "realMemoryStateTouched": false
+    }
+  },
+  "validation": {
+    "focusedNativeMemoryTests": { "status": "PASS", "count": 10 },
+    "fullSuite": { "status": "PASS", "tests": 1267, "failures": 0 },
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS",
+    "compatibility": "PASS",
+    "authorizationContract": "PASS"
+  },
+  "architectureSafeguards": {
+    "localMemoryRegistry": false,
+    "localVectorDatabase": false,
+    "parallelMemoryAuthority": false,
+    "newCliFallback": false,
+    "newPollingSystem": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "OpenClawVersionChanged": false,
+    "officialPackagesChanged": false
+  },
+  "remainingRisks": [
+    "Provider-specific embedding readiness and external credential behavior remain dependent on the native OpenClaw provider/runtime configuration.",
+    "The disposable exact runtime did not access real provider credentials, so credential-backed search quality was not certified.",
+    "Legacy generic memory diagnostics remain compatibility surfaces and are intentionally separate from the new native-only Worker Profile memory operations."
+  ]
+}
