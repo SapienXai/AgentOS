@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-native-memory-hardening-certification",
+  "phase": "Phase 5.1 — Memory Mutation Reconciliation & Cross-Worker Isolation",
+  "certifiedCodeHead": "5119ad5c22fe55e634430adaadc3662f62be7b8a",
+  "repository": "SapienXai/AgentOS",
+  "branch": "main",
+  "startingHead": "cde123623f8a60ffb578840753f5104b5567bc0a",
+  "openClaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+    "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1"
+  },
+  "ownership": {
+    "memoryStorage": "OpenClaw",
+    "memoryReadsAndWrites": "OpenClaw",
+    "mutationReconciliation": "AgentOS observes native postconditions without becoming authoritative",
+    "loaderStateAndRequestFencing": "AgentOS UI state only",
+    "auditMetadata": "AgentOS"
+  },
+  "crossWorkerIsolation": {
+    "workerBoundStateReset": true,
+    "resetFields": [
+      "projection",
+      "diary",
+      "searchResult",
+      "isLoadingStatus",
+      "isLoadingDiary",
+      "isSearching",
+      "activeAction",
+      "actionResult",
+      "error"
+    ],
+    "requestTokenFields": ["agentId", "generation", "sequence", "kind"],
+    "crossWorkerStaleResponsesDropped": true,
+    "sameWorkerLatestRequestWinsPerKind": true,
+    "readRequestsAbortedOnWorkerChange": true,
+    "writesCanceledAfterDispatch": false,
+    "lateWriteResultsDropped": true,
+    "queryResetOnWorkerChange": true,
+    "diaryClosedOnWorkerChange": true,
+    "randomRequestAuthority": false
+  },
+  "mutationSemantics": {
+    "outcomes": ["succeeded", "failed", "unknown"],
+    "retryableOutcome": false,
+    "definiteRejection": {
+      "classification": "structured native error kind or request not sent",
+      "outcome": "failed",
+      "postconditionRead": false
+    },
+    "ambiguousTransportFailure": {
+      "classification": "native request may have been sent and final delivery is not proven",
+      "outcomeWithoutProof": "unknown",
+      "blindRetry": false,
+      "maximumReconciliationReads": 1
+    },
+    "reconciliation": {
+      "reset": {
+        "readMethod": "doctor.memory.dreamDiary",
+        "confirmedWhen": "native found=false",
+        "otherwise": "unknown"
+      },
+      "resetGroundedShortTerm": {
+        "readMethod": "doctor.memory.status",
+        "confirmedWhen": "native dreaming.shortTermCount=0",
+        "otherwise": "unknown"
+      },
+      "backfill": {
+        "readMethod": "doctor.memory.dreamDiary",
+        "postcondition": "no reliable operation-specific postcondition; unknown when ambiguous"
+      },
+      "repairDreamingArtifacts": {
+        "readMethod": "doctor.memory.status",
+        "postcondition": "no reliable operation-specific postcondition; unknown when ambiguous"
+      },
+      "dedupeDreamDiary": {
+        "readMethod": "doctor.memory.dreamDiary",
+        "postcondition": "no reliable operation-specific postcondition; unknown when ambiguous"
+      }
+    },
+    "messageForUnknown": "OpenClaw may have applied this action, but AgentOS could not verify the final state. Refresh diagnostics before deciding what to do next."
+  },
+  "audit": {
+    "unknownOutcomeSupported": true,
+    "unknownOutcomeRecorded": true,
+    "contentRecorded": false,
+    "queryRecorded": false,
+    "diaryContentRecorded": false,
+    "secretValuesRecorded": false
+  },
+  "apiAndUx": {
+    "route": "POST /api/agents/:agentId/memory/actions",
+    "nativeFirst": true,
+    "explicitConfirmationPreserved": true,
+    "unknownOutcomeStatus": 409,
+    "definiteRejectionStatus": 400,
+    "unknownOutcomeHasAutomaticRetry": false,
+    "refreshActionLabel": "Refresh diagnostics",
+    "workerChangeRemountsMemoryPanel": true,
+    "rawGatewayCallsFromReact": false
+  },
+  "runtimeCertification": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "gatewayVersion": "2026.9.1",
+    "nativeTransport": true,
+    "isolatedState": true,
+    "isolatedConfig": true,
+    "userGatewayTouched": false,
+    "realCredentialsAccessed": false,
+    "nativeMemoryMethods": {
+      "memory.search": "PASS",
+      "doctor.memory.status": "PASS",
+      "doctor.memory.dreamDiary": "PASS",
+      "doctor.memory.backfillDreamDiary": "PASS",
+      "doctor.memory.resetDreamDiary": "PASS",
+      "doctor.memory.resetGroundedShortTerm": "PASS",
+      "doctor.memory.repairDreamingArtifacts": "PASS",
+      "doctor.memory.dedupeDreamDiary": "PASS"
+    },
+    "nativeMethodRpcCounts": {
+      "memory.search": 1,
+      "doctor.memory.status": 1,
+      "doctor.memory.dreamDiary": 1,
+      "doctor.memory.backfillDreamDiary": 1,
+      "doctor.memory.resetDreamDiary": 1,
+      "doctor.memory.resetGroundedShortTerm": 1,
+      "doctor.memory.repairDreamingArtifacts": 1,
+      "doctor.memory.dedupeDreamDiary": 1
+    },
+    "ambiguousMutationFixtures": "PASS — deterministic structured transport and adapter fixtures cover confirmed and unknown outcomes without retry",
+    "liveProviderFixture": "SKIPPED — no real provider credentials were accessed",
+    "authorizationFixture": "SKIPPED — exact native memory methods were exercised with the privileged disposable operator; separate insufficient-scope mutation fixture was not required",
+    "cleanup": "PASS — disposable Gateway stopped and disposable state removed"
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "memoryContentAddedToAudit": false,
+    "centralRedaction": true,
+    "productPermissionsEnforced": true,
+    "nativeScopesEnforced": true,
+    "gatewayFinalAuthorization": true,
+    "skillOrMemoryContentTrustedAsSystemInstruction": false
+  },
+  "performance": {
+    "workerProfileReadsRemainLazy": true,
+    "rootDashboardExtraMemoryRpcCount": 0,
+    "requestLedgerPerOperation": true,
+    "reconciliationReadBound": 1,
+    "perSearchResultRpcFanout": false,
+    "perDiaryEntryRpcFanout": false,
+    "newPollingDaemon": false,
+    "newEventTransport": false,
+    "newReconnectOwner": false
+  },
+  "validation": {
+    "focusedNativeMemoryTests": {"status": "PASS", "tests": 18, "failures": 0},
+    "fullSuite": {"status": "PASS", "tests": 1275, "failures": 0},
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS",
+    "exactNativeMemoryCertification": "PASS"
+  },
+  "architectureSafeguards": {
+    "localMemoryRegistry": false,
+    "localMemoryMutationAuthority": false,
+    "parallelMemoryAuthority": false,
+    "newCliFallback": false,
+    "newPollingSystem": false,
+    "newGatewaySubscription": false,
+    "newReconnectOwner": false,
+    "OpenClawVersionChanged": false,
+    "officialPackagesChanged": false
+  },
+  "remainingRisks": [
+    "Provider-credential-backed memory behavior remains intentionally untested because the certification never accessed real credentials.",
+    "Ambiguous mutation reconciliation can only confirm reset operations when their exact native postconditions are observable; other maintenance writes remain unknown by design."
+  ]
+}
