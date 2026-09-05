@@ -46,8 +46,8 @@ The product keeps these concepts distinct:
   `models.authStatus`.
 - Configured model: the native default, worker primary, fallback list, or
   explicit session override.
-- Effective model: the model OpenClaw reports for the current session, or a
-  model that OpenClaw reports ready in the selected worker/default context.
+- Effective runtime model: the model OpenClaw reports for the current session
+  or run. A ready configured worker/default model is not runtime evidence.
 - Fallbacks: the ordered native policy. OpenClaw chooses and executes a
   fallback; AgentOS only displays and edits the native order.
 
@@ -124,6 +124,31 @@ Clearing a session override sends `model: null` to OpenClaw; it does not copy
 the current agent model into the session.
 
 Mission is an AgentOS business context, not a fabricated native model scope.
+
+## Phase 4.1 — Truthfulness and inheritance hardening
+
+Native session provenance is authoritative. `modelOverrideSource: "user"`
+means that a session has an explicit model override even when its worker is
+`Automatic` or has no explicit model. `"auto"` and `null` are not user
+overrides; an omitted field remains unprojected and is not treated as proof of
+an override. Choosing `Automatic` in the session inspector sends the native
+`sessions.patch` mutation with `model: null`, then rereads OpenClaw state to
+confirm that the explicit override is gone. AgentOS never copies a worker or
+default model into the session to simulate inheritance.
+
+Selection projections now separate three facts: `configuredModelId` and
+`configuredStatus` describe native configuration and catalog readiness, while
+`effectiveModelId` describes only concrete native session evidence. Worker and
+default scopes therefore report a ready configured model without claiming that
+it is the model currently executing; fallback execution remains OpenClaw-owned.
+
+The worker and session pickers use the same native `models.list` `view=default`
+read as session mutation validation. A model is selectable only when native
+availability is explicitly `true`; visible configured references that are
+missing, unavailable, or have missing authentication remain visible as
+non-selectable state. A catalog race after the picker read can still be
+rejected by OpenClaw, but a stable native state cannot disagree solely because
+AgentOS used different catalog views.
 
 ## Mutation safety and reconciliation
 

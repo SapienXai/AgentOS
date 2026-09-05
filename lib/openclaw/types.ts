@@ -1824,6 +1824,8 @@ export interface AddModelsCatalogModel {
   local: boolean;
   /** null means OpenClaw did not report availability, rather than available. */
   available: boolean | null;
+  deprecated?: boolean;
+  disabled?: boolean;
   missing: boolean;
   alreadyAdded: boolean;
   recommended: boolean;

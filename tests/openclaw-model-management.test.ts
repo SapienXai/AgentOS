@@ -4,6 +4,9 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildModelSelectionProjection,
+  isSelectableModel,
+  MODEL_SELECTION_CATALOG_VIEW,
   modelManagementModelToCatalogModel,
   presentModelProviderSetupHint,
   resolveModelAvailability
@@ -147,6 +150,10 @@ test("post-onboarding management reads OpenClaw provider and auth metadata", () 
     path.join(rootDir, "lib/openclaw/application/model-management-service.ts"),
     "utf8"
   );
+  const projectionSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/domains/model-management.ts"),
+    "utf8"
+  );
   const routeSource = readFileSync(
     path.join(rootDir, "app/api/models/management/route.ts"),
     "utf8"
@@ -167,11 +174,107 @@ test("post-onboarding management reads OpenClaw provider and auth metadata", () 
   assert.match(serviceSource, /models\.authLogout/);
   assert.match(serviceSource, /agentId/);
   assert.match(serviceSource, /adapter\.listSessions/);
-  assert.match(serviceSource, /native-session/);
+  assert.match(projectionSource, /native-session/);
   assert.match(routeSource, /models\.manage/);
   assert.match(routeSource, /secrets\.manage/);
   assert.match(routeSource, /wizard-status[\s\S]*runtime\.use/);
   assert.match(routeSource, /sessionKey/);
+});
+
+function projectionModels() {
+  return [
+    { id: "openai/model-a", provider: "openai", availability: "ready" as const },
+    { id: "openai/model-b", provider: "openai", availability: "unavailable" as const }
+  ];
+}
+
+test("configured and ready worker/default models are not projected as effective runtime models", () => {
+  const models = projectionModels();
+  const defaults = { model: { primary: "openai/model-a", fallbacks: ["openai/model-b"] } };
+
+  const worker = buildModelSelectionProjection({
+    agentId: "worker-1",
+    defaults,
+    agents: [{ id: "worker-1", model: { primary: "openai/model-a", fallbacks: ["openai/model-b"] } }],
+    sessions: [],
+    sessionReadOk: true,
+    models
+  });
+  const globalDefault = buildModelSelectionProjection({
+    defaults,
+    agents: [],
+    sessions: [],
+    sessionReadOk: true,
+    models
+  });
+
+  assert.equal(worker.configuredModelId, "openai/model-a");
+  assert.equal(worker.configuredStatus, "ready");
+  assert.equal(worker.effectiveModelId, null);
+  assert.equal(worker.effectiveStatus, "unknown");
+  assert.equal(worker.source, "unknown");
+  assert.equal(globalDefault.configuredStatus, "ready");
+  assert.equal(globalDefault.effectiveModelId, null);
+  assert.equal(globalDefault.effectiveStatus, "unknown");
+});
+
+test("native session model evidence is the only scoped effective runtime model", () => {
+  const selection = buildModelSelectionProjection({
+    agentId: "worker-1",
+    sessionKey: "session-1",
+    defaults: { model: { primary: "openai/model-a", fallbacks: [] } },
+    agents: [{ id: "worker-1", model: { primary: "openai/model-a" } }],
+    sessions: [{
+      key: "session-1",
+      model: "model-a",
+      modelProvider: "openai",
+      modelOverrideSource: "user"
+    }],
+    sessionReadOk: true,
+    models: projectionModels()
+  });
+
+  assert.equal(selection.configuredModelId, "openai/model-a");
+  assert.equal(selection.effectiveModelId, "openai/model-a");
+  assert.equal(selection.effectiveProvider, "openai");
+  assert.equal(selection.effectiveStatus, "known");
+  assert.equal(selection.source, "native-session");
+  assert.equal(selection.inherited, false);
+});
+
+test("session selection read failure is unknown rather than known inheritance", () => {
+  const selection = buildModelSelectionProjection({
+    agentId: "worker-1",
+    sessionKey: "session-1",
+    defaults: { model: { primary: "openai/model-a", fallbacks: [] } },
+    agents: [{ id: "worker-1", model: { primary: "openai/model-a" } }],
+    sessions: [],
+    sessionReadOk: false,
+    models: projectionModels()
+  });
+
+  assert.equal(selection.effectiveModelId, null);
+  assert.equal(selection.effectiveStatus, "unknown");
+  assert.equal(selection.inherited, null);
+});
+
+test("model picker and session mutation share the native default catalog view and readiness rule", () => {
+  assert.equal(MODEL_SELECTION_CATALOG_VIEW, "default");
+  assert.equal(isSelectableModel({ available: true, missing: false }), true);
+  assert.equal(isSelectableModel({ available: null, missing: false }), false);
+  assert.equal(isSelectableModel({ available: false, unavailableReason: "missing-auth" }), false);
+  assert.equal(isSelectableModel({ available: true, disabled: true }), true);
+  assert.equal(isSelectableModel({ available: false, disabled: true }), false);
+  assert.equal(isSelectableModel({ available: false, deprecated: true }), false);
+
+  const sessionServiceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/session-model-service.ts"),
+    "utf8"
+  );
+  const pickerHookSource = readFileSync(path.join(rootDir, "hooks/use-model-catalog.ts"), "utf8");
+  assert.match(sessionServiceSource, /MODEL_SELECTION_CATALOG_VIEW/);
+  assert.match(pickerHookSource, /MODEL_SELECTION_CATALOG_VIEW/);
+  assert.doesNotMatch(sessionServiceSource, /view: "configured"/);
 });
 
 test("scoped model surfaces preserve native identity and keep unsupported scopes out of the product", () => {
@@ -185,6 +288,10 @@ test("scoped model surfaces preserve native identity and keep unsupported scopes
   assert.match(sessionRouteSource, /action: z\.literal\("inherit"\)/);
   assert.match(sessionServiceSource, /patchSessionModel/);
   assert.match(sessionServiceSource, /listSessions/);
+  assert.match(sessionServiceSource, /buildSessionModelOverrides/);
+  assert.match(sessionServiceSource, /model: null/);
+  assert.match(sessionServiceSource, /remainingOverrides/);
+  assert.doesNotMatch(sessionServiceSource, /view: "configured"/);
   assert.doesNotMatch(sessionServiceSource, /setModelAuthOrder/);
   assert.match(clientSource, /models\.list[\s\S]*agentId/);
 });

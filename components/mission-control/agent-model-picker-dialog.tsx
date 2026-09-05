@@ -35,6 +35,7 @@ import {
   modelRecordIdentityKey,
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
+import { isSelectableModel } from "@/lib/openclaw/domains/model-management";
 import { formatAgentDisplayName, formatContextWindow, formatModelLabel } from "@/lib/openclaw/presenters";
 import type {
   AddModelsCatalogModel,
@@ -495,11 +496,9 @@ export function AgentModelPickerDialog({
                   <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai"} />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent assignment</p>
+                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Configured worker model</p>
                   <p className={cn("truncate text-[0.8rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
-                    {nativeSelection?.effectiveModelId
-                      ? formatModelLabel(nativeSelection.effectiveModelId)
-                      : currentModel?.name || (currentModelId ? currentModelId : "OpenClaw global default")}
+                    {currentModel?.name || (currentModelId ? currentModelId : "Automatic — OpenClaw global default")}
                   </p>
                 </div>
               </div>
@@ -563,8 +562,12 @@ export function AgentModelPickerDialog({
           >
             {nativeSelection ? (
               <div className={cn("mb-2 rounded-[13px] border px-3 py-2 text-[0.7rem]", isLight ? "border-primary/20 bg-primary/5 text-foreground" : "border-violet-300/20 bg-violet-400/[0.07] text-slate-200")}>
-                <span className="font-semibold">Effective OpenClaw model: </span>
-                {nativeSelection.effectiveModelId ? formatModelLabel(nativeSelection.effectiveModelId) : "Unknown"}
+                <span className="font-semibold">
+                  {nativeSelection.scope === "session" ? "Current session model: " : "Configured model: "}
+                </span>
+                {nativeSelection.scope === "session"
+                  ? nativeSelection.effectiveModelId ? formatModelLabel(nativeSelection.effectiveModelId) : "Unknown"
+                  : nativeSelection.configuredModelId ? formatModelLabel(nativeSelection.configuredModelId) : "Automatic — OpenClaw global default"}
                 <span className={cn("ml-1.5", isLight ? "text-muted-foreground" : "text-slate-400")}>{nativeSelection.explanation}</span>
               </div>
             ) : null}
@@ -936,10 +939,6 @@ export function AgentModelPickerDialog({
   );
 }
 
-function isSelectableModel(model: AgentModelRecord) {
-  return !model.missing && model.available !== false;
-}
-
 function ProviderGlyph({ provider }: { provider: string }) {
   if (provider === "openai") {
     return <Sparkles className="h-5 w-5" />;
@@ -1242,6 +1241,8 @@ function buildConfiguredModelRecords(
         contextWindow: model.contextWindow,
         local: model.local,
         available: model.available,
+        deprecated: snapshotModel?.deprecated ?? model.deprecated,
+        disabled: snapshotModel?.disabled ?? model.disabled,
         missing: model.missing,
         tags: model.tags,
         usageCount: snapshotModel?.usageCount ?? 0

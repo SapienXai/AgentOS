@@ -48,6 +48,7 @@ import {
 } from "@/lib/openclaw/model-provider-registry";
 import { getModelProviderAdapter, ModelProviderActionError } from "@/lib/openclaw/model-provider-adapters";
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
+import { isSelectableModel } from "@/lib/openclaw/domains/model-management";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import { useModelCatalog } from "@/hooks/use-model-catalog";
@@ -3270,10 +3271,6 @@ function resolveCustomEndpointDetail(endpoint?: string) {
   } catch {
     return `Custom endpoint: ${trimmed}`;
   }
-}
-
-function isSelectableModel(model: AddModelsCatalogModel) {
-  return !model.missing && model.available !== false;
 }
 
 function resolveConnectionDetail(

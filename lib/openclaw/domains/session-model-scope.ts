@@ -9,7 +9,7 @@ export type SessionModelOverrideRecord = {
   agentId: string;
   agentName: string;
   sessionModelId: string;
-  agentModelId: string;
+  agentModelId: string | null;
   title: string;
   updatedAt: number;
 };
@@ -29,17 +29,17 @@ export function buildSessionModelOverrides(
       const agentModelId =
         agent?.modelId && agent.modelId !== "unassigned"
           ? normalizeOpenAiModelId(agent.modelId)
-          : "";
+          : null;
       const sessionModelId = normalizeOpenAiModelId(runtime.modelId);
 
       const nativeOverrideSource = runtime.modelOverrideSource;
       const isExplicitNativeOverride = nativeOverrideSource === "user";
 
-      if (!agent || !agentModelId || nativeOverrideSource === "auto" || nativeOverrideSource === null) {
+      if (!agent || nativeOverrideSource === "auto" || nativeOverrideSource === null) {
         return [];
       }
 
-      if (!isExplicitNativeOverride && modelIdsShareRoute(sessionModelId, agentModelId)) {
+      if (!isExplicitNativeOverride && (!agentModelId || modelIdsShareRoute(sessionModelId, agentModelId))) {
         return [];
       }
 

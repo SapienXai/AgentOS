@@ -91,3 +91,54 @@ test("native user provenance keeps an explicit session override even when the ro
 
   assert.equal(overrides.some((override) => override.sessionKey === "agent:writer:explicit"), true);
 });
+
+test("native user provenance keeps an explicit session override when the worker inherits", () => {
+  const snapshot = createSnapshot();
+  snapshot.agents[0] = { ...snapshot.agents[0], modelId: "unassigned" };
+  snapshot.runtimes[0] = {
+    ...snapshot.runtimes[0],
+    modelId: "openai/gpt-5.4",
+    modelOverrideSource: "user"
+  };
+
+  const override = buildSessionModelOverrides(snapshot).find(
+    (entry) => entry.sessionKey === "agent:researcher:main"
+  );
+
+  assert.ok(override);
+  assert.equal(override.agentModelId, null);
+  assert.equal(override.sessionModelId, "openai/gpt-5.4");
+});
+
+test("native auto and inherited provenance are never treated as explicit overrides", () => {
+  const snapshot = createSnapshot();
+  snapshot.runtimes.push(
+    {
+      id: "auto-runtime",
+      source: "session",
+      key: "agent:writer:auto",
+      sessionId: "session-auto",
+      agentId: "writer",
+      modelId: "openai/gpt-5.4",
+      modelOverrideSource: "auto",
+      title: "Automatic session",
+      updatedAt: 600
+    } as never,
+    {
+      id: "null-runtime",
+      source: "session",
+      key: "agent:writer:inherited",
+      sessionId: "session-inherited",
+      agentId: "writer",
+      modelId: "openai/gpt-5.4",
+      modelOverrideSource: null,
+      title: "Inherited session",
+      updatedAt: 601
+    } as never
+  );
+
+  const overrides = buildSessionModelOverrides(snapshot);
+
+  assert.equal(overrides.some((entry) => entry.sessionKey === "agent:writer:auto"), false);
+  assert.equal(overrides.some((entry) => entry.sessionKey === "agent:writer:inherited"), false);
+});

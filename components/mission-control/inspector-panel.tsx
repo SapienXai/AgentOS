@@ -55,6 +55,7 @@ import {
   useInspectorTaskDetailStream
 } from "@/components/mission-control/use-inspector-panel-data";
 import { useModelCatalog } from "@/hooks/use-model-catalog";
+import { isSelectableModel } from "@/lib/openclaw/domains/model-management";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge as UiBadge, type BadgeProps } from "@/components/ui/badge";
@@ -3329,7 +3330,7 @@ function RuntimeContent({
               className="h-8 w-full rounded-[10px] border border-white/10 bg-slate-950/60 px-2 text-[11px] text-slate-100"
             >
               <option value="">Inherit agent model</option>
-              {sessionModelOptions.filter((model) => model.available === true).map((model) => (
+              {sessionModelOptions.filter((model) => isSelectableModel(model)).map((model) => (
                 <option key={model.id} value={model.id}>{model.name}</option>
               ))}
             </select>

@@ -3,6 +3,10 @@ import "server-only";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { buildSessionModelOverrides } from "@/lib/openclaw/domains/session-model-scope";
+import {
+  isSelectableModel,
+  MODEL_SELECTION_CATALOG_VIEW
+} from "@/lib/openclaw/domains/model-management";
 import { redactSecretText } from "@/lib/security/redaction";
 import { normalizeOpenAiModelId } from "@/lib/openclaw/domains/model-provider-connection";
 
@@ -39,14 +43,15 @@ export async function setSessionModelOverride(input: {
   }
 
   const catalog = await adapter.listModels(
-    { view: "configured", ...(input.agentId ? { agentId: input.agentId } : {}) },
+    { view: MODEL_SELECTION_CATALOG_VIEW, ...(input.agentId ? { agentId: input.agentId } : {}) },
     { timeoutMs: 8_000 }
   );
   const selected = catalog.models.find((model) => model.key.toLowerCase() === modelId.toLowerCase());
   if (!selected) {
     throw new Error("OpenClaw did not return that model for this worker.");
   }
-  if (selected.available !== true) {
+  const selectability = isSelectableModel(selected);
+  if (!selectability) {
     throw new Error(selected.unavailableReason === "missing-auth"
       ? "Connect this provider in OpenClaw before selecting the model."
       : "OpenClaw reports that model is not ready for this worker.");

@@ -4,7 +4,10 @@ import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ModelManagementSnapshot, ModelSelectionProjection } from "@/lib/openclaw/domains/model-management";
-import { modelManagementModelToCatalogModel } from "@/lib/openclaw/domains/model-management";
+import {
+  MODEL_SELECTION_CATALOG_VIEW,
+  modelManagementModelToCatalogModel
+} from "@/lib/openclaw/domains/model-management";
 import { mergeCatalogWithConfiguredModels } from "@/lib/openclaw/domains/model-catalog-projection";
 
 type ModelCatalogPayload = {
@@ -38,7 +41,7 @@ async function loadModelCatalog(view: ModelCatalogView, force = false, agentId?:
   const endpoint = view === "all" ? "/api/models/catalog" : "/api/models/management";
   const query = view === "all"
     ? ""
-    : `?view=default${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}${sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : ""}`;
+    : `?view=${MODEL_SELECTION_CATALOG_VIEW}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}${sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : ""}`;
   const request = fetch(`${endpoint}${query}`, {
     signal: AbortSignal.timeout(MODEL_CATALOG_TIMEOUT_MS)
   }).then(async (response) => {
