@@ -11,9 +11,9 @@ import {
   OpenClawUserProfileCapabilityError,
   listOpenClawGatewayRoleNames,
   listOpenClawUserProfiles,
-  reconcileOpenClawUserRoleMutation,
-  setOpenClawUserRole
+  executeOpenClawUserRoleMutation
 } from "@/lib/openclaw/application/user-profile-service";
+import { buildNativeMutationFailureResponse } from "@/lib/openclaw/application/native-mutation-service";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { requireSameOriginMutation } from "@/lib/security/instance-protection-route";
@@ -87,23 +87,20 @@ export async function PATCH(request: Request) {
       if (input.role !== null && roleNames && !roleNames.includes(input.role)) {
         return NextResponse.json({ error: "The OpenClaw role is not defined by the active Gateway policy.", code: "openclaw-role-not-configured" }, { status: 400 });
       }
-      try {
-        const updated = await setOpenClawUserRole(input.profileId, input.role, authorization.commandOptions);
+      const mutation = await executeOpenClawUserRoleMutation({
+        profileId: input.profileId,
+        role: input.role,
+        beforeRole: profile?.role,
+        options: authorization.commandOptions
+      });
+      if (mutation.outcome === "succeeded") {
+        const updated = mutation.result;
         await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
-        return NextResponse.json({ profile: updated, roleNames });
-      } catch (error) {
-        const reconciliation = await reconcileOpenClawUserRoleMutation({
-          profileId: input.profileId,
-          expectedRole: input.role,
-          options: authorization.commandOptions
-        });
-        if (reconciliation.verified) {
-          await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
-          return NextResponse.json({ profile: reconciliation.profile, roleNames, reconciled: true });
-        }
-        await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "unknown" }).catch(() => {});
-        throw error;
+        return NextResponse.json({ profile: updated, roleNames, outcome: "succeeded", reconciled: mutation.reconciled, retryable: mutation.retryable });
       }
+      await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: mutation.outcome }).catch(() => {});
+      const failure = buildNativeMutationFailureResponse(mutation);
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     if (input.action === "unlink") {

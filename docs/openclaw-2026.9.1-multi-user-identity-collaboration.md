@@ -125,3 +125,27 @@ an exact verified native profile fixture exists. This is an explicit limitation,
 not a fabricated identity result. Mutually untrusted organizations require
 separate AgentOS/OpenClaw security domains; Phase 7 does not add tenants,
 organizations, SSO, invitations, or hostile-tenant isolation.
+
+## Phase 7.1 — Mutation Truthfulness
+
+Native collaboration and OpenClaw role mutations use the shared
+`classifyNativeMutationError` contract. A structured definite rejection (for
+example a scope, authorization, conflict, malformed-request, unsupported, or
+rate-limit response) is reported as `failed`, is audited as failed, and is not
+reconciled into success. A request that may have been delivered is treated as
+`unknown` until one bounded authoritative reread proves a state transition.
+Mutations are never retried blindly.
+
+Ambiguous reconciliation is causal: the relevant pre-state is captured when
+it can be read within the existing bounded operation. A member add/remove,
+visibility change, owner assignment, or native role change is only reported as
+reconciled success when the post-state matches the request and differs from
+the captured pre-state. If the desired state already existed, or the pre-state
+cannot be established, a matching post-state remains `unknown`.
+
+The API exposes `outcome: "failed"` for proven native rejection and
+`outcome: "unknown"`, HTTP 409, and `retryable: false` for unresolved delivery.
+The latter uses neutral wording: OpenClaw may have applied the change, but
+AgentOS could not verify the final native state. Audit results remain aligned
+with these outcomes: native success and proven reconciliation are succeeded,
+definite rejection is failed, and inconclusive delivery is unknown.

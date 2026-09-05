@@ -5,10 +5,18 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getMissionControlSnapshot, invalidateMissionControlSnapshotCache } from "@/lib/openclaw/application/mission-control-service";
 import { loadNativeSessionOwnershipDetail } from "@/lib/openclaw/application/mission-control/native-work-detail";
 import {
+  readNativeSessionMemberPresence,
+  readNativeSessionOwner,
+  readNativeSessionVisibility,
   reconcileNativeSessionMemberMutation,
   reconcileNativeSessionOwnerMutation,
   reconcileNativeSessionVisibilityMutation
 } from "@/lib/openclaw/application/session-collaboration-service";
+import {
+  buildNativeMutationFailureResponse,
+  executeNativeMutation
+} from "@/lib/openclaw/application/native-mutation-service";
+import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { listOpenClawUserProfiles } from "@/lib/openclaw/application/user-profile-service";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -161,26 +169,42 @@ export async function POST(request: Request) {
       productPermission: "sessions.collaborate"
     });
     if ("response" in preflight) return preflight.response;
-    try {
-      const result = await adapter.assignSessionOwner?.({ key: input.sessionKey, owner }, preflight.commandOptions);
-      if (!result) throw new Error("sessions.assignOwner is not available in the current OpenClaw adapter.");
+    const beforeOwner = await readNativeSessionOwner({
+      adapter,
+      sessionKey: input.sessionKey,
+      timeoutMs: 5_000
+    });
+    const mutation = await executeNativeMutation({
+      operation: "sessions.assignOwner",
+      mutate: async () => {
+        const result = await adapter.assignSessionOwner?.({ key: input.sessionKey, owner }, preflight.commandOptions);
+        if (!result) throw new NativeGatewayError("sessions.assignOwner is not available in the current OpenClaw adapter.", { kind: "unsupported" });
+        return result;
+      },
+      reconcile: async () => {
+        const reconciliation = await reconcileNativeSessionOwnerMutation({
+          adapter,
+          sessionKey: input.sessionKey,
+          target: owner,
+          beforeOwner,
+          timeoutMs: 5_000
+        });
+        return {
+          verified: reconciliation.changedAndVerified,
+          result: reconciliation.changedAndVerified
+            ? { ok: true as const, key: input.sessionKey, owner: { actor: { type: owner.type, id: owner.id } } }
+            : null
+        };
+      }
+    });
+    if (mutation.outcome === "succeeded") {
       invalidateMissionControlSnapshotCache();
       await recordAgentOsAuditEvent({ actor: preflight.actor, operation: "session.assign-owner", targetKind: "openclaw-session", targetId: input.sessionKey, result: "succeeded" }).catch(() => {});
-      return NextResponse.json(redactSecrets(result), { headers: { "Cache-Control": "no-store" } });
-    } catch (error) {
-      const reconciliation = await reconcileNativeSessionOwnerMutation({
-        adapter,
-        sessionKey: input.sessionKey,
-        target: owner,
-        timeoutMs: 5_000
-      });
-      if (reconciliation.verified) {
-        await recordAgentOsAuditEvent({ actor: preflight.actor, operation: "session.assign-owner", targetKind: "openclaw-session", targetId: input.sessionKey, result: "succeeded" }).catch(() => {});
-        return NextResponse.json(redactSecrets({ ok: true, key: input.sessionKey, owner: reconciliation.owner, reconciled: true }), { headers: { "Cache-Control": "no-store" } });
-      }
-      await recordAgentOsAuditEvent({ actor: preflight.actor, operation: "session.assign-owner", targetKind: "openclaw-session", targetId: input.sessionKey, result: "unknown" }).catch(() => {});
-      return NextResponse.json({ error: redactErrorMessage(error, "OpenClaw rejected the ownership handoff.") }, { status: 400 });
+      return NextResponse.json(redactSecrets({ ...mutation.result, outcome: "succeeded", reconciled: mutation.reconciled, retryable: mutation.retryable }), { headers: { "Cache-Control": "no-store" } });
     }
+    await recordAgentOsAuditEvent({ actor: preflight.actor, operation: "session.assign-owner", targetKind: "openclaw-session", targetId: input.sessionKey, result: mutation.outcome }).catch(() => {});
+    const failure = buildNativeMutationFailureResponse(mutation);
+    return NextResponse.json(failure.body, { status: failure.status, headers: { "Cache-Control": "no-store" } });
   }
 
   if (input.action === "addMember" || input.action === "removeMember") {
@@ -221,25 +245,66 @@ export async function POST(request: Request) {
   });
   if ("response" in preflight) return preflight.response;
 
-  try {
-    const result = input.action === "setVisibility"
-      ? await adapter.setSessionVisibility?.({ sessionKey: input.sessionKey, visibility: input.visibility }, preflight.commandOptions)
-      : input.action === "addMember"
-        ? await adapter.addSessionMember?.({ sessionKey: input.sessionKey, identityId: input.profileId }, preflight.commandOptions)
-        : await adapter.removeSessionMember?.({ sessionKey: input.sessionKey, identityId: input.profileId }, preflight.commandOptions);
-    if (!result) throw new Error(`${method} is not available in the current OpenClaw adapter.`);
+  const beforePresent = input.action === "setVisibility"
+    ? undefined
+    : await readNativeSessionMemberPresence({
+      adapter,
+      sessionKey: input.sessionKey,
+      identityId: input.profileId,
+      timeoutMs: 5_000
+    });
+  const beforeVisibility = input.action === "setVisibility"
+    ? await readNativeSessionVisibility({ adapter, sessionKey: input.sessionKey, timeoutMs: 5_000 })
+    : undefined;
+  const mutation = await executeNativeMutation({
+    operation: method,
+    mutate: async () => {
+      const result = input.action === "setVisibility"
+        ? await adapter.setSessionVisibility?.({ sessionKey: input.sessionKey, visibility: input.visibility }, preflight.commandOptions)
+        : input.action === "addMember"
+          ? await adapter.addSessionMember?.({ sessionKey: input.sessionKey, identityId: input.profileId }, preflight.commandOptions)
+          : await adapter.removeSessionMember?.({ sessionKey: input.sessionKey, identityId: input.profileId }, preflight.commandOptions);
+      if (!result) throw new NativeGatewayError(`${method} is not available in the current OpenClaw adapter.`, { kind: "unsupported" });
+      return result;
+    },
+    reconcile: async () => {
+      if (input.action === "setVisibility") {
+        const reconciliation = await reconcileNativeSessionVisibilityMutation({
+          adapter,
+          sessionKey: input.sessionKey,
+          expectedVisibility: input.visibility,
+          beforeVisibility,
+          timeoutMs: 5_000
+        });
+        return {
+          verified: reconciliation.changedAndVerified,
+          result: reconciliation.changedAndVerified
+            ? { ok: true as const, sessionKey: input.sessionKey, visibility: input.visibility }
+            : null
+        };
+      }
+      const reconciliation = await reconcileNativeSessionMemberMutation({
+        adapter,
+        sessionKey: input.sessionKey,
+        identityId: input.profileId,
+        expectedPresent: input.action === "addMember",
+        beforePresent,
+        timeoutMs: 5_000
+      });
+      return {
+        verified: reconciliation.changedAndVerified,
+        result: reconciliation.changedAndVerified
+          ? { ok: true as const, sessionKey: input.sessionKey, identityId: input.profileId }
+          : null
+      };
+    }
+  });
+  if (mutation.outcome === "succeeded") {
     invalidateMissionControlSnapshotCache();
     await recordAgentOsAuditEvent({ actor: preflight.actor, operation: `session.${input.action}`, targetKind: "openclaw-session", targetId: input.sessionKey, result: "succeeded" }).catch(() => {});
-    return NextResponse.json(redactSecrets(result), { headers: { "Cache-Control": "no-store" } });
-  } catch (error) {
-    const reconciliation = input.action === "setVisibility"
-      ? await reconcileNativeSessionVisibilityMutation({ adapter, sessionKey: input.sessionKey, expectedVisibility: input.visibility, timeoutMs: 5_000 })
-      : await reconcileNativeSessionMemberMutation({ adapter, sessionKey: input.sessionKey, identityId: input.profileId, expectedPresent: input.action === "addMember", timeoutMs: 5_000 });
-    if (reconciliation.verified) {
-      await recordAgentOsAuditEvent({ actor: preflight.actor, operation: `session.${input.action}`, targetKind: "openclaw-session", targetId: input.sessionKey, result: "succeeded" }).catch(() => {});
-      return NextResponse.json(redactSecrets({ ok: true, sessionKey: input.sessionKey, reconciled: true, ...reconciliation }), { headers: { "Cache-Control": "no-store" } });
-    }
-    await recordAgentOsAuditEvent({ actor: preflight.actor, operation: `session.${input.action}`, targetKind: "openclaw-session", targetId: input.sessionKey, result: "unknown" }).catch(() => {});
-    return NextResponse.json({ error: redactErrorMessage(error, "OpenClaw rejected the session collaboration change.") }, { status: 400 });
+    return NextResponse.json(redactSecrets({ ...mutation.result, outcome: "succeeded", reconciled: mutation.reconciled, retryable: mutation.retryable }), { headers: { "Cache-Control": "no-store" } });
   }
+  await recordAgentOsAuditEvent({ actor: preflight.actor, operation: `session.${input.action}`, targetKind: "openclaw-session", targetId: input.sessionKey, result: mutation.outcome }).catch(() => {});
+  const failure = buildNativeMutationFailureResponse(mutation);
+  return NextResponse.json(failure.body, { status: failure.status, headers: { "Cache-Control": "no-store" } });
 }

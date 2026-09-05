@@ -1,6 +1,11 @@
 import "server-only";
 
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import {
+  executeNativeMutation,
+  type NativeMutationExecution
+} from "@/lib/openclaw/application/native-mutation-service";
 import type {
   OpenClawCommandOptions,
   OpenClawUserListPayload,
@@ -29,7 +34,7 @@ export async function setOpenClawUserRole(
 ): Promise<OpenClawUserProfile | null> {
   const client = getOpenClawGatewayClient();
   if (!client.setUserRole) {
-    throw new OpenClawUserProfileCapabilityError("OpenClaw role management is unavailable.");
+    throw new NativeGatewayError("OpenClaw role management is unavailable.", { kind: "unsupported" });
   }
   return client.setUserRole(profileId, role, options);
 }
@@ -41,15 +46,55 @@ export async function setOpenClawUserRole(
 export async function reconcileOpenClawUserRoleMutation(input: {
   profileId: string;
   expectedRole: string | null;
+  beforeRole?: string | null;
   options?: OpenClawCommandOptions;
-}): Promise<{ verified: boolean; profile: OpenClawUserProfile | null }> {
+}): Promise<{ verified: boolean; changedAndVerified: boolean; profile: OpenClawUserProfile | null }> {
   try {
     const profiles = await listOpenClawUserProfiles(input.options);
     const profile = profiles.profiles.find((candidate) => candidate.profileId === input.profileId) ?? null;
-    return { verified: profile?.role === input.expectedRole, profile };
+    const verified = profile?.role === input.expectedRole;
+    return {
+      verified,
+      changedAndVerified: verified && input.beforeRole !== undefined && input.beforeRole !== input.expectedRole,
+      profile
+    };
   } catch {
-    return { verified: false, profile: null };
+    return { verified: false, changedAndVerified: false, profile: null };
   }
+}
+
+export async function executeOpenClawUserRoleMutation(input: {
+  profileId: string;
+  role: string | null;
+  beforeRole: string | null | undefined;
+  options?: OpenClawCommandOptions;
+}): Promise<NativeMutationExecution<OpenClawUserProfile | null>> {
+  const client = getOpenClawGatewayClient();
+  if (!client.setUserRole) {
+    return executeNativeMutation({
+      operation: "users.setRole",
+      mutate: async () => {
+        throw new NativeGatewayError("OpenClaw role management is unavailable.", { kind: "unsupported" });
+      }
+    });
+  }
+
+  return executeNativeMutation({
+    operation: "users.setRole",
+    mutate: () => client.setUserRole!(input.profileId, input.role, input.options),
+    reconcile: async () => {
+      const reconciliation = await reconcileOpenClawUserRoleMutation({
+        profileId: input.profileId,
+        expectedRole: input.role,
+        beforeRole: input.beforeRole,
+        options: input.options
+      });
+      return {
+        verified: reconciliation.changedAndVerified,
+        result: reconciliation.profile
+      };
+    }
+  });
 }
 
 export async function listOpenClawGatewayRoleNames(options: OpenClawCommandOptions = {}) {

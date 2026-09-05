@@ -3,7 +3,10 @@ import "server-only";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import { runGatewayConfigMutationWithPacing } from "@/lib/openclaw/application/config-pacing-service";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
-import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import {
+  NativeGatewayError,
+  OpenClawGatewayClientError
+} from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   GatewayProbePayload,
     GatewayStatusPayload,
@@ -502,25 +505,33 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   setSessionVisibility(input: OpenClawSessionVisibilitySetInput, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
-    if (!client.setSessionVisibility) return Promise.reject(new Error("OpenClaw does not expose session.visibility.set."));
+    if (!client.setSessionVisibility) {
+      return Promise.reject(new NativeGatewayError("OpenClaw does not expose session.visibility.set.", { kind: "unsupported" }));
+    }
     return client.setSessionVisibility(input, options);
   }
 
   addSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
-    if (!client.addSessionMember) return Promise.reject(new Error("OpenClaw does not expose session.members.add."));
+    if (!client.addSessionMember) {
+      return Promise.reject(new NativeGatewayError("OpenClaw does not expose session.members.add.", { kind: "unsupported" }));
+    }
     return client.addSessionMember(input, options);
   }
 
   removeSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
-    if (!client.removeSessionMember) return Promise.reject(new Error("OpenClaw does not expose session.members.remove."));
+    if (!client.removeSessionMember) {
+      return Promise.reject(new NativeGatewayError("OpenClaw does not expose session.members.remove.", { kind: "unsupported" }));
+    }
     return client.removeSessionMember(input, options);
   }
 
   assignSessionOwner(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
-    if (!client.assignSessionOwner) return Promise.reject(new Error("OpenClaw does not expose sessions.assignOwner."));
+    if (!client.assignSessionOwner) {
+      return Promise.reject(new NativeGatewayError("OpenClaw does not expose sessions.assignOwner.", { kind: "unsupported" }));
+    }
     return client.assignSessionOwner(input, options);
   }
 
