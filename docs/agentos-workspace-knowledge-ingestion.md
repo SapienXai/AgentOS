@@ -54,6 +54,7 @@ For a workspace at `<workspace>`:
   .openclaw/
     project.json
     knowledge/
+      writer-lock.json                 # transient destination writer lease
       state.json
       documents.json
       current.json
@@ -72,6 +73,11 @@ the immutable generation containing the matching `state.json` and
 `documents.json`. The root `state.json` and `documents.json` files are
 compatibility mirrors; readers treat the generation selected by `current.json`
 as authoritative and never combine independent mirrors.
+
+`current.json` and the generation marker are the authoritative activation
+boundary. The root metadata files are compatibility mirrors only; supported
+readers do not combine those mirrors or read the raw corpus outside the reader
+boundary.
 
 The staging directory and old generations are removed after successful
 activation. A caller can use another corpus and state root for a newly created
@@ -172,19 +178,76 @@ overwritten.
 The active generation is a pair of immutable metadata files plus the matching
 stable corpus directory. Metadata is written completely inside a generation
 directory before activation. A durable transaction journal records the
-prepared, corpus-activated, and metadata-activated phases. On startup, on read,
-and after an in-process failure, the journal either completes the new generation
-or restores the previous one. Readers ignore incomplete generations, mismatched
-metadata, and invalid pointers. Durable temporary-file writes and renames are
-used for the journal, pointer, generation metadata, and compatibility mirrors.
+prepared, activating, corpus-activated, and metadata-activated phases. It also
+binds the transaction ID and generation ID to the writer lock ID, owner PID,
+hostname, and process-start identity. On startup, on read, and after an
+in-process failure, the journal either completes the new generation or restores
+the previous one. Readers ignore incomplete generations, mismatched metadata,
+and invalid pointers. Durable temporary-file writes and renames are used for
+the journal, pointer, generation metadata, and compatibility mirrors.
 
 Schema V1 root state and document files remain readable. The next successful
 write creates a V2 generation and activates it; no destructive migration is
 required before that write.
 
+## Writer concurrency and lock ownership
+
+Every ingestion run takes the single destination lease at
+`.openclaw/knowledge/writer-lock.json`; promotion takes the lease in the target
+state root. Acquisition is an atomic `open(..., "wx")` create with a durable
+record containing a random `lockId`, PID, hostname, start time, heartbeat, and
+process-start identity. A heartbeat is refreshed while the operation runs.
+
+There is no second lock in the corpus path, so promotion and ingestion have one
+lock ordering and cannot deadlock over the same destination. A live contender
+gets the typed busy result and may retry. Every successful acquisition releases
+in `finally`, including cancellation, source errors, activation failures, and
+promotion failures. Release verifies the same `lockId` before removing the
+lease and never removes a replacement owner's lock.
+
+## Reader snapshots and stale-writer recovery
+
+`readKnowledgeIngestionState` and the exported `readKnowledgeSnapshot` are the
+supported reader boundaries. A reader never recovers a transaction while a
+writer lease is live. During staging, or while a journal is still `prepared`,
+the reader returns the last pointer-selected generation. During the
+`activating`, `corpus-activated`, or `metadata-activated` phases it waits for a
+bounded interval; if activation does not settle it returns a typed busy result
+rather than exposing a mixed corpus and metadata pair.
+
+If the lease owner is stale, a reader may temporarily acquire the same writer
+lease as `reader-recovery`, recover the journal, and then release it. Same-host
+ownership uses PID liveness plus process-start identity to avoid PID reuse;
+other-host ownership uses the heartbeat age conservatively. A malformed lock,
+journal, pointer, or activation marker fails closed. Raw reads of
+`knowledge/sources/**` are not a supported concurrent-read API; future corpus
+consumers must enter through the stable reader boundary.
+
+## Promotion concurrency
+
+Promotion reads the source through its stable reader boundary and owns only the
+destination writer lease while staging and activating the target generation.
+Two promotions to the same target, or a promotion concurrent with ingestion to
+that target, therefore serialize with the same busy/retry behavior. A source
+writer is never allowed to be recovered by the promotion reader; it is either
+read from its previous stable generation or reported busy during activation.
+
+## Git TLS environment isolation
+
+Remote repository checkout retains enterprise trust-anchor overrides
+(`GIT_SSL_CAINFO`, `GIT_SSL_CAPATH`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, and
+`CURL_CA_BUNDLE`) when supplied by the parent environment, but always keeps
+certificate verification enabled. It strips `GIT_SSL_NO_VERIFY`, forced
+protocol versions, weak cipher-list overrides, SSH/credential settings, and
+all HTTP(S)/generic/Git proxy variables. Git is also invoked with explicit
+`http.sslVerify=true`, default protocol and cipher settings, and blank HTTP and
+HTTPS proxy configuration. Retaining a custom CA path changes the trust anchor,
+not the requirement to verify the server certificate.
+
 ## Phase boundary
 
 This phase intentionally does not implement connector authentication, OpenClaw
 memory/search/embeddings/vector indexes, RAG, retrieval ranking, runtime context
-injection, or new UX. Those require separate OpenClaw capability discovery and a
-new ownership decision before implementation.
+injection, or new UX. Phase 2 closure also does not start Phase 3 or Phase 7
+work; those require separate OpenClaw capability discovery and a new ownership
+decision before implementation.

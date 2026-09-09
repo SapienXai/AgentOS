@@ -5,6 +5,7 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { access, copyFile, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { hostname as osHostname } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -25,8 +26,13 @@ export const MIN_PINNED_GIT_VERSION = "2.37.0";
 
 const CURRENT_FILE = "current.json";
 const TRANSACTION_FILE = "transaction.json";
+const WRITER_LOCK_FILE = "writer-lock.json";
 const GENERATIONS_DIR = "generations";
 const GENERATION_MARKER = ".agentos-generation";
+const KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION = 1;
+const ACTIVATION_READER_WAIT_MS = 5_000;
+const WRITER_HEARTBEAT_MS = 2_000;
+const WRITER_STALE_AFTER_MS = 15_000;
 
 export const DEFAULT_KNOWLEDGE_INGESTION_LIMITS = {
   maxPagesPerSource: 24,
@@ -259,11 +265,203 @@ export class KnowledgeIngestionCancelledError extends Error {
   }
 }
 
+export class KnowledgeIngestionBusyError extends Error {
+  constructor(message = "Knowledge corpus is busy with another operation; retry shortly.") {
+    super(message);
+    this.name = "KnowledgeIngestionBusyError";
+  }
+}
+
+export function isKnowledgeIngestionBusyError(error: unknown): error is KnowledgeIngestionBusyError {
+  return error instanceof KnowledgeIngestionBusyError;
+}
+
+class KnowledgeIngestionLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "KnowledgeIngestionLockError";
+  }
+}
+
+type KnowledgeWriterLockRecord = {
+  schemaVersion: typeof KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION;
+  lockId: string;
+  pid: number;
+  hostname: string;
+  startedAt: string;
+  heartbeatAt: string;
+  operation: "ingestion" | "promotion" | "reader-recovery";
+  ownerStartIdentity: string | null;
+};
+
+type KnowledgeWriterLockHandle = {
+  lockPath: string;
+  record: KnowledgeWriterLockRecord;
+  heartbeat: NodeJS.Timeout;
+  inFlight: Promise<void> | null;
+  released: boolean;
+};
+
+async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation: KnowledgeWriterLockRecord["operation"] }): Promise<KnowledgeWriterLockHandle> {
+  await assertNoSymlinkAlongPath(path.dirname(input.stateRoot), input.stateRoot, true);
+  await mkdir(input.stateRoot, { recursive: true });
+  const lockPath = path.join(input.stateRoot, WRITER_LOCK_FILE);
+  const record: KnowledgeWriterLockRecord = {
+    schemaVersion: KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION,
+    lockId: randomUUID(),
+    pid: process.pid,
+    hostname: osHostname(),
+    startedAt: new Date().toISOString(),
+    heartbeatAt: new Date().toISOString(),
+    operation: input.operation,
+    ownerStartIdentity: await processStartIdentity(process.pid)
+  };
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600);
+      try {
+        await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const lockHandle = { lockPath, record, heartbeat: undefined as unknown as NodeJS.Timeout, inFlight: null, released: false } as KnowledgeWriterLockHandle;
+      lockHandle.heartbeat = setInterval(() => {
+        if (lockHandle.released || lockHandle.inFlight) return;
+        const refresh = refreshKnowledgeWriterLock(lockHandle);
+        lockHandle.inFlight = refresh;
+        void refresh.then(
+          () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; },
+          () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; }
+        );
+      }, WRITER_HEARTBEAT_MS);
+      lockHandle.heartbeat.unref?.();
+      return lockHandle;
+    } catch (error) {
+      if (!isNodeError(error, "EEXIST")) throw error;
+      const existing = await readKnowledgeWriterLock(input.stateRoot);
+      if (!existing) continue;
+      if (await isKnowledgeWriterLive(existing)) throw new KnowledgeIngestionBusyError();
+      const stalePath = `${lockPath}.stale-${randomUUID()}`;
+      try {
+        await rename(lockPath, stalePath);
+        await rm(stalePath, { force: true });
+      } catch (renameError) {
+        if (!isNodeError(renameError, "ENOENT")) throw renameError;
+      }
+    }
+  }
+  throw new KnowledgeIngestionBusyError();
+}
+
+async function refreshKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
+  const current = await readKnowledgeWriterLock(path.dirname(handle.lockPath));
+  if (!current || current.lockId !== handle.record.lockId) {
+    clearInterval(handle.heartbeat);
+    return;
+  }
+  handle.record.heartbeatAt = new Date().toISOString();
+  await writeDurableJson(handle.lockPath, handle.record);
+}
+
+async function releaseKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
+  if (handle.released) return;
+  handle.released = true;
+  clearInterval(handle.heartbeat);
+  if (handle.inFlight) await handle.inFlight.catch(() => undefined);
+  const current = await readKnowledgeWriterLock(path.dirname(handle.lockPath));
+  if (!current) return;
+  if (current.lockId !== handle.record.lockId) throw new KnowledgeIngestionLockError("Knowledge writer lock ownership changed before release.");
+  await rm(handle.lockPath, { force: true });
+}
+
+async function readKnowledgeWriterLock(stateRoot: string): Promise<KnowledgeWriterLockRecord | null> {
+  const lockPath = path.join(stateRoot, WRITER_LOCK_FILE);
+  if (!(await pathExists(lockPath))) return null;
+  const value = await readJson(lockPath);
+  if (!isKnowledgeWriterLock(value)) throw new KnowledgeIngestionLockError("Knowledge writer lock is malformed; refusing recovery.");
+  return value;
+}
+
+async function isKnowledgeWriterLive(record: KnowledgeWriterLockRecord): Promise<boolean> {
+  if (record.hostname !== osHostname()) {
+    const heartbeat = Date.parse(record.heartbeatAt);
+    return !Number.isFinite(heartbeat) || Date.now() - heartbeat <= WRITER_STALE_AFTER_MS;
+  }
+  const processAlive = isProcessAlive(record.pid);
+  if (!processAlive) return false;
+  const currentIdentity = await processStartIdentity(record.pid);
+  if (record.ownerStartIdentity && currentIdentity) return record.ownerStartIdentity === currentIdentity;
+  if (record.ownerStartIdentity && !currentIdentity) return true;
+  return true;
+}
+
+async function processStartIdentity(pid: number): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "lstart="], { timeout: 3_000, maxBuffer: 16 * 1024 });
+    const identity = stdout.trim();
+    return identity || null;
+  } catch {
+    return null;
+  }
+}
+
+function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return isNodeError(error, "EPERM");
+  }
+}
+
+async function recoverKnowledgeTransactionForReader(corpusRoot: string, stateRoot: string) {
+  const deadline = Date.now() + ACTIVATION_READER_WAIT_MS;
+  while (true) {
+    const writer = await readKnowledgeWriterLock(stateRoot);
+    if (writer && await isKnowledgeWriterLive(writer)) {
+      const transaction = await readKnowledgeTransactionJournal(stateRoot);
+      if (!transaction || transaction.phase === "prepared") return;
+      if (Date.now() >= deadline) throw new KnowledgeIngestionBusyError("Knowledge corpus activation is in progress; retry the read.");
+      await delay(25);
+      continue;
+    }
+
+    try {
+      const recoveryLock = await acquireKnowledgeWriterLock({ stateRoot, operation: "reader-recovery" });
+      try {
+        await recoverKnowledgeTransaction(corpusRoot, stateRoot, recoveryLock.record.lockId);
+      } finally {
+        await releaseKnowledgeWriterLock(recoveryLock);
+      }
+      return;
+    } catch (error) {
+      if (!isKnowledgeIngestionBusyError(error)) throw error;
+      if (Date.now() >= deadline) throw error;
+      await delay(25);
+    }
+  }
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export function isKnowledgeIngestionCancelledError(error: unknown): error is KnowledgeIngestionCancelledError {
   return error instanceof KnowledgeIngestionCancelledError;
 }
 
 export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput): Promise<KnowledgeIngestionResult> {
+  const writerLock = await acquireKnowledgeWriterLock({ stateRoot: input.stateRoot, operation: "ingestion" });
+  try {
+    return await ingestKnowledgeSourcesWithLock(input, writerLock);
+  } finally {
+    await releaseKnowledgeWriterLock(writerLock);
+  }
+}
+
+async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput, writerLock: KnowledgeWriterLockHandle): Promise<KnowledgeIngestionResult> {
   const runId = `knowledge-${randomUUID()}`;
   const startedAt = new Date().toISOString();
   const limits = resolveLimits(input.limits);
@@ -283,8 +481,8 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
     else input.signal.addEventListener("abort", () => runController.abort(), { once: true });
   }
   const signal = runController.signal;
-  await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot);
-  const previousSnapshot = await readKnowledgeSnapshot(input.corpusRoot, input.stateRoot);
+  await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot, writerLock.record.lockId);
+  const previousSnapshot = await readKnowledgeSnapshotUnsafe(input.corpusRoot, input.stateRoot);
   const previousState = previousSnapshot?.state ?? null;
   const previousDocuments = previousSnapshot?.documents ?? [];
   const stagingRoot = path.join(input.corpusRoot, ".agentos-staging", runId);
@@ -401,6 +599,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       state,
       documents: documentsFile,
       transactionId: runId,
+      writerLock,
       hooks: input.transactionHooks
     });
 
@@ -434,7 +633,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       state
     };
   } catch (error) {
-    await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot);
+    await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot, writerLock.record.lockId);
     if (isKnowledgeIngestionCancelledError(error) || signal.aborted) {
       const finishedAt = new Date().toISOString();
       const sourceReports: KnowledgeIngestionSourceReport[] = sourceResults.map((result) => ({
@@ -483,8 +682,13 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
 }
 
 export async function readKnowledgeIngestionState(stateRoot: string, corpusRoot = inferCorpusRoot(stateRoot)): Promise<KnowledgeIngestionState | null> {
-  await recoverKnowledgeTransaction(corpusRoot, stateRoot);
-  return (await readKnowledgeSnapshot(corpusRoot, stateRoot))?.state ?? null;
+  await recoverKnowledgeTransactionForReader(corpusRoot, stateRoot);
+  return (await readKnowledgeSnapshotUnsafe(corpusRoot, stateRoot))?.state ?? null;
+}
+
+export async function readKnowledgeSnapshot(corpusRoot: string, stateRoot: string): Promise<KnowledgeSnapshot | null> {
+  await recoverKnowledgeTransactionForReader(corpusRoot, stateRoot);
+  return readKnowledgeSnapshotUnsafe(corpusRoot, stateRoot);
 }
 
 export async function promoteKnowledgeCorpus(input: {
@@ -493,12 +697,28 @@ export async function promoteKnowledgeCorpus(input: {
   toCorpusRoot: string;
   toStateRoot: string;
   transactionHooks?: KnowledgeIngestionTransactionHooks;
-}) {
-  await recoverKnowledgeTransaction(input.fromCorpusRoot, input.fromStateRoot);
-  await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot);
-  const sourceSnapshot = await readKnowledgeSnapshot(input.fromCorpusRoot, input.fromStateRoot);
+}): Promise<void> {
+  const writerLock = await acquireKnowledgeWriterLock({ stateRoot: input.toStateRoot, operation: "promotion" });
+  try {
+    await promoteKnowledgeCorpusWithLock(input, writerLock);
+  } finally {
+    await releaseKnowledgeWriterLock(writerLock);
+  }
+}
+
+async function promoteKnowledgeCorpusWithLock(input: {
+  fromCorpusRoot: string;
+  fromStateRoot: string;
+  toCorpusRoot: string;
+  toStateRoot: string;
+  transactionHooks?: KnowledgeIngestionTransactionHooks;
+}, writerLock: KnowledgeWriterLockHandle): Promise<void> {
+  await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot, writerLock.record.lockId);
+  const sourceSnapshot = input.fromCorpusRoot === input.toCorpusRoot && input.fromStateRoot === input.toStateRoot
+    ? await readKnowledgeSnapshotUnsafe(input.fromCorpusRoot, input.fromStateRoot)
+    : await readKnowledgeSnapshot(input.fromCorpusRoot, input.fromStateRoot);
   if (!sourceSnapshot?.state) return;
-  const targetSnapshot = await readKnowledgeSnapshot(input.toCorpusRoot, input.toStateRoot);
+  const targetSnapshot = await readKnowledgeSnapshotUnsafe(input.toCorpusRoot, input.toStateRoot);
   const transactionId = `promotion-${randomUUID()}`;
   const stagingRoot = path.join(input.toCorpusRoot, ".agentos-staging", transactionId);
   await assertNoSymlinkAlongPath(input.toCorpusRoot, stagingRoot, true);
@@ -532,10 +752,11 @@ export async function promoteKnowledgeCorpus(input: {
       state,
       documents,
       transactionId,
+      writerLock,
       hooks: input.transactionHooks
     });
   } catch (error) {
-    await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot);
+    await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot, writerLock.record.lockId);
     throw error;
   } finally {
     if (!(await pathExists(path.join(input.toStateRoot, TRANSACTION_FILE)))) await cleanupStagingRoot(stagingRoot);
@@ -1206,11 +1427,15 @@ type KnowledgeTransactionJournal = {
   transactionId: string;
   generationId: string;
   previousPointer: KnowledgeGenerationPointer | null;
-  phase: "prepared" | "corpus-activated" | "metadata-activated";
+  phase: "prepared" | "activating" | "corpus-activated" | "metadata-activated";
   stagingRelativePath: string;
+  lockId?: string;
+  ownerPid?: number;
+  ownerHostname?: string;
+  ownerStartIdentity?: string | null;
 };
 
-type KnowledgeSnapshot = {
+export type KnowledgeSnapshot = {
   state: KnowledgeIngestionState;
   documents: KnowledgeDocumentMetadata[];
 };
@@ -1222,6 +1447,7 @@ async function activateKnowledgeGeneration(input: {
   state: KnowledgeIngestionState;
   documents: KnowledgeDocumentsFile;
   transactionId: string;
+  writerLock: KnowledgeWriterLockHandle;
   hooks?: KnowledgeIngestionTransactionHooks;
 }) {
   const generationId = input.state.generationId;
@@ -1241,7 +1467,11 @@ async function activateKnowledgeGeneration(input: {
     generationId,
     previousPointer: currentPointer,
     phase: "prepared",
-    stagingRelativePath: path.relative(input.corpusRoot, input.stagingRoot)
+    stagingRelativePath: path.relative(input.corpusRoot, input.stagingRoot),
+    lockId: input.writerLock.record.lockId,
+    ownerPid: input.writerLock.record.pid,
+    ownerHostname: input.writerLock.record.hostname,
+    ownerStartIdentity: input.writerLock.record.ownerStartIdentity
   };
 
   try {
@@ -1252,6 +1482,8 @@ async function activateKnowledgeGeneration(input: {
     await writeDurableJson(path.join(input.stateRoot, TRANSACTION_FILE), journal);
     await writeDurableFile(path.join(stagedSources, GENERATION_MARKER), `${generationId}\n`);
     await input.hooks?.beforeCorpusActivation?.();
+    journal.phase = "activating";
+    await writeDurableJson(path.join(input.stateRoot, TRANSACTION_FILE), journal);
     await mkdir(path.dirname(backupSources), { recursive: true });
     if (await pathExists(activeSources)) {
       await assertNoSymlinkAlongPath(input.corpusRoot, activeSources);
@@ -1284,12 +1516,19 @@ async function cleanupKnowledgeTransaction(input: { corpusRoot: string; stateRoo
   await rm(path.join(input.stateRoot, TRANSACTION_FILE), { force: true });
 }
 
-async function recoverKnowledgeTransaction(corpusRoot: string, stateRoot: string) {
+async function recoverKnowledgeTransaction(corpusRoot: string, stateRoot: string, ownerLockId?: string) {
   const transactionPath = path.join(stateRoot, TRANSACTION_FILE);
   if (!(await pathExists(transactionPath))) return;
-  const journalValue = await readJson(transactionPath);
-  if (!isKnowledgeTransactionJournal(journalValue)) throw new Error("Knowledge transaction recovery found an invalid journal.");
-  const journal = journalValue;
+  const journal = await readKnowledgeTransactionJournal(stateRoot);
+  const currentLock = await readKnowledgeWriterLock(stateRoot);
+  if (ownerLockId) {
+    if (!currentLock || currentLock.lockId !== ownerLockId) throw new KnowledgeIngestionBusyError("Knowledge transaction recovery lost writer ownership.");
+  } else if (currentLock && await isKnowledgeWriterLive(currentLock)) {
+    throw new KnowledgeIngestionBusyError("Knowledge transaction recovery is owned by a live writer.");
+  }
+  if (journal.lockId && journal.lockId !== ownerLockId && await isTransactionOwnerLive(journal)) {
+    throw new KnowledgeIngestionBusyError("Knowledge transaction recovery is owned by a live writer.");
+  }
   const stagingRoot = path.resolve(corpusRoot, journal.stagingRelativePath);
   if (!isPathWithin(corpusRoot, stagingRoot) || path.basename(stagingRoot) !== journal.transactionId) throw new Error("Knowledge transaction recovery found an invalid staging path.");
   const activeSources = path.join(corpusRoot, "sources");
@@ -1320,14 +1559,48 @@ async function recoverKnowledgeTransaction(corpusRoot: string, stateRoot: string
   await rm(path.join(stateRoot, TRANSACTION_FILE), { force: true });
 }
 
-async function readKnowledgeSnapshot(corpusRoot: string, stateRoot: string): Promise<KnowledgeSnapshot | null> {
+async function readKnowledgeTransactionJournal(stateRoot: string): Promise<KnowledgeTransactionJournal> {
+  const value = await readJson(path.join(stateRoot, TRANSACTION_FILE));
+  if (!isKnowledgeTransactionJournal(value)) throw new Error("Knowledge transaction recovery found an invalid journal.");
+  return value;
+}
+
+async function isTransactionOwnerLive(journal: KnowledgeTransactionJournal) {
+  if (typeof journal.ownerPid !== "number" || typeof journal.ownerHostname !== "string") return false;
+  const owner: KnowledgeWriterLockRecord = {
+    schemaVersion: KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION,
+    lockId: journal.lockId ?? "legacy-transaction-owner",
+    pid: journal.ownerPid,
+    hostname: journal.ownerHostname,
+    startedAt: "1970-01-01T00:00:00.000Z",
+    heartbeatAt: "1970-01-01T00:00:00.000Z",
+    operation: "ingestion",
+    ownerStartIdentity: journal.ownerStartIdentity ?? null
+  };
+  return isKnowledgeWriterLive(owner);
+}
+
+function isKnowledgeWriterLock(value: unknown): value is KnowledgeWriterLockRecord {
+  return isRecord(value)
+    && value.schemaVersion === KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION
+    && typeof value.lockId === "string"
+    && typeof value.pid === "number"
+    && Number.isInteger(value.pid)
+    && value.pid > 0
+    && typeof value.hostname === "string"
+    && typeof value.startedAt === "string"
+    && Number.isFinite(Date.parse(value.startedAt))
+    && typeof value.heartbeatAt === "string"
+    && Number.isFinite(Date.parse(value.heartbeatAt))
+    && (value.operation === "ingestion" || value.operation === "promotion" || value.operation === "reader-recovery")
+    && (value.ownerStartIdentity === null || typeof value.ownerStartIdentity === "string");
+}
+
+async function readKnowledgeSnapshotUnsafe(corpusRoot: string, stateRoot: string): Promise<KnowledgeSnapshot | null> {
   const pointer = await readKnowledgeGenerationPointer(stateRoot);
-  if (pointer || await pathExists(path.join(stateRoot, CURRENT_FILE))) {
-    if (!pointer) return await findLatestKnowledgeGeneration(stateRoot, corpusRoot);
+  if (pointer) {
     const current = await readKnowledgeGeneration(stateRoot, pointer.generationId);
     if (current && (await readGenerationMarker(path.join(corpusRoot, "sources"))) === pointer.generationId) return current;
-    const fallback = await findLatestKnowledgeGeneration(stateRoot, corpusRoot);
-    if (fallback) return fallback;
     return null;
   }
   return readLegacyKnowledgeSnapshot(stateRoot);
@@ -1339,18 +1612,6 @@ async function readKnowledgeGeneration(stateRoot: string, generationId: string):
   const state = parseKnowledgeState(await readJson(path.join(generationRoot, "state.json")), generationId);
   const documents = parseKnowledgeDocuments(await readJson(path.join(generationRoot, "documents.json")), generationId);
   return state && documents ? { state, documents } : null;
-}
-
-async function findLatestKnowledgeGeneration(stateRoot: string, corpusRoot: string): Promise<KnowledgeSnapshot | null> {
-  const generationRoot = path.join(stateRoot, GENERATIONS_DIR);
-  const entries = await readdir(generationRoot, { withFileTypes: true }).catch(() => []);
-  const candidates: Array<{ updatedAt: string; snapshot: KnowledgeSnapshot }> = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !/^knowledge-generation-[a-f0-9-]+$/i.test(entry.name)) continue;
-    const snapshot = await readKnowledgeGeneration(stateRoot, entry.name);
-    if (snapshot && (await readGenerationMarker(path.join(corpusRoot, "sources"))) === entry.name) candidates.push({ updatedAt: snapshot.state.updatedAt, snapshot });
-  }
-  return candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]?.snapshot ?? null;
 }
 
 async function readLegacyKnowledgeSnapshot(stateRoot: string): Promise<KnowledgeSnapshot | null> {
@@ -1385,8 +1646,10 @@ function parseKnowledgeDocuments(value: unknown, expectedGenerationId?: string):
 }
 
 async function readKnowledgeGenerationPointer(stateRoot: string): Promise<KnowledgeGenerationPointer | null> {
-  const value = await readJson(path.join(stateRoot, CURRENT_FILE));
-  if (!isRecord(value) || value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION || typeof value.generationId !== "string") return null;
+  const currentPath = path.join(stateRoot, CURRENT_FILE);
+  if (!(await pathExists(currentPath))) return null;
+  const value = await readJson(currentPath);
+  if (!isKnowledgeGenerationPointer(value)) throw new Error("Knowledge generation pointer is malformed; refusing recovery.");
   return { schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION, generationId: value.generationId };
 }
 
@@ -1397,7 +1660,21 @@ async function restoreKnowledgePointer(stateRoot: string, pointer: KnowledgeGene
 }
 
 function isKnowledgeTransactionJournal(value: unknown): value is KnowledgeTransactionJournal {
-  return isRecord(value) && value.schemaVersion === KNOWLEDGE_INGESTION_SCHEMA_VERSION && typeof value.transactionId === "string" && typeof value.generationId === "string" && typeof value.stagingRelativePath === "string" && (value.phase === "prepared" || value.phase === "corpus-activated" || value.phase === "metadata-activated");
+  return isRecord(value)
+    && value.schemaVersion === KNOWLEDGE_INGESTION_SCHEMA_VERSION
+    && typeof value.transactionId === "string"
+    && typeof value.generationId === "string"
+    && (value.previousPointer === null || isKnowledgeGenerationPointer(value.previousPointer))
+    && typeof value.stagingRelativePath === "string"
+    && (value.phase === "prepared" || value.phase === "activating" || value.phase === "corpus-activated" || value.phase === "metadata-activated")
+    && (value.lockId === undefined || typeof value.lockId === "string")
+    && (value.ownerPid === undefined || (typeof value.ownerPid === "number" && Number.isInteger(value.ownerPid) && value.ownerPid > 0))
+    && (value.ownerHostname === undefined || typeof value.ownerHostname === "string")
+    && (value.ownerStartIdentity === undefined || value.ownerStartIdentity === null || typeof value.ownerStartIdentity === "string");
+}
+
+function isKnowledgeGenerationPointer(value: unknown): value is KnowledgeGenerationPointer {
+  return isRecord(value) && value.schemaVersion === KNOWLEDGE_INGESTION_SCHEMA_VERSION && typeof value.generationId === "string";
 }
 
 async function readGenerationMarker(sourcesRoot: string): Promise<string | null> {
@@ -2050,6 +2327,11 @@ export async function runSafeGitClone(
     const resolveValue = `${resolveHost}:${port}:${resolvedAddresses.map(formatCurlResolveAddress).join(",")}`;
     await commandRunner("git", [
       "-c", `http.curloptResolve=${resolveValue}`,
+      "-c", "http.sslVerify=true",
+      "-c", "http.sslVersion=",
+      "-c", "http.sslCipherList=",
+      "-c", "http.proxy=",
+      "-c", "https.proxy=",
       "-c", "http.followRedirects=false",
       "-c", "credential.helper=",
       "-c", "protocol.file.allow=never",
@@ -2073,8 +2355,8 @@ export async function runSafeGitClone(
 }
 
 function createSafeGitEnvironment(): NodeJS.ProcessEnv {
-  const blocked = /^(?:GIT_CONFIG_|GIT_ASKPASS$|GIT_SSH|SSH_|GIT_CREDENTIAL|GIT_PROXY|GIT_TRACE|GIT_DEBUG|GIT_SSL_(?:CERT|KEY|CAPATH|CIPHER)$)/i;
-  const proxy = /^(?:HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|no_proxy)$/;
+  const blocked = /^(?:GIT_CONFIG_|GIT_ASKPASS$|GIT_SSH|SSH_|GIT_CREDENTIAL|GIT_.*PROXY|GIT_TRACE|GIT_DEBUG|GIT_SSL_(?:NO_VERIFY|VERSION|CIPHER_LIST|CERT$|KEY$|CERT_PASSWORD_PROTECTED$))/i;
+  const proxy = /^(?:HTTP_PROXY|HTTPS_PROXY|FTP_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|ftp_proxy|all_proxy|no_proxy)$/;
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !blocked.test(key) && !proxy.test(key)));
   return {
     ...environment,
@@ -2104,6 +2386,10 @@ function isGitVersionAtLeast(actual: string, minimum: string) {
 
 function isAbortError(error: unknown) {
   return isRecord(error) && (error.name === "AbortError" || error.code === "ABORT_ERR");
+}
+
+function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return isRecord(error) && error.code === code;
 }
 
 async function mkdtempSafe(prefix: string) {

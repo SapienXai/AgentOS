@@ -8,6 +8,7 @@ import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-
 import {
   ingestKnowledgeSources,
   KnowledgeIngestionCancelledError,
+  KnowledgeIngestionBusyError,
   normalizeKnowledgeRepositoryRemoteUrl,
   promoteKnowledgeCorpus,
   readKnowledgeIngestionState,
@@ -106,6 +107,248 @@ test("pinned Git clone passes DNS pinning and cancellation to the child command"
   controller.abort();
   await assert.rejects(promise, KnowledgeIngestionCancelledError);
   assert.equal(calls[1]?.signal?.aborted, true);
+});
+
+test("a live writer keeps readers on the previous stable generation", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-reader-race-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    let releaseWriter!: () => void;
+    let writerEntered!: () => void;
+    const writerEnteredPromise = new Promise<void>((resolve) => { writerEntered = resolve; });
+    const writerRelease = new Promise<void>((resolve) => { releaseWriter = resolve; });
+    const writer = ingestKnowledgeSources({
+      sources: [promptSource("brief", "next generation")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        beforeCorpusActivation: async () => {
+          writerEntered();
+          await writerRelease;
+        }
+      }
+    });
+    await writerEnteredPromise;
+    assert.equal((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.generationId, first.state.generationId);
+    releaseWriter();
+    const completed = await writer;
+    assert.notEqual(completed.state.generationId, first.state.generationId);
+    assert.equal((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.generationId, completed.state.generationId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a second writer fails busy and can retry after the first writer releases", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-writer-race-");
+  try {
+    await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    let releaseWriter!: () => void;
+    let writerEntered!: () => void;
+    const writerEnteredPromise = new Promise<void>((resolve) => { writerEntered = resolve; });
+    const writerRelease = new Promise<void>((resolve) => { releaseWriter = resolve; });
+    const writer = ingestKnowledgeSources({
+      sources: [promptSource("brief", "serialized generation")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        afterStage: async () => {
+          writerEntered();
+          await writerRelease;
+        }
+      }
+    });
+    await writerEnteredPromise;
+    await assert.rejects(
+      () => ingestKnowledgeSources({ sources: [promptSource("brief", "contender")], corpusRoot, stateRoot }),
+      KnowledgeIngestionBusyError
+    );
+    releaseWriter();
+    await writer;
+    const retry = await ingestKnowledgeSources({ sources: [promptSource("brief", "contender")], corpusRoot, stateRoot });
+    assert.equal(retry.run.status, "ready");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stale writer ownership is reclaimed before transaction recovery", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-stale-lock-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    const stagingRoot = path.join(corpusRoot, ".agentos-staging", "stale-transaction");
+    await mkdir(path.join(stagingRoot, "sources"), { recursive: true });
+    await writeFile(path.join(stateRoot, "writer-lock.json"), JSON.stringify({
+      schemaVersion: 1,
+      lockId: "stale-lock",
+      pid: 99_999_999,
+      hostname: "stale-test-host",
+      startedAt: "2020-01-01T00:00:00.000Z",
+      heartbeatAt: "2020-01-01T00:00:00.000Z",
+      operation: "ingestion",
+      ownerStartIdentity: null
+    }));
+    await writeFile(path.join(stateRoot, "transaction.json"), JSON.stringify({
+      schemaVersion: 2,
+      transactionId: "stale-transaction",
+      generationId: "knowledge-generation-dead0000",
+      previousPointer: { schemaVersion: 2, generationId: first.state.generationId },
+      phase: "prepared",
+      stagingRelativePath: ".agentos-staging/stale-transaction",
+      lockId: "stale-lock",
+      ownerPid: 99_999_999,
+      ownerHostname: "stale-test-host",
+      ownerStartIdentity: null
+    }));
+    assert.equal((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.generationId, first.state.generationId);
+    assert.equal(await readFile(path.join(stateRoot, "transaction.json")).catch(() => null), null);
+    const retry = await ingestKnowledgeSources({ sources: [promptSource("brief", "after stale recovery")], corpusRoot, stateRoot });
+    assert.equal(retry.run.status, "ready");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("malformed writer control state fails closed", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-malformed-lock-");
+  try {
+    await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    await writeFile(path.join(stateRoot, "writer-lock.json"), "not-json\n");
+    await assert.rejects(() => readKnowledgeIngestionState(stateRoot, corpusRoot), /writer lock|malformed/i);
+    assert.equal(await readFile(path.join(stateRoot, "writer-lock.json"), "utf8"), "not-json\n");
+    await rm(path.join(stateRoot, "writer-lock.json"), { force: true });
+    await writeFile(path.join(stateRoot, "current.json"), "not-json\n");
+    await assert.rejects(() => readKnowledgeIngestionState(stateRoot, corpusRoot), /generation pointer|malformed/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cancellation releases the writer lease for an immediate retry", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-cancel-lock-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    const controller = new AbortController();
+    const cancelled = await ingestKnowledgeSources({
+      sources: [promptSource("brief", "cancelled generation")],
+      corpusRoot,
+      stateRoot,
+      signal: controller.signal,
+      transactionHooks: { afterStage: () => controller.abort() }
+    });
+    assert.equal(cancelled.run.status, "cancelled");
+    assert.equal((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.generationId, first.state.generationId);
+    const retry = await ingestKnowledgeSources({ sources: [promptSource("brief", "retry generation")], corpusRoot, stateRoot });
+    assert.equal(retry.run.status, "ready");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("post-pointer failure finalizes the promoted generation without exposing a split state", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-post-pointer-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "before pointer")], corpusRoot, stateRoot });
+    const replacement = await assert.rejects(() => ingestKnowledgeSources({
+      sources: [promptSource("brief", "after pointer")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: { afterMetadataActivation: () => { throw new Error("injected post-pointer failure"); } }
+    }), /injected post-pointer failure/);
+    assert.equal(replacement, undefined);
+    assert.match((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.sourceReports[0]?.sourceId ?? "", /brief/);
+    assert.match(await readFile(path.join(corpusRoot, first.documents[0]!.outputPath), "utf8"), /after pointer/);
+    assert.equal(await readFile(path.join(stateRoot, "transaction.json")).catch(() => null), null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("promotion uses the target writer lease and serializes promotion contenders", async () => {
+  const source = await makeRoots("agentos-knowledge-promotion-lock-source-");
+  const target = await makeRoots("agentos-knowledge-promotion-lock-target-");
+  try {
+    const sourceIngestion = await ingestKnowledgeSources({ sources: [promptSource("source", "promoted content")], corpusRoot: source.corpusRoot, stateRoot: source.stateRoot });
+    await ingestKnowledgeSources({ sources: [promptSource("target", "target content")], corpusRoot: target.corpusRoot, stateRoot: target.stateRoot });
+    let releasePromotion!: () => void;
+    let promotionEntered!: () => void;
+    const promotionEnteredPromise = new Promise<void>((resolve) => { promotionEntered = resolve; });
+    const promotionRelease = new Promise<void>((resolve) => { releasePromotion = resolve; });
+    const promotion = promoteKnowledgeCorpus({
+      fromCorpusRoot: source.corpusRoot,
+      fromStateRoot: source.stateRoot,
+      toCorpusRoot: target.corpusRoot,
+      toStateRoot: target.stateRoot,
+      transactionHooks: { afterStage: async () => { promotionEntered(); await promotionRelease; } }
+    });
+    await promotionEnteredPromise;
+    await assert.rejects(() => promoteKnowledgeCorpus({
+      fromCorpusRoot: source.corpusRoot,
+      fromStateRoot: source.stateRoot,
+      toCorpusRoot: target.corpusRoot,
+      toStateRoot: target.stateRoot
+    }), KnowledgeIngestionBusyError);
+    releasePromotion();
+    await promotion;
+    const retry = promoteKnowledgeCorpus({
+      fromCorpusRoot: source.corpusRoot,
+      fromStateRoot: source.stateRoot,
+      toCorpusRoot: target.corpusRoot,
+      toStateRoot: target.stateRoot
+    });
+    await retry;
+    assert.match(await readFile(path.join(target.corpusRoot, sourceIngestion.documents[0]!.outputPath), "utf8"), /promoted content/);
+  } finally {
+    await rm(source.root, { recursive: true, force: true });
+    await rm(target.root, { recursive: true, force: true });
+  }
+});
+
+test("Git clone strips verification-disabling and proxy inheritance while retaining CA trust anchors", async () => {
+  const names = ["GIT_SSL_NO_VERIFY", "GIT_SSL_VERSION", "GIT_SSL_CIPHER_LIST", "GIT_HTTP_PROXY", "HTTPS_PROXY", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH", "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE"];
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  const values: Record<string, string> = {
+    GIT_SSL_NO_VERIFY: "true",
+    GIT_SSL_VERSION: "SSLv3",
+    GIT_SSL_CIPHER_LIST: "RC4-MD5",
+    GIT_HTTP_PROXY: "http://proxy.invalid",
+    HTTPS_PROXY: "http://proxy.invalid",
+    GIT_SSL_CAINFO: "/enterprise/ca.pem",
+    GIT_SSL_CAPATH: "/enterprise/ca",
+    SSL_CERT_FILE: "/enterprise/cert.pem",
+    SSL_CERT_DIR: "/enterprise/certs",
+    CURL_CA_BUNDLE: "/enterprise/bundle.pem"
+  };
+  try {
+    for (const [name, value] of Object.entries(values)) process.env[name] = value;
+    const calls: Array<{ args: string[]; env: NodeJS.ProcessEnv }> = [];
+    await runSafeGitClone("https://example.com/repo.git", "/tmp/agentos-tls-test-target", undefined, 1_000, ["93.184.216.34"], async (_file, args, options) => {
+      calls.push({ args, env: options.env });
+      return { stdout: args[0] === "--version" ? "git version 2.50.1" : "", stderr: "" };
+    });
+    const clone = calls[1]!;
+    assert.equal(clone.env.GIT_SSL_NO_VERIFY, undefined);
+    assert.equal(clone.env.GIT_SSL_VERSION, undefined);
+    assert.equal(clone.env.GIT_SSL_CIPHER_LIST, undefined);
+    assert.equal(clone.env.GIT_HTTP_PROXY, undefined);
+    assert.equal(clone.env.HTTPS_PROXY, undefined);
+    assert.equal(clone.env.GIT_SSL_CAINFO, values.GIT_SSL_CAINFO);
+    assert.equal(clone.env.GIT_SSL_CAPATH, values.GIT_SSL_CAPATH);
+    assert.equal(clone.env.SSL_CERT_FILE, values.SSL_CERT_FILE);
+    assert.equal(clone.env.SSL_CERT_DIR, values.SSL_CERT_DIR);
+    assert.equal(clone.env.CURL_CA_BUNDLE, values.CURL_CA_BUNDLE);
+    assert.ok(clone.args.includes("http.sslVerify=true"));
+    assert.ok(clone.args.includes("http.sslVersion="));
+    assert.ok(clone.args.includes("http.sslCipherList="));
+    assert.ok(clone.args.includes("http.proxy="));
+    assert.ok(clone.args.includes("https.proxy="));
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });
 
 test("failed corpus activation rolls back the previous complete generation", async () => {
