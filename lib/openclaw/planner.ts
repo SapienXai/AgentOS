@@ -28,7 +28,6 @@ import {
   detectPlannerTextLanguage,
   enrichWorkspacePlan,
   normalizeWorkspacePlan,
-  getPlannerWorkspaceSizeProfile,
   resolvePlannerReplyLanguage,
   synthesizePlannerAdvisors
 } from "@/lib/openclaw/planner-core";
@@ -311,9 +310,7 @@ export async function submitWorkspacePlanTurn(
   const runtimeReadyPlan = shouldUseLocalPlannerFastPath(nextPlan)
     ? nextPlan
     : await ensurePlannerRuntime(nextPlan);
-  const shouldUseAdvisorBoard =
-    runtimeReadyPlan.autopilot &&
-    (runtimeReadyPlan.intake.reviewRequested || runtimeReadyPlan.intake.turnCount > 2);
+  const shouldUseAdvisorBoard = runtimeReadyPlan.autopilot && shouldUsePlannerAdvisorBoard(runtimeReadyPlan, trimmedMessage);
   const advisorNotes = shouldUseAdvisorBoard
     ? await synthesizePlannerAdvisorsWithRuntime(runtimeReadyPlan, trimmedMessage)
     : [];
@@ -1155,8 +1152,6 @@ function buildPlannerArchitectPrompt(
   harvestedContext: PlannerHarvestResult,
   advisorNotes: PlannerAdvisorNote[]
 ) {
-  const sizeProfile = getPlannerWorkspaceSizeProfile(plan.intake.size);
-
   return [
     "You are Workspace Architect, the primary planning agent inside AgentOS.",
     "Return valid JSON only. Do not wrap the JSON in markdown fences.",
@@ -1173,7 +1168,9 @@ function buildPlannerArchitectPrompt(
     "- Never derive a company or workspace name from generic intent text like \"workspace kurmak istiyorum\" or similar action phrasing.",
     "- If the message includes a proper noun tied to the project, workspace, or brand, treat it as a valid name candidate unless contradicted.",
     "- If the site title or domain is ambiguous or generic, make the best assumption and keep it in the assumptions list instead of stopping the draft.",
-    "- Do not invent workflows, automations, channels, or a large agent roster without evidence, but draft the smallest coherent set that supports the brief.",
+    "- Do not invent workflows, automations, channels, or a persistent specialist without explicit operator evidence; default to one primary agent and no persistent specialists, automations, or external channels.",
+    "- Workspace size is a presentation/complexity label only. It must never determine agent, workflow, automation, or channel counts.",
+    "- Advisor agents are internal planning infrastructure and must never appear in the generated workspace workforce.",
     "- Keep the reply to one short sentence when possible.",
     "- Do not repeat the full draft, and do not put assumptions, suggestions, or questions into the reply text.",
     "- Reply in the same language as the operator's latest message.",
@@ -1189,7 +1186,7 @@ function buildPlannerArchitectPrompt(
     "- For narrow edits like a rename or copy tweak, patch only the directly requested fields and leave the rest of the workspace shape alone.",
     "- When a domain implies a likely brand name, use it unless contradicted.",
     "- When you still need confirmation after reading a source, state what you inferred first and ask only for the remaining ambiguity.",
-    "- Respect the selected workspace size. Keep the operator-facing chat concise, but still complete the underlying project context and blueprint.",
+    "- Keep the operator-facing chat concise, but still complete the underlying project context and blueprint.",
     "- Use patch precisely. Update company, product, workspace, agents, workflows, automations, and channels only when the operator intent clearly supports them.",
     "- When removing an agent, workflow, channel, automation, or hook during a revision, use the relevant removeIds field and regenerate dependent items as needed.",
     "- Change only the canonical workspace.materialization object when the physical starting point changes; its mode and fields must remain a valid combination.",
@@ -1201,16 +1198,6 @@ function buildPlannerArchitectPrompt(
     JSON.stringify(
       {
         operatorMessage: latestMessage,
-        selectedWorkspaceSize: {
-          id: plan.intake.size,
-          label: sizeProfile.label,
-          targets: {
-            agents: sizeProfile.agentCount,
-            tasks: sizeProfile.workflowCount,
-            automations: sizeProfile.automationCount,
-            externalChannels: sizeProfile.externalChannelCount
-          }
-        },
         architectSummary: plan.architectSummary,
         currentPlan: createPlannerPromptContext(plan),
         harvestedContext,
@@ -1237,8 +1224,6 @@ function buildPlannerDocumentRewritePrompt(
   targetDocument: WorkspaceScaffoldDocument,
   instruction: string
 ) {
-  const sizeProfile = getPlannerWorkspaceSizeProfile(plan.intake.size);
-
   return [
     "You are Workspace Architect, rewriting one generated workspace document.",
     "Return valid JSON only. Do not wrap the JSON in markdown fences.",
@@ -1262,16 +1247,6 @@ function buildPlannerDocumentRewritePrompt(
           category: targetDocument.category,
           baseContent: targetDocument.baseContent,
           currentContent: targetDocument.content
-        },
-        selectedWorkspaceSize: {
-          id: plan.intake.size,
-          label: sizeProfile.label,
-          targets: {
-            agents: sizeProfile.agentCount,
-            tasks: sizeProfile.workflowCount,
-            automations: sizeProfile.automationCount,
-            externalChannels: sizeProfile.externalChannelCount
-          }
         },
         currentPlan: createPlannerPromptContext(plan),
         recentConversation: plan.conversation.slice(-6).map((entry) => ({
@@ -1353,6 +1328,19 @@ function shouldUseLocalPlannerFastPath(plan: WorkspacePlan) {
   return !plan.intake.reviewRequested && plan.intake.turnCount <= 1 && plan.runtime.status !== "ready";
 }
 
+function shouldUsePlannerAdvisorBoard(plan: WorkspacePlan, latestMessage: string) {
+  if (plan.intake.reviewRequested || /\b(review|audit|challenge|architecture board|deep review)\b/i.test(latestMessage)) {
+    return true;
+  }
+
+  return [
+    plan.team.persistentAgents.filter((agent) => agent.enabled).length > 1,
+    plan.operations.automations.some((automation) => automation.enabled),
+    plan.operations.channels.some((channel) => channel.enabled && channel.type !== "internal"),
+    plan.knowledge.sources.length > 1
+  ].some(Boolean);
+}
+
 function resolveArchitectThinking(plan: WorkspacePlan) {
   if (plan.intake.reviewRequested) {
     return "high";
@@ -1366,7 +1354,6 @@ function resolveArchitectThinking(plan: WorkspacePlan) {
 }
 
 function createPlannerPromptContext(plan: WorkspacePlan) {
-  const sizeProfile = getPlannerWorkspaceSizeProfile(plan.intake.size);
   const enabledAgents = plan.team.persistentAgents.filter((agent) => agent.enabled);
   const enabledWorkflows = plan.operations.workflows.filter((workflow) => workflow.enabled);
   const enabledAutomations = plan.operations.automations.filter((automation) => automation.enabled);
@@ -1400,13 +1387,7 @@ function createPlannerPromptContext(plan: WorkspacePlan) {
     },
     intake: {
       mode: plan.intake.mode,
-      size: plan.intake.size,
-      sizeTargets: {
-        agents: sizeProfile.agentCount,
-        tasks: sizeProfile.workflowCount,
-        automations: sizeProfile.automationCount,
-        externalChannels: sizeProfile.externalChannelCount
-      },
+      complexityLabel: plan.intake.size,
       reviewRequested: plan.intake.reviewRequested,
       confirmations: plan.intake.confirmations,
       inferences: plan.intake.inferences

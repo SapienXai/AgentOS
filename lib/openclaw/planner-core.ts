@@ -52,6 +52,8 @@ const advisorNames: Record<PlannerAdvisorId, string> = {
 
 export type PlannerWorkspaceSizeProfile = {
   label: string;
+  /** Presentation-only defaults. These values are never used to resize topology. */
+  topologyDriven: false;
   agentCount: number;
   workflowCount: number;
   automationCount: number;
@@ -65,8 +67,9 @@ export const plannerWorkspaceSizeOrder: PlannerWorkspaceSize[] = ["small", "medi
 const plannerWorkspaceSizeProfiles: Record<PlannerWorkspaceSize, PlannerWorkspaceSizeProfile> = {
   small: {
     label: "Small",
+    topologyDriven: false,
     agentCount: 1,
-    workflowCount: 1,
+    workflowCount: 0,
     automationCount: 0,
     externalChannelCount: 0,
     confirmationLimit: 1,
@@ -74,19 +77,21 @@ const plannerWorkspaceSizeProfiles: Record<PlannerWorkspaceSize, PlannerWorkspac
   },
   medium: {
     label: "Medium",
-    agentCount: 3,
-    workflowCount: 3,
-    automationCount: 1,
+    topologyDriven: false,
+    agentCount: 1,
+    workflowCount: 0,
+    automationCount: 0,
     externalChannelCount: 0,
     confirmationLimit: 2,
     suggestedReplyLimit: 3
   },
   large: {
     label: "Large",
-    agentCount: 5,
-    workflowCount: 4,
-    automationCount: 2,
-    externalChannelCount: 1,
+    topologyDriven: false,
+    agentCount: 1,
+    workflowCount: 0,
+    automationCount: 0,
+    externalChannelCount: 0,
     confirmationLimit: 3,
     suggestedReplyLimit: 4
   }
@@ -661,257 +666,10 @@ export function buildRecommendedFirstMissions(plan: WorkspacePlan) {
   );
 }
 
-function buildSupplementalPlannerAgents(template: WorkspaceTemplate) {
-  const opsLead = createPlannerAgentSpec({
-    id: "ops-lead",
-    role: "Operations Lead",
-    name: "Operations Lead",
-    purpose: "Own automations, reporting cadence, and cross-agent handoffs for the workspace.",
-    responsibilities: ["Maintain the operating cadence", "Wire recurring automations", "Keep handoffs durable"],
-    outputs: ["ops brief", "automation notes"]
-  });
-
-  if (template === "research") {
-    return [
-      createPlannerAgentSpec({
-        id: "analyst",
-        role: "Analyst",
-        name: "Analyst",
-        purpose: "Turn gathered evidence into patterns, themes, and decision-ready summaries.",
-        responsibilities: ["Cluster findings", "Spot repeated signals", "Prepare concise summaries"],
-        outputs: ["insight summary", "theme map"]
-      }),
-      opsLead
-    ];
-  }
-
-  return [opsLead];
-}
-
-function buildSupplementalPlannerWorkflows(
-  template: WorkspaceTemplate,
-  agents: PlannerPersistentAgentSpec[]
-) {
-  const primaryAgentId = agents.find((agent) => agent.enabled && agent.isPrimary)?.id;
-  const reviewerAgentId = findAgentId(agents, "review");
-  const learnerAgentId = findAgentId(agents, "learn");
-  const opsAgentId = findAgentId(agents, "ops");
-
-  return [
-    createPlannerWorkflowSpec({
-      id: "context-sync",
-      name: template === "research" ? "Evidence sync" : "Context sync",
-      goal: "Pull new context from linked sources and keep the blueprint aligned with reality.",
-      trigger: "manual",
-      ownerAgentId: learnerAgentId ?? primaryAgentId,
-      collaboratorAgentIds: [primaryAgentId, reviewerAgentId].filter(Boolean) as string[],
-      successDefinition: "New context is reflected in durable docs, scope, and decision notes.",
-      outputs: ["memory/blueprint.md", "deliverables/<run>/context-sync.md"]
-    }),
-    createPlannerWorkflowSpec({
-      id: "ops-rhythm",
-      name: "Operating rhythm",
-      goal: "Review handoffs, automations, and next-step ownership on a repeatable cadence.",
-      trigger: "cron",
-      ownerAgentId: opsAgentId ?? reviewerAgentId ?? learnerAgentId ?? primaryAgentId,
-      collaboratorAgentIds: [primaryAgentId].filter(Boolean) as string[],
-      successDefinition: "The workspace has a fresh operator brief and an explicit next batch of work.",
-      outputs: ["deliverables/<run>/ops-rhythm.md"]
-    })
-  ];
-}
-
-function buildRecommendedExternalPlannerChannels(template: WorkspaceTemplate) {
-  const channelOrder: PlannerChannelType[] =
-    template === "content"
-      ? ["telegram", "discord", "slack"]
-      : ["slack", "discord", "telegram"];
-
-  return channelOrder.map((type) =>
-    createPlannerChannelSpec(type, {
-      id: `${type}-ops`,
-      purpose:
-        template === "content"
-          ? "Optional distribution or community surface for a larger operating setup."
-          : "Optional external operating surface for a larger workspace.",
-      enabled: false,
-      announce: true
-    })
-  );
-}
-
-function applyPlannerWorkspaceSizeProfile(plan: WorkspacePlan) {
-  const nextPlan = clonePlan(plan);
-  const profile = getPlannerWorkspaceSizeProfile(nextPlan.intake.size);
-
-  nextPlan.team.persistentAgents = resizePlannerAgents(
-    nextPlan.workspace.template,
-    nextPlan.team.persistentAgents,
-    profile.agentCount
-  );
-  nextPlan.operations.channels = resizePlannerChannels(
-    nextPlan.workspace.template,
-    nextPlan.operations.channels,
-    profile.externalChannelCount
-  );
-  nextPlan.operations.workflows = resizePlannerWorkflows(
-    nextPlan.workspace.template,
-    nextPlan.operations.workflows,
-    nextPlan.team.persistentAgents,
-    profile.workflowCount
-  );
-  nextPlan.operations.automations = resizePlannerAutomations(
-    nextPlan.workspace.template,
-    nextPlan.operations.automations,
-    nextPlan.team.persistentAgents,
-    nextPlan.operations.channels,
-    profile.automationCount
-  );
-
-  return nextPlan;
-}
-
-function resizePlannerAgents(
-  template: WorkspaceTemplate,
-  currentAgents: PlannerPersistentAgentSpec[],
-  targetCount: number
-) {
-  if (targetCount <= 0) {
-    return [];
-  }
-
-  const catalog = dedupeById(
-    prioritizePrimaryAgent([
-      ...currentAgents,
-      ...buildRecommendedPlannerAgents(template),
-      ...buildSupplementalPlannerAgents(template)
-    ])
-  );
-
-  return catalog.slice(0, targetCount).map((agent, index) =>
-    createPlannerAgentSpec({
-      ...agent,
-      enabled: true,
-      isPrimary: agent.isPrimary || index === 0
-    })
-  );
-}
-
-function resizePlannerChannels(
-  template: WorkspaceTemplate,
-  currentChannels: PlannerChannelSpec[],
-  externalTargetCount: number
-) {
-  const internalChannel =
-    currentChannels.find((channel) => channel.type === "internal") ??
-    buildRecommendedPlannerChannels()[0];
-  const externalCatalog = dedupeByType([
-    ...currentChannels.filter((channel) => channel.type !== "internal"),
-    ...buildRecommendedExternalPlannerChannels(template)
-  ]);
-
-  return [
-    createPlannerChannelSpec("internal", {
-      ...internalChannel,
-      enabled: true
-    }),
-    ...externalCatalog.slice(0, externalTargetCount)
-  ];
-}
-
-function resizePlannerWorkflows(
-  template: WorkspaceTemplate,
-  currentWorkflows: PlannerWorkflowSpec[],
-  agents: PlannerPersistentAgentSpec[],
-  targetCount: number
-) {
-  if (targetCount <= 0) {
-    return [];
-  }
-
-  const catalog = dedupeById([
-    ...currentWorkflows,
-    ...buildRecommendedPlannerWorkflows(template, agents),
-    ...buildSupplementalPlannerWorkflows(template, agents)
-  ]);
-
-  return catalog.slice(0, targetCount).map((workflow) => alignPlannerWorkflowAgents(workflow, agents));
-}
-
-function resizePlannerAutomations(
-  template: WorkspaceTemplate,
-  currentAutomations: PlannerAutomationSpec[],
-  agents: PlannerPersistentAgentSpec[],
-  channels: PlannerChannelSpec[],
-  targetCount: number
-) {
-  if (targetCount <= 0) {
-    return [];
-  }
-
-  const catalog = dedupeById([
-    ...currentAutomations,
-    ...buildRecommendedPlannerAutomations(template, agents, channels)
-  ]);
-
-  return catalog
-    .slice(0, targetCount)
-    .map((automation) => alignPlannerAutomationDependencies(automation, agents, channels));
-}
-
-function alignPlannerWorkflowAgents(
-  workflow: PlannerWorkflowSpec,
-  agents: PlannerPersistentAgentSpec[]
-) {
-  const enabledAgentIds = new Set(agents.filter((agent) => agent.enabled).map((agent) => agent.id));
-  const primaryAgentId = agents.find((agent) => agent.enabled && agent.isPrimary)?.id;
-  const reviewerAgentId = findAgentId(agents, "review");
-  const learnerAgentId = findAgentId(agents, "learn");
-  const ownerAgentId =
-    workflow.ownerAgentId && enabledAgentIds.has(workflow.ownerAgentId)
-      ? workflow.ownerAgentId
-      : reviewerAgentId ?? learnerAgentId ?? primaryAgentId;
-
-  return createPlannerWorkflowSpec({
-    ...workflow,
-    ownerAgentId,
-    collaboratorAgentIds: workflow.collaboratorAgentIds.filter(
-      (agentId) => enabledAgentIds.has(agentId) && agentId !== ownerAgentId
-    ),
-    enabled: true
-  });
-}
-
-function alignPlannerAutomationDependencies(
-  automation: PlannerAutomationSpec,
-  agents: PlannerPersistentAgentSpec[],
-  channels: PlannerChannelSpec[]
-) {
-  const enabledAgentIds = new Set(agents.filter((agent) => agent.enabled).map((agent) => agent.id));
-  const knownChannelIds = new Set(channels.map((channel) => channel.id));
-  const primaryAgentId = agents.find((agent) => agent.enabled && agent.isPrimary)?.id;
-  const reviewerAgentId = findAgentId(agents, "review");
-  const learnerAgentId = findAgentId(agents, "learn");
-
-  return createPlannerAutomationSpec({
-    ...automation,
-    agentId:
-      automation.agentId && enabledAgentIds.has(automation.agentId)
-        ? automation.agentId
-        : reviewerAgentId ?? learnerAgentId ?? primaryAgentId,
-    channelId:
-      automation.channelId && knownChannelIds.has(automation.channelId)
-        ? automation.channelId
-        : channels[0]?.id,
-    enabled: true
-  });
-}
-
 export function createInitialWorkspacePlan(id = createWorkspacePlanId()): WorkspacePlan {
   const createdAt = new Date().toISOString();
   const template: WorkspaceTemplate = "software";
-  const agents = buildRecommendedPlannerAgents(template);
-  const channels = buildRecommendedPlannerChannels();
+  const agents = buildMinimalPlannerAgents(template);
   const basePlan: WorkspacePlan = {
     id,
     status: "draft",
@@ -962,9 +720,9 @@ export function createInitialWorkspacePlan(id = createWorkspacePlanId()): Worksp
       ]
     },
     operations: {
-      workflows: buildRecommendedPlannerWorkflows(template, agents),
-      channels,
-      automations: buildRecommendedPlannerAutomations(template, agents, channels),
+      workflows: [],
+      channels: [],
+      automations: [],
       hooks: buildRecommendedPlannerHooks(),
       sandbox: createPlannerSandboxSpec({
         workspaceOnly: true,
@@ -1056,26 +814,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function applyPlannerTemplate(plan: WorkspacePlan, template: WorkspaceTemplate) {
   const nextPlan = clonePlan(plan);
-  const recommendedAgents = buildRecommendedPlannerAgents(template, nextPlan.workspace.name);
-  const recommendedChannels = nextPlan.operations.channels.length
-    ? nextPlan.operations.channels
-    : buildRecommendedPlannerChannels();
 
   nextPlan.workspace.template = template;
   nextPlan.workspace.docs = buildWorkspaceScaffoldPreview(template, nextPlan.workspace.rules);
-  nextPlan.team.persistentAgents = recommendedAgents;
-  nextPlan.operations.workflows = buildRecommendedPlannerWorkflows(template, recommendedAgents);
-  nextPlan.operations.automations = buildRecommendedPlannerAutomations(
-    template,
-    recommendedAgents,
-    recommendedChannels
-  );
+  if (nextPlan.team.persistentAgents.length === 0) {
+    nextPlan.team.persistentAgents = buildMinimalPlannerAgents(template, nextPlan.workspace.name);
+  }
 
   return enrichWorkspacePlan(nextPlan);
 }
 
+function buildMinimalPlannerAgents(template: WorkspaceTemplate, workspaceName?: string) {
+  const primary = buildRecommendedPlannerAgents(template, workspaceName)[0];
+  return primary
+    ? [createPlannerAgentSpec({ ...primary, enabled: true, isPrimary: true })]
+    : [
+        createPlannerAgentSpec({
+          id: "primary-operator",
+          role: "Primary Operator",
+          name: workspaceName ? `${workspaceName} Operator` : "Primary Operator",
+          isPrimary: true
+        })
+      ];
+}
+
 export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
-  let nextPlan = clonePlan(plan);
+  const nextPlan = clonePlan(plan);
   const rawPlan = plan as WorkspacePlan & {
     knowledge?: { sources?: unknown[] };
     intake?: PlannerIntakeState & { sources?: unknown[] };
@@ -1160,7 +924,7 @@ export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
 
   if (!isWorkspaceEditDraft) {
     if (nextPlan.team.persistentAgents.length === 0) {
-      nextPlan.team.persistentAgents = buildRecommendedPlannerAgents(
+      nextPlan.team.persistentAgents = buildMinimalPlannerAgents(
         nextPlan.workspace.template,
         nextPlan.workspace.name
       );
@@ -1188,20 +952,9 @@ export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
     .map((channel) => createPlannerChannelSpec(channel.type, channel))
     .filter((channel, index, channels) => channels.findIndex((entry) => entry.id === channel.id) === index);
 
-  if (!isWorkspaceEditDraft && nextPlan.operations.channels.length === 0) {
-    nextPlan.operations.channels = buildRecommendedPlannerChannels();
-  }
-
   nextPlan.operations.workflows = nextPlan.operations.workflows
     .map((workflow) => createPlannerWorkflowSpec(workflow))
     .filter((workflow, index, workflows) => workflows.findIndex((entry) => entry.id === workflow.id) === index);
-
-  if (!isWorkspaceEditDraft && nextPlan.operations.workflows.length === 0) {
-    nextPlan.operations.workflows = buildRecommendedPlannerWorkflows(
-      nextPlan.workspace.template,
-      nextPlan.team.persistentAgents
-    );
-  }
 
   nextPlan.operations.automations = nextPlan.operations.automations
     .map((automation) => createPlannerAutomationSpec(automation))
@@ -1209,10 +962,6 @@ export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
       (automation, index, automations) =>
         automations.findIndex((entry) => entry.id === automation.id) === index
     );
-
-  if (!isWorkspaceEditDraft) {
-    nextPlan = applyPlannerWorkspaceSizeProfile(nextPlan);
-  }
 
   nextPlan.operations.hooks = nextPlan.operations.hooks
     .map((hook) => createPlannerHookSpec(hook))
@@ -1934,8 +1683,7 @@ function hasPlannerDraft(plan: WorkspacePlan) {
   return Boolean(
     (plan.company.name || plan.workspace.name) &&
       plan.company.mission &&
-      plan.team.persistentAgents.some((agent) => agent.enabled) &&
-      plan.operations.workflows.some((workflow) => workflow.enabled)
+      plan.team.persistentAgents.some((agent) => agent.enabled)
   );
 }
 
@@ -1974,10 +1722,6 @@ function collectPlanBlockers(plan: WorkspacePlan) {
     blockers.push("One enabled agent must be marked as primary.");
   }
 
-  if (!plan.operations.workflows.some((workflow) => workflow.enabled)) {
-    blockers.push("At least one enabled workflow is required.");
-  }
-
   for (const workflow of plan.operations.workflows.filter((entry) => entry.enabled)) {
     if (!workflow.name || !workflow.goal || !workflow.successDefinition) {
       blockers.push(`Workflow "${workflow.name || workflow.id}" is incomplete.`);
@@ -2010,7 +1754,6 @@ function collectPlanBlockers(plan: WorkspacePlan) {
 
 function collectPlanWarnings(plan: WorkspacePlan) {
   const warnings: string[] = [];
-  const sizeProfile = getPlannerWorkspaceSizeProfile(plan.intake.size);
 
   if (plan.product.nonGoals.length === 0) {
     warnings.push("No non-goals are defined for V1.");
@@ -2026,21 +1769,6 @@ function collectPlanWarnings(plan: WorkspacePlan) {
 
   if (plan.workspace.stackDecisions.length === 0 && plan.workspace.template !== "content") {
     warnings.push("Critical stack decisions are not captured yet.");
-  }
-
-  if (sizeProfile.automationCount > 0 && !plan.operations.automations.some((entry) => entry.enabled)) {
-    warnings.push("No automation loops are enabled.");
-  }
-
-  if (
-    sizeProfile.externalChannelCount > 0 &&
-    !plan.operations.channels.some((entry) => entry.type !== "internal")
-  ) {
-    warnings.push("Only internal channels are configured.");
-  }
-
-  if (sizeProfile.agentCount >= 3 && plan.team.maxParallelRuns < 2) {
-    warnings.push("Parallel run limit is conservative for a multi-agent workspace.");
   }
 
   return uniqueStrings(warnings);
@@ -2967,24 +2695,6 @@ function describeRecommendedOutputs(id: string, template: WorkspaceTemplate) {
   return template === "research"
     ? ["research summary", "evidence log"]
     : ["implementation artifacts", "handoff summary"];
-}
-
-function prioritizePrimaryAgent(agents: PlannerPersistentAgentSpec[]) {
-  const primaryAgent = agents.find((agent) => agent.isPrimary) ?? agents[0];
-
-  if (!primaryAgent) {
-    return agents;
-  }
-
-  return [primaryAgent, ...agents.filter((agent) => agent.id !== primaryAgent.id)];
-}
-
-function dedupeById<T extends { id: string }>(items: T[]) {
-  return items.filter((item, index, list) => list.findIndex((entry) => entry.id === item.id) === index);
-}
-
-function dedupeByType<T extends { type: string }>(items: T[]) {
-  return items.filter((item, index, list) => list.findIndex((entry) => entry.type === item.type) === index);
 }
 
 function normalizeText(value: string) {

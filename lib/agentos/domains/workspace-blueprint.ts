@@ -1,0 +1,288 @@
+import type { AgentPolicy } from "@/lib/openclaw/types";
+import type {
+  WorkspaceKnowledgeSource,
+  WorkspaceKnowledgeSourceKind
+} from "@/lib/agentos/domains/workspace-knowledge";
+import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
+
+export const WORKSPACE_BLUEPRINT_SCHEMA_VERSION = 1 as const;
+export const WORKSPACE_BLUEPRINT_POLICY_VERSION = "phase4-minimum-topology-v1" as const;
+
+export type WorkspaceBlueprintStatus = "draft" | "ready" | "blocked";
+export type WorkspaceBlueprintFreshness = "fresh" | "stale" | "unknown";
+export type WorkspaceArchitectMode = "automatic" | "review";
+
+export type WorkspaceBlueprintEvidenceKind =
+  | "brief"
+  | "knowledge-source"
+  | "native-memory"
+  | "corpus-document"
+  | "operator";
+
+export type WorkspaceBlueprintEvidence = {
+  id: string;
+  kind: WorkspaceBlueprintEvidenceKind;
+  sourceId: string | null;
+  summary: string;
+  confidence: number;
+  imported: boolean;
+};
+
+export type WorkspaceBlueprintAgent = {
+  id: string;
+  role: string;
+  name: string;
+  enabled: true;
+  persistence: "primary" | "specialist";
+  isPrimary: boolean;
+  purpose: string;
+  responsibilities: string[];
+  outputs: string[];
+  skillIds: string[];
+  toolIds: string[];
+  policy: AgentPolicy;
+  justification: string;
+  evidenceRefs: string[];
+};
+
+export type WorkspaceBlueprintWorkflow = {
+  id: string;
+  name: string;
+  goal: string;
+  trigger: "manual" | "event" | "cron" | "launch";
+  ownerAgentId: string;
+  collaboratorAgentIds: string[];
+  successDefinition: string;
+  outputs: string[];
+  enabled: boolean;
+  evidenceRefs: string[];
+};
+
+export type WorkspaceBlueprintAutomation = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  scheduleKind: "every" | "cron";
+  scheduleValue: string;
+  agentId: string;
+  mission: string;
+  thinking: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  announce: boolean;
+  selection: "explicit" | "recommended";
+  evidenceRefs: string[];
+};
+
+export type WorkspaceBlueprintChannel = {
+  id: string;
+  type: "slack" | "telegram" | "whatsapp" | "discord" | "googlechat";
+  name: string;
+  purpose: string;
+  target?: string;
+  enabled: boolean;
+  announce: boolean;
+  requiresCredentials: boolean;
+  primaryAgentId: string;
+  selection: "explicit" | "recommended";
+  evidenceRefs: string[];
+};
+
+export type WorkspaceBlueprintConnection = {
+  id: string;
+  provider: string;
+  status: "declared" | "required" | "recommended";
+  purpose: string;
+  sourceId: string | null;
+  credentials: "not-in-blueprint";
+};
+
+export type WorkspaceBlueprintOperatorOverrides = {
+  lockedPaths: string[];
+  lockedDecisions: string[];
+};
+
+export type WorkspaceBlueprint = {
+  schemaVersion: typeof WORKSPACE_BLUEPRINT_SCHEMA_VERSION;
+  status: WorkspaceBlueprintStatus;
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  identity: {
+    name: string;
+    purpose: string;
+    projectType: string;
+  };
+  brief: string;
+  materialization: WorkspaceMaterialization;
+  knowledge: {
+    sources: WorkspaceKnowledgeSource[];
+    generationId: string | null;
+    sourceIds: string[];
+    coverage: {
+      sourceCount: number;
+      readySourceCount: number;
+      documentCount: number;
+    };
+    retrieval: {
+      mode: "native-memory-search" | "bounded-corpus-assembly" | "none";
+      queries: string[];
+      evidenceRefs: string[];
+    };
+  };
+  workforce: {
+    primaryAgent: WorkspaceBlueprintAgent;
+    specialists: WorkspaceBlueprintAgent[];
+    allowEphemeralSubagents: true;
+    maxParallelRuns: number;
+  };
+  capabilities: {
+    skills: Array<{
+      id: string;
+      status: "selected" | "recommended";
+      source: "openclaw-preset" | "operator";
+      rationale: string;
+      evidenceRefs: string[];
+    }>;
+    tools: Array<{
+      id: string;
+      status: "selected" | "recommended";
+      rationale: string;
+      evidenceRefs: string[];
+    }>;
+  };
+  memory: {
+    ownership: "openclaw-native";
+    search: "native-gateway-preferred";
+    seedRequired: false;
+    durableFacts: string[];
+    rationale: string;
+  };
+  connections: WorkspaceBlueprintConnection[];
+  operations: {
+    workflows: WorkspaceBlueprintWorkflow[];
+    automations: WorkspaceBlueprintAutomation[];
+    channels: WorkspaceBlueprintChannel[];
+  };
+  safety: {
+    workspaceOnly: true;
+    generationSideEffectFree: true;
+    importedKnowledgeUntrusted: true;
+    notes: string[];
+  };
+  recommendations: string[];
+  assumptions: string[];
+  warnings: string[];
+  evidence: WorkspaceBlueprintEvidence[];
+  operatorOverrides: WorkspaceBlueprintOperatorOverrides;
+  provenance: {
+    architectRunId: string;
+    inputFingerprint: string;
+    knowledgeGenerationId: string | null;
+    sourceIds: string[];
+    createdAt: string;
+    modelId: string | null;
+    runtime: "native-openclaw" | "bounded-local" | "unknown";
+  };
+};
+
+export type WorkspaceArchitectCorpusDocument = {
+  sourceId: string;
+  title?: string;
+  summary?: string;
+  content?: string;
+  contentLength?: number;
+};
+
+export type WorkspaceArchitectKnowledgeInput = {
+  generationId?: string | null;
+  sources?: WorkspaceKnowledgeSource[];
+  documents?: WorkspaceArchitectCorpusDocument[];
+  /** Phase 2 snapshot-shaped input; only bounded metadata/previews are consumed. */
+  snapshot?: {
+    generationId?: string | null;
+    state?: { generationId?: string | null };
+    documents?: WorkspaceArchitectCorpusDocument[];
+  };
+};
+
+export type WorkspaceArchitectInput = {
+  brief: string;
+  materialization?: WorkspaceMaterialization;
+  knowledge?: WorkspaceArchitectKnowledgeInput;
+  mode?: WorkspaceArchitectMode;
+  operatorOverrides?: Partial<WorkspaceBlueprintOperatorOverrides>;
+};
+
+export type WorkspaceBlueprintFreshnessResult = {
+  status: WorkspaceBlueprintFreshness;
+  blueprintGenerationId: string | null;
+  currentGenerationId: string | null;
+  reason: string;
+};
+
+export type WorkspaceBlueprintValidationIssue = {
+  code: string;
+  path: string;
+  message: string;
+  severity: "error" | "warning";
+};
+
+export type WorkspaceBlueprintValidation = {
+  valid: boolean;
+  issues: WorkspaceBlueprintValidationIssue[];
+};
+
+export type WorkspaceArchitectResult = {
+  blueprint: WorkspaceBlueprint;
+  summary: string;
+  assumptions: string[];
+  warnings: string[];
+  recommendations: string[];
+  validation: WorkspaceBlueprintValidation;
+  freshness: WorkspaceBlueprintFreshnessResult;
+};
+
+export type WorkspaceBlueprintRevisionInput = {
+  brief?: string;
+  materialization?: WorkspaceMaterialization;
+  operatorEdits?: {
+    identity?: Partial<WorkspaceBlueprint["identity"]>;
+    workforce?: {
+      primaryAgent?: Partial<WorkspaceBlueprintAgent>;
+      specialists?: WorkspaceBlueprintAgent[];
+    };
+    operations?: {
+      workflows?: WorkspaceBlueprintWorkflow[];
+      automations?: WorkspaceBlueprintAutomation[];
+      channels?: WorkspaceBlueprintChannel[];
+    };
+    recommendations?: string[];
+  };
+  knowledge?: WorkspaceArchitectKnowledgeInput;
+};
+
+export type WorkspaceArchitectNativeSearchResult = {
+  status: "available" | "unavailable" | "unknown";
+  results: Array<{
+    sourceId?: string | null;
+    text?: string | null;
+    snippet?: string | null;
+    citation?: string | null;
+    score?: number | null;
+  }>;
+  warning?: string | null;
+};
+
+export type WorkspaceArchitectRunOptions = {
+  now?: () => string;
+  runId?: string;
+  modelId?: string | null;
+  nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>;
+};
+
+export type WorkspaceBlueprintSourceSummary = {
+  id: string;
+  kind: WorkspaceKnowledgeSourceKind;
+  label: string;
+  summary: string;
+};

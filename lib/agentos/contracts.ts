@@ -272,3 +272,25 @@ export type {
   WorkspaceTemplate,
   WorkspaceUpdateInput
 } from "@/lib/openclaw/types";
+
+export type {
+  WorkspaceArchitectCorpusDocument,
+  WorkspaceArchitectInput,
+  WorkspaceArchitectKnowledgeInput,
+  WorkspaceArchitectMode,
+  WorkspaceArchitectNativeSearchResult,
+  WorkspaceArchitectResult,
+  WorkspaceArchitectRunOptions,
+  WorkspaceBlueprint,
+  WorkspaceBlueprintAgent,
+  WorkspaceBlueprintAutomation,
+  WorkspaceBlueprintChannel,
+  WorkspaceBlueprintConnection,
+  WorkspaceBlueprintEvidence,
+  WorkspaceBlueprintFreshness,
+  WorkspaceBlueprintFreshnessResult,
+  WorkspaceBlueprintRevisionInput,
+  WorkspaceBlueprintStatus,
+  WorkspaceBlueprintValidation,
+  WorkspaceBlueprintValidationIssue
+} from "@/lib/agentos/domains/workspace-blueprint";
