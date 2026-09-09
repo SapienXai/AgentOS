@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
-import { access, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -19,7 +19,14 @@ import type {
 
 const execFileAsync = promisify(execFile);
 
-export const KNOWLEDGE_INGESTION_SCHEMA_VERSION = 1;
+export const KNOWLEDGE_INGESTION_SCHEMA_VERSION = 2;
+export const LEGACY_KNOWLEDGE_INGESTION_SCHEMA_VERSION = 1;
+export const MIN_PINNED_GIT_VERSION = "2.37.0";
+
+const CURRENT_FILE = "current.json";
+const TRANSACTION_FILE = "transaction.json";
+const GENERATIONS_DIR = "generations";
+const GENERATION_MARKER = ".agentos-generation";
 
 export const DEFAULT_KNOWLEDGE_INGESTION_LIMITS = {
   maxPagesPerSource: 24,
@@ -94,6 +101,7 @@ export type KnowledgeDocumentMetadata = Omit<KnowledgeDocument, "normalizedConte
 
 export type KnowledgeDocumentsFile = {
   schemaVersion: typeof KNOWLEDGE_INGESTION_SCHEMA_VERSION;
+  generationId?: string;
   updatedAt: string;
   documents: KnowledgeDocumentMetadata[];
 };
@@ -119,6 +127,7 @@ export type KnowledgeIngestionSourceReport = {
 
 export type KnowledgeIngestionState = {
   schemaVersion: typeof KNOWLEDGE_INGESTION_SCHEMA_VERSION;
+  generationId?: string;
   updatedAt: string;
   lastRunId: string | null;
   lastRunIds: string[];
@@ -161,6 +170,16 @@ export type KnowledgeWebsiteFetcher = {
   ): Promise<KnowledgeWebsiteResponse>;
 };
 
+export type KnowledgeHostResolver = (hostname: string) => Promise<string[]>;
+
+export type KnowledgeIngestionTransactionHooks = {
+  afterStage?: () => void | Promise<void>;
+  beforeCorpusActivation?: () => void | Promise<void>;
+  afterCorpusActivation?: () => void | Promise<void>;
+  beforeMetadataActivation?: () => void | Promise<void>;
+  afterMetadataActivation?: () => void | Promise<void>;
+};
+
 export type IngestKnowledgeSourcesInput = {
   sources: WorkspaceKnowledgeSource[];
   corpusRoot: string;
@@ -169,6 +188,8 @@ export type IngestKnowledgeSourcesInput = {
   limits?: Partial<KnowledgeIngestionLimits>;
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
+  networkResolver?: KnowledgeHostResolver;
+  transactionHooks?: KnowledgeIngestionTransactionHooks;
 };
 
 export type KnowledgeIngestionRun = {
@@ -206,6 +227,7 @@ type SourceContext = {
   signal?: AbortSignal;
   sourceDirectory: string;
   websiteFetcher: KnowledgeWebsiteFetcher;
+  resolveHost: KnowledgeHostResolver;
   onProgress?: IngestKnowledgeSourcesInput["onProgress"];
   bytesFetched: number;
 };
@@ -248,6 +270,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
   const sources = normalizeIngestionSources(input.sources);
   const sourceDirectories = buildSourceDirectoryMap(sources);
   const websiteFetcher = input.websiteFetcher ?? createDefaultWebsiteFetcher();
+  const resolveHost = input.networkResolver ?? resolvePublicHostAddresses;
   const runController = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
@@ -260,8 +283,10 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
     else input.signal.addEventListener("abort", () => runController.abort(), { once: true });
   }
   const signal = runController.signal;
-  const previousState = await readKnowledgeIngestionState(input.stateRoot);
-  const previousDocuments = await readKnowledgeDocuments(input.stateRoot);
+  await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot);
+  const previousSnapshot = await readKnowledgeSnapshot(input.corpusRoot, input.stateRoot);
+  const previousState = previousSnapshot?.state ?? null;
+  const previousDocuments = previousSnapshot?.documents ?? [];
   const stagingRoot = path.join(input.corpusRoot, ".agentos-staging", runId);
   const sourceResults: SourceWorkResult[] = [];
   const runWarnings: string[] = [];
@@ -291,6 +316,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
         signal,
         sourceDirectory: sourceDirectories.get(source.id) ?? sourceDirectoryName(source.id),
         websiteFetcher,
+        resolveHost,
         onProgress: input.onProgress,
         bytesFetched: 0
       };
@@ -326,7 +352,14 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       total: sources.length,
       warningCount: runWarnings.length
     });
-    await stageDocuments(stagingRoot, input.corpusRoot, mergedDocuments);
+    await stageKnowledgeCorpus({
+      stagingRoot,
+      corpusRoot: input.corpusRoot,
+      documents: mergedDocuments,
+      previousDocuments,
+      pruneSourceIds: sourceResults.filter((result) => result.report.status === "ready").map((result) => result.source.id)
+    });
+    await input.transactionHooks?.afterStage?.();
 
     throwIfAborted(signal);
 
@@ -339,15 +372,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       total: sourceResults.length,
       warningCount: runWarnings.length
     });
-    const committedReports = await commitSourceResults({
-      corpusRoot: input.corpusRoot,
-      stagingRoot,
-      sourceResults,
-      previousDocuments,
-      documents: mergedDocuments,
-      runId,
-      onProgress: input.onProgress
-    });
+    const committedReports = await commitSourceResults({ sourceResults, previousDocuments, documents: mergedDocuments, runId, onProgress: input.onProgress });
 
     const finishedAt = new Date().toISOString();
     const sourceReports = committedReports;
@@ -356,6 +381,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
     const errorCount = sourceReports.reduce((total, report) => total + report.errorCount, 0);
     const state: KnowledgeIngestionState = {
       schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+      generationId: `knowledge-generation-${randomUUID()}`,
       updatedAt: finishedAt,
       lastRunId: runId,
       lastRunIds: [runId, ...(previousState?.lastRunIds ?? [])].slice(0, 10),
@@ -364,10 +390,19 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
     };
     const documentsFile: KnowledgeDocumentsFile = {
       schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+      generationId: state.generationId,
       updatedAt: finishedAt,
       documents: mergedDocuments.map(toDocumentMetadata)
     };
-    await writeKnowledgeMetadataAtomically(input.stateRoot, state, documentsFile, runId);
+    await activateKnowledgeGeneration({
+      corpusRoot: input.corpusRoot,
+      stateRoot: input.stateRoot,
+      stagingRoot,
+      state,
+      documents: documentsFile,
+      transactionId: runId,
+      hooks: input.transactionHooks
+    });
 
     await emitProgress(input.onProgress, {
       runId,
@@ -399,6 +434,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       state
     };
   } catch (error) {
+    await recoverKnowledgeTransaction(input.corpusRoot, input.stateRoot);
     if (isKnowledgeIngestionCancelledError(error) || signal.aborted) {
       const finishedAt = new Date().toISOString();
       const sourceReports: KnowledgeIngestionSourceReport[] = sourceResults.map((result) => ({
@@ -407,6 +443,7 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
       }));
       const state: KnowledgeIngestionState = {
         schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+        ...(previousState?.generationId ? { generationId: previousState.generationId } : {}),
         updatedAt: finishedAt,
         lastRunId: previousState?.lastRunId ?? null,
         lastRunIds: previousState?.lastRunIds ?? [],
@@ -439,30 +476,15 @@ export async function ingestKnowledgeSources(input: IngestKnowledgeSourcesInput)
     throw error;
   } finally {
     clearTimeout(timeout);
-    await rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined);
-    const stagingParent = path.dirname(stagingRoot);
-    try {
-      if ((await readdir(stagingParent)).length === 0) await rm(stagingParent, { force: true });
-    } catch {
-      // Best-effort cleanup must not mask the ingestion result.
+    if (!(await pathExists(path.join(input.stateRoot, TRANSACTION_FILE)))) {
+      await cleanupStagingRoot(stagingRoot);
     }
   }
 }
 
-export async function readKnowledgeIngestionState(stateRoot: string): Promise<KnowledgeIngestionState | null> {
-  const value = await readJson(path.join(stateRoot, "state.json"));
-  if (!isRecord(value) || value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION) return null;
-  const reports = Array.isArray(value.sourceReports)
-    ? value.sourceReports.filter(isKnowledgeIngestionSourceReport)
-    : [];
-  return {
-    schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
-    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date(0).toISOString(),
-    lastRunId: typeof value.lastRunId === "string" ? value.lastRunId : null,
-    lastRunIds: Array.isArray(value.lastRunIds) ? value.lastRunIds.filter((entry): entry is string => typeof entry === "string") : [],
-    sourceReports: reports,
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((entry): entry is string => typeof entry === "string") : []
-  };
+export async function readKnowledgeIngestionState(stateRoot: string, corpusRoot = inferCorpusRoot(stateRoot)): Promise<KnowledgeIngestionState | null> {
+  await recoverKnowledgeTransaction(corpusRoot, stateRoot);
+  return (await readKnowledgeSnapshot(corpusRoot, stateRoot))?.state ?? null;
 }
 
 export async function promoteKnowledgeCorpus(input: {
@@ -470,36 +492,53 @@ export async function promoteKnowledgeCorpus(input: {
   fromStateRoot: string;
   toCorpusRoot: string;
   toStateRoot: string;
+  transactionHooks?: KnowledgeIngestionTransactionHooks;
 }) {
-  const documents = await readKnowledgeDocuments(input.fromStateRoot);
-  const state = await readKnowledgeIngestionState(input.fromStateRoot);
-  await mkdir(path.join(input.toCorpusRoot, "sources"), { recursive: true });
-
-  for (const document of documents) {
-    const sourcePath = safeCorpusPath(input.fromCorpusRoot, document.outputPath);
-    const targetPath = safeCorpusPath(input.toCorpusRoot, document.outputPath);
-    await assertNoSymlinkAlongPath(input.fromCorpusRoot, sourcePath);
-    await assertNoSymlinkAlongPath(input.toCorpusRoot, targetPath);
-    if (!(await pathExists(sourcePath))) continue;
-    if (await pathExists(targetPath)) {
-      const current = await readFile(targetPath, "utf8");
-      if (sha256(current) !== document.contentHash) {
-        throw new Error(`Knowledge corpus promotion would overwrite an unrelated file at ${document.outputPath}.`);
-      }
-      continue;
-    }
-    await mkdir(path.dirname(targetPath), { recursive: true });
-    await copyFile(sourcePath, targetPath);
-  }
-
-  if (state) {
-    const promotedState = { ...state, updatedAt: new Date().toISOString() };
-    const documentsFile: KnowledgeDocumentsFile = {
+  await recoverKnowledgeTransaction(input.fromCorpusRoot, input.fromStateRoot);
+  await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot);
+  const sourceSnapshot = await readKnowledgeSnapshot(input.fromCorpusRoot, input.fromStateRoot);
+  if (!sourceSnapshot?.state) return;
+  const targetSnapshot = await readKnowledgeSnapshot(input.toCorpusRoot, input.toStateRoot);
+  const transactionId = `promotion-${randomUUID()}`;
+  const stagingRoot = path.join(input.toCorpusRoot, ".agentos-staging", transactionId);
+  await assertNoSymlinkAlongPath(input.toCorpusRoot, stagingRoot, true);
+  await mkdir(stagingRoot, { recursive: true });
+  try {
+    const updatedAt = new Date().toISOString();
+    const state: KnowledgeIngestionState = {
+      ...sourceSnapshot.state,
       schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
-      updatedAt: promotedState.updatedAt,
-      documents
+      generationId: `knowledge-generation-${randomUUID()}`,
+      updatedAt
     };
-    await writeKnowledgeMetadataAtomically(input.toStateRoot, promotedState, documentsFile, `promotion-${randomUUID()}`);
+    const documents: KnowledgeDocumentsFile = {
+      schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+      generationId: state.generationId,
+      updatedAt,
+      documents: sourceSnapshot.documents
+    };
+    await stagePromotionCorpus({
+      stagingRoot,
+      fromCorpusRoot: input.fromCorpusRoot,
+      toCorpusRoot: input.toCorpusRoot,
+      documents: sourceSnapshot.documents,
+      previousDocuments: targetSnapshot?.documents ?? []
+    });
+    await input.transactionHooks?.afterStage?.();
+    await activateKnowledgeGeneration({
+      corpusRoot: input.toCorpusRoot,
+      stateRoot: input.toStateRoot,
+      stagingRoot,
+      state,
+      documents,
+      transactionId,
+      hooks: input.transactionHooks
+    });
+  } catch (error) {
+    await recoverKnowledgeTransaction(input.toCorpusRoot, input.toStateRoot);
+    throw error;
+  } finally {
+    if (!(await pathExists(path.join(input.toStateRoot, TRANSACTION_FILE)))) await cleanupStagingRoot(stagingRoot);
   }
 }
 
@@ -675,14 +714,13 @@ async function ingestRepositorySource(context: SourceContext) {
     return { support: "partial" as const, documents: [], discoveredItems: 1, fetchedItems: 0, skippedItems: 1, error: "Repository source requires remoteUrl or localPath." };
   }
 
-  assertSafeWorkspaceCloneRepoUrl(locator.remoteUrl);
-  if (hasUrlCredentials(locator.remoteUrl)) {
-    return { support: "partial" as const, documents: [], discoveredItems: 1, fetchedItems: 0, skippedItems: 1, error: "Remote repository URLs with embedded credentials are not accepted." };
-  }
+  const remoteUrl = normalizeKnowledgeRepositoryRemoteUrl(locator.remoteUrl);
+  const addresses = await context.resolveHost(remoteUrl.hostname);
+  assertPublicAddresses(addresses, "Remote repository host resolves to a blocked or non-public address.");
 
   const temporaryRoot = await mkdtempSafe("agentos-knowledge-repo-");
   try {
-    await runSafeGitClone(locator.remoteUrl, temporaryRoot, context.signal, context.limits.requestTimeoutMs);
+    await runSafeGitClone(remoteUrl, temporaryRoot, context.signal, context.limits.requestTimeoutMs, addresses);
     return await ingestRepositoryDirectory(context, temporaryRoot);
   } catch (error) {
     if (isKnowledgeIngestionCancelledError(error)) throw error;
@@ -1034,17 +1072,100 @@ function mergePreviousDocumentsForPartialSources(current: KnowledgeDocument[], p
   return retained.sort((left, right) => left.outputPath.localeCompare(right.outputPath));
 }
 
-async function stageDocuments(stagingRoot: string, corpusRoot: string, documents: KnowledgeDocument[]) {
-  for (const document of documents) {
+async function stageKnowledgeCorpus(input: {
+  stagingRoot: string;
+  corpusRoot: string;
+  documents: KnowledgeDocument[];
+  previousDocuments: KnowledgeDocumentMetadata[];
+  pruneSourceIds: string[];
+}) {
+  const stagedSources = path.join(input.stagingRoot, "sources");
+  await mkdir(stagedSources, { recursive: true });
+  await copySafeCorpusTree(path.join(input.corpusRoot, "sources"), stagedSources);
+  const desiredPaths = new Set(input.documents.map((document) => document.outputPath));
+  const previousByPath = new Map(input.previousDocuments.map((document) => [document.outputPath, document]));
+
+  for (const document of input.documents) {
+    const targetPath = safeCorpusPath(input.corpusRoot, document.outputPath);
+    const stagedPath = safeCorpusPath(input.stagingRoot, document.outputPath);
+    await validateManagedTarget(targetPath, document, input.previousDocuments);
     if (!document.normalizedContent) continue;
-    const stagedPath = path.join(stagingRoot, document.outputPath);
-    await assertNoSymlinkAlongPath(corpusRoot, safeCorpusPath(corpusRoot, document.outputPath), true);
+    await assertNoSymlinkAlongPath(input.stagingRoot, stagedPath, true);
     await mkdir(path.dirname(stagedPath), { recursive: true });
     await writeFile(stagedPath, document.normalizedContent, "utf8");
   }
+
+  for (const document of input.previousDocuments) {
+    if (!input.pruneSourceIds.includes(document.sourceId) || desiredPaths.has(document.outputPath)) continue;
+    const targetPath = safeCorpusPath(input.corpusRoot, document.outputPath);
+    const stagedPath = safeCorpusPath(input.stagingRoot, document.outputPath);
+    if (!(await pathExists(targetPath))) continue;
+    const metadata = await lstat(targetPath);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error(`Knowledge output path is not a regular file: ${document.outputPath}.`);
+    if (sha256(await readFile(targetPath, "utf8")) === document.contentHash) await rm(stagedPath, { force: true });
+  }
+
+  for (const [outputPath, document] of previousByPath) {
+    if (desiredPaths.has(outputPath) || !input.pruneSourceIds.includes(document.sourceId)) continue;
+    await assertNoSymlinkAlongPath(input.corpusRoot, safeCorpusPath(input.corpusRoot, outputPath));
+  }
 }
 
-async function commitSourceResults(input: { corpusRoot: string; stagingRoot: string; sourceResults: SourceWorkResult[]; previousDocuments: KnowledgeDocumentMetadata[]; documents: KnowledgeDocument[]; runId: string; onProgress?: IngestKnowledgeSourcesInput["onProgress"] }) {
+async function stagePromotionCorpus(input: {
+  stagingRoot: string;
+  fromCorpusRoot: string;
+  toCorpusRoot: string;
+  documents: KnowledgeDocumentMetadata[];
+  previousDocuments: KnowledgeDocumentMetadata[];
+}) {
+  const stagedSources = path.join(input.stagingRoot, "sources");
+  await mkdir(stagedSources, { recursive: true });
+  await copySafeCorpusTree(path.join(input.toCorpusRoot, "sources"), stagedSources);
+  for (const document of input.documents) {
+    const sourcePath = safeCorpusPath(input.fromCorpusRoot, document.outputPath);
+    const targetPath = safeCorpusPath(input.toCorpusRoot, document.outputPath);
+    const stagedPath = safeCorpusPath(input.stagingRoot, document.outputPath);
+    await assertNoSymlinkAlongPath(input.fromCorpusRoot, sourcePath);
+    await validateManagedTarget(targetPath, document, input.previousDocuments);
+    if (!(await pathExists(sourcePath))) throw new Error(`Knowledge corpus promotion source is missing ${document.outputPath}.`);
+    await mkdir(path.dirname(stagedPath), { recursive: true });
+    await copyFile(sourcePath, stagedPath);
+  }
+}
+
+async function copySafeCorpusTree(sourceRoot: string, targetRoot: string) {
+  if (!(await pathExists(sourceRoot))) return;
+  const entries = await readdir(sourceRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === GENERATION_MARKER) continue;
+    const sourcePath = path.join(sourceRoot, entry.name);
+    const targetPath = path.join(targetRoot, entry.name);
+    const metadata = await lstat(sourcePath);
+    if (metadata.isSymbolicLink()) throw new Error("Knowledge corpus contains a symbolic link.");
+    if (metadata.isDirectory()) {
+      await mkdir(targetPath, { recursive: true });
+      await copySafeCorpusTree(sourcePath, targetPath);
+    } else if (metadata.isFile()) {
+      await mkdir(path.dirname(targetPath), { recursive: true });
+      await copyFile(sourcePath, targetPath);
+    } else {
+      throw new Error("Knowledge corpus contains an unsupported filesystem entry.");
+    }
+  }
+}
+
+async function validateManagedTarget(targetPath: string, document: KnowledgeDocument | KnowledgeDocumentMetadata, previousDocuments: KnowledgeDocumentMetadata[]) {
+  await assertNoSymlinkAlongPath(path.dirname(path.dirname(targetPath)), targetPath, true);
+  if (!(await pathExists(targetPath))) return;
+  const metadata = await lstat(targetPath);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error(`Knowledge output path is not a regular file: ${document.outputPath}.`);
+  const currentHash = sha256(await readFile(targetPath, "utf8"));
+  if (currentHash === document.contentHash) return;
+  const wasManaged = previousDocuments.some((previous) => previous.outputPath === document.outputPath && previous.contentHash === currentHash);
+  if (!wasManaged) throw new Error(`Knowledge output path would overwrite an unrelated file: ${document.outputPath}.`);
+}
+
+async function commitSourceResults(input: { sourceResults: SourceWorkResult[]; previousDocuments: KnowledgeDocumentMetadata[]; documents: KnowledgeDocument[]; runId: string; onProgress?: IngestKnowledgeSourcesInput["onProgress"] }) {
   const reports: KnowledgeIngestionSourceReport[] = [];
   const documentsBySource = new Map<string, KnowledgeDocument[]>();
   for (const document of input.documents) {
@@ -1058,19 +1179,7 @@ async function commitSourceResults(input: { corpusRoot: string; stagingRoot: str
   for (const [index, result] of input.sourceResults.entries()) {
     const sourceDocuments = documentsBySource.get(result.source.id) ?? [];
     const report = { ...result.report, storedDocuments: sourceDocuments.length };
-    if (report.status === "error") {
-      reports.push(report);
-      continue;
-    }
     const desiredDocuments = sourceDocuments.filter((document) => document.sourceId === result.source.id);
-    await commitSourceFiles({
-      corpusRoot: input.corpusRoot,
-      stagingRoot: input.stagingRoot,
-      sourceId: result.source.id,
-      desiredDocuments,
-      previousDocuments: input.previousDocuments,
-      pruneStale: report.status === "ready"
-    });
     const unchangedItems = desiredDocuments.filter((document) => input.previousDocuments.some((previous) => previous.id === document.id && previous.contentHash === document.contentHash)).length;
     reports.push({ ...report, unchangedItems });
     await emitProgress(input.onProgress, {
@@ -1087,88 +1196,263 @@ async function commitSourceResults(input: { corpusRoot: string; stagingRoot: str
   return reports;
 }
 
-async function commitSourceFiles(input: { corpusRoot: string; stagingRoot: string; sourceId: string; desiredDocuments: KnowledgeDocument[]; previousDocuments: KnowledgeDocumentMetadata[]; pruneStale: boolean }) {
-  const backups: Array<{ original: string; backup: string }> = [];
-  const installed: string[] = [];
-  const sourceDocuments = input.previousDocuments.filter((document) => document.sourceId === input.sourceId);
-  const desiredIds = new Set(input.desiredDocuments.map((document) => document.id));
-  const stale = input.pruneStale ? sourceDocuments.filter((document) => !desiredIds.has(document.id)) : [];
-  try {
-    const changes = input.desiredDocuments.filter((document) => Boolean(document.normalizedContent));
-    for (const document of changes) {
-      const stagedPath = safeCorpusPath(input.stagingRoot, document.outputPath);
-      const targetPath = safeCorpusPath(input.corpusRoot, document.outputPath);
-      await assertNoSymlinkAlongPath(input.corpusRoot, targetPath, true);
-      await assertNoSymlinkAlongPath(input.stagingRoot, stagedPath, true);
-      await mkdir(path.dirname(targetPath), { recursive: true });
-      const hadTarget = await pathExists(targetPath);
-      if (hadTarget) {
-        const current = await lstat(targetPath);
-        if (!current.isFile() || current.isSymbolicLink()) throw new Error(`Knowledge output path is not a regular file: ${document.outputPath}.`);
-        const currentHash = sha256(await readFile(targetPath, "utf8"));
-        if (currentHash === document.contentHash) continue;
-        const wasManaged = input.previousDocuments.some(
-          (previous) => previous.outputPath === document.outputPath && previous.contentHash === currentHash
-        );
-        if (!wasManaged) {
-          throw new Error(`Knowledge output path would overwrite an unrelated file: ${document.outputPath}.`);
-        }
-      }
-      const backup = path.join(input.stagingRoot, ".backups", document.outputPath);
-      if (hadTarget) {
-        await mkdir(path.dirname(backup), { recursive: true });
-        await rename(targetPath, backup);
-        backups.push({ original: targetPath, backup });
-      }
-      await rename(stagedPath, targetPath);
-      installed.push(targetPath);
-    }
+type KnowledgeGenerationPointer = {
+  schemaVersion: typeof KNOWLEDGE_INGESTION_SCHEMA_VERSION;
+  generationId: string;
+};
 
-    for (const document of stale) {
-      const targetPath = safeCorpusPath(input.corpusRoot, document.outputPath);
-      if (!(await pathExists(targetPath))) continue;
-      const metadata = await lstat(targetPath);
-      if (metadata.isSymbolicLink() || !metadata.isFile()) continue;
-      if (sha256(await readFile(targetPath, "utf8")) !== document.contentHash) continue;
-      const backup = path.join(input.stagingRoot, ".backups", document.outputPath);
-      await mkdir(path.dirname(backup), { recursive: true });
-      await rename(targetPath, backup);
-      backups.push({ original: targetPath, backup });
+type KnowledgeTransactionJournal = {
+  schemaVersion: typeof KNOWLEDGE_INGESTION_SCHEMA_VERSION;
+  transactionId: string;
+  generationId: string;
+  previousPointer: KnowledgeGenerationPointer | null;
+  phase: "prepared" | "corpus-activated" | "metadata-activated";
+  stagingRelativePath: string;
+};
+
+type KnowledgeSnapshot = {
+  state: KnowledgeIngestionState;
+  documents: KnowledgeDocumentMetadata[];
+};
+
+async function activateKnowledgeGeneration(input: {
+  corpusRoot: string;
+  stateRoot: string;
+  stagingRoot: string;
+  state: KnowledgeIngestionState;
+  documents: KnowledgeDocumentsFile;
+  transactionId: string;
+  hooks?: KnowledgeIngestionTransactionHooks;
+}) {
+  const generationId = input.state.generationId;
+  if (!generationId || input.documents.generationId !== generationId) throw new Error("Knowledge generation metadata is inconsistent.");
+  await assertNoSymlinkAlongPath(path.dirname(input.stateRoot), input.stateRoot, true);
+  await assertNoSymlinkAlongPath(path.dirname(input.corpusRoot), input.corpusRoot, true);
+  await mkdir(input.stateRoot, { recursive: true });
+  await mkdir(input.corpusRoot, { recursive: true });
+  const generationRoot = path.join(input.stateRoot, GENERATIONS_DIR, generationId);
+  const stagedSources = path.join(input.stagingRoot, "sources");
+  const activeSources = path.join(input.corpusRoot, "sources");
+  const backupSources = path.join(input.stagingRoot, ".backups", "sources");
+  const currentPointer = await readKnowledgeGenerationPointer(input.stateRoot);
+  const journal: KnowledgeTransactionJournal = {
+    schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+    transactionId: input.transactionId,
+    generationId,
+    previousPointer: currentPointer,
+    phase: "prepared",
+    stagingRelativePath: path.relative(input.corpusRoot, input.stagingRoot)
+  };
+
+  try {
+    await mkdir(generationRoot, { recursive: true });
+    await writeDurableJson(path.join(generationRoot, "state.json"), input.state);
+    await writeDurableJson(path.join(generationRoot, "documents.json"), input.documents);
+    await writeDurableJson(path.join(generationRoot, "generation.json"), { schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION, generationId });
+    await writeDurableJson(path.join(input.stateRoot, TRANSACTION_FILE), journal);
+    await writeDurableFile(path.join(stagedSources, GENERATION_MARKER), `${generationId}\n`);
+    await input.hooks?.beforeCorpusActivation?.();
+    await mkdir(path.dirname(backupSources), { recursive: true });
+    if (await pathExists(activeSources)) {
+      await assertNoSymlinkAlongPath(input.corpusRoot, activeSources);
+      await rename(activeSources, backupSources);
     }
-    await rm(path.join(input.stagingRoot, ".backups"), { recursive: true, force: true });
+    await rename(stagedSources, activeSources);
+    journal.phase = "corpus-activated";
+    await writeDurableJson(path.join(input.stateRoot, TRANSACTION_FILE), journal);
+    await input.hooks?.afterCorpusActivation?.();
+    await input.hooks?.beforeMetadataActivation?.();
+    await writeDurableJson(path.join(input.stateRoot, CURRENT_FILE), {
+      schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+      generationId
+    } satisfies KnowledgeGenerationPointer);
+    journal.phase = "metadata-activated";
+    await writeDurableJson(path.join(input.stateRoot, TRANSACTION_FILE), journal);
+    await input.hooks?.afterMetadataActivation?.();
+    await writeKnowledgeCompatibilityMirrors(input.stateRoot, input.state, input.documents);
+    await cleanupKnowledgeTransaction(input, backupSources);
   } catch (error) {
-    for (const target of installed.reverse()) {
-      await rm(target, { force: true }).catch(() => undefined);
-    }
-    for (const entry of backups.reverse()) {
-      await mkdir(path.dirname(entry.original), { recursive: true }).catch(() => undefined);
-      await rename(entry.backup, entry.original).catch(() => undefined);
-    }
+    if (!(await pathExists(path.join(input.stateRoot, TRANSACTION_FILE)))) await rm(generationRoot, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
 }
 
-async function writeKnowledgeMetadataAtomically(stateRoot: string, state: KnowledgeIngestionState, documents: KnowledgeDocumentsFile, suffix: string) {
-  await mkdir(stateRoot, { recursive: true });
-  const statePath = path.join(stateRoot, "state.json");
-  const documentsPath = path.join(stateRoot, "documents.json");
-  const stateTemp = `${statePath}.tmp-${suffix}`;
-  const documentsTemp = `${documentsPath}.tmp-${suffix}`;
+async function cleanupKnowledgeTransaction(input: { corpusRoot: string; stateRoot: string; stagingRoot: string; state: KnowledgeIngestionState }, backupSources: string) {
+  await rm(backupSources, { recursive: true, force: true });
+  await cleanupStagingRoot(input.stagingRoot);
+  await cleanupOldKnowledgeGenerations(input.stateRoot, input.state.generationId ?? "");
+  await rm(path.join(input.stateRoot, TRANSACTION_FILE), { force: true });
+}
+
+async function recoverKnowledgeTransaction(corpusRoot: string, stateRoot: string) {
+  const transactionPath = path.join(stateRoot, TRANSACTION_FILE);
+  if (!(await pathExists(transactionPath))) return;
+  const journalValue = await readJson(transactionPath);
+  if (!isKnowledgeTransactionJournal(journalValue)) throw new Error("Knowledge transaction recovery found an invalid journal.");
+  const journal = journalValue;
+  const stagingRoot = path.resolve(corpusRoot, journal.stagingRelativePath);
+  if (!isPathWithin(corpusRoot, stagingRoot) || path.basename(stagingRoot) !== journal.transactionId) throw new Error("Knowledge transaction recovery found an invalid staging path.");
+  const activeSources = path.join(corpusRoot, "sources");
+  const backupSources = path.join(stagingRoot, ".backups", "sources");
+  const current = await readKnowledgeGenerationPointer(stateRoot);
+  if (current?.generationId === journal.generationId) {
+    if ((await readGenerationMarker(activeSources)) !== journal.generationId) throw new Error("Knowledge transaction recovery found an activated generation without its corpus marker.");
+    await rm(backupSources, { recursive: true, force: true }).catch(() => undefined);
+    await cleanupStagingRoot(stagingRoot);
+    await cleanupOldKnowledgeGenerations(stateRoot, journal.generationId);
+    await rm(path.join(stateRoot, TRANSACTION_FILE), { force: true });
+    return;
+  }
+
+  const activeMarker = await readGenerationMarker(activeSources);
+  if (activeMarker === journal.generationId) {
+    await rm(activeSources, { recursive: true, force: true });
+  } else if (activeMarker !== null && activeMarker !== journal.previousPointer?.generationId) {
+    throw new Error("Knowledge transaction recovery found an unexpected active corpus.");
+  }
+  if (await pathExists(backupSources)) {
+    if (await pathExists(activeSources)) throw new Error("Knowledge transaction recovery cannot restore the previous corpus safely.");
+    await rename(backupSources, activeSources);
+  }
+  await restoreKnowledgePointer(stateRoot, journal.previousPointer);
+  await rm(path.join(stateRoot, GENERATIONS_DIR, journal.generationId), { recursive: true, force: true }).catch(() => undefined);
+  await cleanupStagingRoot(stagingRoot);
+  await rm(path.join(stateRoot, TRANSACTION_FILE), { force: true });
+}
+
+async function readKnowledgeSnapshot(corpusRoot: string, stateRoot: string): Promise<KnowledgeSnapshot | null> {
+  const pointer = await readKnowledgeGenerationPointer(stateRoot);
+  if (pointer || await pathExists(path.join(stateRoot, CURRENT_FILE))) {
+    if (!pointer) return await findLatestKnowledgeGeneration(stateRoot, corpusRoot);
+    const current = await readKnowledgeGeneration(stateRoot, pointer.generationId);
+    if (current && (await readGenerationMarker(path.join(corpusRoot, "sources"))) === pointer.generationId) return current;
+    const fallback = await findLatestKnowledgeGeneration(stateRoot, corpusRoot);
+    if (fallback) return fallback;
+    return null;
+  }
+  return readLegacyKnowledgeSnapshot(stateRoot);
+}
+
+async function readKnowledgeGeneration(stateRoot: string, generationId: string): Promise<KnowledgeSnapshot | null> {
+  if (!/^knowledge-generation-[a-f0-9-]+$/i.test(generationId)) return null;
+  const generationRoot = path.join(stateRoot, GENERATIONS_DIR, generationId);
+  const state = parseKnowledgeState(await readJson(path.join(generationRoot, "state.json")), generationId);
+  const documents = parseKnowledgeDocuments(await readJson(path.join(generationRoot, "documents.json")), generationId);
+  return state && documents ? { state, documents } : null;
+}
+
+async function findLatestKnowledgeGeneration(stateRoot: string, corpusRoot: string): Promise<KnowledgeSnapshot | null> {
+  const generationRoot = path.join(stateRoot, GENERATIONS_DIR);
+  const entries = await readdir(generationRoot, { withFileTypes: true }).catch(() => []);
+  const candidates: Array<{ updatedAt: string; snapshot: KnowledgeSnapshot }> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^knowledge-generation-[a-f0-9-]+$/i.test(entry.name)) continue;
+    const snapshot = await readKnowledgeGeneration(stateRoot, entry.name);
+    if (snapshot && (await readGenerationMarker(path.join(corpusRoot, "sources"))) === entry.name) candidates.push({ updatedAt: snapshot.state.updatedAt, snapshot });
+  }
+  return candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]?.snapshot ?? null;
+}
+
+async function readLegacyKnowledgeSnapshot(stateRoot: string): Promise<KnowledgeSnapshot | null> {
+  const state = parseKnowledgeState(await readJson(path.join(stateRoot, "state.json")));
+  const documentsValue = await readJson(path.join(stateRoot, "documents.json"));
+  const documents = parseKnowledgeDocuments(documentsValue);
+  if (!state || !documents) return null;
+  const documentsGenerationId = isRecord(documentsValue) && typeof documentsValue.generationId === "string" ? documentsValue.generationId : null;
+  if ((state.generationId ?? null) !== documentsGenerationId) return null;
+  return { state, documents };
+}
+
+function parseKnowledgeState(value: unknown, expectedGenerationId?: string): KnowledgeIngestionState | null {
+  if (!isRecord(value) || (value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION && value.schemaVersion !== LEGACY_KNOWLEDGE_INGESTION_SCHEMA_VERSION)) return null;
+  if (expectedGenerationId && (value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION || value.generationId !== expectedGenerationId)) return null;
+  const reports = Array.isArray(value.sourceReports) ? value.sourceReports.filter(isKnowledgeIngestionSourceReport) : [];
+  return {
+    schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
+    ...(typeof value.generationId === "string" ? { generationId: value.generationId } : {}),
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date(0).toISOString(),
+    lastRunId: typeof value.lastRunId === "string" ? value.lastRunId : null,
+    lastRunIds: Array.isArray(value.lastRunIds) ? value.lastRunIds.filter((entry): entry is string => typeof entry === "string") : [],
+    sourceReports: reports,
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((entry): entry is string => typeof entry === "string") : []
+  };
+}
+
+function parseKnowledgeDocuments(value: unknown, expectedGenerationId?: string): KnowledgeDocumentMetadata[] | null {
+  if (!isRecord(value) || (value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION && value.schemaVersion !== LEGACY_KNOWLEDGE_INGESTION_SCHEMA_VERSION) || !Array.isArray(value.documents)) return null;
+  if (expectedGenerationId && (value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION || value.generationId !== expectedGenerationId)) return null;
+  return value.documents.filter(isKnowledgeDocumentMetadata);
+}
+
+async function readKnowledgeGenerationPointer(stateRoot: string): Promise<KnowledgeGenerationPointer | null> {
+  const value = await readJson(path.join(stateRoot, CURRENT_FILE));
+  if (!isRecord(value) || value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION || typeof value.generationId !== "string") return null;
+  return { schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION, generationId: value.generationId };
+}
+
+async function restoreKnowledgePointer(stateRoot: string, pointer: KnowledgeGenerationPointer | null) {
+  const currentPath = path.join(stateRoot, CURRENT_FILE);
+  if (pointer) await writeDurableJson(currentPath, pointer);
+  else await rm(currentPath, { force: true });
+}
+
+function isKnowledgeTransactionJournal(value: unknown): value is KnowledgeTransactionJournal {
+  return isRecord(value) && value.schemaVersion === KNOWLEDGE_INGESTION_SCHEMA_VERSION && typeof value.transactionId === "string" && typeof value.generationId === "string" && typeof value.stagingRelativePath === "string" && (value.phase === "prepared" || value.phase === "corpus-activated" || value.phase === "metadata-activated");
+}
+
+async function readGenerationMarker(sourcesRoot: string): Promise<string | null> {
+  const marker = await readFile(path.join(sourcesRoot, GENERATION_MARKER), "utf8").catch(() => null);
+  return marker?.trim() || null;
+}
+
+async function writeKnowledgeCompatibilityMirrors(stateRoot: string, state: KnowledgeIngestionState, documents: KnowledgeDocumentsFile) {
+  await writeDurableJson(path.join(stateRoot, "state.json"), state);
+  await writeDurableJson(path.join(stateRoot, "documents.json"), documents);
+}
+
+async function writeDurableJson(filePath: string, value: unknown) {
+  await writeDurableFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeDurableFile(filePath: string, content: string) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.tmp-${randomUUID()}`;
   try {
-    await writeFile(stateTemp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-    await writeFile(documentsTemp, `${JSON.stringify(documents, null, 2)}\n`, "utf8");
-    await rename(stateTemp, statePath);
-    await rename(documentsTemp, documentsPath);
+    const handle = await open(temporaryPath, "w", 0o600);
+    try {
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporaryPath, filePath);
   } finally {
-    await rm(stateTemp, { force: true }).catch(() => undefined);
-    await rm(documentsTemp, { force: true }).catch(() => undefined);
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
   }
 }
 
-async function readKnowledgeDocuments(stateRoot: string): Promise<KnowledgeDocumentMetadata[]> {
-  const value = await readJson(path.join(stateRoot, "documents.json"));
-  if (!isRecord(value) || value.schemaVersion !== KNOWLEDGE_INGESTION_SCHEMA_VERSION || !Array.isArray(value.documents)) return [];
-  return value.documents.filter(isKnowledgeDocumentMetadata);
+async function cleanupOldKnowledgeGenerations(stateRoot: string, activeGenerationId: string) {
+  const generationRoot = path.join(stateRoot, GENERATIONS_DIR);
+  const entries = await readdir(generationRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory() && /^knowledge-generation-[a-f0-9-]+$/i.test(entry.name) && entry.name !== activeGenerationId) {
+      await rm(path.join(generationRoot, entry.name), { recursive: true, force: true });
+    }
+  }
+}
+
+async function cleanupStagingRoot(stagingRoot: string) {
+  await rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined);
+  const stagingParent = path.dirname(stagingRoot);
+  try {
+    if ((await readdir(stagingParent)).length === 0) await rm(stagingParent, { force: true });
+  } catch {
+    // Best-effort cleanup must not mask the ingestion result.
+  }
+}
+
+function inferCorpusRoot(stateRoot: string) {
+  return path.resolve(stateRoot, "..", "..", "knowledge");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1487,11 +1771,7 @@ async function fetchWebsiteResource(context: SourceContext, requestedUrl: string
 
 function createDefaultWebsiteFetcher(): KnowledgeWebsiteFetcher {
   return {
-    async resolve(hostname) {
-      if (isIP(stripIpv6Brackets(hostname))) return [stripIpv6Brackets(hostname)];
-      const entries = await lookup(hostname, { all: true, verbatim: true });
-      return entries.map((entry) => entry.address);
-    },
+    resolve: resolvePublicHostAddresses,
     fetch: fetchPublicHttpUrl
   };
 }
@@ -1558,6 +1838,17 @@ export function normalizeHttpUrl(value: string) {
   return url;
 }
 
+export function normalizeKnowledgeRepositoryRemoteUrl(value: string): URL {
+  assertSafeWorkspaceCloneRepoUrl(value);
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("Remote repository ingestion accepts HTTPS URLs only.");
+  if (url.username || url.password || hasUrlCredentials(value)) throw new Error("Remote repository URLs with embedded credentials are not accepted.");
+  if (url.port && url.port !== "443") throw new Error("Remote repository ingestion accepts the HTTPS default port only.");
+  if (url.search) throw new Error("Remote repository URLs cannot contain query parameters.");
+  url.hash = "";
+  return url;
+}
+
 export function isBlockedIpAddress(value: string): boolean {
   const address = stripIpv6Brackets(value).split("%")[0];
   const version = isIP(address);
@@ -1582,8 +1873,21 @@ export function isBlockedIpAddress(value: string): boolean {
   return isBlockedIpAddress(`${mapped[0] / 256 | 0}.${mapped[0] % 256}.${mapped[1] / 256 | 0}.${mapped[1] % 256}`);
 }
 
-function assertPublicAddresses(addresses: string[]) {
-  if (addresses.length === 0 || addresses.some(isBlockedIpAddress)) throw new Error("Website host resolves to a blocked or non-public address.");
+export function assertPublicAddresses(addresses: string[], message = "Website host resolves to a blocked or non-public address.") {
+  if (addresses.length === 0 || addresses.some(isBlockedIpAddress)) throw new Error(message);
+}
+
+export async function resolvePublicHostAddresses(hostname: string): Promise<string[]> {
+  const normalized = stripIpv6Brackets(hostname);
+  if (isIP(normalized)) {
+    const addresses = [normalized];
+    assertPublicAddresses(addresses);
+    return addresses;
+  }
+  const entries = await lookup(normalized, { all: true, verbatim: true });
+  const addresses = entries.map((entry) => entry.address);
+  assertPublicAddresses(addresses);
+  return addresses;
 }
 
 function safeSameHostUrl(value: string, host: string) {
@@ -1701,23 +2005,105 @@ function isPathWithin(root: string, candidate: string) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-async function runSafeGitClone(repoUrl: string, targetDir: string, signal: AbortSignal | undefined, timeoutMs: number) {
+export type KnowledgeGitCommandRunner = (
+  file: string,
+  args: string[],
+  options: {
+    timeout: number;
+    maxBuffer: number;
+    env: NodeJS.ProcessEnv;
+    signal?: AbortSignal;
+  }
+) => Promise<{ stdout: string; stderr: string }>;
+
+export async function runSafeGitClone(
+  repoUrl: URL | string,
+  targetDir: string,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  resolvedAddresses: string[],
+  commandRunner: KnowledgeGitCommandRunner = execFileAsync
+) {
   throwIfAborted(signal);
+  const normalizedUrl = typeof repoUrl === "string" ? normalizeKnowledgeRepositoryRemoteUrl(repoUrl) : normalizeKnowledgeRepositoryRemoteUrl(repoUrl.toString());
+  assertPublicAddresses(resolvedAddresses, "Remote repository host resolves to a blocked or non-public address.");
+  const isolatedHome = await mkdtempSafe("agentos-knowledge-git-home-");
+  const gitEnv = {
+    ...createSafeGitEnvironment(),
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
+    CURL_HOME: isolatedHome
+  } as unknown as NodeJS.ProcessEnv;
+  const commandOptions = {
+    timeout: Math.max(timeoutMs, 30_000),
+    maxBuffer: 1024 * 1024,
+    env: gitEnv,
+    signal
+  };
   try {
-    await execFileAsync("git", ["-c", "protocol.file.allow=never", "-c", "core.hooksPath=/dev/null", "clone", "--depth", "1", "--no-tags", "--no-recurse-submodules", "--", repoUrl, targetDir], {
-      timeout: Math.max(timeoutMs, 30_000),
-      maxBuffer: 1024 * 1024,
-      env: {
-        ...process.env,
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: "/dev/null",
-        GIT_TERMINAL_PROMPT: "0"
-      }
-    });
-  } catch {
+    const version = await commandRunner("git", ["--version"], commandOptions);
+    if (!isGitVersionAtLeast(version.stdout, MIN_PINNED_GIT_VERSION)) throw new Error("Remote repository ingestion requires Git 2.37.0 or newer for DNS pinning.");
+    const hostname = stripIpv6Brackets(normalizedUrl.hostname);
+    const resolveHost = isIP(hostname) === 6 ? `[${hostname}]` : hostname;
+    const port = normalizedUrl.port || "443";
+    const resolveValue = `${resolveHost}:${port}:${resolvedAddresses.map(formatCurlResolveAddress).join(",")}`;
+    await commandRunner("git", [
+      "-c", `http.curloptResolve=${resolveValue}`,
+      "-c", "http.followRedirects=false",
+      "-c", "credential.helper=",
+      "-c", "protocol.file.allow=never",
+      "-c", "core.hooksPath=/dev/null",
+      "clone",
+      "--depth", "1",
+      "--no-tags",
+      "--no-recurse-submodules",
+      "--",
+      normalizedUrl.toString(),
+      targetDir
+    ], commandOptions);
+  } catch (error) {
+    if (signal?.aborted || isAbortError(error)) throw new KnowledgeIngestionCancelledError();
+    if (error instanceof Error && error.message.includes("requires Git 2.37.0")) throw error;
     throw new Error("Remote repository checkout failed.");
+  } finally {
+    await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   }
   throwIfAborted(signal);
+}
+
+function createSafeGitEnvironment(): NodeJS.ProcessEnv {
+  const blocked = /^(?:GIT_CONFIG_|GIT_ASKPASS$|GIT_SSH|SSH_|GIT_CREDENTIAL|GIT_PROXY|GIT_TRACE|GIT_DEBUG|GIT_SSL_(?:CERT|KEY|CAPATH|CIPHER)$)/i;
+  const proxy = /^(?:HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|no_proxy)$/;
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !blocked.test(key) && !proxy.test(key)));
+  return {
+    ...environment,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1"
+  } as unknown as NodeJS.ProcessEnv;
+}
+
+function formatCurlResolveAddress(address: string) {
+  const normalized = stripIpv6Brackets(address);
+  return isIP(normalized) === 6 ? `[${normalized}]` : normalized;
+}
+
+function isGitVersionAtLeast(actual: string, minimum: string) {
+  const actualParts = actual.match(/git version (\d+)\.(\d+)(?:\.(\d+))?/i);
+  const minimumParts = minimum.split(".").map(Number);
+  if (!actualParts) return false;
+  const current = [Number(actualParts[1]), Number(actualParts[2]), Number(actualParts[3] ?? 0)];
+  for (let index = 0; index < minimumParts.length; index += 1) {
+    if (current[index] !== minimumParts[index]) return current[index] > minimumParts[index];
+  }
+  return true;
+}
+
+function isAbortError(error: unknown) {
+  return isRecord(error) && (error.name === "AbortError" || error.code === "ABORT_ERR");
 }
 
 async function mkdtempSafe(prefix: string) {

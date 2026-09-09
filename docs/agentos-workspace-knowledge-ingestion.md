@@ -56,12 +56,27 @@ For a workspace at `<workspace>`:
     knowledge/
       state.json
       documents.json
+      current.json
+      generations/
+        knowledge-generation-<id>/
+          state.json
+          documents.json
+          generation.json
 ```
 
-Runs first write to `<workspace>/knowledge/.agentos-staging/<run-id>/`. The
-staging directory is removed after success or failure. A caller can use another
-corpus and state root for a newly created workspace, then promote only the
-managed, state-listed files with `promoteKnowledgeCorpus`.
+The stable, agent-readable corpus remains at `knowledge/sources/**`. A run first
+builds a complete replacement at
+`knowledge/.agentos-staging/<run-id>/sources/`. The active corpus directory is
+swapped with a backup, then `current.json` is atomically activated to point at
+the immutable generation containing the matching `state.json` and
+`documents.json`. The root `state.json` and `documents.json` files are
+compatibility mirrors; readers treat the generation selected by `current.json`
+as authoritative and never combine independent mirrors.
+
+The staging directory and old generations are removed after successful
+activation. A caller can use another corpus and state root for a newly created
+workspace, then promote only the managed, state-listed files with
+`promoteKnowledgeCorpus`, which uses the same generation activation protocol.
 
 ## Lifecycle and progress
 
@@ -106,11 +121,24 @@ become warnings on that source; they do not erase other sources.
 
 ## Repository and local file safety
 
+Remote repository ingestion accepts only unauthenticated HTTPS URLs on the
+default HTTPS port. SSH, `git://`, `file://`, `ext::`, embedded credentials,
+query parameters, and other protocols are rejected before checkout. The host
+is resolved immediately before Git runs; every answer must be public, including
+IPv4-mapped IPv6 answers. Git 2.37 or newer is required because the clone uses
+`http.curloptResolve` to pin the resolved public address set while preserving
+the hostname for TLS and the HTTP Host header. HTTP redirects are disabled, so
+the clone cannot silently leave the validated host. This follows Git's
+documented `HOST:PORT:ADDRESS[,ADDRESS]` resolve configuration format.
+
 Remote repositories are cloned into a temporary directory with a shallow,
-no-tags, no-submodules command. Git configuration and prompting are disabled,
-hooks are bypassed, and no project code is executed. Local and checked-out
-content is read only after realpath/symlink checks. Noise directories such as
-`.git`, `node_modules`, build outputs, caches, and coverage are ignored.
+no-tags, no-submodules command. System/global Git configuration, credential
+helpers, prompts, SSH variables, and proxy variables are isolated or disabled;
+hooks are bypassed, and no project code is executed. The child Git process
+receives the run `AbortSignal`, so cancellation terminates the checkout and
+temporary checkout cleanup runs in `finally`. Local and checked-out content is
+read only after realpath/symlink checks. Noise directories such as `.git`,
+`node_modules`, build outputs, caches, and coverage are ignored.
 
 The file boundary uses an explicit extension/name allowlist, per-document and
 per-source byte limits, UTF-8/binary checks, and sensitive-name exclusions.
@@ -135,12 +163,24 @@ Document IDs, output paths, canonical locators, and SHA-256 content hashes are
 deterministic. Locator and content deduplication merges provenance without
 duplicating files. Re-ingesting unchanged content reports unchanged items.
 
-Each successful source commit updates only its managed outputs and prunes stale
-documents only after that source completes successfully. Partial/error sources
-retain their previous files and metadata. Existing files that are not represented
-by prior managed metadata are never overwritten. File installation and stale
-deletion use reversible backups and rollback on failure; state files are written
-with temporary files and renames.
+Each successful run stages the entire next corpus while retaining operator-owned
+files and modified managed files. Partial/error sources retain their previous
+files and metadata; stale managed files are pruned only for successful sources.
+Existing files that are not represented by prior managed metadata are never
+overwritten.
+
+The active generation is a pair of immutable metadata files plus the matching
+stable corpus directory. Metadata is written completely inside a generation
+directory before activation. A durable transaction journal records the
+prepared, corpus-activated, and metadata-activated phases. On startup, on read,
+and after an in-process failure, the journal either completes the new generation
+or restores the previous one. Readers ignore incomplete generations, mismatched
+metadata, and invalid pointers. Durable temporary-file writes and renames are
+used for the journal, pointer, generation metadata, and compatibility mirrors.
+
+Schema V1 root state and document files remain readable. The next successful
+write creates a V2 generation and activates it; no destructive migration is
+required before that write.
 
 ## Phase boundary
 

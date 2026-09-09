@@ -38,5 +38,8 @@ export async function ingestWorkspaceKnowledge(
 
 /** Read the last persisted ingestion state without starting an ingestion run. */
 export function getWorkspaceKnowledgeIngestionState(workspacePath: string): Promise<KnowledgeIngestionState | null> {
-  return readKnowledgeIngestionState(path.join(workspacePath, ".openclaw", "knowledge"));
+  return readKnowledgeIngestionState(
+    path.join(workspacePath, ".openclaw", "knowledge"),
+    path.join(workspacePath, "knowledge")
+  );
 }
