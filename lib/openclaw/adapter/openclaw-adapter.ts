@@ -2,6 +2,7 @@ import "server-only";
 
 import type { CommandResult } from "@/lib/openclaw/cli";
 import { runGatewayConfigMutationWithPacing } from "@/lib/openclaw/application/config-pacing-service";
+import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   NativeGatewayError,
@@ -86,6 +87,8 @@ import type {
   OpenClawMemoryAgentInput,
   OpenClawMemoryDreamActionPayload,
   OpenClawMemoryDreamDiaryPayload,
+  OpenClawMemoryIndexRebuildPayload,
+  OpenClawMemoryIndexStatusPayload,
   OpenClawMemorySearchInput,
   OpenClawMemorySearchPayload,
   OpenClawMemoryStatusPayload,
@@ -233,6 +236,13 @@ export interface OpenClawAdapter {
   getSessionUsageLogs?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   searchMemory?(input: OpenClawMemorySearchInput, options?: OpenClawCommandOptions): Promise<OpenClawMemorySearchPayload>;
   getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
+  /**
+   * OpenClaw 2026.9.3 exposes memory index inspection and repair only through
+   * its structured CLI, not through the Gateway. These methods are the narrow,
+   * explicit fallback for that missing Gateway surface.
+   */
+  getMemoryIndexStatus?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexStatusPayload>;
+  rebuildMemoryIndex?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexRebuildPayload>;
   getNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamDiaryPayload>;
   backfillNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
   resetNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;
@@ -365,6 +375,8 @@ export interface OpenClawAdapter {
 }
 
 export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
+  private readonly cliMemoryFallback = new CliOpenClawGatewayClient();
+
   constructor(private readonly getClient: () => OpenClawGatewayClient = getOpenClawGatewayClient) {}
 
   capture() {
@@ -686,6 +698,14 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       return Promise.reject(new Error("OpenClaw native doctor.memory.status is unavailable."));
     }
     return client.getNativeMemoryDoctorStatus(input, options);
+  }
+
+  async getMemoryIndexStatus(input: OpenClawMemoryAgentInput, options: OpenClawCommandOptions = {}) {
+    return this.cliMemoryFallback.getMemoryIndexStatus(input, options);
+  }
+
+  rebuildMemoryIndex(input: OpenClawMemoryAgentInput, options: OpenClawCommandOptions = {}) {
+    return this.cliMemoryFallback.rebuildMemoryIndex(input, options);
   }
 
   getNativeMemoryDreamDiary(input: OpenClawMemoryAgentInput = {}, options: OpenClawCommandOptions = {}) {

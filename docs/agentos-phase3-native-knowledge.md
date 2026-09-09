@@ -42,10 +42,13 @@ AgentOS only owns the product-level declaration that its stable corpus should
 be included in each active workspace agent's native memory scope.
 
 OpenClaw's stable native Gateway exposes `memory.search` and
-`doctor.memory.status`. It does not expose the CLI memory index counters as a
-native Gateway status payload in this release. AgentOS therefore leaves native
-files, chunks, dirty state, source counts, and index-action state unknown rather
-than deriving them from the filesystem or from AgentOS metadata.
+`doctor.memory.status`. It does not expose the CLI memory index counters or a
+memory synchronization method as native Gateway methods in this release. The
+adapter therefore uses OpenClaw's structured `memory status --json --agent`
+command as an explicit, normalized CLI fallback for those facts. It invokes
+OpenClaw's own `memory index --force --agent` command only when that status
+reports a dirty or incompatible index. No filesystem scan, SQLite access, or
+AgentOS indexing implementation is used.
 
 After a successful config mutation, OpenClaw's authoritative mutation metadata
 is surfaced. If it reports `restartRequired`, AgentOS reports that the Gateway
@@ -57,10 +60,12 @@ release deliberately uses a transient search manager, however. In a disposable
 live Gateway check, the initial Phase 2 corpus was searchable, but a subsequent
 Phase 2 directory replacement was not observed through repeated
 `memory.search` calls without an explicit native rebuild. There is no supported
-Gateway `memory.sync` method to invoke for that case. AgentOS therefore does
-not add a watcher or force a rebuild after every generation; this refresh path
-remains an explicit Phase 3 follow-up until the native Gateway lifecycle
-exposes or activates the persistent watcher for this route.
+Gateway `memory.sync` method to invoke for that case. `ensureWorkspaceNativeKnowledge`
+now closes this gap by asking OpenClaw for its structured index status after a
+binding is active and delegating a rebuild only for the reported dirty or
+incompatible state. A clean index causes no OpenClaw config rewrite and no
+rebuild. If config pacing or a required Gateway restart is pending, refresh is
+deferred and the result remains explicitly observable.
 
 ## Trust and isolation
 
@@ -102,5 +107,7 @@ await ensureWorkspaceNativeKnowledge({
 ```
 
 Use `planWorkspaceKnowledgeBinding` for a dry-run preview and
-`getWorkspaceNativeKnowledgeStatus` for a native status projection. Phase 4
-must not rebuild this binding logic or access OpenClaw's internal SQLite.
+`getWorkspaceNativeKnowledgeStatus` for a status projection, including the
+normalized OpenClaw index facts and whether a refresh is required. Phase 4
+must not rebuild this binding logic, add a watcher, or access OpenClaw's
+internal SQLite.

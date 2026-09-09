@@ -13,6 +13,10 @@ import {
   type WorkspaceNativeKnowledgeBindingInput
 } from "@/lib/agentos/application/workspace-native-knowledge-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import type {
+  OpenClawMemoryIndexStatusPayload,
+  OpenClawMemoryStatusPayload
+} from "@/lib/openclaw/client/types";
 import { searchWorkerMemory } from "@/lib/openclaw/application/native-memory-service";
 
 const tempRoots: string[] = [];
@@ -303,7 +307,110 @@ test("coverage reports markdown and non-markdown final corpus documents without 
   assert.equal(status.coverage.markdownCoveragePercent, 50);
   assert.equal(status.index, null);
   assert.equal(status.indexActionRequired, "unknown");
-  assert.match(status.warnings.join(" "), /does not expose memory index file\/chunk counters/);
+  assert.match(status.warnings.join(" "), /OpenClaw owns native memory watching/);
+});
+
+test("ensure refreshes a dirty OpenClaw index through the explicit CLI fallback and skips clean indexes", async () => {
+  const workspacePath = await makeWorkspace();
+  await ingestPrompt(workspacePath, "INDEX_REFRESH_FACT");
+  const fixture = adapterFixture({
+    agents: {
+      entries: {
+        "agent-a": { memory: { search: { extraPaths: [{ path: "knowledge/sources" }] } } }
+      }
+    }
+  });
+  const dirty: OpenClawMemoryIndexStatusPayload = {
+    agentId: "agent-a",
+    backend: "builtin",
+    files: 0,
+    chunks: 0,
+    dirty: true,
+    lastSyncError: null,
+    sourceCounts: { memory: 0 },
+    indexIdentity: { status: "missing", code: "metadata_missing", owner: "openclaw", reason: "index metadata is missing" },
+    appliedVia: "cli-fallback"
+  };
+  const clean: OpenClawMemoryIndexStatusPayload = {
+    ...dirty,
+    files: 1,
+    chunks: 1,
+    dirty: false,
+    sourceCounts: { memory: 1 },
+    indexIdentity: { status: "valid", code: null, owner: "openclaw", reason: null }
+  };
+  let statusReadCount = 0;
+  let rebuildCount = 0;
+  fixture.adapter.getMemoryIndexStatus = async () => {
+    statusReadCount += 1;
+    return statusReadCount === 1 ? dirty : clean;
+  };
+  fixture.adapter.rebuildMemoryIndex = async () => {
+    rebuildCount += 1;
+    return { agentId: "agent-a", appliedVia: "cli-fallback", command: "memory index --force" };
+  };
+
+  const refreshed = await ensureWorkspaceNativeKnowledge({
+    workspacePath,
+    agentIds: ["agent-a"],
+    adapter: fixture.adapter
+  });
+  assert.equal(refreshed.indexRefresh[0]?.action, "reindexed");
+  assert.equal(refreshed.indexRefresh[0]?.appliedVia, "cli-fallback");
+  assert.equal(rebuildCount, 1);
+
+  const unchanged = await ensureWorkspaceNativeKnowledge({
+    workspacePath,
+    agentIds: ["agent-a"],
+    adapter: fixture.adapter
+  });
+  assert.equal(unchanged.indexRefresh[0]?.action, "not-required");
+  assert.equal(rebuildCount, 1);
+});
+
+test("workspace status projects OpenClaw CLI index health without exposing native paths", async () => {
+  const workspacePath = await makeWorkspace();
+  await ingestPrompt(workspacePath, "INDEX_STATUS_FACT");
+  const fixture = adapterFixture({
+    agents: {
+      entries: {
+        "agent-a": { memory: { search: { extraPaths: [{ path: "knowledge/sources" }] } } }
+      }
+    }
+  });
+  const nativeStatus: OpenClawMemoryStatusPayload = {
+    agentId: "agent-a",
+    embedding: { ok: true, checked: true }
+  };
+  const indexStatus: OpenClawMemoryIndexStatusPayload = {
+    agentId: "agent-a",
+    backend: "builtin",
+    files: 1,
+    chunks: 2,
+    dirty: false,
+    lastSyncError: null,
+    sourceCounts: { memory: 1 },
+    indexIdentity: { status: "valid", code: null, owner: "openclaw", reason: null },
+    appliedVia: "cli-fallback"
+  };
+  fixture.adapter.getNativeMemoryDoctorStatus = async () => nativeStatus;
+  fixture.adapter.getMemoryIndexStatus = async () => indexStatus;
+
+  const status = await getWorkspaceNativeKnowledgeStatus({
+    workspacePath,
+    agentIds: ["agent-a"],
+    adapter: fixture.adapter
+  });
+  assert.equal(status.status, "configured");
+  assert.deepEqual(status.index, {
+    files: 1,
+    chunks: 2,
+    dirty: false,
+    lastSyncError: null,
+    sourceCounts: { memory: 1 }
+  });
+  assert.equal(status.indexActionRequired, "not-required");
+  assert.doesNotMatch(JSON.stringify(status), /dbPath|workspaceDir/);
 });
 
 test("malformed native config and missing native status remain explicit failure or unknown states", async () => {

@@ -11,6 +11,7 @@ import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-
 import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import { redactSecretText } from "@/lib/security/redaction";
 import type {
   AgentPayload,
   GatewayProbePayload,
@@ -74,6 +75,9 @@ import type {
   OpenClawListSessionsInput,
   OpenClawLogsTailInput,
   OpenClawLogsTailPayload,
+  OpenClawMemoryAgentInput,
+  OpenClawMemoryIndexRebuildPayload,
+  OpenClawMemoryIndexStatusPayload,
   OpenClawModelScanPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawPluginListPayload,
@@ -401,6 +405,34 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getStatus(options: OpenClawCommandOptions = {}) {
     return runOpenClawJson<StatusPayload>(["status", "--json"], options);
+  }
+
+  async getMemoryIndexStatus(
+    input: OpenClawMemoryAgentInput,
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawMemoryIndexStatusPayload> {
+    const agentId = requireMemoryAgentId(input);
+    const raw = await runOpenClawJson<unknown>(
+      ["memory", "status", "--json", "--agent", agentId],
+      { ...options, timeoutMs: options.timeoutMs ?? 20_000 }
+    );
+    return normalizeMemoryIndexStatus(raw, agentId);
+  }
+
+  async rebuildMemoryIndex(
+    input: OpenClawMemoryAgentInput,
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawMemoryIndexRebuildPayload> {
+    const agentId = requireMemoryAgentId(input);
+    await runOpenClaw(
+      ["memory", "index", "--force", "--agent", agentId],
+      { ...options, timeoutMs: options.timeoutMs ?? 4 * 60_000 }
+    );
+    return {
+      agentId,
+      appliedVia: "cli-fallback",
+      command: "memory index --force"
+    };
   }
 
   getUpdateStatus(options: OpenClawCommandOptions = {}) {
@@ -1106,4 +1138,70 @@ function resolveLatestPendingDeviceRequestId(payload: Record<string, unknown>) {
   }
 
   return selected?.requestId ?? null;
+}
+
+function requireMemoryAgentId(input: OpenClawMemoryAgentInput) {
+  const agentId = input.agentId?.trim();
+  if (!agentId) {
+    throw new Error("OpenClaw memory index status requires an explicit agent id.");
+  }
+  return agentId;
+}
+
+function normalizeMemoryIndexStatus(raw: unknown, agentId: string): OpenClawMemoryIndexStatusPayload {
+  const records: Array<Record<string, unknown>> = Array.isArray(raw)
+    ? raw.filter(isObjectRecord)
+    : isObjectRecord(raw) ? [raw] : [];
+  const record = records.find((candidate) => candidate.agentId === agentId) ?? records[0];
+  const status = record && isObjectRecord(record.status) ? record.status : null;
+  if (!status) {
+    throw new Error("OpenClaw memory status returned an invalid agent status payload.");
+  }
+
+  const sourceCounts = Array.isArray(status.sourceCounts)
+    ? Object.fromEntries(
+        status.sourceCounts
+          .filter(isObjectRecord)
+          .map((source: Record<string, unknown>) => {
+            const sourceName = typeof source.source === "string" ? source.source : null;
+            const files = typeof source.files === "number" && Number.isFinite(source.files)
+              ? source.files
+              : null;
+            return sourceName && files !== null ? [sourceName, files] as [string, number] : null;
+          })
+          .filter((entry): entry is [string, number] => entry !== null)
+      )
+    : null;
+  const identity = isObjectRecord(status.custom) && isObjectRecord(status.custom.indexIdentity)
+    ? status.custom.indexIdentity
+    : null;
+
+  return {
+    agentId,
+    backend: typeof status.backend === "string" ? status.backend : null,
+    files: readFiniteNumber(status.files),
+    chunks: readFiniteNumber(status.chunks),
+    dirty: typeof status.dirty === "boolean" ? status.dirty : null,
+    lastSyncError: typeof status.lastSyncError === "string"
+      ? redactSecretText(status.lastSyncError)
+      : null,
+    sourceCounts,
+    indexIdentity: identity
+      ? {
+          status: readString(identity.status),
+          code: readString(identity.code),
+          owner: readString(identity.owner),
+          reason: readString(identity.reason)
+        }
+      : null,
+    appliedVia: "cli-fallback"
+  };
+}
+
+function readFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : null;
 }

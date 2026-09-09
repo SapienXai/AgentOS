@@ -735,6 +735,37 @@ export type OpenClawMemoryStatusPayload = {
   };
 };
 
+/**
+ * Structured status returned by the OpenClaw memory CLI when the Gateway does
+ * not expose index inspection or synchronization methods.
+ *
+ * This is deliberately normalized at the AgentOS adapter boundary so callers
+ * never depend on OpenClaw's CLI paths, database paths, or full status object.
+ */
+export type OpenClawMemoryIndexStatusPayload = {
+  agentId: string;
+  backend: string | null;
+  files: number | null;
+  chunks: number | null;
+  dirty: boolean | null;
+  lastSyncError: string | null;
+  sourceCounts: Record<string, number> | null;
+  indexIdentity: {
+    status: string | null;
+    code: string | null;
+    owner: string | null;
+    reason: string | null;
+  } | null;
+  appliedVia: "cli-fallback";
+};
+
+/** Result of an explicit OpenClaw-owned memory index rebuild. */
+export type OpenClawMemoryIndexRebuildPayload = {
+  agentId: string;
+  appliedVia: "cli-fallback";
+  command: "memory index --force";
+};
+
 export type OpenClawMemoryDreamDiaryPayload = {
   agentId: string;
   found: boolean;
