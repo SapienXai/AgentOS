@@ -55,6 +55,11 @@ import {
   unbindWorkspaceChannelAgent,
   upsertWorkspaceChannel
 } from "@/lib/openclaw/application/channel-service";
+import {
+  ensureWorkspaceNativeKnowledge,
+  getWorkspaceNativeKnowledgeStatus,
+  planWorkspaceKnowledgeBinding
+} from "@/lib/agentos/application/workspace-native-knowledge-service";
 
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
@@ -86,6 +91,7 @@ export {
   discoverDiscordRoutes,
   discoverSurfaceRoutes,
   discoverTelegramGroups,
+  ensureWorkspaceNativeKnowledge,
   ensureOpenClawRuntimeSmokeTest,
   ensureOpenClawRuntimeStateAccess,
   generateGatewayNativeAuthToken,
@@ -94,10 +100,12 @@ export {
   getGatewayBindMode,
   getGatewayNativeAuthStatus,
   getRuntimeOutput,
+  getWorkspaceNativeKnowledgeStatus,
   getTaskDetail,
   inspectRuntimeIssueDevices,
   readWorkspaceEditSeed,
   reconcileWorkspaceSurfaceBindings,
+  planWorkspaceKnowledgeBinding,
   repairRuntimeIssueLegacyState,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
