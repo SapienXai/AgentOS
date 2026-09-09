@@ -15,6 +15,7 @@ import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gate
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { redactSecretText } from "@/lib/security/redaction";
+import { resolveAuthoritativeRuntimeOwnershipProof } from "@/lib/openclaw/lifecycle/runtime-provenance";
 import {
   resolveLocalCliRuntimeIdentity,
   resolveMemoryCliFallbackLocality,
@@ -87,6 +88,7 @@ import type {
   OpenClawMemoryIndexRebuildPayload,
   OpenClawMemoryIndexStatusPayload,
   OpenClawRuntimeIdentity,
+  OpenClawRuntimeOwnershipProof,
   OpenClawModelScanPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawPluginListPayload,
@@ -403,6 +405,12 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getRuntimeIdentity() {
     return this.options.runtimeIdentity ?? null;
+  }
+
+  getRuntimeOwnershipProof(): Promise<OpenClawRuntimeOwnershipProof | null> {
+    return this.options.runtimeIdentity
+      ? resolveAuthoritativeRuntimeOwnershipProof(this.options.runtimeIdentity)
+      : Promise.resolve(null);
   }
 
   async getOperatorIdentity(): Promise<OpenClawOperatorIdentity> {

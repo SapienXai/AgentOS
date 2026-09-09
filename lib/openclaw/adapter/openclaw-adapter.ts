@@ -386,11 +386,15 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     cliMemoryFallback?: CliOpenClawGatewayClient
   ) {
     this.cliMemoryFallback = cliMemoryFallback ?? new CliOpenClawGatewayClient({
-        resolveMemoryCliFallbackLocality: () => resolveMemoryCliFallbackLocality({
-          gatewayRuntime: this.getClient().getRuntimeIdentity?.() ?? null,
-          cliRuntime: resolveLocalCliRuntimeIdentity()
-        })
-      });
+      resolveMemoryCliFallbackLocality: async () => {
+        const client = this.getClient();
+        return resolveMemoryCliFallbackLocality({
+          gatewayRuntime: client.getRuntimeIdentity?.() ?? null,
+          cliRuntime: resolveLocalCliRuntimeIdentity(),
+          ownershipProof: await client.getRuntimeOwnershipProof?.()
+        });
+      }
+    });
   }
 
   capture() {

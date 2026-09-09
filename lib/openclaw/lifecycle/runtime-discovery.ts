@@ -45,9 +45,11 @@ type GatewayProbeResult = {
 };
 
 /**
- * Resolve the same trusted runtime configuration used by lifecycle discovery.
+ * Resolve the configured runtime metadata used by lifecycle discovery.
  * Callers may provide factory-bound values, but those values stay inside the
- * server-side client boundary and are never read from request payloads.
+ * server-side client boundary and are never read from request payloads. This
+ * function does not attest Gateway ownership; provenance is resolved by the
+ * lifecycle boundary separately.
  */
 export function resolveGatewayRuntimeIdentity(
   options: GatewayRuntimeIdentityOptions = {}
@@ -134,6 +136,7 @@ export async function discoverGatewayRuntime(
     managementStrategy,
     gatewayUrl,
     gatewayPort,
+    profile: env.OPENCLAW_PROFILE?.trim() || null,
     binaryPath,
     installLocation,
     stateDir,

@@ -115,6 +115,7 @@ export type {
   OpenClawMemoryIndexStatusPayload,
   OpenClawMemoryIndexRebuildPayload,
   OpenClawRuntimeIdentity,
+  OpenClawRuntimeOwnershipProof,
   OpenClawGatewayClient,
   OpenClawModelAuthOrderSetInput,
   OpenClawSessionsPayload,

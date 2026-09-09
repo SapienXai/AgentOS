@@ -83,6 +83,8 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(supervisorRuntime, /Managed Gateway restarted and is ready/);
   assert.match(supervisorRuntime, /healthFailureThreshold/);
   assert.match(supervisorRuntime, /restartFailureLimit/);
+  assert.match(supervisorRuntime, /stateDir,\s*configPath/);
+  assert.match(supervisorRuntime, /profile: environment\.OPENCLAW_PROFILE/);
   assert.match(supervisor, /detached: true/);
   assert.match(supervisor, /startRailwayPublicProxy/);
   assert.match(supervisor, /AGENTOS_BROWSER_POLICY_READY_PATH/);

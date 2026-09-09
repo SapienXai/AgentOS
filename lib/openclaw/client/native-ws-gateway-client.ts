@@ -110,6 +110,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import { isUnsupportedLegacyProviderId } from "@/lib/openclaw/model-provider-registry";
 import { normalizeOpenClawChatAdmission } from "@/lib/openclaw/domains/chat-admission";
+import { resolveAuthoritativeRuntimeOwnershipProof } from "@/lib/openclaw/lifecycle/runtime-provenance";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import type {
   GatewayStatusPayload,
@@ -192,6 +193,7 @@ import type {
   OpenClawMemorySearchInput,
   OpenClawMemorySearchPayload,
   OpenClawMemoryStatusPayload,
+  OpenClawRuntimeOwnershipProof,
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
   OpenClawQuestionListPayload,
@@ -367,6 +369,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getRuntimeIdentity() {
     return this.options.runtimeIdentity ?? null;
+  }
+
+  getRuntimeOwnershipProof(): Promise<OpenClawRuntimeOwnershipProof | null> {
+    return this.options.runtimeIdentity
+      ? resolveAuthoritativeRuntimeOwnershipProof(this.options.runtimeIdentity)
+      : Promise.resolve(null);
   }
 
   close(reason = "closed") {

@@ -41,6 +41,8 @@ export function createOpenClawGatewayClient(
     OPENCLAW_STATE_DIR: stateDir
   });
   const gatewayUrl = options.url ?? resolveGatewayUrl();
+  // This is configuration metadata only. The client resolves fresh lifecycle
+  // ownership proof before allowing a memory CLI operation.
   const runtimeIdentity = resolveGatewayRuntimeIdentity({
     gatewayUrl,
     stateDir,

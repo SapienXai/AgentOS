@@ -99,6 +99,7 @@ export type GatewayRuntimeDescriptor = {
   managementStrategy: GatewayManagementStrategy;
   gatewayUrl: string;
   gatewayPort: number;
+  profile: string | null;
   binaryPath: string | null;
   installLocation: string | null;
   stateDir: string;
@@ -160,6 +161,9 @@ export type SupervisorResponse = {
   generation: number | null;
   gatewayUrl?: string;
   gatewayPort?: number;
+  stateDir?: string;
+  configPath?: string;
+  profile?: string | null;
   ready?: boolean;
   authenticated?: boolean;
   health?: "unknown" | "live" | "not-live";

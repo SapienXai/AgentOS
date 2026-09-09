@@ -63,16 +63,27 @@ normalized at the adapter boundary; AgentOS never receives the full CLI JSON.
 
 ## Runtime locality
 
-The CLI fallback is enabled only when the connected client carries trusted
-runtime evidence from the existing lifecycle discovery boundary and that
-evidence matches the local CLI runtime after canonical path resolution. The
-proof requires a loopback Gateway, trusted AgentOS-managed lifecycle
-ownership (or the existing AgentOS Railway supervisor), matching Gateway URL,
-profile, state directory, and config path. The CLI process is explicitly
-pinned to the proven `OPENCLAW_STATE_DIR`, `OPENCLAW_CONFIG_PATH`, and
-`OPENCLAW_PROFILE` values. A loopback URL, port, process user, version, or
-agent ID alone is never proof. The identity is server-side configuration and
-lifecycle evidence, not request data.
+The client factory's `OpenClawRuntimeIdentity` is configured runtime metadata,
+not proof that the connected WebSocket listener belongs to those paths. A
+loopback URL, port, process user, version, agent ID, or identical locally
+synthesized configuration is never enough.
+
+Before the CLI fallback is allowed, the client asks the lifecycle provenance
+boundary for fresh ownership evidence. The accepted evidence is either a live
+AgentOS-spawned child recorded with its exact launch identity and lifecycle
+generation, or a ready response from the private Railway supervisor that
+reports its registered Gateway URL, state directory, config path, profile,
+process ID, and generation. The evidence must match the configured Gateway and
+the local CLI after canonical `realpath` resolution. The normal
+`openclaw-service` mode does not prove which process owns a pre-existing local
+listener, so it fails closed.
+
+The CLI process is explicitly pinned to the proven `OPENCLAW_STATE_DIR`,
+`OPENCLAW_CONFIG_PATH`, and `OPENCLAW_PROFILE` values. `AGENTOS_OPENCLAW_GATEWAY_URL`
+and `OPENCLAW_GATEWAY_URL` are removed from the CLI child environment because
+they select Gateway connection behavior, not the local memory store. No
+ownership proof is accepted from an HTTP request or other user-controlled
+payload.
 
 ## Remote Gateway
 
@@ -80,8 +91,9 @@ Remote Gateway native `memory.search` remains usable. Local CLI index status and
 rebuild are reported as unavailable because a local process cannot be assumed
 to address that Gateway's state. An externally managed local Gateway is also
 unavailable unless its runtime identity is proven by the supported lifecycle
-boundary. Unknown locality returns unknown freshness and never runs
-`memory index --force`.
+boundary. A stale child record, missing supervisor identity fields, changed
+supervisor generation, or path mismatch also fails closed. Unknown locality
+returns unknown freshness and never runs `memory index --force`.
 
 No filesystem scan, SQLite access, remote shell, custom watcher, or AgentOS
 indexing implementation is used. The absence of a remote native index

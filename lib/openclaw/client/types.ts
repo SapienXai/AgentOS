@@ -56,9 +56,9 @@ export type OpenClawGatewayMode =
   | "unreachable";
 
 /**
- * Trusted configuration/lifecycle evidence captured by the client factory.
- * This is not an identity reported by the remote Gateway and must never be
- * accepted from an HTTP request or other user-controlled payload.
+ * Configured runtime metadata captured by the server-side client factory.
+ * These values describe the runtime AgentOS intends to use; they are not an
+ * identity reported by the connected Gateway and are not ownership proof.
  */
 export type OpenClawRuntimeIdentity = {
   gatewayUrl: string;
@@ -68,6 +68,22 @@ export type OpenClawRuntimeIdentity = {
   ownership: "agentos-managed" | "external-supervisor" | "unavailable" | "unknown";
   deploymentMode: "local" | "railway" | "unknown";
   managementStrategy: "child" | "openclaw-service" | "external-supervisor" | "unavailable";
+  supervisorEndpoint: string | null;
+};
+
+/**
+ * Authoritative lifecycle evidence for a running Gateway. This is produced
+ * only by AgentOS' managed child lifecycle or its private external supervisor
+ * protocol; it must never be accepted from an HTTP request.
+ */
+export type OpenClawRuntimeOwnershipProof = {
+  source: "agentos-child" | "external-supervisor";
+  gatewayUrl: string;
+  stateDir: string;
+  configPath: string;
+  profile: string | null;
+  generation: number;
+  pid: number;
   supervisorEndpoint: string | null;
 };
 
@@ -1907,8 +1923,10 @@ export type OpenClawUpdateStatusPayload = Record<string, unknown> & {
 };
 
 export interface OpenClawGatewayClient {
-  /** Trusted factory/lifecycle evidence; never derived from a request. */
+  /** Configured server-side runtime metadata; not Gateway ownership proof. */
   getRuntimeIdentity?(): OpenClawRuntimeIdentity | null;
+  /** Fresh lifecycle ownership proof; never derived from a request. */
+  getRuntimeOwnershipProof?(): Promise<OpenClawRuntimeOwnershipProof | null>;
   getDiagnostics?(): OpenClawGatewayClientDiagnostics;
   /** Current official transport generation; this never creates a connection. */
   getNativeConnectionGeneration?(): number;

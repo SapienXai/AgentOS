@@ -7,7 +7,11 @@ import {
   resolveGatewayRuntimeIdentity,
   type GatewayRuntimeIdentityOptions
 } from "@/lib/openclaw/lifecycle/runtime-discovery";
-import type { OpenClawRuntimeIdentity } from "@/lib/openclaw/client/types";
+import { resolveAuthoritativeRuntimeOwnershipProof } from "@/lib/openclaw/lifecycle/runtime-provenance";
+import type {
+  OpenClawRuntimeIdentity,
+  OpenClawRuntimeOwnershipProof
+} from "@/lib/openclaw/client/types";
 
 export type MemoryCliFallbackCapability =
   | "available-local-same-runtime"
@@ -30,10 +34,12 @@ export type MemoryCliRuntimeEnvironment = {
 };
 
 export type MemoryCliFallbackLocalityInput = {
-  /** Trusted identity captured by the connected client factory. */
+  /** Configured identity captured by the connected client factory. */
   gatewayRuntime: OpenClawRuntimeIdentity | null | undefined;
-  /** Trusted local lifecycle/config identity; never request-derived. */
+  /** Configured local CLI identity; never request-derived. */
   cliRuntime?: OpenClawRuntimeIdentity | null;
+  /** Fresh proof supplied by the trusted client/lifecycle boundary. */
+  ownershipProof?: OpenClawRuntimeOwnershipProof | null;
 };
 
 /** Resolve the local CLI identity from the existing lifecycle discovery boundary. */
@@ -42,9 +48,10 @@ export function resolveLocalCliRuntimeIdentity(options: GatewayRuntimeIdentityOp
 }
 
 /**
- * A loopback URL is only a prerequisite. The CLI is usable for memory
- * maintenance only when lifecycle ownership, URL, profile, state root, and
- * config path all agree and both filesystem roots can be canonicalized.
+ * A loopback URL and matching configured fields are only prerequisites. The
+ * CLI is usable for memory maintenance only when a fresh authoritative
+ * lifecycle proof also identifies the running Gateway and its exact state and
+ * config roots.
  */
 export async function resolveMemoryCliFallbackLocality(
   input: MemoryCliFallbackLocalityInput
@@ -82,10 +89,6 @@ export async function resolveMemoryCliFallbackLocality(
     return unproven("The local CLI runtime does not resolve to the same loopback Gateway.");
   }
 
-  if (!isAllowedLifecycleOwnership(gatewayRuntime) || !isAllowedLifecycleOwnership(cliRuntime)) {
-    return unproven("Gateway lifecycle ownership is not trusted for local memory CLI maintenance.");
-  }
-
   if (
     normalizeGatewayUrl(gatewayRuntime.gatewayUrl) !== normalizeGatewayUrl(cliRuntime.gatewayUrl) ||
     gatewayRuntime.profile !== cliRuntime.profile ||
@@ -97,18 +100,40 @@ export async function resolveMemoryCliFallbackLocality(
     return unproven("Connected Gateway and local CLI runtime identities do not match.");
   }
 
+  const ownershipProof = input.ownershipProof === undefined
+    ? await resolveAuthoritativeRuntimeOwnershipProof(gatewayRuntime)
+    : input.ownershipProof;
+  if (!ownershipProof) {
+    return unproven("Authoritative Gateway lifecycle ownership proof is unavailable.");
+  }
+
+  if (!isCompatibleOwnershipProof(ownershipProof, gatewayRuntime)) {
+    return unproven("Gateway lifecycle ownership proof does not describe the configured runtime.");
+  }
+
   const canonicalGatewayStateDir = await canonicalRuntimePath(gatewayRuntime.stateDir);
   const canonicalCliStateDir = await canonicalRuntimePath(cliRuntime.stateDir);
+  const canonicalProofStateDir = await canonicalRuntimePath(ownershipProof.stateDir);
   const canonicalGatewayConfigPath = await canonicalRuntimePath(gatewayRuntime.configPath);
   const canonicalCliConfigPath = await canonicalRuntimePath(cliRuntime.configPath);
+  const canonicalProofConfigPath = await canonicalRuntimePath(ownershipProof.configPath);
 
-  if (!canonicalGatewayStateDir || !canonicalCliStateDir || !canonicalGatewayConfigPath || !canonicalCliConfigPath) {
+  if (
+    !canonicalGatewayStateDir ||
+    !canonicalCliStateDir ||
+    !canonicalProofStateDir ||
+    !canonicalGatewayConfigPath ||
+    !canonicalCliConfigPath ||
+    !canonicalProofConfigPath
+  ) {
     return unproven("Gateway and local CLI state/config paths could not be canonicalized.");
   }
 
   if (
     canonicalGatewayStateDir !== canonicalCliStateDir ||
-    canonicalGatewayConfigPath !== canonicalCliConfigPath
+    canonicalGatewayStateDir !== canonicalProofStateDir ||
+    canonicalGatewayConfigPath !== canonicalCliConfigPath ||
+    canonicalGatewayConfigPath !== canonicalProofConfigPath
   ) {
     return unproven("Connected Gateway and local CLI state/config identities do not match.");
   }
@@ -126,7 +151,9 @@ export async function resolveMemoryCliFallbackLocality(
     reason: null,
     evidence: [
       "loopback-gateway",
-      "trusted-lifecycle-ownership",
+      ownershipProof.source === "agentos-child"
+        ? "authoritative-agentos-child-ownership"
+        : "authoritative-railway-supervisor-ownership",
       "matching-gateway-url",
       "matching-profile",
       "matching-state-dir",
@@ -161,12 +188,29 @@ export function classifyGatewayUrl(value: string | null | undefined) {
   return "unknown" as const;
 }
 
-function isAllowedLifecycleOwnership(runtime: OpenClawRuntimeIdentity) {
-  return runtime.ownership === "agentos-managed" || (
-    runtime.ownership === "external-supervisor" &&
+function isCompatibleOwnershipProof(
+  proof: OpenClawRuntimeOwnershipProof,
+  runtime: OpenClawRuntimeIdentity
+) {
+  if (proof.generation <= 0 || proof.pid <= 1) return false;
+  if (
+    normalizeGatewayUrl(proof.gatewayUrl) !== normalizeGatewayUrl(runtime.gatewayUrl) ||
+    proof.profile !== runtime.profile
+  ) {
+    return false;
+  }
+
+  if (proof.source === "agentos-child") {
+    return runtime.ownership === "agentos-managed" &&
+      runtime.deploymentMode === "local" &&
+      runtime.managementStrategy === "child" &&
+      proof.supervisorEndpoint === null;
+  }
+
+  return runtime.ownership === "external-supervisor" &&
     runtime.deploymentMode === "railway" &&
-    runtime.managementStrategy === "external-supervisor"
-  );
+    runtime.managementStrategy === "external-supervisor" &&
+    proof.supervisorEndpoint === runtime.supervisorEndpoint;
 }
 
 function isLoopbackIp(hostname: string) {

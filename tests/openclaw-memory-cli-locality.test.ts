@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { chmod, mkdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,10 +18,12 @@ import {
   classifyGatewayUrl,
   resolveMemoryCliFallbackLocality
 } from "@/lib/openclaw/client/memory-cli-locality";
+import { resolveAuthoritativeRuntimeOwnershipProof } from "@/lib/openclaw/lifecycle/runtime-provenance";
 import type { OpenClawCliRuntimeEnvironment } from "@/lib/openclaw/cli";
 import type {
   OpenClawGatewayClient,
-  OpenClawRuntimeIdentity
+  OpenClawRuntimeIdentity,
+  OpenClawRuntimeOwnershipProof
 } from "@/lib/openclaw/client/types";
 
 test("remote Gateway blocks memory status and rebuild without invoking the CLI", async () => {
@@ -83,7 +87,7 @@ test("different local state or config identities block both status and rebuild",
   }
 });
 
-test("a local Gateway with external supervisor ownership is not trusted, while Railway supervisor ownership is", async () => {
+test("local ownership labels and matching config do not self-attest a Railway supervisor", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
   try {
     const localExternal = await createRuntimeIdentity(root, "local-external");
@@ -101,24 +105,25 @@ test("a local Gateway with external supervisor ownership is not trusted, while R
     });
     assert.equal(localDecision.status, "unproven");
 
-    const railway = await createRuntimeIdentity(root, "railway");
+    const railway = {
+      ...(await createRuntimeIdentity(root, "railway")),
+      ownership: "external-supervisor" as const,
+      deploymentMode: "railway" as const,
+      managementStrategy: "external-supervisor" as const,
+      supervisorEndpoint: "/tmp/agentos-memory-locality-supervisor.sock"
+    };
     const railwayDecision = await resolveMemoryCliFallbackLocality({
-      gatewayRuntime: {
-        ...railway,
-        ownership: "external-supervisor",
-        deploymentMode: "railway",
-        managementStrategy: "external-supervisor",
-        supervisorEndpoint: "/tmp/agentos-memory-locality-supervisor.sock"
-      },
-      cliRuntime: {
-        ...railway,
-        ownership: "external-supervisor",
-        deploymentMode: "railway",
-        managementStrategy: "external-supervisor",
-        supervisorEndpoint: "/tmp/agentos-memory-locality-supervisor.sock"
-      }
+      gatewayRuntime: railway,
+      cliRuntime: railway
     });
-    assert.equal(railwayDecision.status, "proven-same-runtime");
+    assert.equal(railwayDecision.status, "unproven");
+
+    const provenRailwayDecision = await resolveMemoryCliFallbackLocality({
+      gatewayRuntime: railway,
+      cliRuntime: railway,
+      ownershipProof: ownershipProof(railway, "external-supervisor")
+    });
+    assert.equal(provenRailwayDecision.status, "proven-same-runtime");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -143,13 +148,37 @@ test("matching state roots do not override a different config path", async () =>
   }
 });
 
+test("authoritative ownership still cannot bridge a Gateway-to-CLI runtime path mismatch", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
+  try {
+    const gateway = {
+      ...(await createRuntimeIdentity(root, "owned-a")),
+      managementStrategy: "child" as const
+    };
+    const different = {
+      ...(await createRuntimeIdentity(root, "owned-b")),
+      managementStrategy: "child" as const
+    };
+    const decision = await resolveMemoryCliFallbackLocality({
+      gatewayRuntime: gateway,
+      cliRuntime: gateway,
+      ownershipProof: ownershipProof(different, "agentos-child")
+    });
+    assert.equal(decision.status, "unproven");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("same-runtime proof pins the CLI to exact canonical state and config paths", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
   try {
     const identity = {
       ...(await createRuntimeIdentity(root, "runtime")),
-      profile: "staging"
+      profile: "staging",
+      managementStrategy: "child"
     } satisfies OpenClawRuntimeIdentity;
+    const proof = ownershipProof(identity, "agentos-child");
     const calls: Array<{ kind: string; args: string[]; environment: Record<string, string | null> }> = [];
     let statusPayload: unknown = [{
       agentId: "agent-a",
@@ -165,7 +194,8 @@ test("same-runtime proof pins the CLI to exact canonical state and config paths"
     const fallback = new CliOpenClawGatewayClient({
       resolveMemoryCliFallbackLocality: () => resolveMemoryCliFallbackLocality({
         gatewayRuntime: identity,
-        cliRuntime: identity
+        cliRuntime: identity,
+        ownershipProof: proof
       }),
       runMemoryJson: async <TPayload>(args: string[], environment: OpenClawCliRuntimeEnvironment) => {
         calls.push({ kind: "status", args, environment });
@@ -210,6 +240,135 @@ test("same-runtime proof pins the CLI to exact canonical state and config paths"
       profile: "staging"
     });
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("identical configured runtime fields without ownership proof remain unavailable", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
+  try {
+    const identity = await createRuntimeIdentity(root, "configured-only");
+    const calls: string[] = [];
+    const fallback = createFallback({ gatewayRuntime: identity, cliRuntime: identity, calls });
+    const adapter = new GatewayBackedOpenClawAdapter(
+      () => ({ getRuntimeIdentity: () => identity } as OpenClawGatewayClient),
+      fallback
+    );
+
+    const status = await adapter.getMemoryIndexStatus({ agentId: "agent-a" });
+    assert.equal(status.availability, "unavailable");
+    assert.equal(status.locality, "unavailable-unproven");
+    await assert.rejects(
+      () => adapter.rebuildMemoryIndex!({ agentId: "agent-a" }),
+      (error: unknown) => error instanceof OpenClawMemoryCliFallbackUnavailableError && error.locality.status === "unproven"
+    );
+    assert.deepEqual(calls, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("managed child ownership proof is live and is invalidated on replacement or exit", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
+  try {
+    const identity = {
+      ...(await createRuntimeIdentity(root, "managed-child")),
+      managementStrategy: "child"
+    } satisfies OpenClawRuntimeIdentity;
+    const first = createLifecycleChild(41001);
+    const second = createLifecycleChild(41002);
+    const descriptor = {
+      ...identity,
+      gatewayPort: 18789,
+      binaryPath: "/tmp/openclaw.mjs",
+      installLocation: null,
+      pid: null,
+      generation: null,
+      supervisorEndpoint: null,
+      supervisorProtocolVersion: null,
+      version: "2026.9.3",
+      sourceCommit: null,
+      state: "ready" as const,
+      health: "live" as const,
+      ready: true,
+      authenticated: true,
+      protocolVersion: 4,
+      checkedAt: new Date().toISOString(),
+      reason: null
+    };
+    const { registerAgentOsManagedGatewayRuntime, clearAgentOsManagedGatewayRuntime } = await import("@/lib/openclaw/lifecycle/runtime-provenance");
+
+    registerAgentOsManagedGatewayRuntime(descriptor, first);
+    const firstProof = await resolveAuthoritativeRuntimeOwnershipProof(identity);
+    assert.equal(firstProof?.generation, 1);
+
+    registerAgentOsManagedGatewayRuntime(descriptor, second);
+    const replacementProof = await resolveAuthoritativeRuntimeOwnershipProof(identity);
+    assert.equal(replacementProof?.pid, 41002);
+    clearAgentOsManagedGatewayRuntime(descriptor, first);
+    assert.equal((await resolveAuthoritativeRuntimeOwnershipProof(identity))?.pid, 41002);
+
+    (second.process as unknown as { exitCode: number | null }).exitCode = 0;
+    second.process.emit("exit", 0, null);
+    assert.equal(await resolveAuthoritativeRuntimeOwnershipProof(identity), null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Railway supervisor proof must report the exact live runtime identity", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agentos-memory-locality-"));
+  const socketPath = path.join(root, "supervisor.sock");
+  const server = createServer((socket) => {
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      const lineEnd = buffer.indexOf("\n");
+      if (lineEnd < 0) return;
+      const request = JSON.parse(buffer.slice(0, lineEnd)) as { requestId: string };
+      socket.end(`${JSON.stringify({
+        protocolVersion: 1,
+        requestId: request.requestId,
+        ok: true,
+        command: "status",
+        owner: "external-supervisor",
+        state: "ready",
+        pid: 42001,
+        generation: 7,
+        gatewayUrl: identity.gatewayUrl,
+        gatewayPort: 18789,
+        stateDir: identity.stateDir,
+        configPath: identity.configPath,
+        profile: identity.profile,
+        ready: true,
+        authenticated: true,
+        health: "live",
+        protocolVersionGateway: 4
+      })}\n`);
+    });
+  });
+  const identity = {
+    ...(await createRuntimeIdentity(root, "railway-supervisor")),
+    ownership: "external-supervisor",
+    deploymentMode: "railway",
+    managementStrategy: "external-supervisor",
+    supervisorEndpoint: socketPath
+  } satisfies OpenClawRuntimeIdentity;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, () => resolve());
+    });
+    await chmod(socketPath, 0o600);
+    const proof = await resolveAuthoritativeRuntimeOwnershipProof(identity);
+    assert.equal(proof?.source, "external-supervisor");
+    assert.equal(proof?.generation, 7);
+    assert.equal(proof?.configPath, identity.configPath);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await unlink(socketPath).catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -310,4 +469,34 @@ function createFallback(input: {
       return { stdout: "", stderr: "" };
     }
   });
+}
+
+function ownershipProof(
+  identity: OpenClawRuntimeIdentity,
+  source: OpenClawRuntimeOwnershipProof["source"]
+): OpenClawRuntimeOwnershipProof {
+  return {
+    source,
+    gatewayUrl: identity.gatewayUrl,
+    stateDir: identity.stateDir,
+    configPath: identity.configPath,
+    profile: identity.profile,
+    generation: 1,
+    pid: 40_001,
+    supervisorEndpoint: source === "external-supervisor" ? identity.supervisorEndpoint : null
+  };
+}
+
+function createLifecycleChild(pid: number) {
+  const process = new EventEmitter() as EventEmitter & {
+    exitCode: number | null;
+    pid: number;
+  };
+  process.exitCode = null;
+  process.pid = pid;
+  return {
+    process: process as unknown as import("node:child_process").ChildProcess,
+    pid,
+    generation: pid === 41_001 ? 1 : 2
+  };
 }

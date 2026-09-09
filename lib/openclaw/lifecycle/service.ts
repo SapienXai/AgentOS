@@ -19,6 +19,10 @@ import {
   requestSupervisorCommand,
   SupervisorIpcError
 } from "./supervisor-ipc";
+import {
+  clearAgentOsManagedGatewayRuntime,
+  registerAgentOsManagedGatewayRuntime
+} from "./runtime-provenance";
 import type {
   GatewayLifecycleChild,
   GatewayLifecycleOperation,
@@ -118,10 +122,11 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
         resetOpenClawGatewayClient("External Gateway stopped");
         return this.result("stop", mergeSupervisorResponse(descriptor, response), true, "External Gateway stopped.");
       }
-      if (this.child) {
-        const child = this.child;
-        this.child = null;
-        await this.stopChild(child);
+    if (this.child) {
+      const child = this.child;
+      this.child = null;
+      clearAgentOsManagedGatewayRuntime(descriptor, child);
+      await this.stopChild(child);
       } else if (descriptor.state === "stopped" || descriptor.health === "not-live") {
         return this.result("stop", { ...descriptor, state: "stopped", ready: false, authenticated: false }, false, "OpenClaw Gateway was already stopped.");
       } else {
@@ -217,6 +222,7 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
       if (this.child) {
         const child = this.child;
         this.child = null;
+        clearAgentOsManagedGatewayRuntime(descriptor, child);
         await this.stopChild(child);
       }
       this.child = await this.spawnChild(descriptor);
@@ -239,6 +245,7 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
       if (this.child) {
         const child = this.child;
         this.child = null;
+        clearAgentOsManagedGatewayRuntime(descriptor, child);
         await this.stopChild(child);
     } else {
       await getOpenClawAdapter().controlGateway("stop");
@@ -293,6 +300,7 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
       ? await this.options.spawnGateway(descriptor)
       : await spawnGatewayChild(descriptor, this.options.env ? { ...this.options.env } : process.env);
     this.child = child;
+    registerAgentOsManagedGatewayRuntime(descriptor, child);
     child.process.once("exit", () => {
       if (this.child?.process === child.process) {
         this.child = null;

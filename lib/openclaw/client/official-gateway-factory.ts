@@ -21,6 +21,7 @@ export type OfficialBackedOpenClawGatewayClientOptions = OfficialGatewayTranspor
   configPath?: string | null;
   fallback?: OpenClawGatewayClient;
   forceCli?: boolean;
+  /** Configured runtime metadata; ownership proof is resolved separately. */
   runtimeIdentity?: OpenClawRuntimeIdentity | null;
   onNativeFailure?: NativeWsOpenClawGatewayClientOptions["onNativeFailure"];
   requestPolicy?: AgentOsGatewayRequestPolicy;

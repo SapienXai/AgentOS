@@ -67,7 +67,7 @@ export type NativeWsOpenClawGatewayClientOptions = {
   /** Testable/shared AgentOS request policy; production creates one per client. */
   requestPolicy?: AgentOsGatewayRequestPolicy;
   forceCli?: boolean;
-  /** Trusted runtime identity captured by the gateway client factory. */
+  /** Configured server-side runtime metadata captured by the factory. */
   runtimeIdentity?: OpenClawRuntimeIdentity | null;
   onNativeFailure?: (error: unknown, method: string) => void;
 };

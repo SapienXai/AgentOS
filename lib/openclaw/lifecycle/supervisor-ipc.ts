@@ -91,6 +91,9 @@ export function mergeSupervisorResponse(
     state: response.state,
     gatewayUrl: response.gatewayUrl ?? descriptor.gatewayUrl,
     gatewayPort: response.gatewayPort ?? descriptor.gatewayPort,
+    stateDir: response.stateDir ?? descriptor.stateDir,
+    configPath: response.configPath ?? descriptor.configPath,
+    profile: response.profile === undefined ? descriptor.profile : response.profile,
     pid: response.pid,
     generation: response.generation,
     supervisorProtocolVersion: response.protocolVersion,
@@ -113,6 +116,9 @@ export function buildSupervisorResponse(input: {
   generation: number | null;
   gatewayUrl?: string;
   gatewayPort?: number;
+  stateDir?: string;
+  configPath?: string;
+  profile?: string | null;
   ready?: boolean;
   authenticated?: boolean;
   health?: "unknown" | "live" | "not-live";
@@ -133,6 +139,9 @@ export function buildSupervisorResponse(input: {
     generation: input.generation,
     gatewayUrl: input.gatewayUrl,
     gatewayPort: input.gatewayPort,
+    stateDir: input.stateDir,
+    configPath: input.configPath,
+    profile: input.profile,
     ready: input.ready,
     authenticated: input.authenticated,
     health: input.health,
