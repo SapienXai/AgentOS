@@ -20,8 +20,9 @@ import {
   type WorkspaceMaterialization
 } from "@/lib/agentos/domains/workspace-materialization";
 import {
-  legacyPlannerContextSourceToKnowledgeSource,
   normalizeWorkspaceKnowledgeSources,
+  normalizeWorkspaceKnowledgeSourcesTolerant,
+  normalizeLegacyPlannerContextSourcesTolerant,
   type WorkspaceKnowledgeSource
 } from "@/lib/agentos/domains/workspace-knowledge";
 import { DEFAULT_WORKSPACE_RULES } from "@/lib/openclaw/workspace-presets";
@@ -76,6 +77,7 @@ export type WorkspaceProjectManifest = {
   agents: WorkspaceProjectManifestAgent[];
   channels: WorkspaceChannelSummary[];
   contextSources: PlannerContextSource[];
+  knowledgeSourceWarnings?: string[];
 };
 
 type WorkspaceProjectManifestChannel = WorkspaceChannelSummary;
@@ -141,15 +143,10 @@ export function normalizeWorkspaceProjectManifestRecord(value: unknown): Workspa
     materialization = null;
   }
 
-  const legacySources = parseWorkspaceProjectManifestContextSources(parsed.contextSources);
-  let knowledgeSources: WorkspaceKnowledgeSource[] = [];
-  try {
-    knowledgeSources = Array.isArray(parsed.knowledgeSources)
-      ? normalizeWorkspaceKnowledgeSources(parsed.knowledgeSources)
-      : legacySources.map((source) => legacyPlannerContextSourceToKnowledgeSource(source));
-  } catch {
-    knowledgeSources = [];
-  }
+  const knowledgeSourceNormalization = Array.isArray(parsed.knowledgeSources)
+    ? normalizeWorkspaceKnowledgeSourcesTolerant(parsed.knowledgeSources, { strict: false })
+    : normalizeLegacyPlannerContextSourcesTolerant(parsed.contextSources);
+  const knowledgeSources = knowledgeSourceNormalization.sources;
   const legacyMaterialization = materialization
     ? materializationToLegacyWorkspaceFields(materialization)
     : { sourceMode: null, repoUrl: undefined, existingPath: undefined };
@@ -175,9 +172,17 @@ export function normalizeWorkspaceProjectManifestRecord(value: unknown): Workspa
     hidden: parsed.hidden === true,
     systemTag: typeof parsed.systemTag === "string" ? parsed.systemTag : null,
     contextSources: knowledgeSources.map((source) => knowledgeSourceToLegacyPlannerContextSource(source)),
+    ...(knowledgeSourceNormalization.issues.length > 0
+      ? { knowledgeSourceWarnings: knowledgeSourceNormalization.issues.map(formatKnowledgeSourceIssue) }
+      : {}),
     agents,
     channels: channels
   };
+}
+
+function formatKnowledgeSourceIssue(issue: { index: number; message: string; sourceId?: string }) {
+  const sourceLabel = issue.sourceId ? ` ${issue.sourceId}` : "";
+  return `Skipped knowledge source${sourceLabel} at index ${issue.index}: ${issue.message}`;
 }
 
 /** Serialize canonical V2 metadata while preserving unrelated and unknown fields. */
@@ -577,95 +582,6 @@ export function uniqueByChatId(assignments: WorkspaceChannelGroupAssignment[]) {
   }
 
   return Array.from(seen.values());
-}
-
-function parseWorkspaceProjectManifestContextSources(raw: unknown): PlannerContextSource[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  return raw.flatMap((entry) => {
-    if (!isObjectRecord(entry)) {
-      return [];
-    }
-
-    const kind = isPlannerContextSourceKind(entry.kind) ? entry.kind : "prompt";
-    const label = typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : kind;
-    const summary = typeof entry.summary === "string" && entry.summary.trim() ? entry.summary.trim() : label;
-    const id =
-      typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `${kind}-${slugify(label) || "context"}`;
-
-    return normalizeWorkspaceContextSources([
-      {
-        id,
-        kind,
-        label,
-        summary,
-        details: Array.isArray(entry.details) ? entry.details.filter((detail): detail is string => typeof detail === "string") : [],
-        status: entry.status === "error" ? "error" : "ready",
-        createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
-        confidence: typeof entry.confidence === "number" ? entry.confidence : undefined,
-        url: typeof entry.url === "string" ? entry.url : undefined,
-        error: typeof entry.error === "string" ? entry.error : undefined
-      }
-    ]);
-  });
-}
-
-function normalizeWorkspaceContextSources(
-  sources: Array<{
-    id?: string;
-    kind?: unknown;
-    label?: unknown;
-    summary?: unknown;
-    details?: unknown;
-    status?: unknown;
-    createdAt?: unknown;
-    confidence?: unknown;
-    error?: unknown;
-    url?: unknown;
-  }>
-): PlannerContextSource[] {
-  return sources.flatMap((source) => {
-    if (!source || typeof source !== "object") {
-      return [];
-    }
-
-    const kind = isPlannerContextSourceKind(source.kind) ? source.kind : "prompt";
-    const label = normalizeOptionalValue(source.label as string | null | undefined) ?? kind;
-    const summary = normalizeOptionalValue(source.summary as string | null | undefined) ?? label;
-    const status = source.status === "error" ? "error" : "ready";
-    const createdAt = normalizeOptionalValue(source.createdAt as string | null | undefined) ?? new Date().toISOString();
-    const normalizedError = normalizeOptionalValue(source.error as string | null | undefined);
-    const normalizedUrl = normalizeOptionalValue(source.url as string | null | undefined);
-
-    if (!label || !summary) {
-      return [];
-    }
-
-    return [
-      {
-        id: normalizeOptionalValue(source.id as string | null | undefined) ?? `${kind}-${slugify(label) || "context"}`,
-        kind,
-        label,
-        summary,
-        details: Array.isArray(source.details)
-          ? source.details
-              .map((entry) => normalizeOptionalValue(entry as string | null | undefined) ?? "")
-              .filter((entry): entry is string => Boolean(entry))
-          : [],
-        status,
-        createdAt,
-        ...(typeof source.confidence === "number" ? { confidence: source.confidence } : {}),
-        ...(normalizedError ? { error: normalizedError } : {}),
-        ...(normalizedUrl ? { url: normalizedUrl } : {})
-      }
-    ];
-  });
-}
-
-function isPlannerContextSourceKind(value: unknown): value is PlannerContextSource["kind"] {
-  return value === "prompt" || value === "website" || value === "repo" || value === "folder";
 }
 
 function parseWorkspaceCreateRules(value: unknown): WorkspaceCreateRules | null {

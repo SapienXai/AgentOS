@@ -12,8 +12,9 @@ import {
 } from "@/lib/agentos/domains/workspace-materialization";
 import {
   createWorkspaceKnowledgeSource,
-  legacyPlannerContextSourceToKnowledgeSource,
+  normalizeLegacyPlannerContextSourcesTolerant,
   normalizeWorkspaceKnowledgeSources,
+  normalizeWorkspaceKnowledgeSourcesTolerant,
   type WorkspaceKnowledgeSource,
   type WorkspaceKnowledgeSourceKind
 } from "@/lib/agentos/domains/workspace-knowledge";
@@ -1000,13 +1001,17 @@ export function normalizeWorkspacePlan(value: unknown): WorkspacePlan {
   const base = createInitialWorkspacePlan(id);
   const rawIntake = isRecord(raw.intake) ? raw.intake : {};
   const rawWorkspace = isRecord(raw.workspace) ? raw.workspace : {};
-  const legacySources = Array.isArray(rawIntake.sources)
-    ? rawIntake.sources.map((source) => legacyPlannerContextSourceToKnowledgeSource(source))
-    : [];
+  const legacySourceNormalization = normalizeLegacyPlannerContextSourcesTolerant(rawIntake.sources);
+  const legacySources = legacySourceNormalization.sources;
   const knowledgeRaw = isRecord(raw.knowledge) ? raw.knowledge : {};
-  const knowledgeSources = Array.isArray(knowledgeRaw.sources)
-    ? normalizeWorkspaceKnowledgeSources(knowledgeRaw.sources)
-    : legacySources;
+  const knowledgeSourceNormalization = Array.isArray(knowledgeRaw.sources)
+    ? normalizeWorkspaceKnowledgeSourcesTolerant(knowledgeRaw.sources, { strict: false })
+    : { sources: legacySources, issues: [] };
+  const knowledgeSources = knowledgeSourceNormalization.sources;
+  const knowledgeWarnings = (Array.isArray(knowledgeRaw.sources)
+    ? knowledgeSourceNormalization.issues
+    : legacySourceNormalization.issues
+  ).map((issue) => `Skipped knowledge source${issue.sourceId ? ` ${issue.sourceId}` : ""} at index ${issue.index}: ${issue.message}`);
   const materialization = normalizeWorkspaceMaterializationInput({
     ...(Object.prototype.hasOwnProperty.call(rawWorkspace, "materialization")
       ? { materialization: rawWorkspace.materialization }
@@ -1028,7 +1033,8 @@ export function normalizeWorkspacePlan(value: unknown): WorkspacePlan {
       ...rawIntake
     },
     knowledge: {
-      sources: knowledgeSources
+      sources: knowledgeSources,
+      ...(knowledgeWarnings.length > 0 ? { warnings: knowledgeWarnings } : {})
     },
     workspace: {
       ...base.workspace,
@@ -1081,9 +1087,7 @@ export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
     };
   };
   const rawWorkspace = rawPlan.workspace ?? ({} as NonNullable<typeof rawPlan.workspace>);
-  const legacySources = Array.isArray(rawPlan.intake?.sources)
-    ? rawPlan.intake.sources.map((source) => legacyPlannerContextSourceToKnowledgeSource(source))
-    : [];
+  const legacySources = normalizeLegacyPlannerContextSourcesTolerant(rawPlan.intake?.sources).sources;
   if (!rawPlan.knowledge) {
     nextPlan.knowledge = { sources: legacySources };
   }
@@ -1096,6 +1100,7 @@ export function enrichWorkspacePlan(plan: WorkspacePlan): WorkspacePlan {
     });
   }
   nextPlan.knowledge = {
+    ...nextPlan.knowledge,
     sources: normalizeWorkspaceKnowledgeSources(nextPlan.knowledge?.sources ?? [])
   };
   const isWorkspaceEditDraft = nextPlan.knowledge.sources.some((source) => source.id === workspaceEditSourceId);

@@ -44,6 +44,12 @@ export type WorkspaceKnowledgeSource = {
   error?: string;
 };
 
+export type WorkspaceKnowledgeSourceNormalizationIssue = {
+  index: number;
+  message: string;
+  sourceId?: string;
+};
+
 type RawSource = Record<string, unknown>;
 
 const SENSITIVE_KEY = /(token|password|secret|credential|apikey|api_key|accesskey|privatekey|cookie|authorization)/i;
@@ -190,6 +196,7 @@ export function legacyPlannerContextSourceToKnowledgeSource(
 ): WorkspaceKnowledgeSource {
   if (!isRecord(raw)) throw new Error("Legacy context source must be an object.");
   const kind = raw.kind === "repo" ? "repository" : raw.kind;
+  if (!isKnowledgeSourceKind(kind)) throw new Error("Legacy context source kind is unsupported.");
   const label = text(raw.label) ?? (typeof kind === "string" ? kind : "source");
   const url = text(raw.url);
   let locator: WorkspaceKnowledgeSourceLocator;
@@ -197,11 +204,16 @@ export function legacyPlannerContextSourceToKnowledgeSource(
   if (kind === "website") locator = { kind: "website", url: url ?? text(raw.summary) ?? label };
   else if (kind === "repository") locator = { kind: "repository", ...(url ? { remoteUrl: url } : { localPath: text(raw.summary) ?? label }) };
   else if (kind === "folder") locator = { kind: "folder", path: url ?? text(raw.summary) ?? label };
-  else locator = { kind: "prompt", text: text(raw.summary) ?? label };
+  else if (kind === "file") locator = { kind: "file", path: url ?? text(raw.summary) ?? label };
+  else if (kind === "connector") {
+    const provider = text(raw.provider);
+    if (!provider) throw new Error("Legacy connector source requires a provider.");
+    locator = { kind: "connector", provider, ...(text(raw.accountId) ? { accountId: text(raw.accountId) } : {}), ...(text(raw.resourceId) ? { resourceId: text(raw.resourceId) } : {}) };
+  } else locator = { kind: "prompt", text: text(raw.summary) ?? label };
 
   return createWorkspaceKnowledgeSource({
     id: text(raw.id) ?? `${kind}-${slugify(label) || "source"}`,
-    kind: isKnowledgeSourceKind(kind) ? kind : "prompt",
+    kind,
     label,
     summary: text(raw.summary) ?? label,
     details: Array.isArray(raw.details) ? raw.details.map(text).filter((entry): entry is string => Boolean(entry)) : [],
@@ -214,6 +226,29 @@ export function legacyPlannerContextSourceToKnowledgeSource(
   });
 }
 
+export function normalizeLegacyPlannerContextSourcesTolerant(raw: unknown): {
+  sources: WorkspaceKnowledgeSource[];
+  issues: WorkspaceKnowledgeSourceNormalizationIssue[];
+} {
+  if (!Array.isArray(raw)) return { sources: [], issues: [] };
+
+  const sources: WorkspaceKnowledgeSource[] = [];
+  const issues: WorkspaceKnowledgeSourceNormalizationIssue[] = [];
+  for (const [index, entry] of raw.entries()) {
+    try {
+      sources.push(legacyPlannerContextSourceToKnowledgeSource(entry));
+    } catch (error) {
+      issues.push({
+        index,
+        message: error instanceof Error ? error.message : "Legacy context source could not be migrated.",
+        sourceId: isRecord(entry) ? text(entry.id) : undefined
+      });
+    }
+  }
+
+  return { sources: normalizeWorkspaceKnowledgeSources(sources), issues };
+}
+
 export function workspaceKnowledgeSourceIdentity(source: WorkspaceKnowledgeSource) {
   const locator = source.locator;
   if (locator.kind === "prompt") return `prompt:${locator.text.replace(/\s+/g, " ").trim()}`;
@@ -224,17 +259,42 @@ export function workspaceKnowledgeSourceIdentity(source: WorkspaceKnowledgeSourc
 }
 
 export function normalizeWorkspaceKnowledgeSources(raw: unknown): WorkspaceKnowledgeSource[] {
-  if (!Array.isArray(raw)) return [];
+  return normalizeWorkspaceKnowledgeSourcesTolerant(raw, { strict: true }).sources;
+}
+
+/**
+ * Historical reads and migrations must isolate malformed entries instead of
+ * losing the valid entries around them. Mutation callers should keep using
+ * normalizeWorkspaceKnowledgeSources for strict all-or-nothing validation.
+ */
+export function normalizeWorkspaceKnowledgeSourcesTolerant(
+  raw: unknown,
+  options: { strict?: boolean } = {}
+): {
+  sources: WorkspaceKnowledgeSource[];
+  issues: WorkspaceKnowledgeSourceNormalizationIssue[];
+} {
+  if (!Array.isArray(raw)) return { sources: [], issues: [] };
   const sources: WorkspaceKnowledgeSource[] = [];
+  const issues: WorkspaceKnowledgeSourceNormalizationIssue[] = [];
   const identities = new Set<string>();
-  for (const entry of raw) {
-    const source = normalizeWorkspaceKnowledgeSource(entry);
-    const identity = workspaceKnowledgeSourceIdentity(source);
-    if (identities.has(identity)) continue;
-    identities.add(identity);
-    sources.push(source);
+  for (const [index, entry] of raw.entries()) {
+    try {
+      const source = normalizeWorkspaceKnowledgeSource(entry);
+      const identity = workspaceKnowledgeSourceIdentity(source);
+      if (identities.has(identity)) continue;
+      identities.add(identity);
+      sources.push(source);
+    } catch (error) {
+      if (options.strict !== false) throw error;
+      issues.push({
+        index,
+        message: error instanceof Error ? error.message : "Knowledge source could not be normalized.",
+        sourceId: isRecord(entry) ? text(entry.id) : undefined
+      });
+    }
   }
-  return sources;
+  return { sources, issues };
 }
 
 export function mergeWorkspaceKnowledgeSources(

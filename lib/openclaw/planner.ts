@@ -725,7 +725,8 @@ You are the primary planning agent for AgentOS.
 - Use patch as the source of truth. The planner layer should validate the draft, not force the operator to restate it.
 - When a domain or website implies a likely brand name, use it unless contradicted.
 - If a section must be removed in a revision, use the relevant removeIds list for agents, workflows, channels, automations, or hooks.
-- When changing source mode, clear stale repo and folder fields in the same patch.
+- Change only the canonical workspace.materialization object when the physical starting point changes; its mode and fields must remain a valid combination.
+- Add or remove knowledge.sources independently. Changing workspace.materialization must not delete unrelated knowledge.sources, and changing knowledge.sources must not mutate workspace.materialization.
 - Treat AgentOS as the source of truth. Patch only the fields that should change.
 `,
   "planner-founder": `# Founder Advisor
@@ -1191,7 +1192,8 @@ function buildPlannerArchitectPrompt(
     "- Respect the selected workspace size. Keep the operator-facing chat concise, but still complete the underlying project context and blueprint.",
     "- Use patch precisely. Update company, product, workspace, agents, workflows, automations, and channels only when the operator intent clearly supports them.",
     "- When removing an agent, workflow, channel, automation, or hook during a revision, use the relevant removeIds field and regenerate dependent items as needed.",
-    "- When changing source mode, clear stale repo and folder fields in the same patch.",
+    "- Change only the canonical workspace.materialization object when the physical starting point changes; its mode and fields must remain a valid combination.",
+    "- Add or remove knowledge.sources independently. Changing workspace.materialization must not delete unrelated knowledge.sources, and changing knowledge.sources must not mutate workspace.materialization.",
     "- When adding a new agent, generate a stable slug id and include role, name, purpose, responsibilities, and outputs.",
     "- Patch only fields that should change.",
     "",

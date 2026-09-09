@@ -23,9 +23,18 @@ V1 `sourceMode`, `repoUrl`, `existingPath`, and `contextSources` are accepted at
 
 Reads do not rewrite files. New workspace creation, natural workspace metadata edits, and other manifest writes serialize V2 while preserving unrelated and unknown-safe metadata. Legacy fields are removed only during those writes.
 
+Historical manifest and planner reads migrate sources entry by entry: a malformed
+source is reported as a warning while valid neighbors remain available. Mutation
+boundaries still use strict normalization and reject malformed source updates as
+a whole.
+
 The wizard keeps its existing quick-create interaction. Its mapping is explicit: GitHub URL means clone plus repository source; website URL means empty plus website source; existing folder means existing plus folder source; plain context means empty plus prompt source; no source means empty with no knowledge source.
 
 Planner harvesting is lightweight context collection. Harvested sources are declared references and explicit planner evidence, not an ingestion pipeline. Materialization patches clear only stale materialization fields; knowledge patches never mutate materialization.
+
+Architect prompts use the canonical `workspace.materialization` and
+`knowledge.sources` vocabulary. The two declarations are independent and are
+never coupled by a source-selection prompt rule.
 
 ## Phase 2 boundary
 

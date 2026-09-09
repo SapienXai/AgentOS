@@ -2450,6 +2450,7 @@ export interface WorkspacePlan {
   intake: PlannerIntakeState;
   knowledge: {
     sources: WorkspaceKnowledgeSource[];
+    warnings?: string[];
   };
   company: {
     name: string;
