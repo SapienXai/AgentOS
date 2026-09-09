@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   discoverGatewayRuntime,
+  resolveGatewayRuntimeIdentity,
   resolveManagementStrategy,
   resolveOwnership,
   resolveSafeRuntimePath
@@ -29,6 +30,30 @@ test("canonical runtime discovery fails closed for unknown ownership and unsafe 
   });
   assert.equal(descriptor.ownership, "unknown");
   assert.equal(descriptor.state, "unknown");
+});
+
+test("runtime identity reuses lifecycle ownership and exact state/config roots", () => {
+  const identity = resolveGatewayRuntimeIdentity({
+    env: {
+      OPENCLAW_SUPERVISOR_MODE: "agentos-managed",
+      OPENCLAW_GATEWAY_PROCESS_MODE: "child",
+      OPENCLAW_STATE_DIR: "/tmp/agentos-identity-state",
+      OPENCLAW_CONFIG_PATH: "/tmp/agentos-identity-config/openclaw.json",
+      OPENCLAW_PROFILE: "staging"
+    },
+    gatewayUrl: "ws://127.0.0.1:28789"
+  });
+
+  assert.deepEqual(identity, {
+    gatewayUrl: "ws://127.0.0.1:28789",
+    stateDir: "/tmp/agentos-identity-state",
+    configPath: "/tmp/agentos-identity-config/openclaw.json",
+    profile: "staging",
+    ownership: "agentos-managed",
+    deploymentMode: "local",
+    managementStrategy: "child",
+    supervisorEndpoint: null
+  });
 });
 
 test("managed lifecycle serializes cross-action mutations and never double-spawns", async () => {

@@ -2,9 +2,12 @@ import "server-only";
 
 import {
   runOpenClaw,
+  runOpenClawForRuntime,
   runOpenClawJson,
+  runOpenClawJsonForRuntime,
   runOpenClawJsonStream,
-  type CommandResult
+  type CommandResult,
+  type OpenClawCliRuntimeEnvironment
 } from "@/lib/openclaw/cli";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
@@ -12,6 +15,11 @@ import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gate
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { redactSecretText } from "@/lib/security/redaction";
+import {
+  resolveLocalCliRuntimeIdentity,
+  resolveMemoryCliFallbackLocality,
+  type MemoryCliFallbackLocality
+} from "@/lib/openclaw/client/memory-cli-locality";
 import type {
   AgentPayload,
   GatewayProbePayload,
@@ -78,6 +86,7 @@ import type {
   OpenClawMemoryAgentInput,
   OpenClawMemoryIndexRebuildPayload,
   OpenClawMemoryIndexStatusPayload,
+  OpenClawRuntimeIdentity,
   OpenClawModelScanPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawPluginListPayload,
@@ -353,7 +362,49 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export type CliOpenClawGatewayClientOptions = {
+  runtimeIdentity?: OpenClawRuntimeIdentity | null;
+  resolveMemoryCliFallbackLocality?: () => Promise<MemoryCliFallbackLocality>;
+  runMemoryJson?: <TPayload>(
+    args: string[],
+    runtimeEnvironment: OpenClawCliRuntimeEnvironment,
+    options?: OpenClawCommandOptions
+  ) => Promise<TPayload>;
+  runMemory?: (
+    args: string[],
+    runtimeEnvironment: OpenClawCliRuntimeEnvironment,
+    options?: OpenClawCommandOptions
+  ) => Promise<CommandResult>;
+};
+
+export class OpenClawMemoryCliFallbackUnavailableError extends Error {
+  readonly locality: MemoryCliFallbackLocality;
+  readonly code = "memory-cli-fallback-unavailable" as const;
+
+  constructor(locality: MemoryCliFallbackLocality) {
+    super(locality.reason ?? "OpenClaw memory CLI maintenance is unavailable.");
+    this.name = "OpenClawMemoryCliFallbackUnavailableError";
+    this.locality = locality;
+  }
+}
+
 export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
+  private readonly options: CliOpenClawGatewayClientOptions;
+
+  constructor(options: CliOpenClawGatewayClientOptions = {}) {
+    this.options = {
+      ...options,
+      runMemoryJson: options.runMemoryJson ?? ((args, runtimeEnvironment, commandOptions) =>
+        runOpenClawJsonForRuntime(args, runtimeEnvironment, commandOptions)),
+      runMemory: options.runMemory ?? ((args, runtimeEnvironment, commandOptions) =>
+        runOpenClawForRuntime(args, runtimeEnvironment, commandOptions))
+    };
+  }
+
+  getRuntimeIdentity() {
+    return this.options.runtimeIdentity ?? null;
+  }
+
   async getOperatorIdentity(): Promise<OpenClawOperatorIdentity> {
     return {
       requestedRole: null,
@@ -412,11 +463,22 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {}
   ): Promise<OpenClawMemoryIndexStatusPayload> {
     const agentId = requireMemoryAgentId(input);
-    const raw = await runOpenClawJson<unknown>(
+    const locality = await this.resolveMemoryCliFallbackLocality();
+    if (locality.status !== "proven-same-runtime" || !locality.cliEnvironment) {
+      return createUnavailableMemoryIndexStatus(agentId, locality);
+    }
+
+    const raw = await this.options.runMemoryJson!<unknown>(
       ["memory", "status", "--json", "--agent", agentId],
+      locality.cliEnvironment,
       { ...options, timeoutMs: options.timeoutMs ?? 20_000 }
     );
-    return normalizeMemoryIndexStatus(raw, agentId);
+    return {
+      ...normalizeMemoryIndexStatus(raw, agentId),
+      availability: "available",
+      locality: "available-local-same-runtime",
+      localityReason: null
+    };
   }
 
   async rebuildMemoryIndex(
@@ -424,8 +486,14 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {}
   ): Promise<OpenClawMemoryIndexRebuildPayload> {
     const agentId = requireMemoryAgentId(input);
-    await runOpenClaw(
+    const locality = await this.resolveMemoryCliFallbackLocality();
+    if (locality.status !== "proven-same-runtime" || !locality.cliEnvironment) {
+      throw new OpenClawMemoryCliFallbackUnavailableError(locality);
+    }
+
+    await this.options.runMemory!(
       ["memory", "index", "--force", "--agent", agentId],
+      locality.cliEnvironment,
       { ...options, timeoutMs: options.timeoutMs ?? 4 * 60_000 }
     );
     return {
@@ -433,6 +501,17 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       appliedVia: "cli-fallback",
       command: "memory index --force"
     };
+  }
+
+  private async resolveMemoryCliFallbackLocality() {
+    if (this.options.resolveMemoryCliFallbackLocality) {
+      return this.options.resolveMemoryCliFallbackLocality();
+    }
+
+    return resolveMemoryCliFallbackLocality({
+      gatewayRuntime: this.options.runtimeIdentity,
+      cliRuntime: resolveLocalCliRuntimeIdentity()
+    });
   }
 
   getUpdateStatus(options: OpenClawCommandOptions = {}) {
@@ -1148,6 +1227,26 @@ function requireMemoryAgentId(input: OpenClawMemoryAgentInput) {
   return agentId;
 }
 
+function createUnavailableMemoryIndexStatus(
+  agentId: string,
+  locality: MemoryCliFallbackLocality
+): OpenClawMemoryIndexStatusPayload {
+  return {
+    agentId,
+    backend: null,
+    files: null,
+    chunks: null,
+    dirty: null,
+    lastSyncError: null,
+    sourceCounts: null,
+    indexIdentity: null,
+    appliedVia: null,
+    availability: "unavailable",
+    locality: locality.capability,
+    localityReason: locality.reason
+  };
+}
+
 function normalizeMemoryIndexStatus(raw: unknown, agentId: string): OpenClawMemoryIndexStatusPayload {
   const records: Array<Record<string, unknown>> = Array.isArray(raw)
     ? raw.filter(isObjectRecord)
@@ -1194,7 +1293,10 @@ function normalizeMemoryIndexStatus(raw: unknown, agentId: string): OpenClawMemo
           reason: readString(identity.reason)
         }
       : null,
-    appliedVia: "cli-fallback"
+    appliedVia: "cli-fallback",
+    availability: "available",
+    locality: "available-local-same-runtime",
+    localityReason: null
   };
 }
 

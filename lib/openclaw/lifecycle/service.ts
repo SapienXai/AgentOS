@@ -399,6 +399,7 @@ async function probeNativeGatewayReadiness(
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-lifecycle",
     ...(env.OPENCLAW_STATE_DIR?.trim() ? { stateDir: env.OPENCLAW_STATE_DIR.trim() } : {}),
+    configPath: descriptor.configPath,
     sharedStateMode: "read-only"
   });
   try {

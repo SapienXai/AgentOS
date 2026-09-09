@@ -8,6 +8,7 @@ import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-polic
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { readOpenClawRuntimeIdentity } from "@/lib/openclaw/migration-engine/paths";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import type { OpenClawRuntimeIdentity } from "@/lib/openclaw/client/types";
 import type {
   GatewayDeploymentMode,
   GatewayLifecycleEnvironment,
@@ -27,6 +28,13 @@ export type GatewayRuntimeDiscoveryOptions = {
   probe?: (input: { url: string; port: number }) => Promise<GatewayProbeResult>;
 };
 
+export type GatewayRuntimeIdentityOptions = {
+  env?: GatewayLifecycleEnvironment;
+  gatewayUrl?: string | null;
+  stateDir?: string | null;
+  configPath?: string | null;
+};
+
 type GatewayProbeResult = {
     health: "unknown" | "live" | "not-live";
     ready: boolean;
@@ -35,6 +43,43 @@ type GatewayProbeResult = {
     version: string | null;
     sourceCommit: string | null;
 };
+
+/**
+ * Resolve the same trusted runtime configuration used by lifecycle discovery.
+ * Callers may provide factory-bound values, but those values stay inside the
+ * server-side client boundary and are never read from request payloads.
+ */
+export function resolveGatewayRuntimeIdentity(
+  options: GatewayRuntimeIdentityOptions = {}
+): OpenClawRuntimeIdentity {
+  const env = options.env ?? process.env;
+  const deploymentMode = resolveDeploymentMode(env);
+  const ownership = resolveOwnership(env, deploymentMode);
+  const stateDir = resolveSafeRuntimePath(
+    options.stateDir?.trim() || env.OPENCLAW_STATE_DIR?.trim() || path.join(homedir(), ".openclaw"),
+    "OpenClaw state"
+  );
+  const configPath = resolveSafeRuntimePath(
+    options.configPath?.trim() || env.OPENCLAW_CONFIG_PATH?.trim() || path.join(stateDir, "openclaw.json"),
+    "OpenClaw config"
+  );
+  const gatewayUrl = options.gatewayUrl?.trim()
+    ? normalizeTrustedGatewayUrl(options.gatewayUrl)
+    : resolveTrustedGatewayUrl(env);
+
+  return {
+    gatewayUrl,
+    stateDir,
+    configPath,
+    profile: env.OPENCLAW_PROFILE?.trim() || null,
+    ownership,
+    deploymentMode,
+    managementStrategy: resolveManagementStrategy(env, ownership),
+    supervisorEndpoint: ownership === "external-supervisor"
+      ? resolveSupervisorSocketPath(env)
+      : null
+  };
+}
 
 export async function discoverGatewayRuntime(
   options: GatewayRuntimeDiscoveryOptions = {}
@@ -145,7 +190,12 @@ export function resolveManagementStrategy(
 }
 
 export function resolveTrustedGatewayUrl(env: GatewayLifecycleEnvironment) {
-  const url = resolveGatewayUrl(env.AGENTOS_OPENCLAW_GATEWAY_URL ?? env.OPENCLAW_GATEWAY_URL);
+  return normalizeTrustedGatewayUrl(
+    resolveGatewayUrl(env.AGENTOS_OPENCLAW_GATEWAY_URL ?? env.OPENCLAW_GATEWAY_URL)
+  );
+}
+
+export function normalizeTrustedGatewayUrl(url: string) {
   let parsed: URL;
   try {
     parsed = new URL(url);

@@ -40,6 +40,13 @@ interface StreamingCommandOptions extends CommandOptions {
   onStderr?: (text: string) => Promise<void> | void;
 }
 
+/** Exact trusted runtime roots used by the guarded memory CLI fallback. */
+export type OpenClawCliRuntimeEnvironment = {
+  stateDir: string;
+  configPath: string;
+  profile: string | null;
+};
+
 export interface CommandResult {
   stdout: string;
   stderr: string;
@@ -73,9 +80,39 @@ export async function runOpenClawJson<T>(
   }
 }
 
+export function runOpenClawForRuntime(
+  args: string[],
+  runtimeEnvironment: OpenClawCliRuntimeEnvironment,
+  options: CommandOptions = {}
+): Promise<CommandResult> {
+  return runOpenClawStream(args, options, runtimeEnvironment);
+}
+
+export async function runOpenClawJsonForRuntime<T>(
+  args: string[],
+  runtimeEnvironment: OpenClawCliRuntimeEnvironment,
+  options: CommandOptions = {}
+): Promise<T> {
+  try {
+    const result = await runOpenClawForRuntime(args, runtimeEnvironment, options);
+    return parseJsonOutput<T>(result.stdout || result.stderr);
+  } catch (error) {
+    const failedResult = extractFailedCommandResult(error);
+
+    if (failedResult) {
+      try {
+        return parseJsonOutput<T>(failedResult.stdout || failedResult.stderr);
+      } catch {}
+    }
+
+    throw error;
+  }
+}
+
 export async function runOpenClawStream(
   args: string[],
-  options: StreamingCommandOptions = {}
+  options: StreamingCommandOptions = {},
+  runtimeEnvironment?: OpenClawCliRuntimeEnvironment
 ): Promise<CommandResult> {
   const openClawBin = await resolveOpenClawBin();
 
@@ -87,7 +124,7 @@ export async function runOpenClawStream(
     // turbopackIgnore: true
     const child = spawn(invocation.command, invocation.args, {
       detached: true,
-      env: buildOpenClawEnv(),
+      env: buildOpenClawEnv(runtimeEnvironment),
       windowsHide: true
     });
 
@@ -701,8 +738,22 @@ function quoteShellSegment(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function buildOpenClawEnv() {
-  return buildOpenClawSpawnEnv();
+function buildOpenClawEnv(runtimeEnvironment?: OpenClawCliRuntimeEnvironment) {
+  const ambient: NodeJS.ProcessEnv = buildOpenClawSpawnEnv();
+  if (!runtimeEnvironment) {
+    return ambient;
+  }
+
+  const pinnedBase = { ...ambient };
+  delete pinnedBase.AGENTOS_OPENCLAW_GATEWAY_URL;
+  delete pinnedBase.OPENCLAW_GATEWAY_URL;
+
+  return {
+    ...pinnedBase,
+    OPENCLAW_STATE_DIR: runtimeEnvironment.stateDir,
+    OPENCLAW_CONFIG_PATH: runtimeEnvironment.configPath,
+    OPENCLAW_PROFILE: runtimeEnvironment.profile ?? undefined
+  };
 }
 
 async function canExecuteOpenClaw(command: string) {

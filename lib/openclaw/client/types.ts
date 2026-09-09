@@ -55,6 +55,22 @@ export type OpenClawGatewayMode =
   | "degraded"
   | "unreachable";
 
+/**
+ * Trusted configuration/lifecycle evidence captured by the client factory.
+ * This is not an identity reported by the remote Gateway and must never be
+ * accepted from an HTTP request or other user-controlled payload.
+ */
+export type OpenClawRuntimeIdentity = {
+  gatewayUrl: string;
+  stateDir: string;
+  configPath: string;
+  profile: string | null;
+  ownership: "agentos-managed" | "external-supervisor" | "unavailable" | "unknown";
+  deploymentMode: "local" | "railway" | "unknown";
+  managementStrategy: "child" | "openclaw-service" | "external-supervisor" | "unavailable";
+  supervisorEndpoint: string | null;
+};
+
 export type OpenClawGatewayRecentFallbackDiagnostic = {
   at: string;
   operation: string;
@@ -756,13 +772,17 @@ export type OpenClawMemoryIndexStatusPayload = {
     owner: string | null;
     reason: string | null;
   } | null;
-  appliedVia: "cli-fallback";
+  appliedVia: "cli-fallback" | "native-gateway" | null;
+  /** The CLI was intentionally not run when this is unavailable. */
+  availability?: "available" | "unavailable";
+  locality?: "available-local-same-runtime" | "unavailable-remote" | "unavailable-unproven";
+  localityReason?: string | null;
 };
 
 /** Result of an explicit OpenClaw-owned memory index rebuild. */
 export type OpenClawMemoryIndexRebuildPayload = {
   agentId: string;
-  appliedVia: "cli-fallback";
+  appliedVia: "cli-fallback" | "native-gateway";
   command: "memory index --force";
 };
 
@@ -1887,6 +1907,8 @@ export type OpenClawUpdateStatusPayload = Record<string, unknown> & {
 };
 
 export interface OpenClawGatewayClient {
+  /** Trusted factory/lifecycle evidence; never derived from a request. */
+  getRuntimeIdentity?(): OpenClawRuntimeIdentity | null;
   getDiagnostics?(): OpenClawGatewayClientDiagnostics;
   /** Current official transport generation; this never creates a connection. */
   getNativeConnectionGeneration?(): number;
@@ -1969,6 +1991,10 @@ export interface OpenClawGatewayClient {
   getSessionUsageLogs?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   /** Native-only Phase 5 memory operations. The CLI client intentionally does not implement these. */
   searchMemory?(input: OpenClawMemorySearchInput, options?: OpenClawCommandOptions): Promise<OpenClawMemorySearchPayload>;
+  /** Future native Gateway index status; preferred over the CLI fallback. */
+  getNativeMemoryIndexStatus?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexStatusPayload>;
+  /** Future native Gateway index maintenance; preferred over the CLI fallback. */
+  rebuildNativeMemoryIndex?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexRebuildPayload>;
   getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
   getNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamDiaryPayload>;
   backfillNativeMemoryDreamDiary?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryDreamActionPayload>;

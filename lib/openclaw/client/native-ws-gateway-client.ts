@@ -365,6 +365,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     this.connection = options.transport;
   }
 
+  getRuntimeIdentity() {
+    return this.options.runtimeIdentity ?? null;
+  }
+
   close(reason = "closed") {
     this.connection.close(reason);
     this.requestPolicy.reset(this.connection.getGeneration());

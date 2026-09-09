@@ -13,7 +13,8 @@ import type {
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
   OpenClawGatewayConnectionState,
-  OpenClawGatewayEventConnectionState
+  OpenClawGatewayEventConnectionState,
+  OpenClawRuntimeIdentity
 } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import type { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
@@ -66,6 +67,8 @@ export type NativeWsOpenClawGatewayClientOptions = {
   /** Testable/shared AgentOS request policy; production creates one per client. */
   requestPolicy?: AgentOsGatewayRequestPolicy;
   forceCli?: boolean;
+  /** Trusted runtime identity captured by the gateway client factory. */
+  runtimeIdentity?: OpenClawRuntimeIdentity | null;
   onNativeFailure?: (error: unknown, method: string) => void;
 };
 

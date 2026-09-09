@@ -115,6 +115,17 @@ test("OpenClaw direct CLI command usage remains in documented fallback/provision
   assert.deepEqual(offenders, []);
 });
 
+test("workspace native knowledge service keeps runtime locality and CLI execution behind the adapter", () => {
+  const source = readFileSync(
+    path.join(rootDir, "lib/agentos/application/workspace-native-knowledge-service.ts"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(source, /CliOpenClawGatewayClient|runOpenClaw(?:Json)?/);
+  assert.match(source, /adapter\.getMemoryIndexStatus/);
+  assert.match(source, /adapter\.rebuildMemoryIndex/);
+});
+
 test("AgentOS contracts expose explicit runtime aliases instead of wildcard OpenClaw exports", () => {
   const source = readFileSync(path.join(rootDir, "lib/agentos/contracts.ts"), "utf8");
 

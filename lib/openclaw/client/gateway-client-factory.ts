@@ -6,12 +6,16 @@ import {
   type AgentOsGatewayAuthCredential
 } from "@/lib/agentos/runtime-auth";
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
-import { resolveOpenClawStateDir } from "@/lib/openclaw/client/gateway-state";
+import {
+  resolveOpenClawConfigPath,
+  resolveOpenClawStateDir
+} from "@/lib/openclaw/client/gateway-state";
 import {
   createOfficialBackedOpenClawGatewayClient,
   type OfficialBackedOpenClawGatewayClientOptions
 } from "@/lib/openclaw/client/official-gateway-factory";
 import { isCliGatewayClientForcedByEnv, resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { resolveGatewayRuntimeIdentity } from "@/lib/openclaw/lifecycle/runtime-discovery";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 
 let defaultClient: OpenClawGatewayClient | null = null;
@@ -21,7 +25,7 @@ export type OpenClawGatewayClientProvider = () => OpenClawGatewayClient;
 
 export type OpenClawGatewayClientFactoryOptions = Omit<
   OfficialBackedOpenClawGatewayClientOptions,
-  "clientName" | "url"
+  "clientName" | "url" | "runtimeIdentity"
 > & {
   url?: string | null;
   clientName?: string;
@@ -30,17 +34,30 @@ export type OpenClawGatewayClientFactoryOptions = Omit<
 export function createOpenClawGatewayClient(
   options: OpenClawGatewayClientFactoryOptions = {}
 ) {
-  const cliClient = options.fallback ?? new CliOpenClawGatewayClient();
   const forceCli = options.forceCli || isCliGatewayClientForcedByEnv();
+  const stateDir = options.stateDir ?? resolveOpenClawStateDir();
+  const configPath = options.configPath ?? resolveOpenClawConfigPath({
+    ...process.env,
+    OPENCLAW_STATE_DIR: stateDir
+  });
+  const gatewayUrl = options.url ?? resolveGatewayUrl();
+  const runtimeIdentity = resolveGatewayRuntimeIdentity({
+    gatewayUrl,
+    stateDir,
+    configPath
+  });
+  const cliClient = options.fallback ?? new CliOpenClawGatewayClient({ runtimeIdentity });
 
   const commonOptions = {
     fallback: cliClient,
-    url: options.url ?? resolveGatewayUrl()
+    url: gatewayUrl
   } as const;
 
   return createOfficialBackedOpenClawGatewayClient({
     ...options,
     ...commonOptions,
+    configPath,
+    runtimeIdentity,
     forceCli,
     token: options.token !== undefined
       ? options.token
@@ -48,7 +65,7 @@ export function createOpenClawGatewayClient(
     password: options.password !== undefined
       ? options.password
       : resolveGatewayCredential("password", "AGENTOS_OPENCLAW_GATEWAY_PASSWORD", "OPENCLAW_GATEWAY_PASSWORD"),
-    stateDir: options.stateDir ?? resolveOpenClawStateDir(),
+    stateDir,
     sharedStateMode: options.sharedStateMode ?? "managed-write",
     clientName: options.clientName as GatewayClientName | undefined,
   } as OfficialBackedOpenClawGatewayClientOptions);
@@ -56,7 +73,9 @@ export function createOpenClawGatewayClient(
 
 function createDefaultOpenClawGatewayClient() {
   if (isCliGatewayClientForcedByEnv()) {
-    return new CliOpenClawGatewayClient();
+    return new CliOpenClawGatewayClient({
+      runtimeIdentity: resolveGatewayRuntimeIdentity()
+    });
   }
 
   return createOpenClawGatewayClient();

@@ -3,6 +3,10 @@ import "server-only";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import { runGatewayConfigMutationWithPacing } from "@/lib/openclaw/application/config-pacing-service";
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
+import {
+  resolveLocalCliRuntimeIdentity,
+  resolveMemoryCliFallbackLocality
+} from "@/lib/openclaw/client/memory-cli-locality";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   NativeGatewayError,
@@ -238,8 +242,8 @@ export interface OpenClawAdapter {
   getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
   /**
    * OpenClaw 2026.9.3 exposes memory index inspection and repair only through
-   * its structured CLI, not through the Gateway. These methods are the narrow,
-   * explicit fallback for that missing Gateway surface.
+   * its structured CLI, not through the Gateway. These methods prefer a future
+   * native surface and otherwise use the narrow, explicit CLI fallback.
    */
   getMemoryIndexStatus?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexStatusPayload>;
   rebuildMemoryIndex?(input: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryIndexRebuildPayload>;
@@ -375,9 +379,19 @@ export interface OpenClawAdapter {
 }
 
 export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
-  private readonly cliMemoryFallback = new CliOpenClawGatewayClient();
+  private readonly cliMemoryFallback: CliOpenClawGatewayClient;
 
-  constructor(private readonly getClient: () => OpenClawGatewayClient = getOpenClawGatewayClient) {}
+  constructor(
+    private readonly getClient: () => OpenClawGatewayClient = getOpenClawGatewayClient,
+    cliMemoryFallback?: CliOpenClawGatewayClient
+  ) {
+    this.cliMemoryFallback = cliMemoryFallback ?? new CliOpenClawGatewayClient({
+        resolveMemoryCliFallbackLocality: () => resolveMemoryCliFallbackLocality({
+          gatewayRuntime: this.getClient().getRuntimeIdentity?.() ?? null,
+          cliRuntime: resolveLocalCliRuntimeIdentity()
+        })
+      });
+  }
 
   capture() {
     const client = this.getClient();
@@ -701,10 +715,18 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
   }
 
   async getMemoryIndexStatus(input: OpenClawMemoryAgentInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (client.getNativeMemoryIndexStatus) {
+      return client.getNativeMemoryIndexStatus(input, options);
+    }
     return this.cliMemoryFallback.getMemoryIndexStatus(input, options);
   }
 
   rebuildMemoryIndex(input: OpenClawMemoryAgentInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (client.rebuildNativeMemoryIndex) {
+      return client.rebuildNativeMemoryIndex(input, options);
+    }
     return this.cliMemoryFallback.rebuildMemoryIndex(input, options);
   }
 

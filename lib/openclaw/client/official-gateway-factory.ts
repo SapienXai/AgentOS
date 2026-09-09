@@ -1,6 +1,9 @@
 import "server-only";
 
-import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
+import type {
+  OpenClawGatewayClient,
+  OpenClawRuntimeIdentity
+} from "@/lib/openclaw/client/types";
 import {
   NativeWsOpenClawGatewayClient,
   type NativeWsOpenClawGatewayClientOptions
@@ -15,8 +18,10 @@ import {
 import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 
 export type OfficialBackedOpenClawGatewayClientOptions = OfficialGatewayTransportOptions & {
+  configPath?: string | null;
   fallback?: OpenClawGatewayClient;
   forceCli?: boolean;
+  runtimeIdentity?: OpenClawRuntimeIdentity | null;
   onNativeFailure?: NativeWsOpenClawGatewayClientOptions["onNativeFailure"];
   requestPolicy?: AgentOsGatewayRequestPolicy;
 };
@@ -70,7 +75,8 @@ export function createOfficialBackedOpenClawGatewayClient(
     forceCli: options.forceCli,
     onNativeFailure: options.onNativeFailure,
     transport: coordinator,
-    requestPolicy
+    requestPolicy,
+    runtimeIdentity: options.runtimeIdentity ?? null
   });
   return client;
 }

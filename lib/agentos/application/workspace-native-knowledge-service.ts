@@ -92,9 +92,14 @@ export type WorkspaceNativeKnowledgeIndexRefresh = {
   action: "reindexed" | "not-required" | "skipped" | "unavailable" | "failed";
   dirty: boolean | null;
   indexIdentityStatus: string | null;
-  appliedVia: "cli-fallback" | null;
+  appliedVia: "cli-fallback" | "native-gateway" | null;
   issue: string | null;
 };
+
+export type WorkspaceNativeKnowledgeIndexLocality =
+  | "available-local-same-runtime"
+  | "unavailable-remote"
+  | "unavailable-unproven";
 
 export type WorkspaceNativeKnowledgeStatus = {
   status: "configured" | "not-configured" | "degraded" | "unknown" | "not-applicable";
@@ -117,6 +122,8 @@ export type WorkspaceNativeKnowledgeStatus = {
     dirty: boolean | null;
     lastSyncError: string | null;
     sourceCounts: Record<string, number> | null;
+    locality: WorkspaceNativeKnowledgeIndexLocality | null;
+    localityReason: string | null;
   } | null;
   restartRequired: boolean | null;
   indexActionRequired: "required" | "not-required" | "unknown";
@@ -326,10 +333,13 @@ export async function getWorkspaceNativeKnowledgeStatus(
         };
       }
       try {
+        const payload = await adapter.getMemoryIndexStatus({ agentId: agent.agentId }, input.commandOptions);
         return {
           agentId: agent.agentId,
-          payload: await adapter.getMemoryIndexStatus({ agentId: agent.agentId }, input.commandOptions),
-          issue: null
+          payload,
+          issue: payload.availability === "unavailable"
+            ? payload.localityReason ?? "OpenClaw memory index status is unavailable; index freshness is unknown."
+            : null
         };
       } catch (error) {
         return {
@@ -340,7 +350,7 @@ export async function getWorkspaceNativeKnowledgeStatus(
       }
     }));
     const indexObservationsWithPayload = indexObservations.filter(
-      (observation): observation is { agentId: string; payload: OpenClawMemoryIndexStatusPayload; issue: null } =>
+      (observation): observation is { agentId: string; payload: OpenClawMemoryIndexStatusPayload; issue: string | null } =>
         observation.payload !== null
     );
     const index = aggregateNativeIndexStatus(indexObservationsWithPayload.map((observation) => observation.payload));
@@ -350,7 +360,7 @@ export async function getWorkspaceNativeKnowledgeStatus(
     const indexWarnings = indexObservations
       .filter((observation) => observation.issue)
       .map((observation) => `${observation.agentId}: ${observation.issue}`);
-    if (indexObservationsWithPayload.length > 0) {
+    if (indexObservationsWithPayload.some((observation) => observation.payload.availability !== "unavailable")) {
       indexWarnings.unshift(
         "OpenClaw 2026.9.3 has no Gateway memory index status/sync method; AgentOS uses its structured CLI fallback only when the native status reports dirty or incompatible."
       );
@@ -482,6 +492,17 @@ async function refreshNativeKnowledgeIndexes(input: {
       };
     }
 
+    if (status.availability === "unavailable") {
+      return {
+        agentId: agent.agentId,
+        action: "unavailable" as const,
+        dirty: null,
+        indexIdentityStatus: null,
+        appliedVia: null,
+        issue: status.localityReason ?? "OpenClaw memory index status is unavailable; index refresh was not attempted."
+      };
+    }
+
     const required = isNativeIndexRefreshRequired(status);
     if (!required) {
       const clean = status.dirty === false && status.indexIdentity?.status === "valid";
@@ -550,6 +571,9 @@ function resolveIndexActionRequired(statuses: OpenClawMemoryIndexStatusPayload[]
   if (statuses.length === 0) {
     return "unknown" as const;
   }
+  if (statuses.some((status) => status.availability === "unavailable")) {
+    return "unknown" as const;
+  }
   if (statuses.some(isNativeIndexRefreshRequired)) {
     return "required" as const;
   }
@@ -571,7 +595,9 @@ function aggregateNativeIndexStatus(statuses: OpenClawMemoryIndexStatusPayload[]
     chunks: same((status) => status.chunks) ? first.chunks : null,
     dirty: same((status) => status.dirty) ? first.dirty : null,
     lastSyncError: same((status) => status.lastSyncError) ? first.lastSyncError : "OpenClaw agents reported different index errors.",
-    sourceCounts: same((status) => status.sourceCounts) ? first.sourceCounts : null
+    sourceCounts: same((status) => status.sourceCounts) ? first.sourceCounts : null,
+    locality: same((status) => status.locality) ? first.locality ?? null : null,
+    localityReason: same((status) => status.localityReason) ? first.localityReason ?? null : null
   };
 }
 
