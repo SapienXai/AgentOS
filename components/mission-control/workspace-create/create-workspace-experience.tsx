@@ -86,6 +86,13 @@ const progressLabels = [
   "Preparing the blueprint"
 ];
 
+type ProgressChipState = "pending" | "active" | "done";
+
+type ProgressChip = {
+  label: string;
+  step: number;
+};
+
 export function CreateWorkspaceExperience({
   open,
   onOpenChange,
@@ -470,7 +477,9 @@ export function CreateWorkspaceExperience({
               <ChevronLeft className="mr-1.5 h-4 w-4" />
               Back to brief
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-1">
+              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Final creation is a Phase 6 action.</span>
+              <div className="flex items-center gap-2">
               <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                 Customize
@@ -484,6 +493,7 @@ export function CreateWorkspaceExperience({
               >
                 Create Workspace
               </Button>
+              </div>
             </div>
           </div>
         ) : (
@@ -530,7 +540,7 @@ export function CreateWorkspaceExperience({
             notice={notice}
           />
         ) : stage === "generating" ? (
-          <GeneratingView isLight={isLight} activeStep={progressStep} sources={sources} />
+          <GeneratingView isLight={isLight} activeStep={progressStep} sources={sources} brief={brief} />
         ) : (
           <ReviewView
             isLight={isLight}
@@ -725,7 +735,9 @@ function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
   );
 }
 
-function GeneratingView({ isLight, activeStep, sources }: { isLight: boolean; activeStep: number; sources: WorkspaceKnowledgeSource[] }) {
+function GeneratingView({ isLight, activeStep, sources, brief }: { isLight: boolean; activeStep: number; sources: WorkspaceKnowledgeSource[]; brief: string }) {
+  const chips = buildProgressChips(sources, brief);
+
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[640px] flex-col justify-center px-5 py-12 md:px-10">
       <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-live="polite" aria-busy="true">
@@ -750,9 +762,60 @@ function GeneratingView({ isLight, activeStep, sources }: { isLight: boolean; ac
             );
           })}
         </div>
+        <ProgressChipRail isLight={isLight} chips={chips} activeStep={activeStep} />
       </div>
     </main>
   );
+}
+
+function ProgressChipRail({ isLight, chips, activeStep }: { isLight: boolean; chips: ProgressChip[]; activeStep: number }) {
+  return (
+    <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-live="polite" aria-label="Current analysis signals">
+      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live analysis</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {chips.map((chip, index) => {
+          const state: ProgressChipState = activeStep > chip.step ? "done" : activeStep === chip.step ? "active" : "pending";
+          return (
+            <span
+              key={`${chip.label}:${state}`}
+              className={cn(
+                "workspace-architect-chip-enter inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]",
+                state === "done" && (isLight ? "border-emerald-300/60 bg-emerald-50 text-emerald-800" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"),
+                state === "active" && (isLight ? "border-[#d8b184] bg-[#f8efe3] text-[#7c5a34]" : "border-violet-300/30 bg-violet-300/10 text-violet-100"),
+                state === "pending" && (isLight ? "border-[#e4ddd3] bg-white/70 text-[#9a8d82]" : "border-white/10 bg-white/[0.035] text-slate-500")
+              )}
+              style={{ animationDelay: `${index * 55}ms` }}
+            >
+              <span className={cn("size-1.5 rounded-full", state === "done" ? "bg-emerald-400" : state === "active" ? "bg-violet-300 motion-safe:animate-pulse" : isLight ? "bg-[#cdbcae]" : "bg-slate-600")} aria-hidden="true" />
+              {chip.label}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function buildProgressChips(sources: WorkspaceKnowledgeSource[], brief: string): ProgressChip[] {
+  const chips: ProgressChip[] = sources.slice(0, 4).map((source) => ({
+    label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label}`,
+    step: 0
+  }));
+
+  if (sources.length > 0) {
+    chips.push({ label: `${sources.length} source${sources.length === 1 ? "" : "s"} staged`, step: 1 });
+  }
+
+  const briefSignals = [
+    { pattern: /marketing/i, label: "Marketing intent" },
+    { pattern: /management/i, label: "Management intent" },
+    { pattern: /autonom/i, label: "Autonomous operation" }
+  ];
+  for (const signal of briefSignals) {
+    if (signal.pattern.test(brief)) chips.push({ label: signal.label, step: 2 });
+  }
+  chips.push({ label: "Blueprint safety check", step: 3 });
+  return chips;
 }
 
 function ReviewView({
@@ -793,6 +856,7 @@ function ReviewView({
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
+  const fallbackDiagnostic = model.warnings.find((warning) => /Architect/i.test(warning));
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
@@ -800,7 +864,7 @@ function ReviewView({
         <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <div>
             <p className="text-sm font-semibold">AgentOS couldn’t fully analyze the project.</p>
-            <p className="mt-1 text-xs opacity-80">This is a safe minimal draft. You can review it or retry without losing context.</p>
+            <p className="mt-1 text-xs opacity-80">{fallbackDiagnostic || "This is a safe minimal draft. You can review it or retry without losing context."}</p>
           </div>
           <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
         </div>
@@ -843,6 +907,8 @@ function ReviewView({
           </ReviewSection>
         </div>
 
+        <BlueprintSignalRail isLight={isLight} model={model} />
+
         <ReviewDetailSections isLight={isLight} model={model} />
       </section>
 
@@ -853,6 +919,49 @@ function ReviewView({
       </section>
     </main>
   );
+}
+
+function BlueprintSignalRail({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
+  const signals = buildBlueprintSignals(model);
+  if (!signals.length) return null;
+
+  return (
+    <section className="mt-5 border-t pt-4" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-label="Blueprint signals">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Blueprint signals</p>
+        <p className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Selections surfaced from the brief and staged context</p>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {signals.map((signal, index) => (
+          <span
+            key={signal}
+            className={cn(
+              "workspace-architect-chip-enter inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]",
+              index === 0
+                ? (isLight ? "border-[#d8b184] bg-[#f8efe3] text-[#7c5a34]" : "border-violet-300/30 bg-violet-300/10 text-violet-100")
+                : (isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")
+            )}
+            style={{ animationDelay: `${index * 55}ms` }}
+          >
+            <span className="max-w-[18rem] truncate">{signal}</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function buildBlueprintSignals(model: WorkspaceBlueprintReviewModel) {
+  const signals = [
+    ...model.knowledge.sources.map((source) => `${formatWorkspaceSourceKind(source.kind)} · ${source.label}`),
+    ...model.specialists.map((agent) => `Agent · ${agent.name}`),
+    ...model.automations.map((automation) => `Automation · ${automation.name}`),
+    ...model.channels.map((channel) => `Channel · ${channel.name || channel.type}`),
+    ...model.connections.map((connection) => `Connection · ${connection.provider}`),
+    ...model.capabilities.skills.map((skill) => `Skill · ${capabilityLabel(skill.id)}`),
+    ...model.capabilities.tools.map((tool) => `Tool · ${capabilityLabel(tool.id)}`)
+  ];
+  return [...new Set(signals)].slice(0, 12);
 }
 
 function ReviewDetailSections({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {

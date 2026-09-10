@@ -126,6 +126,10 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /draftContextId: stagedDraftContextId/);
   assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
   assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
+  assert.match(source, /Live analysis/);
+  assert.match(source, /Blueprint signals/);
+  assert.match(source, /workspace-architect-chip-enter/);
+  assert.match(source, /Final creation is a Phase 6 action/);
   assert.doesNotMatch(source, /file\.text\(/);
   assert.doesNotMatch(source, /documents: knowledgePayload/);
   assert.doesNotMatch(source, /fetch\(`\/api\/planner/);
