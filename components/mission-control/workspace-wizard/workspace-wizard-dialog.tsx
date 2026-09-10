@@ -4,6 +4,7 @@ import { Bot, Check, ChevronRight, Columns2, FolderOpen, GitBranch, Globe, Loade
 import { useMemo, useState, type ReactNode } from "react";
 
 import { OperationProgress } from "@/components/mission-control/operation-progress";
+import { CreateWorkspaceExperience } from "@/components/mission-control/workspace-create/create-workspace-experience";
 import {
   WorkspaceWizardBlueprintEditor,
   type WorkspaceBlueprintEditorFocus
@@ -73,7 +74,21 @@ type WorkspaceWizardDialogProps = {
   onWorkspaceUpdated?: (workspaceId: string) => void;
 };
 
-export function WorkspaceWizardDialog({
+export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
+  if (!props.workspaceEditId) {
+    return (
+      <CreateWorkspaceExperience
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+        surfaceTheme={props.surfaceTheme}
+      />
+    );
+  }
+
+  return <LegacyWorkspaceWizardDialog {...props} />;
+}
+
+function LegacyWorkspaceWizardDialog({
   open,
   onOpenChange,
   initialMode = "basic",
