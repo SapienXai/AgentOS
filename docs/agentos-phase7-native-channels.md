@@ -1,5 +1,10 @@
 # AgentOS Phase 7.1 — Native Channel Setup
 
+The readiness projection is aligned with the OpenClaw 2026.9.3 channel
+account-state contract: `running` is the native started state, while a
+configured account with no running transport is stopped. WhatsApp linking is
+an authentication fact; it does not by itself claim a running listener.
+
 Phase 7.1 activates the channel declarations recorded by Phase 6 without
 changing the immutable provisioning manifest. AgentOS reads the historical
 `pendingSetup.channels` entries from `.openclaw/agentos-provisioning.json` and
@@ -23,6 +28,21 @@ linked, authentication, disabled, and error states. If live status is
 unavailable, the projection is unavailable rather than optimistically
 connected.
 
+Setup completion is deliberately stricter than configuration. The canonical
+readiness rule is: a workspace binding exists, live native status is available,
+the account is not failed/disabled, authentication is satisfied, and the
+native transport is `running` or `connected`. `configured` alone is not
+operational, and WhatsApp `linked` alone is not operational when the native
+account is stopped. Those states remain pending and expose `Start`; a failed
+or disabled account exposes `Needs attention`/`Retry`.
+
+The workspace's ordered `agentIds` list is the authoritative routing source;
+its first entry is the canonical primary agent established by provisioning.
+An omitted agent selection uses only that primary. An explicit agent id that
+is no longer in the workspace is rejected with a typed setup error, and an
+existing binding that points outside the workspace is projected as drift
+without being rewritten during status reads.
+
 The workspace projection is available at:
 
 ```text
@@ -33,6 +53,12 @@ POST /api/workspaces/:workspaceId/setup
 The POST boundary only delegates to existing OpenClaw channel services and the
 existing AgentOS workspace registry writer. It does not write a second channel
 runtime or copy credentials into AgentOS state.
+
+`performWorkspaceChannelSetup` keeps those production service dependencies
+behind a small injectable application boundary. Executable tests exercise
+configure, native QR login start/wait, binding, account selection, start/stop,
+plugin restart reporting, idempotent registry updates, unavailable status, and
+secret-redacted failures without replacing OpenClaw's channel ownership.
 
 ## Supported setup paths
 

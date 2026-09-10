@@ -80,10 +80,40 @@ export type WorkspaceChannelSetupProjectionInput = {
   pendingChannels: string[];
   workspaceId: string;
   primaryAgentId: string | null;
+  workspaceAgentIds?: string[];
   registry: ChannelRegistry;
   surfaceRuntime: SurfaceRuntimeSnapshot;
   providers: WorkspaceChannelSetupProvider[];
 };
+
+/**
+ * OpenClaw reports configuration, authentication/link state, and transport
+ * liveness separately. Only the latter is sufficient to finish a workspace
+ * channel setup after a binding exists.
+ */
+export function isWorkspaceChannelSetupSatisfied(input: {
+  provider: MissionControlSurfaceProvider;
+  runtime: SurfaceAccountRuntimeStatus;
+  bindingPresent: boolean;
+  nativeStatusAvailable: boolean;
+}) {
+  if (!input.bindingPresent || input.nativeStatusAvailable === false ||
+      (input.runtime.source !== "gateway-probe" && input.runtime.source !== "gateway-status")) {
+    return false;
+  }
+  if (!isSupportedWorkspaceChannelProvider(input.provider)) {
+    return false;
+  }
+  if (input.runtime.failed || input.runtime.disabled || input.runtime.authenticationRequired) {
+    return false;
+  }
+
+  // OpenClaw's account-state contract treats configured/linked accounts with
+  // no running transport as stopped. `connected` is also accepted because
+  // native probes can report a healthy transport without a separate running
+  // flag (notably for some WhatsApp status surfaces).
+  return input.runtime.running || input.runtime.connected;
+}
 
 export function parsePendingChannelDeclaration(value: string) {
   const separator = value.indexOf(":");
@@ -138,6 +168,9 @@ export function projectWorkspaceChannelSetup(
     );
     const boundChannel = workspaceChannels.find((channel) => channel.id === declaration.declarationId) ??
       (workspaceChannels.length === 1 ? workspaceChannels[0] : null);
+    const workspaceBinding = boundChannel?.workspaces.find((binding) => binding.workspaceId === input.workspaceId) ?? null;
+    const bindingAgentValid = !workspaceBinding || !input.workspaceAgentIds ||
+      workspaceBinding.agentIds.every((agentId) => input.workspaceAgentIds!.includes(agentId));
     const boundRuntime = boundChannel
       ? runtimeAccounts.find((account) => account.accountId === boundChannel.id) ?? null
       : null;
@@ -178,6 +211,24 @@ export function projectWorkspaceChannelSetup(
         bindingPresent: Boolean(boundChannel),
         runtime: null,
         lastError: null,
+        complete: false
+      });
+    }
+
+    if (boundChannel && !bindingAgentValid) {
+      return buildBaseItem({
+        historicalPending,
+        declarationId: declaration.declarationId,
+        provider,
+        status: "error",
+        statusLabel: "Needs attention",
+        action: "retry",
+        accountId: boundChannel.id,
+        accountIds: runtimeAccounts.map((account) => account.accountId),
+        primaryAgentId: input.primaryAgentId,
+        bindingPresent: true,
+        runtime: boundRuntime,
+        lastError: "The workspace binding points to an agent that is no longer in this workspace.",
         complete: false
       });
     }
@@ -293,8 +344,12 @@ function buildRuntimeItem(input: {
   bindingPresent: boolean;
 }) {
   const runtimeState = normalizeRuntimeState(input.runtime);
-  const connected = input.runtime.connected;
-  const complete = input.bindingPresent && (connected || input.runtime.running || input.runtime.linked || input.runtime.configured);
+  const complete = isWorkspaceChannelSetupSatisfied({
+    provider: input.provider.id,
+    runtime: input.runtime,
+    bindingPresent: input.bindingPresent,
+    nativeStatusAvailable: true
+  });
 
   return buildBaseItem({
     ...input,
@@ -302,12 +357,14 @@ function buildRuntimeItem(input: {
     statusLabel: runtimeState.statusLabel,
     action: complete
       ? "none"
+      : input.runtime.errorMessage || input.runtime.failed || input.runtime.disabled
+        ? "retry"
       : input.runtime.authenticationRequired
         ? "authenticate"
         : !input.runtime.configured
           ? input.provider.setupMode === "qr" ? "authenticate" : "configure"
           : input.bindingPresent
-            ? runtimeState.status === "configured" ? "start" : "retry"
+            ? "start"
             : "bind",
     runtime: input.runtime,
     lastError: input.runtime.errorMessage,
@@ -319,14 +376,18 @@ function normalizeRuntimeState(runtime: SurfaceAccountRuntimeStatus): {
   status: WorkspaceChannelSetupStatus;
   statusLabel: string;
 } {
-  if (runtime.errorMessage || runtime.failed) return { status: "error", statusLabel: "OpenClaw error" };
-  if (runtime.disabled) return { status: "blocked", statusLabel: "Disabled" };
+  if (runtime.errorMessage || runtime.failed) return { status: "error", statusLabel: "Needs attention" };
+  if (runtime.disabled) return { status: "blocked", statusLabel: "Needs attention" };
   if (runtime.authenticationRequired) return { status: "authentication-required", statusLabel: "Authentication required" };
   if (runtime.connected) return { status: "connected", statusLabel: "Connected" };
   if (runtime.running) return { status: "running", statusLabel: "Running" };
   if (runtime.linked) return { status: "linked", statusLabel: "Linked" };
   if (runtime.configured) return { status: "configured", statusLabel: "Configured" };
   return { status: "not-configured", statusLabel: "Setup required" };
+}
+
+function isSupportedWorkspaceChannelProvider(provider: MissionControlSurfaceProvider) {
+  return provider === "whatsapp" || provider === "telegram" || provider === "discord" || provider === "slack";
 }
 
 function buildUnavailableItem(input: {

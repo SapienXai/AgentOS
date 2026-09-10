@@ -100,6 +100,118 @@ test("a native connected account is complete only after the workspace binding ex
   assert.equal(bound.complete, true);
 });
 
+test("configured-only accounts remain incomplete even when bound", () => {
+  const result = projectWorkspaceChannelSetup({
+    pendingChannels: ["telegram:configured-only"],
+    workspaceId: "workspace-1",
+    primaryAgentId: "agent-1",
+    workspaceAgentIds: ["agent-1"],
+    registry: {
+      version: 1,
+      channels: [{
+        id: "configured-only",
+        type: "telegram",
+        name: "Configured only",
+        primaryAgentId: "agent-1",
+        workspaces: [{ workspaceId: "workspace-1", workspacePath: "/runtime/workspace", agentIds: ["agent-1"], groupAssignments: [] }]
+      }]
+    },
+    surfaceRuntime: runtimeSnapshot({
+      telegram: { "configured-only": runtimeAccount("telegram", "configured-only", { configured: true }) }
+    }),
+    providers
+  });
+
+  assert.equal(result.items[0]?.complete, false);
+  assert.equal(result.items[0]?.action, "start");
+  assert.equal(result.pendingCount, 1);
+});
+
+test("linked but stopped WhatsApp still needs Start under the native stopped contract", () => {
+  const result = projectWorkspaceChannelSetup({
+    pendingChannels: ["whatsapp:linked-stopped"],
+    workspaceId: "workspace-1",
+    primaryAgentId: "agent-1",
+    workspaceAgentIds: ["agent-1"],
+    registry: {
+      version: 1,
+      channels: [{
+        id: "linked-stopped",
+        type: "whatsapp",
+        name: "Linked stopped",
+        primaryAgentId: "agent-1",
+        workspaces: [{ workspaceId: "workspace-1", workspacePath: "/runtime/workspace", agentIds: ["agent-1"], groupAssignments: [] }]
+      }]
+    },
+    surfaceRuntime: runtimeSnapshot({
+      whatsapp: { "linked-stopped": runtimeAccount("whatsapp", "linked-stopped", { configured: true, linked: true }) }
+    }),
+    providers
+  });
+
+  assert.equal(result.items[0]?.status, "linked");
+  assert.equal(result.items[0]?.action, "start");
+  assert.equal(result.items[0]?.complete, false);
+});
+
+test("failed and disabled native accounts remain needs-attention even when bound", () => {
+  for (const overrides of [{ failed: true, errorMessage: "native failure" }, { disabled: true, enabled: false }]) {
+    const result = projectWorkspaceChannelSetup({
+      pendingChannels: ["telegram:attention"],
+      workspaceId: "workspace-1",
+      primaryAgentId: "agent-1",
+      workspaceAgentIds: ["agent-1"],
+      registry: {
+        version: 1,
+        channels: [{
+          id: "attention",
+          type: "telegram",
+          name: "Attention",
+          primaryAgentId: "agent-1",
+          workspaces: [{ workspaceId: "workspace-1", workspacePath: "/runtime/workspace", agentIds: ["agent-1"], groupAssignments: [] }]
+        }]
+      },
+      surfaceRuntime: runtimeSnapshot({
+        telegram: { attention: runtimeAccount("telegram", "attention", { configured: true, running: true, ...overrides }) }
+      }),
+      providers
+    });
+
+    assert.equal(result.items[0]?.complete, false);
+    assert.equal(result.items[0]?.statusLabel, "Needs attention");
+    assert.equal(result.items[0]?.action, "retry");
+  }
+});
+
+test("binding drift is projected as needs-attention without rewriting the registry", () => {
+  const registry = {
+    version: 1 as const,
+    channels: [{
+      id: "drifted",
+      type: "telegram" as const,
+      name: "Drifted",
+      primaryAgentId: "agent-deleted",
+      workspaces: [{ workspaceId: "workspace-1", workspacePath: "/runtime/workspace", agentIds: ["agent-deleted"], groupAssignments: [] }]
+    }]
+  };
+  const result = projectWorkspaceChannelSetup({
+    pendingChannels: ["telegram:drifted"],
+    workspaceId: "workspace-1",
+    primaryAgentId: "agent-1",
+    workspaceAgentIds: ["agent-1"],
+    registry,
+    surfaceRuntime: runtimeSnapshot({
+      telegram: { drifted: runtimeAccount("telegram", "drifted", { configured: true, running: true }) }
+    }),
+    providers
+  });
+
+  assert.equal(result.items[0]?.statusLabel, "Needs attention");
+  assert.equal(result.items[0]?.action, "retry");
+  assert.match(result.items[0]?.lastError ?? "", /no longer in this workspace/);
+  assert.deepEqual(registry.channels[0]?.workspaces[0]?.agentIds, ["agent-deleted"]);
+});
+
 test("remote or blocked live status is unavailable and never becomes a disconnected claim", () => {
   const result = projectWorkspaceChannelSetup({
     pendingChannels: ["telegram:remote-channel"],
@@ -132,6 +244,34 @@ test("config-only snapshots are unavailable because they do not prove live nativ
   assert.equal(result.source, "unavailable");
   assert.equal(result.items[0]?.status, "unavailable");
   assert.equal(result.items[0]?.nativeStatusAvailable, false);
+});
+
+test("configured accounts stay unknown when the native status source is unavailable", () => {
+  const result = projectWorkspaceChannelSetup({
+    pendingChannels: ["telegram:offline-configured"],
+    workspaceId: "workspace-1",
+    primaryAgentId: "agent-1",
+    workspaceAgentIds: ["agent-1"],
+    registry: {
+      version: 1,
+      channels: [{
+        id: "offline-configured",
+        type: "telegram",
+        name: "Offline configured",
+        primaryAgentId: "agent-1",
+        workspaces: [{ workspaceId: "workspace-1", workspacePath: "/runtime/workspace", agentIds: ["agent-1"], groupAssignments: [] }]
+      }]
+    },
+    surfaceRuntime: runtimeSnapshot({
+      telegram: { "offline-configured": runtimeAccount("telegram", "offline-configured", { configured: true, running: true }) }
+    }, { source: "unavailable", issue: "Gateway status unavailable." }),
+    providers
+  });
+
+  assert.equal(result.source, "unavailable");
+  assert.equal(result.items[0]?.complete, false);
+  assert.equal(result.items[0]?.status, "unavailable");
+  assert.equal(result.items[0]?.action, "none");
 });
 
 test("a declaration can identify its own bound account without selecting a different workspace account", () => {

@@ -52,6 +52,32 @@ export type WorkspaceChannelSetupRequest = {
   currentQrDataUrl?: string | null;
 };
 
+/** Application-service seam for executable orchestration tests. Provider-specific
+ * behavior remains owned by the existing channel/connect services. */
+export type WorkspaceChannelSetupDependencies = {
+  getMissionControlSnapshot: typeof getMissionControlSnapshot;
+  getChannelConnectOverview: typeof getChannelConnectOverview;
+  installChannelPlugin: typeof installChannelPlugin;
+  startChannelWebLogin: typeof startChannelWebLogin;
+  waitForChannelWebLogin: typeof waitForChannelWebLogin;
+  createManagedChatChannelAccount: typeof createManagedChatChannelAccount;
+  upsertWorkspaceChannel: typeof upsertWorkspaceChannel;
+  startChannelAccount: typeof startChannelAccount;
+  stopChannelAccount: typeof stopChannelAccount;
+};
+
+const defaultWorkspaceChannelSetupDependencies: WorkspaceChannelSetupDependencies = {
+  getMissionControlSnapshot,
+  getChannelConnectOverview,
+  installChannelPlugin,
+  startChannelWebLogin,
+  waitForChannelWebLogin,
+  createManagedChatChannelAccount,
+  upsertWorkspaceChannel,
+  startChannelAccount,
+  stopChannelAccount
+};
+
 export class WorkspaceChannelSetupError extends Error {
   readonly code: string;
   readonly statusCode: number;
@@ -64,8 +90,11 @@ export class WorkspaceChannelSetupError extends Error {
   }
 }
 
-export async function getWorkspaceChannelSetupStatus(workspaceId: string) {
-  const loaded = await loadWorkspaceChannelSetup(workspaceId);
+export async function getWorkspaceChannelSetupStatus(
+  workspaceId: string,
+  dependencies: WorkspaceChannelSetupDependencies = defaultWorkspaceChannelSetupDependencies
+) {
+  const loaded = await loadWorkspaceChannelSetup(workspaceId, dependencies);
   return {
     workspaceId,
     workspaceName: loaded.workspace.name,
@@ -75,9 +104,10 @@ export async function getWorkspaceChannelSetupStatus(workspaceId: string) {
 
 export async function performWorkspaceChannelSetup(
   input: WorkspaceChannelSetupRequest,
-  options: OpenClawCommandOptions = {}
+  options: OpenClawCommandOptions = {},
+  dependencies: WorkspaceChannelSetupDependencies = defaultWorkspaceChannelSetupDependencies
 ) {
-  const loaded = await loadWorkspaceChannelSetup(input.workspaceId);
+  const loaded = await loadWorkspaceChannelSetup(input.workspaceId, dependencies);
   const item = input.declarationId
     ? loaded.projection.items.find((candidate) =>
         candidate.declarationId === input.declarationId && candidate.provider === input.provider
@@ -92,10 +122,10 @@ export async function performWorkspaceChannelSetup(
   }
 
   if (input.action === "install-plugin") {
-    const plugin = await installChannelPlugin(input.provider as Parameters<typeof installChannelPlugin>[0], options);
+    const plugin = await dependencies.installChannelPlugin(input.provider as Parameters<typeof installChannelPlugin>[0], options);
     return {
       plugin,
-      setup: await getWorkspaceChannelSetupStatus(input.workspaceId)
+      setup: await getWorkspaceChannelSetupStatus(input.workspaceId, dependencies)
     };
   }
 
@@ -103,14 +133,14 @@ export async function performWorkspaceChannelSetup(
     if (input.provider !== "whatsapp") {
       throw new WorkspaceChannelSetupError("workspace-channel-login-unsupported", "Only WhatsApp uses the native web login flow.");
     }
-    const login = await startChannelWebLogin({
+    const login = await dependencies.startChannelWebLogin({
       provider: "whatsapp",
       accountId: normalizeOptional(input.accountId),
       force: true
     }, options);
     return {
       login,
-      setup: await getWorkspaceChannelSetupStatus(input.workspaceId)
+      setup: await getWorkspaceChannelSetupStatus(input.workspaceId, dependencies)
     };
   }
 
@@ -118,14 +148,14 @@ export async function performWorkspaceChannelSetup(
     if (input.provider !== "whatsapp") {
       throw new WorkspaceChannelSetupError("workspace-channel-login-unsupported", "Only WhatsApp uses the native web login flow.");
     }
-    const login = await waitForChannelWebLogin({
+    const login = await dependencies.waitForChannelWebLogin({
       provider: "whatsapp",
       accountId: normalizeOptional(input.accountId),
       currentQrDataUrl: normalizeOptional(input.currentQrDataUrl)
     }, options);
     return {
       login,
-      setup: await getWorkspaceChannelSetupStatus(input.workspaceId)
+      setup: await getWorkspaceChannelSetupStatus(input.workspaceId, dependencies)
     };
   }
 
@@ -150,21 +180,23 @@ export async function performWorkspaceChannelSetup(
       );
     }
     const accountId = requestedAccountId ?? normalizeAccountId(item?.declarationId);
+    const primaryAgentId = resolveAgentId(loaded.workspace.agentIds, input.primaryAgentId);
+    const agentIds = primaryAgentId ? [primaryAgentId] : [];
     const existing = item?.accountIds.includes(accountId ?? "") ? item : null;
     if (existing?.configured) {
-      await upsertWorkspaceChannel({
+      await dependencies.upsertWorkspaceChannel({
         workspaceId: input.workspaceId,
         workspacePath: loaded.workspace.path,
         channelId: accountId!,
         type: input.provider,
         name,
-        primaryAgentId: resolveAgentId(loaded.workspace.agentIds, input.primaryAgentId),
-        agentIds: resolveAgentIds(loaded.workspace.agentIds, input.primaryAgentId)
+        primaryAgentId,
+        agentIds
       });
-      return getWorkspaceChannelSetupStatus(input.workspaceId);
+      return getWorkspaceChannelSetupStatus(input.workspaceId, dependencies);
     }
 
-    const account = await createManagedChatChannelAccount({
+    const account = await dependencies.createManagedChatChannelAccount({
       provider: input.provider,
       name,
       accountId,
@@ -173,16 +205,16 @@ export async function performWorkspaceChannelSetup(
       appToken: input.appToken ?? undefined,
       commandOptions: options
     });
-    await upsertWorkspaceChannel({
+    await dependencies.upsertWorkspaceChannel({
       workspaceId: input.workspaceId,
       workspacePath: loaded.workspace.path,
       channelId: account.id,
       type: input.provider,
       name,
-      primaryAgentId: resolveAgentId(loaded.workspace.agentIds, input.primaryAgentId),
-      agentIds: resolveAgentIds(loaded.workspace.agentIds, input.primaryAgentId)
+      primaryAgentId,
+      agentIds
     });
-    return getWorkspaceChannelSetupStatus(input.workspaceId);
+    return getWorkspaceChannelSetupStatus(input.workspaceId, dependencies);
   }
 
   const accountId = normalizeAccountId(input.accountId ?? item?.accountId);
@@ -199,29 +231,34 @@ export async function performWorkspaceChannelSetup(
     if (!(runtimeAccount.configured || runtimeAccount.connected || runtimeAccount.running || runtimeAccount.linked)) {
       throw new WorkspaceChannelSetupError("workspace-channel-account-not-ready", "The selected OpenClaw account is not configured or authenticated yet.");
     }
-    await upsertWorkspaceChannel({
+    const primaryAgentId = resolveAgentId(loaded.workspace.agentIds, input.primaryAgentId);
+    const agentIds = primaryAgentId ? [primaryAgentId] : [];
+    await dependencies.upsertWorkspaceChannel({
       workspaceId: input.workspaceId,
       workspacePath: loaded.workspace.path,
       channelId: accountId,
       type: input.provider,
       name: runtimeAccount.name || accountId,
-      primaryAgentId: resolveAgentId(loaded.workspace.agentIds, input.primaryAgentId),
-      agentIds: resolveAgentIds(loaded.workspace.agentIds, input.primaryAgentId)
+      primaryAgentId,
+      agentIds
     });
-    return getWorkspaceChannelSetupStatus(input.workspaceId);
+    return getWorkspaceChannelSetupStatus(input.workspaceId, dependencies);
   }
 
   if (input.action === "start") {
-    await startChannelAccount({ provider: input.provider as Parameters<typeof startChannelAccount>[0]["provider"], accountId }, options);
+    await dependencies.startChannelAccount({ provider: input.provider as Parameters<typeof startChannelAccount>[0]["provider"], accountId }, options);
   } else {
-    await stopChannelAccount({ provider: input.provider as Parameters<typeof stopChannelAccount>[0]["provider"], accountId }, options);
+    await dependencies.stopChannelAccount({ provider: input.provider as Parameters<typeof stopChannelAccount>[0]["provider"], accountId }, options);
   }
 
-  return getWorkspaceChannelSetupStatus(input.workspaceId);
+  return getWorkspaceChannelSetupStatus(input.workspaceId, dependencies);
 }
 
-async function loadWorkspaceChannelSetup(workspaceId: string) {
-  const snapshot = await getMissionControlSnapshot({
+async function loadWorkspaceChannelSetup(
+  workspaceId: string,
+  dependencies: WorkspaceChannelSetupDependencies
+) {
+  const snapshot = await dependencies.getMissionControlSnapshot({
     force: true,
     includeHidden: false,
     loadProfile: "refresh"
@@ -232,12 +269,15 @@ async function loadWorkspaceChannelSetup(workspaceId: string) {
   }
 
   const pendingChannels = await readPendingChannelDeclarations(workspace.path);
-  const providers = await resolveSetupProviders();
-  const primaryAgentId = snapshot.agents.find((agent) => agent.workspaceId === workspace.id && agent.id === workspace.agentIds[0])?.id ?? workspace.agentIds[0] ?? null;
+  const providers = await resolveSetupProviders(dependencies);
+  // WorkspaceProject.agentIds is the authoritative ordered agent list; the
+  // first entry is the canonical primary established by provisioning.
+  const primaryAgentId = workspace.agentIds[0] ?? null;
   const projection = projectWorkspaceChannelSetup({
     pendingChannels,
     workspaceId,
     primaryAgentId,
+    workspaceAgentIds: workspace.agentIds,
     registry: snapshot.channelRegistry,
     surfaceRuntime: snapshot.surfaceRuntime,
     providers
@@ -246,8 +286,10 @@ async function loadWorkspaceChannelSetup(workspaceId: string) {
   return { snapshot, workspace, projection };
 }
 
-async function resolveSetupProviders(): Promise<WorkspaceChannelSetupProvider[]> {
-  const overview = await getChannelConnectOverview().catch(() => null);
+async function resolveSetupProviders(
+  dependencies: WorkspaceChannelSetupDependencies
+): Promise<WorkspaceChannelSetupProvider[]> {
+  const overview = await dependencies.getChannelConnectOverview().catch(() => null);
   if (overview) {
     return overview.providers.map((provider) => ({
       id: provider.id,
@@ -316,12 +358,14 @@ function normalizeAccountId(value: string | null | undefined) {
 
 function resolveAgentId(agentIds: string[], requested: string | null | undefined) {
   const candidate = normalizeOptional(requested);
-  return candidate && agentIds.includes(candidate) ? candidate : agentIds[0] ?? null;
-}
-
-function resolveAgentIds(agentIds: string[], requested: string | null | undefined) {
-  const selected = resolveAgentId(agentIds, requested);
-  return selected ? [selected] : [];
+  if (!candidate) return agentIds[0] ?? null;
+  if (!agentIds.includes(candidate)) {
+    throw new WorkspaceChannelSetupError(
+      "workspace-channel-agent-invalid",
+      "The selected agent is no longer available in this workspace. Choose another agent and retry."
+    );
+  }
+  return candidate;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
