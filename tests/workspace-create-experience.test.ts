@@ -113,9 +113,10 @@ test("channel setup copy distinguishes WhatsApp QR sessions from token channels"
 });
 
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
-  const [wrapperSource, source] = await Promise.all([
+  const [wrapperSource, source, contextRoute] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
-    readFile(componentPath, "utf8")
+    readFile(componentPath, "utf8"),
+    readFile("app/api/workspaces/context/route.ts", "utf8")
   ]);
 
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
@@ -126,14 +127,25 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /draftContextId: stagedDraftContextId/);
   assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
   assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
-  assert.match(source, /Live analysis/);
+  assert.match(source, /Project context/);
   assert.match(source, /Blueprint signals/);
   assert.match(source, /workspace-architect-chip-enter/);
   assert.match(source, /Final creation is a Phase 6 action/);
+  assert.match(source, /setProgressPhase\("reading-context"\)/);
+  assert.match(source, /setProgressPhase\("designing-workspace"\)/);
+  assert.match(source, /setProgressPhase\("preparing-review"\)/);
+  assert.match(source, /state === "ready" \|\| state === "partial"/);
+  assert.doesNotMatch(source, /setInterval|2[,_]?400/);
+  assert.doesNotMatch(source, /Marketing intent|Management intent|Autonomous operation/);
+  assert.doesNotMatch(source, /briefSignals/);
   assert.doesNotMatch(source, /file\.text\(/);
   assert.doesNotMatch(source, /documents: knowledgePayload/);
   assert.doesNotMatch(source, /fetch\(`\/api\/planner/);
   assert.match(source, /Final workspace provisioning will be added in Phase 6/);
+  assert.match(contextRoute, /validateWorkspaceCreationUploadMetadata/);
+  assert.match(contextRoute, /content-length/);
+  assert.ok(contextRoute.indexOf("content-length") < contextRoute.indexOf("request.formData()"));
+  assert.ok(contextRoute.indexOf("validateWorkspaceCreationUploadMetadata") < contextRoute.indexOf("arrayBuffer()"));
 });
 
 test("Architect API routes use workspace authorization and never provision the final workspace", async () => {

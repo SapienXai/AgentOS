@@ -29,12 +29,60 @@ const WORKSPACE_CREATION_CONTEXT_ROOT = path.join(missionControlRootPath, "works
 const WORKSPACE_CREATION_CONTEXT_SCHEMA_VERSION = 1;
 const WORKSPACE_CREATION_CONTEXT_TTL_MS = 6 * 60 * 60 * 1_000;
 const MAX_CONTEXT_SOURCES = 24;
-const MAX_UPLOAD_FILES = 120;
-const MAX_UPLOAD_BYTES_PER_FILE = DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxBytesPerDocument;
-const MAX_UPLOAD_BYTES = DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxTotalBytesPerSource;
-const MAX_UPLOAD_BYTES_TOTAL = MAX_UPLOAD_BYTES * 4;
 const MAX_RELATIVE_UPLOAD_PATH_LENGTH = 400;
 const DRAFT_ID_PATTERN = /^[a-f0-9-]{36}$/i;
+
+const MULTIPART_REQUEST_OVERHEAD_BYTES = 1_048_576;
+
+export const WORKSPACE_CREATION_UPLOAD_LIMITS = {
+  maxFiles: Math.min(120, DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxFilesPerSource),
+  maxBytesPerFile: DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxBytesPerDocument,
+  maxBytesPerSource: DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxTotalBytesPerSource,
+  maxBytesTotal: DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxTotalBytesPerSource * 4,
+  maxRequestBytes: DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxTotalBytesPerSource * 4 + MULTIPART_REQUEST_OVERHEAD_BYTES
+} as const;
+
+export type WorkspaceCreationUploadManifestEntry = {
+  sourceId: string;
+  relativePath: string;
+  fileName?: string;
+};
+
+export function validateWorkspaceCreationUploadMetadata(
+  files: readonly { name: string; size: number }[],
+  manifest: readonly WorkspaceCreationUploadManifestEntry[]
+) {
+  if (files.length > WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles || manifest.length > WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles) {
+    throw new Error("Too many files selected.");
+  }
+  if (files.length !== manifest.length) {
+    throw new Error("Uploaded project context metadata does not match the files supplied.");
+  }
+
+  const sourceTotals = new Map<string, number>();
+  let totalBytes = 0;
+  for (const [index, file] of files.entries()) {
+    if (!Number.isSafeInteger(file.size) || file.size < 0) throw new Error("Uploaded project context contains an invalid file.");
+    if (file.size > WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile) throw new Error("File is too large for project analysis.");
+    const manifestEntry = manifest[index];
+    const manifestFileName = manifestEntry?.fileName;
+    const manifestBaseName = path.posix.basename(manifestEntry?.relativePath.replace(/\\/g, "/") ?? "");
+    if (!manifestEntry || manifestBaseName !== file.name || (manifestFileName !== undefined && manifestFileName !== file.name)) {
+      throw new Error("Uploaded project context metadata does not match the files supplied.");
+    }
+    totalBytes += file.size;
+    const sourceId = manifestEntry.sourceId;
+    const sourceTotal = (sourceTotals.get(sourceId) ?? 0) + file.size;
+    sourceTotals.set(sourceId, sourceTotal);
+    if (sourceTotal > WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerSource) throw new Error("Project context is too large for analysis.");
+  }
+  if (totalBytes > WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesTotal) throw new Error("Project context is too large for analysis.");
+}
+
+const MAX_UPLOAD_FILES = WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles;
+const MAX_UPLOAD_BYTES_PER_FILE = WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile;
+const MAX_UPLOAD_BYTES = WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerSource;
+const MAX_UPLOAD_BYTES_TOTAL = WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesTotal;
 
 type WorkspaceCreationContextSourceStatus = "attached" | "reading" | "ready" | "partial" | "error" | "unsupported";
 

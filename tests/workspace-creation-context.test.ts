@@ -6,6 +6,8 @@ import { test } from "node:test";
 import {
   readWorkspaceCreationContext,
   stageWorkspaceCreationKnowledge,
+  validateWorkspaceCreationUploadMetadata,
+  WORKSPACE_CREATION_UPLOAD_LIMITS,
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
@@ -60,6 +62,14 @@ function repositorySource(id = "repository") {
 
 function upload(sourceId: string, relativePath: string, text: string): WorkspaceCreationUpload {
   return { sourceId, relativePath, fileName: relativePath.split("/").pop() ?? relativePath, bytes: Buffer.from(text) };
+}
+
+function uploadManifest(sourceId: string, count = 1) {
+  return Array.from({ length: count }, (_, index) => ({
+    sourceId,
+    relativePath: `file-${index}.md`,
+    fileName: `file-${index}.md`
+  }));
 }
 
 function websiteFetcher(counter?: { calls: number }) {
@@ -117,6 +127,50 @@ test("website and uploaded files are ingested through the Phase 2 corpus before 
     assert.ok((context.knowledge.documents ?? []).some((document) => document.content?.includes("restaurant operators")));
     assert.match(promptCapture[0] ?? "", /B2B reservation platform/);
   });
+});
+
+test("oversized upload metadata is rejected before any file buffer is read", () => {
+  let arrayBufferCalls = 0;
+  const file = {
+    name: "file-0.md",
+    size: WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile + 1,
+    arrayBuffer: async () => {
+      arrayBufferCalls += 1;
+      return new ArrayBuffer(0);
+    }
+  };
+
+  assert.throws(
+    () => validateWorkspaceCreationUploadMetadata([file], uploadManifest("oversized")),
+    /File is too large for project analysis/
+  );
+  assert.equal(arrayBufferCalls, 0);
+});
+
+test("upload metadata rejects a manifest/file name mismatch before buffering", () => {
+  assert.throws(
+    () => validateWorkspaceCreationUploadMetadata(
+      [{ name: "actual.md", size: 10 }],
+      [{ sourceId: "mismatch", relativePath: "declared.md", fileName: "declared.md" }]
+    ),
+    /metadata does not match the files supplied/
+  );
+});
+
+test("upload metadata rejects cumulative size and file count before buffering", () => {
+  const validSize = WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile;
+  assert.throws(
+    () => validateWorkspaceCreationUploadMetadata(
+      Array.from({ length: 9 }, (_, index) => ({ name: `file-${index}.md`, size: validSize })),
+      uploadManifest("cumulative", 9)
+    ),
+    /Project context is too large for analysis/
+  );
+  const files = Array.from({ length: WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles + 1 }, (_, index) => ({ name: `file-${index}.md`, size: 0 }));
+  assert.throws(
+    () => validateWorkspaceCreationUploadMetadata(files, uploadManifest("count", files.length)),
+    /Too many files selected/
+  );
 });
 
 test("staged context reuses a successful generation and does not re-fetch on retry", async () => {

@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   stageWorkspaceCreationKnowledge,
+  validateWorkspaceCreationUploadMetadata,
+  WORKSPACE_CREATION_UPLOAD_LIMITS,
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -27,6 +29,15 @@ export async function POST(request: Request) {
   if ("response" in permission) return permission.response;
 
   try {
+    const contentLengthHeader = request.headers.get("content-length");
+    if (contentLengthHeader !== null) {
+      const normalizedContentLength = contentLengthHeader.trim();
+      const contentLength = Number(normalizedContentLength);
+      if (!/^\d+$/.test(normalizedContentLength) || !Number.isSafeInteger(contentLength) || contentLength > WORKSPACE_CREATION_UPLOAD_LIMITS.maxRequestBytes) {
+        throw new Error("Project context is too large for analysis.");
+      }
+    }
+
     let draftContextId: string | null | undefined;
     let sources: unknown[];
     let uploads: WorkspaceCreationUpload[] = [];
@@ -35,15 +46,16 @@ export async function POST(request: Request) {
       const formData = await request.formData();
       draftContextId = z.string().uuid().nullable().optional().parse(formData.get("draftContextId") || undefined);
       sources = z.array(z.unknown()).max(24).parse(JSON.parse(String(formData.get("sources") ?? "[]")));
-      const manifest = z.array(uploadManifestSchema).max(120).parse(JSON.parse(String(formData.get("uploadManifest") ?? "[]")));
+      const manifest = z.array(uploadManifestSchema).max(WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles, "Too many files selected.").parse(JSON.parse(String(formData.get("uploadManifest") ?? "[]")));
       const files = formData.getAll("files");
-      if (files.length !== manifest.length) throw new Error("Uploaded project context metadata does not match the files supplied.");
+      if (files.some((value) => !(value instanceof File))) throw new Error("Uploaded project context contains an invalid file.");
+      validateWorkspaceCreationUploadMetadata(files as File[], manifest);
       uploads = await Promise.all(files.map(async (value, index) => {
-        if (!(value instanceof File)) throw new Error("Uploaded project context contains an invalid file.");
+        const file = value as File;
         return {
           ...manifest[index],
-          fileName: manifest[index].fileName || value.name,
-          bytes: Buffer.from(await value.arrayBuffer())
+          fileName: manifest[index].fileName || file.name,
+          bytes: Buffer.from(await file.arrayBuffer())
         };
       }));
     } else {

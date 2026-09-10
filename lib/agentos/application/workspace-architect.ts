@@ -298,11 +298,16 @@ export async function generateWorkspaceBlueprint(
   const operatorEvidence = operatorConstraints.map((constraint) =>
     createEvidence("operator", null, constraint, 100, false)
   );
+  const revisionEvidence = revisionInstruction
+    ? [createEvidence("operator", null, `Latest operator revision: ${revisionInstruction}`, 100, false)]
+    : [];
   const evidence = [
     createEvidence("brief", null, brief, 100, false),
     ...operatorEvidence,
+    ...revisionEvidence,
     ...knowledgeEvidence.evidence
   ].slice(0, MAX_EVIDENCE_ITEMS);
+  const operatorIntentText = buildOperatorIntentText({ brief, revisionInstruction, operatorConstraints });
   const reasoning = await runArchitectReasoning({
     brief,
     revisionInstruction,
@@ -320,7 +325,8 @@ export async function generateWorkspaceBlueprint(
     materialization,
     knowledge,
     evidence,
-    operatorConstraints
+    operatorConstraints,
+    operatorIntentText
   });
   const warnings = [
     ...(knowledgeEvidence.warning ? [knowledgeEvidence.warning] : []),
@@ -437,7 +443,7 @@ export async function reviseWorkspaceBlueprint(
   const nextBrief = input.brief === undefined ? blueprint.brief : redactSecretText(input.brief.trim()).slice(0, MAX_BRIEF_LENGTH);
   if (!nextBrief) throw new Error("Workspace architect brief is required.");
   const revisionInstruction = input.revisionInstruction === undefined
-    ? undefined
+    ? blueprint.provenance.latestRevisionInstruction ?? undefined
     : redactSecretText(input.revisionInstruction.trim()).slice(0, MAX_REVISION_INSTRUCTION_LENGTH);
   const nextKnowledge = input.knowledge ? normalizeKnowledgeContext(input.knowledge) : {
     sources: blueprint.knowledge.sources,
@@ -1131,6 +1137,7 @@ function normalizeArchitectProposal(input: {
   knowledge: KnowledgeContext;
   evidence: WorkspaceBlueprintEvidence[];
   operatorConstraints: string[];
+  operatorIntentText: string;
 }): ArchitectNormalizationResult {
   const fallbackIdentity = inferIdentity(input.brief, input.knowledge.sources);
   const identity = {
@@ -1158,7 +1165,7 @@ function normalizeArchitectProposal(input: {
     input.proposal.operations,
     primaryAgent.id,
     [primaryAgent, ...specialists],
-    input.brief,
+    input.operatorIntentText,
     input.evidence,
     input.operatorConstraints,
     warnings
@@ -1274,7 +1281,7 @@ function normalizeArchitectOperations(
   proposal: WorkspaceArchitectProposal["operations"],
   primaryAgentId: string,
   agents: WorkspaceBlueprintAgent[],
-  brief: string,
+  operatorIntentText: string,
   evidence: WorkspaceBlueprintEvidence[],
   operatorConstraints: string[],
   warnings: string[]
@@ -1301,8 +1308,8 @@ function normalizeArchitectOperations(
       evidenceRefs: refs
     }];
   });
-  const automations = normalizeAutomations(proposal?.automations ?? [], primaryAgentId, agentIds, brief, evidenceById, operatorConstraints, warnings);
-  const channels = normalizeChannels(proposal?.channels ?? [], primaryAgentId, agentIds, brief, evidenceById, operatorConstraints, warnings);
+  const automations = normalizeAutomations(proposal?.automations ?? [], primaryAgentId, agentIds, operatorIntentText, evidenceById, operatorConstraints, warnings);
+  const channels = normalizeChannels(proposal?.channels ?? [], primaryAgentId, agentIds, operatorIntentText, evidenceById, operatorConstraints, warnings);
   return { workflows, automations, channels };
 }
 
@@ -1310,7 +1317,7 @@ function normalizeAutomations(
   proposals: NonNullable<WorkspaceArchitectProposal["operations"]>["automations"],
   primaryAgentId: string,
   agentIds: Set<string>,
-  brief: string,
+  operatorIntentText: string,
   evidenceById: Map<string, WorkspaceBlueprintEvidence>,
   operatorConstraints: string[],
   warnings: string[]
@@ -1322,7 +1329,7 @@ function normalizeAutomations(
     const refs = normalizeEvidenceRefs(item.evidenceRefs, evidenceById);
     const citedText = refs.map((ref) => evidenceById.get(ref)?.summary ?? "").join(" ");
     const intent = isActionableIntent(item.intent) && refs.length > 0 && (item.intent === "explicit-request"
-      ? hasOperatorAuthorityEvidence(refs, evidenceById) && hasAutomationIntent(brief)
+      ? hasOperatorAuthorityEvidence(refs, evidenceById) && hasAutomationIntent(operatorIntentText)
       : hasTrustedEvidenceBackedIntent(refs, evidenceById, citedText, hasAutomationIntent));
     if (!id || seen.has(id) || !intent || !item.scheduleValue || !isMeaningfulJustification(item.justification)) {
       warnings.push(`Dropped automation ${item.id || "without an id"}: recurring intent, schedule, justification, and evidence are required.`);
@@ -1351,7 +1358,7 @@ function normalizeChannels(
   proposals: NonNullable<WorkspaceArchitectProposal["operations"]>["channels"],
   primaryAgentId: string,
   agentIds: Set<string>,
-  brief: string,
+  operatorIntentText: string,
   evidenceById: Map<string, WorkspaceBlueprintEvidence>,
   operatorConstraints: string[],
   warnings: string[]
@@ -1363,7 +1370,7 @@ function normalizeChannels(
     const refs = normalizeEvidenceRefs(item.evidenceRefs, evidenceById);
     const citedText = refs.map((ref) => evidenceById.get(ref)?.summary ?? "").join(" ");
     const intent = isActionableIntent(item.intent) && refs.length > 0 && (item.intent === "explicit-request"
-      ? hasOperatorAuthorityEvidence(refs, evidenceById) && hasChannelIntent(brief, item.type)
+      ? hasOperatorAuthorityEvidence(refs, evidenceById) && hasChannelIntent(operatorIntentText, item.type)
       : hasTrustedEvidenceBackedIntent(refs, evidenceById, citedText, (text) => hasChannelIntent(text, item.type)));
     if (!id || seen.has(id) || !intent) {
       warnings.push(`Dropped channel ${item.id || "without an id"}: actual AI communication intent and evidence are required.`);
@@ -1498,6 +1505,16 @@ function normalizeOperatorConstraints(constraints?: string[]) {
   return [...new Set((constraints ?? [])
     .map((constraint) => redactSecretText(constraint.trim()).slice(0, 300))
     .filter(Boolean))].slice(0, 12);
+}
+
+function buildOperatorIntentText(input: {
+  brief: string;
+  revisionInstruction?: string;
+  operatorConstraints: string[];
+}) {
+  return [input.brief, ...input.operatorConstraints, input.revisionInstruction]
+    .filter((entry): entry is string => Boolean(entry?.trim()))
+    .join("\n");
 }
 
 function extractBriefConstraints(brief: string) {

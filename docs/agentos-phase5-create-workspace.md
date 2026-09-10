@@ -35,11 +35,19 @@ The Architect and revision routes accept only the opaque draft context reference
 
 ## Revision context
 
-Revision instructions are sent as a separate bounded `revisionInstruction`. The canonical operator brief is preserved rather than repeatedly appending revision text to it. The latest revision is included in the Architect evidence pack and bounded blueprint provenance, while existing freshness and operator revision locks remain authoritative.
+Revision instructions are sent as a separate bounded `revisionInstruction`. The canonical operator brief is preserved rather than repeatedly appending revision text to it. The latest revision is included in the Architect evidence pack, represented as bounded non-imported operator evidence, and recorded in blueprint provenance. Deterministic specialist, automation, channel, and connection checks use the brief, constraints, and latest revision as operator intent, while imported evidence remains untrusted. A later revision replaces the previous revision for the next run; it is never accumulated as a transcript.
 
 ## Honest states
 
-Generation presents human-readable stages without fake percentages. Cancellation preserves the brief and sources. Model fallback is shown as a basic draft, not as a healthy ready state. Source and freshness warnings remain visible in review, and retry preserves the current input.
+Generation presents only request-backed coarse stages: `Reading project context` while context staging is in flight, `Designing your workspace` while the Architect request is in flight, and `Preparing your review` after the Architect response has returned. There is no timer-driven phase advancement and no frontend brief regex presented as Architect analysis. Context chips initially say `Attached` or `Reading`; `Ready`, `Partial`, `Failed`, and the staged count are shown only from returned source reports. The post-generation `Blueprint signals` rail is a projection of the validated server-returned blueprint, not an inference from the brief.
+
+Cancellation preserves the brief and sources. Model fallback is shown as a basic draft, not as a healthy ready state. Source and freshness warnings remain visible in review, and retry preserves the current input.
+
+## Upload safety
+
+`WORKSPACE_CREATION_UPLOAD_LIMITS` is the single Create Workspace upload limit source and is derived from the Phase 2 ingestion limits: 120 files, 1 MB per file, 8 MB per source, and 32 MB total. When a multipart request includes `Content-Length`, the route rejects a request beyond the bounded multipart envelope before calling `formData()`. After multipart parsing, the route validates manifest/file count and names, each `File.size`, per-source cumulative size, and total size before calling any `arrayBuffer()`. The service repeats byte limits as a defense-in-depth check for non-route callers. Client-side checks are only UX helpers; the server remains authoritative.
+
+The Next.js multipart parser may buffer the request while `request.formData()` runs, so this is not streaming enforcement. The closure prevents the application from converting rejected `File` objects into additional `Buffer` allocations or staging them before metadata validation. Oversized files and batches return concise user-facing errors without exposing paths or implementation details.
 
 WhatsApp is shown as `Setup required · QR sign-in`; token-based channels use token setup language. No channel, connection, automation, agent, or final workspace is activated by Phase 5.
 

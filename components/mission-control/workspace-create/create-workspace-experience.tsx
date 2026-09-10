@@ -79,18 +79,18 @@ type CreateWorkspaceExperienceProps = {
   surfaceTheme: SurfaceTheme;
 };
 
-const progressLabels = [
-  "Staging project context",
-  "Reading supplied sources",
-  "Designing the workspace",
-  "Preparing the blueprint"
-];
+const progressSteps = [
+  { id: "reading-context", label: "Reading project context" },
+  { id: "designing-workspace", label: "Designing your workspace" },
+  { id: "preparing-review", label: "Preparing your review" }
+] as const;
 
-type ProgressChipState = "pending" | "active" | "done";
+type GenerationPhase = (typeof progressSteps)[number]["id"];
+type ProgressChipState = ContextSourceStatus;
 
 type ProgressChip = {
   label: string;
-  step: number;
+  state: ProgressChipState;
 };
 
 export function CreateWorkspaceExperience({
@@ -109,7 +109,8 @@ export function CreateWorkspaceExperience({
   const [contextDirty, setContextDirty] = useState(false);
   const [materialization, setMaterialization] = useState<WorkspaceMaterialization>({ mode: "empty" });
   const [stage, setStage] = useState<CreateStage>("intake");
-  const [progressStep, setProgressStep] = useState(0);
+  const [progressPhase, setProgressPhase] = useState<GenerationPhase>("designing-workspace");
+  const [contextWasRequested, setContextWasRequested] = useState(false);
   const [result, setResult] = useState<WorkspaceArchitectResult | null>(null);
   const [freshness, setFreshness] = useState<WorkspaceBlueprintFreshnessResult | null>(null);
   const [contextAction, setContextAction] = useState<ContextAction>(null);
@@ -145,7 +146,8 @@ export function CreateWorkspaceExperience({
       setContextDirty(false);
       setMaterialization({ mode: "empty" });
       setStage("intake");
-      setProgressStep(0);
+      setProgressPhase("designing-workspace");
+      setContextWasRequested(false);
       setResult(null);
       setFreshness(null);
       setContextAction(null);
@@ -157,14 +159,6 @@ export function CreateWorkspaceExperience({
       setIsCustomizing(false);
     }
   }, [open]);
-
-  useEffect(() => {
-    if (stage !== "generating") return;
-    const interval = window.setInterval(() => {
-      setProgressStep((current) => Math.min(current + 1, progressLabels.length - 1));
-    }, 2_400);
-    return () => window.clearInterval(interval);
-  }, [stage]);
 
   const markContextChanged = () => {
     setContextDirty(true);
@@ -183,7 +177,7 @@ export function CreateWorkspaceExperience({
     if (!contextDirty && draftContextId) return null;
     if (!sources.length && !draftContextId) return null;
 
-    setProgressStep(0);
+    setProgressPhase("reading-context");
     setSourceStates((current) => Object.fromEntries(sources.map((source) => [source.id, { ...current[source.id], status: "reading" as const }])));
     const formData = new FormData();
     if (draftContextId) formData.set("draftContextId", draftContextId);
@@ -222,14 +216,16 @@ export function CreateWorkspaceExperience({
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const shouldStageContext = contextDirty || (!draftContextId && sources.length > 0);
     setStage("generating");
-    setProgressStep(0);
+    setContextWasRequested(shouldStageContext);
+    setProgressPhase(shouldStageContext ? "reading-context" : "designing-workspace");
     setNotice(null);
     setRevisionError(null);
 
     try {
       const stagedContext = await stageContext(controller);
-      if (stagedContext) setProgressStep(2);
+      setProgressPhase("designing-workspace");
       const stagedDraftContextId = stagedContext?.draftContextId ?? draftContextId;
       const response = await fetch("/api/workspaces/architect", {
         method: "POST",
@@ -251,6 +247,7 @@ export function CreateWorkspaceExperience({
         throw new Error(payload?.error || "AgentOS could not design the workspace.");
       }
 
+      setProgressPhase("preparing-review");
       setResult(payload);
       setFreshness(payload.freshness);
       setContextDirty(false);
@@ -466,7 +463,7 @@ export function CreateWorkspaceExperience({
       footer={
         stage === "generating" ? (
           <div className="flex w-full items-center justify-between gap-3">
-            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>AgentOS is designing the first draft.</span>
+            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>{progressSteps.find((step) => step.id === progressPhase)?.label ?? "Working on the first draft"}.</span>
             <Button type="button" variant="secondary" onClick={cancelGeneration} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
               Cancel
             </Button>
@@ -480,19 +477,19 @@ export function CreateWorkspaceExperience({
             <div className="flex flex-col items-end gap-1">
               <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Final creation is a Phase 6 action.</span>
               <div className="flex items-center gap-2">
-              <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
-                <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Customize
-              </Button>
-              <Button
-                type="button"
-                disabled
-                title="Final workspace provisioning will be added in Phase 6."
-                aria-label="Create Workspace is not available until provisioning is implemented"
-                className={missionControlDialogButtonClassName("primary", surfaceTheme)}
-              >
-                Create Workspace
-              </Button>
+                <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Customize
+                </Button>
+                <Button
+                  type="button"
+                  disabled
+                  title="Final workspace provisioning will be added in Phase 6."
+                  aria-label="Create Workspace is not available until provisioning is implemented"
+                  className={missionControlDialogButtonClassName("primary", surfaceTheme)}
+                >
+                  Create Workspace
+                </Button>
               </div>
             </div>
           </div>
@@ -540,7 +537,7 @@ export function CreateWorkspaceExperience({
             notice={notice}
           />
         ) : stage === "generating" ? (
-          <GeneratingView isLight={isLight} activeStep={progressStep} sources={sources} brief={brief} />
+          <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} />
         ) : (
           <ReviewView
             isLight={isLight}
@@ -735,58 +732,63 @@ function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
   );
 }
 
-function GeneratingView({ isLight, activeStep, sources, brief }: { isLight: boolean; activeStep: number; sources: WorkspaceKnowledgeSource[]; brief: string }) {
-  const chips = buildProgressChips(sources, brief);
+function GeneratingView({ isLight, activePhase, contextWasRequested, sources, sourceStates }: { isLight: boolean; activePhase: GenerationPhase; contextWasRequested: boolean; sources: WorkspaceKnowledgeSource[]; sourceStates: Record<string, ContextSourceState> }) {
+  const chips = buildProgressChips(sources, sourceStates);
+  const currentStep = progressSteps.findIndex((step) => step.id === activePhase);
+  const steps = contextWasRequested ? progressSteps : progressSteps.filter((step) => step.id !== "reading-context");
+  const activeLabel = progressSteps.find((step) => step.id === activePhase)?.label ?? "Working on the first draft";
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[640px] flex-col justify-center px-5 py-12 md:px-10">
-      <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-live="polite" aria-busy="true">
+      <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-busy="true">
         <div className="flex items-center gap-3">
           <div className={cn("flex size-10 items-center justify-center rounded-xl", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Sparkles className="h-5 w-5" /></div>
           <div>
-            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Designing your workspace</p>
+            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")} aria-live="polite">{activeLabel}</p>
             <p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{sources.length ? `Using ${sources.length} context source${sources.length === 1 ? "" : "s"}.` : "Starting from your brief."}</p>
           </div>
         </div>
         <div className="mt-7 space-y-4">
-          {progressLabels.map((label, index) => {
-            const completed = index < activeStep;
-            const active = index === activeStep;
+          {steps.map((step) => {
+            const index = progressSteps.findIndex((candidate) => candidate.id === step.id);
+            const completed = index < currentStep;
+            const active = index === currentStep;
             return (
-              <div key={label} className="flex items-center gap-3">
+              <div key={step.id} className="flex items-center gap-3">
                 <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", completed ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-500" : active ? (isLight ? "border-[#b8895f] bg-[#f3e7db] text-[#9a6d45]" : "border-violet-300/50 bg-violet-400/10 text-violet-200") : (isLight ? "border-[#e5dbd0] text-[#b6a89c]" : "border-white/10 text-slate-600"))} aria-hidden="true">
                   {completed ? <Check className="h-3 w-3" /> : active ? <LoaderCircle className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : <span className="size-1 rounded-full bg-current" />}
                 </span>
-                <span className={cn("text-sm", completed || active ? (isLight ? "text-[#4d4036]" : "text-slate-200") : (isLight ? "text-[#a99b8f]" : "text-slate-600"))}>{label}</span>
+                <span className={cn("text-sm", completed || active ? (isLight ? "text-[#4d4036]" : "text-slate-200") : (isLight ? "text-[#a99b8f]" : "text-slate-600"))}>{step.label}</span>
               </div>
             );
           })}
         </div>
-        <ProgressChipRail isLight={isLight} chips={chips} activeStep={activeStep} />
+        <ProgressChipRail isLight={isLight} chips={chips} />
       </div>
     </main>
   );
 }
 
-function ProgressChipRail({ isLight, chips, activeStep }: { isLight: boolean; chips: ProgressChip[]; activeStep: number }) {
+function ProgressChipRail({ isLight, chips }: { isLight: boolean; chips: ProgressChip[] }) {
   return (
-    <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-live="polite" aria-label="Current analysis signals">
-      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live analysis</p>
+    <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-live="polite" aria-label="Project context status">
+      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project context</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {chips.map((chip, index) => {
-          const state: ProgressChipState = activeStep > chip.step ? "done" : activeStep === chip.step ? "active" : "pending";
+          const state = chip.state;
           return (
             <span
               key={`${chip.label}:${state}`}
               className={cn(
                 "workspace-architect-chip-enter inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]",
-                state === "done" && (isLight ? "border-emerald-300/60 bg-emerald-50 text-emerald-800" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"),
-                state === "active" && (isLight ? "border-[#d8b184] bg-[#f8efe3] text-[#7c5a34]" : "border-violet-300/30 bg-violet-300/10 text-violet-100"),
-                state === "pending" && (isLight ? "border-[#e4ddd3] bg-white/70 text-[#9a8d82]" : "border-white/10 bg-white/[0.035] text-slate-500")
+                state === "ready" && (isLight ? "border-emerald-300/60 bg-emerald-50 text-emerald-800" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"),
+                state === "partial" && (isLight ? "border-amber-300/70 bg-amber-50 text-amber-900" : "border-amber-300/25 bg-amber-300/10 text-amber-100"),
+                state === "reading" && (isLight ? "border-[#d8b184] bg-[#f8efe3] text-[#7c5a34]" : "border-violet-300/30 bg-violet-300/10 text-violet-100"),
+                (state === "attached" || state === "error" || state === "unsupported") && (isLight ? "border-[#e4ddd3] bg-white/70 text-[#9a8d82]" : "border-white/10 bg-white/[0.035] text-slate-500")
               )}
               style={{ animationDelay: `${index * 55}ms` }}
             >
-              <span className={cn("size-1.5 rounded-full", state === "done" ? "bg-emerald-400" : state === "active" ? "bg-violet-300 motion-safe:animate-pulse" : isLight ? "bg-[#cdbcae]" : "bg-slate-600")} aria-hidden="true" />
+              <span className={cn("size-1.5 rounded-full", state === "ready" ? "bg-emerald-400" : state === "partial" || state === "error" || state === "unsupported" ? "bg-amber-400" : state === "reading" ? "bg-violet-300 motion-safe:animate-pulse" : isLight ? "bg-[#cdbcae]" : "bg-slate-600")} aria-hidden="true" />
               {chip.label}
             </span>
           );
@@ -796,26 +798,34 @@ function ProgressChipRail({ isLight, chips, activeStep }: { isLight: boolean; ch
   );
 }
 
-function buildProgressChips(sources: WorkspaceKnowledgeSource[], brief: string): ProgressChip[] {
-  const chips: ProgressChip[] = sources.slice(0, 4).map((source) => ({
-    label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label}`,
-    step: 0
-  }));
+function buildProgressChips(sources: WorkspaceKnowledgeSource[], sourceStates: Record<string, ContextSourceState>): ProgressChip[] {
+  const chips: ProgressChip[] = sources.slice(0, 6).map((source) => {
+    const state = sourceStates[source.id]?.status ?? "attached";
+    return {
+      label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label} · ${formatContextSourceStatus(state)}`,
+      state
+    };
+  });
 
-  if (sources.length > 0) {
-    chips.push({ label: `${sources.length} source${sources.length === 1 ? "" : "s"} staged`, step: 1 });
+  const stagedCount = sources.filter((source) => {
+    const state = sourceStates[source.id]?.status;
+    return state === "ready" || state === "partial";
+  }).length;
+  if (stagedCount > 0) {
+    chips.push({ label: `${stagedCount} source${stagedCount === 1 ? "" : "s"} staged`, state: "ready" });
   }
-
-  const briefSignals = [
-    { pattern: /marketing/i, label: "Marketing intent" },
-    { pattern: /management/i, label: "Management intent" },
-    { pattern: /autonom/i, label: "Autonomous operation" }
-  ];
-  for (const signal of briefSignals) {
-    if (signal.pattern.test(brief)) chips.push({ label: signal.label, step: 2 });
-  }
-  chips.push({ label: "Blueprint safety check", step: 3 });
   return chips;
+}
+
+function formatContextSourceStatus(status: ContextSourceStatus) {
+  switch (status) {
+    case "reading": return "Reading";
+    case "ready": return "Ready";
+    case "partial": return "Partial";
+    case "error": return "Failed";
+    case "unsupported": return "Unsupported";
+    default: return "Attached";
+  }
 }
 
 function ReviewView({
