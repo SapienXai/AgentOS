@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const navigationSource = readFileSync("components/settings/settings-navigation.tsx", "utf8");
+const pageSource = readFileSync("components/settings/settings-page.tsx", "utf8");
+const controlCenterSource = readFileSync("components/mission-control/settings-control-center.tsx", "utf8");
 const runtimeSource = readFileSync("components/settings/runtime-settings.tsx", "utf8");
 const advancedSource = readFileSync("components/settings/advanced-settings.tsx", "utf8");
 
@@ -20,6 +22,11 @@ test("Runtime keeps native OpenClaw access and contextual recovery", () => {
   assert.match(runtimeSource, /Open OpenClaw Control UI/);
   assert.match(runtimeSource, /Gateway needs attention/);
   assert.match(runtimeSource, /onRunRecommendedGatewayAction/);
+});
+
+test("Settings surfaces do not override child control sizing", () => {
+  assert.doesNotMatch(pageSource, /\[&_a\]:|\[&_button\]:|\[&_input\]:|\[&_select\]:/);
+  assert.doesNotMatch(controlCenterSource, /\[&_a\]:|\[&_button\]:|\[&_input\]:|\[&_select\]:/);
 });
 
 test("Advanced links preserve engineering and destructive controls", () => {

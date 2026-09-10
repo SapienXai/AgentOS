@@ -25,7 +25,7 @@ export function SettingsPage({
     <>
       <PikoLoader open={isSettingsOperationInProgress} title={settingsOperationTitle} description={settingsOperationDescription} />
       <main className={cn(
-        "relative z-10 min-h-screen [&_a]:min-h-11 [&_a]:min-w-11 [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0",
+        "relative z-10 min-h-screen",
         surfaceTheme === "light" ? "text-foreground" : "bg-[#080d16] text-slate-100"
       )}>
         <section className={cn("px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-[76px] lg:px-8 lg:pb-12 lg:pt-[92px]", sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]")}>

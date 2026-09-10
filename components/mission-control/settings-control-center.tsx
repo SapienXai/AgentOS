@@ -1261,7 +1261,7 @@ export function SettingsControlCenter(
       />
       <main
       className={cn(
-        "relative z-10 min-h-screen [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0",
+        "relative z-10 min-h-screen",
         surfaceTheme === "light" ? "text-foreground" : "bg-[#080d16] text-slate-100"
       )}
     >

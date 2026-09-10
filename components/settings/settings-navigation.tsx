@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { Activity, Bot, Folder, Settings2, Wrench } from "lucide-react";
 
 import type { SettingsArea } from "@/components/settings/settings-types";
@@ -23,9 +24,16 @@ export function SettingsNavigation({
   onSelect: (section: SettingsArea) => void;
   surfaceTheme: "dark" | "light";
 }) {
+  const mobileNavigationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const activeLink = mobileNavigationRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    activeLink?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeSection]);
+
   return (
     <nav aria-label="Settings sections" className="min-w-0">
-      <div className="flex gap-1 overflow-x-auto pb-1 lg:hidden">
+      <div ref={mobileNavigationRef} className="flex gap-1 overflow-x-auto pb-1 lg:hidden">
         {sections.map((section) => (
           <SettingsNavigationLink
             key={section.id}
