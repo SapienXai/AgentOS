@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import { AccountsSurfaceSection } from "@/components/mission-control/accounts-surface-section";
@@ -80,6 +81,11 @@ import type {
   SurfaceBindingRepairResult,
   WorkspaceChannelGroupAssignment
 } from "@/lib/agentos/contracts";
+import type {
+  WorkspaceChannelSetupAction,
+  WorkspaceChannelSetupItem,
+  WorkspaceChannelSetupProjection
+} from "@/lib/openclaw/domains/workspace-channel-setup";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
@@ -105,6 +111,22 @@ type GatewayAuthStatusResult = {
     };
     recommendation?: string | null;
   };
+  error?: string;
+};
+
+type WorkspaceChannelSetupResponse = WorkspaceChannelSetupProjection & {
+  workspaceId: string;
+  workspaceName: string;
+  plugin?: {
+    restarted?: boolean;
+    restartError?: string | null;
+  };
+  login?: {
+    connected?: boolean;
+    qrDataUrl?: string;
+    message?: string;
+  };
+  setup?: WorkspaceChannelSetupResponse;
   error?: string;
 };
 
@@ -223,6 +245,12 @@ export function WorkspaceChannelsDialog({
   const [provisionDraft, setProvisionDraft] = useState<Record<string, string | boolean>>(
     buildEmptyProvisionDraft(getSurfaceCatalogEntry(activeProvider))
   );
+  const [workspaceSetup, setWorkspaceSetup] = useState<WorkspaceChannelSetupResponse | null>(null);
+  const [workspaceSetupError, setWorkspaceSetupError] = useState<string | null>(null);
+  const [workspaceSetupLoading, setWorkspaceSetupLoading] = useState(false);
+  const [workspaceSetupBusy, setWorkspaceSetupBusy] = useState<WorkspaceChannelSetupAction | null>(null);
+  const [workspaceSetupQr, setWorkspaceSetupQr] = useState<{ item: WorkspaceChannelSetupItem; dataUrl: string } | null>(null);
+  const [workspaceSetupQrMessage, setWorkspaceSetupQrMessage] = useState<string | null>(null);
   const beginSaving = useCallback((message: string) => {
     setIsSaving(true);
     setSavingMessage(message);
@@ -268,6 +296,29 @@ export function WorkspaceChannelsDialog({
     [activeProvider, surfaceCatalogByProvider]
   );
   const surfaceGatewayAccess = snapshot.surfaceRuntime.gatewayAccess;
+  const loadWorkspaceSetup = useCallback(async () => {
+    if (!workspace?.id) {
+      setWorkspaceSetup(null);
+      return;
+    }
+
+    setWorkspaceSetupLoading(true);
+    setWorkspaceSetupError(null);
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/setup`, {
+        cache: "no-store"
+      });
+      const result = (await response.json()) as WorkspaceChannelSetupResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Workspace channel setup could not be loaded.");
+      }
+      setWorkspaceSetup(result);
+    } catch (error) {
+      setWorkspaceSetupError(error instanceof Error ? error.message : "Workspace channel setup could not be loaded.");
+    } finally {
+      setWorkspaceSetupLoading(false);
+    }
+  }, [workspace?.id]);
   const workspaceDriftIssues = useMemo(
     () => filterWorkspaceDriftIssues(snapshot.surfaceDrift.issues, workspace?.id ?? null),
     [snapshot.surfaceDrift.issues, workspace?.id]
@@ -462,6 +513,12 @@ export function WorkspaceChannelsDialog({
       setRouteErrorsBySurfaceId({});
       setLoadingRoutesBySurfaceId({});
       setRepairPreview(null);
+      setWorkspaceSetup(null);
+      setWorkspaceSetupError(null);
+      setWorkspaceSetupLoading(false);
+      setWorkspaceSetupBusy(null);
+      setWorkspaceSetupQr(null);
+      setWorkspaceSetupQrMessage(null);
       return;
     }
 
@@ -470,6 +527,14 @@ export function WorkspaceChannelsDialog({
     }
 
   }, [currentCatalogEntry, initialAgentId, newPrimaryAgentId, open, workspaceAgents]);
+
+  useEffect(() => {
+    if (!open || !workspace?.id) {
+      return;
+    }
+
+    void loadWorkspaceSetup();
+  }, [loadWorkspaceSetup, open, workspace?.id]);
 
   useEffect(() => {
     setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
@@ -522,6 +587,162 @@ export function WorkspaceChannelsDialog({
     }
 
     return result;
+  };
+
+  const postWorkspaceSetup = async (payload: Record<string, unknown>) => {
+    if (!workspace) {
+      throw new Error("Workspace was not found.");
+    }
+
+    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/setup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = (await response.json()) as WorkspaceChannelSetupResponse;
+    if (!response.ok || result.error) {
+      throw new Error(result.error || "Workspace channel setup could not be updated.");
+    }
+
+    const nextSetup = result.setup ?? result;
+    if (Array.isArray(nextSetup.items)) {
+      setWorkspaceSetup(nextSetup);
+    }
+    return result;
+  };
+
+  const waitForWorkspaceWhatsAppLogin = async () => {
+    if (!workspaceSetupQr || !workspace) {
+      return;
+    }
+
+    setWorkspaceSetupBusy("authenticate");
+    try {
+      const result = await postWorkspaceSetup({
+        action: "login-wait",
+        provider: "whatsapp",
+        declarationId: workspaceSetupQr.item.declarationId,
+        accountId: workspaceSetupQr.item.accountId,
+        currentQrDataUrl: workspaceSetupQr.dataUrl
+      });
+      const login = result.login;
+      if (login?.qrDataUrl) {
+        setWorkspaceSetupQr((current) => current ? { ...current, dataUrl: login.qrDataUrl! } : current);
+      }
+      setWorkspaceSetupQrMessage(login?.message ?? null);
+      if (login?.connected) {
+        setWorkspaceSetupQr(null);
+        toast.success("WhatsApp linked by OpenClaw.", {
+          description: "Choose the verified account below to bind it to this workspace."
+        });
+      }
+    } catch (error) {
+      toast.error("WhatsApp setup failed.", {
+        description: error instanceof Error ? error.message : "OpenClaw could not complete QR login."
+      });
+    } finally {
+      setWorkspaceSetupBusy(null);
+    }
+  };
+
+  const handleWorkspaceSetupAction = async (item: WorkspaceChannelSetupItem) => {
+    if (!workspace || item.action === "none") {
+      return;
+    }
+
+    const catalogEntry = surfaceCatalogByProvider.get(item.provider) ?? getSurfaceCatalogEntry(item.provider);
+    setActiveSection("surfaces");
+    setActiveKind(catalogEntry.kind);
+    setActiveProvider(item.provider);
+
+    if (item.action === "configure" || item.action === "select-account") {
+      window.setTimeout(() => document.getElementById("workspace-channel-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      return;
+    }
+
+    if (item.action === "retry") {
+      await loadWorkspaceSetup();
+      return;
+    }
+
+    if (item.action === "authenticate") {
+      setWorkspaceSetupBusy("authenticate");
+      setWorkspaceSetupQrMessage(null);
+      try {
+        const result = await postWorkspaceSetup({
+          action: "login-start",
+          provider: "whatsapp",
+          declarationId: item.declarationId,
+          accountId: item.accountId
+        });
+        if (result.login?.qrDataUrl) {
+          setWorkspaceSetupQr({ item, dataUrl: result.login.qrDataUrl });
+        }
+        setWorkspaceSetupQrMessage(result.login?.message ?? null);
+      } catch (error) {
+        toast.error("WhatsApp setup failed.", {
+          description: error instanceof Error ? error.message : "OpenClaw could not start QR login."
+        });
+      } finally {
+        setWorkspaceSetupBusy(null);
+      }
+      return;
+    }
+
+    if (item.action === "install-plugin") {
+      setWorkspaceSetupBusy("install-plugin");
+      try {
+        const result = await postWorkspaceSetup({
+          action: "install-plugin",
+          provider: item.provider,
+          declarationId: item.declarationId
+        });
+        await onRefresh().catch(() => {});
+        if (result.plugin?.restartError) {
+          toast.warning(`${item.label} plugin installed; restart still required.`, {
+            description: result.plugin.restartError
+          });
+        } else {
+          toast.success(`${item.label} plugin is ready.`);
+        }
+      } catch (error) {
+        toast.error("Channel plugin setup failed.", {
+          description: error instanceof Error ? error.message : "OpenClaw could not install this channel plugin."
+        });
+      } finally {
+        setWorkspaceSetupBusy(null);
+      }
+      return;
+    }
+
+    const accountId = item.accountId ?? (item.accountIds.length === 1 ? item.accountIds[0] : null);
+    if (!accountId) {
+      window.setTimeout(() => document.getElementById("workspace-channel-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      toast.message("Choose an OpenClaw account", {
+        description: "AgentOS will not select between multiple native accounts automatically."
+      });
+      return;
+    }
+
+    setWorkspaceSetupBusy(item.action);
+    try {
+      await postWorkspaceSetup({
+        action: item.action,
+        provider: item.provider,
+        declarationId: item.declarationId,
+        accountId
+      });
+      await onRefresh().catch(() => {});
+      toast.success(item.action === "bind" ? "Channel bound to this workspace." : "OpenClaw channel setup updated.");
+    } catch (error) {
+      toast.error("Workspace channel setup failed.", {
+        description: error instanceof Error ? error.message : "OpenClaw could not update this channel."
+      });
+    } finally {
+      setWorkspaceSetupBusy(null);
+    }
   };
 
   const patchWorkspaceSurface = async (payload: Record<string, unknown>) => {
@@ -715,6 +936,7 @@ export function WorkspaceChannelsDialog({
       applyRegistryUpdate(result);
       toast.success(`${getSurfaceCatalogEntry(activeProvider).label} connected to this workspace.`);
       void onRefresh().catch(() => {});
+      void loadWorkspaceSetup();
     } catch (error) {
       await showSurfaceMutationError("Integration connection failed.", error, () => handleAttachExisting(account));
     } finally {
@@ -768,6 +990,7 @@ export function WorkspaceChannelsDialog({
       setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
       toast.success(`${currentCatalogEntry.label} provisioned and connected.`);
       void onRefresh().catch(() => {});
+      void loadWorkspaceSetup();
     } catch (error) {
       await showSurfaceMutationError("Integration provisioning failed.", error, handleProvisionSurface);
     } finally {
@@ -1260,6 +1483,110 @@ export function WorkspaceChannelsDialog({
           </div>
         ) : null}
 
+        {workspaceSetupError ? (
+          <div className="mx-4 mt-4 rounded-2xl border border-rose-300/40 bg-rose-50 px-3 py-3 sm:mx-6 dark:border-rose-300/25 dark:bg-rose-400/[0.08]">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-rose-950 dark:text-rose-50">Channel setup status unavailable</p>
+                <p className="mt-1 text-xs leading-5 text-rose-900/80 dark:text-rose-100/80">{workspaceSetupError}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {workspaceSetup?.items.length ? (
+          <section className="mx-4 mt-4 rounded-2xl border border-violet-300/35 bg-violet-50/70 p-3.5 sm:mx-6 dark:border-violet-300/20 dark:bg-violet-400/[0.06]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-violet-950 dark:text-violet-50">Finish workspace channel setup</p>
+                  <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
+                    {workspaceSetup.pendingCount} pending
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-violet-900/75 dark:text-violet-100/75">
+                  Historical declarations are shown against the latest native OpenClaw account and binding status.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
+                disabled={workspaceSetupLoading}
+                onClick={() => void loadWorkspaceSetup()}
+              >
+                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", workspaceSetupLoading && "animate-spin")} />
+                Refresh status
+              </Button>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {workspaceSetup.items.map((item) => (
+                <div key={`${item.provider}:${item.declarationId}`} className="flex flex-col gap-3 rounded-xl border border-violet-300/25 bg-white/70 px-3 py-2.5 dark:border-white/10 dark:bg-black/15 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <SurfaceIcon provider={item.provider} className="h-8 w-8 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium text-violet-950 dark:text-violet-50">{item.label}</p>
+                        <Badge variant="muted" className={cn("h-5 rounded-full px-2 text-[10px]", workspaceSetupBadgeClass(item.status))}>
+                          {item.statusLabel}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] text-violet-900/70 dark:text-violet-100/70">
+                        {item.setupLabel} · {item.bindingPresent ? "workspace binding present" : "not bound to this workspace"}
+                      </p>
+                      {item.lastError || item.availabilityReason ? (
+                        <p className="mt-1 text-[11px] leading-4 text-violet-900/75 dark:text-violet-100/70">{item.lastError || item.availabilityReason}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  {item.action !== "none" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={item.action === "authenticate" ? "default" : "secondary"}
+                      className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
+                      disabled={Boolean(workspaceSetupBusy) || workspaceSetupLoading}
+                      onClick={() => void handleWorkspaceSetupAction(item)}
+                    >
+                      {workspaceSetupBusy === item.action ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                      {workspaceSetupActionLabel(item.action)}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            {workspaceSetupQr ? (
+              <div className="mt-3 flex flex-col gap-3 rounded-xl border border-emerald-300/35 bg-emerald-50/70 p-3 dark:border-emerald-300/20 dark:bg-emerald-400/[0.06] sm:flex-row sm:items-center">
+                <div className="rounded-lg bg-white p-2 shadow-sm">
+                  <Image unoptimized src={workspaceSetupQr.dataUrl} alt="WhatsApp connection QR code" width={156} height={156} className="h-[156px] w-[156px]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-emerald-950 dark:text-emerald-50">Scan with WhatsApp</p>
+                  <p className="mt-1 text-xs leading-5 text-emerald-900/75 dark:text-emerald-100/75">
+                    OpenClaw owns this QR session. After scanning, check native status and bind the verified account to this workspace.
+                  </p>
+                  {workspaceSetupQrMessage ? <p className="mt-1 text-[11px] text-emerald-900/70 dark:text-emerald-100/70">{workspaceSetupQrMessage}</p> : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="mt-3 h-8 rounded-full px-3 text-[11px]"
+                    disabled={workspaceSetupBusy === "authenticate"}
+                    onClick={() => void waitForWorkspaceWhatsAppLogin()}
+                  >
+                    {workspaceSetupBusy === "authenticate" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                    {workspaceSetupBusy === "authenticate" ? "Checking…" : "Check connection"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
         <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
           <aside className="sticky top-0 z-10 h-fit rounded-[14px] border border-[var(--wi-border)] bg-[var(--wi-panel)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:top-0">
@@ -1428,7 +1755,7 @@ export function WorkspaceChannelsDialog({
               </section>
             ) : null}
 
-            <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
+            <section id="workspace-channel-connect" className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
               <div className="flex items-center justify-between gap-3">
                 <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">{currentCatalogEntry.label} integrations</p>
                 <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
@@ -2173,4 +2500,42 @@ function SurfaceMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-[11px] text-foreground dark:text-slate-200">{value}</p>
     </div>
   );
+}
+
+function workspaceSetupActionLabel(action: WorkspaceChannelSetupAction) {
+  switch (action) {
+    case "install-plugin":
+      return "Install plugin";
+    case "authenticate":
+      return "Open QR setup";
+    case "select-account":
+      return "Choose account";
+    case "bind":
+      return "Bind account";
+    case "configure":
+      return "Configure account";
+    case "start":
+      return "Start account";
+    case "retry":
+      return "Retry status";
+    case "none":
+      return "";
+  }
+}
+
+function workspaceSetupBadgeClass(status: WorkspaceChannelSetupItem["status"]) {
+  switch (status) {
+    case "connected":
+    case "running":
+    case "linked":
+      return "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100";
+    case "configured":
+      return "border-cyan-300/45 bg-cyan-50 text-cyan-700 dark:border-cyan-300/25 dark:bg-cyan-400/10 dark:text-cyan-100";
+    case "unavailable":
+    case "blocked":
+    case "error":
+      return "border-amber-300/45 bg-amber-50 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100";
+    default:
+      return "border-violet-300/45 bg-violet-50 text-violet-700 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-100";
+  }
 }

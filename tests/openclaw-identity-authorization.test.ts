@@ -597,6 +597,8 @@ test("selected public OpenClaw mutation routes require preflight and pass server
     ["app/api/settings/gateway/route.ts", "config.patch", "device.pair.approve"],
     ["app/api/runtime/issues/route.ts", "device.pair.approve"],
     ["app/api/openclaw/channels/connect/route.ts", "plugins.install", "channels.pairing.approve"],
+    ["app/api/workspaces/[workspaceId]/channels/route.ts", "channels.add"],
+    ["app/api/workspaces/[workspaceId]/setup/route.ts", "channels.add", "web.login.start", "web.login.wait"],
     ["app/api/openclaw/mobile-pairing/route.ts", "device.pair.setup"]
   ] as const;
 

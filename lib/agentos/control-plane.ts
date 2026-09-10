@@ -60,6 +60,10 @@ import {
   getWorkspaceNativeKnowledgeStatus,
   planWorkspaceKnowledgeBinding
 } from "@/lib/agentos/application/workspace-native-knowledge-service";
+import {
+  getWorkspaceChannelSetupStatus,
+  performWorkspaceChannelSetup
+} from "@/lib/openclaw/application/workspace-channel-setup-service";
 
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
@@ -101,11 +105,13 @@ export {
   getGatewayNativeAuthStatus,
   getRuntimeOutput,
   getWorkspaceNativeKnowledgeStatus,
+  getWorkspaceChannelSetupStatus,
   getTaskDetail,
   inspectRuntimeIssueDevices,
   readWorkspaceEditSeed,
   reconcileWorkspaceSurfaceBindings,
   planWorkspaceKnowledgeBinding,
+  performWorkspaceChannelSetup,
   repairRuntimeIssueLegacyState,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,

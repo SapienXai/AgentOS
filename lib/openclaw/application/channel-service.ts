@@ -47,6 +47,7 @@ import {
   missionControlRootPath
 } from "@/lib/openclaw/state/paths";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import { redactSecrets } from "@/lib/security/redaction";
 import type {
   ChannelAccountRecord,
@@ -632,6 +633,7 @@ export async function createManagedChatChannelAccount(input: {
   botToken?: string;
   appToken?: string;
   webhookUrl?: string;
+  commandOptions?: OpenClawCommandOptions;
 }, timings?: TimingCollector) {
   if (input.provider === "telegram") {
     if (!input.token?.trim()) {
@@ -641,7 +643,8 @@ export async function createManagedChatChannelAccount(input: {
     return createTelegramChannelAccount({
       name: input.name,
       token: input.token,
-      accountId: input.accountId
+      accountId: input.accountId,
+      commandOptions: input.commandOptions
     }, timings);
   }
 
@@ -696,7 +699,10 @@ export async function createManagedChatChannelAccount(input: {
   })();
 
   await measureTiming(timings, `managed-chat.${input.provider}.provision-openclaw`, () =>
-    getOpenClawAdapter().provisionChannelAccount(provisionInput, { timeoutMs: 60000 })
+    getOpenClawAdapter().provisionChannelAccount(provisionInput, {
+      ...input.commandOptions,
+      timeoutMs: 60000
+    })
   );
 
   const afterAccounts = (
@@ -728,6 +734,7 @@ export async function createManagedSurfaceAccount(input: {
   appToken?: string;
   webhookUrl?: string;
   config?: Record<string, unknown>;
+  commandOptions?: OpenClawCommandOptions;
 }, timings?: TimingCollector) {
   if (isManagedChatChannelProvider(input.provider)) {
     return createManagedChatChannelAccount({
@@ -737,7 +744,8 @@ export async function createManagedSurfaceAccount(input: {
       token: input.token,
       botToken: input.botToken,
       appToken: input.appToken,
-      webhookUrl: input.webhookUrl
+      webhookUrl: input.webhookUrl,
+      commandOptions: input.commandOptions
     }, timings);
   }
 
@@ -902,7 +910,7 @@ export async function createManagedSurfaceAccount(input: {
 }
 
 export async function createTelegramChannelAccount(
-  input: { name: string; token: string; accountId?: string },
+  input: { name: string; token: string; accountId?: string; commandOptions?: OpenClawCommandOptions },
   timings?: TimingCollector
 ) {
   const accountId = normalizeOptionalValue(input.accountId) ?? (await buildTelegramAccountId(input.name, timings));
@@ -915,7 +923,10 @@ export async function createTelegramChannelAccount(
         token: input.token,
         name: input.name
       },
-      { timeoutMs: 60000 }
+      {
+        ...input.commandOptions,
+        timeoutMs: 60000
+      }
     )
   );
 

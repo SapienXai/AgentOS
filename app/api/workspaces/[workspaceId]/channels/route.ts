@@ -16,12 +16,14 @@ import type {
   MissionControlSurfaceProvider,
   WorkspaceChannelGroupAssignment
 } from "@/lib/agentos/contracts";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import {
   formatGatewayConfigRateLimitMessage,
   isGatewayConfigRateLimitMessage
 } from "@/lib/openclaw/gateway-config-errors";
 import { createTimingCollector, formatTimingSummary, measureTiming } from "@/lib/openclaw/timing";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
@@ -105,6 +107,12 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const groupAssignments = normalizeGroupAssignments(input.groupAssignments ?? []);
 
     if (!channelId) {
+      let commandOptions: OpenClawCommandOptions | undefined;
+      if (isNativeManagedChatProvider(input.type)) {
+        const authorization = await resolveNativeChannelProvisionOptions(request, workspaceId, input.type);
+        if ("response" in authorization) return authorization.response;
+        commandOptions = authorization.commandOptions;
+      }
       const created = await measureTiming(timings, "channel.account.create", () =>
         createManagedSurfaceAccount(
           {
@@ -114,7 +122,8 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
             token: input.token,
             botToken: input.botToken,
             appToken: input.appToken,
-            webhookUrl: input.webhookUrl
+            webhookUrl: input.webhookUrl,
+            commandOptions
           },
           timings
         )
@@ -314,4 +323,21 @@ function formatChannelMutationError(error: unknown, fallback: string, actionLabe
   return isGatewayConfigRateLimitMessage(message)
     ? formatGatewayConfigRateLimitMessage(message, actionLabel)
     : message;
+}
+
+function isNativeManagedChatProvider(provider: string): provider is "telegram" | "discord" | "slack" | "googlechat" {
+  return provider === "telegram" || provider === "discord" || provider === "slack" || provider === "googlechat";
+}
+
+async function resolveNativeChannelProvisionOptions(request: Request, workspaceId: string, provider: string) {
+  return requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace-surface-provision",
+    method: "channels.add",
+    params: { provider, workspaceId },
+    targetKind: "workspace-channel",
+    targetId: `${workspaceId}:${provider}`,
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "gateway.manage"
+  });
 }
