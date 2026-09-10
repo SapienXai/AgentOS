@@ -2112,6 +2112,7 @@ export interface WorkspaceAgentBlueprintInput {
   theme?: string;
   skillId?: string;
   skillIds?: string[];
+  toolIds?: string[];
   modelId?: string;
   isPrimary?: boolean;
   policy?: AgentPolicy;

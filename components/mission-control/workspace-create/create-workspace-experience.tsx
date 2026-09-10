@@ -39,6 +39,7 @@ import type {
   WorkspaceArchitectResult,
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
 import {
   formatWorkspaceChannelSetup,
   formatWorkspaceSchedule,
@@ -48,7 +49,7 @@ import {
 } from "@/lib/agentos/ui/workspace-create-presenter";
 
 type SurfaceTheme = "dark" | "light";
-type CreateStage = "intake" | "generating" | "review";
+type CreateStage = "intake" | "generating" | "review" | "provisioning";
 type ContextAction = "website" | "github" | "connect" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
 type ContextSourceStatus = "attached" | "reading" | "ready" | "partial" | "error" | "unsupported";
@@ -73,10 +74,25 @@ type ContextStageResult = {
   warnings: string[];
 };
 
+type ProvisioningRun = {
+  runId: string;
+  state: "pending" | "validating" | "materializing" | "bootstrapping" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
+  result: WorkspaceCreateResult | null;
+  warnings: string[];
+  error: { code: string; message: string } | null;
+  progress: { label: string; detail: string } | null;
+  steps: Array<{ id: string; label: string; status: "pending" | "active" | "complete" | "failed" }>;
+  signals: string[];
+  knowledge: { promotedGenerationId: string | null; sourceIds: string[]; documentCount: number } | null;
+  pendingSetup: { channels: string[]; connections: string[]; automations: string[] };
+};
+
 type CreateWorkspaceExperienceProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   surfaceTheme: SurfaceTheme;
+  onWorkspaceCreated?: (result: WorkspaceCreateResult) => void;
+  onRefresh?: () => Promise<void>;
 };
 
 const progressSteps = [
@@ -96,7 +112,9 @@ type ProgressChip = {
 export function CreateWorkspaceExperience({
   open,
   onOpenChange,
-  surfaceTheme
+  surfaceTheme,
+  onWorkspaceCreated,
+  onRefresh
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
@@ -124,6 +142,10 @@ export function CreateWorkspaceExperience({
   const [customName, setCustomName] = useState("");
   const [customPrimaryName, setCustomPrimaryName] = useState("");
   const [isSavingCustomization, setIsSavingCustomization] = useState(false);
+  const [provisioningRun, setProvisioningRun] = useState<ProvisioningRun | null>(null);
+  const [provisioningError, setProvisioningError] = useState<string | null>(null);
+  const provisioningKeyRef = useRef<string | null>(null);
+  const provisioningPollRef = useRef<AbortController | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -157,6 +179,10 @@ export function CreateWorkspaceExperience({
       setRevisionValue("");
       setRevisionError(null);
       setIsCustomizing(false);
+      setProvisioningRun(null);
+      setProvisioningError(null);
+      provisioningKeyRef.current = null;
+      provisioningPollRef.current?.abort();
     }
   }, [open]);
 
@@ -250,6 +276,9 @@ export function CreateWorkspaceExperience({
       setProgressPhase("preparing-review");
       setResult(payload);
       setFreshness(payload.freshness);
+      setProvisioningRun(null);
+      setProvisioningError(null);
+      provisioningKeyRef.current = null;
       setContextDirty(false);
       setStage("review");
       setRevisionValue("");
@@ -308,6 +337,9 @@ export function CreateWorkspaceExperience({
 
       setResult(payload);
       setFreshness(payload.freshness);
+      setProvisioningRun(null);
+      setProvisioningError(null);
+      provisioningKeyRef.current = null;
       setRevisionValue("");
       setCustomName(payload.blueprint.identity.name);
       setCustomPrimaryName(payload.blueprint.workforce.primaryAgent.name);
@@ -346,12 +378,76 @@ export function CreateWorkspaceExperience({
 
       setResult(payload);
       setFreshness(payload.freshness);
+      setProvisioningRun(null);
+      setProvisioningError(null);
+      provisioningKeyRef.current = null;
       setIsCustomizing(false);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The workspace edits could not be saved.");
     } finally {
       setIsSavingCustomization(false);
     }
+  };
+
+  const provision = async () => {
+    if (!result || stage === "provisioning") return;
+    if (!canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId)) return;
+
+    const controller = new AbortController();
+    provisioningPollRef.current?.abort();
+    provisioningPollRef.current = controller;
+    const idempotencyKey = provisioningKeyRef.current ?? `workspace-provision:${result.blueprint.id}:${result.blueprint.updatedAt}`;
+    provisioningKeyRef.current = idempotencyKey;
+    setStage("provisioning");
+    setProvisioningRun(null);
+    setProvisioningError(null);
+
+    try {
+      const response = await fetch("/api/workspaces/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          blueprint: result.blueprint,
+          draftContextId,
+          expectedKnowledgeGenerationId: (freshness ?? result.freshness).currentGenerationId,
+          idempotencyKey,
+          acceptDraft: result.blueprint.status === "draft"
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
+      if (!response.ok || !payload?.runId) throw new Error(payload?.error || "AgentOS could not start workspace provisioning.");
+
+      let current = payload;
+      setProvisioningRun(current);
+      while (!isProvisioningTerminal(current.state)) {
+        await wait(450, controller.signal);
+        const statusResponse = await fetch(`/api/workspaces/provision?runId=${encodeURIComponent(current.runId)}`, { signal: controller.signal });
+        const statusPayload = (await statusResponse.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
+        if (!statusResponse.ok || !statusPayload?.runId) throw new Error(statusPayload?.error || "AgentOS could not read workspace provisioning status.");
+        current = statusPayload;
+        setProvisioningRun(current);
+      }
+
+      if (current.state === "failed" || current.state === "cancelled") {
+        setProvisioningError(current.error?.message || "Workspace provisioning did not complete.");
+      } else {
+        await onRefresh?.().catch(() => undefined);
+      }
+      setStage("review");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setProvisioningError(error instanceof Error ? error.message : "Workspace provisioning did not complete.");
+      setStage("review");
+    } finally {
+      if (provisioningPollRef.current === controller) provisioningPollRef.current = null;
+    }
+  };
+
+  const openProvisionedWorkspace = () => {
+    if (!provisioningRun?.result) return;
+    onWorkspaceCreated?.(provisioningRun.result);
+    onOpenChange(false);
   };
 
   const addUrlSource = () => {
@@ -441,10 +537,17 @@ export function CreateWorkspaceExperience({
       }
     : null;
 
-  const title = stage === "review" ? (reviewModel?.fallback ? "Basic draft created" : "Workspace ready") : "Create Workspace";
-  const description = stage === "review"
-    ? "Review the workspace AgentOS designed from your project."
-    : "Give AgentOS the project. It will understand the rest.";
+  const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
+  const title = stage === "provisioning"
+    ? "Creating workspace"
+    : stage === "review"
+      ? (isProvisioned ? "Workspace ready" : reviewModel?.fallback ? "Basic draft created" : "Review workspace")
+      : "Create Workspace";
+  const description = stage === "provisioning"
+    ? "AgentOS is materializing the approved blueprint."
+    : stage === "review"
+      ? "Review the workspace AgentOS designed from your project."
+      : "Give AgentOS the project. It will understand the rest.";
 
   return (
     <MissionControlDialogShell
@@ -454,7 +557,7 @@ export function CreateWorkspaceExperience({
       title={title}
       description={description}
       icon={stage === "review" ? Bot : Sparkles}
-      chips={stage === "review" ? <Badge variant={reviewModel?.fallback ? "warning" : "success"}>{reviewModel?.fallback ? "Draft" : "Review"}</Badge> : null}
+      chips={stage === "review" ? <Badge variant={isProvisioned ? provisioningRun?.state === "partial" ? "warning" : "success" : reviewModel?.fallback ? "warning" : "muted"}>{isProvisioned ? provisioningRun?.state === "partial" ? "Partial" : "Ready" : reviewModel?.fallback ? "Draft" : "Review"}</Badge> : stage === "provisioning" ? <Badge variant="muted">Working</Badge> : null}
       contentClassName="left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen transform-none rounded-none border-x-0 md:left-1/2 md:top-1/2 md:h-[min(calc(100vh-72px),780px)] md:max-h-[calc(100vh-72px)] md:w-[min(92vw,900px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border-x"
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
@@ -468,6 +571,11 @@ export function CreateWorkspaceExperience({
               Cancel
             </Button>
           </div>
+        ) : stage === "provisioning" ? (
+          <div className="flex w-full items-center justify-between gap-3">
+            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} aria-live="polite">{provisioningRun?.progress?.label || "Provisioning workspace"}.</span>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Run in background</Button>
+          </div>
         ) : stage === "review" ? (
           <div className="flex w-full items-center justify-between gap-3">
             <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
@@ -475,7 +583,7 @@ export function CreateWorkspaceExperience({
               Back to brief
             </Button>
             <div className="flex flex-col items-end gap-1">
-              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Final creation is a Phase 6 action.</span>
+              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : "Review the draft, then create the workspace."}</span>
               <div className="flex items-center gap-2">
                 <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                   <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -483,12 +591,13 @@ export function CreateWorkspaceExperience({
                 </Button>
                 <Button
                   type="button"
-                  disabled
-                  title="Final workspace provisioning will be added in Phase 6."
-                  aria-label="Create Workspace is not available until provisioning is implemented"
+                  disabled={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId)}
+                  onClick={isProvisioned ? openProvisionedWorkspace : () => void provision()}
+                  title={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId) ? "Review the blueprint and its project context before creating the workspace." : undefined}
+                  aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
                   className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                 >
-                  Create Workspace
+                  {isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
                 </Button>
               </div>
             </div>
@@ -538,6 +647,8 @@ export function CreateWorkspaceExperience({
           />
         ) : stage === "generating" ? (
           <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} />
+        ) : stage === "provisioning" ? (
+          <ProvisioningView isLight={isLight} run={provisioningRun} />
         ) : (
           <ReviewView
             isLight={isLight}
@@ -556,6 +667,8 @@ export function CreateWorkspaceExperience({
             onCloseCustomization={() => setIsCustomizing(false)}
             onSaveCustomization={() => void saveCustomization()}
             isSavingCustomization={isSavingCustomization}
+            provisioningRun={provisioningRun}
+            provisioningError={provisioningError}
           />
         )}
       </div>
@@ -801,8 +914,9 @@ function ProgressChipRail({ isLight, chips }: { isLight: boolean; chips: Progres
 function buildProgressChips(sources: WorkspaceKnowledgeSource[], sourceStates: Record<string, ContextSourceState>): ProgressChip[] {
   const chips: ProgressChip[] = sources.slice(0, 6).map((source) => {
     const state = sourceStates[source.id]?.status ?? "attached";
+    const storedDocuments = sourceStates[source.id]?.storedDocuments;
     return {
-      label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label} · ${formatContextSourceStatus(state)}`,
+      label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label}${storedDocuments ? ` · ${storedDocuments} document${storedDocuments === 1 ? "" : "s"} found` : ""} · ${formatContextSourceStatus(state)}`,
       state
     };
   });
@@ -828,6 +942,25 @@ function formatContextSourceStatus(status: ContextSourceStatus) {
   }
 }
 
+function ProvisioningView({ isLight, run }: { isLight: boolean; run: ProvisioningRun | null }) {
+  const steps = run?.steps ?? [];
+  const signals = run?.signals ?? [];
+  return (
+    <main className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center px-5 py-12 md:px-10">
+      <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-busy="true" aria-live="polite">
+        <div className="flex items-center gap-3">
+          <div className={cn("flex size-10 items-center justify-center rounded-xl", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><LoaderCircle className="h-5 w-5 animate-spin motion-reduce:animate-none" /></div>
+          <div className="min-w-0"><p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{run?.progress?.label || "Preparing workspace"}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{run?.progress?.detail || "AgentOS is starting the approved workspace bootstrap."}</p></div>
+        </div>
+        <div className="mt-7 space-y-3">
+          {steps.map((step, index) => <div key={step.id} className="flex items-center gap-3"><span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", step.status === "complete" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-500" : step.status === "failed" ? "border-red-400/50 bg-red-400/10 text-red-500" : step.status === "active" ? (isLight ? "border-[#b8895f] bg-[#f3e7db] text-[#9a6d45]" : "border-violet-300/50 bg-violet-400/10 text-violet-200") : (isLight ? "border-[#e5dbd0] text-[#b6a89c]" : "border-white/10 text-slate-600"))} aria-hidden="true">{step.status === "complete" ? <Check className="h-3 w-3" /> : step.status === "active" ? <LoaderCircle className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : step.status === "failed" ? <CircleAlert className="h-3 w-3" /> : <span className="size-1 rounded-full bg-current" />}</span><span className={cn("text-sm", step.status === "pending" ? (isLight ? "text-[#a99b8f]" : "text-slate-600") : (isLight ? "text-[#4d4036]" : "text-slate-200"))}>{step.label}</span><span className="sr-only">Step {index + 1} of {steps.length}</span></div>)}
+        </div>
+        {signals.length ? <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }}><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live provisioning signals</p><div className="mt-2 flex flex-wrap gap-1.5">{signals.map((signal, index) => <span key={signal} className={cn("workspace-architect-chip-enter inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")} style={{ animationDelay: `${index * 55}ms` }}><span className={cn("size-1.5 rounded-full", isLight ? "bg-[#cdbcae]" : "bg-slate-600")} aria-hidden="true" />{signal}</span>)}</div></div> : null}
+      </div>
+    </main>
+  );
+}
+
 function ReviewView({
   isLight,
   model,
@@ -844,7 +977,9 @@ function ReviewView({
   setCustomPrimaryName,
   onCloseCustomization,
   onSaveCustomization,
-  isSavingCustomization
+  isSavingCustomization,
+  provisioningRun,
+  provisioningError
 }: {
   isLight: boolean;
   model: WorkspaceBlueprintReviewModel | null;
@@ -862,11 +997,14 @@ function ReviewView({
   onCloseCustomization: () => void;
   onSaveCustomization: () => void;
   isSavingCustomization: boolean;
+  provisioningRun: ProvisioningRun | null;
+  provisioningError: string | null;
 }) {
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
   const fallbackDiagnostic = model.warnings.find((warning) => /Architect/i.test(warning));
+  const provisioningComplete = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
@@ -877,6 +1015,22 @@ function ReviewView({
             <p className="mt-1 text-xs opacity-80">{fallbackDiagnostic || "This is a safe minimal draft. You can review it or retry without losing context."}</p>
           </div>
           <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+        </div>
+      ) : null}
+
+      {provisioningComplete ? (
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", provisioningRun.state === "partial" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"))} role="status">
+          <p className="text-sm font-semibold">{provisioningRun.state === "partial" ? "Workspace created with setup pending." : "Workspace created successfully."}</p>
+          <p className="mt-1 text-xs opacity-80">{provisioningRun.state === "partial" ? "The workspace is usable now. Finish the listed channels, connections, or automations when you are ready." : "Open the workspace to continue with your team."}</p>
+          {provisioningRun.signals.length ? <div className="mt-3 flex flex-wrap gap-1.5">{provisioningRun.signals.slice(0, 8).map((signal, index) => <span key={signal} className={cn("workspace-architect-chip-enter inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]", isLight ? "border-emerald-200 bg-white/70 text-emerald-800" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100")} style={{ animationDelay: `${index * 55}ms` }}>{signal}</span>)}</div> : null}
+          {provisioningRun.pendingSetup.channels.length || provisioningRun.pendingSetup.connections.length || provisioningRun.pendingSetup.automations.length ? <p className="mt-3 text-xs font-medium">Some setup remains in the workspace review.</p> : null}
+        </div>
+      ) : null}
+
+      {provisioningRun?.state === "failed" || provisioningError ? (
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-red-200 bg-red-50 text-red-950" : "border-red-400/20 bg-red-400/10 text-red-100")} role="alert">
+          <p className="text-sm font-semibold">Workspace provisioning needs attention.</p>
+          <p className="mt-1 text-xs opacity-80">{provisioningError || provisioningRun?.error?.message || "The workspace could not be completed."}</p>
         </div>
       ) : null}
 
@@ -1013,4 +1167,28 @@ function slugify(value: string) {
 
 function capabilityLabel(id: string) {
   return id.split(/[-_]/g).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function canProvisionBlueprint(
+  result: WorkspaceArchitectResult,
+  currentFreshness: WorkspaceBlueprintFreshnessResult,
+  draftContextId: string | null
+) {
+  if (!result.validation.valid || result.blueprint.status === "blocked" || currentFreshness.status === "stale") return false;
+  if (currentFreshness.status === "fresh") return true;
+  return result.blueprint.knowledge.sourceIds.length === 0 || Boolean(draftContextId && result.blueprint.knowledge.generationId === null);
+}
+
+function isProvisioningTerminal(state: ProvisioningRun["state"]) {
+  return state === "ready" || state === "partial" || state === "failed" || state === "cancelled";
+}
+
+function wait(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Provisioning polling was cancelled.", "AbortError"));
+    }, { once: true });
+  });
 }

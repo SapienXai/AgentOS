@@ -81,6 +81,8 @@ export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
         open={props.open}
         onOpenChange={props.onOpenChange}
         surfaceTheme={props.surfaceTheme}
+        onWorkspaceCreated={(result) => props.onWorkspaceCreated(result)}
+        onRefresh={props.onRefresh}
       />
     );
   }

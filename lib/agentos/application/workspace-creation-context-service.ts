@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   DEFAULT_KNOWLEDGE_INGESTION_LIMITS,
   ingestKnowledgeSources,
+  promoteKnowledgeCorpus,
   readKnowledgeSnapshot,
   type KnowledgeHostResolver,
   type KnowledgeIngestionProgress,
@@ -315,6 +316,64 @@ export async function readWorkspaceCreationContext(input: {
       documents,
       warnings: stored.warnings
     }
+  };
+}
+
+/**
+ * Promote an actor-owned staged context into a final workspace without
+ * recrawling or exposing the staging filesystem layout to callers.
+ */
+export async function promoteWorkspaceCreationKnowledge(input: {
+  actorId: string;
+  draftContextId: string;
+  targetWorkspacePath: string;
+  expectedGenerationId: string;
+}) {
+  const actorId = input.actorId.trim();
+  if (!actorId) throw new Error("Workspace context ownership is unavailable.");
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const expectedGenerationId = input.expectedGenerationId.trim();
+  if (!expectedGenerationId) throw new Error("Workspace knowledge generation is required.");
+
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftRoot = resolveDraftRoot(actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(actorId) || Date.parse(stored.expiresAt) <= Date.now()) {
+    throw new Error("Workspace context is unavailable or expired.");
+  }
+  if (stored.generationId !== expectedGenerationId) {
+    throw new Error("Workspace context is stale; the knowledge generation changed.");
+  }
+
+  const sourceSnapshot = await readKnowledgeSnapshot(
+    path.join(draftRoot, "corpus"),
+    path.join(draftRoot, "state")
+  );
+  if (!sourceSnapshot?.state?.generationId || sourceSnapshot.state.generationId !== expectedGenerationId) {
+    throw new Error("Workspace context is stale; the staged knowledge generation could not be verified.");
+  }
+
+  const targetWorkspacePath = path.resolve(input.targetWorkspacePath);
+  await promoteKnowledgeCorpus({
+    fromCorpusRoot: path.join(draftRoot, "corpus"),
+    fromStateRoot: path.join(draftRoot, "state"),
+    toCorpusRoot: path.join(targetWorkspacePath, "knowledge"),
+    toStateRoot: path.join(targetWorkspacePath, ".openclaw", "knowledge")
+  });
+
+  const promoted = await readKnowledgeSnapshot(
+    path.join(targetWorkspacePath, "knowledge"),
+    path.join(targetWorkspacePath, ".openclaw", "knowledge")
+  );
+  if (!promoted?.state?.generationId) {
+    throw new Error("Workspace knowledge promotion did not produce an active generation.");
+  }
+
+  return {
+    stagedGenerationId: expectedGenerationId,
+    generationId: promoted.state.generationId,
+    sourceIds: stored.sources.map((source) => source.id),
+    documentCount: promoted.documents.length
   };
 }
 

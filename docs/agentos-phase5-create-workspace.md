@@ -5,7 +5,7 @@ Phase 5 makes Create Workspace a brief-first review flow. The operator provides 
 ## Product flow
 
 ```text
-brief → context → Generate Workspace → human-readable progress → Blueprint review → customize or revise
+brief → context → Generate Workspace → human-readable progress → Blueprint review → customize/revise → Create Workspace → verified result
 ```
 
 Automatic is the default. Customize exposes only constraints that materially change Architect input before generation. Detailed changes happen after the first blueprint through the review editor or the natural-language revision composer.
@@ -53,4 +53,4 @@ WhatsApp is shown as `Setup required · QR sign-in`; token-based channels use to
 
 ## Phase 6 boundary
 
-The review action for final creation is intentionally unavailable until Phase 6 owns materialization and verification. Phase 5 may generate and revise architecture only. Ensuring a temporary AgentOS-owned staging context and writing its draft corpus are allowed internal preparation side effects; creating the final user workspace, agents, channels, automations, connections, or authentication remains absent. The existing legacy Planner and workspace provisioning APIs remain compatibility infrastructure for other flows, but the new Create mode does not route through them.
+Phase 6 owns the final creation action. Phase 5 still only stages context and generates/revises the blueprint; after operator review, the client calls the server-side Phase 6 provisioning run. The provisioning service materializes the final workspace through the canonical OpenClaw workspace service, promotes accepted knowledge, creates only the selected agents, binds native memory, records setup declarations, and verifies the result. It does not authenticate channels, activate automations, create live connections, or run a kickoff mission.
