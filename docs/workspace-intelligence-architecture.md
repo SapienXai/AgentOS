@@ -1,11 +1,12 @@
 # Workspace Intelligence Architecture
 
-This document defines the Phase 1 Project Intelligence foundation and the
-Phase 2 creation-runtime boundary. It is a normalized, versioned AgentOS
-domain contract for discovery and workspace-architecture work. Phase 2 adds
-reliable observation around the existing context and Architect path without
-implementing discovery, verification, Workspace Architect 2.0, Workspace
-Composer, or a parallel OpenClaw runtime.
+This document defines the Phase 1 Project Intelligence foundation, the Phase
+2 creation-runtime boundary, and the Phase 3 deterministic discovery
+boundary. It is a normalized, versioned AgentOS domain contract for evidence
+collection and workspace-architecture work. Phase 2 adds reliable
+observation around the existing context and Architect path; Phase 3 adds
+bounded website discovery without implementing verification, Workspace
+Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
 
 ## Ownership and boundaries
 
@@ -15,6 +16,8 @@ The long-term flow is:
 OpenClaw workspace/source conventions
         ↓
 existing AgentOS ingestion and source abstractions
+        ↓
+deterministic Project Discovery Engine (Phase 3)
         ↓
 parsing and extraction (future)
         ↓
@@ -150,6 +153,12 @@ These fixtures are evaluation inputs for the future Project Intelligence
 Agent. They do not hard-code Web3 assumptions into the domain and do not
 implement production discovery or synthesis logic.
 
+Phase 3 uses separate deterministic website fixtures for CoinCollect, a
+generic SaaS site, and documentation-heavy software. They exercise root and
+subdomain traversal, metadata/navigation/footer harvesting, sitemaps,
+external candidate preservation, contact discovery, canonicalization, and
+bounded security behavior without live network access.
+
 ## Existing Create Workspace flow
 
 Phase 1 does not change the existing Create Workspace runtime. Its current
@@ -162,6 +171,59 @@ Create Workspace → context staging → ingestion → bounded corpus → Worksp
 Project Intelligence is an additive normalized sidecar. It does not replace
 WorkspaceBlueprint, alter provisioning, or claim ownership of OpenClaw
 workspace materialization.
+
+## Phase 3 Project Discovery Engine
+
+Project Discovery is a deterministic evidence-collection boundary between
+declared sources and the existing knowledge corpus. It does not synthesize a
+`ProjectIntelligencePack`, decide truth, verify official ownership, or use an
+LLM. Its output is a bounded `ProjectDiscoveryManifest` containing observed
+pages, candidates, contacts, metadata, relationships, fetch status, and
+warnings. These are discovered candidates, not verified official resources.
+
+Website traversal uses a public-suffix-aware registrable-domain check. The
+root host and explicitly policy-approved subdomains such as `docs`,
+`developers`, `api`, `help`, and `support` may be crawled within the same
+source limits. `app`, `www`, and `blog` are shallow, useful candidates;
+infrastructure-like subdomains such as `cdn`, `static`, `assets`, `status`,
+and `tracking` are recorded but not recursively crawled by default. A naïve
+hostname suffix match is not used, so lookalikes such as
+`project.org.attacker.example` remain outside the site family.
+
+Every fetch remains behind the existing AgentOS HTTP, DNS, public-address,
+redirect, byte, page, depth, concurrency, and total-run bounds. Redirects and
+new hostnames are revalidated. External links such as repositories, social
+profiles, explorers, support platforms, and document hosts are retained with
+their source-page provenance but are never recursively crawled. Mail and
+telephone links are normalized as contact candidates and are never fetched.
+
+Robots policy and a bounded set of sitemap/index locations are inspected
+before page scheduling. Malformed robots and sitemap material is ignored as a
+bounded discovery miss. Navigation, footer, canonical, alternate/meta,
+OpenGraph, Twitter, title, JSON-LD type, contact, document, and application
+signals are harvested before navigation/footer/body cleanup. JSON-LD is
+bounded, parsed without execution, and remains untrusted observation data.
+
+The scheduler uses deterministic priority signals so root, documentation,
+developer, product, support, contact, security, integration, and similar
+project surfaces are favored over boilerplate, archives, and pagination. URL
+normalization removes fragments, default ports, and common tracking
+parameters while preserving meaningful query parameters. Safe progress
+locators remove query strings and fragments before entering
+`WorkspaceCreationRun` events or snapshots.
+
+The static fetch path is the default. Low-information JavaScript shell pages
+are detected with bounded deterministic signals. No new browser runtime is
+created: because the current server-side discovery boundary has no approved
+rendered-fetch capability, the manifest records an explicit unavailable
+fallback warning and continues with whatever static evidence is usable.
+
+Discovered pages are projected into the existing protected knowledge corpus;
+the bounded manifest is stored alongside the knowledge generation state for
+future extraction without rescanning raw HTML. Phase 3 does not create a
+second memory system, raw-source abstraction, verifier, fact extractor, or
+Project Intelligence Agent. Phase 4 may consume these manifests to perform
+structured extraction and official-source verification.
 
 ## Phase 2 creation execution
 
@@ -253,10 +315,12 @@ implementing composition.
 
 Phase 1 and Phase 1.1 establish normalized claims, evidence qualification
 semantics, projections, conflicts, source-coverage invariants, lifecycle
-contracts, fixtures, and validation only. The following remain future work:
+contracts, fixtures, and validation. Phase 3 establishes deterministic
+bounded project discovery and its corpus/creation-progress projection. The
+following remain future work:
 
-- Phase 2+: discovery, source traversal, extraction, synthesis, and any
-  Project Intelligence Agent runtime;
+- Phase 4+: structured extraction, synthesis, official-resource verification,
+  and any Project Intelligence Agent runtime;
 - later phases: verification runtime, retrieval, persistence, refresh,
   transport/event streaming, Workspace Architect evolution, and AI Workspace
   Composer;

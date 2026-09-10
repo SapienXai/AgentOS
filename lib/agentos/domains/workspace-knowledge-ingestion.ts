@@ -11,6 +11,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { assertSafeWorkspaceCloneRepoUrl } from "@/lib/openclaw/domains/workspace-bootstrap";
+import { discoverProjectWebsite } from "@/lib/agentos/application/project-discovery-engine";
+import { isDiscoveryManifest, type ProjectDiscoveryManifest } from "@/lib/agentos/domains/project-discovery";
 import {
   isSupportedWorkspaceKnowledgeFile,
   type WorkspaceKnowledgeSource,
@@ -140,6 +142,7 @@ export type KnowledgeIngestionState = {
   lastRunIds: string[];
   sourceReports: KnowledgeIngestionSourceReport[];
   warnings: string[];
+  discoveryManifests?: ProjectDiscoveryManifest[];
 };
 
 export type KnowledgeIngestionProgress = {
@@ -231,6 +234,7 @@ type SourceWorkResult = {
   source: WorkspaceKnowledgeSource;
   documents: KnowledgeDocument[];
   report: KnowledgeIngestionSourceReport;
+  discovery?: ProjectDiscoveryManifest;
 };
 
 type SourceContext = {
@@ -249,20 +253,6 @@ type TextNormalization = {
   content: string;
   skipped: boolean;
   redacted: boolean;
-};
-
-type WebsitePage = {
-  url: string;
-  depth: number;
-};
-
-type WebsitePageResult = {
-  documents: KnowledgeDocument[];
-  links: string[];
-  canonicalUrl?: string;
-  fetched: boolean;
-  skipped: boolean;
-  warnings: string[];
 };
 
 export class KnowledgeIngestionCancelledError extends Error {
@@ -582,6 +572,7 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
     const finishedAt = new Date().toISOString();
     const sourceReports = committedReports;
     const warnings = [...runWarnings, ...sourceReports.flatMap((report) => report.warnings)];
+    const discoveryManifests = sourceResults.flatMap((result) => result.discovery ? [result.discovery] : []);
     const status = resolveOverallStatus(sourceReports, mergedDocuments.length > 0);
     const errorCount = sourceReports.reduce((total, report) => total + report.errorCount, 0);
     const state: KnowledgeIngestionState = {
@@ -591,7 +582,8 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
       lastRunId: runId,
       lastRunIds: [runId, ...(previousState?.lastRunIds ?? [])].slice(0, 10),
       sourceReports,
-      warnings
+      warnings,
+      ...(discoveryManifests.length > 0 ? { discoveryManifests } : {})
     };
     const documentsFile: KnowledgeDocumentsFile = {
       schemaVersion: KNOWLEDGE_INGESTION_SCHEMA_VERSION,
@@ -658,7 +650,8 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
           timedOut
             ? "Knowledge ingestion exceeded its total run timeout; the previous corpus was preserved."
             : "Knowledge ingestion was cancelled; the previous corpus was preserved."
-        ]
+        ],
+        ...(previousState?.discoveryManifests ? { discoveryManifests: previousState.discoveryManifests } : {})
       };
       return {
         run: {
@@ -813,7 +806,7 @@ function nonNegativeLimit(value: number) {
 async function ingestOneSource(context: SourceContext): Promise<SourceWorkResult> {
   const startedAt = new Date().toISOString();
   const warnings: string[] = [];
-  let result: { support: KnowledgeSourceSupport; documents: KnowledgeDocument[]; discoveredItems: number; fetchedItems: number; skippedItems: number; warnings?: string[]; error?: string };
+  let result: { support: KnowledgeSourceSupport; documents: KnowledgeDocument[]; discoveredItems: number; fetchedItems: number; skippedItems: number; warnings?: string[]; error?: string; discovery?: ProjectDiscoveryManifest };
 
   try {
     throwIfAborted(context.signal);
@@ -900,7 +893,7 @@ async function ingestOneSource(context: SourceContext): Promise<SourceWorkResult
     warnings,
     ...(result.error ? { error: result.error } : {})
   };
-  return { source: context.source, documents: result.documents, report };
+  return { source: context.source, documents: result.documents, report, ...(result.discovery ? { discovery: result.discovery } : {}) };
 }
 
 async function ingestPromptSource(context: SourceContext) {
@@ -930,7 +923,38 @@ async function ingestPromptSource(context: SourceContext) {
 
 async function ingestWebsiteSource(context: SourceContext) {
   const locator = requireLocator(context.source, "website");
-  return crawlWebsite(context, locator.url);
+  const discovered = await discoverProjectWebsite({
+    runId: context.runId,
+    sourceId: context.source.id,
+    sourceKind: context.source.kind,
+    rootUrl: locator.url,
+    limits: context.limits,
+    signal: context.signal,
+    websiteFetcher: context.websiteFetcher,
+    resolveHost: context.resolveHost,
+    assertPublicAddresses,
+    onProgress: context.onProgress
+  });
+  const documents = discovered.documents.map((page) => createDocument(context, {
+    title: page.title,
+    origin: page.origin,
+    canonicalLocator: `website:${page.canonicalUrl}`,
+    relativePath: websiteOutputPath(page.canonicalUrl),
+    mediaType: "text/markdown",
+    format: "markdown",
+    classification: classifyDocument(new URL(page.canonicalUrl).pathname, page.title),
+    content: normalizeImportedText(page.content).content
+  }));
+  return {
+    support: discovered.warnings.length > 0 ? "partial" as const : "supported" as const,
+    documents,
+    discoveredItems: discovered.discoveredItems,
+    fetchedItems: discovered.fetchedItems,
+    skippedItems: discovered.skippedItems,
+    warnings: discovered.warnings,
+    ...(discovered.warnings.length > 0 ? { error: discovered.warnings[0] } : {}),
+    discovery: discovered.manifest
+  };
 }
 
 async function ingestRepositorySource(context: SourceContext) {
@@ -1637,7 +1661,8 @@ function parseKnowledgeState(value: unknown, expectedGenerationId?: string): Kno
     lastRunId: typeof value.lastRunId === "string" ? value.lastRunId : null,
     lastRunIds: Array.isArray(value.lastRunIds) ? value.lastRunIds.filter((entry): entry is string => typeof entry === "string") : [],
     sourceReports: reports,
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((entry): entry is string => typeof entry === "string") : []
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((entry): entry is string => typeof entry === "string") : [],
+    ...(Array.isArray(value.discoveryManifests) ? { discoveryManifests: value.discoveryManifests.filter(isDiscoveryManifest) } : {})
   };
 }
 
@@ -1864,190 +1889,6 @@ function decodeHtmlEntities(value: string) {
   });
 }
 
-async function crawlWebsite(context: SourceContext, startUrl: string) {
-  const start = normalizeHttpUrl(startUrl);
-  const host = start.hostname.toLowerCase();
-  const robots = await readRobotsPolicy(context, start, host);
-  const sitemapUrls = await discoverSitemapUrls(context, start, host, robots.sitemaps);
-  const queue: WebsitePage[] = [{ url: start.toString(), depth: 0 }, ...sitemapUrls.map((url) => ({ url, depth: 0 }))];
-  const seen = new Set<string>();
-  const documents: KnowledgeDocument[] = [];
-  const warnings: string[] = [];
-  let processedItems = 0;
-  let fetchedItems = 0;
-  let skippedItems = 0;
-  let discoveredItems = queue.length;
-  let limited = false;
-
-  while (queue.length > 0 && processedItems < context.limits.maxPagesPerSource) {
-    throwIfAborted(context.signal);
-    const batch = queue.splice(0, Math.min(context.limits.maxConcurrentRequests, context.limits.maxPagesPerSource - processedItems));
-    processedItems += batch.length;
-    for (const page of batch) seen.add(page.url);
-    const results = await Promise.all(batch.map(async (page) => ({ page, result: await crawlWebsitePage(context, page, host, robots) })));
-    for (const { page, result } of results) {
-      fetchedItems += result.fetched ? 1 : 0;
-      skippedItems += result.skipped ? 1 : 0;
-      warnings.push(...result.warnings);
-      if (result.documents.length > 0) documents.push(...result.documents);
-      for (const link of result.links) {
-        const parsed = safeSameHostUrl(link, host);
-        if (!parsed || result.documents.length === 0) continue;
-        if (page.depth >= context.limits.maxDepth) continue;
-        const normalized = parsed.toString();
-        if (!seen.has(normalized) && !queue.some((entry) => entry.url === normalized)) {
-          queue.push({ url: normalized, depth: page.depth + 1 });
-          discoveredItems += 1;
-        }
-      }
-    }
-    if (queue.length > 0 && processedItems >= context.limits.maxPagesPerSource) limited = true;
-  }
-  if (queue.length > 0 || limited) warnings.push("Website crawl limits stopped further discovery.");
-  const uniqueDocuments = deduplicateDocuments(documents);
-  return {
-    support: warnings.length > 0 ? "partial" as const : "supported" as const,
-    documents: uniqueDocuments,
-    discoveredItems,
-    fetchedItems,
-    skippedItems,
-    warnings,
-    ...(warnings.length > 0 ? { error: warnings[0] } : {})
-  };
-}
-
-type RobotsPolicy = { disallow: string[]; sitemaps: string[] };
-
-async function readRobotsPolicy(context: SourceContext, start: URL, host: string): Promise<RobotsPolicy> {
-  const url = new URL("/robots.txt", start);
-  try {
-    const response = await fetchWebsiteResource(context, url.toString(), host);
-    if (response.status === 404) return { disallow: [], sitemaps: [] };
-    if (response.status < 200 || response.status >= 300) return { disallow: [], sitemaps: [] };
-    let active = false;
-    const disallow: string[] = [];
-    const sitemaps: string[] = [];
-    for (const line of response.body.split(/\r?\n/)) {
-      const [rawKey, ...rest] = line.split(":");
-      const key = rawKey.trim().toLowerCase();
-      const value = rest.join(":").trim();
-      if (key === "user-agent") active = value === "*";
-      else if (active && key === "disallow" && value) disallow.push(value);
-      else if (key === "sitemap" && value) {
-        const sitemap = safeSameHostUrl(value, host);
-        if (sitemap) sitemaps.push(sitemap.toString());
-      }
-    }
-    return { disallow, sitemaps };
-  } catch {
-    return { disallow: [], sitemaps: [] };
-  }
-}
-
-async function discoverSitemapUrls(context: SourceContext, start: URL, host: string, declaredSitemaps: string[]) {
-  const queue = Array.from(new Set([...declaredSitemaps, new URL("/sitemap.xml", start).toString()]));
-  const pages: string[] = [];
-  const visited = new Set<string>();
-  while (queue.length > 0 && visited.size < context.limits.maxSitemaps) {
-    const sitemapUrl = queue.shift();
-    if (!sitemapUrl || visited.has(sitemapUrl)) continue;
-    visited.add(sitemapUrl);
-    try {
-      const response = await fetchWebsiteResource(context, sitemapUrl, host);
-      if (response.status < 200 || response.status >= 300) continue;
-      const locations = parseSitemapLocations(response.body).filter((value) => Boolean(safeSameHostUrl(value, host)));
-      if (/<sitemapindex\b/i.test(response.body)) queue.push(...locations);
-      else pages.push(...locations);
-    } catch {
-      continue;
-    }
-  }
-  return Array.from(new Set(pages));
-}
-
-function parseSitemapLocations(xml: string) {
-  return Array.from(xml.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi)).map((match) => decodeHtmlEntities(match[1].trim())).filter(Boolean);
-}
-
-async function crawlWebsitePage(context: SourceContext, page: WebsitePage, host: string, robots: RobotsPolicy): Promise<WebsitePageResult> {
-  const parsed = safeSameHostUrl(page.url, host);
-  if (!parsed || robots.disallow.some((prefix) => parsed.pathname.startsWith(prefix))) {
-    return { documents: [], links: [], fetched: false, skipped: true, warnings: ["Website page was outside the allowed crawl scope or disallowed by robots.txt."] };
-  }
-  try {
-    const response = await fetchWebsiteResource(context, parsed.toString(), host);
-    if (response.status < 200 || response.status >= 300) {
-      return { documents: [], links: [], fetched: false, skipped: true, warnings: [`Website page returned HTTP ${response.status}.`] };
-    }
-    const contentType = response.headers["content-type"] ?? "";
-    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
-      return { documents: [], links: [], fetched: true, skipped: true, warnings: ["Skipped a non-HTML website response."] };
-    }
-    const parsedHtml = parseHtmlDocument(response.body, response.finalUrl ?? parsed.toString(), host);
-    const canonical = parsedHtml.canonicalUrl && safeSameHostUrl(parsedHtml.canonicalUrl, host)?.toString();
-    const canonicalUrl = canonicalWebsiteUrl(canonical ?? response.finalUrl ?? parsed.toString());
-    const normalized = normalizeImportedText(parsedHtml.markdown);
-    if (normalized.skipped || !normalized.content) {
-      return { documents: [], links: [], canonicalUrl, fetched: true, skipped: true, warnings: ["Skipped website content containing high-confidence secret material or no readable text."] };
-    }
-    const outputPath = websiteOutputPath(canonicalUrl);
-    const document = createDocument(context, {
-      title: parsedHtml.title ?? canonicalUrl,
-      origin: response.finalUrl ?? parsed.toString(),
-      canonicalLocator: `website:${canonicalUrl}`,
-      relativePath: outputPath,
-      mediaType: "text/markdown",
-      format: "markdown",
-      classification: classifyDocument(new URL(canonicalUrl).pathname, parsedHtml.title ?? canonicalUrl),
-      content: normalized.content
-    });
-    return {
-      documents: [document],
-      links: parsedHtml.links,
-      canonicalUrl,
-      fetched: true,
-      skipped: false,
-      warnings: normalized.redacted ? ["Redacted high-confidence secret material from a website page."] : []
-    };
-  } catch (error) {
-    if (isKnowledgeIngestionCancelledError(error)) throw error;
-    return { documents: [], links: [], fetched: false, skipped: true, warnings: [safeErrorMessage(error, "Website page could not be fetched.")] };
-  }
-}
-
-async function fetchWebsiteResource(context: SourceContext, requestedUrl: string, allowedHost: string) {
-  let currentUrl = normalizeHttpUrl(requestedUrl);
-  for (let redirect = 0; redirect <= context.limits.maxRedirects; redirect += 1) {
-    throwIfAborted(context.signal);
-    const parsed = safeSameHostUrl(currentUrl.toString(), allowedHost);
-    if (!parsed) throw new Error("Website request left the declared host scope.");
-    const addresses = await context.websiteFetcher.resolve(parsed.hostname);
-    assertPublicAddresses(addresses);
-    const remaining = Math.max(1, context.limits.maxTotalBytesPerSource - context.bytesFetched);
-    const response = await context.websiteFetcher.fetch(parsed.toString(), {
-      maxBytes: Math.min(context.limits.maxBytesPerDocument, remaining),
-      timeoutMs: context.limits.requestTimeoutMs,
-      signal: context.signal,
-      resolvedAddresses: addresses
-    });
-    const responseBytes = Buffer.byteLength(response.body, "utf8");
-    if (responseBytes > Math.min(context.limits.maxBytesPerDocument, remaining)) {
-      throw new Error("Website document byte limit reached.");
-    }
-    context.bytesFetched += responseBytes;
-    const location = response.headers.location;
-    if (response.status >= 300 && response.status < 400 && location) {
-      if (redirect >= context.limits.maxRedirects) throw new Error("Website redirect limit reached.");
-      const next = new URL(location, parsed);
-      if (!safeSameHostUrl(next.toString(), allowedHost)) throw new Error("Website redirect left the declared host scope.");
-      currentUrl = next;
-      continue;
-    }
-    return { ...response, finalUrl: parsed.toString() };
-  }
-  throw new Error("Website redirect limit reached.");
-}
-
 function createDefaultWebsiteFetcher(): KnowledgeWebsiteFetcher {
   return {
     resolve: resolvePublicHostAddresses,
@@ -2169,16 +2010,6 @@ export async function resolvePublicHostAddresses(hostname: string): Promise<stri
   return addresses;
 }
 
-function safeSameHostUrl(value: string, host: string) {
-  try {
-    const url = normalizeHttpUrl(value);
-    if (url.hostname.toLowerCase() !== host.toLowerCase()) return null;
-    return url;
-  } catch {
-    return null;
-  }
-}
-
 function websiteOutputPath(value: string) {
   const url = normalizeHttpUrl(value);
   const segments = url.pathname.split("/").filter(Boolean).map((segment) => segment.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80) || "page");
@@ -2187,12 +2018,6 @@ function websiteOutputPath(value: string) {
   if (/\.[a-z0-9]{1,8}$/i.test(last)) segments[segments.length - 1] = last.replace(/\.[a-z0-9]{1,8}$/i, ".md");
   else segments.push("index.md");
   return path.posix.join(...segments);
-}
-
-function canonicalWebsiteUrl(value: string) {
-  const url = normalizeHttpUrl(value);
-  if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "") || "/";
-  return url.toString();
 }
 
 function requireLocator<T extends WorkspaceKnowledgeSourceLocator["kind"]>(source: WorkspaceKnowledgeSource, kind: T): Extract<WorkspaceKnowledgeSourceLocator, { kind: T }> {
