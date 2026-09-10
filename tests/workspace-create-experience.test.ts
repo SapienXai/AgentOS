@@ -106,6 +106,22 @@ test("blueprint presenter keeps minimum topology compact and preserves fallback 
   assert.equal(model.fallback, true);
 });
 
+test("blueprint presenter preserves structured partial-context and fallback diagnostics", () => {
+  const model = presentWorkspaceBlueprint(minimalResult({ status: "fallback", mode: "deterministic-safe-fallback", failureKind: "timeout", failureCode: "architect-timeout", retryability: "transient" }), {
+    partialContext: true,
+    attempts: 2,
+    elapsedMs: 12_000,
+    retryAvailable: true,
+    failureCategory: "architect-timeout"
+  });
+  assert.equal(model.partialContext, true);
+  assert.equal(model.contextWarning, "Architecture generated from partial project context.");
+  assert.equal(model.attempts, 2);
+  assert.equal(model.elapsedMs, 12_000);
+  assert.equal(model.retryAvailable, true);
+  assert.equal(model.failureCategory, "architect-timeout");
+});
+
 test("channel setup copy distinguishes WhatsApp QR sessions from token channels", () => {
   assert.equal(formatWorkspaceChannelSetup({ authenticationKind: "qr-session", requiresCredentials: false, requiresAuthentication: true }), "Setup required · QR sign-in");
   assert.equal(formatWorkspaceChannelSetup({ authenticationKind: "token", requiresCredentials: true, requiresAuthentication: true }), "Setup required · Token");
@@ -121,10 +137,9 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
 
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
   assert.match(wrapperSource, /<CreateWorkspaceExperience/);
-  assert.match(source, /fetch\("\/api\/workspaces\/architect"/);
-  assert.match(source, /fetch\("\/api\/workspaces\/context"/);
-  assert.match(source, /const stagedDraftContextId = stagedContext\?\.draftContextId \?\? draftContextId/);
-  assert.match(source, /draftContextId: stagedDraftContextId/);
+  assert.match(source, /fetch\("\/api\/workspaces\/creation-runs"/);
+  assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\?afterSequence=/);
+  assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\/cancel`/);
   assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
   assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
   assert.match(source, /Project context/);
@@ -135,9 +150,9 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /Open Workspace/);
   assert.match(source, /Run in background/);
   assert.match(source, /canProvisionBlueprint/);
-  assert.match(source, /setProgressPhase\("reading-context"\)/);
-  assert.match(source, /setProgressPhase\("designing-workspace"\)/);
-  assert.match(source, /setProgressPhase\("preparing-review"\)/);
+  assert.match(source, /setProgressPhase\(shouldStageContext \? "reading-context" : "designing-workspace"\)/);
+  assert.match(source, /activeStage === "review-preparation"/);
+  assert.match(source, /Architecture generated from partial project context/);
   assert.match(source, /provisioningRun\?\.state === "ready" \|\| provisioningRun\?\.state === "partial"/);
   assert.doesNotMatch(source, /setInterval|2[,_]?400/);
   assert.doesNotMatch(source, /Marketing intent|Management intent|Autonomous operation/);
@@ -147,8 +162,9 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.doesNotMatch(source, /fetch\(`\/api\/planner/);
   assert.match(contextRoute, /validateWorkspaceCreationUploadMetadata/);
   assert.match(contextRoute, /content-length/);
-  assert.ok(contextRoute.indexOf("content-length") < contextRoute.indexOf("request.formData()"));
-  assert.ok(contextRoute.indexOf("validateWorkspaceCreationUploadMetadata") < contextRoute.indexOf("arrayBuffer()"));
+  assert.match(contextRoute, /readWorkspaceCreationFileWithinLimits/);
+  assert.ok(contextRoute.indexOf("contentLengthHeader") < contextRoute.indexOf("const body = await readWorkspaceCreationRequestBodyWithinLimit"));
+  assert.ok(contextRoute.indexOf("validateWorkspaceCreationUploadMetadata(files") < contextRoute.indexOf("readWorkspaceCreationFileWithinLimits(\n"));
 });
 
 test("Architect API routes use workspace authorization and never provision the final workspace", async () => {

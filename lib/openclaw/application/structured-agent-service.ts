@@ -55,30 +55,40 @@ export async function runStructuredWorkspaceArchitectAgent(
   const agentId = runtime.architectAgentId;
   const sessionKey = options.sessionKey?.trim() || `agent:${agentId}:architect:${request.runId}`;
   const timeoutMs = Math.max(1_000, Math.min(request.timeoutMs, 125_000));
-
-  const payload = await adapter.runAgentTurn(
-    {
-      agentId,
-      sessionKey,
-      message: `${request.systemPrompt}\n\n${request.userPrompt}`,
-      thinking: request.mode === "review" ? "high" : "medium",
-      timeoutSeconds: Math.ceil(timeoutMs / 1_000),
-      idempotencyKey: `${request.runId}:${request.attempt}`
-    },
-    {
-      timeoutMs,
-      signal: request.signal
-    }
-  );
+  const abortHandler = () => {
+    void adapter.abortAgentTurn?.({ agentId, sessionKey }, { timeoutMs: 15_000 }).catch(() => undefined);
+  };
+  request.signal.addEventListener("abort", abortHandler, { once: true });
+  let payload: Awaited<ReturnType<OpenClawAdapter["runAgentTurn"]>>;
+  try {
+    payload = await adapter.runAgentTurn(
+      {
+        agentId,
+        sessionKey,
+        message: `${request.systemPrompt}\n\n${request.userPrompt}`,
+        thinking: request.mode === "review" ? "high" : "medium",
+        timeoutSeconds: Math.ceil(timeoutMs / 1_000),
+        idempotencyKey: `${request.runId}:${request.attempt}`
+      },
+      {
+        timeoutMs,
+        signal: request.signal
+      }
+    );
+  } finally {
+    request.signal.removeEventListener("abort", abortHandler);
+  }
 
   const text = extractMissionCommandPayloads(payload)
     .map((entry) => entry.text.trim())
     .filter(Boolean)
     .join("\n\n") || payload.summary?.trim() || "";
+  const effectiveSessionKey = payload.sessionKey?.trim() || sessionKey;
 
   return {
     text,
     runId: payload.runId ?? null,
+    sessionKey: effectiveSessionKey,
     runtime: "native-openclaw"
   };
 }

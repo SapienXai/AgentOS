@@ -884,12 +884,15 @@ test("unavailable Architect runtime returns an honest safe fallback", async () =
     }
   });
 
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(result.reasoning.status, "fallback");
   assert.equal(result.reasoning.mode, "deterministic-safe-fallback");
+  assert.equal(result.reasoning.failureKind, "runtime-bootstrap");
+  assert.equal(result.reasoning.failureCode, "runtime-configuration-invalid");
+  assert.equal(result.reasoning.retryability, "terminal");
   assert.equal(result.blueprint.status, "draft");
   assert.equal(result.blueprint.workforce.specialists.length, 0);
-  assert.match(result.blueprint.warnings.join(" "), /reasoning unavailable/i);
+  assert.match(result.blueprint.warnings.join(" "), /runtime bootstrap failed/i);
 });
 
 test("revision re-runs Architect reasoning for unlocked sections", async () => {

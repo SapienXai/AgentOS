@@ -30,6 +30,8 @@ export type WorkspaceArchitectFailureKind =
   | "cancelled"
   | "unknown";
 
+export type WorkspaceArchitectRetryability = "terminal" | "transient" | "repairable" | "cancelled";
+
 export type WorkspaceArchitectProposalBoundary =
   | "persistent-responsibility"
   | "security"
@@ -380,6 +382,10 @@ export type WorkspaceArchitectResult = {
       modelId: string | null;
       warning: string | null;
       failureKind: WorkspaceArchitectFailureKind;
+      failureCode?: string;
+      retryability?: WorkspaceArchitectRetryability;
+      remoteRunId?: string | null;
+      remoteSessionKey?: string | null;
   };
 };
 
@@ -445,6 +451,7 @@ export type WorkspaceArchitectModelExecutionResult = {
   runId?: string | null;
   modelId?: string | null;
   runtime?: "native-openclaw" | "model-runtime" | "unknown";
+  sessionKey?: string | null;
 };
 
 export type WorkspaceArchitectModelExecutor = (

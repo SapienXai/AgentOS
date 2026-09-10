@@ -18,7 +18,7 @@ import {
   WandSparkles,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import {
   MissionControlDialogShell,
@@ -39,6 +39,7 @@ import type {
   WorkspaceArchitectResult,
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
 import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
 import {
   formatWorkspaceChannelSetup,
@@ -59,21 +60,6 @@ type ContextSourceState = {
   storedDocuments?: number;
 };
 type UploadGroup = { sourceId: string; files: File[] };
-type ContextStageResult = {
-  draftContextId: string;
-  generationId: string | null;
-  runStatus: "ready" | "partial" | "error" | "cancelled" | "reused";
-  reused: boolean;
-  sourceReports: Array<{
-    sourceId: string;
-    status: ContextSourceStatus;
-    storedDocuments: number;
-    warnings: string[];
-    error: string | null;
-  }>;
-  warnings: string[];
-};
-
 type ProvisioningRun = {
   runId: string;
   state: "pending" | "validating" | "materializing" | "bootstrapping" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
@@ -130,6 +116,7 @@ export function CreateWorkspaceExperience({
   const [progressPhase, setProgressPhase] = useState<GenerationPhase>("designing-workspace");
   const [contextWasRequested, setContextWasRequested] = useState(false);
   const [result, setResult] = useState<WorkspaceArchitectResult | null>(null);
+  const [creationRun, setCreationRun] = useState<WorkspaceCreationRun | null>(null);
   const [freshness, setFreshness] = useState<WorkspaceBlueprintFreshnessResult | null>(null);
   const [contextAction, setContextAction] = useState<ContextAction>(null);
   const [sourceDraft, setSourceDraft] = useState<SourceDraft>({ kind: "website", value: "" });
@@ -151,8 +138,14 @@ export function CreateWorkspaceExperience({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const review = useMemo(
-    () => (result ? presentWorkspaceBlueprint(result) : null),
-    [result]
+    () => (result ? presentWorkspaceBlueprint(result, {
+      partialContext: creationRun?.snapshot.context.status === "partial",
+      attempts: creationRun?.snapshot.architect.attempts,
+      elapsedMs: creationRun?.snapshot.architect.elapsedMs,
+      retryAvailable: creationRun?.snapshot.architect.retryAvailable,
+      failureCategory: creationRun?.snapshot.architect.failure?.code ?? null
+    }) : null),
+    [creationRun, result]
   );
 
   useEffect(() => {
@@ -171,6 +164,7 @@ export function CreateWorkspaceExperience({
       setProgressPhase("designing-workspace");
       setContextWasRequested(false);
       setResult(null);
+      setCreationRun(null);
       setFreshness(null);
       setContextAction(null);
       setSourceDraft({ kind: "website", value: "" });
@@ -199,42 +193,6 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const stageContext = async (controller: AbortController): Promise<ContextStageResult | null> => {
-    if (!contextDirty && draftContextId) return null;
-    if (!sources.length && !draftContextId) return null;
-
-    setProgressPhase("reading-context");
-    setSourceStates((current) => Object.fromEntries(sources.map((source) => [source.id, { ...current[source.id], status: "reading" as const }])));
-    const formData = new FormData();
-    if (draftContextId) formData.set("draftContextId", draftContextId);
-    formData.set("sources", JSON.stringify(sources));
-    const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
-    for (const group of uploadGroups) {
-      for (const file of group.files) {
-        const relativePath = file.webkitRelativePath || file.name;
-        manifest.push({ sourceId: group.sourceId, relativePath, fileName: file.name });
-        formData.append("files", file, file.name);
-      }
-    }
-    formData.set("uploadManifest", JSON.stringify(manifest));
-    const response = await fetch("/api/workspaces/context", {
-      method: "POST",
-      body: formData,
-      signal: controller.signal
-    });
-    const payload = (await response.json().catch(() => null)) as ContextStageResult & { error?: string } | null;
-    if (!response.ok || !payload?.draftContextId) throw new Error(payload?.error || "AgentOS could not read the project context.");
-    setDraftContextId(payload.draftContextId);
-    setSourceStates(Object.fromEntries(payload.sourceReports.map((report) => [report.sourceId, {
-      status: report.status,
-      warning: report.error || report.warnings[0],
-      storedDocuments: report.storedDocuments
-    }])));
-    if (payload.runStatus === "cancelled") throw new DOMException("Context staging was cancelled.", "AbortError");
-    setContextDirty(false);
-    return payload;
-  };
-
   const generate = async () => {
     const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating") return;
@@ -250,32 +208,28 @@ export function CreateWorkspaceExperience({
     setRevisionError(null);
 
     try {
-      const stagedContext = await stageContext(controller);
-      setProgressPhase("designing-workspace");
-      const stagedDraftContextId = stagedContext?.draftContextId ?? draftContextId;
-      const response = await fetch("/api/workspaces/architect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          brief: nextBrief,
-          mode: mode === "automatic" ? "automatic" : "review",
-          operatorConstraints: constraints
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean),
-          materialization,
-          ...(stagedDraftContextId ? { draftContextId: stagedDraftContextId } : {})
-        })
-      });
-      const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
-      if (!response.ok || !payload?.blueprint) {
-        throw new Error(payload?.error || "AgentOS could not design the workspace.");
+      const formData = new FormData();
+      formData.set("idempotencyKey", crypto.randomUUID());
+      formData.set("brief", nextBrief);
+      formData.set("mode", mode === "automatic" ? "automatic" : "review");
+      formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
+      formData.set("materialization", JSON.stringify(materialization));
+      formData.set("sources", JSON.stringify(sources));
+      if (draftContextId) formData.set("draftContextId", draftContextId);
+      const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
+      for (const group of uploadGroups) {
+        for (const file of group.files) {
+          manifest.push({ sourceId: group.sourceId, relativePath: file.webkitRelativePath || file.name, fileName: file.name });
+          formData.append("files", file, file.name);
+        }
       }
-
-      setProgressPhase("preparing-review");
-      setResult(payload);
-      setFreshness(payload.freshness);
+      formData.set("uploadManifest", JSON.stringify(manifest));
+      const response = await fetch("/api/workspaces/creation-runs", { method: "POST", body: formData, signal: controller.signal });
+      const initial = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      if (!response.ok || !initial?.runId) throw new Error(initial?.error || "AgentOS could not start workspace creation.");
+      setCreationRun(initial);
+      setDraftContextId(initial.draftContextId);
+      await pollCreationRun(initial.runId, controller, initial, sources);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
@@ -283,8 +237,6 @@ export function CreateWorkspaceExperience({
       setStage("review");
       setRevisionValue("");
       setIsCustomizing(false);
-      setCustomName(payload.blueprint.identity.name);
-      setCustomPrimaryName(payload.blueprint.workforce.primaryAgent.name);
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setStage("intake");
@@ -307,7 +259,71 @@ export function CreateWorkspaceExperience({
     }
   };
 
+  const pollCreationRun = useCallback(async (runId: string, controller: AbortController, initial: WorkspaceCreationRun, sourceList: WorkspaceKnowledgeSource[]) => {
+    let afterSequence = initial.events.at(-1)?.sequence ?? 0;
+    for (;;) {
+      if (controller.signal.aborted) throw new DOMException("Workspace creation was cancelled.", "AbortError");
+      const response = await fetch(`/api/workspaces/creation-runs/${runId}?afterSequence=${afterSequence}`, { signal: controller.signal });
+      const payload = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      if (!response.ok || !payload?.runId) throw new Error(payload?.error || "AgentOS could not read workspace creation progress.");
+      setCreationRun(payload);
+      afterSequence = payload.events.at(-1)?.sequence ?? afterSequence;
+      const activeStage = payload.snapshot.stage;
+      setProgressPhase(activeStage === "context-staging" || activeStage === "source-ingestion" ? "reading-context" : activeStage === "review-preparation" ? "preparing-review" : "designing-workspace");
+      if (payload.snapshot.context.status === "partial") {
+        setSourceStates((existing) => Object.fromEntries(sourceList.map((source) => [source.id, { ...existing[source.id], status: "partial", warning: "Architecture generated from partial project context." }])));
+      }
+      if (payload.snapshot.state === "review-ready") {
+        const generated = payload.result as WorkspaceArchitectResult | null;
+        if (!generated?.blueprint) throw new Error("Workspace creation completed without a reviewable blueprint.");
+        setProgressPhase("preparing-review");
+        setResult(generated);
+        setFreshness(generated.freshness);
+        setContextDirty(false);
+        setStage("review");
+        setRevisionValue("");
+        setIsCustomizing(false);
+        setCustomName(generated.blueprint.identity.name);
+        setCustomPrimaryName(generated.blueprint.workforce.primaryAgent.name);
+        return;
+      }
+      if (payload.snapshot.state === "cancelled") throw new DOMException("Workspace creation was cancelled.", "AbortError");
+      if (payload.snapshot.state === "failed") throw new Error(payload.snapshot.architect.failure?.message || "Workspace creation failed.");
+      await wait(450, controller.signal);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/workspaces/creation-runs?active=true", { signal: controller.signal });
+        const payload = (await response.json().catch(() => null)) as { runs?: WorkspaceCreationRun[] } | null;
+        const activeRun = payload?.runs?.[0];
+        if (!response.ok || !activeRun || controller.signal.aborted) return;
+        const recoveredSources = activeRun.input.sources as WorkspaceKnowledgeSource[];
+        setBrief(activeRun.input.brief);
+        setMode(activeRun.input.mode === "automatic" ? "automatic" : "customize");
+        setSources(recoveredSources);
+        setDraftContextId(activeRun.draftContextId);
+        setCreationRun(activeRun);
+        setStage("generating");
+        setContextWasRequested(recoveredSources.length > 0);
+        abortControllerRef.current = controller;
+        await pollCreationRun(activeRun.runId, controller, activeRun, recoveredSources);
+      } catch {
+        // Reload recovery is best-effort; the durable run remains available to a later poll.
+      }
+    })();
+    return () => controller.abort();
+  }, [open, pollCreationRun]);
+
   const cancelGeneration = () => {
+    const runId = creationRun?.runId;
+    if (runId) {
+      void fetch(`/api/workspaces/creation-runs/${runId}/cancel`, { method: "POST", keepalive: true }).catch(() => undefined);
+    }
     abortControllerRef.current?.abort();
   };
 
@@ -1011,10 +1027,18 @@ function ReviewView({
       {model.fallback ? (
         <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <div>
-            <p className="text-sm font-semibold">AgentOS couldn’t fully analyze the project.</p>
-            <p className="mt-1 text-xs opacity-80">{fallbackDiagnostic || "This is a safe minimal draft. You can review it or retry without losing context."}</p>
+            <p className="text-sm font-semibold">AI architecture unavailable</p>
+            <p className="mt-1 text-xs opacity-80">Minimal fallback draft created. {fallbackDiagnostic || "You can review it or retry without losing context."}</p>
+            <p className="mt-2 text-[11px] opacity-75">Category: {model.failureCategory || "architect-unavailable"} · Attempts: {model.attempts} · Elapsed: {formatElapsed(model.elapsedMs)}</p>
           </div>
-          <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+          {model.retryAvailable ? <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button> : null}
+        </div>
+      ) : null}
+
+      {model.partialContext ? (
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
+          <p className="text-sm font-semibold">Architecture generated from partial project context</p>
+          <p className="mt-1 text-xs opacity-80">Some available project evidence could not be fully staged within the analysis budget.</p>
         </div>
       ) : null}
 
@@ -1191,4 +1215,9 @@ function wait(ms: number, signal: AbortSignal) {
       reject(new DOMException("Provisioning polling was cancelled.", "AbortError"));
     }, { once: true });
   });
+}
+
+function formatElapsed(value: number) {
+  if (!value || value < 1_000) return "under 1s";
+  return `${Math.round(value / 1_000)}s`;
 }

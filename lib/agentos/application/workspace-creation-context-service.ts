@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -19,6 +19,7 @@ import {
   workspaceKnowledgeSourceIdentity,
   type WorkspaceKnowledgeSource
 } from "@/lib/agentos/domains/workspace-knowledge";
+import { writeAtomicJson } from "@/lib/agentos/application/workspace-provisioning-store";
 import type {
   WorkspaceArchitectCorpusDocument,
   WorkspaceArchitectKnowledgeInput
@@ -78,6 +79,47 @@ export function validateWorkspaceCreationUploadMetadata(
     if (sourceTotal > WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerSource) throw new Error("Project context is too large for analysis.");
   }
   if (totalBytes > WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesTotal) throw new Error("Project context is too large for analysis.");
+}
+
+export async function readWorkspaceCreationFileWithinLimits(file: File, limit: number, signal?: AbortSignal) {
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("Project context is too large for analysis.");
+  const reader = file.stream().getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      if (signal?.aborted) throw new DOMException("Upload reading was cancelled.", "AbortError");
+      const next = await reader.read();
+      if (next.done) break;
+      const chunk = next.value;
+      if (total + chunk.byteLength > limit) throw new Error("Uploaded project context exceeds the size limit.");
+      total += chunk.byteLength;
+      chunks.push(Buffer.from(chunk));
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+export async function readWorkspaceCreationRequestBodyWithinLimit(request: Request, limit: number) {
+  const reader = request.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      if (request.signal.aborted) throw new DOMException("Upload reading was cancelled.", "AbortError");
+      const next = await reader.read();
+      if (next.done) break;
+      if (total + next.value.byteLength > limit) throw new Error("Project context is too large for analysis.");
+      total += next.value.byteLength;
+      chunks.push(Buffer.from(next.value));
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 const MAX_UPLOAD_FILES = WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles;
@@ -148,9 +190,60 @@ type StoredContext = {
   uploads: Record<string, StoredUpload[]>;
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
+  intakeStatus?: "staged" | "analyzed";
 };
 
 const contextLocks = new Map<string, Promise<void>>();
+
+/** Persist intake bytes and metadata before a background creation run is acknowledged. */
+export async function persistWorkspaceCreationIntake(input: {
+  actorId: string;
+  draftContextId?: string | null;
+  sources: unknown[];
+  uploads?: WorkspaceCreationUpload[];
+}) {
+  const actorId = input.actorId.trim();
+  if (!actorId) throw new Error("Workspace context ownership is unavailable.");
+  const draftContextId = input.draftContextId ? assertDraftContextId(input.draftContextId) : randomUUID();
+  const lockKey = `${actorHash(actorId)}:${draftContextId}`;
+  return withContextLock(lockKey, async () => {
+    await cleanupExpiredWorkspaceCreationContexts();
+    const sources = normalizeWorkspaceKnowledgeSources(input.sources);
+    if (sources.length > MAX_CONTEXT_SOURCES) throw new Error("Too many project context sources were supplied.");
+    const sourceById = new Map(sources.map((source) => [source.id, source]));
+    const draftRoot = resolveDraftRoot(actorId, draftContextId);
+    const previous = await readStoredContext(draftRoot);
+    const uploads = input.uploads ?? [];
+    assertActualUploadLimits(uploads);
+    const storedUploads = await prepareUploads(draftRoot, sourceById, groupUploads(uploads, sourceById), previous?.uploads ?? {});
+    await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
+    const fingerprint = createContextFingerprint(sources, storedUploads);
+    const sameIntake = previous?.fingerprint === fingerprint;
+    await writeStoredContext(draftRoot, createStoredContext({
+      actorId,
+      draftContextId,
+      fingerprint,
+      generationId: sameIntake ? previous?.generationId ?? null : null,
+      sources: sources.map(publicSource),
+      uploads: storedUploads,
+      sourceReports: sameIntake && previous?.sourceReports.length ? previous.sourceReports : sources.map((source) => ({
+        sourceId: source.id,
+        sourceKind: source.kind,
+        status: "attached",
+        support: "partial",
+        discoveredItems: 0,
+        fetchedItems: 0,
+        storedDocuments: 0,
+        warningCount: 0,
+        warnings: [],
+        error: null
+      })),
+      warnings: sameIntake ? previous?.warnings ?? [] : [],
+      intakeStatus: "staged"
+    }));
+    return { draftContextId, sources: sources.map(publicSource), fingerprint };
+  });
+}
 
 export async function stageWorkspaceCreationKnowledge(
   input: {
@@ -184,10 +277,7 @@ async function stageWorkspaceCreationKnowledgeLocked(
   if (previous && previous.actorHash !== actorHash(input.actorId)) throw new Error("Workspace context is unavailable.");
 
   const uploads = input.uploads ?? [];
-  if (uploads.length > MAX_UPLOAD_FILES) throw new Error("Too many uploaded project files were supplied.");
-  if (uploads.reduce((total, upload) => total + upload.bytes.byteLength, 0) > MAX_UPLOAD_BYTES_TOTAL) {
-    throw new Error("The uploaded project context exceeds the size limit.");
-  }
+  assertActualUploadLimits(uploads);
   const uploadGroups = groupUploads(uploads, sourceById);
   const storedUploads = await prepareUploads(draftRoot, sourceById, uploadGroups, previous?.uploads ?? {});
   await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
@@ -203,7 +293,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
       await writeStoredContext(draftRoot, {
         ...previous,
         updatedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString()
+        expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString(),
+        intakeStatus: "analyzed"
       });
       return {
         draftContextId: input.draftContextId,
@@ -227,7 +318,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
       sources: publicSources,
       uploads: storedUploads,
       sourceReports: [],
-      warnings: []
+      warnings: [],
+      intakeStatus: "analyzed"
     });
     await writeStoredContext(draftRoot, emptyContext);
     return {
@@ -253,9 +345,21 @@ async function stageWorkspaceCreationKnowledgeLocked(
   const sourceReports = ingestion.sourceReports.map((report) => projectSourceReport(report));
   const warnings = ingestion.state.warnings.map((warning) => sanitizeDiagnostic(warning));
   if (ingestion.run.status === "cancelled") {
+    const sameIntake = previous?.fingerprint === fingerprint;
+    await writeStoredContext(draftRoot, createStoredContext({
+      actorId: input.actorId,
+      draftContextId: input.draftContextId,
+      fingerprint,
+      generationId: ingestion.state.generationId ?? (sameIntake ? previous?.generationId ?? null : null),
+      sources: publicSources,
+      uploads: storedUploads,
+      sourceReports,
+      warnings,
+      intakeStatus: "analyzed"
+    }));
     return {
       draftContextId: input.draftContextId,
-      generationId: previous?.generationId ?? ingestion.state.generationId ?? null,
+      generationId: ingestion.state.generationId ?? (sameIntake ? previous?.generationId ?? null : null),
       runStatus: "cancelled",
       reused: false,
       sources: publicSources,
@@ -271,7 +375,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
     sources: publicSources,
     uploads: storedUploads,
     sourceReports,
-    warnings
+    warnings,
+    intakeStatus: "analyzed"
   });
   await writeStoredContext(draftRoot, storedContext);
   return {
@@ -296,6 +401,7 @@ export async function readWorkspaceCreationContext(input: {
   if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) {
     throw new Error("Workspace context is unavailable or expired.");
   }
+  if (stored.intakeStatus === "staged" && !stored.generationId) throw new Error("Workspace context is still being analyzed.");
 
   const snapshot = stored.generationId
     ? await readKnowledgeSnapshot(path.join(draftRoot, "corpus"), path.join(draftRoot, "state"))
@@ -303,7 +409,9 @@ export async function readWorkspaceCreationContext(input: {
   const documents = snapshot ? await readBoundedArchitectDocuments(path.join(draftRoot, "corpus"), snapshot.documents) : [];
   const failedSourceIds = new Set(stored.sourceReports.filter((report) => report.status === "error" || report.status === "unsupported").map((report) => report.sourceId));
   const sources = stored.sources.map((source) => failedSourceIds.has(source.id) ? { ...source, status: "error" as const, error: stored.sourceReports.find((report) => report.sourceId === source.id)?.error ?? "Source content could not be read." } : source);
-  const runStatus = stored.sourceReports.some((report) => report.status === "error" || report.status === "unsupported")
+  const runStatus = stored.intakeStatus === "staged"
+    ? "partial"
+    : stored.sourceReports.some((report) => report.status === "error" || report.status === "unsupported")
     ? stored.sourceReports.some((report) => report.status === "ready" || report.status === "partial") ? "partial" : "error"
     : "ready";
   return {
@@ -457,7 +565,7 @@ async function prepareUploads(
       const target = path.join(uploadRoot, ...relativePath.split("/"));
       await assertNoSymlinkAlongPath(uploadRoot, target);
       await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-      await writeFile(target, upload.bytes, { mode: 0o600 });
+      await writeDurableFile(target, upload.bytes);
       records.push({
         relativePath,
         fileName: sanitizeFileName(upload.fileName || path.basename(relativePath)),
@@ -492,6 +600,7 @@ function createStoredContext(input: {
   uploads: Record<string, StoredUpload[]>;
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
+  intakeStatus?: "staged" | "analyzed";
 }): StoredContext {
   const now = new Date().toISOString();
   return {
@@ -506,7 +615,8 @@ function createStoredContext(input: {
     sources: input.sources,
     uploads: input.uploads,
     sourceReports: input.sourceReports,
-    warnings: input.warnings.slice(0, 24)
+    warnings: input.warnings.slice(0, 24),
+    intakeStatus: input.intakeStatus ?? "analyzed"
   };
 }
 
@@ -608,7 +718,34 @@ async function writeStoredContext(draftRoot: string, context: StoredContext) {
   await mkdir(draftRoot, { recursive: true, mode: 0o700 });
   const target = path.join(draftRoot, "context.json");
   await assertNoSymlinkAlongPath(draftRoot, target);
-  await writeFile(target, `${JSON.stringify(context, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await writeAtomicJson(target, context);
+}
+
+function assertActualUploadLimits(uploads: readonly WorkspaceCreationUpload[]) {
+  if (uploads.length > MAX_UPLOAD_FILES) throw new Error("Too many uploaded project files were supplied.");
+  let total = 0;
+  const sourceTotals = new Map<string, number>();
+  for (const upload of uploads) {
+    const size = upload.bytes.byteLength;
+    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_UPLOAD_BYTES_PER_FILE) {
+      throw new Error(`Uploaded file ${path.basename(upload.relativePath || upload.fileName)} exceeds the size limit.`);
+    }
+    total += size;
+    const sourceTotal = (sourceTotals.get(upload.sourceId) ?? 0) + size;
+    sourceTotals.set(upload.sourceId, sourceTotal);
+    if (sourceTotal > MAX_UPLOAD_BYTES) throw new Error("The uploaded project context exceeds the size limit.");
+    if (total > MAX_UPLOAD_BYTES_TOTAL) throw new Error("The uploaded project context exceeds the size limit.");
+  }
+}
+
+async function writeDurableFile(target: string, content: string | Buffer) {
+  const handle = await open(target, "w", 0o600);
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 async function cleanupExpiredWorkspaceCreationContexts() {

@@ -18,10 +18,24 @@ export type WorkspaceBlueprintReviewModel = {
   warnings: string[];
   recommendations: string[];
   fallback: boolean;
+  partialContext: boolean;
+  contextWarning: string | null;
+  failureCategory: string | null;
+  attempts: number;
+  elapsedMs: number;
+  retryAvailable: boolean;
   freshness: WorkspaceArchitectResult["freshness"];
 };
 
-export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult): WorkspaceBlueprintReviewModel {
+export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, options: {
+  partialContext?: boolean;
+  attempts?: number;
+  elapsedMs?: number;
+  retryAvailable?: boolean;
+  failureCategory?: string | null;
+} = {}): WorkspaceBlueprintReviewModel {
+  const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
+  const partialContext = options.partialContext === true;
   return {
     identity: result.blueprint.identity,
     primaryAgent: result.blueprint.workforce.primaryAgent,
@@ -35,7 +49,13 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult): Wor
     workflows: result.blueprint.operations.workflows,
     warnings: result.warnings,
     recommendations: result.recommendations,
-    fallback: result.reasoning.status === "fallback" || result.blueprint.status === "draft",
+    fallback,
+    partialContext,
+    contextWarning: partialContext ? "Architecture generated from partial project context." : null,
+    failureCategory: options.failureCategory ?? result.reasoning.failureCode ?? (fallback ? result.reasoning.failureKind : null),
+    attempts: options.attempts ?? result.reasoning.attempts,
+    elapsedMs: options.elapsedMs ?? 0,
+    retryAvailable: options.retryAvailable ?? (result.reasoning.retryability === "transient" || result.reasoning.retryability === "repairable"),
     freshness: result.freshness
   };
 }

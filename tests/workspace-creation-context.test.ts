@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
   readWorkspaceCreationContext,
+  readWorkspaceCreationFileWithinLimits,
   stageWorkspaceCreationKnowledge,
   validateWorkspaceCreationUploadMetadata,
   WORKSPACE_CREATION_UPLOAD_LIMITS,
@@ -145,6 +146,21 @@ test("oversized upload metadata is rejected before any file buffer is read", () 
     /File is too large for project analysis/
   );
   assert.equal(arrayBufferCalls, 0);
+});
+
+test("actual uploaded bytes are bounded while the file stream is consumed", async () => {
+  const file = {
+    stream: () => new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile + 1));
+        controller.close();
+      }
+    })
+  } as File;
+  await assert.rejects(
+    readWorkspaceCreationFileWithinLimits(file, WORKSPACE_CREATION_UPLOAD_LIMITS.maxBytesPerFile),
+    /exceeds the size limit/
+  );
 });
 
 test("upload metadata rejects a manifest/file name mismatch before buffering", () => {

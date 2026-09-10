@@ -1,10 +1,11 @@
 # Workspace Intelligence Architecture
 
-This document defines the Phase 1 Project Intelligence foundation. It is a
-normalized, versioned AgentOS domain contract for future discovery and
-workspace-architecture work. It does not implement discovery, verification,
-transport, Workspace Architect runtime, Workspace Composer, or OpenClaw
-runtime behavior.
+This document defines the Phase 1 Project Intelligence foundation and the
+Phase 2 creation-runtime boundary. It is a normalized, versioned AgentOS
+domain contract for discovery and workspace-architecture work. Phase 2 adds
+reliable observation around the existing context and Architect path without
+implementing discovery, verification, Workspace Architect 2.0, Workspace
+Composer, or a parallel OpenClaw runtime.
 
 ## Ownership and boundaries
 
@@ -21,9 +22,9 @@ normalized Project Intelligence candidate
         ↓
 strict Project Intelligence validation
         ↓
-ProjectIntelligencePack
+ProjectIntelligencePack (future approved input)
         ↓
-Workspace Architect (future projection)
+Workspace Architect
         ↓
 WorkspaceBlueprint (existing architecture contract)
         ↓
@@ -161,6 +162,58 @@ Create Workspace → context staging → ingestion → bounded corpus → Worksp
 Project Intelligence is an additive normalized sidecar. It does not replace
 WorkspaceBlueprint, alter provisioning, or claim ownership of OpenClaw
 workspace materialization.
+
+## Phase 2 creation execution
+
+`WorkspaceCreationRun` is an AgentOS orchestration sidecar for the
+pre-provisioning path only. Its lifecycle is:
+
+`pending | running | review-ready | failed | cancelled`
+
+Its execution stages cover intake, context staging, source ingestion,
+Architect runtime preparation/reasoning/validation, and review preparation.
+There is deliberately no provisioning stage. A creation run may record a
+`provisioningHandoffReady` flag and `provisioningRunId`, but
+`WorkspaceProvisioningRun` remains the only authoritative provisioning
+lifecycle.
+
+Creation runs are durable JSON records with an actor-scoped idempotency key,
+protected `draftContextId`, bounded attempt diagnostics, a current snapshot,
+and versioned structured events. Events are retained to a maximum of 256 per
+run; the snapshot remains authoritative when older events are truncated.
+Events contain stable codes and structured fields rather than UI sentences.
+
+The transport is durable polling. Initial multipart intake returns `202` only
+after upload bytes and intake metadata have been persisted through the
+existing protected workspace-creation context storage. The background
+executor reopens those files by actor and draft context; it never depends on
+request/FormData memory. Existing context and provisioning routes remain
+compatible.
+
+One configurable overall analysis deadline governs context staging and
+Architect execution. Context staging is bounded by both the existing
+ingestion limit and the budget required to preserve an Architect reserve.
+Architect attempts consume the remaining shared deadline, so independent
+timeout stacks cannot extend the run beyond its overall budget.
+
+Failure diagnostics separate category, stable failure code, and retryability.
+Authorization, invalid configuration/request, unsupported capability, and
+ambiguous remote execution are terminal. Temporary transport/provider
+failures are transient; structured-output failures are repairable; explicit
+cancellation is cancelled. Diagnostics are redacted and bounded.
+
+When usable evidence survives incomplete context staging, the run records
+`context.status = partial` and `architect.partialContext = true`. Architect
+may continue, but the review presenter must expose that the architecture was
+generated from partial project context. Partial coverage is never silently
+treated as full readiness.
+
+Creation recovery is activated by `ensureCreationRunExecution(runId)` during
+initial creation, actor-authorized active polling, and reload recovery. It
+uses an atomic lease and the stable `${creationRunId}:${attempt}` Architect
+idempotency identity. The OpenClaw adapter contract is the authority for
+whether interrupted remote execution can be replayed safely; ambiguous
+outcomes fail closed rather than creating a duplicate turn.
 
 ## Future intelligence roles
 

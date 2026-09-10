@@ -38,6 +38,7 @@ import type {
   WorkspaceArchitectProposalBoundary,
   WorkspaceArchitectProposalIntent,
   WorkspaceArchitectReasoningMode,
+  WorkspaceArchitectRetryability,
   WorkspaceArchitectResult,
   WorkspaceArchitectRunOptions,
   WorkspaceBlueprint,
@@ -425,7 +426,11 @@ export async function generateWorkspaceBlueprint(
       attempts: reasoning.attempts,
       modelId: reasoning.modelId,
       warning: reasoning.warning,
-      failureKind: reasoning.failureKind
+      failureKind: reasoning.failureKind,
+      failureCode: reasoning.failureCode,
+      retryability: reasoning.retryability,
+      remoteRunId: reasoning.remoteRunId,
+      remoteSessionKey: reasoning.remoteSessionKey
     }
   };
 }
@@ -900,6 +905,10 @@ type ArchitectReasoningState = {
   reasoningMode: WorkspaceArchitectReasoningMode;
   warning: string | null;
   failureKind: WorkspaceArchitectFailureKind;
+  failureCode: string;
+  retryability: WorkspaceArchitectRetryability;
+  remoteRunId: string | null;
+  remoteSessionKey: string | null;
 };
 
 type ArchitectNormalizationResult = {
@@ -945,6 +954,10 @@ async function runArchitectReasoning(input: {
   let lastModelId: string | null = input.options.modelId?.trim() || null;
   let lastRuntime: WorkspaceBlueprint["provenance"]["runtime"] = "unknown";
   let lastFailureKind: WorkspaceArchitectFailureKind = "unknown";
+  let lastFailureCode = "architect-unavailable";
+  let lastRetryability: WorkspaceArchitectRetryability = "terminal";
+  let lastRemoteRunId: string | null = null;
+  let lastRemoteSessionKey: string | null = null;
   let attempts = 0;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -971,6 +984,8 @@ async function runArchitectReasoning(input: {
         input.options.signal
       );
       lastModelId = response.modelId?.trim() || lastModelId;
+      lastRemoteRunId = response.runId?.trim() || lastRemoteRunId;
+      lastRemoteSessionKey = response.sessionKey?.trim() || lastRemoteSessionKey;
       lastRuntime = response.runtime === "native-openclaw" ? "native-openclaw" : response.runtime === "unknown" ? "unknown" : "bounded-local";
       const proposal = parseArchitectProposal(response.text);
       return {
@@ -981,12 +996,20 @@ async function runArchitectReasoning(input: {
         runtime: lastRuntime,
         reasoningMode: response.runtime === "native-openclaw" ? "openclaw-agent" : "model-runtime",
         warning: null,
-        failureKind: "none"
+        failureKind: "none",
+        failureCode: "none",
+        retryability: "terminal",
+        remoteRunId: lastRemoteRunId,
+        remoteSessionKey: lastRemoteSessionKey
       };
     } catch (error) {
       lastError = redactSecretText(error instanceof Error ? error.message : String(error)).slice(0, 300) || lastError;
-      lastFailureKind = classifyArchitectFailure(error);
+      const classification = classifyArchitectFailure(error);
+      lastFailureKind = classification.kind;
+      lastFailureCode = classification.code;
+      lastRetryability = classification.retryability;
       if (input.options.signal?.aborted) break;
+      if (classification.retryability !== "transient" && classification.retryability !== "repairable") break;
     }
   }
 
@@ -999,21 +1022,48 @@ async function runArchitectReasoning(input: {
     reasoningMode: "deterministic-safe-fallback",
     warning: `${["runtime-bootstrap", "gateway", "authorization"].includes(lastFailureKind)
       ? "Architect runtime bootstrap failed"
-      : "Architect reasoning unavailable"}; returned a safe minimal draft. ${lastError}`,
-    failureKind: lastFailureKind
+      : "Architect reasoning unavailable"}; returned a safe minimal draft.`,
+    failureKind: lastFailureKind,
+    failureCode: lastFailureCode,
+    retryability: lastRetryability,
+    remoteRunId: lastRemoteRunId,
+    remoteSessionKey: lastRemoteSessionKey
   };
 }
 
-function classifyArchitectFailure(error: unknown): WorkspaceArchitectFailureKind {
+function classifyArchitectFailure(error: unknown): {
+  kind: WorkspaceArchitectFailureKind;
+  code: string;
+  retryability: WorkspaceArchitectRetryability;
+} {
   const message = error instanceof Error ? error.message : String(error);
   const kind = error && typeof error === "object" && "kind" in error ? error.kind : null;
-  if (kind === "runtime-bootstrap" || kind === "gateway" || kind === "authorization") return kind;
-  if (/cancelled|canceled|aborted/i.test(message)) return "cancelled";
-  if (/timed out|timeout/i.test(message)) return "timeout";
-  if (/unauthori[sz]|forbidden|permission|access denied/i.test(message)) return "authorization";
-  if (/gateway|websocket|connection|openclaw.*unavailable/i.test(message)) return "gateway";
-  if (/proposal validation failed|invalid json|structured proposal/i.test(message)) return "structured-output";
-  return "model";
+  if (kind === "authorization" || /unauthori[sz]|forbidden|permission|access denied/i.test(message)) {
+    return { kind: "authorization", code: "authorization-denied", retryability: "terminal" };
+  }
+  if (kind === "runtime-bootstrap" || /unsupported\s+(?:model|capability)|runtime configuration|invalid runtime|model runtime (?:unavailable|missing|not configured)/i.test(message)) {
+    return { kind: "runtime-bootstrap", code: "runtime-configuration-invalid", retryability: "terminal" };
+  }
+  if (/cancelled|canceled|aborted/i.test(message)) {
+    return { kind: "cancelled", code: "cancelled", retryability: "cancelled" };
+  }
+  if (/timed out|timeout/i.test(message)) {
+    return { kind: "timeout", code: "architect-timeout", retryability: "transient" };
+  }
+  if (/proposal validation failed|invalid json|structured proposal/i.test(message)) {
+    return { kind: "structured-output", code: "structured-output-invalid", retryability: "repairable" };
+  }
+  if (kind === "gateway" || /gateway|websocket|connection|network|temporar|service unavailable|rate limit/i.test(message)) {
+    const transient = /temporar|timeout|network|connection|websocket|rate limit|unavailable/i.test(message);
+    return { kind: "gateway", code: transient ? "gateway-temporarily-unavailable" : "gateway-configuration-invalid", retryability: transient ? "transient" : "terminal" };
+  }
+  if (/unsupported\s+(?:model|capability)|model not found|invalid model/i.test(message)) {
+    return { kind: "model", code: "model-capability-unsupported", retryability: "terminal" };
+  }
+  if (/invalid request|invalid configuration/i.test(message)) {
+    return { kind: "model", code: "invalid-architect-request", retryability: "terminal" };
+  }
+  return { kind: "model", code: "model-execution-failed", retryability: "transient" };
 }
 
 async function executeArchitectModelWithDeadline<T>(
