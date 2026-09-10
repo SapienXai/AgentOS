@@ -40,6 +40,8 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
+import { SettingsPage } from "@/components/settings/settings-page";
+import type { SettingsArea } from "@/components/settings/settings-types";
 import {
   buildOpenClawCapabilityRows,
   formatGatewayFallbackDiagnosticKind,
@@ -123,6 +125,10 @@ type ToolSettingId = "browser" | "web-fetch" | "web-search";
 type ToolSettingsSaveState = "idle" | "saving" | "saved" | "error";
 type SettingsSectionId =
   | "general"
+  | "ai-tools"
+  | "runtime"
+  | "advanced"
+  | "developer"
   | "overview"
   | "openclaw"
   | "gateway"
@@ -131,7 +137,6 @@ type SettingsSectionId =
   | "workspace"
   | "agents"
   | "diagnostics"
-  | "advanced"
   | "danger-zone";
 
 type SettingsSection = {
@@ -143,33 +148,41 @@ type SettingsSection = {
 };
 
 const settingsSections: SettingsSection[] = [
-  { id: "overview", label: "Overview", icon: Settings2, group: "Core" },
   { id: "general", label: "General", icon: Wrench, group: "Core" },
-  { id: "openclaw", label: "OpenClaw", icon: Activity, group: "OpenClaw" },
-  { id: "gateway", label: "Gateway", icon: ShieldCheck, group: "OpenClaw" },
-  { id: "capabilities", label: "Capabilities", icon: ListChecks, group: "OpenClaw" },
-  { id: "models", label: "Models", icon: Box, group: "OpenClaw" },
+  { id: "ai-tools", label: "AI & Tools", icon: Bot, group: "Core" },
   { id: "workspace", label: "Workspace", icon: Folder, group: "Workspace" },
-  { id: "agents", label: "Agents", icon: Bot, group: "Workspace" },
-  { id: "diagnostics", label: "Diagnostics", icon: TerminalSquare, group: "System" },
-  { id: "advanced", label: "Advanced", icon: Settings2, group: "System" },
+  { id: "runtime", label: "Runtime", icon: Activity, group: "OpenClaw" },
+  { id: "advanced", label: "Advanced", icon: Settings2, group: "System" }
+];
+
+const legacySettingsSections: SettingsSection[] = [
+  { id: "openclaw", label: "OpenClaw runtime", icon: Activity, group: "OpenClaw" },
+  { id: "gateway", label: "Gateway & auth", icon: ShieldCheck, group: "OpenClaw" },
+  { id: "capabilities", label: "Capabilities & contracts", icon: ListChecks, group: "OpenClaw" },
+  { id: "models", label: "Legacy model controls", icon: Box, group: "OpenClaw" },
+  { id: "workspace", label: "Workspace details", icon: Folder, group: "Workspace" },
+  { id: "agents", label: "Agent details", icon: Bot, group: "Workspace" },
+  { id: "diagnostics", label: "Diagnostics & recovery", icon: TerminalSquare, group: "System" },
+  { id: "developer", label: "Developer tooling", icon: Settings2, group: "System" },
   { id: "danger-zone", label: "Danger Zone", icon: AlertTriangle, group: "System", destructive: true }
 ];
 
 const settingsSectionGroups = ["Core", "OpenClaw", "Workspace", "System"] as const;
 
-const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
-  general: ["gateway", "capabilities", "agents"],
-  overview: ["general", "openclaw", "gateway"],
-  openclaw: ["gateway", "diagnostics", "advanced"],
-  gateway: ["openclaw", "general", "diagnostics"],
-  capabilities: ["gateway", "general", "advanced"],
-  models: ["gateway", "workspace", "agents"],
-  workspace: ["models", "agents", "diagnostics"],
-  agents: ["workspace", "models", "diagnostics"],
-  diagnostics: ["gateway", "capabilities", "advanced"],
-  advanced: ["diagnostics", "openclaw", "danger-zone"],
-  "danger-zone": ["advanced", "diagnostics", "openclaw"]
+const relatedSettingsSections: Partial<Record<SettingsSectionId, SettingsSectionId[]>> = {
+  general: ["ai-tools", "runtime"],
+  "ai-tools": ["general", "runtime"],
+  workspace: ["general", "runtime"],
+  runtime: ["workspace", "advanced"],
+  advanced: ["runtime", "diagnostics", "danger-zone"],
+  developer: ["gateway", "diagnostics", "danger-zone"],
+  openclaw: ["gateway", "developer"],
+  gateway: ["openclaw", "diagnostics"],
+  capabilities: ["gateway", "developer"],
+  models: ["general", "workspace"],
+  agents: ["workspace", "models"],
+  diagnostics: ["gateway", "developer"],
+  "danger-zone": ["developer", "diagnostics"]
 };
 
 export function SettingsControlCenter(
@@ -813,7 +826,7 @@ export function SettingsControlCenter(
 
   useEffect(() => {
     if (
-      renderedActiveSection === "general" &&
+      renderedActiveSection === "ai-tools" &&
       browserToolEnabled === null &&
       !isLoadingToolSettings &&
       !toolSettingsError
@@ -1134,9 +1147,9 @@ export function SettingsControlCenter(
   const configUpdatePacingRetryMs = configUpdatePacing.cooldownUntil
     ? Math.max(0, Date.parse(configUpdatePacing.cooldownUntil) - Date.now() + configUpdatePacingTick * 0)
     : null;
-  const activeSectionConfig = settingsSections.find((section) => section.id === renderedActiveSection) ?? settingsSections[0];
+  const activeSectionConfig = [...settingsSections, ...legacySettingsSections].find((section) => section.id === renderedActiveSection) ?? settingsSections[0];
   const activeSectionLabel = activeSectionConfig.label;
-  const relatedSectionIds = relatedSettingsSections[renderedActiveSection];
+  const relatedSectionIds = relatedSettingsSections[renderedActiveSection] ?? [];
   const scrollSettingsToTop = () => {
     if (typeof window === "undefined") {
       return;
@@ -1177,6 +1190,68 @@ export function SettingsControlCenter(
     }
   ];
 
+  const isSimplifiedSettingsSection =
+    renderedActiveSection === "general" ||
+    renderedActiveSection === "ai-tools" ||
+    renderedActiveSection === "workspace" ||
+    renderedActiveSection === "runtime" ||
+    renderedActiveSection === "advanced";
+
+  if (isSimplifiedSettingsSection) {
+    return (
+      <SettingsPage
+        activeSection={renderedActiveSection as SettingsArea}
+        sidebarOpen={sidebarOpen}
+        onSelectSection={(section) => selectSettingsSection(section)}
+        onOpenAdvancedSection={(section) => {
+          const legacySection = section as SettingsSectionId;
+          setActiveSection(legacySection);
+          if (typeof window !== "undefined") {
+            window.history.replaceState(null, "", `/settings#${legacySection}`);
+          }
+          scrollSettingsToTop();
+        }}
+        snapshot={snapshot}
+        surfaceTheme={surfaceTheme}
+        workspaceRootDraft={workspaceRootDraft}
+        isSavingWorkspaceRoot={isSavingWorkspaceRoot}
+        onWorkspaceRootDraftChange={onWorkspaceRootDraftChange}
+        onSaveWorkspaceRootSettings={onSaveWorkspaceRootSettings}
+        selectedModelId={selectedOrDefaultModelId}
+        onSelectedModelIdChange={onSelectedModelIdChange}
+        modelOnboardingRunState={modelOnboardingRunState}
+        onRunModelSetDefault={onRunModelSetDefault}
+        onOpenAddModels={onOpenAddModels}
+        onOpenSetupWizard={onOpenSetupWizard}
+        browserToolEnabled={browserToolEnabled}
+        webFetchToolEnabled={webFetchToolEnabled}
+        webSearchToolEnabled={webSearchToolEnabled}
+        isLoadingToolSettings={isLoadingToolSettings}
+        savingToolSettingId={savingToolSettingId}
+        toolSettingsSaveState={toolSettingsSaveState}
+        toolSettingsError={toolSettingsError}
+        onSaveToolSetting={(settingId, enabled) => void saveToolSetting(settingId, enabled)}
+        onOpenControlUi={openControlUi}
+        isOpeningControlUi={isOpeningControlUi}
+        controlUiOpenError={controlUiOpenError}
+        isGatewayServiceOnline={isGatewayServiceOnline}
+        gatewayActionGuidance={gatewayActionGuidance}
+        gatewayActionBusy={gatewayActionBusy}
+        gatewayControlAction={gatewayControlAction}
+        onRunRecommendedGatewayAction={runRecommendedGatewayAction}
+        onRunGatewayControlAction={(action) => void runGatewayControlAction(action)}
+        openClawAppConnectOpen={isOpenClawAppConnectOpen}
+        onOpenClawAppConnectOpenChange={setIsOpenClawAppConnectOpen}
+        onPairingPrepared={() => void refreshGatewayBind()}
+        onOpenUpdateDialog={onOpenUpdateDialog}
+        onOpenResetDialog={onOpenResetDialog}
+        isSettingsOperationInProgress={isSettingsOperationInProgress}
+        settingsOperationTitle={settingsOperationTitle}
+        settingsOperationDescription={settingsOperationDescription}
+      />
+    );
+  }
+
   return (
     <>
       <PikoLoader
@@ -1196,64 +1271,16 @@ export function SettingsControlCenter(
             sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]"
           )}
         >
-          <div className="mx-auto max-w-[1680px] space-y-4 sm:space-y-5">
-            <section className="flex flex-col gap-5">
-              <div className="order-2 grid grid-cols-2 gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
-                  <SummaryTile
-                    label="OpenClaw"
-                    value={snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"}
-                    detail={recommendedVersion ? `AgentOS certified version ${formatVersionValue(recommendedVersion)}` : "AgentOS certification unavailable"}
-                    surfaceTheme={surfaceTheme}
-                    accent
-                    compact
-                  />
-                  <SummaryTile
-                    label="Gateway"
-                    value={snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}
-                    detail={`Bind: ${displayedGatewayBind}`}
-                    surfaceTheme={surfaceTheme}
-                    compact
-                  />
-                  <SummaryTile
-                    label="Model"
-                    value={selectedOrDefaultModelId || "Not selected"}
-                    detail={modelProvider}
-                    surfaceTheme={surfaceTheme}
-                    compact
-                  />
-                  <SummaryTile
-                    label="Workspace"
-                    value={compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")}
-                    detail={`${snapshot.workspaces.length} workspace${snapshot.workspaces.length === 1 ? "" : "s"}`}
-                    surfaceTheme={surfaceTheme}
-                    compact
-                  />
-                  <SummaryTile
-                    label="Status"
-                    value={connectionState === "live" ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting"}
-                    detail="AgentOS stream"
-                    surfaceTheme={surfaceTheme}
-                    compact
-                  />
-                  <SummaryTile
-                    label="Runtime"
-                    value={snapshot.runtimes.some((runtime) => runtime.status === "running") ? "Running" : "Idle"}
-                    detail={`${activeRuntimeIssues.length} issue${activeRuntimeIssues.length === 1 ? "" : "s"}`}
-                    surfaceTheme={surfaceTheme}
-                    compact
-                  />
-              </div>
-
-              <div className="order-1 flex flex-col gap-1.5">
-                <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
-                  Settings
-                </h1>
-                <p className={cn("max-w-2xl text-sm leading-6", mutedTextClassName(surfaceTheme))}>
-                  System configuration, runtime health, and operator controls.
-                </p>
-              </div>
-
-            </section>
+          <div className="mx-auto max-w-[1320px] space-y-4 sm:space-y-5">
+            <header className="flex flex-col gap-2">
+              <Link href="/settings#advanced" scroll={false} onClick={(event) => { event.preventDefault(); selectSettingsSection("advanced"); }} className={cn("w-fit text-xs font-medium", surfaceTheme === "light" ? "text-primary" : "text-primary")}>← Back to simplified settings</Link>
+              <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
+                Advanced settings
+              </h1>
+              <p className={cn("max-w-2xl text-sm leading-6", mutedTextClassName(surfaceTheme))}>
+                Low-level OpenClaw controls, diagnostics, and compatibility tooling.
+              </p>
+            </header>
 
             <div className="grid items-start gap-5 lg:grid-cols-[224px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
               <SettingsSectionNavigation
@@ -1876,7 +1903,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {renderedActiveSection === "general" ? (
+              {String(renderedActiveSection) === "general" ? (
               <section id="general" className="scroll-mt-24">
                 <Card title="General" icon={Wrench} surfaceTheme={surfaceTheme}>
                   <div className={cn(
@@ -2019,7 +2046,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {renderedActiveSection === "workspace" ? (
+              {String(renderedActiveSection) === "workspace" ? (
               <section id="workspace" className="scroll-mt-24">
                 <Card title="Workspace" icon={Folder} surfaceTheme={surfaceTheme}>
                   <div>
@@ -2230,8 +2257,8 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {renderedActiveSection === "advanced" ? (
-              <section id="advanced" className="scroll-mt-24">
+              {renderedActiveSection === "developer" ? (
+              <section id="developer" className="scroll-mt-24">
                 <Card title="Advanced" icon={Settings2} surfaceTheme={surfaceTheme}>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <Metric
@@ -2632,7 +2659,12 @@ function SettingsSectionNavigation({
   onSelect: (sectionId: SettingsSectionId) => void;
   surfaceTheme: SurfaceTheme;
 }) {
-  const activeSectionConfig = settingsSections.find((section) => section.id === activeSection) ?? settingsSections[0];
+  const isLegacySection = !settingsSections.some((section) => section.id === activeSection);
+  const navigationSections = isLegacySection ? legacySettingsSections : settingsSections;
+  const navigationGroups = isLegacySection
+    ? settingsSectionGroups.filter((group) => group !== "Core")
+    : settingsSectionGroups;
+  const activeSectionConfig = navigationSections.find((section) => section.id === activeSection) ?? navigationSections[0];
   const ActiveIcon = activeSectionConfig.icon;
 
   const renderSectionLink = (section: SettingsSection, mobile = false) => {
@@ -2708,11 +2740,11 @@ function SettingsSectionNavigation({
           <ChevronDown className="h-4 w-4 shrink-0 opacity-60 transition-transform group-open:rotate-180" />
         </summary>
         <nav aria-label="Settings sections" className={cn("border-t px-2.5 pb-3 pt-2", surfaceTheme === "light" ? "border-border" : "border-white/[0.09] bg-[#0a1320]")}>
-          {settingsSectionGroups.map((group) => (
+          {navigationGroups.map((group) => (
             <div key={group} className="pt-2 first:pt-0">
               <p className={cn("px-3 pb-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>{group}</p>
               <div className="grid gap-0.5 sm:grid-cols-2">
-                {settingsSections.filter((section) => section.group === group).map((section) => renderSectionLink(section, true))}
+                {navigationSections.filter((section) => section.group === group).map((section) => renderSectionLink(section, true))}
               </div>
             </div>
           ))}
@@ -2732,11 +2764,11 @@ function SettingsSectionNavigation({
           <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>Choose a section to configure.</p>
         </div>
         <nav aria-label="Settings sections" className="space-y-3">
-          {settingsSectionGroups.map((group) => (
+          {navigationGroups.map((group) => (
             <div key={group}>
               <p className={cn("px-3 pb-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>{group}</p>
               <div className="space-y-0.5">
-                {settingsSections.filter((section) => section.group === group).map((section) => renderSectionLink(section))}
+                {navigationSections.filter((section) => section.group === group).map((section) => renderSectionLink(section))}
               </div>
             </div>
           ))}
@@ -2837,53 +2869,6 @@ function Card({
         {action}
       </div>
       <div className="mt-4">{children}</div>
-    </div>
-  );
-}
-
-function SummaryTile({
-  label,
-  value,
-  detail,
-  surfaceTheme,
-  accent = false,
-  compact = false
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  surfaceTheme: SurfaceTheme;
-  accent?: boolean;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        compact ? "rounded-[14px] border p-2.5" : "rounded-[18px] border p-3.5",
-        surfaceTheme === "light"
-          ? accent
-            ? "border-primary/20 bg-primary/8"
-            : "border-border bg-card/86"
-          : accent
-            ? "border-primary/30 bg-primary/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-            : "border-white/[0.10] bg-[#111c2c] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-      )}
-    >
-      <p className={cn(compact ? "text-[9px] uppercase tracking-[0.16em]" : "text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>
-        {label}
-      </p>
-      <p
-        className={cn(
-          compact ? "mt-1 truncate text-xs font-medium leading-4" : "mt-2 truncate text-sm font-medium",
-          surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-100"
-        )}
-        title={value}
-      >
-        {value}
-      </p>
-      {detail ? (
-        <p className={cn(compact ? "mt-0.5 hidden text-[10px] leading-4 sm:block" : "mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{detail}</p>
-      ) : null}
     </div>
   );
 }
@@ -6172,13 +6157,15 @@ function resolveHashSettingsSection(): SettingsSectionId {
   }
 
   switch (window.location.hash.replace(/^#/, "")) {
-    case "overview":
-      return "overview";
+    case "runtime":
+      return "runtime";
     case "gateway":
       return "gateway";
     case "general":
-    case "tools":
       return "general";
+    case "tools":
+    case "ai-tools":
+      return "ai-tools";
     case "capabilities":
       return "capabilities";
     case "models":
@@ -6191,12 +6178,14 @@ function resolveHashSettingsSection(): SettingsSectionId {
       return "diagnostics";
     case "advanced":
       return "advanced";
+    case "developer":
+      return "developer";
     case "danger-zone":
       return "danger-zone";
     case "openclaw":
       return "openclaw";
     default:
-      return "overview";
+      return "general";
   }
 }
 
