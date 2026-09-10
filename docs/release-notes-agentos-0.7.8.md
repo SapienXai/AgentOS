@@ -35,7 +35,7 @@ AgentOS 0.7.8 improves the packaged desktop operator experience and keeps the Mi
 ## Known Limitations
 
 - Runtime and OAuth smoke paths remain dependent on a configured local OpenClaw Gateway and provider credentials.
-- Desktop release signing and notarization require the organization-controlled CI secrets described in `apps/desktop/RELEASE.md`.
+- This release intentionally ships macOS without Apple Developer ID signing/notarization. Users may need to approve the app in macOS Privacy & Security after downloading it. Windows Authenticode signing is also not configured; Tauri updater metadata remains signed with the updater key.
 
 ## Upgrade Notes
 

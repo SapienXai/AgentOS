@@ -57,24 +57,19 @@ jobs:
       - name: Prepare and audit packaged AgentOS
         run: pnpm desktop:prepare && pnpm desktop:audit
 
-      - name: Build and upload signed desktop release
+      - name: Build and upload desktop release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: apps/desktop/src-tauri
           tauriScript: pnpm exec tauri
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           releaseName: AgentOS Desktop __VERSION__
-          releaseBody: See the platform installers and signed updater metadata attached to this draft release.
+          releaseBody: |-
+            macOS Developer ID signing/notarization and Windows Authenticode signing are not configured for this release. Tauri updater metadata is signed with the configured updater key.
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
