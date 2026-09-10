@@ -9,7 +9,7 @@ const createPath = "components/mission-control/workspace-create/create-workspace
 test("Phase 6 provisioning uses the canonical OpenClaw workspace boundary", async () => {
   const source = await readFile(servicePath, "utf8");
 
-  assert.match(source, /createWorkspaceProject\(prepared\.createInput/);
+  assert.match(source, /dependencies\.createWorkspaceProject\(prepared\.createInput/);
   assert.match(source, /promoteWorkspaceCreationKnowledge/);
   assert.match(source, /ensureWorkspaceNativeKnowledge/);
   assert.match(source, /updateAgent\(/);
@@ -17,16 +17,17 @@ test("Phase 6 provisioning uses the canonical OpenClaw workspace boundary", asyn
   assert.doesNotMatch(source, /from ["']@\/lib\/agentos\/control-plane/);
 });
 
-test("provisioning records durable states, checkpoints, and actor-scoped idempotency", async () => {
+test("provisioning records durable states, completed steps, and actor-scoped idempotency", async () => {
   const source = await readFile(servicePath, "utf8");
 
   for (const state of ["pending", "validating", "materializing", "bootstrapping", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying", "ready", "partial", "failed"]) {
     assert.match(source, new RegExp(`['\"]${state}['\"]`));
   }
   assert.match(source, /idempotencyKeyHash/);
-  assert.match(source, /mkdir\(lockPath/);
-  assert.match(source, /open\(filePath, "wx"/);
-  assert.match(source, /checkpoints:/);
+  assert.match(source, /acquireProvisioningLease/);
+  assert.match(source, /WORKSPACE_PROVISIONING_SCHEMA_VERSION/);
+  assert.match(source, /completedSteps/);
+  assert.match(source, /resumeWorkspaceProvisioningRun/);
   assert.match(source, /isTerminal\(run\.state\)/);
   assert.match(source, /signal\?: AbortSignal/);
   assert.match(source, /state: cancelled \? "cancelled" : "failed"/);
@@ -48,9 +49,10 @@ test("provisioning keeps knowledge freshness and materialization validation serv
 test("provisioning writes an AgentOS-owned manifest and records setup without activating it", async () => {
   const source = await readFile(servicePath, "utf8");
 
-  assert.match(source, /WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH = "\.openclaw\/agentos-provisioning\.json"/);
+  assert.match(source, /WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH/);
   assert.match(source, /pendingSetup/);
   assert.match(source, /writeProvisioningManifest/);
+  assert.match(source, /writeAtomicJson/);
   assert.match(source, /automations: blueprint\.operations\.automations/);
   assert.match(source, /channels: blueprint\.operations\.channels/);
   assert.doesNotMatch(source, /createManagedChatChannelAccount|createManagedSurfaceAccount|createCron/);

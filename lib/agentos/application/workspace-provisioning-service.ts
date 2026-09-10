@@ -1,7 +1,7 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import {
   getWorkspaceBlueprintFreshness,
   validateWorkspaceBlueprint
 } from "@/lib/agentos/application/workspace-architect";
+import { readKnowledgeSnapshot } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import {
   promoteWorkspaceCreationKnowledge,
   readWorkspaceCreationContext,
@@ -19,6 +20,30 @@ import {
   type WorkspaceNativeKnowledgeBindingResult,
   type WorkspaceNativeKnowledgeStatus
 } from "@/lib/agentos/application/workspace-native-knowledge-service";
+import {
+  acquireProvisioningLease,
+  ProvisioningLeaseBusyError,
+  ProvisioningLeaseLostError,
+  type ProvisioningLeaseHandle
+} from "@/lib/agentos/application/workspace-provisioning-lease";
+import {
+  buildProvisioningStorageKey,
+  createRunAtomically,
+  findRunById,
+  readStoredRun,
+  readStoredRunFile,
+  resolveProvisioningRoot,
+  runPath,
+  updateStoredRun,
+  writeAtomicJson,
+  WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH,
+  WORKSPACE_PROVISIONING_ROOT,
+  WORKSPACE_PROVISIONING_SCHEMA_VERSION,
+  workspaceProvisioningStates,
+  type ProvisioningCheckpoint,
+  type ProvisioningCompletedStepId,
+  type StoredWorkspaceProvisioningRun
+} from "@/lib/agentos/application/workspace-provisioning-store";
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
 import { normalizeWorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import { filterKnownOpenClawSkillIds, filterKnownOpenClawToolIds } from "@/lib/openclaw/agent-presets";
@@ -30,91 +55,27 @@ import { createWorkspaceAgentId } from "@/lib/openclaw/domains/agent-provisionin
 import { readWorkspaceProjectManifest } from "@/lib/openclaw/domains/workspace-manifest";
 import { buildWorkspaceScaffoldDocumentPaths } from "@/lib/openclaw/workspace-docs";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
+import { classifyGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import type {
+  OperationProgressSnapshot,
   WorkspaceCreateResult,
   WorkspaceTemplate
 } from "@/lib/openclaw/types";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
-export const WORKSPACE_PROVISIONING_SCHEMA_VERSION = 1 as const;
-export const WORKSPACE_PROVISIONING_ROOT = path.join(missionControlRootPath, "workspace-provisioning-runs");
-export const WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH = ".openclaw/agentos-provisioning.json";
-
-const RUN_ID_PATTERN = /^[a-f0-9-]{36}$/i;
-const LOCK_STALE_AFTER_MS = 30 * 60 * 1_000;
 const POLL_INTERVAL_MS = 100;
 const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "Documents", "Shared", "projects");
+const PROVISIONING_STEP_ORDER: WorkspaceProvisioningState[] = ["validating", "materializing", "bootstrapping", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying"];
 
-export const workspaceProvisioningStates = [
-  "pending",
-  "validating",
-  "materializing",
-  "bootstrapping",
-  "promoting-knowledge",
-  "provisioning-agents",
-  "binding-knowledge",
-  "applying-capabilities",
-  "recording-declarations",
-  "verifying",
-  "ready",
-  "partial",
-  "failed",
-  "cancelled"
-] as const;
+export { WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH, WORKSPACE_PROVISIONING_ROOT, WORKSPACE_PROVISIONING_SCHEMA_VERSION, workspaceProvisioningStates };
+export type { ProvisioningCheckpoint, ProvisioningCompletedStepId, StoredWorkspaceProvisioningRun };
 
 export type WorkspaceProvisioningState = (typeof workspaceProvisioningStates)[number];
-
-type ProvisioningCheckpoint = {
-  state: WorkspaceProvisioningState;
-  completedAt: string;
-};
 
 type ProvisioningError = {
   code: string;
   message: string;
-};
-
-type StoredWorkspaceProvisioningRun = {
-  schemaVersion: typeof WORKSPACE_PROVISIONING_SCHEMA_VERSION;
-  runId: string;
-  actorHash: string;
-  idempotencyKeyHash: string;
-  blueprintId: string;
-  blueprintFingerprint: string;
-  draftContextId: string | null;
-  expectedKnowledgeGenerationId: string | null;
-  state: WorkspaceProvisioningState;
-  createdAt: string;
-  updatedAt: string;
-  attempt: number;
-  workspaceId: string | null;
-  workspacePath: string | null;
-  result: WorkspaceCreateResult | null;
-  checkpoints: Partial<Record<WorkspaceProvisioningState, ProvisioningCheckpoint>>;
-  warnings: string[];
-  error: ProvisioningError | null;
-  progress: {
-    label: string;
-    detail: string;
-  } | null;
-  knowledge: {
-    stagedGenerationId: string | null;
-    promotedGenerationId: string | null;
-    sourceIds: string[];
-    documentCount: number;
-  } | null;
-  nativeKnowledge: {
-    status: WorkspaceNativeKnowledgeStatus["status"];
-    indexActionRequired: WorkspaceNativeKnowledgeStatus["indexActionRequired"];
-    restartRequired: boolean | null;
-  } | null;
-  pendingSetup: {
-    channels: string[];
-    connections: string[];
-    automations: string[];
-  };
-  verifiedAt: string | null;
 };
 
 export type WorkspaceProvisioningRun = {
@@ -124,6 +85,7 @@ export type WorkspaceProvisioningRun = {
   createdAt: string;
   updatedAt: string;
   attempt: number;
+  blueprintFingerprint: string;
   workspaceId: string | null;
   result: WorkspaceCreateResult | null;
   warnings: string[];
@@ -138,6 +100,7 @@ export type WorkspaceProvisioningRun = {
     status: "pending" | "active" | "complete" | "failed";
   }>;
   signals: string[];
+  completedSteps: Partial<Record<ProvisioningCompletedStepId, ProvisioningCheckpoint>>;
   knowledge: StoredWorkspaceProvisioningRun["knowledge"];
   nativeKnowledge: StoredWorkspaceProvisioningRun["nativeKnowledge"];
   pendingSetup: StoredWorkspaceProvisioningRun["pendingSetup"];
@@ -176,15 +139,57 @@ type PreparedProvisioning = {
   createInput: Parameters<typeof createWorkspaceProject>[0];
 };
 
+export type WorkspaceProvisioningDependencies = {
+  rootPath?: string;
+  now?: () => Date;
+  createWorkspaceProject?: typeof createWorkspaceProject;
+  getMissionControlSnapshot?: typeof getMissionControlSnapshot;
+  readWorkspaceCreationContext?: typeof readWorkspaceCreationContext;
+  readKnowledgeSnapshot?: typeof readKnowledgeSnapshot;
+  promoteWorkspaceCreationKnowledge?: typeof promoteWorkspaceCreationKnowledge;
+  ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
+  updateAgent?: typeof updateAgent;
+};
+
+type ResolvedWorkspaceProvisioningDependencies = {
+  rootPath: string;
+  now: () => Date;
+  createWorkspaceProject: typeof createWorkspaceProject;
+  getMissionControlSnapshot: typeof getMissionControlSnapshot;
+  readWorkspaceCreationContext: typeof readWorkspaceCreationContext;
+  readKnowledgeSnapshot: typeof readKnowledgeSnapshot;
+  promoteWorkspaceCreationKnowledge: typeof promoteWorkspaceCreationKnowledge;
+  ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
+  updateAgent: typeof updateAgent;
+};
+
 const inFlight = new Map<string, Promise<WorkspaceProvisioningRun>>();
 
-export async function startWorkspaceProvisioning(
-  input: ProvisionWorkspaceFromBlueprintInput
-): Promise<WorkspaceProvisioningRun> {
-  const prepared = await prepareProvisioning(input);
-  const key = runKey(prepared.actorId, input.idempotencyKey);
-  let run = await readStoredRun(key);
+function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): ResolvedWorkspaceProvisioningDependencies {
+  return {
+    rootPath: resolveProvisioningRoot(input.rootPath),
+    now: input.now ?? (() => new Date()),
+    createWorkspaceProject: input.createWorkspaceProject ?? createWorkspaceProject,
+    getMissionControlSnapshot: input.getMissionControlSnapshot ?? getMissionControlSnapshot,
+    readWorkspaceCreationContext: input.readWorkspaceCreationContext ?? readWorkspaceCreationContext,
+    readKnowledgeSnapshot: input.readKnowledgeSnapshot ?? readKnowledgeSnapshot,
+    promoteWorkspaceCreationKnowledge: input.promoteWorkspaceCreationKnowledge ?? promoteWorkspaceCreationKnowledge,
+    ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
+    updateAgent: input.updateAgent ?? updateAgent
+  };
+}
 
+export async function startWorkspaceProvisioning(
+  input: ProvisionWorkspaceFromBlueprintInput,
+  dependencies: WorkspaceProvisioningDependencies = {}
+): Promise<WorkspaceProvisioningRun> {
+  const resolved = resolveDependencies(dependencies);
+  const prepared = await prepareProvisioning(input, resolved);
+  const storageKey = buildProvisioningStorageKey(prepared.actorId, input.idempotencyKey);
+  const filePath = runPath(resolved.rootPath, storageKey);
+  let run = await readStoredRun(resolved.rootPath, storageKey);
+
+  if (run) assertStoredRunIntegrity(run);
   if (run && run.blueprintFingerprint !== prepared.blueprintFingerprint) {
     throw new WorkspaceProvisioningError(
       "idempotency-conflict",
@@ -194,77 +199,131 @@ export async function startWorkspaceProvisioning(
   }
 
   if (!run) {
-    run = await createRunAtomically(key, {
+    run = await createRunAtomically(resolved.rootPath, storageKey, {
       actorId: prepared.actorId,
       blueprint: prepared.blueprint,
       blueprintFingerprint: prepared.blueprintFingerprint,
       draftContextId: prepared.draftContextId,
       expectedKnowledgeGenerationId: prepared.expectedKnowledgeGenerationId
     });
-  } else if (isTerminal(run.state) && run.state !== "ready") {
-    run = await updateStoredRun(key, run, {
+    if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run could not be created.", 500);
+  } else if (run.state === "failed" || run.state === "cancelled") {
+    run = await retryFailedProvisioningRun(filePath, run, resolved);
+  }
+
+  const existing = inFlight.get(filePath);
+  if (!existing && !isTerminal(run.state)) {
+    const execution = executeWorkspaceProvisioning(filePath, prepared, input.signal, resolved)
+      .catch((error) => recoverUnexpectedProvisioningFailure(filePath, error, resolved))
+      .finally(() => {
+        if (inFlight.get(filePath) === execution) inFlight.delete(filePath);
+      });
+    inFlight.set(filePath, execution);
+  }
+
+  return publicRun(await readStoredRun(resolved.rootPath, storageKey) ?? run);
+}
+
+async function retryFailedProvisioningRun(
+  filePath: string,
+  expectedRun: StoredWorkspaceProvisioningRun,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  const lease = await acquireProvisioningLease({
+    runFilePath: filePath,
+    runId: expectedRun.runId,
+    attempt: expectedRun.attempt
+  });
+  if (!lease) return await readStoredRunFile(filePath) ?? expectedRun;
+  try {
+    await lease.assertOwned();
+    const current = await readStoredRunFile(filePath);
+    if (!current) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run is unavailable.", 500);
+    assertStoredRunIntegrity(current);
+    if (current.state !== "failed" && current.state !== "cancelled") return current;
+    return updateStoredRun(filePath, current, {
       state: "pending",
       error: null,
-      progress: null,
-      attempt: run.attempt + 1,
-      updatedAt: new Date().toISOString()
+      progress: { label: "Preparing workspace", detail: "Retrying the incomplete provisioning run." },
+      attempt: current.attempt + 1,
+      warnings: [],
+      updatedAt: dependencies.now().toISOString()
     });
+  } finally {
+    await lease.release().catch(() => undefined);
   }
-
-  const existing = inFlight.get(key);
-  if (!existing && !isTerminal(run.state)) {
-    const execution = executeWorkspaceProvisioning(key, prepared, input.signal)
-      .catch((error) => recoverUnexpectedProvisioningFailure(key, error))
-      .finally(() => {
-        if (inFlight.get(key) === execution) inFlight.delete(key);
-      });
-    inFlight.set(key, execution);
-  }
-
-  const active = inFlight.get(key);
-  if (active && run.state !== "ready" && run.state !== "partial" && run.state !== "failed" && run.state !== "cancelled") {
-    return publicRun(await readStoredRun(key) ?? run);
-  }
-  return publicRun(await readStoredRun(key) ?? run);
 }
 
 export async function provisionWorkspaceFromBlueprint(
-  input: ProvisionWorkspaceFromBlueprintInput
+  input: ProvisionWorkspaceFromBlueprintInput,
+  dependencies: WorkspaceProvisioningDependencies = {}
 ): Promise<WorkspaceProvisioningRun> {
-  return startWorkspaceProvisioning(input);
+  return startWorkspaceProvisioning(input, dependencies);
 }
 
 export async function waitForWorkspaceProvisioning(
-  input: ProvisionWorkspaceFromBlueprintInput
+  input: ProvisionWorkspaceFromBlueprintInput,
+  dependencies: WorkspaceProvisioningDependencies = {}
 ): Promise<WorkspaceProvisioningRun> {
-  const key = runKey(input.actorId, input.idempotencyKey);
-  await startWorkspaceProvisioning(input);
+  const resolved = resolveDependencies(dependencies);
+  const storageKey = buildProvisioningStorageKey(input.actorId, input.idempotencyKey);
+  await startWorkspaceProvisioning(input, resolved);
 
   for (;;) {
-    const run = await readStoredRun(key);
+    const run = await readStoredRun(resolved.rootPath, storageKey);
     if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run is unavailable.", 500);
     if (isTerminal(run.state)) return publicRun(run);
     await delay(POLL_INTERVAL_MS);
   }
 }
 
+export async function resumeWorkspaceProvisioningRun(input: {
+  actorId: string;
+  runId: string;
+  signal?: AbortSignal;
+}, dependencies: WorkspaceProvisioningDependencies = {}): Promise<WorkspaceProvisioningRun | null> {
+  const resolved = resolveDependencies(dependencies);
+  const runId = input.runId.trim();
+  const locator = await findRunById(resolved.rootPath, input.actorId, runId);
+  if (!locator) return null;
+  assertStoredRunIntegrity(locator.run);
+  if (isTerminal(locator.run.state)) return publicRun(locator.run);
+
+  const prepared = await prepareProvisioning({
+    actorId: input.actorId,
+    blueprint: locator.run.blueprint,
+    draftContextId: locator.run.draftContextId,
+    expectedKnowledgeGenerationId: locator.run.expectedKnowledgeGenerationId,
+    idempotencyKey: `resume:${locator.run.idempotencyKeyHash}`,
+    acceptDraft: true
+  }, resolved, {
+    allowCompletedKnowledgeRecovery: true
+  });
+  ensureExecution(locator.filePath, prepared, input.signal, resolved);
+  return publicRun(await readStoredRunFile(locator.filePath) ?? locator.run);
+}
+
+export async function ensureWorkspaceProvisioningRunActive(input: {
+  actorId: string;
+  runId: string;
+  signal?: AbortSignal;
+}, dependencies: WorkspaceProvisioningDependencies = {}) {
+  return resumeWorkspaceProvisioningRun(input, dependencies);
+}
+
 export async function getWorkspaceProvisioningRun(input: {
   actorId: string;
   runId: string;
-}): Promise<WorkspaceProvisioningRun | null> {
-  const runId = input.runId.trim();
-  if (!RUN_ID_PATTERN.test(runId)) return null;
-  const expectedActorHash = actorHash(input.actorId);
-  const files = await readdir(WORKSPACE_PROVISIONING_ROOT).catch(() => []);
-  for (const fileName of files) {
-    if (!fileName.endsWith(".json")) continue;
-    const run = await readStoredRunFile(path.join(WORKSPACE_PROVISIONING_ROOT, fileName));
-    if (run?.actorHash === expectedActorHash && run.runId === runId) return publicRun(run);
-  }
-  return null;
+  signal?: AbortSignal;
+}, dependencies: WorkspaceProvisioningDependencies = {}): Promise<WorkspaceProvisioningRun | null> {
+  return ensureWorkspaceProvisioningRunActive(input, dependencies);
 }
 
-async function prepareProvisioning(input: ProvisionWorkspaceFromBlueprintInput): Promise<PreparedProvisioning> {
+async function prepareProvisioning(
+  input: ProvisionWorkspaceFromBlueprintInput,
+  dependencies: ResolvedWorkspaceProvisioningDependencies,
+  options: { allowCompletedKnowledgeRecovery?: boolean } = {}
+): Promise<PreparedProvisioning> {
   const actorId = input.actorId.trim();
   if (!actorId) throw new WorkspaceProvisioningError("actor-unavailable", "Workspace ownership is unavailable.");
   const idempotencyKey = input.idempotencyKey.trim();
@@ -290,14 +349,19 @@ async function prepareProvisioning(input: ProvisionWorkspaceFromBlueprintInput):
   }
 
   const draftContextId = input.draftContextId?.trim() || null;
-  const context = draftContextId
-    ? await readWorkspaceCreationContext({ actorId, draftContextId })
-    : null;
+  let context: WorkspaceCreationContextResult | null = null;
+  if (draftContextId) {
+    try {
+      context = await dependencies.readWorkspaceCreationContext({ actorId, draftContextId });
+    } catch (error) {
+      if (!options.allowCompletedKnowledgeRecovery) throw error;
+    }
+  }
   const expectedKnowledgeGenerationId = input.expectedKnowledgeGenerationId?.trim() || null;
-  if (expectedKnowledgeGenerationId !== (context?.generationId ?? null)) {
+  if (context && expectedKnowledgeGenerationId !== (context.generationId ?? null)) {
     throw new WorkspaceProvisioningError("knowledge-generation-mismatch", "The staged project context changed; review the blueprint again.", 409);
   }
-  validateKnowledgeFreshness(blueprint, context);
+  if (context || !options.allowCompletedKnowledgeRecovery) validateKnowledgeFreshness(blueprint, context);
 
   const blueprintFingerprint = fingerprintBlueprint(blueprint);
   const template = inferWorkspaceTemplate(blueprint.identity.projectType);
@@ -344,144 +408,437 @@ async function prepareProvisioning(input: ProvisionWorkspaceFromBlueprintInput):
   };
 }
 
-async function executeWorkspaceProvisioning(key: string, prepared: PreparedProvisioning, signal?: AbortSignal): Promise<WorkspaceProvisioningRun> {
-  return withDurableRunLock(key, async () => {
-    let run = await readStoredRun(key);
-    if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run is unavailable.", 500);
-    if (run.state === "ready") return publicRun(run);
+function ensureExecution(
+  filePath: string,
+  prepared: PreparedProvisioning,
+  signal: AbortSignal | undefined,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  const existing = inFlight.get(filePath);
+  if (existing) return existing;
+  const execution = executeWorkspaceProvisioning(filePath, prepared, signal, dependencies)
+    .catch((error) => recoverUnexpectedProvisioningFailure(filePath, error, dependencies))
+    .finally(() => {
+      if (inFlight.get(filePath) === execution) inFlight.delete(filePath);
+    });
+  inFlight.set(filePath, execution);
+  return execution;
+}
 
+async function executeWorkspaceProvisioning(
+  filePath: string,
+  prepared: PreparedProvisioning,
+  signal: AbortSignal | undefined,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+): Promise<WorkspaceProvisioningRun> {
+  let run = await readStoredRunFile(filePath);
+  if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run is unavailable.", 500);
+  assertStoredRunIntegrity(run);
+  if (isTerminal(run.state)) return publicRun(run);
+
+  let lease: ProvisioningLeaseHandle | null = null;
+  try {
+    lease = await acquireProvisioningLease({
+      runFilePath: filePath,
+      runId: run.runId,
+      attempt: run.attempt
+    });
+    if (!lease) return publicRun(await readStoredRunFile(filePath) ?? run);
+
+    await lease.assertOwned();
+    throwIfProvisioningAborted(signal);
+    if (!isCompleted(run, "validated")) {
+      run = await transition(filePath, run, "validating", "Validating the blueprint and staged project context.", lease, dependencies);
+      run = await completeStep(filePath, run, "validated", { blueprintFingerprint: run.blueprintFingerprint }, lease, dependencies);
+    }
+
+    const ensured = await ensureWorkspaceBootstrap(filePath, run, prepared, lease, dependencies);
+    run = ensured.run;
+    const created = ensured.created;
+
+    throwIfProvisioningAborted(signal);
+    run = await transition(filePath, run, "promoting-knowledge", "Promoting the accepted staged knowledge.", lease, dependencies);
+    const knowledge = await ensureKnowledgePromotion(filePath, run, prepared, created, lease, dependencies);
+    run = knowledge.run;
+
+    throwIfProvisioningAborted(signal);
+    run = await transition(filePath, run, "binding-knowledge", "Binding workspace knowledge through OpenClaw native memory.", lease, dependencies);
+    const nativeBinding = await bindNativeKnowledge(created, prepared, dependencies, lease);
+    run = await updateStoredRun(filePath, run, {
+      nativeKnowledge: nativeBinding
+        ? {
+            status: normalizeNativeKnowledgeStatus(nativeBinding.status),
+            indexActionRequired: nativeBinding.indexRefresh.some((entry) => entry.action === "unavailable" || entry.action === "failed")
+              ? "unknown"
+              : "not-required",
+            restartRequired: nativeBinding.restartRequired
+          }
+        : { status: "not-applicable", indexActionRequired: "not-required", restartRequired: null },
+      warnings: uniqueStrings([
+        ...run.warnings,
+        ...safeMessages(nativeBinding?.warnings ?? []),
+        ...safeMessages(nativeBinding?.errors ?? [])
+      ]),
+      updatedAt: dependencies.now().toISOString()
+    });
+    if (!isCompleted(run, "knowledge-bound")) {
+      run = await completeStep(filePath, run, "knowledge-bound", { status: nativeBinding?.status ?? "not-applicable" }, lease, dependencies);
+    }
+
+    throwIfProvisioningAborted(signal);
+    run = await transition(filePath, run, "applying-capabilities", "Applying the selected skills and tools through the canonical AgentOS agent boundary.", lease, dependencies);
+    const capabilityWarnings = await applyAgentCapabilities(created, prepared.blueprint, dependencies, lease);
+    run = await updateStoredRun(filePath, run, {
+      warnings: uniqueStrings([...run.warnings, ...capabilityWarnings]),
+      updatedAt: dependencies.now().toISOString()
+    });
+    if (capabilityWarnings.length === 0) {
+      run = await completeStep(filePath, run, "capabilities-applied", { agentCount: String(created.agentIds.length) }, lease, dependencies);
+    }
+
+    throwIfProvisioningAborted(signal);
+    run = await transition(filePath, run, "recording-declarations", "Recording pending channel, connection, and automation setup.", lease, dependencies);
+    const pendingSetup = buildPendingSetup(prepared.blueprint);
+    await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup);
+    await writeCuratedMemory(created.workspacePath, prepared.blueprint.memory.durableFacts);
+    run = await updateStoredRun(filePath, run, { pendingSetup, updatedAt: dependencies.now().toISOString() });
+    run = await completeStep(filePath, run, "declarations-recorded", { pendingSetup: "recorded" }, lease, dependencies);
+
+    throwIfProvisioningAborted(signal);
+    run = await transition(filePath, run, "verifying", "Verifying the physical workspace, agents, bootstrap files, and native bindings.", lease, dependencies);
+    const verification = await verifyProvisionedWorkspace(created, prepared.blueprint, nativeBinding, dependencies, run);
+    const warnings = uniqueStrings([...run.warnings, ...verification.warnings]);
+    const finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : warnings.length > 0 ? "partial" : "ready";
+    const verifiedAt = dependencies.now().toISOString();
+    const verificationError = verification.coreErrors.length > 0
+      ? { code: "verification-failed", message: verification.coreErrors[0] }
+      : null;
+    const completedSteps = verification.coreErrors.length > 0
+      ? run.completedSteps
+      : {
+          ...run.completedSteps,
+          "final-verification-complete": { completedAt: verifiedAt, evidence: { state: finalState } }
+        };
+    const terminalRun: StoredWorkspaceProvisioningRun = {
+      ...run,
+      state: finalState,
+      warnings,
+      error: verificationError,
+      completedSteps,
+      verifiedAt,
+      updatedAt: verifiedAt
+    };
+    // Keep the non-terminal state visible until the sidecar and the durable run
+    // record agree. This prevents pollers from observing a false terminal state
+    // while the final manifest write is still in flight.
+    await lease.assertOwned();
+    await writeProvisioningManifest(created.workspacePath, terminalRun, prepared.blueprint, pendingSetup);
+    await lease.assertOwned();
+    run = await updateStoredRun(filePath, run, {
+      state: finalState,
+      warnings,
+      error: verificationError,
+      completedSteps,
+      verifiedAt,
+      updatedAt: verifiedAt
+    });
+    return publicRun(run);
+  } catch (error) {
+    if (error instanceof ProvisioningLeaseBusyError || error instanceof ProvisioningLeaseLostError) {
+      return publicRun(await readStoredRunFile(filePath) ?? run);
+    }
+    const message = redactErrorMessage(error, "Workspace provisioning did not complete.");
+    const cancelled = isAbortError(error);
+    const latest = await readStoredRunFile(filePath);
+    if (!latest) throw error;
+    run = await updateStoredRun(filePath, latest, {
+      state: cancelled ? "cancelled" : "failed",
+      error: {
+        code: cancelled ? "cancelled" : error instanceof WorkspaceProvisioningError ? error.code : "provisioning-failed",
+        message: cancelled ? "Provisioning stopped; the workspace may be incomplete and can be resumed." : message
+      },
+      warnings: uniqueStrings([...latest.warnings, cancelled ? "Provisioning stopped; the workspace may be incomplete and can be resumed." : message]),
+      updatedAt: dependencies.now().toISOString()
+    });
+    return publicRun(run);
+  } finally {
+    await lease?.release().catch(() => undefined);
+  }
+}
+
+async function ensureWorkspaceBootstrap(
+  filePath: string,
+  initialRun: StoredWorkspaceProvisioningRun,
+  prepared: PreparedProvisioning,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  let run = initialRun;
+  await lease.assertOwned();
+  let created = run.result;
+  let bootstrap = created ? await verifyWorkspaceBootstrap(created, prepared.blueprint) : { coreErrors: ["The workspace creation result is not available."], warnings: [] };
+  let agents = created ? await verifyWorkspaceAgents(created, prepared.blueprint, dependencies) : { coreErrors: ["The workspace agent result is not available."], warnings: [] };
+
+  if (!created || bootstrap.coreErrors.length > 0 || agents.coreErrors.length > 0) {
+    if (bootstrap.coreErrors.some((message) => message.startsWith("Workspace identity conflict"))) {
+      throw new WorkspaceProvisioningError("workspace-conflict", bootstrap.coreErrors[0], 409);
+    }
+    run = await transition(filePath, run, "materializing", "Creating or reusing the workspace through the canonical OpenClaw workspace service.", lease, dependencies);
     try {
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "validating", "Validating the blueprint and staged project context.");
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "materializing", "Creating the workspace folder through the canonical OpenClaw workspace service.");
-      const created = await createWorkspaceProject(prepared.createInput, {
-        onProgress: async () => {
-          await updateProgress(key, "Creating the workspace", "OpenClaw is materializing the selected workspace and bootstrap files.");
+      created = await dependencies.createWorkspaceProject(prepared.createInput, {
+        onProgress: async (snapshot: OperationProgressSnapshot) => {
+          await updateCanonicalOpenClawProgress(filePath, snapshot, lease, dependencies);
         }
       });
-      throwIfProvisioningAborted(signal);
-      run = await updateStoredRun(key, run, {
-        workspaceId: created.workspaceId,
-        workspacePath: created.workspacePath,
-        result: created,
-        updatedAt: new Date().toISOString()
-      });
-      run = await transition(key, run, "bootstrapping", "Verifying the canonical AgentOS/OpenClaw workspace bootstrap.");
-
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "promoting-knowledge", "Promoting the accepted staged knowledge generation.");
-      if (!run.knowledge && prepared.context?.generationId && prepared.draftContextId) {
-        const promoted = await promoteWorkspaceCreationKnowledge({
-          actorId: prepared.actorId,
-          draftContextId: prepared.draftContextId,
-          targetWorkspacePath: created.workspacePath,
-          expectedGenerationId: prepared.context.generationId
-        });
-        run = await updateStoredRun(key, run, {
-          knowledge: {
-            stagedGenerationId: promoted.stagedGenerationId,
-            promotedGenerationId: promoted.generationId,
-            sourceIds: promoted.sourceIds,
-            documentCount: promoted.documentCount
-          },
-          updatedAt: new Date().toISOString()
-        });
-      } else if (!run.knowledge) {
-        run = await updateStoredRun(key, run, {
-          knowledge: {
-            stagedGenerationId: null,
-            promotedGenerationId: null,
-            sourceIds: prepared.blueprint.knowledge.sourceIds,
-            documentCount: 0
-          },
-          updatedAt: new Date().toISOString()
-        });
-      }
-
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "provisioning-agents", "Confirming the primary agent and selected specialists.");
-      run = await transition(key, run, "binding-knowledge", "Binding workspace knowledge through OpenClaw native memory.");
-      const nativeBinding = await bindNativeKnowledge(created, prepared);
-      run = await updateStoredRun(key, run, {
-        nativeKnowledge: nativeBinding
-          ? {
-              status: normalizeNativeKnowledgeStatus(nativeBinding.status),
-              indexActionRequired: nativeBinding.indexRefresh.some((entry) => entry.action === "unavailable" || entry.action === "failed")
-                ? "unknown"
-                : "not-required",
-              restartRequired: nativeBinding.restartRequired
-            }
-          : { status: "not-applicable", indexActionRequired: "not-required", restartRequired: null },
-        warnings: uniqueStrings([...run.warnings, ...(nativeBinding?.warnings ?? []), ...(nativeBinding?.errors ?? [])]),
-        updatedAt: new Date().toISOString()
-      });
-
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "applying-capabilities", "Applying the selected skills and tools through the canonical AgentOS agent boundary.");
-      const capabilityWarnings = await applyAgentCapabilities(created, prepared.blueprint);
-      run = await updateStoredRun(key, run, {
-        warnings: uniqueStrings([...run.warnings, ...capabilityWarnings]),
-        updatedAt: new Date().toISOString()
-      });
-
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "recording-declarations", "Recording pending channel, connection, and automation setup.");
-      const pendingSetup = buildPendingSetup(prepared.blueprint);
-      await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup);
-      await writeCuratedMemory(created.workspacePath, prepared.blueprint.memory.durableFacts);
-      run = await updateStoredRun(key, run, { pendingSetup, updatedAt: new Date().toISOString() });
-
-      throwIfProvisioningAborted(signal);
-      run = await transition(key, run, "verifying", "Verifying the physical workspace, agents, bootstrap files, and native bindings.");
-      const verification = await verifyProvisionedWorkspace(created, prepared.blueprint, nativeBinding);
-      const warnings = uniqueStrings([...run.warnings, ...verification.warnings]);
-      const finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0
-        ? "failed"
-        : warnings.length > 0 || pendingSetup.channels.length > 0 || pendingSetup.connections.length > 0 || pendingSetup.automations.length > 0
-          ? "partial"
-          : "ready";
-      run = await updateStoredRun(key, run, {
-        state: finalState,
-        warnings,
-        error: verification.coreErrors.length > 0
-          ? { code: "verification-failed", message: verification.coreErrors[0] }
-          : null,
-        verifiedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup);
-      return publicRun(run);
     } catch (error) {
-      const message = redactErrorMessage(error, "Workspace provisioning did not complete.");
-      const cancelled = isAbortError(error);
-      run = await updateStoredRun(key, run, {
-        state: cancelled ? "cancelled" : "failed",
-        error: {
-          code: cancelled ? "cancelled" : error instanceof WorkspaceProvisioningError ? error.code : "provisioning-failed",
-          message: cancelled ? "Provisioning stopped; the workspace may be incomplete and can be resumed." : message
-        },
-        warnings: uniqueStrings([...run.warnings, cancelled ? "Provisioning stopped; the workspace may be incomplete and can be resumed." : message]),
-        updatedAt: new Date().toISOString()
-      });
-      return publicRun(run);
+      const gatewayKind = classifyGatewayError(redactErrorMessage(error, "OpenClaw workspace bootstrap failed."), error);
+      const code = gatewayKind === "unreachable" || gatewayKind === "timeout" || gatewayKind === "auth" ? "gateway" : "bootstrap";
+      throw new WorkspaceProvisioningError(code, redactErrorMessage(error, "OpenClaw workspace bootstrap failed."), code === "gateway" ? 503 : 500);
     }
+    await lease.assertOwned();
+    run = await updateStoredRun(filePath, run, {
+      workspaceId: created.workspaceId,
+      workspacePath: created.workspacePath,
+      result: created,
+      updatedAt: dependencies.now().toISOString()
+    });
+    bootstrap = await verifyWorkspaceBootstrap(created, prepared.blueprint);
+    agents = await verifyWorkspaceAgents(created, prepared.blueprint, dependencies);
+  }
+
+  if (run.workspaceId !== created.workspaceId || run.workspacePath !== created.workspacePath || run.result === null) {
+    await lease.assertOwned();
+    run = await updateStoredRun(filePath, run, {
+      workspaceId: created.workspaceId,
+      workspacePath: created.workspacePath,
+      result: created,
+      updatedAt: dependencies.now().toISOString()
+    });
+  }
+
+  if (bootstrap.coreErrors.length > 0) {
+    throw new WorkspaceProvisioningError("bootstrap", bootstrap.coreErrors[0], 500);
+  }
+  if (agents.coreErrors.length > 0) {
+    throw new WorkspaceProvisioningError("agent-provisioning", agents.coreErrors[0], 500);
+  }
+  run = await completeStep(filePath, run, "workspace-materialized", { workspacePath: created.workspacePath }, lease, dependencies);
+  run = await completeStep(filePath, run, "bootstrap-verified", { workspacePath: created.workspacePath }, lease, dependencies);
+  run = await completeStep(filePath, run, "agents-verified", { agentCount: String(created.agentIds.length) }, lease, dependencies);
+  return { run, created };
+}
+
+async function verifyWorkspaceBootstrap(created: WorkspaceCreateResult, blueprint: WorkspaceBlueprint) {
+  const coreErrors: string[] = [];
+  await access(created.workspacePath).catch(() => coreErrors.push("The physical workspace folder is missing."));
+  const manifest = await readWorkspaceProjectManifest(created.workspacePath);
+  if (manifest.name && manifest.name !== blueprint.identity.name) {
+    coreErrors.push(`Workspace identity conflict: the existing workspace is named ${manifest.name}.`);
+  }
+  if (manifest.directory && path.resolve(manifest.directory) !== path.resolve(created.workspacePath)) {
+    coreErrors.push("Workspace identity conflict: the canonical manifest points to another directory.");
+  }
+  const rules = {
+    workspaceOnly: true,
+    generateStarterDocs: true,
+    generateMemory: true,
+    kickoffMission: false
+  };
+  for (const relativePath of buildWorkspaceScaffoldDocumentPaths(inferWorkspaceTemplate(blueprint.identity.projectType), rules)) {
+    await access(path.join(created.workspacePath, relativePath)).catch(() => coreErrors.push(`Required bootstrap file ${relativePath} is missing.`));
+  }
+  return { coreErrors, warnings: [] as string[] };
+}
+
+async function verifyWorkspaceAgents(
+  created: WorkspaceCreateResult,
+  blueprint: WorkspaceBlueprint,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  const requiredIds = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists]
+    .filter((agent) => agent.enabled)
+    .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
+  const manifest = await readWorkspaceProjectManifest(created.workspacePath);
+  const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
+  const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
+  const liveIds = new Set(snapshot.agents
+    .filter((agent) => agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath))
+    .map((agent) => agent.id));
+  const coreErrors = requiredIds
+    .filter((agentId) => !created.agentIds.includes(agentId) || !manifestIds.has(agentId) || !liveIds.has(agentId))
+    .map((agentId) => `Required workspace agent ${agentId} was not verified.`);
+  return { coreErrors, warnings: [] as string[] };
+}
+
+async function updateCanonicalOpenClawProgress(
+  filePath: string,
+  snapshot: OperationProgressSnapshot,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  await lease.assertOwned();
+  const active = snapshot.steps.find((step) => step.status === "active") ?? snapshot.steps.find((step) => step.status === "done");
+  if (!active) return;
+  const state = mapOpenClawProgressState(active.id);
+  const run = await readStoredRunFile(filePath);
+  if (!run || isTerminal(run.state)) return;
+  await updateStoredRun(filePath, run, {
+    state,
+    progress: {
+      label: openClawProgressLabel(active.id),
+      detail: active.detail ?? active.description
+    },
+    updatedAt: dependencies.now().toISOString()
   });
+}
+
+async function ensureKnowledgePromotion(
+  filePath: string,
+  initialRun: StoredWorkspaceProvisioningRun,
+  prepared: PreparedProvisioning,
+  created: WorkspaceCreateResult,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  let run = initialRun;
+  const sourceIds = [...prepared.blueprint.knowledge.sourceIds];
+  if (sourceIds.length === 0) {
+    if (!run.knowledge || run.knowledge.sourceIds.length > 0) {
+      await lease.assertOwned();
+      run = await updateStoredRun(filePath, run, {
+        knowledge: {
+          stagedGenerationId: prepared.expectedKnowledgeGenerationId,
+          promotedGenerationId: null,
+          sourceIds: [],
+          documentCount: 0
+        },
+        updatedAt: dependencies.now().toISOString()
+      });
+    }
+    if (!isCompleted(run, "knowledge-promoted")) {
+      run = await completeStep(filePath, run, "knowledge-promoted", { sourceCount: "0", documentCount: "0" }, lease, dependencies);
+    }
+    return { run };
+  }
+
+  const targetSnapshot = await dependencies.readKnowledgeSnapshot(
+    path.join(created.workspacePath, "knowledge"),
+    path.join(created.workspacePath, ".openclaw", "knowledge")
+  );
+  if (run.knowledge?.promotedGenerationId && targetSnapshot?.state.generationId === run.knowledge.promotedGenerationId) {
+    if (!isCompleted(run, "knowledge-promoted")) {
+      run = await completeStep(filePath, run, "knowledge-promoted", {
+        generationId: run.knowledge.promotedGenerationId,
+        documentCount: String(run.knowledge.documentCount)
+      }, lease, dependencies);
+    }
+    return { run };
+  }
+
+  const expectedGenerationId = prepared.context?.generationId ?? run.expectedKnowledgeGenerationId;
+  if (prepared.context && targetSnapshot && finalKnowledgeMatchesContext(targetSnapshot, sourceIds)) {
+    const promoted = {
+      stagedGenerationId: expectedGenerationId,
+      promotedGenerationId: targetSnapshot.state.generationId ?? null,
+      sourceIds,
+      documentCount: targetSnapshot.documents.length
+    };
+    if (!promoted.promotedGenerationId) {
+      throw new WorkspaceProvisioningError("knowledge-promotion", "The promoted workspace knowledge generation could not be verified.", 500);
+    }
+    await lease.assertOwned();
+    run = await updateStoredRun(filePath, run, { knowledge: promoted, updatedAt: dependencies.now().toISOString() });
+    run = await completeStep(filePath, run, "knowledge-promoted", {
+      generationId: promoted.promotedGenerationId,
+      documentCount: String(promoted.documentCount)
+    }, lease, dependencies);
+    return { run };
+  }
+
+  if (!prepared.draftContextId || !expectedGenerationId) {
+    throw new WorkspaceProvisioningError("knowledge-context-missing", "The staged project context is required to promote this workspace knowledge.", 409);
+  }
+
+  let promoted: Awaited<ReturnType<typeof promoteWorkspaceCreationKnowledge>>;
+  try {
+    promoted = await dependencies.promoteWorkspaceCreationKnowledge({
+      actorId: prepared.actorId,
+      draftContextId: prepared.draftContextId,
+      targetWorkspacePath: created.workspacePath,
+      expectedGenerationId
+    });
+  } catch (error) {
+    throw new WorkspaceProvisioningError(
+      "knowledge-promotion",
+      redactErrorMessage(error, "The staged project knowledge could not be promoted."),
+      500
+    );
+  }
+  if (!promoted.generationId) {
+    throw new WorkspaceProvisioningError("knowledge-promotion", "The promoted workspace knowledge generation could not be verified.", 500);
+  }
+  await lease.assertOwned();
+  run = await updateStoredRun(filePath, run, {
+    knowledge: {
+      stagedGenerationId: promoted.stagedGenerationId,
+      promotedGenerationId: promoted.generationId,
+      sourceIds: promoted.sourceIds,
+      documentCount: promoted.documentCount
+    },
+    updatedAt: dependencies.now().toISOString()
+  });
+  run = await completeStep(filePath, run, "knowledge-promoted", {
+    generationId: promoted.generationId,
+    documentCount: String(promoted.documentCount)
+  }, lease, dependencies);
+  return { run };
+}
+
+function finalKnowledgeMatchesContext(snapshot: Awaited<ReturnType<typeof readKnowledgeSnapshot>>, sourceIds: string[]) {
+  if (!snapshot?.state.generationId) return false;
+  const reportedSourceIds = snapshot.state.sourceReports.map((report) => report.sourceId).sort();
+  return reportedSourceIds.length === sourceIds.length
+    && reportedSourceIds.every((sourceId, index) => sourceId === [...sourceIds].sort()[index]);
+}
+
+function mapOpenClawProgressState(stepId: string): WorkspaceProvisioningState {
+  if (stepId === "validate") return "validating";
+  if (stepId === "source") return "materializing";
+  if (stepId === "scaffold") return "bootstrapping";
+  if (stepId === "agents") return "provisioning-agents";
+  return "bootstrapping";
+}
+
+function openClawProgressLabel(stepId: string) {
+  if (stepId === "validate") return "Preparing workspace";
+  if (stepId === "source") return "Preparing workspace source";
+  if (stepId === "scaffold") return "Writing workspace bootstrap";
+  if (stepId === "agents") return "Creating workspace agents";
+  return "Preparing workspace";
 }
 
 async function bindNativeKnowledge(
   created: WorkspaceCreateResult,
-  prepared: PreparedProvisioning
+  prepared: PreparedProvisioning,
+  dependencies: ResolvedWorkspaceProvisioningDependencies,
+  lease: ProvisioningLeaseHandle
 ): Promise<WorkspaceNativeKnowledgeBindingResult | null> {
-  if (!prepared.context?.generationId || !prepared.draftContextId) return null;
-  return ensureWorkspaceNativeKnowledge({
+  if (prepared.blueprint.knowledge.sourceIds.length === 0) return null;
+  await lease.assertOwned();
+  return dependencies.ensureWorkspaceNativeKnowledge({
     workspacePath: created.workspacePath,
     agentIds: created.agentIds
   });
 }
 
-async function applyAgentCapabilities(created: WorkspaceCreateResult, blueprint: WorkspaceBlueprint) {
-  const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+async function applyAgentCapabilities(
+  created: WorkspaceCreateResult,
+  blueprint: WorkspaceBlueprint,
+  dependencies: ResolvedWorkspaceProvisioningDependencies,
+  lease: ProvisioningLeaseHandle
+) {
+  await lease.assertOwned();
+  const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
   const warnings: string[] = [];
   const desiredAgents = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists];
   for (const desired of desiredAgents) {
@@ -495,13 +852,24 @@ async function applyAgentCapabilities(created: WorkspaceCreateResult, blueprint:
       warnings.push(`Selected agent ${desired.id} was not visible in the current OpenClaw snapshot.`);
       continue;
     }
+    const skills = filterKnownOpenClawSkillIds(desired.skillIds);
+    const tools = filterKnownOpenClawToolIds(desired.toolIds);
+    if (
+      sameStringArray(current.skills, skills)
+      && sameStringArray(current.tools, tools)
+      && current.name === desired.name
+      && stableStringify(current.policy) === stableStringify(desired.policy)
+    ) {
+      continue;
+    }
     try {
-      await updateAgent({
+      await lease.assertOwned();
+      await dependencies.updateAgent({
         id: agentId,
         workspaceId: created.workspaceId,
         workspacePath: created.workspacePath,
-        skills: filterKnownOpenClawSkillIds(desired.skillIds),
-        tools: filterKnownOpenClawToolIds(desired.toolIds),
+        skills,
+        tools,
         policy: desired.policy,
         name: desired.name
       });
@@ -515,7 +883,9 @@ async function applyAgentCapabilities(created: WorkspaceCreateResult, blueprint:
 async function verifyProvisionedWorkspace(
   created: WorkspaceCreateResult,
   blueprint: WorkspaceBlueprint,
-  nativeBinding: WorkspaceNativeKnowledgeBindingResult | null
+  nativeBinding: WorkspaceNativeKnowledgeBindingResult | null,
+  dependencies: ResolvedWorkspaceProvisioningDependencies,
+  run: StoredWorkspaceProvisioningRun
 ) {
   const warnings: string[] = [];
   const coreErrors: string[] = [];
@@ -537,7 +907,7 @@ async function verifyProvisionedWorkspace(
     .filter((agent) => agent.enabled)
     .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
   const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
-  const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
   const workspace = snapshot.workspaces.find((entry) => entry.id === created.workspaceId || path.resolve(entry.path) === path.resolve(created.workspacePath));
   if (!workspace) coreErrors.push("The workspace was not present in the authoritative OpenClaw snapshot.");
   const liveIds = new Set(snapshot.agents.filter((agent) => agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath)).map((agent) => agent.id));
@@ -553,6 +923,17 @@ async function verifyProvisionedWorkspace(
   }
   if (nativeBinding?.indexRefresh.some((entry) => entry.action === "unavailable" || entry.action === "failed")) {
     warnings.push("Native memory index maintenance is deferred or unavailable from this AgentOS runtime.");
+  }
+
+  const provisioningManifestPath = path.join(created.workspacePath, WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH);
+  const provisioningManifest = await readFile(provisioningManifestPath, "utf8")
+    .then((raw) => JSON.parse(raw) as unknown)
+    .catch(() => null);
+  const recorded = isRecord(provisioningManifest) && isRecord(provisioningManifest.agentosProvisioning)
+    ? provisioningManifest.agentosProvisioning
+    : null;
+  if (!recorded || recorded.runId !== run.runId || recorded.blueprintFingerprint !== run.blueprintFingerprint) {
+    coreErrors.push("The AgentOS provisioning manifest does not match the durable provisioning run.");
   }
 
   return { warnings, coreErrors };
@@ -573,7 +954,7 @@ async function writeProvisioningManifest(
   pendingSetup: StoredWorkspaceProvisioningRun["pendingSetup"]
 ) {
   const manifestPath = path.join(workspacePath, WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH);
-  await writeTextFileEnsured(manifestPath, `${JSON.stringify({
+  await writeAtomicJson(manifestPath, {
     manifestVersion: 1,
     agentosProvisioning: {
       manifestVersion: 1,
@@ -591,7 +972,7 @@ async function writeProvisioningManifest(
       pendingSetup,
       verifiedAt: run.verifiedAt
     }
-  }, null, 2)}\n`);
+  });
 }
 
 function normalizeNativeKnowledgeStatus(status: WorkspaceNativeKnowledgeBindingResult["status"]): WorkspaceNativeKnowledgeStatus["status"] {
@@ -672,13 +1053,15 @@ function publicRun(run: StoredWorkspaceProvisioningRun): WorkspaceProvisioningRu
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     attempt: run.attempt,
+    blueprintFingerprint: run.blueprintFingerprint,
     workspaceId: run.workspaceId,
     result: run.result,
     warnings: run.warnings.slice(0, 24),
     error: run.error,
     progress: run.progress,
-    steps: buildSteps(run.state),
+    steps: buildSteps(run.state, run.completedSteps),
     signals: buildSignals(run),
+    completedSteps: run.completedSteps,
     knowledge: run.knowledge,
     nativeKnowledge: run.nativeKnowledge,
     pendingSetup: run.pendingSetup,
@@ -686,13 +1069,35 @@ function publicRun(run: StoredWorkspaceProvisioningRun): WorkspaceProvisioningRu
   };
 }
 
-function buildSteps(state: WorkspaceProvisioningState) {
-  const order: WorkspaceProvisioningState[] = ["validating", "materializing", "bootstrapping", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying"];
-  const index = order.indexOf(state);
-  return order.map((id, position) => ({
+const completedStepForState: Record<WorkspaceProvisioningState, ProvisioningCompletedStepId | null> = {
+  pending: null,
+  validating: "validated",
+  materializing: "workspace-materialized",
+  bootstrapping: "bootstrap-verified",
+  "promoting-knowledge": "knowledge-promoted",
+  "provisioning-agents": "agents-verified",
+  "binding-knowledge": "knowledge-bound",
+  "applying-capabilities": "capabilities-applied",
+  "recording-declarations": "declarations-recorded",
+  verifying: "final-verification-complete",
+  ready: null,
+  partial: null,
+  failed: null,
+  cancelled: null
+};
+
+function buildSteps(state: WorkspaceProvisioningState, completedSteps: StoredWorkspaceProvisioningRun["completedSteps"]) {
+  const index = PROVISIONING_STEP_ORDER.indexOf(state);
+  return PROVISIONING_STEP_ORDER.map((id, position) => ({
     id,
     label: provisioningLabel(id),
-    status: state === "failed" && position >= Math.max(index, 0) ? "failed" as const : position < index || state === "ready" || state === "partial" ? "complete" as const : position === index ? "active" as const : "pending" as const
+    status: completedStepForState[id] && completedSteps[completedStepForState[id]]
+      ? "complete" as const
+      : state === "failed" && position >= Math.max(index, 0)
+        ? "failed" as const
+        : position === index
+          ? "active" as const
+          : "pending" as const
   }));
 }
 
@@ -733,136 +1138,69 @@ function isTerminal(state: WorkspaceProvisioningState) {
   return state === "ready" || state === "partial" || state === "failed" || state === "cancelled";
 }
 
-async function transition(key: string, run: StoredWorkspaceProvisioningRun, state: WorkspaceProvisioningState, detail: string) {
-  const next = await updateStoredRun(key, run, {
+async function transition(
+  filePath: string,
+  run: StoredWorkspaceProvisioningRun,
+  state: WorkspaceProvisioningState,
+  detail: string,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  await lease.assertOwned();
+  return updateStoredRun(filePath, run, {
     state,
     progress: { label: provisioningLabel(state), detail },
-    updatedAt: new Date().toISOString(),
-    checkpoints: {
-      ...run.checkpoints,
-      [state]: { state, completedAt: new Date().toISOString() }
-    }
+    updatedAt: dependencies.now().toISOString()
   });
-  return next;
 }
 
-async function updateProgress(key: string, label: string, detail: string) {
-  const run = await readStoredRun(key);
-  if (!run || isTerminal(run.state)) return;
-  await updateStoredRun(key, run, { progress: { label, detail }, updatedAt: new Date().toISOString() });
+async function completeStep(
+  filePath: string,
+  run: StoredWorkspaceProvisioningRun,
+  stepId: ProvisioningCompletedStepId,
+  evidence: Record<string, string>,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  if (isCompleted(run, stepId)) return run;
+  await lease.assertOwned();
+  const completedAt = dependencies.now().toISOString();
+  return updateStoredRun(filePath, run, {
+    completedSteps: {
+      ...run.completedSteps,
+      [stepId]: { completedAt, evidence }
+    },
+    updatedAt: completedAt
+  });
 }
 
-async function createRunAtomically(key: string, input: {
-  actorId: string;
-  blueprint: WorkspaceBlueprint;
-  blueprintFingerprint: string;
-  draftContextId: string | null;
-  expectedKnowledgeGenerationId: string | null;
-}) {
-  await mkdir(WORKSPACE_PROVISIONING_ROOT, { recursive: true, mode: 0o700 });
-  const now = new Date().toISOString();
-  const run: StoredWorkspaceProvisioningRun = {
-    schemaVersion: WORKSPACE_PROVISIONING_SCHEMA_VERSION,
-    runId: randomUUID(),
-    actorHash: actorHash(input.actorId),
-    idempotencyKeyHash: sha256(key),
-    blueprintId: input.blueprint.id,
-    blueprintFingerprint: input.blueprintFingerprint,
-    draftContextId: input.draftContextId,
-    expectedKnowledgeGenerationId: input.expectedKnowledgeGenerationId,
-    state: "pending",
-    createdAt: now,
-    updatedAt: now,
-    attempt: 1,
-    workspaceId: null,
-    workspacePath: null,
-    result: null,
-    checkpoints: {},
-    warnings: [],
-    error: null,
-    progress: { label: "Preparing workspace", detail: "Provisioning is queued." },
-    knowledge: null,
-    nativeKnowledge: null,
-    pendingSetup: { channels: [], connections: [], automations: [] },
-    verifiedAt: null
-  };
-  const filePath = runPath(key);
-  try {
-    const handle = await open(filePath, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify(run, null, 2)}\n`, "utf8");
-    await handle.close();
-    return run;
-  } catch (error) {
-    if (isFileExistsError(error)) return (await readStoredRun(key)) as StoredWorkspaceProvisioningRun;
-    throw error;
+function isCompleted(run: StoredWorkspaceProvisioningRun, stepId: ProvisioningCompletedStepId) {
+  return Boolean(run.completedSteps[stepId]);
+}
+
+function assertStoredRunIntegrity(run: StoredWorkspaceProvisioningRun): asserts run is StoredWorkspaceProvisioningRun & { blueprint: WorkspaceBlueprint } {
+  const blueprint = isRecord(run.blueprint) ? run.blueprint as unknown as WorkspaceBlueprint : null;
+  if (
+    !isProvisioningState(run.state)
+    || !blueprint
+    || run.blueprintId !== blueprint.id
+    || !isRecord(run.completedSteps)
+    || !Array.isArray(run.warnings)
+    || !isRecord(run.pendingSetup)
+    || !Array.isArray(run.pendingSetup.channels)
+    || !Array.isArray(run.pendingSetup.connections)
+    || !Array.isArray(run.pendingSetup.automations)
+  ) {
+    throw new WorkspaceProvisioningError("provisioning-state-integrity-failed", "The durable provisioning record is invalid and cannot be resumed.", 500);
+  }
+  const validation = validateWorkspaceBlueprint(blueprint);
+  if (!validation.valid || run.blueprintFingerprint !== fingerprintBlueprint(blueprint)) {
+    throw new WorkspaceProvisioningError("provisioning-state-integrity-failed", "The durable provisioning record is invalid and cannot be resumed.", 500);
   }
 }
 
-async function withDurableRunLock<T>(key: string, task: () => Promise<T>): Promise<T> {
-  const lockPath = `${runPath(key)}.lock`;
-  await mkdir(WORKSPACE_PROVISIONING_ROOT, { recursive: true, mode: 0o700 });
-  for (;;) {
-    try {
-      await mkdir(lockPath, { mode: 0o700 });
-      await writeFile(path.join(lockPath, "owner"), `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
-      break;
-    } catch (error) {
-      if (!isFileExistsError(error)) throw error;
-      const lockAge = await stat(lockPath).then((entry) => Date.now() - entry.mtimeMs).catch(() => 0);
-      if (lockAge > LOCK_STALE_AFTER_MS) {
-        await rm(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      await delay(POLL_INTERVAL_MS);
-    }
-  }
-  try {
-    return await task();
-  } finally {
-    await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
-  }
-}
-
-async function readStoredRun(key: string) {
-  return readStoredRunFile(runPath(key));
-}
-
-async function readStoredRunFile(filePath: string) {
-  const raw = await readFile(filePath, "utf8").catch(() => null);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as StoredWorkspaceProvisioningRun;
-    if (parsed.schemaVersion !== WORKSPACE_PROVISIONING_SCHEMA_VERSION || !RUN_ID_PATTERN.test(parsed.runId)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-async function updateStoredRun(key: string, run: StoredWorkspaceProvisioningRun, updates: Partial<StoredWorkspaceProvisioningRun>) {
-  const next = { ...run, ...updates };
-  const targetPath = runPath(key);
-  const temporaryPath = `${targetPath}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  try {
-    await rename(temporaryPath, targetPath);
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-  return next;
-}
-
-function runKey(actorId: string, idempotencyKey: string) {
-  return `${actorHash(actorId)}:${sha256(idempotencyKey.trim())}`;
-}
-
-function runPath(key: string) {
-  return path.join(WORKSPACE_PROVISIONING_ROOT, `${sha256(key)}.json`);
-}
-
-function actorHash(actorId: string) {
-  return sha256(actorId.trim()).slice(0, 32);
+function isProvisioningState(value: unknown): value is WorkspaceProvisioningState {
+  return typeof value === "string" && (workspaceProvisioningStates as readonly string[]).includes(value);
 }
 
 function fingerprintBlueprint(blueprint: WorkspaceBlueprint) {
@@ -892,19 +1230,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isFileExistsError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "EEXIST");
-}
-
-async function recoverUnexpectedProvisioningFailure(key: string, error: unknown) {
-  const run = await readStoredRun(key);
+async function recoverUnexpectedProvisioningFailure(
+  filePath: string,
+  error: unknown,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  if (error instanceof ProvisioningLeaseBusyError || error instanceof ProvisioningLeaseLostError) {
+    const latest = await readStoredRunFile(filePath);
+    return latest ? publicRun(latest) : Promise.reject(error);
+  }
+  const run = await readStoredRunFile(filePath);
   if (!run) throw error;
   const message = redactErrorMessage(error, "Workspace provisioning did not complete.");
-  const failed = await updateStoredRun(key, run, {
+  const failed = await updateStoredRun(filePath, run, {
     state: "failed",
     error: { code: "provisioning-failed", message },
     warnings: uniqueStrings([...run.warnings, message]),
-    updatedAt: new Date().toISOString()
+    updatedAt: dependencies.now().toISOString()
   });
   return publicRun(failed);
 }
@@ -926,4 +1268,12 @@ function isAbortError(error: unknown) {
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function safeMessages(values: readonly string[]) {
+  return values.map((value) => redactErrorMessage(new Error(value), "OpenClaw operation reported a warning."));
+}
+
+function sameStringArray(left: readonly string[] | undefined, right: readonly string[]) {
+  return Boolean(left) && (left ?? []).length === right.length && (left ?? []).every((value, index) => value === right[index]);
 }

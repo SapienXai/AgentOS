@@ -17,7 +17,7 @@ The API derives ownership from the authenticated AgentOS permission boundary. A 
 
 ## Provisioning lifecycle
 
-Runs are persisted below `.mission-control/workspace-provisioning-runs` with a schema version, actor hash, blueprint fingerprint, idempotency identity, attempt, progress, checkpoints, warnings, error, and final result. An atomic create and filesystem lock prevent duplicate runs across concurrent requests and processes. Retrying a failed or partial run reuses the canonical workspace creation idempotency record and repairs only missing downstream declarations or bindings.
+Runs are persisted below `.mission-control/workspace-provisioning-runs` with a schema version, actor hash, exact validated blueprint snapshot, blueprint fingerprint, idempotency identity, attempt, progress, completed-step evidence, warnings, error, and final result. Run records are created and updated with atomic JSON writes. An owner-aware lease records the executor PID, host, start identity, heartbeat, and attempt; live leases block another executor, while dead/stale leases can be reclaimed safely. This is the durable cross-process boundary; the in-memory map is only a same-process optimization.
 
 ```text
 pending
@@ -33,7 +33,7 @@ pending
   → ready | partial | failed
 ```
 
-`ready` means the physical workspace, selected agents, bootstrap documents, AgentOS provisioning manifest, and required native bindings were verified without warnings. `partial` means the workspace is usable but setup or capability work remains. `failed` preserves a bounded diagnostic and never claims that the workspace is ready.
+`ready` means the physical workspace, selected agents, bootstrap documents, AgentOS provisioning manifest, and required native bindings were verified without warnings. `partial` means the core workspace is usable but setup or capability work remains. `failed` preserves a bounded diagnostic and never claims that the workspace is ready. A terminal state is written only after the final sidecar manifest has been atomically written, so status polling cannot observe completion before its durable evidence exists.
 
 Provisioning accepts an internal `AbortSignal`. If cancellation arrives after a side effect has started, the durable run is marked `cancelled` with the truthful message that the workspace may be incomplete and can be resumed; AgentOS does not perform a destructive rollback.
 
@@ -51,7 +51,7 @@ Blueprint channels, connections, and automations are recorded as pending setup i
 
 ## Verification and recovery
 
-Verification reads the physical workspace, canonical OpenClaw project manifest, AgentOS provisioning manifest, authoritative Mission Control snapshot, selected agent IDs, scaffold documents, and native knowledge result. A failed verification produces `failed` with a specific bounded issue. A retry is safe because workspace creation, knowledge promotion, native binding, capability updates, and manifest writes are convergent operations behind the canonical boundaries.
+Verification reads the physical workspace, canonical OpenClaw project manifest, AgentOS provisioning manifest, authoritative Mission Control snapshot, selected agent IDs, scaffold documents, and native knowledge result. A failed verification produces `failed` with a specific bounded issue. `GET /api/workspaces/provision?runId=...` rehydrates the exact stored blueprint and resumes a non-terminal run, so a process restart does not require the original request body. Completed-step evidence and the canonical OpenClaw idempotency record let retries repair only the missing or unverified boundary. Lease loss stops further mutation; the replacement executor must reacquire ownership first.
 
 The client polls `GET /api/workspaces/provision?runId=...` and renders the server-reported steps and live signals as animated chips. Closing the dialog can leave the server run in progress; any caller that retains the run identifier can recover its durable status. The success action is `Open Workspace`, while a partial result remains usable and shows its pending setup.
 
