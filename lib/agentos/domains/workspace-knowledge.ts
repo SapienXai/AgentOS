@@ -44,6 +44,38 @@ export type WorkspaceKnowledgeSource = {
   error?: string;
 };
 
+/**
+ * The Phase 2 ingestion allowlist is shared with Create Workspace so the
+ * browser cannot advertise formats the canonical reader will skip.
+ */
+export const WORKSPACE_KNOWLEDGE_SUPPORTED_EXTENSIONS = [
+  ".md",
+  ".markdown",
+  ".txt",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".html",
+  ".htm",
+  ".xml",
+  ".csv"
+] as const;
+
+export const WORKSPACE_KNOWLEDGE_FILE_ACCEPT = [
+  ...WORKSPACE_KNOWLEDGE_SUPPORTED_EXTENSIONS,
+  "README",
+  "Makefile"
+].join(",");
+
+export function isSupportedWorkspaceKnowledgeFile(name: string) {
+  const basename = name.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+  const extension = basename.includes(".") ? `.${basename.split(".").pop()}` : "";
+  return WORKSPACE_KNOWLEDGE_SUPPORTED_EXTENSIONS.includes(extension as typeof WORKSPACE_KNOWLEDGE_SUPPORTED_EXTENSIONS[number])
+    || basename === "makefile"
+    || basename.startsWith("readme");
+}
+
 export type WorkspaceKnowledgeSourceNormalizationIssue = {
   index: number;
   message: string;

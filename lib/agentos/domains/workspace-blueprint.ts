@@ -310,6 +310,7 @@ export type WorkspaceBlueprint = {
     runtime: "native-openclaw" | "bounded-local" | "unknown";
     reasoningMode: WorkspaceArchitectReasoningMode;
     failureKind: WorkspaceArchitectFailureKind;
+    latestRevisionInstruction?: string | null;
     policyVersion: typeof WORKSPACE_ARCHITECT_POLICY_VERSION;
   };
 };
@@ -326,6 +327,7 @@ export type WorkspaceArchitectKnowledgeInput = {
   generationId?: string | null;
   sources?: WorkspaceKnowledgeSource[];
   documents?: WorkspaceArchitectCorpusDocument[];
+  warnings?: string[];
   /** Phase 2 snapshot-shaped input; only bounded metadata/previews are consumed. */
   snapshot?: {
     generationId?: string | null;
@@ -336,6 +338,7 @@ export type WorkspaceArchitectKnowledgeInput = {
 
 export type WorkspaceArchitectInput = {
   brief: string;
+  revisionInstruction?: string;
   materialization?: WorkspaceMaterialization;
   knowledge?: WorkspaceArchitectKnowledgeInput;
   mode?: WorkspaceArchitectMode;
@@ -382,6 +385,7 @@ export type WorkspaceArchitectResult = {
 
 export type WorkspaceBlueprintRevisionInput = {
   brief?: string;
+  revisionInstruction?: string;
   materialization?: WorkspaceMaterialization;
   operatorEdits?: {
     identity?: Partial<WorkspaceBlueprint["identity"]>;

@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronLeft,
+  CircleAlert,
   FileText,
   FolderOpen,
   Github,
@@ -28,10 +29,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { createWorkspaceKnowledgeSource, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
+import {
+  createWorkspaceKnowledgeSource,
+  WORKSPACE_KNOWLEDGE_FILE_ACCEPT,
+  type WorkspaceKnowledgeSource
+} from "@/lib/agentos/domains/workspace-knowledge";
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import type {
-  WorkspaceArchitectCorpusDocument,
   WorkspaceArchitectResult,
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
@@ -47,6 +51,27 @@ type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review";
 type ContextAction = "website" | "github" | "connect" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
+type ContextSourceStatus = "attached" | "reading" | "ready" | "partial" | "error" | "unsupported";
+type ContextSourceState = {
+  status: ContextSourceStatus;
+  warning?: string;
+  storedDocuments?: number;
+};
+type UploadGroup = { sourceId: string; files: File[] };
+type ContextStageResult = {
+  draftContextId: string;
+  generationId: string | null;
+  runStatus: "ready" | "partial" | "error" | "cancelled" | "reused";
+  reused: boolean;
+  sourceReports: Array<{
+    sourceId: string;
+    status: ContextSourceStatus;
+    storedDocuments: number;
+    warnings: string[];
+    error: string | null;
+  }>;
+  warnings: string[];
+};
 
 type CreateWorkspaceExperienceProps = {
   open: boolean;
@@ -55,8 +80,8 @@ type CreateWorkspaceExperienceProps = {
 };
 
 const progressLabels = [
-  "Understanding your project",
-  "Reading project context",
+  "Staging project context",
+  "Reading supplied sources",
   "Designing the workspace",
   "Preparing the blueprint"
 ];
@@ -71,7 +96,10 @@ export function CreateWorkspaceExperience({
   const [mode, setMode] = useState<"automatic" | "customize">("automatic");
   const [constraints, setConstraints] = useState("");
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
-  const [documents, setDocuments] = useState<WorkspaceArchitectCorpusDocument[]>([]);
+  const [sourceStates, setSourceStates] = useState<Record<string, ContextSourceState>>({});
+  const [uploadGroups, setUploadGroups] = useState<UploadGroup[]>([]);
+  const [draftContextId, setDraftContextId] = useState<string | null>(null);
+  const [contextDirty, setContextDirty] = useState(false);
   const [materialization, setMaterialization] = useState<WorkspaceMaterialization>({ mode: "empty" });
   const [stage, setStage] = useState<CreateStage>("intake");
   const [progressStep, setProgressStep] = useState(0);
@@ -104,7 +132,10 @@ export function CreateWorkspaceExperience({
       setMode("automatic");
       setConstraints("");
       setSources([]);
-      setDocuments([]);
+      setSourceStates({});
+      setUploadGroups([]);
+      setDraftContextId(null);
+      setContextDirty(false);
       setMaterialization({ mode: "empty" });
       setStage("intake");
       setProgressStep(0);
@@ -129,21 +160,53 @@ export function CreateWorkspaceExperience({
   }, [stage]);
 
   const markContextChanged = () => {
-    if (!result) return;
-    const currentFreshness = freshness ?? result.freshness;
-    setFreshness({
-      blueprintGenerationId: currentFreshness.blueprintGenerationId,
-      currentGenerationId: currentFreshness.currentGenerationId,
-      status: "stale",
-      reason: "Project context changed after this blueprint was produced."
-    });
+    setContextDirty(true);
+    if (result) {
+      const currentFreshness = freshness ?? result.freshness;
+      setFreshness({
+        blueprintGenerationId: currentFreshness.blueprintGenerationId,
+        currentGenerationId: currentFreshness.currentGenerationId,
+        status: "stale",
+        reason: "Project context changed after this blueprint was produced."
+      });
+    }
   };
 
-  const knowledgePayload = () => ({
-    generationId: null,
-    sources,
-    documents
-  });
+  const stageContext = async (controller: AbortController): Promise<ContextStageResult | null> => {
+    if (!contextDirty && draftContextId) return null;
+    if (!sources.length && !draftContextId) return null;
+
+    setProgressStep(0);
+    setSourceStates((current) => Object.fromEntries(sources.map((source) => [source.id, { ...current[source.id], status: "reading" as const }])));
+    const formData = new FormData();
+    if (draftContextId) formData.set("draftContextId", draftContextId);
+    formData.set("sources", JSON.stringify(sources));
+    const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
+    for (const group of uploadGroups) {
+      for (const file of group.files) {
+        const relativePath = file.webkitRelativePath || file.name;
+        manifest.push({ sourceId: group.sourceId, relativePath, fileName: file.name });
+        formData.append("files", file, file.name);
+      }
+    }
+    formData.set("uploadManifest", JSON.stringify(manifest));
+    const response = await fetch("/api/workspaces/context", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal
+    });
+    const payload = (await response.json().catch(() => null)) as ContextStageResult & { error?: string } | null;
+    if (!response.ok || !payload?.draftContextId) throw new Error(payload?.error || "AgentOS could not read the project context.");
+    setDraftContextId(payload.draftContextId);
+    setSourceStates(Object.fromEntries(payload.sourceReports.map((report) => [report.sourceId, {
+      status: report.status,
+      warning: report.error || report.warnings[0],
+      storedDocuments: report.storedDocuments
+    }])));
+    if (payload.runStatus === "cancelled") throw new DOMException("Context staging was cancelled.", "AbortError");
+    setContextDirty(false);
+    return payload;
+  };
 
   const generate = async () => {
     const nextBrief = brief.trim();
@@ -158,6 +221,9 @@ export function CreateWorkspaceExperience({
     setRevisionError(null);
 
     try {
+      const stagedContext = await stageContext(controller);
+      if (stagedContext) setProgressStep(2);
+      const stagedDraftContextId = stagedContext?.draftContextId ?? draftContextId;
       const response = await fetch("/api/workspaces/architect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,7 +236,7 @@ export function CreateWorkspaceExperience({
             .map((line) => line.trim())
             .filter(Boolean),
           materialization,
-          knowledge: knowledgePayload()
+          ...(stagedDraftContextId ? { draftContextId: stagedDraftContextId } : {})
         })
       });
       const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
@@ -180,13 +246,14 @@ export function CreateWorkspaceExperience({
 
       setResult(payload);
       setFreshness(payload.freshness);
+      setContextDirty(false);
       setStage("review");
       setRevisionValue("");
       setIsCustomizing(false);
       setCustomName(payload.blueprint.identity.name);
       setCustomPrimaryName(payload.blueprint.workforce.primaryAgent.name);
     } catch (error) {
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setStage("intake");
         setNotice({
           tone: "warning",
@@ -222,12 +289,12 @@ export function CreateWorkspaceExperience({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blueprint: result.blueprint,
+          ...(draftContextId ? { draftContextId } : {}),
           instruction: revisionValue.trim(),
           operatorConstraints: constraints
             .split("\n")
             .map((line) => line.trim())
-            .filter(Boolean),
-          knowledge: knowledgePayload()
+            .filter(Boolean)
         })
       });
       const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
@@ -261,11 +328,11 @@ export function CreateWorkspaceExperience({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blueprint: result.blueprint,
+          ...(draftContextId ? { draftContextId } : {}),
           operatorEdits: {
             identity: { name: nextName },
             workforce: { primaryAgent: { name: nextPrimaryName } }
           },
-          knowledge: knowledgePayload()
         })
       });
       const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
@@ -320,11 +387,12 @@ export function CreateWorkspaceExperience({
       id: `${kind}-${slugify(label)}-${Date.now()}`,
       kind,
       label,
-      summary: kind === "repository" ? "GitHub repository added as project context." : "Website added as project context.",
+      summary: kind === "repository" ? "User-selected GitHub repository source." : "User-selected website source.",
       locator: kind === "repository" ? { kind: "repository", remoteUrl: url.toString() } : { kind: "website", url: url.toString() },
       provenance: "operator"
     });
     setSources((current) => [...current, source]);
+    setSourceStates((current) => ({ ...current, [source.id]: { status: "attached" } }));
     if (kind === "repository") setMaterialization({ mode: "clone", repoUrl: url.toString() });
     setContextAction(null);
     setSourceDraft({ kind: "website", value: "" });
@@ -332,39 +400,29 @@ export function CreateWorkspaceExperience({
     markContextChanged();
   };
 
-  const handleFiles = async (fileList: FileList | null, kind: "file" | "folder") => {
+  const handleFiles = (fileList: FileList | null, kind: "file" | "folder") => {
     if (!fileList?.length) return;
-    const files = Array.from(fileList).slice(0, 12);
+    const files = Array.from(fileList).slice(0, kind === "folder" ? 120 : 12);
     const folderName = files[0]?.webkitRelativePath?.split("/")[0] || files[0]?.name || "Local project";
     const source = createWorkspaceKnowledgeSource({
       id: `${kind}-${slugify(folderName)}-${Date.now()}`,
       kind,
       label: kind === "folder" ? folderName : files.length === 1 ? files[0].name : `${files.length} project files`,
-      summary: kind === "folder" ? `${files.length} local project files added as context.` : `${files.length} project file${files.length === 1 ? "" : "s"} added as context.`,
-      locator: { kind, path: kind === "folder" ? folderName : files[0].name },
+      summary: kind === "folder" ? `${files.length} local project files attached for reading.` : `${files.length} project file${files.length === 1 ? "" : "s"} attached for reading.`,
+      locator: { kind, path: `upload:${kind}-${Date.now()}` },
       provenance: "operator"
     });
-    const textDocuments: WorkspaceArchitectCorpusDocument[] = [];
-    for (const file of files) {
-      if (!isTextLikeFile(file.name)) continue;
-      const content = (await file.text()).slice(0, 1_200);
-      textDocuments.push({
-        sourceId: source.id,
-        title: file.webkitRelativePath || file.name,
-        summary: "Bounded local file preview supplied as project context.",
-        content,
-        contentLength: file.size
-      });
-    }
     setSources((current) => [...current, source]);
-    setDocuments((current) => [...current, ...textDocuments]);
+    setSourceStates((current) => ({ ...current, [source.id]: { status: "attached" } }));
+    setUploadGroups((current) => [...current, { sourceId: source.id, files }]);
     setContextAction(null);
     markContextChanged();
   };
 
   const removeSource = (sourceId: string) => {
     setSources((current) => current.filter((source) => source.id !== sourceId));
-    setDocuments((current) => current.filter((document) => document.sourceId !== sourceId));
+    setSourceStates((current) => { const next = { ...current }; delete next[sourceId]; return next; });
+    setUploadGroups((current) => current.filter((group) => group.sourceId !== sourceId));
     const removed = sources.find((source) => source.id === sourceId);
     if (removed?.locator.kind === "repository" && materialization.mode === "clone" && removed.locator.remoteUrl === materialization.repoUrl) {
       setMaterialization({ mode: "empty" });
@@ -448,12 +506,13 @@ export function CreateWorkspaceExperience({
           <IntakeView
             isLight={isLight}
             brief={brief}
-            setBrief={(value) => { setBrief(value); markContextChanged(); }}
+            setBrief={setBrief}
             mode={mode}
             setMode={setMode}
             constraints={constraints}
             setConstraints={setConstraints}
             sources={sources}
+            sourceStates={sourceStates}
             contextAction={contextAction}
             setContextAction={(next) => { setContextAction(next); setSourceError(null); setSourceDraft({ kind: next === "github" ? "repository" : "website", value: "" }); }}
             sourceDraft={sourceDraft}
@@ -506,6 +565,7 @@ function IntakeView({
   constraints,
   setConstraints,
   sources,
+  sourceStates,
   contextAction,
   setContextAction,
   sourceDraft,
@@ -530,6 +590,7 @@ function IntakeView({
   constraints: string;
   setConstraints: (value: string) => void;
   sources: WorkspaceKnowledgeSource[];
+  sourceStates: Record<string, ContextSourceState>;
   contextAction: ContextAction;
   setContextAction: (action: ContextAction) => void;
   sourceDraft: SourceDraft;
@@ -577,9 +638,10 @@ function IntakeView({
         <ContextButton isLight={isLight} icon={FileText} label="Files" onClick={onBrowseFiles} />
         <ContextButton isLight={isLight} icon={FolderOpen} label="Folder" onClick={onBrowseFolder} />
         <ContextButton isLight={isLight} icon={Link2} label="Connect" onClick={onConnect} />
-        <input ref={fileInputRef} type="file" className="hidden" multiple accept=".md,.mdx,.txt,.json,.csv,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.pdf,.doc,.docx" onChange={(event) => { onFiles(event.target.files); event.currentTarget.value = ""; }} />
-        <input ref={folderInputRef} type="file" className="hidden" multiple {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(event) => { onFolder(event.target.files); event.currentTarget.value = ""; }} />
+        <input ref={fileInputRef} type="file" className="hidden" multiple accept={WORKSPACE_KNOWLEDGE_FILE_ACCEPT} onChange={(event) => { onFiles(event.target.files); event.currentTarget.value = ""; }} />
+        <input ref={folderInputRef} type="file" className="hidden" multiple accept={WORKSPACE_KNOWLEDGE_FILE_ACCEPT} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(event) => { onFolder(event.target.files); event.currentTarget.value = ""; }} />
       </div>
+      <p className={cn("mt-2 text-[11px]", isLight ? "text-[#9b8d80]" : "text-slate-600")}>Supported files: Markdown, text, JSON, YAML, TOML, HTML, XML, CSV, README, and Makefile.</p>
 
       {contextAction === "website" || contextAction === "github" ? (
         <div className={cn("mt-2 flex gap-2 rounded-xl border p-2", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
@@ -615,7 +677,7 @@ function IntakeView({
             <span key={source.id} className={cn("inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs", isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.05] text-slate-300")}>
               <span aria-hidden="true">{source.kind === "website" ? "🌐" : source.kind === "repository" ? "◈" : source.kind === "folder" ? "▱" : "▤"}</span>
               <span className="max-w-[220px] truncate" title={source.label}>{source.label}</span>
-              <Check className="h-3.5 w-3.5 text-emerald-500" aria-label="Context ready" />
+              <SourceStatusIndicator state={sourceStates[source.id]} />
               <button type="button" onClick={() => onRemoveSource(source.id)} className="ml-0.5 rounded p-0.5 text-current/60 hover:bg-black/5 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Remove ${source.label}`}><X className="h-3.5 w-3.5" /></button>
             </span>
           ))}
@@ -639,6 +701,27 @@ function IntakeView({
 
       <p className={cn("mt-8 text-center text-xs", isLight ? "text-[#9b8d80]" : "text-slate-600")}>Understand <span className="px-1">→</span> Organize <span className="px-1">→</span> Design <span className="px-1">→</span> Review</p>
     </main>
+  );
+}
+
+function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
+  const status = state?.status ?? "attached";
+  const label = status === "ready"
+    ? "Context ready"
+    : status === "reading"
+      ? "Reading context"
+      : status === "partial"
+        ? "Partially read"
+        : status === "unsupported"
+          ? "Unsupported format"
+          : status === "error"
+            ? "Could not read"
+            : "Attached; not read yet";
+  return (
+    <span className="inline-flex items-center gap-1" title={state?.warning || label}>
+      {status === "ready" ? <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" /> : status === "reading" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" /> : <CircleAlert className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />}
+      <span className="text-[10px] opacity-70">{status === "ready" ? "Ready" : status === "reading" ? "Reading" : status === "partial" ? "Partial" : status === "unsupported" ? "Unsupported" : status === "error" ? "Error" : "Attached"}</span>
+    </span>
   );
 }
 
@@ -807,10 +890,6 @@ function ModeButton({ isLight, active, label, onClick }: { isLight: boolean; act
 
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "source";
-}
-
-function isTextLikeFile(name: string) {
-  return /\.(md|mdx|txt|json|csv|ya?ml|tsx?|jsx?|py|html?|css|sql|toml|xml)$/i.test(name);
 }
 
 function capabilityLabel(id: string) {

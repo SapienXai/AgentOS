@@ -1,0 +1,556 @@
+import "server-only";
+
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import {
+  DEFAULT_KNOWLEDGE_INGESTION_LIMITS,
+  ingestKnowledgeSources,
+  readKnowledgeSnapshot,
+  type KnowledgeHostResolver,
+  type KnowledgeIngestionProgress,
+  type KnowledgeIngestionSourceReport,
+  type KnowledgeWebsiteFetcher
+} from "@/lib/agentos/domains/workspace-knowledge-ingestion";
+import {
+  normalizeWorkspaceKnowledgeSources,
+  workspaceKnowledgeSourceIdentity,
+  type WorkspaceKnowledgeSource
+} from "@/lib/agentos/domains/workspace-knowledge";
+import type {
+  WorkspaceArchitectCorpusDocument,
+  WorkspaceArchitectKnowledgeInput
+} from "@/lib/agentos/domains/workspace-blueprint";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
+import { redactSecretText } from "@/lib/security/redaction";
+
+const WORKSPACE_CREATION_CONTEXT_ROOT = path.join(missionControlRootPath, "workspace-create");
+const WORKSPACE_CREATION_CONTEXT_SCHEMA_VERSION = 1;
+const WORKSPACE_CREATION_CONTEXT_TTL_MS = 6 * 60 * 60 * 1_000;
+const MAX_CONTEXT_SOURCES = 24;
+const MAX_UPLOAD_FILES = 120;
+const MAX_UPLOAD_BYTES_PER_FILE = DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxBytesPerDocument;
+const MAX_UPLOAD_BYTES = DEFAULT_KNOWLEDGE_INGESTION_LIMITS.maxTotalBytesPerSource;
+const MAX_UPLOAD_BYTES_TOTAL = MAX_UPLOAD_BYTES * 4;
+const MAX_RELATIVE_UPLOAD_PATH_LENGTH = 400;
+const DRAFT_ID_PATTERN = /^[a-f0-9-]{36}$/i;
+
+type WorkspaceCreationContextSourceStatus = "attached" | "reading" | "ready" | "partial" | "error" | "unsupported";
+
+export type WorkspaceCreationUpload = {
+  sourceId: string;
+  relativePath: string;
+  fileName: string;
+  bytes: Buffer;
+};
+
+export type WorkspaceCreationContextSourceReport = {
+  sourceId: string;
+  sourceKind: WorkspaceKnowledgeSource["kind"];
+  status: WorkspaceCreationContextSourceStatus;
+  support: "supported" | "partial" | "declaration-only";
+  discoveredItems: number;
+  fetchedItems: number;
+  storedDocuments: number;
+  warningCount: number;
+  warnings: string[];
+  error: string | null;
+};
+
+export type WorkspaceCreationContextStageResult = {
+  draftContextId: string;
+  generationId: string | null;
+  runStatus: "ready" | "partial" | "error" | "cancelled" | "reused";
+  reused: boolean;
+  sources: WorkspaceKnowledgeSource[];
+  sourceReports: WorkspaceCreationContextSourceReport[];
+  warnings: string[];
+};
+
+export type WorkspaceCreationContextResult = WorkspaceCreationContextStageResult & {
+  knowledge: WorkspaceArchitectKnowledgeInput;
+};
+
+export type WorkspaceCreationContextOptions = {
+  signal?: AbortSignal;
+  onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
+  websiteFetcher?: KnowledgeWebsiteFetcher;
+  networkResolver?: KnowledgeHostResolver;
+};
+
+type StoredUpload = {
+  relativePath: string;
+  fileName: string;
+  size: number;
+  contentHash: string;
+};
+
+type StoredContext = {
+  schemaVersion: typeof WORKSPACE_CREATION_CONTEXT_SCHEMA_VERSION;
+  draftContextId: string;
+  actorHash: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  fingerprint: string;
+  generationId: string | null;
+  sources: WorkspaceKnowledgeSource[];
+  uploads: Record<string, StoredUpload[]>;
+  sourceReports: WorkspaceCreationContextSourceReport[];
+  warnings: string[];
+};
+
+const contextLocks = new Map<string, Promise<void>>();
+
+export async function stageWorkspaceCreationKnowledge(
+  input: {
+    actorId: string;
+    draftContextId?: string | null;
+    sources: unknown[];
+    uploads?: WorkspaceCreationUpload[];
+  } & WorkspaceCreationContextOptions
+): Promise<WorkspaceCreationContextStageResult> {
+  const actorId = input.actorId.trim();
+  if (!actorId) throw new Error("Workspace context ownership is unavailable.");
+  const draftContextId = input.draftContextId ? assertDraftContextId(input.draftContextId) : randomUUID();
+  const lockKey = `${actorHash(actorId)}:${draftContextId}`;
+  return withContextLock(lockKey, () => stageWorkspaceCreationKnowledgeLocked({ ...input, actorId, draftContextId }));
+}
+
+async function stageWorkspaceCreationKnowledgeLocked(
+  input: {
+    actorId: string;
+    draftContextId: string;
+    sources: unknown[];
+    uploads?: WorkspaceCreationUpload[];
+  } & WorkspaceCreationContextOptions
+): Promise<WorkspaceCreationContextStageResult> {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const sources = normalizeWorkspaceKnowledgeSources(input.sources);
+  if (sources.length > MAX_CONTEXT_SOURCES) throw new Error("Too many project context sources were supplied.");
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const draftRoot = resolveDraftRoot(input.actorId, input.draftContextId);
+  const previous = await readStoredContext(draftRoot);
+  if (previous && previous.actorHash !== actorHash(input.actorId)) throw new Error("Workspace context is unavailable.");
+
+  const uploads = input.uploads ?? [];
+  if (uploads.length > MAX_UPLOAD_FILES) throw new Error("Too many uploaded project files were supplied.");
+  if (uploads.reduce((total, upload) => total + upload.bytes.byteLength, 0) > MAX_UPLOAD_BYTES_TOTAL) {
+    throw new Error("The uploaded project context exceeds the size limit.");
+  }
+  const uploadGroups = groupUploads(uploads, sourceById);
+  const storedUploads = await prepareUploads(draftRoot, sourceById, uploadGroups, previous?.uploads ?? {});
+  await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
+  const fingerprint = createContextFingerprint(sources, storedUploads);
+  const publicSources = sources.map(publicSource);
+
+  if (previous?.fingerprint === fingerprint && previous.generationId && previous.sourceReports.every((report) => report.status === "ready")) {
+    const snapshot = await readKnowledgeSnapshot(
+      path.join(draftRoot, "corpus"),
+      path.join(draftRoot, "state")
+    );
+    if (snapshot?.state.generationId === previous.generationId) {
+      await writeStoredContext(draftRoot, {
+        ...previous,
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString()
+      });
+      return {
+        draftContextId: input.draftContextId,
+        generationId: previous.generationId,
+        runStatus: "reused",
+        reused: true,
+        sources: publicSources,
+        sourceReports: previous.sourceReports,
+        warnings: previous.warnings
+      };
+    }
+  }
+
+  const ingestionSources = sources.map((source) => toIngestionSource(source, draftRoot, storedUploads[source.id] ?? []));
+  if (sources.length === 0) {
+    const emptyContext = createStoredContext({
+      actorId: input.actorId,
+      draftContextId: input.draftContextId,
+      fingerprint,
+      generationId: null,
+      sources: publicSources,
+      uploads: storedUploads,
+      sourceReports: [],
+      warnings: []
+    });
+    await writeStoredContext(draftRoot, emptyContext);
+    return {
+      draftContextId: input.draftContextId,
+      generationId: null,
+      runStatus: "ready",
+      reused: false,
+      sources: publicSources,
+      sourceReports: [],
+      warnings: []
+    };
+  }
+
+  const ingestion = await ingestKnowledgeSources({
+    sources: ingestionSources,
+    corpusRoot: path.join(draftRoot, "corpus"),
+    stateRoot: path.join(draftRoot, "state"),
+    signal: input.signal,
+    onProgress: input.onProgress,
+    websiteFetcher: input.websiteFetcher,
+    networkResolver: input.networkResolver
+  });
+  const sourceReports = ingestion.sourceReports.map((report) => projectSourceReport(report));
+  const warnings = ingestion.state.warnings.map((warning) => sanitizeDiagnostic(warning));
+  if (ingestion.run.status === "cancelled") {
+    return {
+      draftContextId: input.draftContextId,
+      generationId: previous?.generationId ?? ingestion.state.generationId ?? null,
+      runStatus: "cancelled",
+      reused: false,
+      sources: publicSources,
+      sourceReports,
+      warnings
+    };
+  }
+  const storedContext = createStoredContext({
+    actorId: input.actorId,
+    draftContextId: input.draftContextId,
+    fingerprint,
+    generationId: ingestion.state.generationId ?? null,
+    sources: publicSources,
+    uploads: storedUploads,
+    sourceReports,
+    warnings
+  });
+  await writeStoredContext(draftRoot, storedContext);
+  return {
+    draftContextId: input.draftContextId,
+    generationId: ingestion.state.generationId ?? null,
+    runStatus: ingestion.run.status === "partial" ? "partial" : ingestion.run.status === "error" ? "error" : "ready",
+    reused: false,
+    sources: publicSources,
+    sourceReports,
+    warnings
+  };
+}
+
+export async function readWorkspaceCreationContext(input: {
+  actorId: string;
+  draftContextId: string;
+}): Promise<WorkspaceCreationContextResult> {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) {
+    throw new Error("Workspace context is unavailable or expired.");
+  }
+
+  const snapshot = stored.generationId
+    ? await readKnowledgeSnapshot(path.join(draftRoot, "corpus"), path.join(draftRoot, "state"))
+    : null;
+  const documents = snapshot ? await readBoundedArchitectDocuments(path.join(draftRoot, "corpus"), snapshot.documents) : [];
+  const failedSourceIds = new Set(stored.sourceReports.filter((report) => report.status === "error" || report.status === "unsupported").map((report) => report.sourceId));
+  const sources = stored.sources.map((source) => failedSourceIds.has(source.id) ? { ...source, status: "error" as const, error: stored.sourceReports.find((report) => report.sourceId === source.id)?.error ?? "Source content could not be read." } : source);
+  const runStatus = stored.sourceReports.some((report) => report.status === "error" || report.status === "unsupported")
+    ? stored.sourceReports.some((report) => report.status === "ready" || report.status === "partial") ? "partial" : "error"
+    : "ready";
+  return {
+    ...stored,
+    runStatus,
+    reused: false,
+    knowledge: {
+      generationId: stored.generationId,
+      sources,
+      documents,
+      warnings: stored.warnings
+    }
+  };
+}
+
+async function readBoundedArchitectDocuments(corpusRoot: string, documents: Array<{ sourceId: string; outputPath: string; title: string; classification: string; contentLength: number }>): Promise<WorkspaceArchitectCorpusDocument[]> {
+  const result: WorkspaceArchitectCorpusDocument[] = [];
+  for (const document of documents.slice(0, 12)) {
+    const relativePath = document.outputPath.replace(/\\/g, "/");
+    const normalized = path.posix.normalize(relativePath);
+    if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) continue;
+    const absolutePath = path.join(corpusRoot, ...normalized.split("/"));
+    await assertNoSymlinkAlongPath(corpusRoot, absolutePath);
+    const content = await readFile(absolutePath, "utf8").catch(() => null);
+    if (content === null) continue;
+    result.push({
+      sourceId: document.sourceId,
+      title: redactSecretText(document.title).slice(0, 160),
+      summary: `${document.classification} document read from the staged project corpus.`,
+      content: redactSecretText(content).slice(0, 1_200),
+      contentLength: document.contentLength
+    });
+  }
+  return result;
+}
+
+function toIngestionSource(source: WorkspaceKnowledgeSource, draftRoot: string, uploads: StoredUpload[]): WorkspaceKnowledgeSource {
+  if (source.kind === "repository" && source.locator.kind === "repository" && source.locator.localPath) {
+    throw new Error("Repository sources must use a remote URL in Create Workspace.");
+  }
+  if (source.kind !== "file" && source.kind !== "folder") return source;
+  if (uploads.length === 0) throw new Error(`${source.label} has no staged upload content.`);
+  const uploadRoot = resolveUploadRoot(draftRoot, source.id);
+  if (source.kind === "file" && uploads.length !== 1) throw new Error(`${source.label} must contain exactly one uploaded file.`);
+  return {
+    ...source,
+    locator: source.kind === "file"
+      ? { kind: "file", path: path.join(uploadRoot, uploads[0].relativePath) }
+      : { kind: "folder", path: uploadRoot }
+  };
+}
+
+function groupUploads(uploads: WorkspaceCreationUpload[], sourceById: Map<string, WorkspaceKnowledgeSource>) {
+  const groups = new Map<string, WorkspaceCreationUpload[]>();
+  for (const upload of uploads) {
+    const source = sourceById.get(upload.sourceId);
+    if (!source) throw new Error("An uploaded file references an unknown project context source.");
+    if (source.kind !== "file" && source.kind !== "folder") throw new Error("Only file and folder sources can contain uploads.");
+    const current = groups.get(upload.sourceId) ?? [];
+    current.push(upload);
+    groups.set(upload.sourceId, current);
+  }
+  return groups;
+}
+
+async function prepareUploads(
+  draftRoot: string,
+  sourceById: Map<string, WorkspaceKnowledgeSource>,
+  groups: Map<string, WorkspaceCreationUpload[]>,
+  previous: Record<string, StoredUpload[]>
+) {
+  const stored: Record<string, StoredUpload[]> = {};
+  for (const [sourceId, source] of sourceById) {
+    const incoming = groups.get(sourceId);
+    if (!incoming) {
+      if (previous[sourceId]) stored[sourceId] = previous[sourceId];
+      continue;
+    }
+    const seenPaths = new Set<string>();
+    const records: StoredUpload[] = [];
+    if (incoming.length > MAX_UPLOAD_FILES) throw new Error("Too many files were supplied for one project context source.");
+    const totalBytes = incoming.reduce((total, upload) => total + upload.bytes.byteLength, 0);
+    if (totalBytes > MAX_UPLOAD_BYTES) throw new Error("The uploaded project context exceeds the size limit.");
+    const uploadRoot = resolveUploadRoot(draftRoot, sourceId);
+    await assertNoSymlinkAlongPath(draftRoot, uploadRoot);
+    await rm(uploadRoot, { recursive: true, force: true });
+    await mkdir(uploadRoot, { recursive: true, mode: 0o700 });
+    for (const upload of incoming) {
+      const relativePath = normalizeUploadRelativePath(upload.relativePath || upload.fileName, source.kind === "file");
+      if (seenPaths.has(relativePath)) throw new Error("Uploaded project files must have unique relative paths.");
+      seenPaths.add(relativePath);
+      if (upload.bytes.byteLength > MAX_UPLOAD_BYTES_PER_FILE) throw new Error(`Uploaded file ${path.basename(relativePath)} exceeds the size limit.`);
+      const target = path.join(uploadRoot, ...relativePath.split("/"));
+      await assertNoSymlinkAlongPath(uploadRoot, target);
+      await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+      await writeFile(target, upload.bytes, { mode: 0o600 });
+      records.push({
+        relativePath,
+        fileName: sanitizeFileName(upload.fileName || path.basename(relativePath)),
+        size: upload.bytes.byteLength,
+        contentHash: sha256(upload.bytes)
+      });
+    }
+    stored[sourceId] = records;
+  }
+  return stored;
+}
+
+async function cleanupRemovedUploadRoots(
+  draftRoot: string,
+  previous: Record<string, StoredUpload[]>,
+  sourceById: Map<string, WorkspaceKnowledgeSource>
+) {
+  for (const sourceId of Object.keys(previous)) {
+    if (sourceById.has(sourceId)) continue;
+    const uploadRoot = resolveUploadRoot(draftRoot, sourceId);
+    await assertNoSymlinkAlongPath(draftRoot, uploadRoot);
+    await rm(uploadRoot, { recursive: true, force: true });
+  }
+}
+
+function createStoredContext(input: {
+  actorId: string;
+  draftContextId: string;
+  fingerprint: string;
+  generationId: string | null;
+  sources: WorkspaceKnowledgeSource[];
+  uploads: Record<string, StoredUpload[]>;
+  sourceReports: WorkspaceCreationContextSourceReport[];
+  warnings: string[];
+}): StoredContext {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: WORKSPACE_CREATION_CONTEXT_SCHEMA_VERSION,
+    draftContextId: input.draftContextId,
+    actorHash: actorHash(input.actorId),
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString(),
+    fingerprint: input.fingerprint,
+    generationId: input.generationId,
+    sources: input.sources,
+    uploads: input.uploads,
+    sourceReports: input.sourceReports,
+    warnings: input.warnings.slice(0, 24)
+  };
+}
+
+function publicSource(source: WorkspaceKnowledgeSource) {
+  if (source.kind === "file" || source.kind === "folder") {
+    return { ...source, locator: { kind: source.kind, path: `staged-upload:${source.id}` } };
+  }
+  if (source.kind === "repository" && source.locator.kind === "repository" && source.locator.localPath) {
+    return { ...source, locator: { kind: "repository" as const, localPath: `staged-repository:${source.id}` } };
+  }
+  return source;
+}
+
+function projectSourceReport(report: KnowledgeIngestionSourceReport): WorkspaceCreationContextSourceReport {
+  const unsupported = report.warnings.some((warning) => /unsupported|binary|extraction is not enabled/i.test(warning));
+  const status: WorkspaceCreationContextSourceStatus = report.support === "declaration-only" || unsupported
+    ? "unsupported"
+    : report.status === "ready"
+      ? "ready"
+      : report.status === "partial"
+        ? "partial"
+        : report.status === "cancelled"
+          ? "error"
+          : "error";
+  return {
+    sourceId: report.sourceId,
+    sourceKind: report.sourceKind,
+    status,
+    support: report.support,
+    discoveredItems: report.discoveredItems,
+    fetchedItems: report.fetchedItems,
+    storedDocuments: report.storedDocuments,
+    warningCount: report.warningCount,
+    warnings: report.warnings.map(sanitizeDiagnostic).slice(0, 8),
+    error: report.error ? sanitizeDiagnostic(report.error) : null
+  };
+}
+
+function createContextFingerprint(sources: WorkspaceKnowledgeSource[], uploads: Record<string, StoredUpload[]>) {
+  return sha256(JSON.stringify({
+    sources: sources.map((source) => ({ id: source.id, identity: workspaceKnowledgeSourceIdentity(source), kind: source.kind })).sort((left, right) => left.id.localeCompare(right.id)),
+    uploads: Object.entries(uploads).sort(([left], [right]) => left.localeCompare(right)).map(([sourceId, entries]) => ({
+      sourceId,
+      entries: entries.map(({ relativePath, contentHash, size }) => ({ relativePath, contentHash, size })).sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+    }))
+  }));
+}
+
+function resolveDraftRoot(actorId: string, draftContextId: string) {
+  return path.join(WORKSPACE_CREATION_CONTEXT_ROOT, actorHash(actorId), assertDraftContextId(draftContextId));
+}
+
+function resolveUploadRoot(draftRoot: string, sourceId: string) {
+  return path.join(draftRoot, "uploads", sha256(sourceId).slice(0, 24));
+}
+
+function assertDraftContextId(value: string) {
+  const normalized = value.trim();
+  if (!DRAFT_ID_PATTERN.test(normalized)) throw new Error("Workspace context identifier is invalid.");
+  return normalized;
+}
+
+function actorHash(actorId: string) {
+  return sha256(actorId.trim()).slice(0, 32);
+}
+
+function normalizeUploadRelativePath(value: string, fileOnly: boolean) {
+  const raw = value.trim().replace(/\\/g, "/");
+  if (!raw || raw.includes("\0") || /^[a-z]:($|\/)/i.test(raw) || raw.startsWith("/")) throw new Error("Uploaded file paths must be relative.");
+  const normalized = path.posix.normalize(raw);
+  const segments = normalized.split("/");
+  if (normalized === "." || segments.includes("..") || normalized.length > MAX_RELATIVE_UPLOAD_PATH_LENGTH) throw new Error("Uploaded file path is unsafe.");
+  if (fileOnly && segments.length !== 1) throw new Error("A file source cannot contain nested upload paths.");
+  return normalized;
+}
+
+function sanitizeFileName(value: string) {
+  return value.replace(/\\/g, "/").split("/").pop()?.replace(/[\0\r\n]/g, "").slice(0, 160) || "uploaded-file";
+}
+
+function sha256(value: string | Buffer) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function readStoredContext(draftRoot: string): Promise<StoredContext | null> {
+  const value = await readFile(path.join(draftRoot, "context.json"), "utf8").catch(() => null);
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredContext>;
+    if (parsed.schemaVersion !== WORKSPACE_CREATION_CONTEXT_SCHEMA_VERSION || typeof parsed.draftContextId !== "string" || typeof parsed.actorHash !== "string" || !Array.isArray(parsed.sources) || !parsed.uploads || !Array.isArray(parsed.sourceReports) || !Array.isArray(parsed.warnings)) return null;
+    return parsed as StoredContext;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredContext(draftRoot: string, context: StoredContext) {
+  await assertNoSymlinkAlongPath(WORKSPACE_CREATION_CONTEXT_ROOT, draftRoot);
+  await mkdir(draftRoot, { recursive: true, mode: 0o700 });
+  const target = path.join(draftRoot, "context.json");
+  await assertNoSymlinkAlongPath(draftRoot, target);
+  await writeFile(target, `${JSON.stringify(context, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+async function cleanupExpiredWorkspaceCreationContexts() {
+  const actorRoots = await readdir(WORKSPACE_CREATION_CONTEXT_ROOT, { withFileTypes: true }).catch(() => []);
+  for (const actorRoot of actorRoots) {
+    if (!actorRoot.isDirectory() || !/^[a-f0-9]{32}$/i.test(actorRoot.name)) continue;
+    const actorPath = path.join(WORKSPACE_CREATION_CONTEXT_ROOT, actorRoot.name);
+    const drafts = await readdir(actorPath, { withFileTypes: true }).catch(() => []);
+    for (const draft of drafts) {
+      if (!draft.isDirectory() || !DRAFT_ID_PATTERN.test(draft.name)) continue;
+      const draftPath = path.join(actorPath, draft.name);
+      const stored = await readStoredContext(draftPath);
+      if (stored && Date.parse(stored.expiresAt) > Date.now()) continue;
+      const metadata = await lstat(draftPath).catch(() => null);
+      if (metadata?.isSymbolicLink()) continue;
+      if (!stored && metadata && Date.now() - metadata.mtimeMs < WORKSPACE_CREATION_CONTEXT_TTL_MS) continue;
+      await rm(draftPath, { recursive: true, force: true });
+    }
+  }
+}
+
+async function assertNoSymlinkAlongPath(root: string, target: string) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Workspace context path escaped its staging root.");
+  let current = resolvedRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const metadata = await lstat(current).catch(() => null);
+    if (metadata?.isSymbolicLink()) throw new Error("Workspace context staging does not accept symbolic links.");
+  }
+}
+
+function sanitizeDiagnostic(value: string) {
+  return redactSecretText(value).replace(/https?:\/\/\S+/gi, "[url]").slice(0, 300);
+}
+
+async function withContextLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = contextLocks.get(key) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const chain = previous.then(() => current);
+  contextLocks.set(key, chain);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (contextLocks.get(key) === chain) contextLocks.delete(key);
+  }
+}

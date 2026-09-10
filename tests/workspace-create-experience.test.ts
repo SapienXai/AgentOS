@@ -121,7 +121,13 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
   assert.match(wrapperSource, /<CreateWorkspaceExperience/);
   assert.match(source, /fetch\("\/api\/workspaces\/architect"/);
+  assert.match(source, /fetch\("\/api\/workspaces\/context"/);
+  assert.match(source, /const stagedDraftContextId = stagedContext\?\.draftContextId \?\? draftContextId/);
+  assert.match(source, /draftContextId: stagedDraftContextId/);
   assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
+  assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
+  assert.doesNotMatch(source, /file\.text\(/);
+  assert.doesNotMatch(source, /documents: knowledgePayload/);
   assert.doesNotMatch(source, /fetch\(`\/api\/planner/);
   assert.match(source, /Final workspace provisioning will be added in Phase 6/);
 });
@@ -136,6 +142,10 @@ test("Architect API routes use workspace authorization and never provision the f
   assert.match(reviseRoute, /requireAgentOsProductPermission\(request, "workspace\.manage"\)/);
   assert.match(generateRoute, /generateWorkspaceBlueprint/);
   assert.match(reviseRoute, /reviseWorkspaceBlueprint/);
+  assert.match(generateRoute, /readWorkspaceCreationContext/);
+  assert.match(reviseRoute, /readWorkspaceCreationContext/);
+  assert.doesNotMatch(generateRoute, /documents/);
+  assert.doesNotMatch(reviseRoute, /documents/);
   assert.doesNotMatch(generateRoute, /createWorkspaceProject/);
   assert.doesNotMatch(reviseRoute, /createWorkspaceProject/);
 });

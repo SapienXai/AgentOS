@@ -63,6 +63,7 @@ const MAX_EVIDENCE_TEXT_LENGTH = 500;
 const MAX_DOCUMENTS = 12;
 const MAX_DOCUMENT_TEXT_LENGTH = 1_200;
 const MAX_SOURCE_TEXT_LENGTH = 600;
+const MAX_REVISION_INSTRUCTION_LENGTH = 2_000;
 const DEFAULT_GENERATION_ID = null;
 const DEFAULT_ARCHITECT_TIMEOUT_MS = 90_000;
 const MAX_ARCHITECT_ATTEMPTS = 3;
@@ -254,6 +255,7 @@ type KnowledgeContext = {
   sources: WorkspaceKnowledgeSource[];
   generationId: string | null;
   documents: WorkspaceArchitectCorpusDocument[];
+  warnings: string[];
 };
 
 type KnowledgeEvidenceResult = {
@@ -273,6 +275,9 @@ export async function generateWorkspaceBlueprint(
   const now = options.now ?? (() => new Date().toISOString());
   const brief = redactSecretText(input.brief.trim()).slice(0, MAX_BRIEF_LENGTH);
   if (!brief) throw new Error("Workspace architect brief is required.");
+  const revisionInstruction = input.revisionInstruction === undefined
+    ? undefined
+    : redactSecretText(input.revisionInstruction.trim()).slice(0, MAX_REVISION_INSTRUCTION_LENGTH);
 
   const materialization = normalizeWorkspaceMaterializationInput({
     materialization: input.materialization ?? { mode: "empty" }
@@ -300,6 +305,7 @@ export async function generateWorkspaceBlueprint(
   ].slice(0, MAX_EVIDENCE_ITEMS);
   const reasoning = await runArchitectReasoning({
     brief,
+    revisionInstruction,
     materialization,
     knowledge,
     evidence,
@@ -318,6 +324,7 @@ export async function generateWorkspaceBlueprint(
   });
   const warnings = [
     ...(knowledgeEvidence.warning ? [knowledgeEvidence.warning] : []),
+    ...knowledge.warnings,
     ...knowledge.sources.filter((source) => source.status === "error").map((source) => `${source.label} is declared but currently unavailable.`),
     ...normalized.warnings,
     ...(reasoning.warning ? [reasoning.warning] : [])
@@ -378,7 +385,7 @@ export async function generateWorkspaceBlueprint(
     operatorOverrides: overrides,
     provenance: {
       architectRunId,
-      inputFingerprint: fingerprintInput({ brief, materialization, knowledge, operatorConstraints, overrides }),
+      inputFingerprint: fingerprintInput({ brief, revisionInstruction, materialization, knowledge, operatorConstraints, overrides }),
       knowledgeGenerationId: knowledge.generationId,
       sourceIds,
       createdAt,
@@ -386,6 +393,7 @@ export async function generateWorkspaceBlueprint(
       runtime: reasoning.runtime,
       reasoningMode: reasoning.reasoningMode,
       failureKind: reasoning.failureKind,
+      ...(revisionInstruction ? { latestRevisionInstruction: revisionInstruction } : {}),
       policyVersion: WORKSPACE_ARCHITECT_POLICY_VERSION
     }
   };
@@ -428,21 +436,27 @@ export async function reviseWorkspaceBlueprint(
   const now = options.now ?? (() => new Date().toISOString());
   const nextBrief = input.brief === undefined ? blueprint.brief : redactSecretText(input.brief.trim()).slice(0, MAX_BRIEF_LENGTH);
   if (!nextBrief) throw new Error("Workspace architect brief is required.");
+  const revisionInstruction = input.revisionInstruction === undefined
+    ? undefined
+    : redactSecretText(input.revisionInstruction.trim()).slice(0, MAX_REVISION_INSTRUCTION_LENGTH);
   const nextKnowledge = input.knowledge ? normalizeKnowledgeContext(input.knowledge) : {
     sources: blueprint.knowledge.sources,
     generationId: blueprint.knowledge.generationId,
-    documents: []
+    documents: [],
+    warnings: []
   };
   const nextConstraints = input.operatorConstraints === undefined
     ? blueprint.operatorConstraints
     : normalizeOperatorConstraints(input.operatorConstraints);
   const generated = await generateWorkspaceBlueprint({
     brief: nextBrief,
+    revisionInstruction,
     materialization: input.materialization ?? blueprint.materialization,
     knowledge: {
       generationId: nextKnowledge.generationId,
       sources: nextKnowledge.sources,
-      documents: nextKnowledge.documents
+      documents: nextKnowledge.documents,
+      warnings: nextKnowledge.warnings
     },
     operatorConstraints: nextConstraints,
     operatorOverrides: blueprint.operatorOverrides
@@ -459,6 +473,7 @@ export async function reviseWorkspaceBlueprint(
     architectRunId: generated.blueprint.provenance.architectRunId,
     inputFingerprint: fingerprintInput({
       brief: next.brief,
+      revisionInstruction,
       materialization: next.materialization,
       knowledge: nextKnowledge,
       operatorConstraints: next.operatorConstraints,
@@ -466,6 +481,7 @@ export async function reviseWorkspaceBlueprint(
     }),
     knowledgeGenerationId: next.knowledge.generationId,
     sourceIds: next.knowledge.sources.map((source) => source.id),
+    ...(revisionInstruction !== undefined ? { latestRevisionInstruction: revisionInstruction || null } : {}),
     createdAt: next.updatedAt
   };
   const validation = validateWorkspaceBlueprint(next);
@@ -733,7 +749,8 @@ function normalizeKnowledgeContext(input?: WorkspaceArchitectKnowledgeInput): Kn
       summary: document.summary ? redactSecretText(document.summary).slice(0, MAX_SOURCE_TEXT_LENGTH) : undefined,
       content: document.content ? redactSecretText(document.content).slice(0, MAX_DOCUMENT_TEXT_LENGTH) : undefined,
       contentLength: typeof document.contentLength === "number" ? Math.max(0, Math.floor(document.contentLength)) : undefined
-    }))
+    })),
+    warnings: (input?.warnings ?? []).map((warning) => redactSecretText(warning).slice(0, MAX_EVIDENCE_TEXT_LENGTH)).filter(Boolean).slice(0, MAX_EVIDENCE_ITEMS)
   };
 }
 
@@ -774,7 +791,8 @@ async function buildKnowledgeEvidence(
   options: { nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>; now: () => string }
 ): Promise<KnowledgeEvidenceResult> {
   const sourceIds = new Set(knowledge.sources.map((source) => source.id));
-  const sourceEvidence = knowledge.sources.map((source) =>
+  const ingestedSourceIds = new Set(knowledge.documents.map((document) => document.sourceId));
+  const sourceEvidence = knowledge.sources.filter((source) => ingestedSourceIds.has(source.id)).map((source) =>
     createEvidence("knowledge-source", source.id, `${source.label}: ${source.summary}`, Math.round((source.confidence ?? 65)), true)
   );
   const queries = buildRetrievalQueries(brief);
@@ -893,6 +911,7 @@ type ArchitectNormalizationResult = {
 
 async function runArchitectReasoning(input: {
   brief: string;
+  revisionInstruction?: string;
   materialization: WorkspaceMaterialization;
   knowledge: KnowledgeContext;
   evidence: WorkspaceBlueprintEvidence[];
@@ -910,6 +929,7 @@ async function runArchitectReasoning(input: {
   }));
   const evidencePack = buildArchitectEvidencePack({
     brief: input.brief,
+    revisionInstruction: input.revisionInstruction,
     materialization: input.materialization,
     knowledge: input.knowledge,
     evidence: input.evidence,
@@ -1060,6 +1080,7 @@ function parseArchitectProposal(text: string): WorkspaceArchitectProposal {
 
 function buildArchitectEvidencePack(input: {
   brief: string;
+  revisionInstruction?: string;
   materialization: WorkspaceMaterialization;
   knowledge: KnowledgeContext;
   evidence: WorkspaceBlueprintEvidence[];
@@ -1067,9 +1088,11 @@ function buildArchitectEvidencePack(input: {
 }) {
   return {
     operatorBrief: input.brief,
+    operatorRevision: input.revisionInstruction ?? null,
     explicitOperatorConstraints: input.operatorConstraints,
     materialization: input.materialization,
     knowledgeGenerationId: input.knowledge.generationId,
+    stagingWarnings: input.knowledge.warnings,
     sources: input.knowledge.sources.slice(0, MAX_EVIDENCE_ITEMS).map((source) => ({
       id: source.id,
       kind: source.kind,
@@ -1727,6 +1750,7 @@ function lockPath(blueprint: WorkspaceBlueprint, path: string) {
 
 function fingerprintInput(input: {
   brief: string;
+  revisionInstruction?: string;
   materialization: WorkspaceMaterialization;
   knowledge: KnowledgeContext;
   operatorConstraints: string[];
@@ -1736,6 +1760,7 @@ function fingerprintInput(input: {
     policy: WORKSPACE_BLUEPRINT_POLICY_VERSION,
     architectPolicy: WORKSPACE_ARCHITECT_POLICY_VERSION,
     brief: input.brief,
+    revisionInstruction: input.revisionInstruction ?? null,
     materialization: input.materialization,
     operatorConstraints: input.operatorConstraints,
     sources: [...input.knowledge.sources].sort((a, b) => a.id.localeCompare(b.id)).map((source) => ({
@@ -1748,6 +1773,7 @@ function fingerprintInput(input: {
     })),
     generationId: input.knowledge.generationId,
     documents: input.knowledge.documents.map((document) => ({ sourceId: document.sourceId, title: document.title, contentLength: document.contentLength })),
+    warnings: input.knowledge.warnings,
     overrides: input.overrides
   });
   return createHash("sha256").update(canonical).digest("hex");

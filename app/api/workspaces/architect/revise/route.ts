@@ -5,8 +5,8 @@ import {
   reviseWorkspaceBlueprint,
   validateWorkspaceBlueprint
 } from "@/lib/agentos/application/workspace-architect";
-import { normalizeWorkspaceKnowledgeSources } from "@/lib/agentos/domains/workspace-knowledge";
 import { normalizeWorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
+import { readWorkspaceCreationContext } from "@/lib/agentos/application/workspace-creation-context-service";
 import type {
   WorkspaceBlueprint,
   WorkspaceBlueprintRevisionInput
@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 
 const revisionRequestSchema = z.object({
   blueprint: z.unknown(),
+  draftContextId: z.string().uuid().optional(),
   instruction: z.string().trim().max(2_000).optional(),
   operatorEdits: z.object({
     identity: z.object({
@@ -31,17 +32,6 @@ const revisionRequestSchema = z.object({
     }).strict().optional()
   }).strict().optional(),
   operatorConstraints: z.array(z.string().trim().min(1).max(300)).max(12).optional(),
-  knowledge: z.object({
-    generationId: z.string().trim().max(200).nullable().optional(),
-    sources: z.array(z.unknown()).max(24).default([]),
-    documents: z.array(z.object({
-      sourceId: z.string().trim().min(1).max(100),
-      title: z.string().trim().max(160).optional(),
-      summary: z.string().trim().max(600).optional(),
-      content: z.string().max(1_200).optional(),
-      contentLength: z.number().int().nonnegative().max(2_000_000).optional()
-    }).strict()).max(12).default([])
-  }).strict().optional()
 }).strict();
 
 export async function POST(request: Request) {
@@ -56,24 +46,23 @@ export async function POST(request: Request) {
     }
 
     const blueprint = parsed.blueprint as WorkspaceBlueprint;
-    const knowledge = parsed.knowledge
-      ? {
-          generationId: parsed.knowledge.generationId,
-          sources: normalizeWorkspaceKnowledgeSources(parsed.knowledge.sources),
-          documents: parsed.knowledge.documents
-        }
+    const stagedContext = parsed.draftContextId
+      ? await readWorkspaceCreationContext({ actorId: permission.actor.actorId, draftContextId: parsed.draftContextId })
       : undefined;
     const instruction = parsed.instruction?.trim();
     const result = await reviseWorkspaceBlueprint(
       blueprint,
       {
-        ...(instruction ? { brief: `${blueprint.brief}\n\nOperator revision: ${instruction}` } : {}),
+        ...(instruction ? { revisionInstruction: instruction } : {}),
         ...(parsed.operatorEdits
           ? { operatorEdits: parsed.operatorEdits as WorkspaceBlueprintRevisionInput["operatorEdits"] }
           : {}),
         ...(parsed.operatorConstraints ? { operatorConstraints: parsed.operatorConstraints } : {}),
-        ...(knowledge ? { knowledge } : {}),
+        ...(stagedContext ? { knowledge: stagedContext.knowledge } : {}),
         materialization: normalizeWorkspaceMaterialization(blueprint.materialization)
+      }, {
+        signal: request.signal,
+        ...(stagedContext ? { currentKnowledgeGenerationId: stagedContext.generationId } : {})
       }
     );
 

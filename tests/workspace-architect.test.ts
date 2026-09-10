@@ -38,9 +38,20 @@ function source(id: string, kind: "file" | "repository" = "file", summary = "Pro
 }
 
 function input(brief: string, overrides: Partial<WorkspaceArchitectInput> = {}): WorkspaceArchitectInput {
+  const knowledge = overrides.knowledge;
   return {
     brief,
-    ...overrides
+    ...overrides,
+    ...(knowledge && knowledge.documents === undefined ? {
+      knowledge: {
+        ...knowledge,
+        documents: (knowledge.sources ?? []).map((entry) => ({
+          sourceId: entry.id,
+          title: entry.label,
+          content: entry.summary
+        }))
+      }
+    } : {})
   };
 }
 
@@ -766,7 +777,10 @@ test("revision re-runs Architect reasoning for unlocked sections", async () => {
   const initial = await generateWorkspaceBlueprint(input("Build a SaaS workspace."), { modelExecutor: minimalModel() });
   const revised = await reviseWorkspaceBlueprint(initial.blueprint, {
     brief: "Build a SaaS workspace.",
-    knowledge: { sources: [source("support", "file", "The company now has a continuous support queue with a restricted CRM.")] }
+    knowledge: {
+      sources: [source("support", "file", "The company now has a continuous support queue with a restricted CRM.")],
+      documents: [{ sourceId: "support", title: "Support", content: "The company now has a continuous support queue with a restricted CRM." }]
+    }
   }, {
     modelExecutor: modelFor((evidenceRefs) => ({
       workforce: {
@@ -781,6 +795,31 @@ test("revision re-runs Architect reasoning for unlocked sections", async () => {
 
   assert.equal(revised.blueprint.workforce.specialists.length, 1);
   assert.notEqual(revised.blueprint.provenance.inputFingerprint, initial.blueprint.provenance.inputFingerprint);
+});
+
+test("revisions keep the canonical brief bounded and send the latest instruction separately", async () => {
+  const prompts: string[] = [];
+  const modelExecutor: WorkspaceArchitectModelExecutor = async (request) => {
+    prompts.push(request.userPrompt);
+    return {
+      text: JSON.stringify({ workforce: { specialists: [] }, operations: { automations: [], channels: [] } }),
+      runId: `revision-${request.attempt}`,
+      modelId: "test/architect",
+      runtime: "model-runtime"
+    };
+  };
+  const brief = "Build a workspace for Acme. " + "Keep the existing operating brief concise. ".repeat(270);
+  const initial = await generateWorkspaceBlueprint(input(brief), { modelExecutor });
+  const firstInstruction = "Remove any optional workflow while preserving the operator's original scope.";
+  const first = await reviseWorkspaceBlueprint(initial.blueprint, { revisionInstruction: firstInstruction }, { modelExecutor });
+  const secondInstruction = "The latest operator decision is to keep one primary agent and no recurring automation.";
+  const second = await reviseWorkspaceBlueprint(first.blueprint, { revisionInstruction: secondInstruction }, { modelExecutor });
+
+  assert.equal(first.blueprint.brief, initial.blueprint.brief);
+  assert.equal(second.blueprint.brief, initial.blueprint.brief);
+  assert.match(prompts.at(-1) ?? "", new RegExp(secondInstruction.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(second.blueprint.provenance.latestRevisionInstruction, secondInstruction);
+  assert.notEqual(second.blueprint.provenance.inputFingerprint, initial.blueprint.provenance.inputFingerprint);
 });
 
 test("revision locks prevent re-architecture from re-adding empty specialist decisions", async () => {

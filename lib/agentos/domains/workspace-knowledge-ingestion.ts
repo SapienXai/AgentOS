@@ -11,11 +11,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { assertSafeWorkspaceCloneRepoUrl } from "@/lib/openclaw/domains/workspace-bootstrap";
-import type {
-  WorkspaceKnowledgeSource,
-  WorkspaceKnowledgeSourceKind,
-  WorkspaceKnowledgeSourceLocator,
-  WorkspaceKnowledgeSourceProvenance
+import {
+  isSupportedWorkspaceKnowledgeFile,
+  type WorkspaceKnowledgeSource,
+  type WorkspaceKnowledgeSourceKind,
+  type WorkspaceKnowledgeSourceLocator,
+  type WorkspaceKnowledgeSourceProvenance
 } from "@/lib/agentos/domains/workspace-knowledge";
 
 const execFileAsync = promisify(execFile);
@@ -1027,7 +1028,7 @@ async function extractLocalFile(context: SourceContext, absolutePath: string, re
   if (extension === ".pdf" || extension === ".docx") {
     return { warning: `Skipped ${relativePath}; ${extension.slice(1).toUpperCase()} text extraction is not enabled in this runtime.` };
   }
-  if (!isSupportedTextExtension(extension, basename)) {
+  if (!isSupportedWorkspaceKnowledgeFile(relativePath)) {
     return { warning: `Skipped unsupported or binary file ${relativePath}.` };
   }
 
@@ -1171,8 +1172,7 @@ async function walkSafeFiles(root: string, context: SourceContext, include: (rel
 function isRepositoryKnowledgeFile(relativePath: string) {
   const normalized = normalizePathForIdentity(relativePath);
   const basename = path.posix.basename(normalized).toLowerCase();
-  const extension = path.posix.extname(normalized).toLowerCase();
-  if (!isSupportedTextExtension(extension, basename)) return false;
+  if (!isSupportedWorkspaceKnowledgeFile(normalized)) return false;
   if (basename.startsWith("readme")) return true;
   if (normalized === "package.json" || normalized === "pyproject.toml" || normalized === "cargo.toml" || normalized === "go.mod" || normalized === "requirements.txt" || basename === "makefile") return true;
   if (normalized.split("/").includes("docs")) return true;
@@ -1187,10 +1187,6 @@ function shouldIgnoreRelativePath(relativePath: string) {
 
 function isSensitiveFileName(basename: string) {
   return basename === ".env" || basename.startsWith(".env.") || basename === ".npmrc" || basename === "credentials.json" || basename === "credentials.yml" || basename === "credentials.yaml" || basename.includes("private-key") || basename.includes("private_key");
-}
-
-function isSupportedTextExtension(extension: string, basename: string) {
-  return [".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".toml", ".html", ".htm", ".xml", ".csv"].includes(extension) || basename === "makefile" || basename.startsWith("readme");
 }
 
 function formatFromExtension(extension: string, basename: string) {

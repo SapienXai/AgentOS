@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
-import { normalizeWorkspaceKnowledgeSources } from "@/lib/agentos/domains/workspace-knowledge";
 import { normalizeWorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
+import { readWorkspaceCreationContext } from "@/lib/agentos/application/workspace-creation-context-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
@@ -18,20 +18,10 @@ const materializationSchema = z.discriminatedUnion("mode", [
 
 const architectRequestSchema = z.object({
   brief: z.string().trim().min(1).max(12_000),
+  draftContextId: z.string().uuid().optional(),
   mode: z.enum(["automatic", "review"]).default("automatic"),
   operatorConstraints: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
-  materialization: materializationSchema.default({ mode: "empty" }),
-  knowledge: z.object({
-    generationId: z.string().trim().max(200).nullable().optional(),
-    sources: z.array(z.unknown()).max(24).default([]),
-    documents: z.array(z.object({
-      sourceId: z.string().trim().min(1).max(100),
-      title: z.string().trim().max(160).optional(),
-      summary: z.string().trim().max(600).optional(),
-      content: z.string().max(1_200).optional(),
-      contentLength: z.number().int().nonnegative().max(2_000_000).optional()
-    }).strict()).max(12).default([])
-  }).strict().default({ sources: [], documents: [] })
+  materialization: materializationSchema.default({ mode: "empty" })
 }).strict();
 
 export async function POST(request: Request) {
@@ -41,17 +31,18 @@ export async function POST(request: Request) {
   try {
     const parsed = architectRequestSchema.parse(await request.json());
     const materialization = normalizeWorkspaceMaterialization(parsed.materialization);
-    const sources = normalizeWorkspaceKnowledgeSources(parsed.knowledge.sources);
+    const stagedContext = parsed.draftContextId
+      ? await readWorkspaceCreationContext({ actorId: permission.actor.actorId, draftContextId: parsed.draftContextId })
+      : undefined;
     const result = await generateWorkspaceBlueprint({
       brief: parsed.brief,
       mode: parsed.mode,
       materialization,
       operatorConstraints: parsed.operatorConstraints,
-      knowledge: {
-        generationId: parsed.knowledge.generationId,
-        sources,
-        documents: parsed.knowledge.documents
-      }
+      ...(stagedContext ? { knowledge: stagedContext.knowledge } : {})
+    }, {
+      signal: request.signal,
+      ...(stagedContext ? { currentKnowledgeGenerationId: stagedContext.generationId } : {})
     });
 
     return NextResponse.json(redactSecrets(result));

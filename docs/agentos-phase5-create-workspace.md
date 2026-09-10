@@ -1,6 +1,6 @@
 # AgentOS Phase 5 — Create Workspace
 
-Phase 5 makes Create Workspace a brief-first review flow. The operator provides a natural-language brief, optionally adds lightweight project context, and receives a `WorkspaceBlueprint` before any final workspace provisioning occurs.
+Phase 5 makes Create Workspace a brief-first review flow. The operator provides a natural-language brief, optionally adds project context, and receives a `WorkspaceBlueprint` before any final workspace provisioning occurs. Phase 5.1 stages that context through the existing Phase 2 ingestion boundary before the Architect sees it.
 
 ## Product flow
 
@@ -23,7 +23,19 @@ The canonical architecture truth in the client is the server-returned `Workspace
 
 ## Context
 
-Website, GitHub, Files, Folder, and Connect are context actions. Website and GitHub are submitted as knowledge sources; a GitHub repository also infers clone materialization without presenting a source as a live Connection. Text-like local files and folder previews are bounded before submission. Connect intentionally explains that live account setup happens later and does not request credentials during architecture review.
+Website, GitHub, Files, Folder, and Connect are context actions. Website and GitHub are submitted as knowledge sources; a GitHub repository also infers clone materialization without presenting a source as a live Connection. Files and folders are uploaded to an AgentOS-owned, actor-bound, expiring draft context. The browser sends no absolute local paths and no document previews; the server writes bounded uploads into the draft corpus and calls `ingestKnowledgeSources`, then reads a bounded `readKnowledgeSnapshot` for the Architect. Connect intentionally explains that live account setup happens later and does not request credentials during architecture review.
+
+## Real context staging
+
+`POST /api/workspaces/context` accepts the selected source declarations and, for files/folders, a bounded multipart upload. `stageWorkspaceCreationKnowledge` keeps the opaque `draftContextId`, source reports, generation ID, and expiry metadata under `.mission-control/workspace-create`. The draft is bound to the authenticated AgentOS actor, serialized per draft for concurrent requests, and removed after its six-hour TTL. Repeating the same successful request reuses its generation; changed or removed sources create a replacement generation. Cancellation preserves the previous successful context when one exists.
+
+The source declaration is not ingestion evidence. Source reports distinguish attached, reading, ready, partial, error, and unsupported states. Unsupported PDF, DOC, and DOCX inputs are not advertised by the canonical file allowlist and are reported as unsupported if submitted through another client. A partial source failure does not discard successfully staged sources.
+
+The Architect and revision routes accept only the opaque draft context reference for normal Create Workspace requests. They resolve the server-side staged context and never trust arbitrary browser-supplied corpus documents. Imported project content remains untrusted reference data: it may establish facts, but it cannot become operator policy or explicit requests.
+
+## Revision context
+
+Revision instructions are sent as a separate bounded `revisionInstruction`. The canonical operator brief is preserved rather than repeatedly appending revision text to it. The latest revision is included in the Architect evidence pack and bounded blueprint provenance, while existing freshness and operator revision locks remain authoritative.
 
 ## Honest states
 
@@ -33,4 +45,4 @@ WhatsApp is shown as `Setup required · QR sign-in`; token-based channels use to
 
 ## Phase 6 boundary
 
-The review action for final creation is intentionally unavailable until Phase 6 owns materialization and verification. Phase 5 may generate and revise architecture only. The existing legacy Planner and workspace provisioning APIs remain compatibility infrastructure for other flows, but the new Create mode does not route through them.
+The review action for final creation is intentionally unavailable until Phase 6 owns materialization and verification. Phase 5 may generate and revise architecture only. Ensuring a temporary AgentOS-owned staging context and writing its draft corpus are allowed internal preparation side effects; creating the final user workspace, agents, channels, automations, connections, or authentication remains absent. The existing legacy Planner and workspace provisioning APIs remain compatibility infrastructure for other flows, but the new Create mode does not route through them.
