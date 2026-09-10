@@ -5,6 +5,7 @@ import {
 } from "@/lib/openclaw/workspace-presets";
 import { normalizeWorkspaceDocOverrides } from "@/lib/openclaw/workspace-docs";
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
+import { getOpenClawChannelAuthentication } from "@/lib/openclaw/domains/channel-auth";
 import {
   normalizeWorkspaceMaterialization,
   normalizeWorkspaceMaterializationInput,
@@ -114,7 +115,6 @@ const channelDefinitions: Record<
   PlannerChannelType,
   {
     label: string;
-    requiresCredentials: boolean;
     credentials: Array<{
       key: string;
       label: string;
@@ -125,12 +125,10 @@ const channelDefinitions: Record<
 > = {
   internal: {
     label: "Internal",
-    requiresCredentials: false,
     credentials: []
   },
   slack: {
     label: "Slack",
-    requiresCredentials: true,
     credentials: [
       {
         key: "botToken",
@@ -142,7 +140,6 @@ const channelDefinitions: Record<
   },
   telegram: {
     label: "Telegram",
-    requiresCredentials: true,
     credentials: [
       {
         key: "token",
@@ -154,12 +151,10 @@ const channelDefinitions: Record<
   },
   whatsapp: {
     label: "WhatsApp",
-    requiresCredentials: false,
     credentials: []
   },
   discord: {
     label: "Discord",
-    requiresCredentials: true,
     credentials: [
       {
         key: "token",
@@ -171,7 +166,6 @@ const channelDefinitions: Record<
   },
   googlechat: {
     label: "Google Chat",
-    requiresCredentials: true,
     credentials: [
       {
         key: "webhookUrl",
@@ -340,7 +334,7 @@ export function createPlannerChannelSpec(
     target: seed?.target?.trim(),
     enabled: seed?.enabled !== false,
     announce: Boolean(seed?.announce),
-    requiresCredentials: channelTemplate.requiresCredentials,
+    requiresCredentials: getOpenClawChannelAuthentication(type).requiresCredentials,
     accountId: seed?.accountId?.trim(),
     primaryAgentId: seed?.primaryAgentId?.trim() ?? null,
     allowedChatIds: normalizeList(seed?.allowedChatIds),

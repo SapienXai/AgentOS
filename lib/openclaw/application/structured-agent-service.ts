@@ -5,28 +5,54 @@ import {
   getOpenClawAdapter,
   type OpenClawAdapter
 } from "@/lib/openclaw/adapter/openclaw-adapter";
+import {
+  ensureWorkspaceArchitectRuntime,
+  PLANNER_RUNTIME_ARCHITECT_AGENT_ID,
+  type PlannerRuntimeEnsureDependencies,
+  type PlannerRuntimeFailureKind
+} from "@/lib/openclaw/application/planner-runtime-service";
 import type {
   WorkspaceArchitectMode,
   WorkspaceArchitectModelExecutionRequest,
   WorkspaceArchitectModelExecutionResult
 } from "@/lib/agentos/domains/workspace-blueprint";
 
-export const DEFAULT_WORKSPACE_ARCHITECT_AGENT_ID = "agentos-planner-runtime-architect";
+export const DEFAULT_WORKSPACE_ARCHITECT_AGENT_ID = PLANNER_RUNTIME_ARCHITECT_AGENT_ID;
+
+export class WorkspaceArchitectRuntimeUnavailableError extends Error {
+  readonly kind: Exclude<PlannerRuntimeFailureKind, "none">;
+
+  constructor(message: string, kind: Exclude<PlannerRuntimeFailureKind, "none"> = "runtime-bootstrap") {
+    super(message);
+    this.kind = kind;
+    this.name = "WorkspaceArchitectRuntimeUnavailableError";
+  }
+}
 
 /**
  * Shared AgentOS/OpenClaw execution boundary for structured architect turns.
- * It deliberately does not create agents, workspaces, or planner topology.
+ * It may ensure only the hidden AgentOS Architect runtime before execution;
+ * final user workspace topology remains outside this boundary.
  */
 export async function runStructuredWorkspaceArchitectAgent(
   request: WorkspaceArchitectModelExecutionRequest,
   options: {
     adapter?: OpenClawAdapter;
-    agentId?: string;
     sessionKey?: string;
+    runtimeDependencies?: PlannerRuntimeEnsureDependencies;
   } = {}
 ): Promise<WorkspaceArchitectModelExecutionResult> {
   const adapter = options.adapter ?? getOpenClawAdapter();
-  const agentId = options.agentId?.trim() || DEFAULT_WORKSPACE_ARCHITECT_AGENT_ID;
+  const runtime = await ensureWorkspaceArchitectRuntime({ dependencies: options.runtimeDependencies });
+  if (runtime.status !== "ready" || !runtime.architectAgentId) {
+    throw new WorkspaceArchitectRuntimeUnavailableError(
+      runtime.warning ?? "The hidden AgentOS Architect runtime is unavailable.",
+      runtime.failureKind === "gateway" || runtime.failureKind === "authorization"
+        ? runtime.failureKind
+        : "runtime-bootstrap"
+    );
+  }
+  const agentId = runtime.architectAgentId;
   const sessionKey = options.sessionKey?.trim() || `agent:${agentId}:architect:${request.runId}`;
   const timeoutMs = Math.max(1_000, Math.min(request.timeoutMs, 125_000));
 

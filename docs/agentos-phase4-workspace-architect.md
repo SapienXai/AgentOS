@@ -1,6 +1,6 @@
 # AgentOS Phase 4 — Workspace Architect
 
-Phase 4 adds a canonical, side-effect-free workspace architecture boundary. It drafts an editable `WorkspaceBlueprint`; it does not create a workspace, provision agents, mutate OpenClaw configuration, restart a Gateway, connect an account, or schedule an automation.
+Phase 4 adds a canonical architecture boundary for the final user workspace. It drafts an editable `WorkspaceBlueprint`; it does not create the final workspace, provision user agents, mutate user OpenClaw configuration, restart a Gateway, connect an account, or schedule an automation. The default Architect path may ensure the hidden AgentOS internal runtime described below.
 
 ## Architect Intelligence
 
@@ -16,9 +16,9 @@ bounded evidence pack
 
 The model proposes architecture. Application code remains authoritative for safety, trust, topology, references, known capabilities, credentials, and side effects. The proposal is smaller than the final blueprint and cannot contain deployment state or credentials.
 
-The default execution path is the existing AgentOS/OpenClaw `OpenClawAdapter.runAgentTurn` boundary, using the hidden planner-runtime Architect agent when that runtime is available. It inherits configured OpenClaw model routing and authorization. Tests may inject a `WorkspaceArchitectModelExecutor` without introducing a provider SDK. Execution has a bounded timeout and at most three attempts, including repair attempts for invalid structured output.
+The default execution path is the existing AgentOS/OpenClaw `OpenClawAdapter.runAgentTurn` boundary. Before the first turn, `runStructuredWorkspaceArchitectAgent` calls `ensureWorkspaceArchitectRuntime`, which authoritatively discovers or repairs the hidden runtime and resolves `agentos-planner-runtime-architect`. Tests may inject a `WorkspaceArchitectModelExecutor` without introducing a provider SDK. Execution has a bounded timeout and at most three attempts, including repair attempts for invalid structured output.
 
-If the model/runtime is unavailable or all bounded attempts return invalid output, AgentOS returns a safe one-primary draft with `deterministic-safe-fallback` provenance and a visible warning. It never labels that draft as AI reasoning. Normal output is not guaranteed deterministic; input fingerprints, normalization, validation, policy enforcement, and fallback behavior are deterministic.
+If runtime bootstrap, Gateway access, model execution, timeout/cancellation, or structured output is unavailable, AgentOS returns a safe one-primary draft with `deterministic-safe-fallback` provenance, a bounded failure kind, and a visible warning. It never labels that draft as AI reasoning. Normal output is not guaranteed deterministic; input fingerprints, normalization, validation, policy enforcement, and fallback behavior are deterministic.
 
 ## Canonical boundary
 
@@ -34,7 +34,7 @@ Workspace size is a presentation/complexity label. It does not resize the workfo
 
 ## Internal planning versus generated workforce
 
-The legacy planner can use its hidden AgentOS planner runtime and conditional advisor board to interpret complex planning turns. Those internal agents are not copied into a generated workspace. The advisor board is used for an explicit review, a complex multi-agent/operations request, or multiple knowledge sources—not for every simple workspace.
+The hidden `AgentOS Planner Runtime` is AgentOS-owned internal infrastructure at `.mission-control/planner/runtime-workspace` with the `mission-control-planner` system tag. `ensureWorkspaceArchitectRuntime` provisions only that hidden workspace and its Architect agent for normal Phase 4 generation. The legacy planner calls the same canonical lifecycle boundary with advisors enabled when it needs its advisor board; advisors are not required for a normal Architect turn. Ensuring this runtime is an allowed internal side effect. It is never copied into a generated workspace and never appears in `WorkspaceBlueprint` or user workforce selectors. Final user workspace provisioning remains outside the Architect application service.
 
 ## Knowledge understanding and trust
 
@@ -42,7 +42,7 @@ OpenClaw native Gateway memory search is preferred when a trusted runtime alread
 
 Knowledge can materially change architecture when it establishes a real persistent responsibility or boundary, such as a continuous support queue with restricted CRM access. Descriptive facts such as “the website has a support page” or “the team usually reviews analytics every morning” remain evidence, but do not create a specialist or automation by themselves. Knowledge sources and live runtime connections remain separate concepts.
 
-Imported knowledge is untrusted. It can support evidence, names, purpose, and warnings, but imported instructions cannot change AgentOS policy or create agents, channels, automations, connections, or credentials. Current explicit operator intent has precedence over imported suggestions. Evidence is bounded, source-linked, and does not contain chain-of-thought.
+Imported knowledge is untrusted. It can establish factual evidence for names, purpose, boundaries, and warnings, but imported instructions cannot become AgentOS policy or explicit operator intent. `explicit-operator-request` specialists and explicit automation/channel/connection requests require `brief` or `operator` evidence. Evidence-backed requests may use imported facts only when they describe a genuine operating requirement; imperative prompt-injection text is not authority. A knowledge source remains distinct from a runtime connection, and credentials never enter a blueprint. Evidence is bounded, source-linked, and does not contain chain-of-thought.
 
 ## Provenance, freshness, and revision
 
@@ -55,6 +55,10 @@ Every run records an architect run ID, deterministic input fingerprint, source I
 The primary agent reuses the existing OpenClaw/AgentOS worker preset and workspace-only policy. Custom skills are not invented by the architect. Unknown model-suggested skills/tools are excluded with a warning. OpenClaw owns memory storage, indexing, embeddings, and search. AgentOS records memory intent and native binding intent only.
 
 Generic inferred purpose is not written to durable memory. Durable facts require explicit operator evidence and durable language such as a permanent constraint, preference, objective, decision, or approval rule. Project documentation remains searchable knowledge, not `MEMORY.md` content. Native Gateway search remains independent from any later local maintenance fallback.
+
+## Channel authentication metadata
+
+Blueprint channel metadata is setup intent only; it never authenticates an account. It follows the OpenClaw 2026.9.3 channel contract: Telegram, Slack, and Discord use token credentials; Google Chat uses service-account setup; WhatsApp uses Gateway-owned QR/session authentication and therefore has `requiresCredentials: false`, `requiresAuthentication: true`, and `authenticationKind: "qr-session"`. Live account status and authentication flows remain owned by OpenClaw channel services.
 
 Regex and heuristics are guardrails only: explicit constraint extraction, sanitation, bounded fallback identity, action-intent safety checks, and deterministic validation. They are not the primary semantic architect.
 

@@ -4,7 +4,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 import { canAgentOsActorUseProductPermission } from "@/lib/security/agentos-product-authorization";
 import type { AgentOsActorContext } from "@/lib/security/agentos-actor";
 import {
@@ -44,9 +43,12 @@ import {
   normalizeWorkspaceDocOverrides,
   type WorkspaceScaffoldDocument
 } from "@/lib/openclaw/workspace-docs";
-import { serializeWorkspaceProjectManifestRecord } from "@/lib/openclaw/domains/workspace-manifest";
 import {
-  createAgent,
+  buildPlannerRuntimeAgentId,
+  ensureAgentOsPlannerRuntime,
+  PLANNER_RUNTIME_ADVISOR_ORDER
+} from "@/lib/openclaw/application/planner-runtime-service";
+import {
   createWorkspaceProject,
   getMissionControlSnapshot,
   submitMission
@@ -76,11 +78,8 @@ const plannerRootPath = path.join(
   "planner"
 );
 const plansRootPath = path.join(plannerRootPath, "plans");
-const plannerRuntimeWorkspacePath = path.join(plannerRootPath, "runtime-workspace");
 const WEBSITE_INSPECTION_TIMEOUT_MS = 3500;
 const WEBSITE_FOLLOWUP_TIMEOUT_MS = 1800;
-const PLANNER_RUNTIME_NAME = "AgentOS Planner Runtime";
-const PLANNER_RUNTIME_SYSTEM_TAG = "mission-control-planner";
 
 type WorkspacePlanDeployOptions = {
   onProgress?: (snapshot: OperationProgressSnapshot) => Promise<void> | void;
@@ -97,95 +96,7 @@ type PlannerOperationProgressHandler = (
   update: PlannerOperationProgressUpdate
 ) => Promise<void> | void;
 
-const plannerRuntimeAgentBlueprints: Array<WorkspaceAgentBlueprintInput> = [
-  {
-    id: "architect",
-    role: "Workspace Architect",
-    name: "Workspace Architect",
-    enabled: true,
-    isPrimary: true,
-    emoji: "🤖",
-    theme: "cyan",
-    skillId: "planner-architect",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  },
-  {
-    id: "founder",
-    role: "Founder",
-    name: "Founder",
-    enabled: true,
-    emoji: "🏗️",
-    theme: "amber",
-    skillId: "planner-founder",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  },
-  {
-    id: "product",
-    role: "Product Lead",
-    name: "Product Lead",
-    enabled: true,
-    emoji: "📐",
-    theme: "emerald",
-    skillId: "planner-product",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  },
-  {
-    id: "ops",
-    role: "Operations",
-    name: "Operations",
-    enabled: true,
-    emoji: "⚙️",
-    theme: "blue",
-    skillId: "planner-ops",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  },
-  {
-    id: "growth",
-    role: "Growth",
-    name: "Growth",
-    enabled: true,
-    emoji: "📣",
-    theme: "violet",
-    skillId: "planner-growth",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  },
-  {
-    id: "reviewer",
-    role: "Reviewer",
-    name: "Reviewer",
-    enabled: true,
-    emoji: "🔍",
-    theme: "rose",
-    skillId: "planner-reviewer",
-    policy: resolveAgentPolicy("worker", {
-      fileAccess: "workspace-only",
-      networkAccess: "enabled"
-    }),
-    heartbeat: { enabled: false }
-  }
-];
-
-const plannerAdvisorOrder: PlannerAdvisorId[] = ["founder", "product", "ops", "growth", "reviewer"];
+const plannerAdvisorOrder: PlannerAdvisorId[] = PLANNER_RUNTIME_ADVISOR_ORDER;
 
 type PlannerAgentTurnPayload = {
   runId?: string;
@@ -311,12 +222,15 @@ export async function submitWorkspacePlanTurn(
     ? nextPlan
     : await ensurePlannerRuntime(nextPlan);
   const shouldUseAdvisorBoard = runtimeReadyPlan.autopilot && shouldUsePlannerAdvisorBoard(runtimeReadyPlan, trimmedMessage);
+  const advisorReadyPlan = shouldUseAdvisorBoard
+    ? await ensurePlannerRuntime(runtimeReadyPlan, true)
+    : runtimeReadyPlan;
   const advisorNotes = shouldUseAdvisorBoard
-    ? await synthesizePlannerAdvisorsWithRuntime(runtimeReadyPlan, trimmedMessage)
+    ? await synthesizePlannerAdvisorsWithRuntime(advisorReadyPlan, trimmedMessage)
     : [];
-  runtimeReadyPlan.advisorNotes = advisorNotes;
+  advisorReadyPlan.advisorNotes = advisorNotes;
   const architectTurn = await runArchitectPlannerTurn(
-    runtimeReadyPlan,
+    advisorReadyPlan,
     trimmedMessage,
     harvestedContext,
     advisorNotes,
@@ -389,7 +303,7 @@ export async function simulateWorkspacePlan(
   const basePlan = incomingPlan
     ? await persistIncomingPlan(planId, incomingPlan)
     : await readWorkspacePlan(planId);
-  let nextPlan = await ensurePlannerRuntime(enrichWorkspacePlan(basePlan));
+  let nextPlan = await ensurePlannerRuntime(enrichWorkspacePlan(basePlan), true);
   const advisorNotes = await synthesizePlannerAdvisorsWithRuntime(nextPlan, "Simulate the specialist planning board.");
 
   nextPlan.advisorNotes = advisorNotes;
@@ -671,206 +585,32 @@ function getWorkspacePlanFilePath(planId: string) {
   return path.join(plansRootPath, `${planId}.json`);
 }
 
-const plannerAdvisorNames: Record<PlannerAdvisorId, string> = {
-  founder: "Founder",
-  product: "Product Lead",
-  ops: "Operations",
-  growth: "Growth",
-  reviewer: "Reviewer",
-  architect: "Workspace Architect"
-};
-
-const plannerRuntimeSkillContents: Record<string, string> = {
-  "planner-architect": `# Workspace Architect
-
-You are the primary planning agent for AgentOS.
-
-## Mission
-- Understand the operator's intent through conversation.
-- Draft a complete, revisable workspace plan proactively.
-- Ask questions only when no safe default exists and the workspace cannot stay coherent without one.
-
-## Output Contract
-- Always return valid JSON only.
-- Never wrap JSON in markdown fences.
-- Use this schema:
-{
-  "reply": "short natural language response to the operator",
-  "mode": "guided | advanced | null",
-  "reviewRequested": boolean,
-  "assumptions": ["assumption you took proactively"],
-  "suggestions": ["recommended next move or stronger default"],
-  "questions": ["only if a decision would materially change the design"],
-  "patch": {}
-}
-
-## Rules
-- Keep momentum. Prefer a complete draft over hesitation.
-- Keep the reply concise and specific, but make the patch rich and complete.
-- Treat natural language as enough. Do not wait for rigid field-by-field phrasing.
-- Treat the latest user message as either a fresh brief or a revision instruction against the current draft.
-- Rewrite any section the operator wants changed and refresh dependent sections in the same patch.
-- Prefer website title and domain evidence over raw action phrases when inferring names.
-- Never derive a company or workspace name from generic intent text like "workspace kurmak istiyorum" or similar action phrasing.
-- If the message includes a proper noun tied to the project, workspace, or brand, treat it as a valid name candidate unless contradicted.
-- When the operator names the company or workspace explicitly, apply it immediately.
-- If the operator asks for a role in plain language, create or adapt a persistent agent for that role.
-- Example: if the operator says "şahsi asistan ekleyelim" or "add a personal assistant", add a persistent agent like { id: "personal-assistant", role: "Personal Assistant", name: "Personal Assistant", ... }.
-- Infer likely defaults and say what you assumed instead of bouncing the decision back by default.
-- Give proactive suggestions when you see a stronger workspace shape, cleaner V1, or better agent split.
-- If the operator asks to rewrite a generated document, update workspace.docOverrides for that document path and keep unrelated plan sections unchanged.
-- Use patch as the source of truth. The planner layer should validate the draft, not force the operator to restate it.
-- When a domain or website implies a likely brand name, use it unless contradicted.
-- If a section must be removed in a revision, use the relevant removeIds list for agents, workflows, channels, automations, or hooks.
-- Change only the canonical workspace.materialization object when the physical starting point changes; its mode and fields must remain a valid combination.
-- Add or remove knowledge.sources independently. Changing workspace.materialization must not delete unrelated knowledge.sources, and changing knowledge.sources must not mutate workspace.materialization.
-- Treat AgentOS as the source of truth. Patch only the fields that should change.
-`,
-  "planner-founder": `# Founder Advisor
-
-Return valid JSON only:
-{
-  "summary": "commercial read",
-  "recommendations": ["..."],
-  "concerns": ["..."]
-}
-
-Focus on mission clarity, audience, value exchange, and launch posture. Be concise.`,
-  "planner-product": `# Product Lead
-
-Return valid JSON only:
-{
-  "summary": "product read",
-  "recommendations": ["..."],
-  "concerns": ["..."]
-}
-
-Focus on offer, V1 scope, non-goals, and operator experience. Be concise.`,
-  "planner-ops": `# Operations Advisor
-
-Return valid JSON only:
-{
-  "summary": "operations read",
-  "recommendations": ["..."],
-  "concerns": ["..."]
-}
-
-Focus on workflows, automations, channels, run cadence, and reliability. Be concise.`,
-  "planner-growth": `# Growth Advisor
-
-Return valid JSON only:
-{
-  "summary": "growth read",
-  "recommendations": ["..."],
-  "concerns": ["..."]
-}
-
-Focus on acquisition loops, activation, community, and measurable signals. Be concise.`,
-  "planner-reviewer": `# Reviewer
-
-Return valid JSON only:
-{
-  "summary": "risk read",
-  "recommendations": ["..."],
-  "concerns": ["..."]
-}
-
-Pressure-test assumptions, missing info, hidden blockers, and design regressions. Be concise.`
-};
-
-async function ensurePlannerRuntime(plan: WorkspacePlan) {
+async function ensurePlannerRuntime(plan: WorkspacePlan, includeAdvisors = false) {
   const currentRuntime = createPlannerRuntimeState(plan.id, plan.runtime);
-  const expectedArchitectAgentId = buildPlannerRuntimeAgentId("architect");
-
-  if (
-    currentRuntime.status === "ready" &&
-    currentRuntime.architectAgentId === expectedArchitectAgentId &&
-    currentRuntime.workspacePath === plannerRuntimeWorkspacePath
-  ) {
-    return enrichWorkspacePlan({
-      ...plan,
-      runtime: currentRuntime
-    });
-  }
-
   const nextPlan = structuredClone(plan);
 
   try {
-    let snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-    let workspace = snapshot.workspaces.find((entry) => entry.path === plannerRuntimeWorkspacePath) ?? null;
-
-    if (!workspace) {
-      await createWorkspaceProject({
-        name: PLANNER_RUNTIME_NAME,
-        directory: plannerRuntimeWorkspacePath,
-        sourceMode: "empty",
-        template: "research",
-        teamPreset: "custom",
-        modelProfile: "balanced",
-        rules: {
-          workspaceOnly: true,
-          generateStarterDocs: false,
-          generateMemory: false,
-          kickoffMission: false
-        },
-        agents: plannerRuntimeAgentBlueprints,
-        creation: {
-          source: "planner-runtime",
-          planId: plan.id
-        }
+    const runtime = await ensureAgentOsPlannerRuntime({ includeAdvisors });
+    if (runtime.status !== "ready" || !runtime.architectAgentId || !runtime.workspaceId || !runtime.workspacePath) {
+      nextPlan.runtime = createPlannerRuntimeState(plan.id, {
+        ...currentRuntime,
+        mode: "fallback",
+        status: "error",
+        lastError: runtime.warning ?? "Planner runtime provisioning did not complete."
       });
-      await configurePlannerRuntimeWorkspace(plannerRuntimeWorkspacePath);
-      snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-      workspace = snapshot.workspaces.find((entry) => entry.path === plannerRuntimeWorkspacePath) ?? null;
-    } else {
-      await configurePlannerRuntimeWorkspace(workspace.path);
+      return enrichWorkspacePlan(nextPlan);
     }
-
-    if (!workspace) {
-      throw new Error("Planner runtime workspace could not be found after provisioning.");
-    }
-
-    const agentIdsByRole = Object.fromEntries(
-      plannerRuntimeAgentBlueprints.map((agent) => [agent.id, buildPlannerRuntimeAgentId(agent.id)])
-    ) as Record<string, string>;
-    const existingAgentIds = new Set(
-      snapshot.agents
-        .filter((agent) => agent.workspaceId === workspace.id)
-        .map((agent) => agent.id)
-    );
-
-    for (const agent of plannerRuntimeAgentBlueprints) {
-      const expectedAgentId = agentIdsByRole[agent.id];
-      if (existingAgentIds.has(expectedAgentId)) {
-        continue;
-      }
-
-      await createAgent({
-        id: expectedAgentId,
-        workspaceId: workspace.id,
-        name: agent.name,
-        emoji: agent.emoji,
-        theme: agent.theme,
-        policy: agent.policy,
-        heartbeat: agent.heartbeat
-      });
-    }
-
-    await configurePlannerRuntimeWorkspace(workspace.path);
 
     nextPlan.runtime = createPlannerRuntimeState(plan.id, {
       ...currentRuntime,
       mode: "agent",
       status: "ready",
-      workspaceId: workspace.id,
-      workspacePath: workspace.path,
-      architectAgentId: agentIdsByRole.architect,
+      workspaceId: runtime.workspaceId,
+      workspacePath: runtime.workspacePath,
+      architectAgentId: runtime.architectAgentId,
       advisorAgentIds: {
-        founder: agentIdsByRole.founder,
-        product: agentIdsByRole.product,
-        ops: agentIdsByRole.ops,
-        growth: agentIdsByRole.growth,
-        reviewer: agentIdsByRole.reviewer
+        ...currentRuntime.advisorAgentIds,
+        ...runtime.advisorAgentIds
       },
       lastError: undefined
     });
@@ -886,34 +626,14 @@ async function ensurePlannerRuntime(plan: WorkspacePlan) {
   return enrichWorkspacePlan(nextPlan);
 }
 
-async function configurePlannerRuntimeWorkspace(workspacePath: string) {
-  await mkdir(path.join(workspacePath, "skills"), { recursive: true });
-
-  for (const [skillId, contents] of Object.entries(plannerRuntimeSkillContents)) {
-    const skillPath = path.join(workspacePath, "skills", skillId, "SKILL.md");
-    await mkdir(path.dirname(skillPath), { recursive: true });
-    await writeFile(skillPath, `${contents.trim()}\n`, "utf8");
-  }
-
-  const projectFilePath = path.join(workspacePath, ".openclaw", "project.json");
-  let parsed: Record<string, unknown> = {};
-
-  try {
-    parsed = JSON.parse(await readFile(projectFilePath, "utf8")) as Record<string, unknown>;
-  } catch {
-    parsed = {};
-  }
-
-  const serialized = serializeWorkspaceProjectManifestRecord(parsed, {
-    name: typeof parsed.name === "string" ? parsed.name : PLANNER_RUNTIME_NAME,
-    hidden: true,
-    systemTag: PLANNER_RUNTIME_SYSTEM_TAG,
-    updatedAt: new Date().toISOString()
-  });
-
-  await mkdir(path.dirname(projectFilePath), { recursive: true });
-  await writeFile(projectFilePath, `${JSON.stringify(serialized, null, 2)}\n`, "utf8");
-}
+const plannerAdvisorNames: Record<PlannerAdvisorId, string> = {
+  founder: "Founder",
+  product: "Product Lead",
+  ops: "Operations",
+  growth: "Growth",
+  reviewer: "Reviewer",
+  architect: "Workspace Architect"
+};
 
 async function synthesizePlannerAdvisorsWithRuntime(plan: WorkspacePlan, latestMessage: string) {
   if (plan.runtime.mode !== "agent" || plan.runtime.status !== "ready") {
@@ -1784,10 +1504,6 @@ function extractPlannerJson<T>(text: string): T {
   }
 
   throw new Error(`Planner agent returned invalid JSON: ${trimmed.slice(0, 800)}`);
-}
-
-function buildPlannerRuntimeAgentId(agentKey: string) {
-  return `${slugify(PLANNER_RUNTIME_NAME)}-${slugify(agentKey) || "agent"}`;
 }
 
 function isWorkspaceTemplateValue(value: unknown): value is WorkspaceTemplate {

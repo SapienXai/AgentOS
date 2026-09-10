@@ -4,6 +4,7 @@ import type {
   WorkspaceKnowledgeSourceKind
 } from "@/lib/agentos/domains/workspace-knowledge";
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
+import type { PlannerRuntimeEnsureDependencies } from "@/lib/openclaw/application/planner-runtime-service";
 
 export const WORKSPACE_BLUEPRINT_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_BLUEPRINT_POLICY_VERSION = "phase4-minimum-topology-v1" as const;
@@ -16,6 +17,17 @@ export type WorkspaceArchitectReasoningMode =
   | "openclaw-agent"
   | "model-runtime"
   | "deterministic-safe-fallback"
+  | "unknown";
+
+export type WorkspaceArchitectFailureKind =
+  | "none"
+  | "runtime-bootstrap"
+  | "gateway"
+  | "authorization"
+  | "model"
+  | "structured-output"
+  | "timeout"
+  | "cancelled"
   | "unknown";
 
 export type WorkspaceArchitectProposalBoundary =
@@ -111,6 +123,7 @@ export type WorkspaceArchitectProposal = {
   connections?: Array<{
     id: string;
     provider: string;
+    intent: WorkspaceArchitectProposalIntent;
     status?: "declared" | "required" | "recommended";
     purpose?: string;
     sourceId?: string | null;
@@ -191,7 +204,9 @@ export type WorkspaceBlueprintChannel = {
   target?: string;
   enabled: boolean;
   announce: boolean;
+  authenticationKind: "none" | "token" | "service-account" | "qr-session" | "unknown";
   requiresCredentials: boolean;
+  requiresAuthentication: boolean;
   primaryAgentId: string;
   selection: "explicit" | "recommended";
   evidenceRefs: string[];
@@ -294,6 +309,7 @@ export type WorkspaceBlueprint = {
     modelId: string | null;
     runtime: "native-openclaw" | "bounded-local" | "unknown";
     reasoningMode: WorkspaceArchitectReasoningMode;
+    failureKind: WorkspaceArchitectFailureKind;
     policyVersion: typeof WORKSPACE_ARCHITECT_POLICY_VERSION;
   };
 };
@@ -358,8 +374,9 @@ export type WorkspaceArchitectResult = {
     status: "model" | "fallback" | "blocked";
     mode: WorkspaceArchitectReasoningMode;
     attempts: number;
-    modelId: string | null;
-    warning: string | null;
+      modelId: string | null;
+      warning: string | null;
+      failureKind: WorkspaceArchitectFailureKind;
   };
 };
 
@@ -401,8 +418,9 @@ export type WorkspaceArchitectRunOptions = {
   modelId?: string | null;
   nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>;
   modelExecutor?: WorkspaceArchitectModelExecutor;
-  architectAgentId?: string;
   architectSessionKey?: string;
+  /** Trusted server-side test seam; never accept runtime dependencies from an HTTP payload. */
+  runtimeDependencies?: PlannerRuntimeEnsureDependencies;
   timeoutMs?: number;
   maxRetries?: number;
   signal?: AbortSignal;
