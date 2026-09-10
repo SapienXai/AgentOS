@@ -32,6 +32,32 @@ export type WorkspaceArchitectFailureKind =
 
 export type WorkspaceArchitectRetryability = "terminal" | "transient" | "repairable" | "cancelled";
 
+export type WorkspaceArchitectLifecycleCode =
+  | "architect-started"
+  | "architect-runtime-ready"
+  | "architect-attempt-started"
+  | "architect-model-started"
+  | "architect-model-completed"
+  | "architect-structured-output-rejected"
+  | "architect-attempt-failed"
+  | "architect-retry-scheduled"
+  | "architect-attempt-completed"
+  | "architect-fallback"
+  | "architect-completed";
+
+export type WorkspaceArchitectLifecycleEvent = {
+  code: WorkspaceArchitectLifecycleCode;
+  attempt: number;
+  maxAttempts: number;
+  elapsedMs: number;
+  failureKind?: WorkspaceArchitectFailureKind;
+  failureCode?: string;
+  retryability?: WorkspaceArchitectRetryability;
+  runtimeMode?: WorkspaceArchitectReasoningMode;
+  modelId?: string | null;
+  structuredOutputAccepted?: boolean;
+};
+
 export type WorkspaceArchitectProposalBoundary =
   | "persistent-responsibility"
   | "security"
@@ -434,6 +460,7 @@ export type WorkspaceArchitectRunOptions = {
   timeoutMs?: number;
   maxRetries?: number;
   signal?: AbortSignal;
+  onLifecycleEvent?: (event: WorkspaceArchitectLifecycleEvent) => void | Promise<void>;
 };
 
 export type WorkspaceArchitectModelExecutionRequest = {

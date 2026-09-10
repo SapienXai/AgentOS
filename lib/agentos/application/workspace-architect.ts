@@ -37,6 +37,7 @@ import type {
   WorkspaceArchitectProposalAgent,
   WorkspaceArchitectProposalBoundary,
   WorkspaceArchitectProposalIntent,
+  WorkspaceArchitectLifecycleEvent,
   WorkspaceArchitectReasoningMode,
   WorkspaceArchitectRetryability,
   WorkspaceArchitectResult,
@@ -959,9 +960,13 @@ async function runArchitectReasoning(input: {
   let lastRemoteRunId: string | null = null;
   let lastRemoteSessionKey: string | null = null;
   let attempts = 0;
+  const lifecycleStartedAt = Date.now();
+  await emitArchitectLifecycle(input.options, { code: "architect-started", attempt: 0, maxAttempts, elapsedMs: 0 });
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     attempts = attempt;
+    await emitArchitectLifecycle(input.options, { code: "architect-runtime-ready", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, runtimeMode: "openclaw-agent" });
+    await emitArchitectLifecycle(input.options, { code: "architect-attempt-started", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt });
     try {
       const prompt = buildArchitectExecutionPrompt(
         WORKSPACE_ARCHITECT_SYSTEM_POLICY,
@@ -971,6 +976,7 @@ async function runArchitectReasoning(input: {
           ? `The previous response was invalid. Retry ${attempt}/${maxAttempts} with strict JSON matching the proposal shape. Do not add unknown fields. Validation issue: ${lastError}`
           : undefined
       );
+      await emitArchitectLifecycle(input.options, { code: "architect-model-started", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt });
       const response: WorkspaceArchitectModelExecutionResult = await executeArchitectModelWithDeadline(
         (signal) => modelExecutor({
           ...prompt,
@@ -983,11 +989,14 @@ async function runArchitectReasoning(input: {
         timeoutMs,
         input.options.signal
       );
+      await emitArchitectLifecycle(input.options, { code: "architect-model-completed", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, modelId: response.modelId?.trim() || null, runtimeMode: response.runtime === "native-openclaw" ? "openclaw-agent" : response.runtime === "unknown" ? "unknown" : "model-runtime" });
       lastModelId = response.modelId?.trim() || lastModelId;
       lastRemoteRunId = response.runId?.trim() || lastRemoteRunId;
       lastRemoteSessionKey = response.sessionKey?.trim() || lastRemoteSessionKey;
       lastRuntime = response.runtime === "native-openclaw" ? "native-openclaw" : response.runtime === "unknown" ? "unknown" : "bounded-local";
       const proposal = parseArchitectProposal(response.text);
+      await emitArchitectLifecycle(input.options, { code: "architect-attempt-completed", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, modelId: lastModelId, runtimeMode: lastRuntime === "native-openclaw" ? "openclaw-agent" : lastRuntime === "unknown" ? "unknown" : "model-runtime", structuredOutputAccepted: true });
+      await emitArchitectLifecycle(input.options, { code: "architect-completed", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, modelId: lastModelId, runtimeMode: lastRuntime === "native-openclaw" ? "openclaw-agent" : lastRuntime === "unknown" ? "unknown" : "model-runtime", structuredOutputAccepted: true });
       return {
         proposal,
         status: "model",
@@ -1008,10 +1017,18 @@ async function runArchitectReasoning(input: {
       lastFailureKind = classification.kind;
       lastFailureCode = classification.code;
       lastRetryability = classification.retryability;
+      if (classification.kind === "structured-output") {
+        await emitArchitectLifecycle(input.options, { code: "architect-structured-output-rejected", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, failureKind: classification.kind, failureCode: classification.code, retryability: classification.retryability, structuredOutputAccepted: false });
+      }
+      await emitArchitectLifecycle(input.options, { code: "architect-attempt-failed", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, failureKind: classification.kind, failureCode: classification.code, retryability: classification.retryability });
       if (input.options.signal?.aborted) break;
       if (classification.retryability !== "transient" && classification.retryability !== "repairable") break;
+      await emitArchitectLifecycle(input.options, { code: "architect-retry-scheduled", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, failureKind: classification.kind, failureCode: classification.code, retryability: classification.retryability });
     }
   }
+
+  await emitArchitectLifecycle(input.options, { code: "architect-attempt-completed", attempt: Math.max(1, attempts), maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, failureKind: lastFailureKind, failureCode: lastFailureCode, retryability: lastRetryability, structuredOutputAccepted: false });
+  await emitArchitectLifecycle(input.options, { code: "architect-fallback", attempt: Math.max(1, attempts), maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, failureKind: lastFailureKind, failureCode: lastFailureCode, retryability: lastRetryability, runtimeMode: "deterministic-safe-fallback", structuredOutputAccepted: false });
 
   return {
     proposal: createSafeFallbackProposal(),
@@ -1029,6 +1046,10 @@ async function runArchitectReasoning(input: {
     remoteRunId: lastRemoteRunId,
     remoteSessionKey: lastRemoteSessionKey
   };
+}
+
+async function emitArchitectLifecycle(options: WorkspaceArchitectRunOptions, event: WorkspaceArchitectLifecycleEvent) {
+  await options.onLifecycleEvent?.(event);
 }
 
 function classifyArchitectFailure(error: unknown): {

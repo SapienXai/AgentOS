@@ -58,6 +58,10 @@ type ContextSourceState = {
   status: ContextSourceStatus;
   warning?: string;
   storedDocuments?: number;
+  discoveredItems?: number;
+  fetchedItems?: number;
+  currentActivity?: string | null;
+  currentLocator?: string | null;
 };
 type UploadGroup = { sourceId: string; files: File[] };
 type ProvisioningRun = {
@@ -270,8 +274,19 @@ export function CreateWorkspaceExperience({
       afterSequence = payload.events.at(-1)?.sequence ?? afterSequence;
       const activeStage = payload.snapshot.stage;
       setProgressPhase(activeStage === "context-staging" || activeStage === "source-ingestion" ? "reading-context" : activeStage === "review-preparation" ? "preparing-review" : "designing-workspace");
+      if (payload.snapshot.context.sourceProgress?.length) {
+        setSourceStates((existing) => Object.fromEntries(payload.snapshot.context.sourceProgress.map((progress) => [progress.sourceId, {
+          ...existing[progress.sourceId],
+          status: mapCreationSourceStatus(progress.state),
+          discoveredItems: progress.discoveredItems,
+          fetchedItems: progress.fetchedItems,
+          storedDocuments: progress.storedDocuments,
+          currentActivity: progress.currentActivity,
+          currentLocator: progress.currentLocator
+        }])))
+      }
       if (payload.snapshot.context.status === "partial") {
-        setSourceStates((existing) => Object.fromEntries(sourceList.map((source) => [source.id, { ...existing[source.id], status: "partial", warning: "Architecture generated from partial project context." }])));
+        setSourceStates((existing) => Object.fromEntries(sourceList.map((source) => [source.id, { ...existing[source.id], ...(existing[source.id] ? {} : { status: "partial" as const }), warning: "Architecture generated from partial project context." }])));
       }
       if (payload.snapshot.state === "review-ready") {
         const generated = payload.result as WorkspaceArchitectResult | null;
@@ -931,8 +946,10 @@ function buildProgressChips(sources: WorkspaceKnowledgeSource[], sourceStates: R
   const chips: ProgressChip[] = sources.slice(0, 6).map((source) => {
     const state = sourceStates[source.id]?.status ?? "attached";
     const storedDocuments = sourceStates[source.id]?.storedDocuments;
+    const progress = sourceStates[source.id];
+    const counts = progress?.fetchedItems || progress?.discoveredItems ? ` · ${progress.fetchedItems ?? 0}/${progress.discoveredItems ?? 0} items` : "";
     return {
-      label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label}${storedDocuments ? ` · ${storedDocuments} document${storedDocuments === 1 ? "" : "s"} found` : ""} · ${formatContextSourceStatus(state)}`,
+      label: `${formatWorkspaceSourceKind(source.kind)} · ${source.label}${storedDocuments ? ` · ${storedDocuments} document${storedDocuments === 1 ? "" : "s"} found` : ""}${counts} · ${formatContextSourceStatus(state)}`,
       state
     };
   });
@@ -945,6 +962,14 @@ function buildProgressChips(sources: WorkspaceKnowledgeSource[], sourceStates: R
     chips.push({ label: `${stagedCount} source${stagedCount === 1 ? "" : "s"} staged`, state: "ready" });
   }
   return chips;
+}
+
+function mapCreationSourceStatus(state: "pending" | "discovering" | "fetching" | "normalizing" | "ready" | "partial" | "failed"): ContextSourceStatus {
+  if (state === "ready") return "ready";
+  if (state === "partial") return "partial";
+  if (state === "failed") return "error";
+  if (state === "pending") return "attached";
+  return "reading";
 }
 
 function formatContextSourceStatus(status: ContextSourceStatus) {

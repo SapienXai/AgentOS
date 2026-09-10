@@ -13,6 +13,8 @@ import {
 } from "@/lib/agentos/application/workspace-creation-run-service";
 import {
   createWorkspaceCreationRunAtomically,
+  mutateWorkspaceCreationRun,
+  readWorkspaceCreationRunFile,
   updateWorkspaceCreationRun,
   workspaceCreationActorHash,
   workspaceCreationStorageKey
@@ -206,6 +208,83 @@ test("cancellation is durable and does not fall through to Architect", async () 
     const finished = await waitForTerminal("cancel-actor", started.runId, deps);
     assert.equal(finished.snapshot.state, "cancelled");
     assert.equal(architectCalls, 0);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("creation idempotency covers normalized intent and upload content", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-idempotency-"));
+  const stableInput = {
+    actorId: "idempotency-actor",
+    idempotencyKey: "creation-key",
+    brief: "Build a workspace",
+    mode: "automatic" as const,
+    operatorConstraints: ["Keep the workspace minimal"],
+    materialization: { mode: "empty" },
+    sources: [source],
+    uploads: [{ sourceId: source.id, relativePath: "brief.md", fileName: "brief.md", bytes: Buffer.from("same content") }]
+  };
+  const deps = dependencies(rootPath, {
+    stageContext: async () => ({ draftContextId: "11111111-1111-4111-8111-111111111111", generationId: null, runStatus: "ready", reused: false, sources: [source], sourceReports: [], warnings: [] }),
+    generateArchitect: async (input, options) => generateWorkspaceBlueprint(input, {
+      ...options,
+      modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+    })
+  });
+  try {
+    const first = await startWorkspaceCreationRun(stableInput, deps);
+    const replay = await startWorkspaceCreationRun({ ...stableInput, brief: "  Build a workspace  " }, deps);
+    assert.equal(replay.runId, first.runId);
+    await waitForTerminal(stableInput.actorId, first.runId, deps);
+
+    for (const changed of [
+      { brief: "Build a different workspace" },
+      { mode: "review" as const },
+      { operatorConstraints: ["Use two operators"] },
+      { materialization: { mode: "existing", existingPath: "/tmp/workspace" } },
+      { sources: [] },
+      { uploads: [{ sourceId: source.id, relativePath: "brief.md", fileName: "brief.md", bytes: Buffer.from("changed content") }] }
+    ]) {
+      await assert.rejects(() => startWorkspaceCreationRun({ ...stableInput, ...changed }, deps), /different creation intent/);
+    }
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("concurrent run mutations serialize against the latest durable snapshot", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-mutation-"));
+  try {
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey("mutation-actor", "mutation-key"), {
+      actorHash: workspaceCreationActorHash("mutation-actor"),
+      idempotencyKeyHash: "mutation-key",
+      attempt: 1,
+      input: { brief: "Build a workspace", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId: null,
+      snapshot: createInitialWorkspaceCreationSnapshot(0),
+      result: null
+    });
+    await Promise.all(Array.from({ length: 12 }, (_, index) => mutateWorkspaceCreationRun(created.filePath, (current) => appendWorkspaceCreationEvent(current, {
+      schemaVersion: 1,
+      createdAt: new Date(Date.parse(current.updatedAt) + index + 1).toISOString(),
+      kind: "warning",
+      stage: current.snapshot.stage,
+      snapshot: current.snapshot,
+      attempt: current.attempt,
+      maxAttempts: 3,
+      elapsedMs: index,
+      sourceId: null,
+      warningCode: `mutation-${index}`,
+      failure: null,
+      activityCode: null,
+      activityData: null
+    }))));
+    const final = await readWorkspaceCreationRunFile(created.filePath);
+    assert.ok(final);
+    assert.equal(final.events.length, 12);
+    assert.deepEqual(final.events.map((event) => event.sequence), Array.from({ length: 12 }, (_, index) => index + 1));
+    assert.equal(validateWorkspaceCreationRun(final), true);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

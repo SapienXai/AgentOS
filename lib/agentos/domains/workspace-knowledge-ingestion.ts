@@ -151,6 +151,12 @@ export type KnowledgeIngestionProgress = {
   completed: number;
   total: number;
   warningCount: number;
+  sourceKind?: WorkspaceKnowledgeSourceKind;
+  activityCode?: string;
+  discoveredItems?: number;
+  fetchedItems?: number;
+  storedDocuments?: number;
+  currentLocator?: string | null;
 };
 
 export type KnowledgeIngestionLimits = {
@@ -469,7 +475,7 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
   const sources = normalizeIngestionSources(input.sources);
   const sourceDirectories = buildSourceDirectoryMap(sources);
   const websiteFetcher = input.websiteFetcher ?? createDefaultWebsiteFetcher();
-  const resolveHost = input.networkResolver ?? resolvePublicHostAddresses;
+  const resolveHost = input.networkResolver ?? websiteFetcher.resolve.bind(websiteFetcher) ?? resolvePublicHostAddresses;
   const runController = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
