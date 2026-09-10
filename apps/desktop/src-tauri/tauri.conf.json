@@ -18,7 +18,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVDQTc2OEM2MEEzNDU0MkYKUldRdlZEUUt4bWluWExjK2FEM0JOZG9CWDNXTy93NlRYMEo0Q1J3SWhsUlhraVdTYVZxcEhTZFYK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwODU1M0MxMUUwNjI3N0EKUldSNkp3WWV3Vk9GUUhpY0cyQ2w0b0V3YVhVSWlVZUh4U0h1ZjhkWHk4VndWMDJxTHBqNjBYcWoK",
       "endpoints": [
         "https://github.com/SapienXai/AgentOS/releases/latest/download/latest-{{target}}.json"
       ]
