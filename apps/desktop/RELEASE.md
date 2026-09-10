@@ -14,7 +14,7 @@ The private key must never be committed or printed. The public key currently in 
 ## GitHub Actions
 
 - `desktop.yml` validates all three platforms and intentionally produces unsigned PR artifacts when release signing secrets are unavailable.
-- `desktop-release.yml` is the release-only path. It runs for `agentos-v*` tags or an explicitly supplied tag, creates a draft GitHub Release, uploads platform installers and signed updater metadata, and requires the updater signing secrets. Apple Developer ID and notarization credentials are intentionally omitted from the current unsigned macOS release path.
+- `desktop-release.yml` is the release-only path. It runs for `agentos-v*` tags or an explicitly supplied tag, creates a draft GitHub Release, uploads platform installers and signed updater metadata, and requires the updater signing secrets. The macOS app bundle is ad-hoc signed with Tauri's `signingIdentity: "-"` setting so its resources are sealed correctly, but Apple Developer ID and notarization credentials are intentionally omitted from the current release path.
 
 macOS production distribution additionally requires Developer ID certificate and notarization credentials. The local `.app`/DMG build is not called Developer ID signed or notarized unless those credentials are present and the workflow reports successful signing/notarization.
 

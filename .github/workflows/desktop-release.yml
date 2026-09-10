@@ -74,3 +74,11 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           retryAttempts: 3
+
+      - name: Verify macOS app bundle signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="apps/desktop/src-tauri/target/release/bundle/macos/AgentOS.app"
+          test -d "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"

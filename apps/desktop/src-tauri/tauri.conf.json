@@ -33,6 +33,9 @@
       "../bootstrap": "bootstrap"
     },
     "icon": ["icons/icon.png"],
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "createUpdaterArtifacts": true
   }
 }
