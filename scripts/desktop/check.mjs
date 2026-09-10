@@ -79,8 +79,8 @@ if (config.bundle?.createUpdaterArtifacts !== true) {
   throw new Error("Production desktop configuration must generate signed updater artifacts.");
 }
 
-if (!config.plugins?.updater?.pubkey || !config.plugins?.updater?.endpoints?.some((endpoint) => endpoint.includes("latest-{{target}}.json"))) {
-  throw new Error("Updater configuration must contain a public key and the release latest-{{target}}.json endpoint.");
+if (!config.plugins?.updater?.pubkey || !config.plugins?.updater?.endpoints?.some((endpoint) => endpoint.includes("latest.json"))) {
+  throw new Error("Updater configuration must contain a public key and the release latest.json endpoint.");
 }
 
 if (!JSON.stringify(config.bundle?.resources ?? {}).includes("agentos-runtime")) {
