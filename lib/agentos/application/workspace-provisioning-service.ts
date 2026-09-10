@@ -142,6 +142,8 @@ type PreparedProvisioning = {
 export type WorkspaceProvisioningDependencies = {
   rootPath?: string;
   now?: () => Date;
+  /** Test-only barrier used to deterministically exercise the atomic-create race. */
+  beforeAtomicRunCreate?: () => Promise<void>;
   createWorkspaceProject?: typeof createWorkspaceProject;
   getMissionControlSnapshot?: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext?: typeof readWorkspaceCreationContext;
@@ -154,6 +156,7 @@ export type WorkspaceProvisioningDependencies = {
 type ResolvedWorkspaceProvisioningDependencies = {
   rootPath: string;
   now: () => Date;
+  beforeAtomicRunCreate?: () => Promise<void>;
   createWorkspaceProject: typeof createWorkspaceProject;
   getMissionControlSnapshot: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext: typeof readWorkspaceCreationContext;
@@ -169,6 +172,7 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
   return {
     rootPath: resolveProvisioningRoot(input.rootPath),
     now: input.now ?? (() => new Date()),
+    beforeAtomicRunCreate: input.beforeAtomicRunCreate,
     createWorkspaceProject: input.createWorkspaceProject ?? createWorkspaceProject,
     getMissionControlSnapshot: input.getMissionControlSnapshot ?? getMissionControlSnapshot,
     readWorkspaceCreationContext: input.readWorkspaceCreationContext ?? readWorkspaceCreationContext,
@@ -190,24 +194,22 @@ export async function startWorkspaceProvisioning(
   let run = await readStoredRun(resolved.rootPath, storageKey);
 
   if (run) assertStoredRunIntegrity(run);
-  if (run && run.blueprintFingerprint !== prepared.blueprintFingerprint) {
-    throw new WorkspaceProvisioningError(
-      "idempotency-conflict",
-      "This idempotency key is already associated with a different workspace blueprint.",
-      409
-    );
-  }
 
   if (!run) {
-    run = await createRunAtomically(resolved.rootPath, storageKey, {
+    await resolved.beforeAtomicRunCreate?.();
+    const created = await createRunAtomically(resolved.rootPath, storageKey, {
       actorId: prepared.actorId,
       blueprint: prepared.blueprint,
       blueprintFingerprint: prepared.blueprintFingerprint,
       draftContextId: prepared.draftContextId,
       expectedKnowledgeGenerationId: prepared.expectedKnowledgeGenerationId
     });
-    if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run could not be created.", 500);
-  } else if (run.state === "failed" || run.state === "cancelled") {
+    run = created.run;
+  }
+
+  assertProvisioningIntentMatches(run, prepared);
+
+  if (run.state === "failed" || run.state === "cancelled") {
     run = await retryFailedProvisioningRun(filePath, run, resolved);
   }
 
@@ -406,6 +408,30 @@ async function prepareProvisioning(
       }
     }
   };
+}
+
+function assertProvisioningIntentMatches(
+  run: StoredWorkspaceProvisioningRun,
+  prepared: PreparedProvisioning
+) {
+  const draftContextId = normalizeOptionalIntent(prepared.draftContextId);
+  const expectedKnowledgeGenerationId = normalizeOptionalIntent(prepared.expectedKnowledgeGenerationId);
+  if (
+    run.blueprintId !== prepared.blueprint.id
+    || run.blueprintFingerprint !== prepared.blueprintFingerprint
+    || normalizeOptionalIntent(run.draftContextId) !== draftContextId
+    || normalizeOptionalIntent(run.expectedKnowledgeGenerationId) !== expectedKnowledgeGenerationId
+  ) {
+    throw new WorkspaceProvisioningError(
+      "idempotency-conflict",
+      "This provisioning request conflicts with an existing workspace creation run.",
+      409
+    );
+  }
+}
+
+function normalizeOptionalIntent(value: string | null | undefined) {
+  return value?.trim() || null;
 }
 
 function ensureExecution(

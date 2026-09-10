@@ -97,6 +97,11 @@ export type StoredRunLocator = {
   filePath: string;
 };
 
+export type CreateProvisioningRunResult = {
+  run: StoredWorkspaceProvisioningRun;
+  created: boolean;
+};
+
 const RUN_ID_PATTERN = /^[a-f0-9-]{36}$/i;
 
 export function resolveProvisioningRoot(rootPath = WORKSPACE_PROVISIONING_ROOT) {
@@ -125,7 +130,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
   blueprintFingerprint: string;
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
-}) {
+}): Promise<CreateProvisioningRunResult> {
   const root = resolveProvisioningRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const now = new Date().toISOString();
@@ -164,12 +169,12 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     } finally {
       await handle.close();
     }
-    return run;
+    return { run, created: true };
   } catch (error) {
     if (isFileExistsError(error)) {
       const existing = await readStoredRun(root, storageKey);
       if (!existing) throw new Error("Workspace provisioning run is unavailable or malformed.");
-      return existing;
+      return { run: existing, created: false };
     }
     throw error;
   }
@@ -208,6 +213,7 @@ export async function updateStoredRun(
   run: StoredWorkspaceProvisioningRun,
   updates: Partial<StoredWorkspaceProvisioningRun>
 ) {
+  assertImmutableRunFields(run, updates);
   const next = { ...run, ...updates };
   await writeAtomicJson(filePath, next);
   return next;
@@ -236,4 +242,27 @@ function sha256(value: string) {
 
 function isFileExistsError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "EEXIST");
+}
+
+function assertImmutableRunFields(run: StoredWorkspaceProvisioningRun, updates: Partial<StoredWorkspaceProvisioningRun>) {
+  if (
+    ("runId" in updates && updates.runId !== run.runId)
+    || ("actorHash" in updates && updates.actorHash !== run.actorHash)
+    || ("idempotencyKeyHash" in updates && updates.idempotencyKeyHash !== run.idempotencyKeyHash)
+    || ("blueprintId" in updates && updates.blueprintId !== run.blueprintId)
+    || ("blueprintFingerprint" in updates && updates.blueprintFingerprint !== run.blueprintFingerprint)
+    || ("draftContextId" in updates && updates.draftContextId !== run.draftContextId)
+    || ("expectedKnowledgeGenerationId" in updates && updates.expectedKnowledgeGenerationId !== run.expectedKnowledgeGenerationId)
+    || ("blueprint" in updates && stableStringify(updates.blueprint) !== stableStringify(run.blueprint))
+  ) {
+    throw new Error("Provisioning intent is immutable after run creation.");
+  }
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }

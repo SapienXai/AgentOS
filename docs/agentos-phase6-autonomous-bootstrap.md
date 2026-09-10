@@ -37,6 +37,8 @@ pending
 
 Provisioning accepts an internal `AbortSignal`. If cancellation arrives after a side effect has started, the durable run is marked `cancelled` with the truthful message that the workspace may be incomplete and can be resumed; AgentOS does not perform a destructive rollback.
 
+Provisioning idempotency is immutable after atomic run creation. Concurrent callers using the same idempotency key must match the stored Blueprint ID, Blueprint fingerprint, draft context, and expected knowledge generation exactly or receive an `idempotency-conflict` response before execution.
+
 ## Materialization and bootstrap ownership
 
 AgentOS reuses OpenClaw’s canonical `createWorkspaceProject` boundary for the workspace directory, scaffold documents, project manifest, and selected agent creation. It does not create an alternative workspace format or duplicate OpenClaw’s agent lifecycle. The blueprint’s selected skills and tools are applied through the existing AgentOS `updateAgent` boundary after creation. The Architect’s hidden planner runtime is never copied into the user workspace.

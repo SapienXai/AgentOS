@@ -28,6 +28,8 @@ test("provisioning records durable states, completed steps, and actor-scoped ide
   assert.match(source, /WORKSPACE_PROVISIONING_SCHEMA_VERSION/);
   assert.match(source, /completedSteps/);
   assert.match(source, /resumeWorkspaceProvisioningRun/);
+  assert.match(source, /assertProvisioningIntentMatches/);
+  assert.match(source, /beforeAtomicRunCreate/);
   assert.match(source, /isTerminal\(run\.state\)/);
   assert.match(source, /signal\?: AbortSignal/);
   assert.match(source, /state: cancelled \? "cancelled" : "failed"/);

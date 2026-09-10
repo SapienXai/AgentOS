@@ -151,6 +151,17 @@ function operationSnapshot() {
   } as unknown as MissionControlSnapshot;
 }
 
+function createAtomicCreateBarrier(expectedCalls = 2) {
+  let arrivals = 0;
+  let release: (() => void) | null = null;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  return async () => {
+    arrivals += 1;
+    if (arrivals === expectedCalls) release?.();
+    await gate;
+  };
+}
+
 function createHarness(rootPath: string, options: {
   delayMs?: number;
   failCreate?: boolean;
@@ -433,13 +444,134 @@ test("concurrent submissions create one durable run and one workspace", async ()
   const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-"));
   try {
     const harness = createHarness(rootPath, { delayMs: 25 });
+    const beforeAtomicRunCreate = createAtomicCreateBarrier();
     const input = { actorId: "actor-concurrent", blueprint: blueprint(), idempotencyKey: "concurrent-key", acceptDraft: true };
     const started = await Promise.all([
-      provisionWorkspaceFromBlueprint(input, harness.dependencies),
-      provisionWorkspaceFromBlueprint(input, harness.dependencies)
+      provisionWorkspaceFromBlueprint(input, { ...harness.dependencies, beforeAtomicRunCreate }),
+      provisionWorkspaceFromBlueprint(input, { ...harness.dependencies, beforeAtomicRunCreate })
     ]);
     const finished = await waitForWorkspaceProvisioning(input, harness.dependencies);
     assert.equal(started[0].runId, started[1].runId);
+    assert.equal(finished.state, "ready");
+    assert.equal(harness.counts().createCount, 1);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("atomic store creation reports one winner and one reused run", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-store-"));
+  try {
+    const storageKey = buildProvisioningStorageKey("actor-store-race", "store-race-key");
+    const firstBlueprint = blueprint({ brief: "First immutable intent." });
+    const secondBlueprint = blueprint({ brief: "Second immutable intent." });
+    const results = await Promise.all([
+      createRunAtomically(rootPath, storageKey, {
+        actorId: "actor-store-race",
+        blueprint: firstBlueprint,
+        blueprintFingerprint: blueprintFingerprint(firstBlueprint),
+        draftContextId: null,
+        expectedKnowledgeGenerationId: null
+      }),
+      createRunAtomically(rootPath, storageKey, {
+        actorId: "actor-store-race",
+        blueprint: secondBlueprint,
+        blueprintFingerprint: blueprintFingerprint(secondBlueprint),
+        draftContextId: null,
+        expectedKnowledgeGenerationId: null
+      })
+    ]);
+    assert.equal(results.filter((result) => result.created).length, 1);
+    assert.equal(results.filter((result) => !result.created).length, 1);
+    assert.equal(results[0].run.runId, results[1].run.runId);
+    const stored = await findRunById(rootPath, "actor-store-race", results[0].run.runId);
+    assert.ok(stored);
+    await assert.rejects(
+      () => updateStoredRun(stored.filePath, stored.run, { blueprintId: "mutated-blueprint" }),
+      /immutable/
+    );
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("different blueprints racing on one idempotency key conflict before execution", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-"));
+  try {
+    const harness = createHarness(rootPath);
+    const beforeAtomicRunCreate = createAtomicCreateBarrier();
+    const inputA = {
+      actorId: "actor-blueprint-race",
+      blueprint: blueprint({ identity: { ...blueprint().identity, name: "Acme" }, brief: "Build Acme." }),
+      idempotencyKey: "blueprint-race-key",
+      acceptDraft: true
+    };
+    const inputB = {
+      ...inputA,
+      blueprint: blueprint({ identity: { ...blueprint().identity, name: "Beta" }, brief: "Build Beta." })
+    };
+    const results = await Promise.allSettled([
+      provisionWorkspaceFromBlueprint(inputA, { ...harness.dependencies, beforeAtomicRunCreate }),
+      provisionWorkspaceFromBlueprint(inputB, { ...harness.dependencies, beforeAtomicRunCreate })
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.ok(rejected[0].reason instanceof WorkspaceProvisioningError);
+    assert.equal((rejected[0].reason as WorkspaceProvisioningError).code, "idempotency-conflict");
+    const winnerInput = results[0].status === "fulfilled" ? inputA : inputB;
+    const finished = await waitForWorkspaceProvisioning(winnerInput, harness.dependencies);
+    assert.equal(finished.state, "ready");
+    assert.equal(harness.counts().createCount, 1);
+    assert.equal(finished.result?.workspaceName, winnerInput.blueprint.identity.name);
+    const stored = await findRunById(rootPath, winnerInput.actorId, finished.runId);
+    assert.ok(stored);
+    assert.equal(stored.run.blueprintId, winnerInput.blueprint.id);
+    assert.equal(stored.run.blueprintFingerprint, blueprintFingerprint(winnerInput.blueprint));
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("different draft contexts and generations racing on one key conflict before execution", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-"));
+  try {
+    const harness = createHarness(rootPath);
+    const beforeAtomicRunCreate = createAtomicCreateBarrier();
+    const inputBase = {
+      actorId: "actor-context-race",
+      blueprint: blueprint(),
+      idempotencyKey: "context-race-key",
+      acceptDraft: true
+    };
+    const contextA = {
+      draftContextId: "33333333-3333-4333-8333-333333333333",
+      generationId: "generation-a",
+      runStatus: "ready" as const,
+      reused: false,
+      sources: [],
+      sourceReports: [],
+      warnings: [],
+      knowledge: { generationId: "generation-a", sources: [], documents: [], warnings: [] }
+    };
+    const contextB = { ...contextA, draftContextId: "44444444-4444-4444-8444-444444444444", generationId: "generation-b", knowledge: { ...contextA.knowledge, generationId: "generation-b" } };
+    const inputA = { ...inputBase, draftContextId: contextA.draftContextId, expectedKnowledgeGenerationId: contextA.generationId };
+    const inputB = { ...inputBase, draftContextId: contextB.draftContextId, expectedKnowledgeGenerationId: contextB.generationId };
+    const dependenciesA = { ...harness.dependencies, beforeAtomicRunCreate, readWorkspaceCreationContext: async () => contextA };
+    const dependenciesB = { ...harness.dependencies, beforeAtomicRunCreate, readWorkspaceCreationContext: async () => contextB };
+    const results = await Promise.allSettled([
+      provisionWorkspaceFromBlueprint(inputA, dependenciesA),
+      provisionWorkspaceFromBlueprint(inputB, dependenciesB)
+    ]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const loser = results.find((result) => result.status === "rejected");
+    assert.ok(loser && loser.status === "rejected");
+    assert.ok(loser.reason instanceof WorkspaceProvisioningError);
+    assert.equal((loser.reason as WorkspaceProvisioningError).code, "idempotency-conflict");
+    const winnerInput = results[0].status === "fulfilled" ? inputA : inputB;
+    const winnerDependencies = results[0].status === "fulfilled" ? dependenciesA : dependenciesB;
+    const finished = await waitForWorkspaceProvisioning(winnerInput, winnerDependencies);
     assert.equal(finished.state, "ready");
     assert.equal(harness.counts().createCount, 1);
   } finally {
@@ -453,17 +585,18 @@ test("a persisted non-terminal run resumes after the in-memory executor is absen
     const harness = createHarness(rootPath);
     const inputBlueprint = blueprint();
     const storageKey = buildProvisioningStorageKey("actor-restart", "restart-key");
-    const prepared = await createRunAtomically(rootPath, storageKey, {
+    const created = await createRunAtomically(rootPath, storageKey, {
       actorId: "actor-restart",
       blueprint: inputBlueprint,
       blueprintFingerprint: blueprintFingerprint(inputBlueprint),
       draftContextId: null,
       expectedKnowledgeGenerationId: null
     });
-    const result = await resumeWorkspaceProvisioningRun({ actorId: "actor-restart", runId: prepared.runId }, harness.dependencies);
-    assert.equal(result?.runId, prepared.runId);
+    assert.equal(created.created, true);
+    const result = await resumeWorkspaceProvisioningRun({ actorId: "actor-restart", runId: created.run.runId }, harness.dependencies);
+    assert.equal(result?.runId, created.run.runId);
     const finished = await eventually(
-      () => getWorkspaceProvisioningRun({ actorId: "actor-restart", runId: prepared.runId }, harness.dependencies),
+      () => getWorkspaceProvisioningRun({ actorId: "actor-restart", runId: created.run.runId }, harness.dependencies),
       (value): value is NonNullable<typeof value> => Boolean(value && (value.state === "ready" || value.state === "failed"))
     );
     assert.equal(finished?.state, "ready");
