@@ -4,7 +4,7 @@ The desktop version is checked against `packages/agentos/package.json`. `pnpm de
 
 ## Updater signing
 
-`tauri.conf.json` contains the updater verification key and points to the GitHub Release assets named `latest-{{target}}.json`. Production releases must provide:
+`tauri.conf.json` contains the updater verification key and points to the GitHub Release asset named `latest.json`. Production releases must provide:
 
 - `TAURI_SIGNING_PRIVATE_KEY`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
