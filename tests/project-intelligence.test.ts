@@ -44,15 +44,29 @@ test("golden fixtures are versioned, broad, and valid as normalized packs", () =
 
     const factKeys = new Set(fixture.facts.map((fact) => fact.key));
     for (const requiredKey of fixture.expectation.requiredFactKeys) assert.equal(factKeys.has(requiredKey), true, `${fixture.name} is missing ${requiredKey}`);
+    for (const [key, expectedValue] of Object.entries(fixture.expectation.requiredFactValues)) {
+      const matched = fixture.facts.find((fact) => fact.key === key);
+      assert.ok(matched, `${fixture.name} is missing ${key}`);
+      assert.deepEqual(matched.value, expectedValue);
+    }
     for (const category of fixture.expectation.requiredResourceCategories) assert.equal(fixture.resources.some((resource) => resource.category === category), true, `${fixture.name} is missing ${category}`);
     for (const fact of fixture.facts.filter((entry) => fixture.expectation.verifiedFactKeys.includes(entry.key))) assert.equal(fact.verification, "verified");
+    for (const kind of fixture.expectation.requiredContactKinds ?? []) assert.equal(fixture.pack.contacts.value.some((contact) => contact.kind === kind), true, `${fixture.name} is missing ${kind} contact`);
+    for (const kind of fixture.expectation.requiredIdentifierKinds ?? []) assert.equal(fixture.pack.identifiers.value.some((identifier) => identifier.kind === kind), true, `${fixture.name} is missing ${kind} identifier`);
   }
 
   const coinCollect = firstFixture();
   assert.equal(coinCollect.pack.identity.projectType.value, "web3");
   assert.equal(goldenProjectFixtures[1]?.pack.identity.projectType.value, "saas");
   assert.equal(goldenProjectFixtures[2]?.pack.identity.projectType.value, "open-source");
-  assert.equal(coinCollect.pack.technicalLandscape.networks.value.length, 0);
+  assert.deepEqual(coinCollect.pack.technicalLandscape.networks.value, ["Ethereum"]);
+  assert.deepEqual(coinCollect.pack.products.features.value, ["On-chain activity views", "Wallet analytics"]);
+  assert.equal(coinCollect.pack.identity.description.value?.includes("self-custody"), true);
+  assert.equal(coinCollect.pack.overview.whatItDoes.value, coinCollect.pack.identity.description.value);
+  assert.equal(coinCollect.pack.contacts.value[0]?.value, "hello@coincollect.test");
+  assert.equal(coinCollect.pack.identifiers.value.some((identifier) => identifier.kind === "contract-address"), true);
+  assert.equal(coinCollect.pack.officialResources.some((resource) => resource.locator.value === "https://app.coincollect.test/"), true);
+  assert.equal(coinCollect.pack.officialResources.some((resource) => resource.locator.value === "https://social.coincollect.test/coincollect"), true);
 });
 
 test("facts are the canonical claim layer and scalar projections must agree", () => {
@@ -135,6 +149,11 @@ test("evidence existence, support, and qualification remain distinct", () => {
   assert.equal(isEvidenceQualificationEligible(officialUpload), true);
   assert.equal(isEvidenceQualificationEligible(authoritativeConnected), true);
   assert.equal(isEvidenceQualificationEligible(unqualifiedEvidence), false);
+  const mismatchedCapability: EvidenceRef = {
+    ...officialUpload,
+    qualification: { status: "qualified", capability: "authoritative-first-party", qualifiedAt: "2026-09-10T00:00:00.000Z" }
+  };
+  assert.equal(isEvidenceQualificationEligible(mismatchedCapability), false);
 });
 
 test("official resources derive verification from evidence and do not carry trust truth", () => {
@@ -172,6 +191,7 @@ test("discovery lifecycle state and execution phase are separate contracts", () 
     sourceIds: ["source-1"],
     state: "running",
     phase: "fetch",
+    startedAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-10T00:00:00.000Z",
     progress: { processedSources: 1, totalSources: 2, eventCount: 2 },
     warningCount: 0,
@@ -196,6 +216,130 @@ test("discovery lifecycle state and execution phase are separate contracts", () 
   assert.equal(validateDiscoveryEvent(event).valid, true);
   assert.equal(validateDiscoveryEvent({ ...event, phase: "failed" }).valid, false);
   assert.equal(validateDiscoveryEvent({ ...event, payload: { apiKey: "secret" } }).valid, false);
+});
+
+test("canonical object-valued facts support contact and identifier projections without double serialization", () => {
+  const fixture = firstFixture();
+  assert.equal(validateProjectIntelligencePack(fixture.pack).valid, true);
+  const contactFact = fixture.facts.find((fact) => fact.id === "fact-contact-email");
+  assert.ok(contactFact);
+  assert.equal(typeof contactFact.normalizedValue, "object");
+  assert.equal(Array.isArray(contactFact.normalizedValue), false);
+  assert.deepEqual(contactFact.normalizedValue, { kind: "email", value: "hello@coincollect.test", label: "public support" });
+  const normalizedContactFact = normalizeProjectFact(contactFact);
+  assert.deepEqual(normalizedContactFact.normalizedValue, contactFact.normalizedValue);
+  assert.deepEqual(
+    normalizeProjectCollectionValue({
+      value: [
+        { kind: "email", value: " HELLO@coincollect.test ", label: "Public support" },
+        { kind: "email", value: "hello@coincollect.test", label: "Public support" }
+      ],
+      factIds: ["fact-contact-email"]
+    }).value,
+    [{ kind: "email", value: "HELLO@coincollect.test", label: "Public support" }]
+  );
+
+  const contradictory = structuredClone(fixture.pack);
+  contradictory.contacts = { ...contradictory.contacts, value: [{ kind: "email", value: "other@coincollect.test", label: "Public support" }] };
+  const validation = validateProjectIntelligencePack(contradictory);
+  assert.equal(validation.valid, false);
+  assert.ok(validation.issues.some((issue) => issue.path === "pack.contacts.value[0]" && issue.code === "inconsistent_projection"));
+});
+
+test("canonical object IDs and reference lists are unique within their normalized collections", () => {
+  const fixture = firstFixture();
+  for (const collection of ["facts", "evidence", "officialResources", "conflicts"] as const) {
+    const duplicate = structuredClone(fixture.pack);
+    const items = duplicate[collection] as unknown[];
+    items.push(structuredClone(items[0]));
+    const validation = validateProjectIntelligencePack(duplicate);
+    assert.equal(validation.valid, false, collection);
+    assert.ok(validation.issues.some((issue) => issue.code === "duplicate_id" && issue.path.startsWith(`pack.${collection}`)), collection);
+  }
+
+  const duplicateProjection = structuredClone(fixture.pack);
+  duplicateProjection.identity.projectName.factIds = ["fact-project-name", "fact-project-name"];
+  const projectionValidation = validateProjectIntelligencePack(duplicateProjection);
+  assert.equal(projectionValidation.valid, false);
+  assert.ok(projectionValidation.issues.some((issue) => issue.code === "duplicate_reference" && issue.path === "pack.identity.projectName.factIds[1]"));
+});
+
+test("evidence discovery lineage resolves, rejects self-links, and rejects cycles", () => {
+  const fixture = firstFixture();
+  const missing = structuredClone(fixture.pack);
+  const missingEvidence = missing.evidence[1];
+  assert.ok(missingEvidence);
+  missingEvidence.provenance.discoveredFromEvidenceRefId = "missing-evidence";
+  const missingValidation = validateProjectIntelligencePack(missing);
+  assert.equal(missingValidation.valid, false);
+  assert.ok(missingValidation.issues.some((issue) => issue.code === "missing_reference" && issue.path.includes("discoveredFromEvidenceRefId")));
+
+  const self = structuredClone(fixture.pack);
+  const selfEvidence = self.evidence[1];
+  assert.ok(selfEvidence);
+  selfEvidence.provenance.discoveredFromEvidenceRefId = selfEvidence.id;
+  const selfValidation = validateProjectIntelligencePack(self);
+  assert.equal(selfValidation.valid, false);
+  assert.ok(selfValidation.issues.some((issue) => issue.code === "provenance_cycle"));
+
+  const cycle = structuredClone(fixture.pack);
+  const first = cycle.evidence[0];
+  const second = cycle.evidence[1];
+  assert.ok(first && second);
+  first.provenance.discoveredFromEvidenceRefId = second.id;
+  second.provenance.discoveredFromEvidenceRefId = first.id;
+  const cycleValidation = validateProjectIntelligencePack(cycle);
+  assert.equal(cycleValidation.valid, false);
+  assert.ok(cycleValidation.issues.some((issue) => issue.code === "provenance_cycle"));
+});
+
+test("source coverage keeps claim, evidence, resource, conflict, and pack provenance references internally consistent", () => {
+  const fixture = firstFixture();
+  const missingSource = structuredClone(fixture.pack);
+  missingSource.sourceCoverage.sourceIds = missingSource.sourceCoverage.sourceIds.filter((sourceId) => sourceId !== "coincollect-docs");
+  const missingSourceValidation = validateProjectIntelligencePack(missingSource);
+  assert.equal(missingSourceValidation.valid, false);
+  assert.ok(missingSourceValidation.issues.some((issue) => issue.code === "missing_reference" && issue.message.includes("sourceCoverage.sourceIds")));
+
+  const missingCoverage = structuredClone(fixture.pack);
+  missingCoverage.sourceCoverage.evidenceRefIds = missingCoverage.sourceCoverage.evidenceRefIds.filter((evidenceRefId) => evidenceRefId !== "cc-docs");
+  const missingCoverageValidation = validateProjectIntelligencePack(missingCoverage);
+  assert.equal(missingCoverageValidation.valid, false);
+  assert.ok(missingCoverageValidation.issues.some((issue) => issue.code === "inconsistent_projection" && issue.message.includes("sourceCoverage.evidenceRefIds")));
+
+  const missingOriginEvidence = structuredClone(fixture.pack);
+  const resource = missingOriginEvidence.officialResources[0];
+  assert.ok(resource);
+  resource.origin.evidenceRefId = "missing-resource-evidence";
+  const missingOriginEvidenceValidation = validateProjectIntelligencePack(missingOriginEvidence);
+  assert.equal(missingOriginEvidenceValidation.valid, false);
+  assert.ok(missingOriginEvidenceValidation.issues.some((issue) => issue.code === "missing_reference" && issue.path.includes("origin.evidenceRefId")));
+});
+
+test("discovery run lifecycle timestamps and cancellation fields remain internally consistent", () => {
+  const base = {
+    schemaVersion: 1,
+    id: "run-1",
+    sourceIds: ["source-1"],
+    updatedAt: "2026-09-10T00:00:00.000Z",
+    progress: { processedSources: 0, totalSources: 1, eventCount: 0 },
+    warningCount: 0,
+    errorCount: 0,
+    cancellation: { requested: false }
+  };
+  assert.equal(validateDiscoveryRun({ ...base, state: "pending", phase: null }).valid, true);
+  assert.equal(validateDiscoveryRun({ ...base, state: "running", phase: "discovery", startedAt: "2026-09-10T00:00:00.000Z" }).valid, true);
+  assert.equal(validateDiscoveryRun({ ...base, state: "ready", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z" }).valid, true);
+  assert.equal(validateDiscoveryRun({ ...base, state: "partial", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z" }).valid, true);
+  assert.equal(validateDiscoveryRun({ ...base, state: "failed", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z" }).valid, true);
+  assert.equal(validateDiscoveryRun({ ...base, state: "cancelled", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z", cancellation: { requested: true, requestedAt: "2026-09-10T00:00:30.000Z", completedAt: "2026-09-10T00:01:00.000Z" } }).valid, true);
+
+  assert.equal(validateDiscoveryRun({ ...base, state: "pending", phase: null, completedAt: "2026-09-10T00:01:00.000Z" }).valid, false);
+  assert.equal(validateDiscoveryRun({ ...base, state: "running", phase: null }).valid, false);
+  assert.equal(validateDiscoveryRun({ ...base, state: "running", phase: "fetch", startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z" }).valid, false);
+  assert.equal(validateDiscoveryRun({ ...base, state: "ready", phase: "finalization", startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z" }).valid, false);
+  assert.equal(validateDiscoveryRun({ ...base, state: "cancelled", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z", cancellation: { requested: true, requestedAt: "2026-09-10T00:00:30.000Z" } }).valid, false);
+  assert.equal(validateDiscoveryRun({ ...base, state: "ready", phase: null, startedAt: "2026-09-10T00:00:00.000Z", completedAt: "2026-09-10T00:01:00.000Z", cancellation: { requested: true, requestedAt: "2026-09-10T00:00:30.000Z" } }).valid, false);
 });
 
 test("normalized domain boundaries reject unknown fields and secret fields", () => {
@@ -247,6 +391,18 @@ test("empty packs remain valid and unknown information is representable", () => 
   partial.state = "partial";
   partial.unknowns = ["Current deployment region is unknown"];
   assert.equal(validateProjectIntelligencePack(partial).valid, true);
+
+  const evidenceOnly = structuredClone(empty);
+  evidenceOnly.state = "ready";
+  evidenceOnly.evidence = [structuredClone(firstFixture().evidence[0])];
+  evidenceOnly.sourceCoverage = { sourceIds: ["coincollect-site"], evidenceRefIds: ["cc-home"], coveredFactIds: [], uncoveredAreas: [] };
+  evidenceOnly.provenance = { generatedBy: "discovery", sourceIds: ["coincollect-site"] };
+  assert.equal(validateProjectIntelligencePack(evidenceOnly).valid, false);
+
+  const unknownOnly = structuredClone(empty);
+  unknownOnly.state = "ready";
+  unknownOnly.unknowns = ["Only an unresolved question"];
+  assert.equal(validateProjectIntelligencePack(unknownOnly).valid, false);
 });
 
 test("Project Intelligence remains a separate normalized domain from WorkspaceBlueprint", () => {

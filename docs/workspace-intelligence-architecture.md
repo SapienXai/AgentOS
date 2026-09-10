@@ -148,3 +148,69 @@ The test fixtures are deterministic and have no live internet dependency:
 These fixtures are evaluation inputs for the future Project Intelligence
 Agent. They do not hard-code Web3 assumptions into the domain and do not
 implement production discovery or synthesis logic.
+
+## Existing Create Workspace flow
+
+Phase 1 does not change the existing Create Workspace runtime. Its current
+flow remains:
+
+```text
+Create Workspace → context staging → ingestion → bounded corpus → Workspace Architect → WorkspaceBlueprint → review → provisioning → OpenClaw workspace → knowledge promotion
+```
+
+Project Intelligence is an additive normalized sidecar. It does not replace
+WorkspaceBlueprint, alter provisioning, or claim ownership of OpenClaw
+workspace materialization.
+
+## Future intelligence roles
+
+The future system separates responsibilities at explicit boundaries:
+
+- The Project Intelligence Agent will discover and synthesize normalized
+  candidate claims from bounded source material. Its runtime is out of scope
+  for Phase 1.
+- Workspace Architect will consume approved intelligence and produce the
+  existing WorkspaceBlueprint contract. Architect runtime changes are out of
+  scope for Phase 1.
+- AI Workspace Composer is a later composition layer that may use approved
+  intelligence and architecture to propose workspace artifacts. Composer,
+  retrieval, persistence, and UI runtime are out of scope for Phase 1.
+
+OpenClaw remains the runtime, orchestration, agent, tool, model, session, and
+gateway owner. AgentOS provides the operator-facing control and normalized
+domain layer above it.
+
+## OpenClaw workspace document semantics
+
+Future workspace composition must preserve the established OpenClaw document
+roles rather than inventing parallel runtime concepts:
+
+- `AGENTS.md` describes workspace operating instructions and constraints.
+- `SOUL.md` describes the agent's durable character and interaction posture.
+- `IDENTITY.md` describes the agent identity presented to operators and users.
+- `USER.md` records relevant user context and preferences.
+- `MEMORY.md` contains durable promoted memory according to the applicable
+  OpenClaw memory rules.
+
+Phase 1 models none of these documents and does not write them. Future phases
+must define their source, approval, promotion, and recovery boundaries before
+implementing composition.
+
+## Phase boundaries
+
+Phase 1 and Phase 1.1 establish normalized claims, evidence qualification
+semantics, projections, conflicts, source-coverage invariants, lifecycle
+contracts, fixtures, and validation only. The following remain future work:
+
+- Phase 2+: discovery, source traversal, extraction, synthesis, and any
+  Project Intelligence Agent runtime;
+- later phases: verification runtime, retrieval, persistence, refresh,
+  transport/event streaming, Workspace Architect evolution, and AI Workspace
+  Composer;
+- all phases: no duplicate OpenClaw runtime, model, tool, session, gateway, or
+  workspace ownership inside AgentOS.
+
+Source identifiers are intentionally opaque in this foundation. Phase 1 checks
+their internal consistency across facts, evidence, resources, coverage, and
+pack provenance, but does not resolve them against `WorkspaceKnowledgeSource`
+until the future ingestion integration defines that boundary.

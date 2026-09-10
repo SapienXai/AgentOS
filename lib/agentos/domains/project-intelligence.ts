@@ -129,7 +129,7 @@ export type ProjectFact<T extends ProjectFactValue = ProjectFactValue> = {
   category: ProjectFactCategory;
   key: string;
   value: T;
-  normalizedValue: string | readonly string[];
+  normalizedValue: ProjectFactValue;
   statement: string;
   confidence: ProjectConfidence;
   verification: ProjectVerificationState;
@@ -182,8 +182,6 @@ export type OfficialResource = {
   verification: ProjectVerificationState;
   origin: OfficialResourceOrigin;
 };
-
-export type OfficialLink = OfficialResource;
 
 export type ProjectConflictSubject =
   | { kind: "fact"; id: string }
@@ -386,7 +384,10 @@ export type ProjectIntelligenceValidationIssue = {
     | "invalid_value"
     | "inconsistent_projection"
     | "unsupported_verification"
-    | "missing_reference";
+    | "missing_reference"
+    | "duplicate_id"
+    | "duplicate_reference"
+    | "provenance_cycle";
   message: string;
 };
 
@@ -733,6 +734,10 @@ export function validateProjectFact(value: unknown, _facts?: readonly ProjectFac
   validateFactAt(value, "fact", issues);
   if (!isRecord(value)) return result(issues);
   if (issues.length === 0) {
+    if (_facts) validateUniqueObjectIds(_facts, "facts", issues);
+    if (evidence) validateUniqueObjectIds(evidence, "evidence", issues);
+  }
+  if (issues.length === 0) {
     validateFactEvidence(value as ProjectFact, evidence, "fact", issues);
   }
   return result(issues);
@@ -741,7 +746,10 @@ export function validateProjectFact(value: unknown, _facts?: readonly ProjectFac
 export function validateOfficialResource(value: unknown, evidence?: readonly EvidenceRef[]): ProjectIntelligenceValidation {
   const issues: ProjectIntelligenceValidationIssue[] = [];
   validateResourceAt(value, "resource", issues);
-  if (issues.length === 0) validateResourceEvidence(value as OfficialResource, evidence, "resource", issues);
+  if (issues.length === 0) {
+    if (evidence) validateUniqueObjectIds(evidence, "evidence", issues);
+    if (issues.length === 0) validateResourceEvidence(value as OfficialResource, evidence, "resource", issues);
+  }
   return result(issues);
 }
 
@@ -750,6 +758,10 @@ export function validateProjectConflict(value: unknown, facts?: readonly Project
   validateConflictAt(value, "conflict", issues);
   if (issues.length === 0 && isRecord(value)) {
     const conflict = value as unknown as ProjectConflict;
+    if (facts) validateUniqueObjectIds(facts, "facts", issues);
+    if (resources) validateUniqueObjectIds(resources, "resources", issues);
+    if (evidence) validateUniqueObjectIds(evidence, "evidence", issues);
+    if (issues.length > 0) return result(issues);
     const factIds = new Set((facts ?? []).map((fact) => fact.id));
     const resourceIds = new Set((resources ?? []).map((resource) => resource.id));
     for (const [index, subject] of conflict.subjects.entries()) {
@@ -805,14 +817,22 @@ export function validateProjectIntelligencePack(value: unknown): ProjectIntellig
     const typedEvidence = evidence as EvidenceRef[];
     const typedResources = resources as OfficialResource[];
     const typedConflicts = conflicts as ProjectConflict[];
-    for (const fact of typedFacts) validateFactEvidence(fact, typedEvidence, "pack.facts", issues);
-    for (const resource of typedResources) validateResourceEvidence(resource, typedEvidence, "pack.officialResources", issues);
-    for (const conflict of typedConflicts) validateProjectConflict(conflict, typedFacts, typedResources, typedEvidence).issues.forEach((issue) => issues.push({ ...issue, path: `pack.${issue.path}` }));
-    validatePackProjections(value as unknown as ProjectIntelligencePack, typedFacts, issues);
-    const sourceCoverage = value.sourceCoverage as ProjectSourceCoverage;
-    validateEvidenceReferences(sourceCoverage.evidenceRefIds, typedEvidence, "pack.sourceCoverage.evidenceRefIds", issues);
-    validateFactReferences(sourceCoverage.coveredFactIds, typedFacts, "pack.sourceCoverage.coveredFactIds", issues);
-    validatePackState(value as unknown as ProjectIntelligencePack, typedFacts, typedEvidence, typedResources, issues);
+    validateUniqueObjectIds(typedFacts, "pack.facts", issues);
+    validateUniqueObjectIds(typedEvidence, "pack.evidence", issues);
+    validateUniqueObjectIds(typedResources, "pack.officialResources", issues);
+    validateUniqueObjectIds(typedConflicts, "pack.conflicts", issues);
+    if (issues.length === 0) {
+      for (const fact of typedFacts) validateFactEvidence(fact, typedEvidence, "pack.facts", issues);
+      for (const resource of typedResources) validateResourceEvidence(resource, typedEvidence, "pack.officialResources", issues);
+      for (const conflict of typedConflicts) validateProjectConflict(conflict, typedFacts, typedResources, typedEvidence).issues.forEach((issue) => issues.push({ ...issue, path: `pack.${issue.path}` }));
+      validateEvidenceLineage(typedEvidence, "pack.evidence", issues);
+      validatePackProjections(value as unknown as ProjectIntelligencePack, typedFacts, issues);
+      const sourceCoverage = value.sourceCoverage as ProjectSourceCoverage;
+      validateEvidenceReferences(sourceCoverage.evidenceRefIds, typedEvidence, "pack.sourceCoverage.evidenceRefIds", issues);
+      validateFactReferences(sourceCoverage.coveredFactIds, typedFacts, "pack.sourceCoverage.coveredFactIds", issues);
+      validateSourceCoverageRelationships(value as unknown as ProjectIntelligencePack, typedFacts, typedEvidence, typedResources, typedConflicts, issues);
+      validatePackState(value as unknown as ProjectIntelligencePack, typedFacts, typedEvidence, typedResources, issues);
+    }
   }
   return result(issues);
 }
@@ -834,7 +854,14 @@ export function isEvidenceQualificationEligible(evidence: Pick<EvidenceRef, "pro
   if (evidence.qualification.status !== "qualified") return false;
   if (evidence.provenance.origin === "operator" || evidence.provenance.origin === "unknown-external" || evidence.provenance.origin === "discovered-external") return false;
   if (evidence.evidenceType === "operator-declaration") return false;
-  return true;
+  if (evidence.qualification.capability === "authoritative-first-party") {
+    return evidence.provenance.origin === "first-party-website" || evidence.provenance.origin === "first-party-documentation" || evidence.provenance.origin === "first-party-repository";
+  }
+  if (evidence.qualification.capability === "authoritative-official-upload") {
+    return evidence.provenance.origin === "uploaded-file" || evidence.provenance.origin === "uploaded-folder";
+  }
+  if (evidence.qualification.capability === "authoritative-connected-source") return evidence.provenance.origin === "connected-source";
+  return false;
 }
 
 export function createEmptyProjectIntelligencePack(input: { id: string; now?: string }): ProjectIntelligencePack {
@@ -970,6 +997,7 @@ function validateConflictAt(value: unknown, path: string, issues: ProjectIntelli
   if (!Array.isArray(value.subjects) || value.subjects.length < 2) addIssue(issues, `${path}.subjects`, "invalid_value", "A conflict requires at least two subjects.");
   else value.subjects.forEach((subject, index) => validateConflictSubject(subject, `${path}.subjects[${index}]`, issues));
   validateStringArray(value.evidenceRefIds, `${path}.evidenceRefIds`, issues);
+  if (Array.isArray(value.evidenceRefIds)) validateUniqueReferences(value.evidenceRefIds, `${path}.evidenceRefIds`, issues);
   validateBoundedText(value.summary, `${path}.summary`, MAX_SUMMARY_LENGTH, issues);
   validateEnum(value.confidence, CONFIDENCE_VALUES, `${path}.confidence`, issues);
   validateEnum(value.status, ["open", "resolved", "dismissed"] as const, `${path}.status`, issues);
@@ -1007,7 +1035,27 @@ function validateDiscoveryRunAt(value: unknown, path: string, issues: ProjectInt
     validateBoolean(value.cancellation.requested, `${path}.cancellation.requested`, issues);
     validateOptionalText(value.cancellation.requestedAt, `${path}.cancellation.requestedAt`, issues);
     validateOptionalText(value.cancellation.completedAt, `${path}.cancellation.completedAt`, issues);
-    if (value.cancellation.completedAt && !value.cancellation.requested) addIssue(issues, `${path}.cancellation.completedAt`, "invalid_value", "Cancellation cannot complete unless cancellation was requested.");
+    if (value.cancellation.requested === false && value.cancellation.requestedAt !== undefined) addIssue(issues, `${path}.cancellation.requestedAt`, "invalid_value", "A cancellation timestamp requires a requested cancellation.");
+    if (value.cancellation.requested === false && value.cancellation.completedAt !== undefined) addIssue(issues, `${path}.cancellation.completedAt`, "invalid_value", "Cancellation cannot complete unless cancellation was requested.");
+    if (value.cancellation.requested === true && value.cancellation.requestedAt === undefined) addIssue(issues, `${path}.cancellation.requestedAt`, "missing_field", "A requested cancellation must include requestedAt.");
+    if (value.cancellation.completedAt !== undefined && value.state !== "cancelled") addIssue(issues, `${path}.cancellation.completedAt`, "invalid_value", "Cancellation can complete only for a cancelled run.");
+    if (value.cancellation.requested === true && value.state !== "running" && value.state !== "cancelled") addIssue(issues, `${path}.cancellation.requested`, "invalid_value", "Only running or cancelled runs can carry a cancellation request.");
+  }
+  if (value.state === "pending") {
+    if (value.completedAt !== undefined) addIssue(issues, `${path}.completedAt`, "invalid_value", "Pending runs must not have completedAt.");
+  } else if (value.state === "running") {
+    if (value.phase === null) addIssue(issues, `${path}.phase`, "invalid_value", "Running runs must report an execution phase.");
+    if (value.startedAt === undefined) addIssue(issues, `${path}.startedAt`, "missing_field", "Running runs must include startedAt.");
+    if (value.completedAt !== undefined) addIssue(issues, `${path}.completedAt`, "invalid_value", "Running runs must not have completedAt.");
+  } else if (DISCOVERY_RUN_STATES.includes(value.state as DiscoveryRunState)) {
+    if (value.phase !== null) addIssue(issues, `${path}.phase`, "invalid_value", "Terminal runs must not report an execution phase.");
+    if (value.startedAt === undefined) addIssue(issues, `${path}.startedAt`, "missing_field", "Terminal runs must include startedAt.");
+    if (value.completedAt === undefined) addIssue(issues, `${path}.completedAt`, "missing_field", "Terminal runs must include completedAt.");
+  }
+  if (value.state === "cancelled" && isRecord(value.cancellation)) {
+    if (value.cancellation.requested !== true) addIssue(issues, `${path}.cancellation.requested`, "invalid_value", "Cancelled runs require a requested cancellation.");
+    if (value.cancellation.requestedAt === undefined) addIssue(issues, `${path}.cancellation.requestedAt`, "missing_field", "Cancelled runs require requestedAt.");
+    if (value.cancellation.completedAt === undefined) addIssue(issues, `${path}.cancellation.completedAt`, "missing_field", "Cancelled runs require cancellation.completedAt.");
   }
 }
 
@@ -1067,6 +1115,7 @@ function validateScalarValue(value: unknown, path: string, issues: ProjectIntell
   if (!isRecord(value)) return addIssue(issues, path, "invalid_type", "Scalar projection must be an object.");
   assertKnownKeysForValidation(value, ["value", "factIds"], path, issues);
   validateStringArray(value.factIds, `${path}.factIds`, issues);
+  if (Array.isArray(value.factIds)) validateUniqueReferences(value.factIds, `${path}.factIds`, issues);
   if (value.value === null) return;
   if (kind === "string") validateStringValue(value.value, `${path}.value`, issues);
   else validateEnum(value.value, PROJECT_TYPES, `${path}.value`, issues);
@@ -1076,6 +1125,7 @@ function validateCollectionValue(value: unknown, path: string, issues: ProjectIn
   if (!isRecord(value)) return addIssue(issues, path, "invalid_type", "Collection projection must be an object.");
   assertKnownKeysForValidation(value, ["value", "factIds"], path, issues);
   validateStringArray(value.factIds, `${path}.factIds`, issues);
+  if (Array.isArray(value.factIds)) validateUniqueReferences(value.factIds, `${path}.factIds`, issues);
   if (!Array.isArray(value.value)) return addIssue(issues, `${path}.value`, "invalid_type", "Collection projection value must be an array.");
   value.value.forEach((member, index) => memberValidator(member, `${path}.value[${index}]`, issues));
 }
@@ -1137,6 +1187,7 @@ function validateResourceEvidence(resource: OfficialResource, evidence: readonly
     return;
   }
   validateClaimVerification(resource.verification, resource.evidence, evidence, `${path}.${resource.id}`, issues);
+  if (resource.origin.evidenceRefId) validateEvidenceReferences([resource.origin.evidenceRefId], evidence, `${path}.${resource.id}.origin.evidenceRefId`, issues);
 }
 
 function validateClaimVerification(verification: ProjectVerificationState, claimEvidence: readonly ProjectClaimEvidence[], evidence: readonly EvidenceRef[], path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1217,9 +1268,9 @@ function referencedFacts(ids: readonly string[], facts: ReadonlyMap<string, Proj
   return referenced;
 }
 
-function factNormalizedMembers(fact: ProjectFact): string[] {
+function factNormalizedMembers(fact: ProjectFact): ProjectFactValue[] {
   const normalized = fact.normalizedValue;
-  return typeof normalized === "string" ? [normalizeProjectIntelligenceText(normalized)] : normalized.map((member) => normalizeProjectIntelligenceText(member));
+  return Array.isArray(normalized) ? [...normalized] : [normalized];
 }
 
 function sameMembership(left: ReadonlySet<string>, right: ReadonlySet<string>) {
@@ -1236,9 +1287,10 @@ function validateFactReferences(ids: readonly string[], facts: readonly ProjectF
 }
 
 function validatePackState(pack: ProjectIntelligencePack, facts: readonly ProjectFact[], evidence: readonly EvidenceRef[], resources: readonly OfficialResource[], issues: ProjectIntelligenceValidationIssue[]) {
-  const hasContent = facts.length > 0 || evidence.length > 0 || resources.length > 0 || pack.unknowns.length > 0 || pack.conflicts.length > 0 || projectionHasContent(pack);
-  if (pack.state === "empty" && hasContent) addIssue(issues, "pack.state", "invalid_value", "A pack with content cannot be empty.");
-  if (pack.state === "ready" && !hasContent) addIssue(issues, "pack.state", "invalid_value", "An empty pack cannot be ready.");
+  const hasMeaningfulContent = facts.length > 0 || evidence.length > 0 || resources.length > 0 || pack.unknowns.length > 0 || pack.conflicts.length > 0 || projectionHasContent(pack);
+  const hasUsableIntelligence = facts.length > 0 || resources.length > 0 || projectionHasContent(pack);
+  if (pack.state === "empty" && hasMeaningfulContent) addIssue(issues, "pack.state", "invalid_value", "A pack with content cannot be empty.");
+  if (pack.state === "ready" && !hasUsableIntelligence) addIssue(issues, "pack.state", "invalid_value", "A ready pack must contain at least one canonical fact, resource, or populated projection.");
 }
 
 function projectionHasContent(pack: ProjectIntelligencePack) {
@@ -1261,6 +1313,9 @@ function validateSourceCoverage(value: unknown, path: string, issues: ProjectInt
   validateStringArray(value.evidenceRefIds, `${path}.evidenceRefIds`, issues);
   validateStringArray(value.coveredFactIds, `${path}.coveredFactIds`, issues);
   validateStringArray(value.uncoveredAreas, `${path}.uncoveredAreas`, issues);
+  if (Array.isArray(value.sourceIds)) validateUniqueReferences(value.sourceIds, `${path}.sourceIds`, issues);
+  if (Array.isArray(value.evidenceRefIds)) validateUniqueReferences(value.evidenceRefIds, `${path}.evidenceRefIds`, issues);
+  if (Array.isArray(value.coveredFactIds)) validateUniqueReferences(value.coveredFactIds, `${path}.coveredFactIds`, issues);
 }
 
 function validatePackProvenance(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1268,6 +1323,7 @@ function validatePackProvenance(value: unknown, path: string, issues: ProjectInt
   assertKnownKeysForValidation(value, ["generatedBy", "sourceIds", "generationId"], path, issues);
   validateEnum(value.generatedBy, ["operator", "discovery", "system"] as const, `${path}.generatedBy`, issues);
   validateStringArray(value.sourceIds, `${path}.sourceIds`, issues);
+  if (Array.isArray(value.sourceIds)) validateUniqueReferences(value.sourceIds, `${path}.sourceIds`, issues);
   validateOptionalText(value.generationId, `${path}.generationId`, issues);
 }
 
@@ -1288,12 +1344,15 @@ function validateConflictSubject(value: unknown, path: string, issues: ProjectIn
 
 function validateClaimEvidence(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
   if (!Array.isArray(value)) return addIssue(issues, path, "invalid_type", "Claim evidence must be an array.");
+  const evidenceRefIds: string[] = [];
   value.forEach((entry, index) => {
     if (!isRecord(entry)) return addIssue(issues, `${path}[${index}]`, "invalid_type", "Claim evidence must be an object.");
     assertKnownKeysForValidation(entry, ["evidenceRefId", "relation"], `${path}[${index}]`, issues);
     validateRequiredText(entry.evidenceRefId, `${path}[${index}].evidenceRefId`, issues);
     validateEnum(entry.relation, ["supports", "contradicts", "context"] as const, `${path}[${index}].relation`, issues);
+    if (typeof entry.evidenceRefId === "string") evidenceRefIds.push(entry.evidenceRefId);
   });
+  validateUniqueReferences(evidenceRefIds, path, issues);
 }
 
 function validateFactProvenance(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1342,9 +1401,7 @@ function validateFactValue(value: unknown, path: string, issues: ProjectIntellig
 }
 
 function validateFactNormalizedValue(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
-  if (typeof value === "string") return;
-  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) return;
-  addIssue(issues, path, "invalid_type", "Fact normalizedValue must be a string or string array.");
+  validateFactValue(value, path, issues);
 }
 
 function validateFactNormalizedConsistency(value: unknown, normalizedValue: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1358,7 +1415,7 @@ function validateFactNormalizedConsistency(value: unknown, normalizedValue: unkn
     if (!sameMembership(expected, actual)) addIssue(issues, path, "inconsistent_projection", "Fact normalizedValue must represent the canonical fact value.");
     return;
   }
-  if (typeof normalizedValue !== "string" || projectMembershipKey(value) !== projectMembershipKey(normalizedValue)) addIssue(issues, path, "inconsistent_projection", "Fact normalizedValue must represent the canonical fact value.");
+  if (projectMembershipKey(canonicalFactMember(value as ProjectFactValue)) !== projectMembershipKey(normalizedValue)) addIssue(issues, path, "inconsistent_projection", "Fact normalizedValue must represent the canonical fact value.");
 }
 
 function validateStringArray(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1419,6 +1476,106 @@ function validateEvidenceReferences(ids: readonly string[], evidence: readonly E
   ids.forEach((id, index) => {
     if (!knownIds.has(id)) addIssue(issues, `${path}[${index}]`, "missing_reference", "Evidence reference does not resolve.");
   });
+}
+
+function validateUniqueObjectIds<T extends { id: string }>(items: readonly T[], path: string, issues: ProjectIntelligenceValidationIssue[]) {
+  const seen = new Set<string>();
+  items.forEach((item, index) => {
+    if (seen.has(item.id)) addIssue(issues, `${path}[${index}].id`, "duplicate_id", "Canonical object IDs must be unique within their collection.");
+    seen.add(item.id);
+  });
+}
+
+function validateUniqueReferences(ids: readonly string[], path: string, issues: ProjectIntelligenceValidationIssue[]) {
+  const seen = new Set<string>();
+  ids.forEach((id, index) => {
+    if (seen.has(id)) addIssue(issues, `${path}[${index}]`, "duplicate_reference", "Reference IDs must be unique within a normalized reference list.");
+    seen.add(id);
+  });
+}
+
+function validateEvidenceLineage(evidence: readonly EvidenceRef[], path: string, issues: ProjectIntelligenceValidationIssue[]) {
+  const byId = new Map(evidence.map((entry) => [entry.id, entry]));
+  const indexById = new Map(evidence.map((entry, index) => [entry.id, index]));
+  const parentById = new Map<string, string>();
+  for (const [index, entry] of evidence.entries()) {
+    const parentId = entry.provenance.discoveredFromEvidenceRefId;
+    if (!parentId) continue;
+    if (!byId.has(parentId)) {
+      addIssue(issues, `${path}[${index}].provenance.discoveredFromEvidenceRefId`, "missing_reference", "Evidence lineage must reference an existing EvidenceRef.");
+      continue;
+    }
+    if (parentId === entry.id) {
+      addIssue(issues, `${path}[${index}].provenance.discoveredFromEvidenceRefId`, "provenance_cycle", "Evidence lineage cannot reference itself.");
+      continue;
+    }
+    parentById.set(entry.id, parentId);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const reported = new Set<string>();
+  const visit = (id: string) => {
+    if (visited.has(id)) return;
+    if (visiting.has(id)) {
+      if (!reported.has(id)) {
+        const index = indexById.get(id);
+        if (index !== undefined) addIssue(issues, `${path}[${index}].provenance.discoveredFromEvidenceRefId`, "provenance_cycle", "Evidence lineage cannot contain cycles.");
+        reported.add(id);
+      }
+      return;
+    }
+    visiting.add(id);
+    const parentId = parentById.get(id);
+    if (parentId) visit(parentId);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const entry of evidence) visit(entry.id);
+}
+
+function validateSourceCoverageRelationships(
+  pack: ProjectIntelligencePack,
+  facts: readonly ProjectFact[],
+  evidence: readonly EvidenceRef[],
+  resources: readonly OfficialResource[],
+  conflicts: readonly ProjectConflict[],
+  issues: ProjectIntelligenceValidationIssue[]
+) {
+  const sourceIds = new Set(pack.sourceCoverage.sourceIds);
+  const coveredEvidenceIds = new Set(pack.sourceCoverage.evidenceRefIds);
+  const coveredFactIds = new Set(pack.sourceCoverage.coveredFactIds);
+  const checkSource = (sourceId: string, path: string) => {
+    if (!sourceIds.has(sourceId)) addIssue(issues, path, "missing_reference", "Source ID must be present in sourceCoverage.sourceIds.");
+  };
+  const checkCoveredEvidence = (evidenceRefId: string, path: string) => {
+    if (!coveredEvidenceIds.has(evidenceRefId)) addIssue(issues, path, "inconsistent_projection", "Referenced evidence must be included in sourceCoverage.evidenceRefIds.");
+  };
+  const checkCoveredFact = (factId: string, path: string) => {
+    if (!coveredFactIds.has(factId)) addIssue(issues, path, "inconsistent_projection", "Referenced canonical facts must be included in sourceCoverage.coveredFactIds.");
+  };
+
+  for (const [index, entry] of evidence.entries()) checkSource(entry.sourceId, `pack.evidence[${index}].sourceId`);
+  for (const [index, fact] of facts.entries()) {
+    fact.sourceIds.forEach((sourceId) => checkSource(sourceId, `pack.facts[${index}].sourceIds`));
+    fact.evidence.forEach((relation, relationIndex) => {
+      checkCoveredEvidence(relation.evidenceRefId, `pack.facts[${index}].evidence[${relationIndex}].evidenceRefId`);
+    });
+  }
+  for (const [index, resource] of resources.entries()) {
+    if (resource.origin.sourceId) checkSource(resource.origin.sourceId, `pack.officialResources[${index}].origin.sourceId`);
+    if (resource.origin.evidenceRefId) checkCoveredEvidence(resource.origin.evidenceRefId, `pack.officialResources[${index}].origin.evidenceRefId`);
+    resource.evidence.forEach((relation, relationIndex) => {
+      checkCoveredEvidence(relation.evidenceRefId, `pack.officialResources[${index}].evidence[${relationIndex}].evidenceRefId`);
+    });
+  }
+  for (const [index, conflict] of conflicts.entries()) {
+    conflict.subjects.forEach((subject, subjectIndex) => {
+      if (subject.kind === "fact") checkCoveredFact(subject.id, `pack.conflicts[${index}].subjects[${subjectIndex}].id`);
+    });
+    conflict.evidenceRefIds.forEach((evidenceRefId, evidenceIndex) => checkCoveredEvidence(evidenceRefId, `pack.conflicts[${index}].evidenceRefIds[${evidenceIndex}]`));
+  }
+  for (const [index, sourceId] of pack.provenance.sourceIds.entries()) checkSource(sourceId, `pack.provenance.sourceIds[${index}]`);
 }
 
 function assertKnownKeys(value: Record<string, unknown>, allowed: readonly string[], typeName: string) {
@@ -1599,19 +1756,31 @@ function normalizeProjectionValue<T>(value: T): T {
   if (typeof value === "string") return normalizeProjectIntelligenceText(value) as T;
   if (Array.isArray(value)) return value.map((entry) => normalizeProjectionValue(entry)) as T;
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, normalizeProjectionValue(entry)])) as T;
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, normalizeProjectionValue(entry)])
+    ) as T;
   }
   return value;
 }
 
-function canonicalFactNormalizedValue(value: ProjectFactValue): string | readonly string[] {
+function canonicalFactNormalizedValue(value: ProjectFactValue): ProjectFactValue {
   if (Array.isArray(value)) return value.map((entry) => canonicalFactMember(entry));
   return canonicalFactMember(value);
 }
 
-function canonicalFactMember(value: ProjectFactValue): string {
+function canonicalFactMember(value: ProjectFactValue): ProjectFactValue {
   if (typeof value === "string") return normalizeProjectIntelligenceText(value).toLocaleLowerCase();
-  return stableStringify(value);
+  if (Array.isArray(value)) return value.map((entry) => canonicalFactMember(entry));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalFactMember(entry)])
+    );
+  }
+  return value;
 }
 
 function projectMembershipKey(value: unknown): string {
