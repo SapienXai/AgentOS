@@ -7,10 +7,120 @@ import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-m
 
 export const WORKSPACE_BLUEPRINT_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_BLUEPRINT_POLICY_VERSION = "phase4-minimum-topology-v1" as const;
+export const WORKSPACE_ARCHITECT_POLICY_VERSION = "phase4.1-structured-architect-v1" as const;
 
 export type WorkspaceBlueprintStatus = "draft" | "ready" | "blocked";
 export type WorkspaceBlueprintFreshness = "fresh" | "stale" | "unknown";
 export type WorkspaceArchitectMode = "automatic" | "review";
+export type WorkspaceArchitectReasoningMode =
+  | "openclaw-agent"
+  | "model-runtime"
+  | "deterministic-safe-fallback"
+  | "unknown";
+
+export type WorkspaceArchitectProposalBoundary =
+  | "persistent-responsibility"
+  | "security"
+  | "tool-access"
+  | "communication-identity"
+  | "independent-queue"
+  | "persistent-context"
+  | "explicit-operator-request";
+
+export type WorkspaceArchitectProposalIntent =
+  | "explicit-request"
+  | "evidence-backed-request"
+  | "descriptive-only";
+
+export type WorkspaceArchitectProposalAgent = {
+  id?: string;
+  role?: string;
+  name?: string;
+  purpose?: string;
+  responsibilities?: string[];
+  outputs?: string[];
+  skillIds?: string[];
+  toolIds?: string[];
+};
+
+export type WorkspaceArchitectProposalSpecialist = WorkspaceArchitectProposalAgent & {
+  justification: {
+    reason: string;
+    boundary: WorkspaceArchitectProposalBoundary;
+    evidenceRefs: string[];
+  };
+};
+
+export type WorkspaceArchitectProposal = {
+  identity?: {
+    name?: string;
+    purpose?: string;
+    projectType?: string;
+  };
+  workforce?: {
+    primaryAgent?: WorkspaceArchitectProposalAgent;
+    specialists?: WorkspaceArchitectProposalSpecialist[];
+  };
+  operations?: {
+    workflows?: Array<{
+      id: string;
+      name?: string;
+      goal?: string;
+      trigger?: "manual" | "event" | "cron" | "launch";
+      ownerAgentId?: string;
+      collaboratorAgentIds?: string[];
+      successDefinition?: string;
+      outputs?: string[];
+      evidenceRefs?: string[];
+    }>;
+    automations?: Array<{
+      id: string;
+      name?: string;
+      description?: string;
+      scheduleKind?: "every" | "cron";
+      scheduleValue?: string;
+      agentId?: string;
+      mission?: string;
+      thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+      announce?: boolean;
+      intent: WorkspaceArchitectProposalIntent;
+      justification: string;
+      evidenceRefs: string[];
+    }>;
+    channels?: Array<{
+      id: string;
+      type: "slack" | "telegram" | "whatsapp" | "discord" | "googlechat";
+      name?: string;
+      purpose: string;
+      target?: string;
+      announce?: boolean;
+      intent: WorkspaceArchitectProposalIntent;
+      evidenceRefs: string[];
+    }>;
+  };
+  capabilities?: {
+    skills?: Array<{ id: string; rationale?: string; evidenceRefs?: string[] }>;
+    tools?: Array<{ id: string; rationale?: string; evidenceRefs?: string[] }>;
+  };
+  memory?: {
+    durableFacts?: Array<{
+      text: string;
+      evidenceRefs: string[];
+    }>;
+  };
+  connections?: Array<{
+    id: string;
+    provider: string;
+    status?: "declared" | "required" | "recommended";
+    purpose?: string;
+    sourceId?: string | null;
+    evidenceRefs: string[];
+  }>;
+  recommendations?: string[];
+  assumptions?: string[];
+  warnings?: string[];
+  confidence?: "high" | "medium" | "low";
+};
 
 export type WorkspaceBlueprintEvidenceKind =
   | "brief"
@@ -113,6 +223,7 @@ export type WorkspaceBlueprint = {
     projectType: string;
   };
   brief: string;
+  operatorConstraints: string[];
   materialization: WorkspaceMaterialization;
   knowledge: {
     sources: WorkspaceKnowledgeSource[];
@@ -182,6 +293,8 @@ export type WorkspaceBlueprint = {
     createdAt: string;
     modelId: string | null;
     runtime: "native-openclaw" | "bounded-local" | "unknown";
+    reasoningMode: WorkspaceArchitectReasoningMode;
+    policyVersion: typeof WORKSPACE_ARCHITECT_POLICY_VERSION;
   };
 };
 
@@ -210,6 +323,7 @@ export type WorkspaceArchitectInput = {
   materialization?: WorkspaceMaterialization;
   knowledge?: WorkspaceArchitectKnowledgeInput;
   mode?: WorkspaceArchitectMode;
+  operatorConstraints?: string[];
   operatorOverrides?: Partial<WorkspaceBlueprintOperatorOverrides>;
 };
 
@@ -240,6 +354,13 @@ export type WorkspaceArchitectResult = {
   recommendations: string[];
   validation: WorkspaceBlueprintValidation;
   freshness: WorkspaceBlueprintFreshnessResult;
+  reasoning: {
+    status: "model" | "fallback" | "blocked";
+    mode: WorkspaceArchitectReasoningMode;
+    attempts: number;
+    modelId: string | null;
+    warning: string | null;
+  };
 };
 
 export type WorkspaceBlueprintRevisionInput = {
@@ -258,6 +379,7 @@ export type WorkspaceBlueprintRevisionInput = {
     };
     recommendations?: string[];
   };
+  operatorConstraints?: string[];
   knowledge?: WorkspaceArchitectKnowledgeInput;
 };
 
@@ -278,7 +400,34 @@ export type WorkspaceArchitectRunOptions = {
   runId?: string;
   modelId?: string | null;
   nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>;
+  modelExecutor?: WorkspaceArchitectModelExecutor;
+  architectAgentId?: string;
+  architectSessionKey?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+  signal?: AbortSignal;
 };
+
+export type WorkspaceArchitectModelExecutionRequest = {
+  systemPrompt: string;
+  userPrompt: string;
+  mode: WorkspaceArchitectMode;
+  runId: string;
+  attempt: number;
+  timeoutMs: number;
+  signal: AbortSignal;
+};
+
+export type WorkspaceArchitectModelExecutionResult = {
+  text: string;
+  runId?: string | null;
+  modelId?: string | null;
+  runtime?: "native-openclaw" | "model-runtime" | "unknown";
+};
+
+export type WorkspaceArchitectModelExecutor = (
+  request: WorkspaceArchitectModelExecutionRequest
+) => Promise<WorkspaceArchitectModelExecutionResult>;
 
 export type WorkspaceBlueprintSourceSummary = {
   id: string;

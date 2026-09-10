@@ -279,6 +279,15 @@ export type {
   WorkspaceArchitectKnowledgeInput,
   WorkspaceArchitectMode,
   WorkspaceArchitectNativeSearchResult,
+  WorkspaceArchitectModelExecutionRequest,
+  WorkspaceArchitectModelExecutionResult,
+  WorkspaceArchitectModelExecutor,
+  WorkspaceArchitectProposal,
+  WorkspaceArchitectProposalAgent,
+  WorkspaceArchitectProposalBoundary,
+  WorkspaceArchitectProposalIntent,
+  WorkspaceArchitectProposalSpecialist,
+  WorkspaceArchitectReasoningMode,
   WorkspaceArchitectResult,
   WorkspaceArchitectRunOptions,
   WorkspaceBlueprint,
@@ -293,4 +302,10 @@ export type {
   WorkspaceBlueprintStatus,
   WorkspaceBlueprintValidation,
   WorkspaceBlueprintValidationIssue
+} from "@/lib/agentos/domains/workspace-blueprint";
+
+export {
+  WORKSPACE_ARCHITECT_POLICY_VERSION,
+  WORKSPACE_BLUEPRINT_POLICY_VERSION,
+  WORKSPACE_BLUEPRINT_SCHEMA_VERSION
 } from "@/lib/agentos/domains/workspace-blueprint";
