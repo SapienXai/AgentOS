@@ -72,6 +72,5 @@ jobs:
             macOS Developer ID signing/notarization and Windows Authenticode signing are not configured for this release. Tauri updater metadata is signed with the configured updater key.
           releaseDraft: true
           prerelease: false
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           retryAttempts: 3
