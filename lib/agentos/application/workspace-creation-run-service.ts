@@ -1125,6 +1125,7 @@ async function updateIntelligenceSnapshot(filePath: string, run: WorkspaceCreati
 
 function createIntelligenceReviewSnapshot(pack: ProjectIntelligencePack) {
   const conflictedFactIds = new Set(pack.conflicts.flatMap((conflict) => conflict.subjects.filter((subject) => subject.kind === "fact").map((subject) => subject.id)));
+  const conflictedResourceIds = new Set(pack.conflicts.flatMap((conflict) => conflict.subjects.filter((subject) => subject.kind === "resource").map((subject) => subject.id)));
   return {
     projectName: pack.identity.projectName.value,
     description: pack.identity.description.value,
@@ -1147,6 +1148,7 @@ function createIntelligenceReviewSnapshot(pack: ProjectIntelligencePack) {
       category: resource.category,
       locator: redactSecretText(resource.locator.value).slice(0, 300),
       verification: resource.verification,
+      conflicted: conflictedResourceIds.has(resource.id),
       origin: resource.origin.origin
     })),
     conflicts: pack.conflicts.slice(0, 16).map((conflict) => ({

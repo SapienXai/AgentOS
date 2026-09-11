@@ -137,6 +137,7 @@ export type WorkspaceCreationIntelligenceReviewResource = {
   category: string;
   locator: string;
   verification: "declared" | "discovered" | "inferred" | "verified";
+  conflicted: boolean;
   origin: string;
 };
 
@@ -597,10 +598,11 @@ function validateWorkspaceCreationIntelligenceReviewFact(value: unknown) {
 function validateWorkspaceCreationIntelligenceReviewResource(value: unknown) {
   if (!value || typeof value !== "object") return false;
   const resource = value as Record<string, unknown>;
-  return hasOnlyKeys(resource, ["id", "label", "category", "locator", "verification", "origin"])
+  return hasOnlyKeys(resource, ["id", "label", "category", "locator", "verification", "conflicted", "origin"])
     && boundedString(resource.id, 120) && boundedString(resource.label, 160) && boundedString(resource.category, 64)
     && boundedString(resource.locator, 300) && boundedString(resource.origin, 64)
-    && ["declared", "discovered", "inferred", "verified"].includes(resource.verification as string);
+    && ["declared", "discovered", "inferred", "verified"].includes(resource.verification as string)
+    && typeof resource.conflicted === "boolean";
 }
 
 function validateWorkspaceCreationIntelligenceReviewConflict(value: unknown) {

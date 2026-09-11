@@ -212,7 +212,7 @@ test("review presenter exposes only bounded intelligence and composition project
         projectType: "software",
         understanding: ["A useful project."],
         facts: [{ id: "fact-1", key: "projectName", statement: "The project is named Acme.", verification: "verified", conflicted: false }],
-        resources: [{ id: "resource-1", label: "Documentation", category: "documentation", locator: "https://acme.example/docs", verification: "discovered", origin: "first-party-documentation" }],
+        resources: [{ id: "resource-1", label: "Documentation", category: "documentation", locator: "https://acme.example/docs", verification: "discovered", conflicted: false, origin: "first-party-documentation" }],
         conflicts: [{ id: "conflict-1", summary: "Two names were found.", status: "open", subjectCount: 2 }],
         unknowns: [],
         sourceCount: 1,
@@ -241,6 +241,12 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
   assert.match(wrapperSource, /<CreateWorkspaceExperience/);
   assert.match(source, /fetch\("\/api\/workspaces\/creation-runs"/);
+  assert.match(source, /Why this agent/);
+  assert.match(source, /Sources analyzed/);
+  assert.match(source, /Trigger:/);
+  assert.match(source, /Outputs:/);
+  assert.match(source, /Skills/);
+  assert.match(source, /Tools/);
   assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\?afterSequence=/);
   assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\/cancel`/);
   assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{creationRun\.runId\}\/revise`/);

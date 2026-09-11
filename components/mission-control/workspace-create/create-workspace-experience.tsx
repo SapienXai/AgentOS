@@ -930,18 +930,23 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
   const currentStep = progressSteps.findIndex((step) => step.id === activePhase);
   const activeLabel = progressSteps.find((step) => step.id === activePhase)?.label ?? "Working on the first draft";
   const visibleActivities = contextWasRequested ? experience.activities : experience.activities.filter((activity) => activity.id !== "reading");
+  const discovery = experience.discovery;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-[640px] flex-col justify-center px-5 py-12 md:px-10">
-      <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-busy="true">
+    <main className="mx-auto flex min-h-full w-full max-w-[820px] flex-col justify-center px-5 py-8 md:px-10 md:py-12">
+      <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-busy="true" aria-live="polite">
         <div className="flex items-center gap-3">
           <div className={cn("flex size-10 items-center justify-center rounded-xl", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Sparkles className="h-5 w-5" /></div>
           <div>
-            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")} aria-live="polite">{experience.phaseLabel || activeLabel}</p>
+            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{discovery.currentActivity || experience.phaseLabel || activeLabel}</p>
             <p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{sources.length ? `Using ${sources.length} context source${sources.length === 1 ? "" : "s"}.` : "Starting from your brief."}</p>
           </div>
         </div>
-        <div className="mt-7 space-y-4">
+        <div className="mt-7 grid gap-3 sm:grid-cols-4" aria-label="Project understanding metrics">
+          {[["Pages", discovery.aggregate.pages], ["Documents", discovery.aggregate.documents], ["Facts", discovery.aggregate.facts], ["Resources", discovery.aggregate.resources]].map(([label, count]) => <div key={label} className={cn("rounded-xl border px-3 py-2.5", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}><p className={cn("text-[10px] uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>{label}</p><p className={cn("mt-1 text-lg font-semibold", isLight ? "text-[#44372d]" : "text-slate-100")}>{count}</p></div>)}
+        </div>
+        <div className="mt-7 grid gap-6 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+          <div className="space-y-4">
           {visibleActivities.map((activity, index) => {
             const completed = activity.status === "complete" || index < currentStep;
             const active = activity.status === "active" || index === currentStep;
@@ -954,6 +959,15 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
               </div>
             );
           })}
+          </div>
+          <section className={cn("min-h-[180px] rounded-xl border p-4", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")} aria-label="Live project signals">
+            <div className="flex items-center justify-between gap-3"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live project signals</p>{discovery.historyTruncated ? <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Recent activity</span> : null}</div>
+            {discovery.currentLocator ? <p className={cn("mt-2 truncate text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} title={discovery.currentLocator}>Reading {discovery.currentLocator}</p> : null}
+            <div className="mt-3 space-y-2">
+              {discovery.signals.slice(0, 8).map((signal) => <div key={signal.id} className="flex items-start gap-2 text-xs"><span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", signal.state === "attention" ? "bg-amber-400" : signal.state === "verified" ? "bg-emerald-400" : signal.state === "reading" ? "bg-violet-300 motion-safe:animate-pulse" : isLight ? "bg-[#b8895f]" : "bg-slate-500")} aria-hidden="true" /><span className={cn("min-w-0 truncate", isLight ? "text-[#5d5046]" : "text-slate-300")}>{signal.label}</span></div>)}
+              {!discovery.signals.length ? <p className={cn("text-xs", isLight ? "text-[#9b8d80]" : "text-slate-500")}>The first useful project signal will appear here.</p> : null}
+            </div>
+          </section>
         </div>
         <ProgressChipRail isLight={isLight} chips={chips} />
       </div>
@@ -1172,6 +1186,9 @@ function ReviewView({
         </div>
       ) : null}
 
+      <ProjectIntelligenceReview isLight={isLight} model={model} />
+      <WorkspaceFilesReview isLight={isLight} model={model} />
+
       {provisioningComplete ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", provisioningRun.state === "partial" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"))} role="status">
           <p className="text-sm font-semibold">{provisioningRun.state === "partial" ? "Workspace created with setup pending." : "Workspace created successfully."}</p>
@@ -1215,7 +1232,11 @@ function ReviewView({
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <ReviewSection isLight={isLight} title="AI Workforce" icon={Bot}>
             <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-slate-100")}>{model.primaryAgent.name}</p>
+            <p className={cn("mt-1 text-xs font-medium", isLight ? "text-[#6f5a4a]" : "text-violet-200/75")}>{model.primaryAgent.role}</p>
             <p className={cn("mt-1 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{model.primaryAgent.purpose}</p>
+            {model.primaryAgent.responsibilities.length ? <p className={cn("mt-3 text-xs leading-5", isLight ? "text-[#71645a]" : "text-slate-300")}>Responsible for {model.primaryAgent.responsibilities.slice(0, 2).join(" and ")}.</p> : null}
+            {model.primaryAgent.outputs.length ? <p className={cn("mt-2 text-xs leading-5", isLight ? "text-[#89796c]" : "text-slate-400")}>Outputs: {model.primaryAgent.outputs.slice(0, 2).join(" · ")}.</p> : null}
+            {model.primaryAgent.justification ? <details className="mt-3 text-xs"><summary className={cn("cursor-pointer font-medium", isLight ? "text-[#76604f]" : "text-violet-200/80")}>Why this agent</summary><p className={cn("mt-2 leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{model.primaryAgent.justification}</p></details> : null}
             {model.primaryAgent.skillIds.length || model.primaryAgent.toolIds.length ? <p className={cn("mt-3 text-xs", isLight ? "text-[#766e64]" : "text-slate-300")}>{model.primaryAgent.skillIds.length + model.primaryAgent.toolIds.length} selected {model.primaryAgent.skillIds.length + model.primaryAgent.toolIds.length === 1 ? "capability" : "capabilities"}.</p> : null}
           </ReviewSection>
 
@@ -1269,6 +1290,32 @@ function BlueprintSignalRail({ isLight, model }: { isLight: boolean; model: Work
   );
 }
 
+function ProjectIntelligenceReview({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
+  if (!model.projectIntelligence) return null;
+  const project = model.project;
+  return (
+    <section className={cn("mb-5 rounded-2xl border p-5", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-labelledby="project-understanding-heading">
+      <div className="flex items-start justify-between gap-3"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Project understanding</p><h2 id="project-understanding-heading" className={cn("mt-1 text-base font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{project.name || model.identity.name}</h2></div><span className={cn("text-[11px]", isLight ? "text-[#89796c]" : "text-slate-500")}>{model.sourceSummary.sourceCount} source{model.sourceSummary.sourceCount === 1 ? "" : "s"} · {model.sourceSummary.evidenceCount} evidence</span></div>
+      {project.description ? <p className={cn("mt-3 max-w-2xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{project.description}</p> : null}
+      {project.understanding.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>What we understand</p><div className="mt-2 space-y-1.5">{project.understanding.slice(0, 4).map((item) => <p key={item} className={cn("text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{item}</p>)}</div></div> : null}
+      {project.keyFacts.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Canonical claims</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{project.keyFacts.slice(0, 8).map((fact) => <div key={fact.id} className={cn("rounded-lg border px-3 py-2", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}><div className="flex items-center justify-between gap-2"><span className={cn("truncate text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{fact.key}</span><span className={cn("shrink-0 text-[10px]", fact.conflicted ? "text-amber-500" : fact.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{fact.verification}{fact.conflicted ? " · Conflict" : ""}</span></div><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{fact.statement}</p></div>)}</div></div> : null}
+      {project.officialResources.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Resources analyzed</p><div className="mt-2 flex flex-wrap gap-1.5">{project.officialResources.slice(0, 10).map((resource) => <span key={resource.id} className={cn("max-w-full rounded-md border px-2 py-1 text-[11px]", resource.conflicted ? (isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-300/20 bg-amber-300/10 text-amber-100") : resource.verification === "verified" ? (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100") : (isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300"))} title={resource.locator}>{resource.label} · {resource.category} · {resource.verification}{resource.conflicted ? " · Conflict" : ""}</span>)}</div></div> : null}
+      {project.conflicts.length ? <div className={cn("mt-4 rounded-lg border px-3 py-2 text-xs", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")}><span className="font-medium">{project.conflicts.filter((conflict) => conflict.status === "open").length} open project conflict{project.conflicts.filter((conflict) => conflict.status === "open").length === 1 ? "" : "s"}</span><span className="ml-2 opacity-75">Conflicts remain visible without changing claim verification.</span></div> : null}
+      {model.coverage.status !== "none" ? <p className={cn("mt-4 text-[11px]", model.coverage.status === "partial" ? "text-amber-500" : isLight ? "text-[#89796c]" : "text-slate-500")}>{model.coverage.status === "full" ? "Good coverage" : "Limited coverage"}{model.coverage.reason ? ` · ${model.coverage.reason}` : ""}</p> : null}
+    </section>
+  );
+}
+
+function WorkspaceFilesReview({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
+  if (!model.workspaceFiles.length) return null;
+  return (
+    <section className={cn("mb-5 rounded-2xl border p-5", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-labelledby="workspace-files-heading">
+      <div className="flex items-baseline justify-between gap-3"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Workspace files</p><h2 id="workspace-files-heading" className={cn("mt-1 text-base font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Planned workspace documents</h2></div><span className={cn("text-[11px]", isLight ? "text-[#89796c]" : "text-slate-500")}>{model.workspaceFiles.length} bounded previews</span></div>
+      <div className="mt-3 divide-y" style={{ borderColor: isLight ? "#ece3d9" : "rgba(255,255,255,0.08)" }}>{model.workspaceFiles.map((artifact) => <div key={artifact.artifactId} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><FileText className={cn("mt-0.5 h-4 w-4 shrink-0", artifact.operation === "conflict" ? "text-amber-400" : isLight ? "text-[#9a6d45]" : "text-violet-300")} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{artifact.title}</p><span className={cn("text-[10px] uppercase tracking-[0.12em]", artifact.operation === "conflict" ? "text-amber-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.operation.replace("merge-managed-section", "update")}</span></div><p className={cn("mt-1 truncate text-xs", isLight ? "text-[#807369]" : "text-slate-400")} title={artifact.path}>{artifact.path}</p><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.preview}</p></div></div>)}</div>
+    </section>
+  );
+}
+
 function buildBlueprintSignals(model: WorkspaceBlueprintReviewModel) {
   const signals = [
     ...model.knowledge.sources.map((source) => `${formatWorkspaceSourceKind(source.kind)} · ${source.label}`),
@@ -1283,15 +1330,17 @@ function buildBlueprintSignals(model: WorkspaceBlueprintReviewModel) {
 }
 
 function ReviewDetailSections({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
+  const agentNames = new Map([model.primaryAgent, ...model.specialists].map((agent) => [agent.id, agent.name]));
   return (
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-      {model.capabilities.skills.length || model.capabilities.tools.length ? <ReviewSection isLight={isLight} title="Capabilities" icon={Sparkles}><p className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{[...model.capabilities.skills.map((item) => capabilityLabel(item.id)), ...model.capabilities.tools.map((item) => capabilityLabel(item.id))].join(" · ")}</p></ReviewSection> : null}
+      {model.capabilities.skills.length || model.capabilities.tools.length ? <ReviewSection isLight={isLight} title="Capabilities" icon={Sparkles}><div className="grid gap-3 sm:grid-cols-2"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Skills</p><p className={cn("mt-1 text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{model.capabilities.skills.length ? model.capabilities.skills.map((item) => capabilityLabel(item.id)).join(" · ") : "None selected"}</p></div><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Tools</p><p className={cn("mt-1 text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{model.capabilities.tools.length ? model.capabilities.tools.map((item) => capabilityLabel(item.id)).join(" · ") : "None selected"}</p></div></div></ReviewSection> : null}
       <ReviewSection isLight={isLight} title="Memory" icon={FileText}><p className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{model.memory.durableFacts.length ? `${model.memory.durableFacts.length} durable fact${model.memory.durableFacts.length === 1 ? "" : "s"} proposed` : "No custom project memory yet."}</p></ReviewSection>
       {model.connections.length ? <ReviewSection isLight={isLight} title="Connections" icon={Link2}><div className="space-y-1.5">{model.connections.map((connection) => <p key={connection.id} className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}><span className="font-medium">{connection.provider}</span><span className="ml-2 text-xs opacity-70">{connection.status === "recommended" ? "Recommended" : connection.status === "required" ? "Required" : "Selected"}</span></p>)}</div></ReviewSection> : null}
-      {model.specialists.length ? <ReviewSection isLight={isLight} title="Additional agents" icon={Bot}><div className="space-y-2">{model.specialists.map((agent) => <div key={agent.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{agent.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{agent.purpose}</p></div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Additional agents" value="No additional agents needed." />}
-      {model.workflows.length ? <ReviewSection isLight={isLight} title="Workflows" icon={WandSparkles}><div className="space-y-2">{model.workflows.map((workflow) => <div key={workflow.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{workflow.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{workflow.goal}</p></div>)}</div></ReviewSection> : null}
-      {model.automations.length ? <ReviewSection isLight={isLight} title="Automations" icon={RefreshCw}><div className="space-y-2">{model.automations.map((automation) => <div key={automation.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{automation.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{formatWorkspaceSchedule(automation.scheduleKind, automation.scheduleValue)}</p></div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Automations" value="No automations added." />}
+      {model.specialists.length ? <ReviewSection isLight={isLight} title="Additional agents" icon={Bot}><div className="space-y-3">{model.specialists.map((agent) => <div key={agent.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{agent.name}</p><p className={cn("mt-1 text-xs font-medium", isLight ? "text-[#6f5a4a]" : "text-violet-200/75")}>{agent.role}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{agent.purpose}</p>{agent.responsibilities.length ? <p className={cn("mt-2 text-xs leading-5", isLight ? "text-[#71645a]" : "text-slate-300")}>Responsible for {agent.responsibilities.slice(0, 2).join(" and ")}.</p> : null}{agent.outputs.length ? <p className={cn("mt-1 text-xs leading-5", isLight ? "text-[#89796c]" : "text-slate-400")}>Outputs: {agent.outputs.slice(0, 2).join(" · ")}.</p> : null}{agent.justification ? <details className="mt-2 text-xs"><summary className={cn("cursor-pointer font-medium", isLight ? "text-[#76604f]" : "text-violet-200/80")}>Why this agent</summary><p className={cn("mt-1 leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{agent.justification}</p></details> : null}</div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Additional agents" value="No additional agents needed." />}
+      {model.workflows.length ? <ReviewSection isLight={isLight} title="Workflows" icon={WandSparkles}><div className="space-y-3">{model.workflows.map((workflow) => <div key={workflow.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{workflow.name}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{workflow.goal}</p><p className={cn("mt-1 text-[11px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Trigger: {workflow.trigger} · Owner: {agentNames.get(workflow.ownerAgentId) ?? "Primary agent"}</p>{workflow.outputs.length ? <p className={cn("mt-1 text-[11px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Output: {workflow.outputs.slice(0, 2).join(" · ")}</p> : null}</div>)}</div></ReviewSection> : null}
+      {model.automations.length ? <ReviewSection isLight={isLight} title="Automations" icon={RefreshCw}><div className="space-y-3">{model.automations.map((automation) => <div key={automation.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{automation.name}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{automation.mission}</p><p className={cn("mt-1 text-[11px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{formatWorkspaceSchedule(automation.scheduleKind, automation.scheduleValue)} · {agentNames.get(automation.agentId) ?? "Primary agent"} · {automation.enabled ? "Enabled" : "Selected"}</p></div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Automations" value="No automations added." />}
       {model.channels.length ? <ReviewSection isLight={isLight} title="Channels" icon={MessageCircle}><div className="space-y-2">{model.channels.map((channel) => <div key={channel.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{channel.name || channel.type}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{formatWorkspaceChannelSetup(channel)}</p></div>)}</div></ReviewSection> : null}
+      <ReviewSection isLight={isLight} title="Sources analyzed" icon={Globe}><p className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{model.sourceSummary.sourceCount} source{model.sourceSummary.sourceCount === 1 ? "" : "s"} · {model.sourceSummary.evidenceCount} evidence · {model.sourceSummary.factCount} fact{model.sourceSummary.factCount === 1 ? "" : "s"} · {model.sourceSummary.resourceCount} resource{model.sourceSummary.resourceCount === 1 ? "" : "s"}</p><p className={cn("mt-2 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{model.coverage.status === "none" ? "No project material was staged." : model.coverage.status === "partial" ? `Limited coverage${model.coverage.reason ? ` · ${model.coverage.reason}` : ""}` : "Good coverage"}</p></ReviewSection>
       {model.warnings.length ? <ReviewSection isLight={isLight} title="Warnings" icon={FileText} tone="warning"><div className="space-y-1.5">{model.warnings.slice(0, 4).map((warning) => <p key={warning} className="text-xs leading-5">{warning}</p>)}</div></ReviewSection> : null}
       {model.recommendations.length ? <ReviewSection isLight={isLight} title="Recommendations" icon={WandSparkles}><div className="space-y-1.5">{model.recommendations.slice(0, 4).map((recommendation) => <p key={recommendation} className={cn("text-xs leading-5", isLight ? "text-[#71645a]" : "text-slate-400")}>{recommendation}</p>)}</div></ReviewSection> : null}
     </div>
