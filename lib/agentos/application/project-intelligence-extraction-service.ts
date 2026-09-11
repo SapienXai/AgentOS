@@ -731,6 +731,10 @@ function categoryForCandidate(relation: string, kind: string, locator: string): 
   if (relation === "social") return "social";
   if (relation === "documentation") return "documentation";
   if (relation === "developer") return "developer";
+  if (relation === "governance") return "governance";
+  if (relation === "status") return "status";
+  if (relation === "explorer") return "explorer";
+  if (relation === "audit") return "audit";
   if (relation === "application") return "application";
   if (relation === "support") return "support";
   if (relation === "document") return /whitepaper|\.pdf/i.test(locator) ? "whitepaper" : "document";

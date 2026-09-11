@@ -11,7 +11,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { assertSafeWorkspaceCloneRepoUrl } from "@/lib/openclaw/domains/workspace-bootstrap";
-import { discoverProjectWebsite } from "@/lib/agentos/application/project-discovery-engine";
+import { discoverProjectWebsite, type ProjectDiscoveryRenderedBrowser } from "@/lib/agentos/application/project-discovery-engine";
 import { isDiscoveryManifest, type ProjectDiscoveryManifest } from "@/lib/agentos/domains/project-discovery";
 import {
   isSupportedWorkspaceKnowledgeFile,
@@ -209,6 +209,7 @@ export type IngestKnowledgeSourcesInput = {
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
   networkResolver?: KnowledgeHostResolver;
+  renderedBrowser?: ProjectDiscoveryRenderedBrowser;
   transactionHooks?: KnowledgeIngestionTransactionHooks;
 };
 
@@ -249,6 +250,7 @@ type SourceContext = {
   sourceDirectory: string;
   websiteFetcher: KnowledgeWebsiteFetcher;
   resolveHost: KnowledgeHostResolver;
+  renderedBrowser?: ProjectDiscoveryRenderedBrowser;
   onProgress?: IngestKnowledgeSourcesInput["onProgress"];
   bytesFetched: number;
 };
@@ -692,6 +694,7 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
         sourceDirectory: sourceDirectories.get(source.id) ?? sourceDirectoryName(source.id),
         websiteFetcher,
         resolveHost,
+        renderedBrowser: input.renderedBrowser,
         onProgress: input.onProgress,
         bytesFetched: 0
       };
@@ -1112,6 +1115,7 @@ async function ingestWebsiteSource(context: SourceContext) {
     signal: context.signal,
     websiteFetcher: context.websiteFetcher,
     resolveHost: context.resolveHost,
+    renderedBrowser: context.renderedBrowser,
     assertPublicAddresses,
     onProgress: context.onProgress
   });

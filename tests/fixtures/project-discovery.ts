@@ -93,6 +93,15 @@ export const documentationHeavyProjectDiscoveryFixture: ProjectDiscoveryFixture 
   }
 };
 
+export const sparseSpaProjectDiscoveryFixture: ProjectDiscoveryFixture = {
+  rootUrl: "https://rendered-app.example/",
+  pages: {
+    "https://rendered-app.example/robots.txt": { body: "User-agent: *\nAllow: /\n" },
+    "https://rendered-app.example/sitemap.xml": { body: "<urlset></urlset>" },
+    "https://rendered-app.example/": { body: "<html><head><title>Rendered App</title></head><body><div id='root'></div><script src='/runtime.js'></script><script src='/app.js'></script><script src='/chunk.js'></script><script src='/vendor.js'></script></body></html>" }
+  }
+};
+
 export function createProjectDiscoveryFixtureFetcher(fixture: ProjectDiscoveryFixture, calls: string[] = []): KnowledgeWebsiteFetcher {
   return {
     resolve: async () => ["93.184.216.34"],

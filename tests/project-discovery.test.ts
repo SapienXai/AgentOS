@@ -12,7 +12,8 @@ import {
   coinCollectProjectDiscoveryFixture,
   createProjectDiscoveryFixtureFetcher,
   documentationHeavyProjectDiscoveryFixture,
-  genericSaasProjectDiscoveryFixture
+  genericSaasProjectDiscoveryFixture,
+  sparseSpaProjectDiscoveryFixture
 } from "@/tests/fixtures/project-discovery";
 import {
   isSameProjectSiteFamily,
@@ -23,6 +24,8 @@ import {
   safeDurableDiscoveryLocator
 } from "@/lib/agentos/domains/project-discovery";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
+import { createOpenClawRenderedDiscoveryBrowser } from "@/lib/openclaw/application/browser-discovery-service";
+import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 
 function limits(overrides: Partial<KnowledgeIngestionLimits> = {}): KnowledgeIngestionLimits {
   return { ...DEFAULT_KNOWLEDGE_INGESTION_LIMITS, ...overrides };
@@ -209,6 +212,54 @@ test("malformed and low-information source material stays bounded and explicit",
   const result = await discover(shell, { maxPagesPerSource: 2, maxBytesPerDocument: 80_000, maxSitemaps: 1 });
   assert.ok(result.manifest.warnings.some((warning) => /JavaScript shell|rendering fallback/i.test(warning)));
   assert.ok(result.manifest.pages.length <= 2);
+});
+
+test("sparse SPA discovery uses a bounded rendered fallback capability and records quality reasons", async () => {
+  const result = await discoverProjectWebsite({
+    runId: "rendered-fallback-test",
+    sourceId: "rendered-spa",
+    sourceKind: "website",
+    rootUrl: sparseSpaProjectDiscoveryFixture.rootUrl,
+    limits: limits({ maxPagesPerSource: 2, maxDepth: 1, maxSitemaps: 1 }),
+    resolveHost: async () => ["93.184.216.34"],
+    assertPublicAddresses,
+    websiteFetcher: createProjectDiscoveryFixtureFetcher(sparseSpaProjectDiscoveryFixture),
+    renderedBrowser: {
+      inspect: async () => ({
+        url: sparseSpaProjectDiscoveryFixture.rootUrl,
+        title: "Rendered App",
+        text: "Rendered App documentation and product overview.",
+        links: [{ url: "https://rendered-app.example/docs", label: "Documentation" }]
+      })
+    }
+  });
+  assert.equal(result.manifest.renderedFallback, "used");
+  assert.equal(result.manifest.quality, "good");
+  assert.ok(result.manifest.qualityReasons.includes("content-shell"));
+  assert.ok(result.manifest.qualityReasons.includes("rendered-fallback-used"));
+  assert.ok(result.documents.some((document) => document.content.includes("Rendered App documentation")));
+});
+
+test("rendered discovery uses the existing OpenClaw browser.request boundary and closes its tab", async () => {
+  const calls: Array<{ method: string; path: string }> = [];
+  const adapter = {
+    call: async (_method: string, params: { method: string; path: string }) => {
+      calls.push({ method: params.method, path: params.path });
+      if (params.path === "/tabs/open") return { tabId: "discovery-tab" };
+      if (params.path === "/snapshot") return { snapshot: "CoinCollect dashboard https://coincollect.example/docs" };
+      return {};
+    }
+  } as unknown as OpenClawAdapter;
+  const browser = createOpenClawRenderedDiscoveryBrowser({ adapter });
+  const rendered = await browser.inspect({ url: "https://coincollect.example/", timeoutMs: 20_000, maxChars: 2_000 });
+
+  assert.equal(rendered.text, "CoinCollect dashboard https://coincollect.example/docs");
+  assert.deepEqual(rendered.links, [{ url: "https://coincollect.example/docs", label: null }]);
+  assert.deepEqual(calls, [
+    { method: "POST", path: "/tabs/open" },
+    { method: "GET", path: "/snapshot" },
+    { method: "DELETE", path: "/tabs/discovery-tab" }
+  ]);
 });
 
 test("website discovery keeps the existing ingestion corpus and persists a bounded manifest", async () => {

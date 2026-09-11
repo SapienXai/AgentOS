@@ -23,7 +23,9 @@ import {
   type ProjectDiscoveryManifest,
   type ProjectDiscoveryPage,
   type ProjectDiscoveryCrawlDisposition,
-  type ProjectDiscoveryRelation
+  type ProjectDiscoveryRelation,
+  type ProjectDiscoveryQualityReason,
+  type ProjectDiscoveryRenderedFallbackStatus
 } from "@/lib/agentos/domains/project-discovery";
 import type { WorkspaceKnowledgeSourceKind } from "@/lib/agentos/domains/workspace-knowledge";
 
@@ -44,6 +46,10 @@ type Progress = {
   currentLocator?: string | null;
 };
 
+export type ProjectDiscoveryRenderedBrowser = {
+  inspect(input: { url: string; timeoutMs: number; maxChars: number; signal?: AbortSignal }): Promise<{ url: string; title?: string | null; text: string; links: Array<{ url: string; label?: string | null }> }>;
+};
+
 export type ProjectDiscoveryEngineInput = {
   runId: string;
   sourceId: string;
@@ -55,6 +61,7 @@ export type ProjectDiscoveryEngineInput = {
   resolveHost: KnowledgeHostResolver;
   assertPublicAddresses: (addresses: string[]) => void;
   onProgress?: (progress: Progress) => void | Promise<void>;
+  renderedBrowser?: ProjectDiscoveryRenderedBrowser;
 };
 
 export type ProjectDiscoveryFetchedPage = {
@@ -170,6 +177,8 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   let discoveredItems = 1;
   let fetchedItems = 0;
   let skippedItems = 0;
+  let renderedFallback: ProjectDiscoveryRenderedFallbackStatus = "not-needed";
+  const qualityReasons: ProjectDiscoveryQualityReason[] = [];
 
   await emit(input, {
     phase: "discover",
@@ -280,6 +289,92 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   }
 
   if (queue.length > 0 || fetched.size >= input.limits.maxPagesPerSource) warnings.push("Website crawl limits stopped further discovery.");
+  const rootPage = pages.find((page) => page.firstParty === "root" && page.depth === 0);
+  const shellDetected = Boolean(rootPage?.warnings.some((warning) => /JavaScript shell|no readable text/i.test(warning)));
+  if (shellDetected) {
+    qualityReasons.push("content-shell");
+    if (input.renderedBrowser) {
+      try {
+        await emit(input, {
+          phase: "fetch",
+          status: "fetching",
+          activityCode: "rendered-fallback-started",
+          completed: fetched.size,
+          total: input.limits.maxPagesPerSource,
+          discoveredItems,
+          fetchedItems,
+          storedDocuments: documents.length,
+          warningCount: warnings.length,
+          currentLocator: safeDiscoveryLocator(root.toString())
+        });
+        const rendered = await input.renderedBrowser.inspect({ url: root.toString(), timeoutMs: Math.min(input.limits.requestTimeoutMs, 20_000), maxChars: Math.min(input.limits.maxBytesPerDocument, 32_000), signal: input.signal });
+        const renderedText = normalizeDiscoveryBody(rendered.text).slice(0, 32_000);
+        if (!renderedText) throw new Error("Rendered project page contained no readable text.");
+        renderedFallback = "used";
+        qualityReasons.push("rendered-fallback-used");
+        await emit(input, {
+          phase: "normalize",
+          status: "normalizing",
+          activityCode: "rendered-fallback-used",
+          completed: fetched.size,
+          total: input.limits.maxPagesPerSource,
+          discoveredItems,
+          fetchedItems,
+          storedDocuments: documents.length,
+          warningCount: warnings.length,
+          currentLocator: safeDiscoveryLocator(root.toString())
+        });
+        if (rootPage) {
+          rootPage.title = rendered.title?.trim().slice(0, MAX_METADATA_TEXT) || rootPage.title;
+          rootPage.warnings = [...rootPage.warnings.filter((warning) => !/no safe server-side rendering fallback/i.test(warning)), "Rendered browser fallback supplied project text."];
+          rootPage.discoveredLinkCount = Math.max(rootPage.discoveredLinkCount, rendered.links.length);
+          rootPage.contentLength = Buffer.byteLength(renderedText, "utf8");
+          rootPage.contentHash = sha256(renderedText);
+          rootPage.fetchStatus = "fetched";
+        }
+        const renderedDocument: ProjectDiscoveryFetchedPage = {
+          page: rootPage ?? {
+            requestedUrl: root.toString(), finalUrl: root.toString(), canonicalUrl: root.toString(), locator: root.toString(), discoveredFrom: null, depth: 0, firstParty: "root", fetchStatus: "fetched", statusCode: 200, contentType: "text/html", title: rendered.title ?? null,
+            metadata: { description: null, siteName: null, openGraphTitle: null, openGraphDescription: null, twitterTitle: null, jsonLdTypes: [] }, discoveredLinkCount: rendered.links.length, contentHash: sha256(renderedText), contentLength: Buffer.byteLength(renderedText, "utf8"), warnings: ["Rendered browser fallback supplied project text."]
+          },
+          title: rendered.title?.trim().slice(0, MAX_METADATA_TEXT) || root.toString(),
+          origin: rendered.url,
+          canonicalUrl: root.toString(),
+          content: renderedText,
+          links: rendered.links.slice(0, 128).map((link) => link.url)
+        };
+        const existingRootDocumentIndex = documents.findIndex((document) => document.page === rootPage);
+        if (existingRootDocumentIndex >= 0) documents[existingRootDocumentIndex] = renderedDocument;
+        else documents.push(renderedDocument);
+        for (const link of rendered.links.slice(0, 128)) {
+          const normalized = safeDiscoveryUrlInFamily(link.url, root.toString());
+          if (!normalized) continue;
+          const relation = classifyDiscoveryRelation(link.label ?? null, normalized);
+          addBoundedCandidate(candidates, candidate("page", normalized, root.toString(), relation, link.label ?? null, true, 1, "queued", null));
+        }
+        discoveredItems += rendered.links.length;
+      } catch (error) {
+        renderedFallback = "failed";
+        qualityReasons.push("rendered-fallback-failed");
+        warnings.push(safeError(error, "Rendered browser fallback was unavailable."));
+      }
+    } else {
+      renderedFallback = "unavailable";
+      qualityReasons.push("rendered-fallback-unavailable");
+      warnings.push("Static discovery found a JavaScript shell; rendered browser fallback is unavailable.");
+    }
+  }
+  if (pages.length <= 1) qualityReasons.push("root-only");
+  if (sitemapResult.discoveredItems === 0) qualityReasons.push("sitemap-empty");
+  if (pages.some((page) => page.fetchStatus === "failed")) qualityReasons.push("fetch-failures");
+  if (queue.length > 0 || fetched.size >= input.limits.maxPagesPerSource) qualityReasons.push("crawl-limit-reached");
+  if (documents.length === 0) qualityReasons.push("insufficient-content");
+  const uniqueQualityReasons = [...new Set(qualityReasons)];
+  const quality = documents.length >= 2 || (documents.length >= 1 && renderedFallback === "used")
+    ? "good" as const
+    : documents.length === 1
+      ? "limited" as const
+      : "insufficient" as const;
   const manifest: ProjectDiscoveryManifest = {
     schemaVersion: PROJECT_DISCOVERY_SCHEMA_VERSION,
     sourceId: input.sourceId,
@@ -292,6 +387,9 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
     }).slice(0, MAX_DISCOVERY_CANDIDATES),
     contacts: contacts.slice(0, MAX_DISCOVERY_CONTACTS),
     warnings: unique(warnings).slice(0, 32),
+    quality,
+    qualityReasons: uniqueQualityReasons.slice(0, 12),
+    renderedFallback,
     limits: {
       maxPages: input.limits.maxPagesPerSource,
       maxDepth: input.limits.maxDepth,
@@ -734,7 +832,9 @@ function safeDiscoveryUrlInFamily(value: string, root: string) {
 function pagePriority(url: string, label: string | null) {
   const value = `${url} ${label ?? ""}`.toLowerCase();
   let score = 100;
-  if (/docs?|documentation|developer|api|product|features|about|company|contact|support|whitepaper|security|architecture|integration|faq/.test(value)) score += 500;
+  if (/\/(?:docs?|documentation|about|product|features|developers?|api|integrations?|security|faq|changelog|roadmap|terms)(?:\/|$)|docs?|documentation|developer|api|product|features|about|company|contact|support|whitepaper|security|architecture|integration|faq|changelog|roadmap/.test(value)) score += 500;
+  if (/\/(?:token|tokenomics|contract|contracts|governance|snapshot|audit|network|chain|dao|github)(?:\/|$)|tokenomics|governance|snapshot|whitepaper|contract|network|chain|audit|dao/.test(value)) score += 460;
+  if (/\/(?:sdk|github|repository|releases|architecture)(?:\/|$)|sdk|repository|releases|architecture/.test(value)) score += 420;
   if (/app\.|dashboard|launch/.test(value)) score += 220;
   if (/blog/.test(value)) score += 40;
   if (/legal|cookie|privacy|terms|tag|archive|calendar|page=/.test(value)) score -= 300;

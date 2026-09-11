@@ -222,10 +222,11 @@ display locators remove query strings and fragments before entering
 identity-bearing query parameters for manifests and evidence.
 
 The static fetch path is the default. Low-information JavaScript shell pages
-are detected with bounded deterministic signals. No new browser runtime is
-created: because the current server-side discovery boundary has no approved
-rendered-fetch capability, the manifest records an explicit unavailable
-fallback warning and continues with whatever static evidence is usable.
+are detected with bounded deterministic signals. When available, the existing
+OpenClaw `browser.request` adapter provides one bounded rendered inspection of
+the root page; AgentOS does not own browser profiles, sessions, or tabs. The
+manifest records whether that fallback was used, unavailable, or failed, and
+continues with whatever static evidence is usable.
 
 Discovered pages are projected into the existing protected knowledge corpus;
 the bounded manifest is stored alongside the knowledge generation state for
@@ -256,9 +257,10 @@ JSON-LD is treated as untrusted observation material. It is parsed without
 execution under bounded script, object, depth, array, and string limits.
 Names, URLs, contact observations, application categories, operating systems,
 and repository/documentation candidates retain page provenance; malformed or
-instruction-shaped content is ignored. New manifests use schema version 2;
-the validator remains read-compatible with version 1 manifests, whose absent
-JSON-LD observation fields are treated as empty by consumers.
+instruction-shaped content is ignored. New manifests use schema version 3 and
+record bounded discovery quality plus rendered-fallback status; the validator
+remains read-compatible with version 1 and 2 manifests, whose absent quality
+fields are treated as legacy metadata by consumers.
 
 ## Phase 4 deterministic structured extraction
 

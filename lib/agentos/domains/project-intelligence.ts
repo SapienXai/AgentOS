@@ -156,6 +156,9 @@ export type OfficialResourceCategory =
   | "contact"
   | "email"
   | "whitepaper"
+  | "governance"
+  | "status"
+  | "audit"
   | "document"
   | "api"
   | "developer"
@@ -990,7 +993,7 @@ function validateResourceAt(value: unknown, path: string, issues: ProjectIntelli
   assertKnownKeysForValidation(value, RESOURCE_KEYS, path, issues);
   validateSchemaVersion(value.schemaVersion, `${path}.schemaVersion`, issues);
   validateRequiredText(value.id, `${path}.id`, issues);
-  validateEnum(value.category, ["website", "application", "documentation", "repository", "social", "contact", "email", "whitepaper", "document", "api", "developer", "explorer", "support", "other"] as const, `${path}.category`, issues);
+  validateEnum(value.category, ["website", "application", "documentation", "repository", "social", "contact", "email", "whitepaper", "governance", "status", "audit", "document", "api", "developer", "explorer", "support", "other"] as const, `${path}.category`, issues);
   validateResourceLocator(value.locator, `${path}.locator`, issues);
   validateBoundedText(value.label, `${path}.label`, MAX_TEXT_LENGTH, issues);
   validateClaimEvidence(value.evidence, `${path}.evidence`, issues);
@@ -1902,7 +1905,7 @@ function requireEvidenceType(value: unknown): ProjectEvidenceType {
 }
 
 function requiredResourceCategory(value: unknown): OfficialResourceCategory {
-  return requireEnum(value, ["website", "application", "documentation", "repository", "social", "contact", "email", "whitepaper", "document", "api", "developer", "explorer", "support", "other"] as const, "OfficialResource.category");
+  return requireEnum(value, ["website", "application", "documentation", "repository", "social", "contact", "email", "whitepaper", "governance", "status", "audit", "document", "api", "developer", "explorer", "support", "other"] as const, "OfficialResource.category");
 }
 
 function requireDiscoveryEventKind(value: unknown): DiscoveryEventKind {

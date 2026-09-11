@@ -33,6 +33,8 @@ import {
   type ProjectIntelligenceExtractionSummary
 } from "@/lib/agentos/application/project-intelligence-extraction-service";
 import type { ProjectDiscoveryManifest } from "@/lib/agentos/domains/project-discovery";
+import type { ProjectDiscoveryRenderedBrowser } from "@/lib/agentos/application/project-discovery-engine";
+import { createOpenClawRenderedDiscoveryBrowser } from "@/lib/openclaw/application/browser-discovery-service";
 import {
   validateProjectIntelligencePack,
   type ProjectIntelligencePack
@@ -193,6 +195,7 @@ export type WorkspaceCreationContextOptions = {
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
   networkResolver?: KnowledgeHostResolver;
+  renderedBrowser?: ProjectDiscoveryRenderedBrowser;
   /** Explicit reanalysis bypasses the same-intake reuse shortcut. */
   forceRefresh?: boolean;
 };
@@ -509,7 +512,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
     signal: input.signal,
     onProgress: input.onProgress,
     websiteFetcher: input.websiteFetcher,
-    networkResolver: input.networkResolver
+    networkResolver: input.networkResolver,
+    renderedBrowser: input.renderedBrowser ?? createOpenClawRenderedDiscoveryBrowser()
   });
   const sourceReports = ingestion.sourceReports.map((report) => projectSourceReport(report));
   const warnings = ingestion.state.warnings.map((warning) => sanitizeDiagnostic(warning));
@@ -700,7 +704,15 @@ export async function readWorkspaceCreationIntelligencePack(input: { actorId: st
   if (!raw) return null;
   try {
     const pack = JSON.parse(raw) as unknown;
-    return validateProjectIntelligencePack(pack).valid ? pack as ProjectIntelligencePack : null;
+    const validation = validateProjectIntelligencePack(pack);
+    if (validation.valid) return pack as ProjectIntelligencePack;
+    if (!validation.issues.length || !validation.issues.every((issue) => issue.code === "unsupported_verification")) return null;
+    const repaired = downgradeUnqualifiedStoredPack(pack);
+    if (!repaired || !validateProjectIntelligencePack(repaired).valid) return null;
+    const target = path.join(draftRoot, "project-intelligence.json");
+    await assertNoSymlinkAlongPath(draftRoot, target);
+    await writeAtomicJson(target, repaired);
+    return repaired;
   } catch {
     return null;
   }
@@ -942,10 +954,40 @@ async function readStoredExtraction(draftRoot: string): Promise<ProjectIntellige
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
-    return validateProjectIntelligenceExtraction(parsed).valid ? parsed as ProjectIntelligenceExtraction : null;
+    const validation = validateProjectIntelligenceExtraction(parsed);
+    if (validation.valid) return parsed as ProjectIntelligenceExtraction;
+    if (!validation.issues.length || !validation.issues.every((issue) => issue.code === "unsupported_verification")) return null;
+    const repaired = downgradeUnqualifiedStoredExtraction(parsed);
+    if (!repaired || !validateProjectIntelligenceExtraction(repaired).valid) return null;
+    await writeStoredExtraction(draftRoot, repaired);
+    return repaired;
   } catch {
     return null;
   }
+}
+
+function downgradeUnqualifiedStoredPack(value: unknown): ProjectIntelligencePack | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = structuredClone(value) as Record<string, unknown>;
+  if (!Array.isArray(candidate.facts) || !Array.isArray(candidate.officialResources)) return null;
+  candidate.facts = candidate.facts.map((fact) => fact && typeof fact === "object" && (fact as Record<string, unknown>).verification === "verified" ? { ...(fact as Record<string, unknown>), verification: "discovered" } : fact);
+  candidate.officialResources = candidate.officialResources.map((resource) => resource && typeof resource === "object" && (resource as Record<string, unknown>).verification === "verified" ? { ...(resource as Record<string, unknown>), verification: "discovered" } : resource);
+  return candidate as unknown as ProjectIntelligencePack;
+}
+
+function downgradeUnqualifiedStoredExtraction(value: unknown): ProjectIntelligenceExtraction | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = structuredClone(value) as Record<string, unknown>;
+  if (!Array.isArray(candidate.facts) || !Array.isArray(candidate.resources)) return null;
+  candidate.facts = candidate.facts.map((fact) => fact && typeof fact === "object" && (fact as Record<string, unknown>).verification === "verified" ? { ...(fact as Record<string, unknown>), verification: "discovered" } : fact);
+  candidate.resources = candidate.resources.map((resource) => resource && typeof resource === "object" && (resource as Record<string, unknown>).verification === "verified" ? { ...(resource as Record<string, unknown>), verification: "discovered" } : resource);
+  const coverage = candidate.coverage;
+  if (coverage && typeof coverage === "object") {
+    const facts = candidate.facts as Array<Record<string, unknown>>;
+    const resources = candidate.resources as Array<Record<string, unknown>>;
+    candidate.coverage = { ...(coverage as Record<string, unknown>), verifiedFactCount: facts.filter((fact) => fact.verification === "verified").length, verifiedResourceCount: resources.filter((resource) => resource.verification === "verified").length };
+  }
+  return candidate as unknown as ProjectIntelligenceExtraction;
 }
 
 async function writeStoredExtraction(draftRoot: string, extraction: ProjectIntelligenceExtraction) {

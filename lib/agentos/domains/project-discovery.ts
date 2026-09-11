@@ -1,7 +1,21 @@
 import { getDomain } from "tldts";
 
-export const PROJECT_DISCOVERY_SCHEMA_VERSION = 2 as const;
-export type ProjectDiscoverySchemaVersion = 1 | typeof PROJECT_DISCOVERY_SCHEMA_VERSION;
+export const PROJECT_DISCOVERY_SCHEMA_VERSION = 3 as const;
+export type ProjectDiscoverySchemaVersion = 1 | 2 | typeof PROJECT_DISCOVERY_SCHEMA_VERSION;
+
+export type ProjectDiscoveryQuality = "good" | "limited" | "insufficient";
+export type ProjectDiscoveryQualityReason =
+  | "root-only"
+  | "content-shell"
+  | "sitemap-empty"
+  | "crawl-limit-reached"
+  | "robots-limited"
+  | "fetch-failures"
+  | "insufficient-content"
+  | "rendered-fallback-used"
+  | "rendered-fallback-unavailable"
+  | "rendered-fallback-failed";
+export type ProjectDiscoveryRenderedFallbackStatus = "not-needed" | "used" | "unavailable" | "failed";
 
 export type ProjectDiscoveryFirstPartyClass = "root" | "subdomain" | "external";
 
@@ -36,6 +50,10 @@ export type ProjectDiscoveryRelation =
   | "documentation"
   | "developer"
   | "support"
+  | "governance"
+  | "status"
+  | "explorer"
+  | "audit"
   | "reference";
 
 export type ProjectDiscoveryCandidate = {
@@ -97,6 +115,9 @@ export type ProjectDiscoveryManifest = {
   candidates: ProjectDiscoveryCandidate[];
   contacts: ProjectDiscoveryContactCandidate[];
   warnings: string[];
+  quality: ProjectDiscoveryQuality;
+  qualityReasons: ProjectDiscoveryQualityReason[];
+  renderedFallback: ProjectDiscoveryRenderedFallbackStatus;
   limits: {
     maxPages: number;
     maxDepth: number;
@@ -186,6 +207,10 @@ export function classifyDiscoveryRelation(label: string | null, locator: string)
   const value = `${label ?? ""} ${locator}`.toLowerCase();
   if (/mailto:|contact|support|helpdesk/.test(value)) return "contact";
   if (/github|gitlab|bitbucket|repository|repo/.test(value)) return "repository";
+  if (/snapshot|governance|dao/.test(value)) return "governance";
+  if (/status(?:page)?|uptime|status\.page/.test(value)) return "status";
+  if (/etherscan|polygonscan|arbiscan|snowtrace|explorer/.test(value)) return "explorer";
+  if (/audit|security review/.test(value)) return "audit";
   if (/discord|telegram|twitter|x\.com|linkedin|youtube|instagram|tiktok/.test(value)) return "social";
   if (/whitepaper|technical-paper|\.pdf(?:$|[?#])|paper|report/.test(value)) return "document";
   if (/^https?:\/\/[^/]*(?:docs?|documentation)\./.test(value) || /documentation|developer|api reference|api docs/.test(value)) return "documentation";
@@ -212,8 +237,8 @@ export function isLikelySocialUrl(value: string) {
 export function isDiscoveryManifest(value: unknown): value is ProjectDiscoveryManifest {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
-  return hasOnlyKeys(candidate, ["schemaVersion", "sourceId", "rootUrl", "registrableDomain", "pages", "candidates", "contacts", "warnings", "limits"])
-    && (candidate.schemaVersion === 1 || candidate.schemaVersion === PROJECT_DISCOVERY_SCHEMA_VERSION)
+  return hasOnlyKeys(candidate, ["schemaVersion", "sourceId", "rootUrl", "registrableDomain", "pages", "candidates", "contacts", "warnings", "quality", "qualityReasons", "renderedFallback", "limits"])
+    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === PROJECT_DISCOVERY_SCHEMA_VERSION)
     && typeof candidate.sourceId === "string" && candidate.sourceId.length > 0 && candidate.sourceId.length <= 120
     && typeof candidate.rootUrl === "string" && candidate.rootUrl.length > 0 && candidate.rootUrl.length <= 500
     && (candidate.registrableDomain === null || typeof candidate.registrableDomain === "string")
@@ -229,7 +254,11 @@ export function isDiscoveryManifest(value: unknown): value is ProjectDiscoveryMa
     && candidate.pages.every(isDiscoveryPage)
     && candidate.candidates.every(isDiscoveryCandidate)
     && candidate.contacts.every(isDiscoveryContact)
-    && isDiscoveryLimits(candidate.limits);
+    && isDiscoveryLimits(candidate.limits)
+    && (candidate.schemaVersion !== PROJECT_DISCOVERY_SCHEMA_VERSION || ["good", "limited", "insufficient"].includes(candidate.quality as string))
+    && (candidate.quality === undefined || ["good", "limited", "insufficient"].includes(candidate.quality as string))
+    && (candidate.qualityReasons === undefined || Array.isArray(candidate.qualityReasons) && candidate.qualityReasons.length <= 12 && candidate.qualityReasons.every((reason) => ["root-only", "content-shell", "sitemap-empty", "crawl-limit-reached", "robots-limited", "fetch-failures", "insufficient-content", "rendered-fallback-used", "rendered-fallback-unavailable", "rendered-fallback-failed"].includes(reason as string)))
+    && (candidate.renderedFallback === undefined || ["not-needed", "used", "unavailable", "failed"].includes(candidate.renderedFallback as string));
 }
 
 function isDiscoveryPage(value: unknown): value is ProjectDiscoveryPage {
@@ -274,7 +303,7 @@ function isDiscoveryCandidate(value: unknown): value is ProjectDiscoveryCandidat
     && ["page", "subdomain", "external-resource", "contact", "document", "sitemap"].includes(candidate.kind as string)
     && typeof candidate.locator === "string"
     && typeof candidate.discoveredFrom === "string"
-    && ["navigation", "footer", "metadata", "canonical", "sitemap", "contact", "document", "repository", "social", "application", "documentation", "developer", "support", "reference"].includes(candidate.relation as string)
+    && ["navigation", "footer", "metadata", "canonical", "sitemap", "contact", "document", "repository", "social", "application", "documentation", "developer", "support", "governance", "status", "explorer", "audit", "reference"].includes(candidate.relation as string)
     && (candidate.label === null || typeof candidate.label === "string")
     && typeof candidate.firstParty === "boolean"
     && Number.isSafeInteger(candidate.depth) && (candidate.depth as number) >= 0
