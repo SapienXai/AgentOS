@@ -190,6 +190,8 @@ export type WorkspaceCreationContextOptions = {
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
   networkResolver?: KnowledgeHostResolver;
+  /** Explicit reanalysis bypasses the same-intake reuse shortcut. */
+  forceRefresh?: boolean;
 };
 
 export type WorkspaceCreationIntelligenceSummary = {
@@ -330,7 +332,7 @@ async function stageWorkspaceCreationKnowledgeLocked(
   }
   const publicSources = sources.map(publicSource);
 
-  if (previous?.fingerprint === fingerprint && previous.generationId && previous.sourceReports.every((report) => report.status === "ready")) {
+  if (!input.forceRefresh && previous?.fingerprint === fingerprint && previous.generationId && previous.sourceReports.every((report) => report.status === "ready")) {
     const snapshot = await readKnowledgeSnapshot(
       path.join(draftRoot, "corpus"),
       path.join(draftRoot, "state")

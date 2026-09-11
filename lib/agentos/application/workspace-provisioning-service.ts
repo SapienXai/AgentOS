@@ -30,6 +30,7 @@ import {
   ProvisioningLeaseLostError,
   type ProvisioningLeaseHandle
 } from "@/lib/agentos/application/workspace-provisioning-lease";
+import { persistWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
 import {
   buildProvisioningStorageKey,
   createRunAtomically,
@@ -146,6 +147,7 @@ type PreparedProvisioning = {
   context: WorkspaceCreationContextResult | null;
   compositionPlan: WorkspaceCompositionPlan | null;
   createInput: Parameters<typeof createWorkspaceProject>[0];
+  intelligencePack: Awaited<ReturnType<typeof readWorkspaceCreationIntelligencePack>>;
 };
 
 export type WorkspaceProvisioningDependencies = {
@@ -162,6 +164,7 @@ export type WorkspaceProvisioningDependencies = {
   promoteWorkspaceCreationKnowledge?: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
   updateAgent?: typeof updateAgent;
+  persistWorkspaceIntelligenceBinding?: typeof persistWorkspaceIntelligenceBinding;
 };
 
 type ResolvedWorkspaceProvisioningDependencies = {
@@ -177,6 +180,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
   promoteWorkspaceCreationKnowledge: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
   updateAgent: typeof updateAgent;
+  persistWorkspaceIntelligenceBinding: typeof persistWorkspaceIntelligenceBinding;
 };
 
 const inFlight = new Map<string, Promise<WorkspaceProvisioningRun>>();
@@ -194,7 +198,8 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
     readKnowledgeSnapshot: input.readKnowledgeSnapshot ?? readKnowledgeSnapshot,
     promoteWorkspaceCreationKnowledge: input.promoteWorkspaceCreationKnowledge ?? promoteWorkspaceCreationKnowledge,
     ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
-    updateAgent: input.updateAgent ?? updateAgent
+    updateAgent: input.updateAgent ?? updateAgent,
+    persistWorkspaceIntelligenceBinding: input.persistWorkspaceIntelligenceBinding ?? persistWorkspaceIntelligenceBinding
   };
 }
 
@@ -384,6 +389,9 @@ async function prepareProvisioning(
   if (context || !options.allowCompletedKnowledgeRecovery) validateKnowledgeFreshness(blueprint, context);
 
   let compositionPlan: WorkspaceCompositionPlan | null = null;
+  const intelligencePack = draftContextId
+    ? await dependencies.readWorkspaceCreationIntelligencePack({ actorId, draftContextId }).catch(() => null)
+    : null;
   const hasCompositionReference = Boolean(
     input.compositionPlan !== undefined && input.compositionPlan !== null
     || normalizeOptionalIntent(input.compositionPlanId)
@@ -420,7 +428,7 @@ async function prepareProvisioning(
     }
     if (compositionPlan.projectIntelligencePackId) {
       if (!draftContextId) throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan requires its staged project intelligence context.", 409);
-      const pack = await dependencies.readWorkspaceCreationIntelligencePack({ actorId, draftContextId });
+      const pack = intelligencePack;
       if (!pack
         || pack.id !== compositionPlan.projectIntelligencePackId
         || (pack.provenance.generationId ?? pack.generation?.id ?? null) !== compositionPlan.projectIntelligenceGenerationId) {
@@ -463,6 +471,7 @@ async function prepareProvisioning(
     expectedKnowledgeGenerationId,
     context,
     compositionPlan,
+    intelligencePack,
     createInput: {
       name: blueprint.identity.name,
       brief: blueprint.brief,
@@ -669,6 +678,32 @@ async function executeWorkspaceProvisioning(
       verifiedAt,
       updatedAt: verifiedAt
     });
+    if (finalState === "ready" || finalState === "partial") {
+      try {
+        await dependencies.persistWorkspaceIntelligenceBinding({
+          actorId: prepared.actorId,
+          workspaceId: created.workspaceId,
+          sourceGenerationId: prepared.context?.generationId ?? prepared.expectedKnowledgeGenerationId,
+          projectIntelligencePackId: prepared.intelligencePack?.id ?? prepared.context?.intelligenceSummary?.packId ?? null,
+          projectIntelligenceGenerationId: prepared.intelligencePack?.provenance.generationId ?? prepared.intelligencePack?.generation?.id ?? prepared.compositionPlan?.projectIntelligenceGenerationId ?? null,
+          blueprintId: prepared.blueprint.id,
+          blueprintFingerprint: run.blueprintFingerprint,
+          compositionPlan: prepared.compositionPlan,
+          provisioningRunId: run.runId,
+          status: finalState === "partial" ? "partial" : "current",
+          now: verifiedAt
+        });
+      } catch (error) {
+        const warning = "Workspace intelligence binding could not be recorded; freshness will remain unknown until the workspace is refreshed.";
+        run = await updateStoredRun(filePath, run, {
+          state: "partial",
+          warnings: uniqueStrings([...run.warnings, warning]),
+          updatedAt: dependencies.now().toISOString()
+        });
+        await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup).catch(() => undefined);
+        void error;
+      }
+    }
     return publicRun(run);
   } catch (error) {
     if (error instanceof ProvisioningLeaseBusyError || error instanceof ProvisioningLeaseLostError) {

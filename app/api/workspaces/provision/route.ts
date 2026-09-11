@@ -6,6 +6,7 @@ import {
   provisionWorkspaceFromBlueprint,
   WorkspaceProvisioningError
 } from "@/lib/agentos/application/workspace-provisioning-service";
+import { attachWorkspaceProvisioningRun } from "@/lib/agentos/application/workspace-creation-run-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
@@ -20,7 +21,8 @@ const provisionRequestSchema = z.object({
   acceptDraft: z.boolean().default(false),
   compositionPlan: z.unknown().optional(),
   compositionPlanId: z.string().trim().min(1).max(160).nullable().optional(),
-  compositionPlanFingerprint: z.string().regex(/^[a-f0-9]{64}$/i).nullable().optional()
+  compositionPlanFingerprint: z.string().regex(/^[a-f0-9]{64}$/i).nullable().optional(),
+  creationRunId: z.string().uuid().nullable().optional()
 }).strict();
 
 export async function POST(request: Request) {
@@ -40,6 +42,13 @@ export async function POST(request: Request) {
       compositionPlanId: parsed.compositionPlanId ?? null,
       compositionPlanFingerprint: parsed.compositionPlanFingerprint ?? null
     });
+    if (parsed.creationRunId) {
+      await attachWorkspaceProvisioningRun({
+        actorId: permission.actor.actorId,
+        runId: parsed.creationRunId,
+        provisioningRunId: run.runId
+      });
+    }
     return NextResponse.json(redactSecrets(run), { status: 202 });
   } catch (error) {
     const status = error instanceof WorkspaceProvisioningError ? error.statusCode : 400;

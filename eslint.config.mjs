@@ -8,6 +8,7 @@ const config = [
       "packages/agentos/bundle/**",
       "apps/desktop/runtime/**",
       "apps/desktop/src-tauri/target/**",
+      "**/.mission-control/**",
       ".desktop-cache/**",
       "deliverables/**"
     ]
