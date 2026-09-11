@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-2026.9.4-final-certification",
-  "generatedAt": "2026-09-11T21:10:57.342Z",
+  "generatedAt": "2026-09-11T21:25:38.151Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosCodeHead": "9c5e0abc61cd9248f856dbeef1b79090a1288e35",
+    "agentosCodeHead": "ad3131d42898ead79c9736dec62a1f87a818b756",
     "branch": "main",
     "node": "v24.20.0",
     "openClaw": {
