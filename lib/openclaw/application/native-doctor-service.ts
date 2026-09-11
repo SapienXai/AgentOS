@@ -5,8 +5,10 @@ import {
   classifyNativeMutationError,
   normalizeClientError
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import type {
   OpenClawCommandOptions,
+  OpenClawGatewayClient,
   OpenClawGatewayRestartRequestInput,
   OpenClawGatewaySuspendPrepareInput,
   OpenClawGatewaySuspendResumeInput,
@@ -86,6 +88,9 @@ export type NativeDoctorSnapshot = {
     updateAvailable: boolean | null;
     currentVersion: string | null;
     latestVersion: string | null;
+    /** A read-only OpenClaw CLI fallback used only when the Gateway omits a target. */
+    discoveredAvailableVersion?: string | null;
+    availabilitySource?: "native-gateway" | "openclaw-cli-fallback" | null;
     effectiveChannel: string | null;
     schedule: Record<string, unknown> | null;
     activeRun?: NativeUpdateRunProjection | null;
@@ -189,6 +194,19 @@ export async function getNativeDoctorSnapshot(
   const updateAvailable = updatePayload
     ? updateAvailableRecord !== null
     : null;
+  const nativeCurrentVersion = readNonEmptyString(updateAvailableRecord?.currentVersion)
+    || readNonEmptyString(statusPayload?.runtimeVersion)
+    || readNonEmptyString(statusPayload?.version);
+  const nativeLatestVersion = readNonEmptyString(updateAvailableRecord?.latestVersion);
+  const fallbackDiscovery = update.status === "available" && !nativeLatestVersion
+    ? await discoverOpenClawUpdateTarget(adapter, commandOptions, nativeCurrentVersion)
+    : null;
+  const discoveredAvailableVersion = nativeLatestVersion || fallbackDiscovery?.version || null;
+  const availabilitySource = nativeLatestVersion
+    ? "native-gateway" as const
+    : fallbackDiscovery?.version
+      ? fallbackDiscovery.source
+      : null;
   const recoveryStatus: NativeRecoveryStatus = configApplication === "restart-required"
     ? "restart-required"
     : healthStatus === "unavailable"
@@ -257,8 +275,10 @@ export async function getNativeDoctorSnapshot(
             ? "available"
             : "current",
       updateAvailable,
-      currentVersion: readNonEmptyString(updateAvailableRecord?.currentVersion),
-      latestVersion: readNonEmptyString(updateAvailableRecord?.latestVersion),
+      currentVersion: nativeCurrentVersion,
+      latestVersion: nativeLatestVersion,
+      discoveredAvailableVersion,
+      availabilitySource,
       effectiveChannel: readNonEmptyString(updatePayload?.effectiveChannel),
       schedule: projectUpdateSchedule(updatePayload?.schedule),
       activeRun: projectUpdateRun(updatePayload?.activeRun),
@@ -266,7 +286,9 @@ export async function getNativeDoctorSnapshot(
       explanation: update.status === "available"
         ? updateAvailable
           ? "OpenClaw reports an update is available."
-          : "OpenClaw reports no update is currently available."
+          : fallbackDiscovery?.version
+            ? `OpenClaw's Gateway did not expose an update target; its read-only CLI status fallback found v${fallbackDiscovery.version}.`
+            : "OpenClaw reports no update is currently available."
         : update.status === "unavailable"
           ? "The native OpenClaw update status method is unavailable."
           : update.status === "forbidden"
@@ -621,6 +643,68 @@ function readConnectionGeneration(adapter: OpenClawAdapter): number | null {
   return typeof generation === "number" && Number.isSafeInteger(generation) && generation >= 0
     ? generation
     : null;
+}
+
+async function discoverOpenClawUpdateTarget(
+  adapter: OpenClawAdapter,
+  commandOptions: OpenClawCommandOptions,
+  currentVersion: string | null
+) {
+  if (!adapter.getUpdateStatus) {
+    return null;
+  }
+
+  const client = adapter.getConnectionIdentity?.()?.client;
+  const beforeFallbackCount = readUpdateStatusFallbackCount(client?.getDiagnostics?.());
+
+  try {
+    const payload = await adapter.getUpdateStatus(commandOptions);
+    const afterFallbackCount = readUpdateStatusFallbackCount(client?.getDiagnostics?.());
+    const version = readUpdateStatusTargetVersion(payload);
+    if (!version || (currentVersion && compareVersionStrings(version, currentVersion) <= 0)) {
+      return null;
+    }
+
+    return {
+      version,
+      source: afterFallbackCount > beforeFallbackCount || !client?.getDiagnostics
+        ? "openclaw-cli-fallback" as const
+        : "native-gateway" as const
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readUpdateStatusFallbackCount(diagnostics: ReturnType<NonNullable<OpenClawGatewayClient["getDiagnostics"]>> | undefined) {
+  const count = diagnostics?.fallbackCounts?.["update.status"];
+  return typeof count === "number" && Number.isFinite(count) ? count : 0;
+}
+
+function readUpdateStatusTargetVersion(payload: Record<string, unknown>) {
+  const records: Record<string, unknown>[] = [];
+  const add = (value: unknown) => {
+    if (isRecord(value) && !records.includes(value)) records.push(value);
+  };
+
+  add(payload);
+  add(payload.result);
+  add(payload.data);
+  add(payload.update);
+  add(payload.availability);
+  add(payload.registry);
+  add(isRecord(payload.update) ? payload.update.registry : null);
+  add(isRecord(payload.result) ? payload.result.update : null);
+  add(isRecord(payload.result) && isRecord(payload.result.update) ? payload.result.update.registry : null);
+
+  for (const record of records) {
+    for (const key of ["latestVersion", "targetVersion", "availableVersion"]) {
+      const version = readNonEmptyString(record[key]);
+      if (version) return normalizeVersion(version);
+    }
+  }
+
+  return null;
 }
 
 function buildMutationOutcome(

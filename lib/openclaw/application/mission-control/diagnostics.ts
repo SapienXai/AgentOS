@@ -46,6 +46,7 @@ import {
   mergeConfiguredModelsIntoModelsPayload
 } from "@/lib/openclaw/adapter/model-adapter";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
+import { resolveEffectiveOpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
 import {
   getLatestOpenClawCompatibilitySmokeTest,
   getLatestRuntimeSmokeTest,
@@ -199,7 +200,9 @@ export async function buildLiveMissionControlDiagnostics(input: {
     compatibilityReport,
     configUpdatePacing: getConfigUpdatePacingSnapshotForSettings(input.settings),
     compatibilitySmokeTest: getLatestOpenClawCompatibilitySmokeTest(input.settings),
-    updateCompatibilityManifest,
+    updateCompatibilityManifest: resolveEffectiveOpenClawCompatibilityManifest({
+      overrideManifest: updateCompatibilityManifest
+    }),
     commandHistory,
     transport,
     eventBridge: getOpenClawEventBridgeStreamStatus(),

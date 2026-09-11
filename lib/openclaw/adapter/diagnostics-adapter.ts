@@ -26,10 +26,13 @@ import {
   type RuntimeIssueState
 } from "@/lib/openclaw/runtime-issues";
 import {
-  resolveOpenClawUpdateCompatibilitySnapshot,
-  shouldShowDefaultOpenClawUpdate
+  resolveOpenClawUpdateCompatibilitySnapshot
 } from "@/lib/openclaw/update-compatibility";
 import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
+import {
+  resolveOpenClawProductUpdateState,
+  type NativeUpdateUserState
+} from "@/lib/openclaw/domains/normal-update-policy";
 
 type PayloadReuseState = {
   reusedCachedValue: boolean;
@@ -263,10 +266,24 @@ export function buildGatewayDiagnostics(input: {
     currentVersion: input.versionDiagnostics.currentVersion,
     latestVersion: input.versionDiagnostics.latestVersion
   });
-  const updateAvailable = shouldShowDefaultOpenClawUpdate({
-    currentVersion: input.versionDiagnostics.currentVersion,
-    decision: updateCompatibility.latestDecision ?? updateCompatibility.recommendedDecision
+  const availabilitySource = input.versionDiagnostics.latestVersion
+    ? input.transport?.fallbackCounts["update.status"]
+      ? "openclaw-cli-fallback" as const
+      : "native-gateway" as const
+    : null;
+  const nativeUpdateState: NativeUpdateUserState = input.versionDiagnostics.updateAvailable === true
+    ? "available-certified"
+    : input.versionDiagnostics.updateAvailable === false
+      ? "up-to-date"
+      : "unknown";
+  const updateProductState = resolveOpenClawProductUpdateState({
+    nativeState: nativeUpdateState,
+    currentVersion: input.versionDiagnostics.currentVersion ?? null,
+    availableVersion: input.versionDiagnostics.latestVersion ?? null,
+    availabilitySource,
+    agentOsDecision: updateCompatibility.latestDecision ?? updateCompatibility.recommendedDecision
   });
+  const updateAvailable = input.versionDiagnostics.updateAvailable;
 
   return {
     installed: true,
@@ -286,6 +303,7 @@ export function buildGatewayDiagnostics(input: {
     updateAvailable,
     updateError: input.versionDiagnostics.updateError,
     updateCompatibility,
+    updateProductState,
     updateRoot: normalizeOptionalValue(input.status?.update?.root ?? undefined),
     updateInstallKind: normalizeOptionalValue(input.status?.update?.installKind ?? undefined),
     updatePackageManager: normalizeOptionalValue(input.status?.update?.packageManager ?? undefined),

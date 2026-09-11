@@ -27,6 +27,58 @@ export type OpenClawCompatibilityManifest = {
   versions: OpenClawCompatibilityManifestVersion[];
 };
 
+/**
+ * Resolve the effective local compatibility policy without allowing an old
+ * Compatibility Lab file to erase newer shipped knowledge.
+ *
+ * Remote manifests are intentionally not accepted here yet. A remote source
+ * must be authenticated and integrity-verified before it can affect update
+ * safety; until that distribution contract exists, the shipped manifest and
+ * explicit local operator decisions are the only inputs.
+ */
+export function resolveEffectiveOpenClawCompatibilityManifest(input: {
+  localManifest?: OpenClawCompatibilityManifest;
+  overrideManifest?: OpenClawCompatibilityManifest | null;
+} = {}): OpenClawCompatibilityManifest {
+  const localManifest = input.localManifest ?? LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST;
+  const overrideManifest = input.overrideManifest;
+
+  if (!overrideManifest) {
+    return localManifest;
+  }
+
+  const entries = new Map<string, OpenClawCompatibilityManifestVersion>();
+  for (const entry of localManifest.versions) {
+    const version = normalizeVersion(entry.version);
+    if (version) {
+      entries.set(version, { ...entry, version });
+    }
+  }
+  for (const entry of overrideManifest.versions) {
+    const version = normalizeVersion(entry.version);
+    if (version) {
+      // An explicit operator decision wins for the same version only.
+      entries.set(version, { ...entry, version });
+    }
+  }
+
+  const localRecommendedVersion = normalizeVersion(localManifest.recommendedVersion);
+  const overrideRecommendedVersion = normalizeVersion(overrideManifest.recommendedVersion);
+  const recommendedVersion = maxVersion(localRecommendedVersion, overrideRecommendedVersion)
+    ?? localManifest.recommendedVersion;
+
+  return {
+    schemaVersion: 1,
+    source: "override",
+    recommendedVersion,
+    minRequiredAgentOsVersion: maxVersion(
+      normalizeVersion(localManifest.minRequiredAgentOsVersion),
+      normalizeVersion(overrideManifest.minRequiredAgentOsVersion)
+    ),
+    versions: Array.from(entries.values())
+  };
+}
+
 export const LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST: OpenClawCompatibilityManifest = {
   schemaVersion: 1,
   source: "local-fallback",
@@ -254,4 +306,10 @@ function findManifestVersion(manifest: OpenClawCompatibilityManifest, version: s
 function normalizeVersion(value: string | null | undefined) {
   const normalized = value?.trim().replace(/^v/i, "");
   return normalized || null;
+}
+
+function maxVersion(left: string | null, right: string | null) {
+  if (!left) return right;
+  if (!right) return left;
+  return compareVersionStrings(left, right) >= 0 ? left : right;
 }

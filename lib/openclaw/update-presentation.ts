@@ -5,8 +5,13 @@ import {
   isNativeUpdateInProgress,
   isUpdateHeld,
   resolveNativeUpdateUserState,
+  resolveOpenClawProductUpdateState,
   resolveNormalOpenClawUpdatePolicy,
   type NativeUpdateUserState,
+  type OpenClawProductUpdateAction,
+  type OpenClawProductUpdateAvailabilitySource,
+  type OpenClawProductUpdateProjection,
+  type OpenClawProductUpdateState,
   type NormalOpenClawUpdateGateResult,
   type NormalOpenClawUpdatePolicy
 } from "@/lib/openclaw/domains/normal-update-policy";
@@ -17,8 +22,13 @@ export {
   isNativeUpdateInProgress,
   isUpdateHeld,
   resolveNativeUpdateUserState,
+  resolveOpenClawProductUpdateState,
   resolveNormalOpenClawUpdatePolicy,
   type NativeUpdateUserState,
+  type OpenClawProductUpdateAction,
+  type OpenClawProductUpdateAvailabilitySource,
+  type OpenClawProductUpdateProjection,
+  type OpenClawProductUpdateState,
   type NormalOpenClawUpdateGateResult,
   type NormalOpenClawUpdatePolicy
 };
@@ -44,6 +54,21 @@ export function formatNativeUpdateStateLabel(state: NativeUpdateUserState) {
     case "up-to-date": return "Up to date";
     case "available-certified": return "Update available";
     case "available-uncertified": return "Certification pending";
+    case "blocked": return "Blocked by AgentOS policy";
+    case "held": return "Update held";
+    case "running": return "Updating OpenClaw";
+    case "unavailable": return "Status unavailable";
+    case "unknown": return "Unable to verify";
+  }
+}
+
+export function formatOpenClawProductUpdateStateLabel(state: OpenClawProductUpdateState) {
+  switch (state) {
+    case "up-to-date": return "Up to date";
+    case "available-certified": return "Update available";
+    case "available-agentos-required": return "AgentOS update required";
+    case "available-uncertified": return "Certification pending";
+    case "available-fallback": return "Update found";
     case "blocked": return "Blocked by AgentOS policy";
     case "held": return "Update held";
     case "running": return "Updating OpenClaw";

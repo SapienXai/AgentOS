@@ -7,7 +7,7 @@ import {
   resolveNormalOpenClawUpdatePolicy,
   type NormalOpenClawUpdatePolicy
 } from "@/lib/openclaw/domains/normal-update-policy";
-import { LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST } from "@/lib/openclaw/update-compatibility";
+import { resolveEffectiveOpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
 
 export async function getNormalOpenClawUpdatePolicy(
   snapshot: NativeDoctorSnapshot
@@ -20,6 +20,8 @@ export async function getNormalOpenClawUpdatePolicy(
   return resolveNormalOpenClawUpdatePolicy({
     snapshot,
     agentOsVersion,
-    manifest: manifestOverride ?? LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST
+    manifest: resolveEffectiveOpenClawCompatibilityManifest({
+      overrideManifest: manifestOverride
+    })
   });
 }

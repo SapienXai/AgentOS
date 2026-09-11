@@ -429,6 +429,7 @@ export interface GatewayDiagnostics {
   updateAvailable?: boolean;
   updateError?: string;
   updateCompatibility?: OpenClawUpdateCompatibilitySnapshot;
+  updateProductState?: import("@/lib/openclaw/domains/normal-update-policy").OpenClawProductUpdateProjection;
   updateRoot?: string;
   updateInstallKind?: string;
   updatePackageManager?: string;

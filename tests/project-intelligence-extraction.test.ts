@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { extractProjectIntelligence, validateProjectIntelligenceExtraction } from "@/lib/agentos/application/project-intelligence-extraction-service";
 import { discoverProjectWebsite } from "@/lib/agentos/application/project-discovery-engine";
+import { isEvidenceClaimScopeCompatible } from "@/lib/agentos/domains/project-intelligence";
 import { assertPublicAddresses, DEFAULT_KNOWLEDGE_INGESTION_LIMITS } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import {
@@ -76,6 +77,39 @@ test("CoinCollect extraction is deterministic, evidence-first, and preserves pub
   assert.ok(first.conflicts.length === 0 || first.conflicts.every((conflict) => conflict.status === "open"));
   assert.doesNotMatch(JSON.stringify(first), /never-store|api[_ -]?key|private[_ -]?key/i);
   assert.equal(validateProjectIntelligenceExtraction(first).valid, true);
+});
+
+test("evidence saturation never promotes an unscoped claim to verified", () => {
+  const documents = Array.from({ length: 4 }, (_, documentIndex) => ({
+    documentId: `saturation-${documentIndex}`,
+    sourceId: "saturation",
+    sourceKind: "website" as const,
+    title: `Feature guide ${documentIndex}`,
+    classification: "documentation",
+    canonicalLocator: `https://example.test/feature-guide-${documentIndex}`,
+    content: [
+      "# Features",
+      ...Array.from({ length: 32 }, (_, featureIndex) => `- Feature ${documentIndex}-${featureIndex}`)
+    ].join("\n")
+  }));
+  const extraction = extractProjectIntelligence({
+    generationId: null,
+    inputFingerprint: "s".repeat(64),
+    now: NOW,
+    sources: [websiteSource("saturation", "https://example.test/")],
+    documents
+  });
+
+  assert.equal(extraction.status, "partial");
+  assert.equal(validateProjectIntelligenceExtraction(extraction).valid, true);
+  assert.ok(extraction.facts.some((fact) => fact.verification === "discovered"));
+  for (const fact of extraction.facts.filter((entry) => entry.verification === "verified")) {
+    assert.equal(fact.evidence.some((reference) => {
+      const evidence = extraction.evidence.find((entry) => entry.id === reference.evidenceRefId);
+      return evidence?.qualification.status === "qualified"
+        && isEvidenceClaimScopeCompatible(evidence, fact.key, fact.normalizedValue);
+    }), true);
+  }
 });
 
 test("structured extraction remains general-purpose for SaaS and documentation-heavy software", async () => {

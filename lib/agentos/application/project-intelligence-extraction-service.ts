@@ -589,14 +589,19 @@ export function validateProjectIntelligenceExtraction(value: unknown): ProjectIn
 
 function makeFact(draft: FactDraft, evidence: readonly EvidenceRef[], generationId: string | null, now: string): ProjectFact {
   const references: ProjectClaimEvidence[] = draft.evidenceIds.map((evidenceRefId) => ({ evidenceRefId, relation: "supports" }));
-  const qualified = references.some((reference) => isEvidenceQualificationEligible(evidence.find((entry) => entry.id === reference.evidenceRefId)));
+  const normalizedValue = normalizeProjectFactValue(draft.value);
+  const qualified = references.some((reference) => {
+    const supportingEvidence = evidence.find((entry) => entry.id === reference.evidenceRefId);
+    return isEvidenceQualificationEligible(supportingEvidence)
+      && isEvidenceClaimScopeCompatible(supportingEvidence, draft.key, normalizedValue);
+  });
   return normalizeProjectFact({
     schemaVersion: PROJECT_INTELLIGENCE_SCHEMA_VERSION,
     id: `fact-${sha256(`${draft.key}|${stableStringify(draft.value)}`).slice(0, 32)}`,
     category: draft.category,
     key: draft.key,
     value: draft.value,
-    normalizedValue: normalizeProjectFactValue(draft.value),
+    normalizedValue,
     statement: draft.statement,
     confidence: qualified ? "high" : "low",
     verification: qualified ? "verified" : "discovered",
@@ -609,7 +614,12 @@ function makeFact(draft: FactDraft, evidence: readonly EvidenceRef[], generation
 
 function makeResource(draft: ResourceDraft, evidence: readonly EvidenceRef[]): OfficialResource {
   const references: ProjectClaimEvidence[] = draft.evidenceIds.map((evidenceRefId) => ({ evidenceRefId, relation: "supports" }));
-  const qualified = references.some((reference) => isEvidenceQualificationEligible(evidence.find((entry) => entry.id === reference.evidenceRefId)));
+  const normalizedLocator = normalizeProjectFactValue(draft.locator);
+  const qualified = references.some((reference) => {
+    const supportingEvidence = evidence.find((entry) => entry.id === reference.evidenceRefId);
+    return isEvidenceQualificationEligible(supportingEvidence)
+      && isEvidenceClaimScopeCompatible(supportingEvidence, `resource:${draft.category}`, normalizedLocator);
+  });
   return normalizeOfficialResource({
     schemaVersion: PROJECT_INTELLIGENCE_SCHEMA_VERSION,
     id: `resource-${sha256(`${draft.category}|${draft.locator.kind}|${draft.locator.value.toLowerCase()}`).slice(0, 32)}`,
