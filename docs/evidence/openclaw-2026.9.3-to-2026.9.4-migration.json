@@ -1,0 +1,494 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.3-to-2026.9.4-migration-certification",
+  "generatedAt": "2026-09-11T20:45:02.022Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosStartingHead": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "source": {
+      "version": "2026.9.3",
+      "commit": "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7",
+      "buildId": "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z"
+    },
+    "target": {
+      "version": "2026.9.4",
+      "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z"
+    },
+    "protocol": 4,
+    "stateSchema": "16 -> 17",
+    "agentSchema": 19,
+    "runtimeMode": "isolated disposable packages, state, HOME, config, workspace, and loopback ports",
+    "sourcePackage": {
+      "version": "2026.9.3",
+      "sourceCommit": "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7",
+      "buildId": "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z",
+      "packageHash": "399006c505bd8a48003267ebd7a12766090cef8564479e96425593e5dd24915e",
+      "stateSchema": 16,
+      "agentSchema": 19
+    },
+    "targetPackage": {
+      "version": "2026.9.4",
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "packageHash": "2863452d8d2c2d302c3462af3f90e41b401708efdcbbbf81d723e73dd8ac67cf",
+      "stateSchema": 17,
+      "agentSchema": 19
+    }
+  },
+  "fixture": {
+    "kind": "real-package-upgrade",
+    "sourceState": "OpenClaw 2026.9.3 initialized and exercised through the official Gateway",
+    "targetState": "OpenClaw 2026.9.4 migrated through native Doctor/runtime startup and reconnected through official gateway-client",
+    "representativeState": [
+      "agents",
+      "sessions",
+      "session lineage",
+      "assistant transcript",
+      "provider/auth-shaped config",
+      "channel/account config",
+      "workspace/project marker",
+      "skill marker",
+      "memory marker",
+      "cron state",
+      "update status",
+      "native identity seed",
+      "explicit AgentOS session and agent-to-agent security policy"
+    ],
+    "productionGatewayTouched": false,
+    "productionStateTouched": false,
+    "productionConfigTouched": false
+  },
+  "source": {
+    "package": {
+      "version": "2026.9.3",
+      "sourceCommit": "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7",
+      "buildId": "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z",
+      "packageHash": "399006c505bd8a48003267ebd7a12766090cef8564479e96425593e5dd24915e",
+      "stateSchema": 16,
+      "agentSchema": 19
+    },
+    "runtime": {
+      "version": "2026.9.3",
+      "buildId": "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z",
+      "protocol": 4
+    },
+    "agentId": "migration-worker",
+    "rootSessionKey": "agent:main:agentos-migration-fixture",
+    "childSessionKey": "agent:migration-worker:agentos-migration-child",
+    "nativeSurfaces": {
+      "update.status": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "channels.list": {
+        "status": "SKIPPED",
+        "shape": "unknown method: channels.list"
+      },
+      "plugins.list": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "memory.status": {
+        "status": "SKIPPED",
+        "shape": "unknown method: memory.status"
+      },
+      "cron.list": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "tasks.list": {
+        "status": "PASS",
+        "shape": "object"
+      }
+    },
+    "state": {
+      "stateSchema": 16,
+      "agentSchema": 19,
+      "tables": {
+        "worker_turn_tool_authorities": 0,
+        "worker_session_tool_operations": 0,
+        "mcp_oauth_stores": 0,
+        "audit_identity_keys": 0,
+        "session_state_events": 0,
+        "session_state_heads": 0,
+        "session_watch_cursors": 0,
+        "session_upstream_links": 0,
+        "device_auth_tokens": 0,
+        "channel_pairing_requests": 0,
+        "channel_pairing_allow_entries": 0,
+        "acp_sessions": 0,
+        "acp_replay_sessions": 0,
+        "agent_databases": 2,
+        "agent_deletion_journal": 0,
+        "agent_provenance": 1,
+        "agent_database_leases": 0,
+        "channel_ingress_events": 0,
+        "capture_sessions": 0,
+        "cron_jobs": 4,
+        "cron_run_receipts": 0,
+        "cron_job_scratch": 0,
+        "task_runs": 0,
+        "subagent_runs": 0,
+        "task_delivery_state": 0,
+        "meeting_transcript_sessions": 0,
+        "session_groups": 0,
+        "worker_environments": 0,
+        "worker_environment_ssh_fallback_ports": 0,
+        "worker_session_placements": 1,
+        "worker_session_placement_moves": 0,
+        "worker_workspace_reconciliations": 0,
+        "worker_workspace_pending_results": 0,
+        "worker_environment_credentials": 0,
+        "worker_transcript_commit_heads": 0,
+        "worker_transcript_commits": 0,
+        "worker_inference_turns": 0,
+        "claw_cron_refs": 0
+      },
+      "configPresent": true,
+      "configHash": "77873487e90e7b3c81aa85782c76f2549aa3bf3ab9c4e682b037111e1228dceb",
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true,
+      "securityPolicyExplicit": true,
+      "transcriptFiles": [
+        "agents/main/agent/openclaw-agent.sqlite",
+        "agents/migration-worker/agent/openclaw-agent.sqlite",
+        "state/openclaw.sqlite",
+        "tmp/openclaw-501/device-identity.918ef5ec.lock.sqlite",
+        "tmp/openclaw-501/gateway.01902167.lock.sqlite",
+        "tmp/openclaw-501/gateway.state.lock.sqlite"
+      ]
+    }
+  },
+  "migration": {
+    "officialPath": "OpenClaw 2026.9.4 native Doctor/runtime migration path",
+    "doctor": {
+      "exitCode": 0,
+      "completed": true,
+      "outputPresent": true,
+      "outputContainsSecret": true,
+      "sanitizedOutputExcerpt": "                                       │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\nUpdated config: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-YDlLu3/config/openclaw.json\n  Backup: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-YDlLu3/config/openclaw.json.bak\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-YDlLu3/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
+    },
+    "stateBefore": {
+      "stateSchema": 16,
+      "agentSchema": 19,
+      "tables": {
+        "worker_turn_tool_authorities": 0,
+        "worker_session_tool_operations": 0,
+        "mcp_oauth_stores": 0,
+        "audit_identity_keys": 0,
+        "session_state_events": 0,
+        "session_state_heads": 0,
+        "session_watch_cursors": 0,
+        "session_upstream_links": 0,
+        "device_auth_tokens": 0,
+        "channel_pairing_requests": 0,
+        "channel_pairing_allow_entries": 0,
+        "acp_sessions": 0,
+        "acp_replay_sessions": 0,
+        "agent_databases": 2,
+        "agent_deletion_journal": 0,
+        "agent_provenance": 1,
+        "agent_database_leases": 0,
+        "channel_ingress_events": 0,
+        "capture_sessions": 0,
+        "cron_jobs": 4,
+        "cron_run_receipts": 0,
+        "cron_job_scratch": 0,
+        "task_runs": 0,
+        "subagent_runs": 0,
+        "task_delivery_state": 0,
+        "meeting_transcript_sessions": 0,
+        "session_groups": 0,
+        "worker_environments": 0,
+        "worker_environment_ssh_fallback_ports": 0,
+        "worker_session_placements": 1,
+        "worker_session_placement_moves": 0,
+        "worker_workspace_reconciliations": 0,
+        "worker_workspace_pending_results": 0,
+        "worker_environment_credentials": 0,
+        "worker_transcript_commit_heads": 0,
+        "worker_transcript_commits": 0,
+        "worker_inference_turns": 0,
+        "claw_cron_refs": 0
+      },
+      "configPresent": true,
+      "configHash": "77873487e90e7b3c81aa85782c76f2549aa3bf3ab9c4e682b037111e1228dceb",
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true,
+      "securityPolicyExplicit": true,
+      "transcriptFiles": [
+        "agents/main/agent/openclaw-agent.sqlite",
+        "agents/migration-worker/agent/openclaw-agent.sqlite",
+        "state/openclaw.sqlite",
+        "tmp/openclaw-501/device-identity.918ef5ec.lock.sqlite",
+        "tmp/openclaw-501/gateway.01902167.lock.sqlite",
+        "tmp/openclaw-501/gateway.state.lock.sqlite"
+      ]
+    },
+    "stateAfterDoctor": {
+      "stateSchema": 17,
+      "agentSchema": 19,
+      "tables": {
+        "worker_turn_tool_authorities": 0,
+        "worker_session_tool_operations": 0,
+        "mcp_oauth_stores": 0,
+        "audit_identity_keys": 0,
+        "session_state_events": 0,
+        "session_state_heads": 0,
+        "session_watch_cursors": 0,
+        "session_upstream_links": 0,
+        "device_auth_tokens": 0,
+        "channel_pairing_requests": 0,
+        "channel_pairing_allow_entries": 0,
+        "acp_sessions": 0,
+        "acp_replay_sessions": 0,
+        "agent_databases": 2,
+        "agent_deletion_journal": 0,
+        "agent_provenance": 1,
+        "agent_database_leases": 0,
+        "channel_ingress_events": 0,
+        "capture_sessions": 0,
+        "cron_jobs": 4,
+        "cron_run_receipts": 0,
+        "cron_job_scratch": 0,
+        "task_runs": 0,
+        "subagent_runs": 0,
+        "task_delivery_state": 0,
+        "meeting_transcript_sessions": 0,
+        "session_groups": 0,
+        "worker_environments": 0,
+        "worker_environment_ssh_fallback_ports": 0,
+        "worker_session_placements": 1,
+        "worker_session_placement_moves": 0,
+        "worker_workspace_reconciliations": 0,
+        "worker_workspace_pending_results": 0,
+        "worker_environment_credentials": 0,
+        "worker_transcript_commit_heads": 0,
+        "worker_transcript_commits": 0,
+        "worker_inference_turns": 0,
+        "claw_cron_refs": 0
+      },
+      "configPresent": true,
+      "configHash": "21ee3777739dff73a4378056454d1b14262ef93cf204ce43ebbfcb23336060cc",
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true,
+      "securityPolicyExplicit": true,
+      "transcriptFiles": [
+        "agents/main/agent/openclaw-agent.sqlite",
+        "agents/migration-worker/agent/openclaw-agent.sqlite",
+        "state/openclaw.sqlite",
+        "tmp/openclaw-501/device-identity.918ef5ec.lock.sqlite",
+        "tmp/openclaw-501/gateway.01902167.lock.sqlite",
+        "tmp/openclaw-501/gateway.state.lock.sqlite"
+      ]
+    },
+    "schema16To17": true,
+    "noSilentDataLoss": true
+  },
+  "target": {
+    "package": {
+      "version": "2026.9.4",
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "packageHash": "2863452d8d2c2d302c3462af3f90e41b401708efdcbbbf81d723e73dd8ac67cf",
+      "stateSchema": 17,
+      "agentSchema": 19
+    },
+    "runtime": {
+      "version": "2026.9.4",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "protocol": 4,
+      "reconnect": true
+    },
+    "nativeSurfaces": {
+      "update.status": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "channels.list": {
+        "status": "SKIPPED",
+        "shape": "unknown method: channels.list"
+      },
+      "plugins.list": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "memory.status": {
+        "status": "SKIPPED",
+        "shape": "unknown method: memory.status"
+      },
+      "cron.list": {
+        "status": "PASS",
+        "shape": "object"
+      },
+      "tasks.list": {
+        "status": "PASS",
+        "shape": "object"
+      }
+    },
+    "representativeState": {
+      "agentCount": 2,
+      "sessionCount": 2,
+      "transcriptAssistantMessages": 1,
+      "selectedModelPreserved": true,
+      "providerConfigPresent": true,
+      "channelConfigPresent": true,
+      "securityPolicyExplicit": true,
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true
+    },
+    "state": {
+      "stateSchema": 17,
+      "agentSchema": 19,
+      "tables": {
+        "worker_turn_tool_authorities": 0,
+        "worker_session_tool_operations": 0,
+        "mcp_oauth_stores": 0,
+        "audit_identity_keys": 0,
+        "session_state_events": 0,
+        "session_state_heads": 0,
+        "session_watch_cursors": 0,
+        "session_upstream_links": 0,
+        "device_auth_tokens": 0,
+        "channel_pairing_requests": 0,
+        "channel_pairing_allow_entries": 0,
+        "acp_sessions": 0,
+        "acp_replay_sessions": 0,
+        "agent_databases": 2,
+        "agent_deletion_journal": 0,
+        "agent_provenance": 1,
+        "agent_database_leases": 2,
+        "channel_ingress_events": 0,
+        "capture_sessions": 0,
+        "cron_jobs": 4,
+        "cron_run_receipts": 0,
+        "cron_job_scratch": 0,
+        "task_runs": 0,
+        "subagent_runs": 0,
+        "task_delivery_state": 0,
+        "meeting_transcript_sessions": 0,
+        "session_groups": 0,
+        "worker_environments": 0,
+        "worker_environment_ssh_fallback_ports": 0,
+        "worker_session_placements": 1,
+        "worker_session_placement_moves": 0,
+        "worker_workspace_reconciliations": 0,
+        "worker_workspace_pending_results": 0,
+        "worker_environment_credentials": 0,
+        "worker_transcript_commit_heads": 0,
+        "worker_transcript_commits": 0,
+        "worker_inference_turns": 0,
+        "claw_cron_refs": 0
+      },
+      "configPresent": true,
+      "configHash": "21ee3777739dff73a4378056454d1b14262ef93cf204ce43ebbfcb23336060cc",
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true,
+      "securityPolicyExplicit": true,
+      "transcriptFiles": [
+        "agents/main/agent/openclaw-agent.sqlite",
+        "agents/migration-worker/agent/openclaw-agent.sqlite",
+        "state/openclaw.sqlite",
+        "tmp/openclaw-501/device-identity.918ef5ec.lock.sqlite",
+        "tmp/openclaw-501/gateway.01902167.lock.sqlite",
+        "tmp/openclaw-501/gateway.state.lock.sqlite"
+      ]
+    }
+  },
+  "recovery": {
+    "doctor": {
+      "exitCode": 0,
+      "completed": true,
+      "outputPresent": true,
+      "outputContainsSecret": true,
+      "sanitizedOutputExcerpt": "────────────────────────────────────────────────╮\n│                                                                          │\n│  Agent \"main\": Memory search provider is set to \"openai\" but no API key  │\n│  was found.                                                              │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-YDlLu3/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
+    },
+    "idempotent": true,
+    "stateAfterRecovery": {
+      "stateSchema": 17,
+      "agentSchema": 19,
+      "tables": {
+        "worker_turn_tool_authorities": 0,
+        "worker_session_tool_operations": 0,
+        "mcp_oauth_stores": 0,
+        "audit_identity_keys": 0,
+        "session_state_events": 0,
+        "session_state_heads": 0,
+        "session_watch_cursors": 0,
+        "session_upstream_links": 0,
+        "device_auth_tokens": 0,
+        "channel_pairing_requests": 0,
+        "channel_pairing_allow_entries": 0,
+        "acp_sessions": 0,
+        "acp_replay_sessions": 0,
+        "agent_databases": 2,
+        "agent_deletion_journal": 0,
+        "agent_provenance": 1,
+        "agent_database_leases": 0,
+        "channel_ingress_events": 0,
+        "capture_sessions": 0,
+        "cron_jobs": 4,
+        "cron_run_receipts": 0,
+        "cron_job_scratch": 0,
+        "task_runs": 0,
+        "subagent_runs": 0,
+        "task_delivery_state": 0,
+        "meeting_transcript_sessions": 0,
+        "session_groups": 0,
+        "worker_environments": 0,
+        "worker_environment_ssh_fallback_ports": 0,
+        "worker_session_placements": 1,
+        "worker_session_placement_moves": 0,
+        "worker_workspace_reconciliations": 0,
+        "worker_workspace_pending_results": 0,
+        "worker_environment_credentials": 0,
+        "worker_transcript_commit_heads": 0,
+        "worker_transcript_commits": 0,
+        "worker_inference_turns": 0,
+        "claw_cron_refs": 0
+      },
+      "configPresent": true,
+      "configHash": "21ee3777739dff73a4378056454d1b14262ef93cf204ce43ebbfcb23336060cc",
+      "skillPresent": true,
+      "memoryPresent": true,
+      "projectPresent": true,
+      "securityPolicyExplicit": true,
+      "transcriptFiles": [
+        "agents/main/agent/openclaw-agent.sqlite",
+        "agents/migration-worker/agent/openclaw-agent.sqlite",
+        "state/openclaw.sqlite",
+        "tmp/openclaw-501/device-identity.918ef5ec.lock.sqlite",
+        "tmp/openclaw-501/gateway.01902167.lock.sqlite",
+        "tmp/openclaw-501/gateway.state.lock.sqlite"
+      ]
+    },
+    "schemaStill17": true,
+    "representativeStateStillIntact": true
+  },
+  "checks": {
+    "exactSourcePackage": true,
+    "exactTargetPackage": true,
+    "sourceRuntime93": true,
+    "targetRuntime94": true,
+    "stateSchema16To17": true,
+    "agentSchema19": true,
+    "gatewayReconnect": true,
+    "representativeStatePreserved": true,
+    "securityPolicyPreserved": true,
+    "nativeSurfacesReadable": true,
+    "recoveryIdempotent": true,
+    "noProductionMutation": true
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessesStopped": true,
+    "disposableRootRemoved": true
+  },
+  "success": true
+}

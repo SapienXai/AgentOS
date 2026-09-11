@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-human-control-inbox-certification",
+  "generatedAt": "2026-09-11T20:50:29.332Z",
+  "certifiedCodeHead": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+  "openClaw": {
+    "release": "2026.9.4",
+    "source": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.4",
+    "gatewayProtocolPackage": "2026.9.4",
+    "packageHash": "2863452d8d2c2d302c3462af3f90e41b401708efdcbbbf81d723e73dd8ac67cf"
+  },
+  "runtime": {
+    "isolated": true,
+    "gatewayPlacement": "disposable-loopback",
+    "handshake": "PASS",
+    "userGatewayUntouched": true,
+    "realCredentialsAccessed": false
+  },
+  "attentionProjection": {
+    "schema": "AttentionItem",
+    "sourceFamilies": [
+      "exec approvals",
+      "plugin approvals",
+      "questions",
+      "task suggestions",
+      "effective capability blockers",
+      "runtime issues"
+    ],
+    "stableIdentity": true,
+    "sourceOfTruth": "OpenClaw native lifecycle; AgentOS projection"
+  },
+  "execApproval": {
+    "pendingRead": "PASS",
+    "create": "PASS",
+    "projection": "PASS",
+    "resolve": "PASS",
+    "event": "SKIPPED",
+    "skipReason": "The disposable approval was created on the same native connection; the exact runtime did not fan its approval lifecycle events back to that subscriber."
+  },
+  "pluginApproval": {
+    "pendingRead": "PASS",
+    "create": "SKIPPED",
+    "projection": "SKIPPED",
+    "resolve": "SKIPPED",
+    "event": "SKIPPED",
+    "skipReason": "No plugin approval was created; the exact runtime requires a trusted plugin runtime owner for safe request generation."
+  },
+  "question": {
+    "pendingRead": "PASS",
+    "create": "PASS",
+    "projection": "PASS",
+    "resolve": "PASS",
+    "event": "PASS",
+    "skipReason": null
+  },
+  "suggestedWork": {
+    "pendingRead": "PASS",
+    "projection": "SKIPPED",
+    "mutation": "SKIPPED",
+    "skipReason": "No disposable suggestion was created; existing AgentOS task-suggestion lifecycle is reused."
+  },
+  "capabilityBlockers": {
+    "status": "SKIPPED",
+    "source": "deterministic AgentOS capability projection tests",
+    "relevanceRule": "active/native work context only"
+  },
+  "runtimeIssue": {
+    "status": "SKIPPED",
+    "source": "existing actionable runtime issue projection",
+    "skipReason": "No disposable runtime failure was required to mutate for this contract gate."
+  },
+  "deduplication": {
+    "stableIdentity": true,
+    "approvalAndQuestionPrecedeBlockers": true,
+    "repeatedEventsDeduplicated": true
+  },
+  "performance": {
+    "inboxGraph": "parallel bulk approval/question reads plus existing Mission Control snapshot",
+    "dashboardSummaryExtraCapabilityRpcCount": 0,
+    "perWorkerRpcFanout": false,
+    "perCapabilityRpcFanout": false,
+    "perItemRpcFanout": false,
+    "requestCoalescing": "existing AgentOsGatewayRequestPolicy and event bridge"
+  },
+  "authorization": {
+    "exactScopes": "PASS",
+    "integratedMethods": [
+      "exec.approval.list",
+      "exec.approval.resolve",
+      "plugin.approval.list",
+      "plugin.approval.resolve",
+      "question.list",
+      "question.resolve"
+    ],
+    "fixtureOnlyMethodsNotIntegrated": [
+      "exec.approval.request",
+      "plugin.approval.request",
+      "question.request"
+    ],
+    "gatewayFinalAuthority": true
+  },
+  "events": {
+    "observed": [
+      "question.requested",
+      "question.resolved",
+      "health",
+      "cron",
+      "sessions.changed",
+      "update.available"
+    ],
+    "cacheInvalidation": "existing event bridge",
+    "reconnectReconciliation": "native inventories"
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "untrustedContentAsInstructions": false,
+    "centralRedaction": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true
+  },
+  "cleanup": {
+    "userGatewayTouched": false,
+    "disposableStateRemoved": "PASS",
+    "gatewayStopped": "PASS",
+    "noCliFallback": "PASS"
+  },
+  "validation": {
+    "deterministicProjectionTests": "PASS",
+    "nativeTransportContractTests": "PASS",
+    "fullSuite": "run separately"
+  },
+  "result": "PASS"
+}

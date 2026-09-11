@@ -149,7 +149,7 @@ async function main() {
     source: summarizeProtocol(evidence.protocol.source),
     target: summarizeProtocol(evidence.protocol.target)
   };
-  evidence.checks = evaluateChecks(evidence);
+  evidence.checks = await evaluateChecks(evidence);
   evidence.success = Object.values(evidence.checks).every(Boolean);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
@@ -217,14 +217,14 @@ async function inspectPackageIdentity(packageRoot, expected) {
 async function inspectClientOrProtocol(sourceRoot, targetRoot, label, sourceExpected, targetExpected) {
   const source = await readJson(path.join(sourceRoot, "package.json"));
   const target = await readJson(path.join(targetRoot, "package.json"));
-  const sourceVersion = await readVersionModule(sourceRoot);
-  const targetVersion = await readVersionModule(targetRoot);
+  const sourceVersion = label === "gateway-protocol" ? await readVersionModule(sourceRoot) : null;
+  const targetVersion = label === "gateway-protocol" ? await readVersionModule(targetRoot) : null;
   return {
     name: label,
     source: { packageName: source.name ?? null, version: source.version ?? null, versionModule: sourceVersion },
     target: { packageName: target.name ?? null, version: target.version ?? null, versionModule: targetVersion },
     exact: source.version === sourceExpected.version && target.version === targetExpected.version
-      && sourceVersion.protocol === sourceExpected.protocol && targetVersion.protocol === targetExpected.protocol
+      && (label !== "gateway-protocol" || (sourceVersion.protocol === sourceExpected.protocol && targetVersion.protocol === targetExpected.protocol))
       && (label !== "gateway-client" || target.dependencies?.["@openclaw/gateway-protocol"] === targetExpected.version)
   };
 }

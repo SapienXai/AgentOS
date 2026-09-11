@@ -259,7 +259,7 @@ async function runExternalLifecycle(input: { fixtureRoot: string; packageRoot: s
     }
     const restarted = await service.restart();
     assert.equal(restarted.descriptor.state, "ready");
-    assert.equal(restarted.descriptor.version, OPENCLAW_RECOMMENDED_VERSION);
+    assert.equal(restarted.descriptor.version, OPENCLAW_IDENTITY_CONTRACT_VERSION);
     assert.equal(restarted.descriptor.sourceCommit, TARGET_COMMIT);
     const beforeCrashClient = createNativeClient(restarted.descriptor.gatewayUrl, token);
     let sessionKey = "";
@@ -297,7 +297,7 @@ async function runExternalLifecycle(input: { fixtureRoot: string; packageRoot: s
         sessionContinuity: Boolean(assistant)
       },
       checks: {
-        canonicalRuntime: restarted.descriptor.version === OPENCLAW_RECOMMENDED_VERSION && restarted.descriptor.sourceCommit === TARGET_COMMIT,
+        canonicalRuntime: restarted.descriptor.version === OPENCLAW_IDENTITY_CONTRACT_VERSION && restarted.descriptor.sourceCommit === TARGET_COMMIT,
         start: started.descriptor.state === "ready",
         stop: stopped.descriptor.state === "stopped",
         restart: restarted.descriptor.state === "ready",
@@ -496,7 +496,7 @@ async function proveCrashLoopProtection() {
         authenticated: true,
         health: "live",
         protocolVersionGateway: 4,
-        version: OPENCLAW_RECOMMENDED_VERSION,
+        version: OPENCLAW_IDENTITY_CONTRACT_VERSION,
         sourceCommit: TARGET_COMMIT,
         message: "Crash-loop protection probe"
       } satisfies SupervisorResponse)
@@ -506,7 +506,7 @@ async function proveCrashLoopProtection() {
       authenticated: true,
       health: "live",
       protocolVersion: 4,
-      version: OPENCLAW_RECOMMENDED_VERSION,
+      version: OPENCLAW_IDENTITY_CONTRACT_VERSION,
       sourceCommit: TARGET_COMMIT,
       checkedAt: new Date().toISOString(),
       reason: null
