@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-runtime-certification",
-  "generatedAt": "2026-09-11T20:47:11.045Z",
+  "generatedAt": "2026-09-11T21:09:44.260Z",
   "provenance": {
-    "agentosCertifiedCodeHead": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "agentosCertifiedCodeHead": "fa3047800851af36629bf3d9732887cf4ed7b446",
     "openclawRelease": "2026.9.4",
     "openclawSourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
     "openclawBuildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
@@ -7615,9 +7615,9 @@
   ],
   "runtime": {
     "schemaVersion": 2,
-    "generatedAt": "2026-09-11T20:47:03.528Z",
+    "generatedAt": "2026-09-11T21:09:36.225Z",
     "targetVersion": "2026.9.4",
-    "gatewayUrl": "ws://127.0.0.1:59821/",
+    "gatewayUrl": "ws://127.0.0.1:61275/",
     "installedVersion": "2026.9.4",
     "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
     "protocolVersion": 4,

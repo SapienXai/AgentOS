@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T20:47:11.032Z",
+  "generatedAt": "2026-09-11T21:09:44.248Z",
   "provenance": {
-    "agentosCommit": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "agentosCommit": "fa3047800851af36629bf3d9732887cf4ed7b446",
     "targetVersion": "2026.9.4",
     "targetCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
     "targetBuildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
@@ -17,8 +17,8 @@
     "provisioningContract": "AgentOS recommended installer version contract",
     "exactPackageProvisioned": true,
     "packageVersion": "2026.9.4",
-    "installerVersionArgumentPresent": false,
-    "installerCommand": "set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --prefix \"$HOME/.openclaw\" --version 2026.9.3 --no-onboard"
+    "installerVersionArgumentPresent": true,
+    "installerCommand": "set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --prefix \"$HOME/.openclaw\" --version 2026.9.4 --no-onboard"
   },
   "freshState": {
     "stateEmptyBeforeBootstrap": true,
@@ -38,7 +38,7 @@
     "agentToAgentAllow": []
   },
   "gateway": {
-    "url": "ws://127.0.0.1:59821/",
+    "url": "ws://127.0.0.1:61275/",
     "protocol": 4,
     "installedVersion": "2026.9.4",
     "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z"
@@ -46,9 +46,9 @@
   "runtimeCertification": {
     "runtime": {
       "schemaVersion": 2,
-      "generatedAt": "2026-09-11T20:47:03.528Z",
+      "generatedAt": "2026-09-11T21:09:36.225Z",
       "targetVersion": "2026.9.4",
-      "gatewayUrl": "ws://127.0.0.1:59821/",
+      "gatewayUrl": "ws://127.0.0.1:61275/",
       "installedVersion": "2026.9.4",
       "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
       "protocolVersion": 4,
