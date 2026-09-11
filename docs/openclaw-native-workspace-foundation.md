@@ -9,23 +9,23 @@ remain outside Phase 0.
 
 ## Compatibility provenance
 
-- Recommended and installed OpenClaw: `2026.9.3`.
-- AgentOS compatibility audit: `docs/openclaw-2026.9.3-compatibility-audit.md`.
-- Local OpenClaw build identity: `2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z`.
+- Recommended and installed OpenClaw: `2026.9.4`.
+- AgentOS compatibility audit: `docs/openclaw-2026.9.4-compatibility-audit.md`.
+- Local OpenClaw build identity: `2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z`.
 - Repository package dependencies are pinned to `@openclaw/gateway-client` and
-  `@openclaw/gateway-protocol` `2026.9.3`.
+  `@openclaw/gateway-protocol` `2026.9.4`.
 - The latest stable release checked for this pass is OpenClaw
-  [v2026.9.3](https://github.com/openclaw/openclaw/releases). Upstream `main`
+  [v2026.9.4](https://github.com/openclaw/openclaw/releases). Upstream `main`
   was inspected for drift, but no unreleased behavior is promoted into the
   AgentOS contract.
 
 Primary upstream references:
 
-- [Agent workspace](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.3/docs/concepts/agent-workspace.md)
-- [Workspace and bootstrap configuration](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.3/docs/gateway/config-agents/workspace-and-bootstrap.md)
-- [Heartbeat](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.3/docs/gateway/heartbeat.md)
-- [Memory](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.3/docs/concepts/memory.md)
-- [Workspace implementation](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.3/src/agents/workspace.ts)
+- [Agent workspace](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.4/docs/concepts/agent-workspace.md)
+- [Workspace and bootstrap configuration](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.4/docs/gateway/config-agents/workspace-and-bootstrap.md)
+- [Heartbeat](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.4/docs/gateway/heartbeat.md)
+- [Memory](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.4/docs/concepts/memory.md)
+- [Workspace implementation](https://raw.githubusercontent.com/openclaw/openclaw/v2026.9.4/src/agents/workspace.ts)
 
 ## Ownership decision
 
@@ -44,7 +44,7 @@ Primary upstream references:
 The single registry is `lib/openclaw/workspace-bootstrap-files.ts`.
 
 The registry now records requirement and lifecycle separately, matching the
-OpenClaw 2026.9.3 contract:
+OpenClaw 2026.9.4 contract:
 
 - required persistent `AGENTS.md`
 - optional persistent `SOUL.md`, `IDENTITY.md`, `USER.md`, and curated `MEMORY.md`

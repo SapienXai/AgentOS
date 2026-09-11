@@ -96,9 +96,9 @@ test("AgentOS release check keeps recommended and supported OpenClaw versions di
     const filePath = path.join(tempRoot, relativePath);
     const contents = await readFile(filePath, "utf8");
     await writeFile(filePath, contents
-      .replaceAll("Recommended OpenClaw: `2026.9.3`", "OpenClaw 2026.9.3 or newer")
-      .replaceAll("Recommended OpenClaw: 2026.9.3", "OpenClaw 2026.9.3 or newer")
-      .replaceAll("recommended OpenClaw 2026.9.3", "OpenClaw 2026.9.3 or newer"), "utf8");
+      .replaceAll("Recommended OpenClaw: `2026.9.4`", "OpenClaw 2026.9.4 or newer")
+      .replaceAll("Recommended OpenClaw: 2026.9.4", "OpenClaw 2026.9.4 or newer")
+      .replaceAll("recommended OpenClaw 2026.9.4", "OpenClaw 2026.9.4 or newer"), "utf8");
   }
 
   const result = runReleaseCheck(tempRoot);

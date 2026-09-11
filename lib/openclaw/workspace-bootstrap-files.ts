@@ -72,12 +72,12 @@ export const OPENCLAW_LEGACY_WORKSPACE_FILES = [
   {
     path: "TOOLS.md",
     replacement: "AGENTS.md#tools",
-    runtime: "OpenClaw 2026.9.3 does not include TOOLS.md in the canonical workspace bootstrap."
+    runtime: "OpenClaw 2026.9.4 does not include TOOLS.md in the canonical workspace bootstrap."
   },
   {
     path: "HEARTBEAT.md",
     replacement: "agents.entries.<agentId>.heartbeat",
-    runtime: "OpenClaw 2026.9.3 stores heartbeat cadence in native config and scratch state, not HEARTBEAT.md."
+    runtime: "OpenClaw 2026.9.4 stores heartbeat cadence in native config and scratch state, not HEARTBEAT.md."
   }
 ] as const;
 

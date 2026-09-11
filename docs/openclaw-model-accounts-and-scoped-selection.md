@@ -6,10 +6,10 @@ authentication, availability, selection, fallback execution, and runtime
 resolution. AgentOS does not create a model registry, provider registry,
 credential store, fallback engine, or session-model lifecycle.
 
-## Exact 2026.9.3 contract
+## Exact 2026.9.4 contract
 
-The Phase 4 integration is based on OpenClaw `2026.9.3`, source
-`1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7`, Gateway protocol `v4`, and the
+The Phase 4 integration is based on OpenClaw `2026.9.4`, source
+`3a9d69db306cd7f081e06254cb89c4bcc14a7107`, Gateway protocol `v4`, and the
 matching `@openclaw/gateway-client` and `@openclaw/gateway-protocol` packages.
 
 The native model contract used by AgentOS is:
@@ -25,10 +25,11 @@ The native model contract used by AgentOS is:
 | `sessions.patch` | Session model override or clear | dynamic; model-only uses `operator.write` | OpenClaw |
 | `config.patch` | Existing default/fallback configuration service | native config scope | OpenClaw |
 
-`models.list` accepts the exact 9.1 catalog controls `view`, `preparedOnly`,
-`refresh`, `agentId`, and `includeProviderCapabilities`. Normal reads do not
-force refresh. AgentOS uses `agentId` only to ask OpenClaw for the selected
-worker's native runtime context; it does not rebuild model inheritance.
+`models.list` accepts the exact 9.4 catalog controls, including `view`,
+`preparedOnly`, `refresh`, `agentId`, `provider`, `authProfileId`,
+`includeDetails`, and `sessionKey` where advertised. Normal reads do not force
+refresh. AgentOS uses these fields only to ask OpenClaw for native runtime
+context; it does not rebuild model inheritance.
 
 OpenClaw 9.1 does not expose a dedicated native `models.setDefault` or
 account-selection method in the contract used here. Defaults and fallback

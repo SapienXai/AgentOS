@@ -153,7 +153,7 @@ function resolveFixtureResponse(prompt: string, messages: unknown): FixtureRespo
         name: "write",
         arguments: {
           path: "deliverables/acceptance-result.txt",
-          content: "AgentOS Workforce 2026.9.3 artifact acceptance.\n"
+          content: "AgentOS Workforce 2026.9.4 artifact acceptance.\n"
         }
       }
     };

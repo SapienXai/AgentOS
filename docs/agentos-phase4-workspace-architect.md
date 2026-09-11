@@ -58,7 +58,7 @@ Generic inferred purpose is not written to durable memory. Durable facts require
 
 ## Channel authentication metadata
 
-Blueprint channel metadata is setup intent only; it never authenticates an account. It follows the OpenClaw 2026.9.3 channel contract: Telegram, Slack, and Discord use token credentials; Google Chat uses service-account setup; WhatsApp uses Gateway-owned QR/session authentication and therefore has `requiresCredentials: false`, `requiresAuthentication: true`, and `authenticationKind: "qr-session"`. Live account status and authentication flows remain owned by OpenClaw channel services.
+Blueprint channel metadata is setup intent only; it never authenticates an account. It follows the OpenClaw 2026.9.4 channel contract: Telegram, Slack, and Discord use token credentials; Google Chat uses service-account setup; WhatsApp uses Gateway-owned QR/session authentication and therefore has `requiresCredentials: false`, `requiresAuthentication: true`, and `authenticationKind: "qr-session"`. Live account status and authentication flows remain owned by OpenClaw channel services.
 
 Regex and heuristics are guardrails only: explicit constraint extraction, sanitation, bounded fallback identity, action-intent safety checks, and deterministic validation. They are not the primary semantic architect.
 

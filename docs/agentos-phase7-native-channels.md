@@ -1,6 +1,6 @@
 # AgentOS Phase 7.1 — Native Channel Setup
 
-The readiness projection is aligned with the OpenClaw 2026.9.3 channel
+The readiness projection is aligned with the OpenClaw 2026.9.4 channel
 account-state contract: `running` is the native started state, while a
 configured account with no running transport is stopped. WhatsApp linking is
 an authentication fact; it does not by itself claim a running listener.

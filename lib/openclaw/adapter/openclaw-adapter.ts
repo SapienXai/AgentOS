@@ -241,7 +241,7 @@ export interface OpenClawAdapter {
   searchMemory?(input: OpenClawMemorySearchInput, options?: OpenClawCommandOptions): Promise<OpenClawMemorySearchPayload>;
   getNativeMemoryDoctorStatus?(input?: OpenClawMemoryAgentInput, options?: OpenClawCommandOptions): Promise<OpenClawMemoryStatusPayload>;
   /**
-   * OpenClaw 2026.9.3 exposes memory index inspection and repair only through
+   * OpenClaw 2026.9.4 exposes memory index inspection and repair only through
    * its structured CLI, not through the Gateway. These methods prefer a future
    * native surface and otherwise use the narrow, explicit CLI fallback.
    */

@@ -54,7 +54,7 @@ export function normalizeOpenClawReleaseVersion(value: unknown) {
 export function assertValidOpenClawReleaseVersion(value: unknown, label = "OpenClaw version") {
   const normalized = normalizeOpenClawReleaseVersion(value);
   if (!normalized) {
-    throw new Error(`${label} is invalid. Expected an OpenClaw release version such as 2026.9.3.`);
+    throw new Error(`${label} is invalid. Expected an OpenClaw release version such as 2026.9.4.`);
   }
   return normalized;
 }

@@ -2,7 +2,19 @@ import { createHash } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
+  OPENCLAW_RECOMMENDED_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
+  OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
+  OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+  OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/identity/contract";
 
 const TARGET_VERSION = "2026.9.4";
 const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
@@ -44,6 +56,12 @@ async function main() {
     return null;
   }) : null;
   if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE is not set");
+  if (OPENCLAW_RECOMMENDED_VERSION !== TARGET_VERSION || OPENCLAW_NATIVE_CONTRACT_VERSION !== TARGET_VERSION || OPENCLAW_IDENTITY_CONTRACT_VERSION !== TARGET_VERSION) {
+    failures.push("AgentOS recommended, native, and identity contracts are not promoted to 2026.9.4");
+  }
+  if (OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT !== TARGET_COMMIT || OPENCLAW_IDENTITY_CONTRACT_BUILD !== TARGET_BUILD || OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL !== 4 || OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA !== 17 || OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA !== 19) {
+    failures.push("AgentOS identity contract does not match the verified 2026.9.4 identity");
+  }
   if (!packageIdentity) {
     // Keep the report deterministic; the failure has already been recorded.
   } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.stateSchema !== 17 || packageIdentity.agentSchema !== 19) {
@@ -79,7 +97,17 @@ async function main() {
       node: process.version,
       openClaw: packageIdentity,
       expectedOpenClaw: { version: TARGET_VERSION, tag: "v2026.9.4", signedTagObject: "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e", sourceCommit: TARGET_COMMIT, buildId: TARGET_BUILD, gatewayProtocol: 4, stateSchema: 17, agentSchema: 19, gatewayClient: TARGET_VERSION, gatewayProtocolPackage: TARGET_VERSION },
-      supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION
+      supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+      agentosContract: {
+        recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
+        nativeContractVersion: OPENCLAW_NATIVE_CONTRACT_VERSION,
+        identityContractVersion: OPENCLAW_IDENTITY_CONTRACT_VERSION,
+        sourceCommit: OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+        buildId: OPENCLAW_IDENTITY_CONTRACT_BUILD,
+        gatewayProtocol: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
+        stateSchema: OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+        agentSchema: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA
+      }
     },
     matrix,
     classification: {
@@ -119,6 +147,14 @@ function assessArtifact(name: string, artifact: JsonRecord) {
     const summary = asRecord(runtime?.summary);
     if (runtime?.targetVersion !== TARGET_VERSION || runtime?.installedVersion !== TARGET_VERSION || runtime?.protocolVersion !== 4) failures.push("runtime target identity or protocol mismatch");
     if (summary?.failed !== 0 || summary?.requiredFailures !== 0 || summary?.unknown !== 0) failures.push("runtime contains failures, required failures, or unknown outcomes");
+  } else if (name === "workforce") {
+    if (asRecord(artifact.summary).failed !== 0) failures.push("workforce summary contains failures");
+  } else if (name === "official-transport") {
+    const requests = asRecord(artifact.requests);
+    const denial = asRecord(artifact.authorizationDenial);
+    if (Object.values(requests).some((entry) => asRecord(entry).status !== "passed") || denial.status !== "denied" || asRecord(artifact.target).protocol !== 4) {
+      failures.push("official transport probes or expected authorization denial failed");
+    }
   } else if (artifact.success !== true && !(typeof artifact.gate === "string" && artifact.gate.endsWith("PASS")) && artifact.result !== "PASS") {
     failures.push("artifact success/gate/result is not PASS");
   }

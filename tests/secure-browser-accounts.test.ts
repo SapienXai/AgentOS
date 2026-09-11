@@ -792,8 +792,8 @@ test("OpenClaw policy plugin binds by trusted session key and fails managed prof
   const metadata = JSON.parse(packageJson) as {
     openclaw?: { build?: { openclawVersion?: string; pluginSdkVersion?: string }; compat?: { pluginApi?: string; minGatewayVersion?: string } }
   };
-  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.9.3");
-  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.9.3");
+  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.9.4");
+  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.9.4");
   assert.equal(metadata.openclaw?.compat?.pluginApi, ">=2026.9.1");
   assert.equal(metadata.openclaw?.compat?.minGatewayVersion, "2026.9.1");
   assert.equal((source.match(/definePluginEntry\(/g) ?? []).length, 1);
