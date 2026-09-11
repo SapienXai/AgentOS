@@ -743,11 +743,13 @@ test("command bar collapses when empty on mobile and desktop", () => {
 test("settings control center exposes hash navigation for subpages", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
 
-  assert.match(source, /type SettingsSectionId =[\s\S]*?\| "diagnostics"[\s\S]*?\| "advanced"/);
+  assert.match(source, /type SettingsSectionId =[\s\S]*?\| "diagnostics"/);
+  assert.match(source, /type SettingsSectionId =[\s\S]*?\| "advanced"/);
   assert.match(source, /const settingsSections: SettingsSection\[] = \[/);
-  assert.match(source, /\{ id: "gateway", label: "Gateway", icon: ShieldCheck, group: "OpenClaw" \}/);
-  assert.match(source, /\{ id: "capabilities", label: "Capabilities", icon: ListChecks, group: "OpenClaw" \}/);
-  assert.match(source, /\{ id: "diagnostics", label: "Diagnostics", icon: TerminalSquare, group: "System" \}/);
+  assert.match(source, /const legacySettingsSections: SettingsSection\[] = \[/);
+  assert.match(source, /\{ id: "gateway", label: "Gateway & auth", icon: ShieldCheck, group: "OpenClaw" \}/);
+  assert.match(source, /\{ id: "capabilities", label: "Capabilities & contracts", icon: ListChecks, group: "OpenClaw" \}/);
+  assert.match(source, /\{ id: "diagnostics", label: "Diagnostics & recovery", icon: TerminalSquare, group: "System" \}/);
   assert.match(source, /const settingsSectionGroups = \["Core", "OpenClaw", "Workspace", "System"\] as const;/);
   assert.match(source, /function SettingsSectionNavigation\(/);
   assert.match(source, /"border-t px-2\.5 pb-3 pt-2"/);
@@ -807,7 +809,8 @@ test("settings control center renders a single hash-selected section", () => {
   assert.match(source, /const \[activeSection, setActiveSection\] = useState<SettingsSectionId>\(\(\) => resolveInitialSettingsSection\(\)\)/);
   assert.match(source, /window\.addEventListener\("hashchange", syncActiveSectionFromHash\)/);
   assert.match(source, /\{ id: "general", label: "General", icon: Wrench, group: "Core" \}/);
-  assert.match(source, /case "general":\s*case "tools":\s*return "general"/);
+  assert.match(source, /case "general":\s*return "general"/);
+  assert.match(source, /case "tools":\s*case "ai-tools":\s*return "ai-tools"/);
 });
 
 test("update check treats loading registry status as loading instead of up to date", () => {

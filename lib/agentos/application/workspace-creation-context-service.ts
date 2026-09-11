@@ -20,7 +20,9 @@ import {
   workspaceKnowledgeSourceIdentity,
   type WorkspaceKnowledgeSource
 } from "@/lib/agentos/domains/workspace-knowledge";
-import { writeAtomicJson } from "@/lib/agentos/application/workspace-provisioning-store";
+import { readStoredRunFile, resolveProvisioningRoot, writeAtomicJson, WORKSPACE_PROVISIONING_ROOT } from "@/lib/agentos/application/workspace-provisioning-store";
+import { readWorkspaceCreationRunFile, resolveWorkspaceCreationRunRoot, WORKSPACE_CREATION_RUN_ROOT } from "@/lib/agentos/application/workspace-creation-run-store";
+import { validateWorkspaceIntelligenceBinding, WORKSPACE_INTELLIGENCE_BINDING_ROOT } from "@/lib/agentos/application/workspace-intelligence-binding-store";
 import {
   createProjectIntelligenceExtractionInputFingerprint,
   extractProjectIntelligence,
@@ -1242,6 +1244,7 @@ async function hashFileWithinLimits(filePath: string, limit: number) {
 }
 
 async function cleanupExpiredWorkspaceCreationContexts() {
+  const retained = await readRetainedContextKeys();
   const actorRoots = await readdir(WORKSPACE_CREATION_CONTEXT_ROOT, { withFileTypes: true }).catch(() => []);
   for (const actorRoot of actorRoots) {
     if (!actorRoot.isDirectory() || !/^[a-f0-9]{32}$/i.test(actorRoot.name)) continue;
@@ -1249,6 +1252,7 @@ async function cleanupExpiredWorkspaceCreationContexts() {
     const drafts = await readdir(actorPath, { withFileTypes: true }).catch(() => []);
     for (const draft of drafts) {
       if (!draft.isDirectory() || !DRAFT_ID_PATTERN.test(draft.name)) continue;
+      if (retained.has(`${actorRoot.name}/${draft.name}`)) continue;
       const draftPath = path.join(actorPath, draft.name);
       const stored = await readStoredContext(draftPath);
       if (stored && Date.parse(stored.expiresAt) > Date.now()) continue;
@@ -1258,6 +1262,51 @@ async function cleanupExpiredWorkspaceCreationContexts() {
       await rm(draftPath, { recursive: true, force: true });
     }
   }
+}
+
+async function readRetainedContextKeys() {
+  const retained = new Set<string>();
+  const now = Date.now();
+  const recentReviewCutoff = now - WORKSPACE_CREATION_CONTEXT_TTL_MS;
+  const creationRoot = resolveWorkspaceCreationRunRoot(WORKSPACE_CREATION_RUN_ROOT);
+  const creationFiles = await readdir(creationRoot).catch(() => []);
+  for (const fileName of creationFiles) {
+    if (!fileName.endsWith(".json")) continue;
+    const run = await readWorkspaceCreationRunFile(path.join(creationRoot, fileName));
+    if (!run?.draftContextId) continue;
+    const isActive = run.snapshot.state === "pending" || run.snapshot.state === "running";
+    const isRecentReview = run.snapshot.state === "review-ready" && Date.parse(run.updatedAt) > recentReviewCutoff;
+    if (isActive || isRecentReview) retained.add(`${run.actorHash}/${run.draftContextId}`);
+  }
+
+  const acceptedProvisioningRunIds = await readAcceptedProvisioningRunIds();
+  const provisioningRoot = resolveProvisioningRoot(WORKSPACE_PROVISIONING_ROOT);
+  const provisioningFiles = await readdir(provisioningRoot).catch(() => []);
+  for (const fileName of provisioningFiles) {
+    if (!fileName.endsWith(".json")) continue;
+    const run = await readStoredRunFile(path.join(provisioningRoot, fileName));
+    if (!run?.draftContextId) continue;
+    const isActive = !["ready", "partial", "failed", "cancelled"].includes(run.state);
+    if (isActive || acceptedProvisioningRunIds.has(run.runId)) retained.add(`${run.actorHash}/${run.draftContextId}`);
+  }
+  return retained;
+}
+
+async function readAcceptedProvisioningRunIds() {
+  const accepted = new Set<string>();
+  const bindingFiles = await readdir(path.resolve(WORKSPACE_INTELLIGENCE_BINDING_ROOT)).catch(() => []);
+  for (const fileName of bindingFiles) {
+    if (!fileName.endsWith(".json")) continue;
+    const raw = await readFile(path.join(WORKSPACE_INTELLIGENCE_BINDING_ROOT, fileName), "utf8").catch(() => null);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (validateWorkspaceIntelligenceBinding(parsed)) accepted.add(parsed.provisioningRunId);
+    } catch {
+      // Malformed bindings are not authoritative and do not retain context.
+    }
+  }
+  return accepted;
 }
 
 async function assertNoSymlinkAlongPath(root: string, target: string) {
