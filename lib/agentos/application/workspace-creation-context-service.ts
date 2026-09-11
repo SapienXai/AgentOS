@@ -30,6 +30,10 @@ import {
   type ProjectIntelligenceExtractionSummary
 } from "@/lib/agentos/application/project-intelligence-extraction-service";
 import type { ProjectDiscoveryManifest } from "@/lib/agentos/domains/project-discovery";
+import {
+  validateProjectIntelligencePack,
+  type ProjectIntelligencePack
+} from "@/lib/agentos/domains/project-intelligence";
 import type {
   WorkspaceArchitectCorpusDocument,
   WorkspaceArchitectKnowledgeInput
@@ -168,10 +172,12 @@ export type WorkspaceCreationContextStageResult = {
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
   extractionSummary?: ProjectIntelligenceExtractionSummary;
+  intelligenceSummary?: WorkspaceCreationIntelligenceSummary;
 };
 
 export type WorkspaceCreationContextResult = WorkspaceCreationContextStageResult & {
   knowledge: WorkspaceArchitectKnowledgeInput;
+  extraction?: ProjectIntelligenceExtraction;
   discoveryManifests?: ProjectDiscoveryManifest[];
 };
 
@@ -180,6 +186,18 @@ export type WorkspaceCreationContextOptions = {
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
   networkResolver?: KnowledgeHostResolver;
+};
+
+export type WorkspaceCreationIntelligenceSummary = {
+  packId: string;
+  inputFingerprint: string;
+  synthesisStatus: "model" | "fallback";
+  state: ProjectIntelligencePack["state"];
+  factCount: number;
+  evidenceCount: number;
+  resourceCount: number;
+  conflictCount: number;
+  unknownCount: number;
 };
 
 type StoredUpload = {
@@ -204,6 +222,7 @@ type StoredContext = {
   warnings: string[];
   intakeStatus?: "staged" | "analyzed";
   extraction?: ProjectIntelligenceExtractionSummary;
+  intelligenceSummary?: WorkspaceCreationIntelligenceSummary;
 };
 
 const contextLocks = new Map<string, Promise<void>>();
@@ -232,7 +251,10 @@ export async function persistWorkspaceCreationIntake(input: {
     await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
     const fingerprint = createContextFingerprint(sources, storedUploads);
     const sameIntake = previous?.fingerprint === fingerprint;
-    if (!sameIntake) await removeStoredExtraction(draftRoot);
+    if (!sameIntake) {
+      await removeStoredExtraction(draftRoot);
+      await removeStoredIntelligence(draftRoot);
+    }
     await writeStoredContext(draftRoot, createStoredContext({
       actorId,
       draftContextId,
@@ -254,6 +276,7 @@ export async function persistWorkspaceCreationIntake(input: {
       })),
       warnings: sameIntake ? previous?.warnings ?? [] : [],
       extraction: sameIntake ? previous?.extraction : undefined,
+      intelligenceSummary: sameIntake ? previous?.intelligenceSummary : undefined,
       intakeStatus: "staged"
     }));
     return { draftContextId, sources: sources.map(publicSource), fingerprint };
@@ -297,6 +320,10 @@ async function stageWorkspaceCreationKnowledgeLocked(
   const storedUploads = await prepareUploads(draftRoot, sourceById, uploadGroups, previous?.uploads ?? {});
   await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
   const fingerprint = createContextFingerprint(sources, storedUploads);
+  if (previous?.fingerprint !== fingerprint) {
+    await removeStoredExtraction(draftRoot);
+    await removeStoredIntelligence(draftRoot);
+  }
   const publicSources = sources.map(publicSource);
 
   if (previous?.fingerprint === fingerprint && previous.generationId && previous.sourceReports.every((report) => report.status === "ready")) {
@@ -328,7 +355,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
         sources: publicSources,
         sourceReports: previous.sourceReports,
         warnings: previous.warnings,
-        extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
+        extractionSummary: summarizeProjectIntelligenceExtraction(extraction),
+        intelligenceSummary: previous.intelligenceSummary
       };
     }
   }
@@ -364,7 +392,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
       sources: publicSources,
       sourceReports: [],
       warnings: [],
-      extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
+      extractionSummary: summarizeProjectIntelligenceExtraction(extraction),
+      intelligenceSummary: emptyContext.intelligenceSummary
     };
   }
 
@@ -390,6 +419,7 @@ async function stageWorkspaceCreationKnowledgeLocked(
       uploads: storedUploads,
       sourceReports,
       warnings,
+      intelligenceSummary: sameIntake ? previous?.intelligenceSummary : undefined,
       intakeStatus: "analyzed"
     }));
     return {
@@ -411,6 +441,7 @@ async function stageWorkspaceCreationKnowledgeLocked(
     uploads: storedUploads,
     sourceReports,
     warnings,
+    intelligenceSummary: previous?.fingerprint === fingerprint ? previous.intelligenceSummary : undefined,
     intakeStatus: "analyzed"
   });
   const snapshot = ingestion.state.generationId
@@ -434,7 +465,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
     sources: publicSources,
     sourceReports,
     warnings,
-    extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
+    extractionSummary: summarizeProjectIntelligenceExtraction(extraction),
+    intelligenceSummary: finalizedContext.intelligenceSummary
   };
 }
 
@@ -473,8 +505,75 @@ export async function readWorkspaceCreationContext(input: {
       warnings: stored.warnings
     },
     extractionSummary: stored.extraction,
+    intelligenceSummary: stored.intelligenceSummary,
+    extraction: (await readStoredExtraction(draftRoot)) ?? undefined,
     discoveryManifests: snapshot?.state.discoveryManifests
   };
+}
+
+export async function readWorkspaceCreationIntelligencePack(input: { actorId: string; draftContextId: string }) {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) return null;
+  const raw = await readFile(path.join(draftRoot, "project-intelligence.json"), "utf8").catch(() => null);
+  if (!raw) return null;
+  try {
+    const pack = JSON.parse(raw) as unknown;
+    return validateProjectIntelligencePack(pack).valid ? pack as ProjectIntelligencePack : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readWorkspaceCreationIntelligenceSummary(input: { actorId: string; draftContextId: string }) {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) return null;
+  return stored.intelligenceSummary ?? null;
+}
+
+export async function persistWorkspaceCreationIntelligencePack(input: {
+  actorId: string;
+  draftContextId: string;
+  inputFingerprint: string;
+  pack: ProjectIntelligencePack;
+  synthesisStatus?: "model" | "fallback";
+}) {
+  const actorId = input.actorId.trim();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const validation = validateProjectIntelligencePack(input.pack);
+  if (!validation.valid) throw new Error("Project Intelligence pack failed normalized validation.");
+  if (!/^[a-f0-9]{64}$/i.test(input.inputFingerprint) || input.pack.provenance.generationId !== input.inputFingerprint) {
+    throw new Error("Project Intelligence pack provenance does not match its synthesis input.");
+  }
+  const lockKey = `${actorHash(actorId)}:${draftContextId}`;
+  return withContextLock(lockKey, async () => {
+    const draftRoot = resolveDraftRoot(actorId, draftContextId);
+    const stored = await readStoredContext(draftRoot);
+    if (!stored || stored.actorHash !== actorHash(actorId)) throw new Error("Workspace context is unavailable.");
+    await assertNoSymlinkAlongPath(WORKSPACE_CREATION_CONTEXT_ROOT, draftRoot);
+    await mkdir(draftRoot, { recursive: true, mode: 0o700 });
+    const target = path.join(draftRoot, "project-intelligence.json");
+    await assertNoSymlinkAlongPath(draftRoot, target);
+    await writeAtomicJson(target, input.pack);
+    const summary: WorkspaceCreationIntelligenceSummary = {
+      packId: input.pack.id,
+      inputFingerprint: input.inputFingerprint,
+      synthesisStatus: input.synthesisStatus ?? "model",
+      state: input.pack.state,
+      factCount: input.pack.facts.length,
+      evidenceCount: input.pack.evidence.length,
+      resourceCount: input.pack.officialResources.length,
+      conflictCount: input.pack.conflicts.length,
+      unknownCount: input.pack.unknowns.length
+    };
+    await writeStoredContext(draftRoot, { ...stored, updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString(), intelligenceSummary: summary });
+    return summary;
+  });
 }
 
 /**
@@ -641,6 +740,13 @@ async function removeStoredExtraction(draftRoot: string) {
   await rm(target, { force: true });
 }
 
+async function removeStoredIntelligence(draftRoot: string) {
+  await assertNoSymlinkAlongPath(WORKSPACE_CREATION_CONTEXT_ROOT, draftRoot);
+  const target = path.join(draftRoot, "project-intelligence.json");
+  await assertNoSymlinkAlongPath(draftRoot, target);
+  await rm(target, { force: true });
+}
+
 function toIngestionSource(source: WorkspaceKnowledgeSource, draftRoot: string, uploads: StoredUpload[]): WorkspaceKnowledgeSource {
   if (source.kind === "repository" && source.locator.kind === "repository" && source.locator.localPath) {
     throw new Error("Repository sources must use a remote URL in Create Workspace.");
@@ -736,6 +842,7 @@ function createStoredContext(input: {
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
   extraction?: ProjectIntelligenceExtractionSummary;
+  intelligenceSummary?: WorkspaceCreationIntelligenceSummary;
   intakeStatus?: "staged" | "analyzed";
 }): StoredContext {
   const now = new Date().toISOString();
@@ -753,6 +860,7 @@ function createStoredContext(input: {
     sourceReports: input.sourceReports,
     warnings: input.warnings.slice(0, 24),
     ...(input.extraction ? { extraction: input.extraction } : {}),
+    ...(input.intelligenceSummary ? { intelligenceSummary: input.intelligenceSummary } : {}),
     intakeStatus: input.intakeStatus ?? "analyzed"
   };
 }

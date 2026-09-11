@@ -148,7 +148,8 @@ export function CreateWorkspaceExperience({
       elapsedMs: creationRun?.snapshot.architect.elapsedMs,
       retryAvailable: creationRun?.snapshot.architect.retryAvailable,
       failureCategory: creationRun?.snapshot.architect.failure?.code ?? null,
-      extraction: creationRun?.snapshot.extraction ?? null
+      extraction: creationRun?.snapshot.extraction ?? null,
+      intelligence: creationRun?.snapshot.intelligence ?? null
     }) : null),
     [creationRun, result]
   );
@@ -1065,6 +1066,13 @@ function ReviewView({
         <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <p className="text-sm font-semibold">Architecture generated from partial project context</p>
           <p className="mt-1 text-xs opacity-80">Some available project evidence could not be fully staged within the analysis budget.</p>
+        </div>
+      ) : null}
+
+      {model.intelligence?.status === "fallback" ? (
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
+          <p className="text-sm font-semibold">AI project intelligence unavailable</p>
+          <p className="mt-1 text-xs opacity-80">Canonical extracted evidence was preserved and a partial intelligence pack was created.</p>
         </div>
       ) : null}
 

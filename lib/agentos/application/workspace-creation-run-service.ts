@@ -4,6 +4,9 @@ import { createHash } from "node:crypto";
 
 import {
   persistWorkspaceCreationIntake,
+  persistWorkspaceCreationIntelligencePack,
+  readWorkspaceCreationIntelligencePack,
+  readWorkspaceCreationIntelligenceSummary,
   readWorkspaceCreationContext,
   stageWorkspaceCreationKnowledge,
   type WorkspaceCreationContextStageResult,
@@ -40,12 +43,21 @@ import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } f
 import { normalizeWorkspaceKnowledgeSources, workspaceKnowledgeSourceIdentity, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 import type { ProjectIntelligenceExtractionSummary } from "@/lib/agentos/application/project-intelligence-extraction-service";
+import {
+  createFallbackProjectIntelligenceSynthesisProposal,
+  createProjectIntelligenceSynthesisInputFingerprint,
+  synthesizeProjectIntelligence,
+  type ProjectIntelligenceSynthesisResult
+} from "@/lib/agentos/application/project-intelligence-synthesis-service";
 
 export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
   overallAnalysisBudgetMs: 180_000,
   architectReserveMs: 90_000,
+  intelligenceReserveMs: 30_000,
   maxArchitectAttempts: 3,
-  maxArchitectAttemptMs: 90_000
+  maxArchitectAttemptMs: 90_000,
+  maxIntelligenceAttempts: 1,
+  maxIntelligenceAttemptMs: 30_000
 } as const;
 
 export type WorkspaceCreationBudget = Partial<typeof DEFAULT_WORKSPACE_CREATION_BUDGET>;
@@ -57,10 +69,14 @@ export type WorkspaceCreationRunDependencies = {
   persistIntake?: typeof persistWorkspaceCreationIntake;
   stageContext?: typeof stageWorkspaceCreationKnowledge;
   readContext?: typeof readWorkspaceCreationContext;
+  synthesizeIntelligence?: typeof synthesizeProjectIntelligence;
+  readIntelligencePack?: typeof readWorkspaceCreationIntelligencePack;
+  readIntelligenceSummary?: typeof readWorkspaceCreationIntelligenceSummary;
+  persistIntelligencePack?: typeof persistWorkspaceCreationIntelligencePack;
   generateArchitect?: typeof generateWorkspaceBlueprint;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "generateArchitect">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
 };
 
@@ -236,6 +252,9 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     if (run.remoteExecution.outcome === "in-flight" || run.remoteExecution.outcome === "ambiguous") {
       return await failRun(filePath, run, dependencies, failure("unknown", "remote-execution-ambiguous", "terminal", "Architect execution could not be safely recovered."));
     }
+    if (run.intelligenceExecution.outcome === "in-flight" || run.intelligenceExecution.outcome === "ambiguous") {
+      return await failRun(filePath, run, dependencies, failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered."));
+    }
     if (run.snapshot.cancelRequested) {
       return await failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
     }
@@ -252,7 +271,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     }
     const contextBudget = Math.max(1, Math.min(
       DEFAULT_KNOWLEDGE_INGESTION_LIMITS.totalRunTimeoutMs,
-      dependencies.budget.overallAnalysisBudgetMs - dependencies.budget.architectReserveMs
+      dependencies.budget.overallAnalysisBudgetMs - dependencies.budget.architectReserveMs - dependencies.budget.intelligenceReserveMs
     ));
     const contextController = linkAbortSignals(controller.signal, contextBudget);
     let context: WorkspaceCreationContextStageResult;
@@ -293,6 +312,9 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     );
     if (context.extractionSummary) run = await updateExtractionSnapshot(filePath, run, dependencies, context.extractionSummary);
     const staged = await dependencies.readContext({ actorId, draftContextId: run.draftContextId! }).catch(() => null);
+    if (staged?.extraction) {
+      run = await synthesizeCreationIntelligence(filePath, actorId, run, dependencies, staged.extraction, contextPartial && usableContext, deadline, controller.signal);
+    }
     const remaining = Math.max(1, deadline - Date.now());
     const attempts = Math.max(1, Math.min(dependencies.budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
     const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxArchitectAttemptMs, Math.floor(remaining / attempts)));
@@ -362,6 +384,142 @@ async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun
     }
   };
   return appendAndPersist(filePath, run, dependencies, snapshot, "context-updated", partial ? "partial-context" : null, null, now);
+}
+
+async function synthesizeCreationIntelligence(
+  filePath: string,
+  actorId: string,
+  run: WorkspaceCreationRun,
+  dependencies: ResolvedDependencies,
+  extraction: import("@/lib/agentos/application/project-intelligence-extraction-service").ProjectIntelligenceExtraction,
+  partialContext: boolean,
+  deadline: number,
+  signal: AbortSignal
+) {
+  const input = { brief: run.input.brief, extraction };
+  const inputFingerprint = createProjectIntelligenceSynthesisInputFingerprint(input);
+  const existing = run.draftContextId
+    ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+    : null;
+  if (existing?.provenance.generationId === inputFingerprint) {
+    const summary = run.draftContextId
+      ? await dependencies.readIntelligenceSummary({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+      : null;
+    const executionStatus = summary?.synthesisStatus ?? (existing.unknowns.includes("intelligence-synthesis") ? "fallback" : "model");
+    const reusedResult: ProjectIntelligenceSynthesisResult = {
+      proposal: createFallbackProjectIntelligenceSynthesisProposal(inputFingerprint),
+      pack: existing,
+      execution: { status: executionStatus, modelExecutionOccurred: executionStatus === "model", remoteRunId: null, remoteSessionKey: null, failureCode: null }
+    };
+    const completed = await completeIntelligenceExecution(filePath, reusedResult);
+    return updateIntelligenceSnapshot(filePath, completed, dependencies, reusedResult, partialContext, true);
+  }
+  const remaining = Math.max(1_000, deadline - Date.now() - dependencies.budget.architectReserveMs);
+  const attemptTimeout = Math.min(dependencies.budget.maxIntelligenceAttemptMs, remaining);
+  let current = await appendAndPersist(
+    filePath,
+    run,
+    dependencies,
+    { ...run.snapshot, stage: "intelligence-synthesis", intelligence: { ...run.snapshot.intelligence, status: "pending", attempts: 1, partialContext } },
+    "intelligence-updated",
+    null,
+    null,
+    dependencies.now().toISOString(),
+    "intelligence-synthesis-started",
+    { intelligenceStatus: "pending", packState: null, packId: null }
+  );
+  current = await mutateWorkspaceCreationRun(filePath, (latest) => ({
+    ...latest,
+    intelligenceExecution: {
+      ...latest.intelligenceExecution,
+      idempotencyKey: `project-intelligence:${latest.runId}:${latest.attempt}`,
+      outcome: "in-flight"
+    }
+  }));
+  const result = await dependencies.synthesizeIntelligence({
+    brief: run.input.brief,
+    extraction,
+    packId: `project-intelligence-${inputFingerprint.slice(0, 32)}`
+  }, {
+    runId: run.runId,
+    attempt: 1,
+    signal,
+    timeoutMs: attemptTimeout
+  }).catch(async (error) => {
+    await markIntelligenceExecutionAmbiguous(filePath, dependencies);
+    throw error;
+  });
+  try {
+    await dependencies.persistIntelligencePack({
+      actorId,
+      draftContextId: run.draftContextId!,
+      inputFingerprint,
+      pack: result.pack,
+      synthesisStatus: result.execution.status
+    });
+  } catch (error) {
+    // The remote outcome is known, but the normalized result was not durable;
+    // record completion before the outer run is failed so recovery cannot
+    // replay a completed model turn.
+    await completeIntelligenceExecution(filePath, result);
+    throw error;
+  }
+  current = await completeIntelligenceExecution(filePath, result);
+  return updateIntelligenceSnapshot(filePath, current, dependencies, result, partialContext, false);
+}
+
+async function completeIntelligenceExecution(filePath: string, result: ProjectIntelligenceSynthesisResult) {
+  return mutateWorkspaceCreationRun(filePath, (latest) => ({
+    ...latest,
+    intelligenceExecution: {
+      ...latest.intelligenceExecution,
+      runId: result.execution.remoteRunId,
+      sessionKey: result.execution.remoteSessionKey,
+      outcome: "completed"
+    }
+  }));
+}
+
+async function updateIntelligenceSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, result: ProjectIntelligenceSynthesisResult, partialContext: boolean, reused: boolean) {
+  const fallback = result.execution.status === "fallback";
+  const intelligenceFailure = fallback && result.execution.failureCode
+    ? failure("model", result.execution.failureCode, "transient", "AI project intelligence was unavailable; canonical extracted evidence was preserved.")
+    : null;
+  const snapshot: WorkspaceCreationSnapshot = {
+    ...run.snapshot,
+    intelligence: {
+      status: fallback ? "fallback" : "model",
+      attempts: reused ? run.snapshot.intelligence.attempts : Math.max(1, run.snapshot.intelligence.attempts),
+      elapsedMs: Math.max(run.snapshot.intelligence.elapsedMs, elapsedMs(run.createdAt, dependencies.now().toISOString())),
+      failure: intelligenceFailure,
+      modelExecutionOccurred: result.execution.modelExecutionOccurred,
+      retryAvailable: Boolean(intelligenceFailure),
+      packId: result.pack.id,
+      packState: result.pack.state,
+      partialContext
+    }
+  };
+  return appendAndPersist(filePath, run, dependencies, snapshot, "intelligence-updated", fallback ? result.execution.failureCode : null, intelligenceFailure ? { kind: intelligenceFailure.kind, code: intelligenceFailure.code, retryability: intelligenceFailure.retryability } : null, dependencies.now().toISOString(), fallback ? "intelligence-fallback" : "intelligence-completed", { intelligenceStatus: fallback ? "fallback" : "model", packState: result.pack.state, packId: result.pack.id });
+}
+
+async function markIntelligenceExecutionAmbiguous(filePath: string, dependencies: ResolvedDependencies) {
+  const current = await readWorkspaceCreationRunFile(filePath);
+  if (!current || isWorkspaceCreationTerminal(current.snapshot.state)) return;
+  const problem = failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered.");
+  const snapshot: WorkspaceCreationSnapshot = {
+    ...current.snapshot,
+    intelligence: {
+      ...current.snapshot.intelligence,
+      status: "blocked",
+      failure: problem,
+      retryAvailable: false
+    }
+  };
+  await appendAndPersist(filePath, current, dependencies, snapshot, "intelligence-updated", problem.code, { kind: problem.kind, code: problem.code, retryability: problem.retryability }, dependencies.now().toISOString(), "intelligence-failed", { intelligenceStatus: "blocked" });
+  await mutateWorkspaceCreationRun(filePath, (latest) => ({
+    ...latest,
+    intelligenceExecution: { ...latest.intelligenceExecution, outcome: "ambiguous" }
+  }));
 }
 
 async function updateExtractionSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, summary: ProjectIntelligenceExtractionSummary) {
@@ -495,10 +653,17 @@ async function failRun(filePath: string, run: WorkspaceCreationRun, dependencies
   return mutateWorkspaceCreationRun(filePath, (current) => {
     if (isWorkspaceCreationTerminal(current.snapshot.state)) return current;
     const now = dependencies.now().toISOString();
+    const intelligenceBlocked = current.intelligenceExecution.outcome === "in-flight" || current.intelligenceExecution.outcome === "ambiguous";
+    const intelligenceFailure = intelligenceBlocked
+      ? failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered.")
+      : current.snapshot.intelligence.failure;
     const snapshot: WorkspaceCreationSnapshot = {
       ...current.snapshot,
       state,
       stage: null,
+      intelligence: intelligenceBlocked
+        ? { ...current.snapshot.intelligence, status: "blocked", failure: intelligenceFailure, retryAvailable: false }
+        : current.snapshot.intelligence,
       architect: { ...current.snapshot.architect, status: "blocked", failure: problem, retryAvailable: problem.retryability === "transient" || problem.retryability === "repairable" },
       cancelRequested: state === "cancelled" || current.snapshot.cancelRequested,
       elapsedMs: elapsedMs(current.createdAt, now)
@@ -526,7 +691,7 @@ async function updateSnapshot(filePath: string, run: WorkspaceCreationRun, depen
   return appendAndPersist(filePath, run, dependencies, snapshot, kind, null, null, dependencies.now().toISOString());
 }
 
-async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, snapshot: WorkspaceCreationSnapshot, kind: "state-changed" | "context-updated" | "architect-updated" | "warning", warningCode: string | null, failureValue: WorkspaceCreationEventFailure | null, now: string, activityCode: WorkspaceCreationActivityCode | null = null, activityData: WorkspaceCreationActivityData | null = null, sourceId: string | null = null) {
+async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, snapshot: WorkspaceCreationSnapshot, kind: "state-changed" | "context-updated" | "intelligence-updated" | "architect-updated" | "warning", warningCode: string | null, failureValue: WorkspaceCreationEventFailure | null, now: string, activityCode: WorkspaceCreationActivityCode | null = null, activityData: WorkspaceCreationActivityData | null = null, sourceId: string | null = null) {
   return mutateWorkspaceCreationRun(filePath, (current) => {
     if (isWorkspaceCreationTerminal(current.snapshot.state) && snapshot.state !== current.snapshot.state) return current;
     const requestedCancel = snapshot.cancelRequested || current.snapshot.cancelRequested;
@@ -541,6 +706,7 @@ async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dep
         sourceProgress
       },
       architect: { ...current.snapshot.architect, ...snapshot.architect },
+      intelligence: { ...current.snapshot.intelligence, ...snapshot.intelligence },
       cancelRequested: requestedCancel,
       state: requestedCancel ? "cancelled" : snapshot.state,
       stage: requestedCancel ? null : snapshot.stage,
@@ -589,6 +755,12 @@ async function recoverUnexpectedCreationFailure(filePath: string, error: unknown
   const run = await readWorkspaceCreationRunFile(filePath);
   if (!run) throw error;
   if (isWorkspaceCreationTerminal(run.snapshot.state)) return run;
+  if (run.intelligenceExecution.outcome === "in-flight" || run.intelligenceExecution.outcome === "ambiguous") {
+    return failRun(filePath, run, dependencies, failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered."));
+  }
+  if (run.remoteExecution.outcome === "in-flight" || run.remoteExecution.outcome === "ambiguous") {
+    return failRun(filePath, run, dependencies, failure("unknown", "remote-execution-ambiguous", "terminal", "Architect execution could not be safely recovered."));
+  }
   return failRun(filePath, run, dependencies, failure("unknown", "creation-run-failed", "terminal", redactErrorMessage(error, "Workspace creation failed.")));
 }
 
@@ -599,6 +771,10 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     persistIntake: input.persistIntake ?? persistWorkspaceCreationIntake,
     stageContext: input.stageContext ?? stageWorkspaceCreationKnowledge,
     readContext: input.readContext ?? readWorkspaceCreationContext,
+    synthesizeIntelligence: input.synthesizeIntelligence ?? synthesizeProjectIntelligence,
+    readIntelligencePack: input.readIntelligencePack ?? readWorkspaceCreationIntelligencePack,
+    readIntelligenceSummary: input.readIntelligenceSummary ?? readWorkspaceCreationIntelligenceSummary,
+    persistIntelligencePack: input.persistIntelligencePack ?? persistWorkspaceCreationIntelligencePack,
     generateArchitect: input.generateArchitect ?? generateWorkspaceBlueprint,
     budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) }
   };

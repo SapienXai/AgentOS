@@ -1,13 +1,15 @@
 # Workspace Intelligence Architecture
 
 This document defines the Phase 1 Project Intelligence foundation, the Phase
-2 creation-runtime boundary, and the Phase 3 deterministic discovery
-boundary. It is a normalized, versioned AgentOS domain contract for evidence
-collection and workspace-architecture work. Phase 2 adds reliable
-observation around the existing context and Architect path; Phase 3 adds
-bounded website discovery; Phase 3.1 hardens its resource, policy, and
-locator boundaries. None of these phases implements verification,
-Workspace Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
+2 creation-runtime boundary, the Phase 3 deterministic discovery boundary,
+and the Phase 5 bounded intelligence-synthesis sidecar. It is a normalized,
+versioned AgentOS domain contract for evidence collection, synthesis, and
+workspace-architecture work. Phase 2 adds reliable observation around the
+existing context and Architect path; Phase 3 adds bounded website discovery;
+Phase 3.1 hardens its resource, policy, and locator boundaries; Phase 5 adds
+evidence-grounded interpretation without changing Workspace Architect input.
+None of these phases implements a future verification engine, Workspace
+Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
 
 ## Ownership and boundaries
 
@@ -26,7 +28,7 @@ normalized Project Intelligence candidate
         ↓
 strict Project Intelligence validation
         ↓
-ProjectIntelligencePack (future approved input)
+ProjectIntelligencePack (Phase 5 sidecar; future approved input)
         ↓
 Workspace Architect
         ↓
@@ -310,6 +312,42 @@ or removed by a live writer as transient state, while malformed durable control
 state still fails closed. Concurrent-reader validation is isolated per test
 workspace so cleanup cannot remove another active test's corpus.
 
+## Phase 5 Project Intelligence synthesis
+
+Phase 5 consumes only the bounded normalized extraction already staged inside
+the protected workspace-creation context. The input bundle contains the
+redacted operator brief as intent context, canonical facts, discovered
+resources, claim-scoped evidence, conflicts, and unknowns. The brief is never
+treated as proof.
+
+The Project Intelligence Agent returns a strict, versioned
+`ProjectIntelligenceSynthesisProposal`. The proposal may add only inferred
+claims that reference existing evidence. It cannot add or rewrite canonical
+facts, official resources, public identifiers, contacts, URLs, or other
+locator-bearing values. Materialization copies canonical facts/resources and
+evidence unchanged, adds only `inferred` claims, rebuilds projections from
+the canonical claim layer, and preserves conflicts and unknowns.
+
+Synthesis is persisted as `project-intelligence.json` beside the existing
+protected extraction artifact. Its input fingerprint is derived from the
+bounded brief and extraction identity, so an unchanged input can reuse the
+pack and an invalidated input removes the old pack before regeneration. A
+model failure produces an honest partial fallback pack containing preserved
+canonical evidence, not invented intelligence.
+
+The synthesis execution record is independent from the Architect execution
+record. AgentOS uses the existing structured OpenClaw adapter path with an
+independent Project Intelligence session namespace and idempotency identity;
+it does not create a worker, provider, model, session, or cancellation
+runtime. If the adapter cannot prove an interrupted turn's outcome, recovery
+fails closed with an ambiguous-execution diagnostic rather than replaying a
+possibly completed turn.
+
+Project Intelligence is an additive review sidecar. The pack is not passed to
+Workspace Architect in Phase 5, `WorkspaceBlueprint` remains unchanged, and
+no retrieval, embeddings, composer, project-aware document generation, or
+Phase 6+ runtime is introduced.
+
 ## Phase 2 creation execution
 
 `WorkspaceCreationRun` is an AgentOS orchestration sidecar for the
@@ -362,16 +400,16 @@ idempotency identity. The OpenClaw adapter contract is the authority for
 whether interrupted remote execution can be replayed safely; ambiguous
 outcomes fail closed rather than creating a duplicate turn.
 
-## Future intelligence roles
+## Intelligence roles and future boundaries
 
 The future system separates responsibilities at explicit boundaries:
 
-- The Project Intelligence Agent will discover and synthesize normalized
-  candidate claims from bounded source material. Its runtime is out of scope
-  for Phase 1.
+- The Project Intelligence Agent now synthesizes evidence-grounded inferred
+  claims from the bounded Phase 4 extraction sidecar. Broader discovery,
+  verification, refresh, and review workflows remain future work.
 - Workspace Architect will consume approved intelligence and produce the
-  existing WorkspaceBlueprint contract. Architect runtime changes are out of
-  scope for Phase 1.
+  existing WorkspaceBlueprint contract. Phase 5 deliberately does not change
+  its input or runtime.
 - AI Workspace Composer is a later composition layer that may use approved
   intelligence and architecture to propose workspace artifacts. Composer,
   retrieval, persistence, and UI runtime are out of scope for Phase 1.
@@ -408,8 +446,8 @@ interpretation. Phase 5 adds the bounded Project Intelligence Agent synthesis
 sidecar without changing Workspace Architect input or `WorkspaceBlueprint`.
 The following remain future work:
 
-- the Project Intelligence Agent runtime, broader synthesis, and future
-  verification/review workflows;
+- broader Project Intelligence discovery, verification, refresh, and review
+  workflows;
 - later phases: verification runtime, retrieval, persistence, refresh,
   transport/event streaming, Workspace Architect evolution, and AI Workspace
   Composer;

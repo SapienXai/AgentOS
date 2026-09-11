@@ -3,7 +3,7 @@ import type {
   WorkspaceBlueprint,
   WorkspaceBlueprintChannel
 } from "@/lib/agentos/domains/workspace-blueprint";
-import type { WorkspaceCreationExtractionSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
+import type { WorkspaceCreationExtractionSnapshot, WorkspaceCreationIntelligenceSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
 
 export type WorkspaceBlueprintReviewModel = {
   identity: WorkspaceBlueprint["identity"];
@@ -26,6 +26,7 @@ export type WorkspaceBlueprintReviewModel = {
   elapsedMs: number;
   retryAvailable: boolean;
   extraction: WorkspaceCreationExtractionSnapshot | null;
+  intelligence: WorkspaceCreationIntelligenceSnapshot | null;
   freshness: WorkspaceArchitectResult["freshness"];
 };
 
@@ -36,6 +37,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
   retryAvailable?: boolean;
   failureCategory?: string | null;
   extraction?: WorkspaceCreationExtractionSnapshot | null;
+  intelligence?: WorkspaceCreationIntelligenceSnapshot | null;
 } = {}): WorkspaceBlueprintReviewModel {
   const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
   const partialContext = options.partialContext === true;
@@ -60,6 +62,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
     elapsedMs: options.elapsedMs ?? 0,
     retryAvailable: options.retryAvailable ?? (result.reasoning.retryability === "transient" || result.reasoning.retryability === "repairable"),
     extraction: options.extraction ?? null,
+    intelligence: options.intelligence ?? null,
     freshness: result.freshness
   };
 }

@@ -57,6 +57,12 @@ export async function createWorkspaceCreationRunAtomically(
       runId: null,
       sessionKey: null,
       outcome: "not-started"
+    },
+    intelligenceExecution: {
+      idempotencyKey: `${sha256(storageKey)}:intelligence:${input.attempt}`,
+      runId: null,
+      sessionKey: null,
+      outcome: "not-started"
     }
   };
   const filePath = workspaceCreationRunPath(root, storageKey);
@@ -97,15 +103,24 @@ function migrateLegacyCreationRun(value: unknown): unknown {
   return {
     ...value,
     snapshot: migrateLegacySnapshot(value.snapshot),
+    intelligenceExecution: isRecord(value.intelligenceExecution) ? value.intelligenceExecution : {
+      idempotencyKey: isRecord(value.remoteExecution) && typeof value.remoteExecution.idempotencyKey === "string"
+        ? `${value.remoteExecution.idempotencyKey}:intelligence`
+        : "legacy:intelligence",
+      runId: null,
+      sessionKey: null,
+      outcome: "not-started"
+    },
     events: Array.isArray(value.events) ? value.events.map((event) => isRecord(event) ? { ...event, snapshot: migrateLegacySnapshot(event.snapshot) } : event) : value.events
   };
 }
 
 function migrateLegacySnapshot(value: unknown): unknown {
-  if (!isRecord(value) || "extraction" in value) return value;
+  if (!isRecord(value)) return value;
+  if ("extraction" in value && "intelligence" in value) return value;
   return {
     ...value,
-    extraction: {
+    ...("extraction" in value ? {} : { extraction: {
       status: "not-requested",
       extractionId: null,
       generationId: null,
@@ -117,6 +132,17 @@ function migrateLegacySnapshot(value: unknown): unknown {
       conflictCount: 0,
       warningCount: 0,
       unknownCount: 0
+      } }),
+    intelligence: {
+      status: "pending",
+      attempts: 0,
+      elapsedMs: 0,
+      failure: null,
+      modelExecutionOccurred: false,
+      retryAvailable: false,
+      packId: null,
+      packState: null,
+      partialContext: false
     }
   };
 }
@@ -199,6 +225,7 @@ function preserveMonotonicRunState(current: WorkspaceCreationRun, next: Workspac
       ? { ...next.snapshot, state: current.snapshot.state, stage: current.snapshot.stage }
       : next.snapshot;
   const remote = remoteExecutionAtLeast(current.remoteExecution, next.remoteExecution);
+  const intelligenceExecution = remoteExecutionAtLeast(current.intelligenceExecution, next.intelligenceExecution);
   const latestSequence = current.events.at(-1)?.sequence ?? 0;
   const nextSequence = next.events.at(-1)?.sequence ?? 0;
   return {
@@ -206,6 +233,7 @@ function preserveMonotonicRunState(current: WorkspaceCreationRun, next: Workspac
     snapshot: nextSnapshot,
     cancelRequestedAt: current.cancelRequestedAt ?? next.cancelRequestedAt ?? (cancelRequested ? next.updatedAt : null),
     remoteExecution: remote,
+    intelligenceExecution,
     events: nextSequence >= latestSequence ? next.events : current.events,
     oldestRetainedSequence: nextSequence >= latestSequence ? next.oldestRetainedSequence : current.oldestRetainedSequence,
     updatedAt: nextSequence >= latestSequence ? next.updatedAt : current.updatedAt

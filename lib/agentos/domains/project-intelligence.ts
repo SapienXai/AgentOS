@@ -423,7 +423,7 @@ const PROJECT_TYPES: readonly ProjectType[] = [
   "other"
 ];
 
-const FACT_CATEGORIES: readonly ProjectFactCategory[] = [
+export const PROJECT_FACT_CATEGORIES: readonly ProjectFactCategory[] = [
   "identity",
   "overview",
   "product",
@@ -603,7 +603,7 @@ export function normalizeProjectFact(raw: unknown): ProjectFact {
   const result: ProjectFact = {
     schemaVersion: PROJECT_INTELLIGENCE_SCHEMA_VERSION,
     id: requiredText(normalized.id, "ProjectFact.id"),
-    category: requireEnum(normalized.category, FACT_CATEGORIES, "ProjectFact.category"),
+    category: requireEnum(normalized.category, PROJECT_FACT_CATEGORIES, "ProjectFact.category"),
     key: normalizeProjectIntelligenceText(requiredText(normalized.key, "ProjectFact.key")),
     value,
     normalizedValue: canonicalFactNormalizedValue(value),
@@ -970,7 +970,7 @@ function validateFactAt(value: unknown, path: string, issues: ProjectIntelligenc
   assertKnownKeysForValidation(value, FACT_KEYS, path, issues);
   validateSchemaVersion(value.schemaVersion, `${path}.schemaVersion`, issues);
   validateRequiredText(value.id, `${path}.id`, issues);
-  validateEnum(value.category, FACT_CATEGORIES, `${path}.category`, issues);
+  validateEnum(value.category, PROJECT_FACT_CATEGORIES, `${path}.category`, issues);
   validateBoundedText(value.key, `${path}.key`, MAX_TEXT_LENGTH, issues);
   validateFactValue(value.value, `${path}.value`, issues);
   validateFactNormalizedValue(value.normalizedValue, `${path}.normalizedValue`, issues);
