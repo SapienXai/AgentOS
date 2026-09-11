@@ -35,3 +35,11 @@ test("Advanced links preserve engineering and destructive controls", () => {
   }
   assert.match(advancedSource, /\/updates/);
 });
+
+test("Advanced links use unique row keys when sections share an anchor", () => {
+  const ids = [...advancedSource.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]);
+
+  assert.equal(ids.length, 8);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.match(advancedSource, /<SettingsRow key=\{entry\.id\}/);
+});
