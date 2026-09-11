@@ -6,6 +6,8 @@ import {
   formatWorkspaceChannelSetup,
   presentWorkspaceBlueprint
 } from "@/lib/agentos/ui/workspace-create-presenter";
+import { friendlyCreationPhase, friendlyProvisioningPhase, presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-creation-experience-presenter";
+import { createInitialWorkspaceCreationSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
 import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 
 const componentPath = "components/mission-control/workspace-create/create-workspace-experience.tsx";
@@ -148,6 +150,27 @@ test("channel setup copy distinguishes WhatsApp QR sessions from token channels"
   assert.equal(formatWorkspaceChannelSetup({ authenticationKind: "none", requiresCredentials: false, requiresAuthentication: false }), "Ready to use");
 });
 
+test("creation experience presenter uses friendly stages and preserves structured attention", () => {
+  const run = {
+    runId: "run-presenter",
+    snapshot: {
+      ...createInitialWorkspaceCreationSnapshot(1),
+      state: "review-ready" as const,
+      stage: "review-preparation" as const,
+      context: { ...createInitialWorkspaceCreationSnapshot(1).context, status: "partial" as const },
+      architect: { ...createInitialWorkspaceCreationSnapshot(1).architect, partialContext: true },
+      composition: { ...createInitialWorkspaceCreationSnapshot(1).composition!, status: "fallback" as const, artifactCount: 2, inputFingerprint: "a".repeat(64) }
+    }
+  } as never;
+  const model = presentWorkspaceCreationExperience({ run, result: minimalResult(), sources: [] });
+  assert.equal(model.stage, "review");
+  assert.equal(model.phaseLabel, "Review your workspace");
+  assert.match(model.attentionItems.join("\n"), /partial project context/);
+  assert.match(model.attentionItems.join("\n"), /deterministic safe fallback/);
+  assert.equal(friendlyCreationPhase("workspace-composition"), "Preparing workspace");
+  assert.equal(friendlyProvisioningPhase("applying-composition"), "Preparing workspace");
+});
+
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
   const [wrapperSource, source, contextRoute] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
@@ -163,7 +186,7 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
   assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
   assert.match(source, /Project context/);
-  assert.match(source, /Blueprint signals/);
+  assert.match(source, /Included from your project/);
   assert.match(source, /workspace-architect-chip-enter/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
   assert.match(source, /Live provisioning signals/);

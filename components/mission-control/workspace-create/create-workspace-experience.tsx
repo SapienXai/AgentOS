@@ -48,6 +48,7 @@ import {
   presentWorkspaceBlueprint,
   type WorkspaceBlueprintReviewModel
 } from "@/lib/agentos/ui/workspace-create-presenter";
+import { presentWorkspaceCreationExperience, type WorkspaceCreationExperienceModel } from "@/lib/agentos/ui/workspace-creation-experience-presenter";
 
 type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
@@ -154,6 +155,7 @@ export function CreateWorkspaceExperience({
     }) : null),
     [creationRun, result]
   );
+  const experience = useMemo(() => presentWorkspaceCreationExperience({ run: creationRun, result, provisioningRun, sources }), [creationRun, provisioningRun, result, sources]);
 
   useEffect(() => {
     if (!open) {
@@ -374,6 +376,7 @@ export function CreateWorkspaceExperience({
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
+      setCreationRun((current) => current ? { ...current, snapshot: { ...current.snapshot, composition: undefined } } : current);
       setRevisionValue("");
       setCustomName(payload.blueprint.identity.name);
       setCustomPrimaryName(payload.blueprint.workforce.primaryAgent.name);
@@ -415,6 +418,7 @@ export function CreateWorkspaceExperience({
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
+      setCreationRun((current) => current ? { ...current, snapshot: { ...current.snapshot, composition: undefined } } : current);
       setIsCustomizing(false);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The workspace edits could not be saved.");
@@ -446,7 +450,9 @@ export function CreateWorkspaceExperience({
           draftContextId,
           expectedKnowledgeGenerationId: (freshness ?? result.freshness).currentGenerationId,
           idempotencyKey,
-          acceptDraft: result.blueprint.status === "draft"
+          acceptDraft: result.blueprint.status === "draft",
+          compositionPlanId: creationRun?.snapshot.composition?.planId ?? null,
+          compositionPlanFingerprint: creationRun?.snapshot.composition?.inputFingerprint ?? null
         })
       });
       const payload = (await response.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
@@ -572,16 +578,8 @@ export function CreateWorkspaceExperience({
     : null;
 
   const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
-  const title = stage === "provisioning"
-    ? "Creating workspace"
-    : stage === "review"
-      ? (isProvisioned ? "Workspace ready" : reviewModel?.fallback ? "Basic draft created" : "Review workspace")
-      : "Create Workspace";
-  const description = stage === "provisioning"
-    ? "AgentOS is materializing the approved blueprint."
-    : stage === "review"
-      ? "Review the workspace AgentOS designed from your project."
-      : "Give AgentOS the project. It will understand the rest.";
+  const title = experience.title;
+  const description = experience.description;
 
   return (
     <MissionControlDialogShell
@@ -600,14 +598,14 @@ export function CreateWorkspaceExperience({
       footer={
         stage === "generating" ? (
           <div className="flex w-full items-center justify-between gap-3">
-            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>{progressSteps.find((step) => step.id === progressPhase)?.label ?? "Working on the first draft"}.</span>
+            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>{experience.phaseLabel}.</span>
             <Button type="button" variant="secondary" onClick={cancelGeneration} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
               Cancel
             </Button>
           </div>
         ) : stage === "provisioning" ? (
           <div className="flex w-full items-center justify-between gap-3">
-            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} aria-live="polite">{provisioningRun?.progress?.label || "Provisioning workspace"}.</span>
+            <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} aria-live="polite">{experience.phaseLabel}.</span>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Run in background</Button>
           </div>
         ) : stage === "review" ? (
@@ -627,7 +625,7 @@ export function CreateWorkspaceExperience({
                   type="button"
                   disabled={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId)}
                   onClick={isProvisioned ? openProvisionedWorkspace : () => void provision()}
-                  title={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId) ? "Review the blueprint and its project context before creating the workspace." : undefined}
+                  title={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId) ? "Review the workspace draft and its project context before creating it." : undefined}
                   aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
                   className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                 >
@@ -680,9 +678,9 @@ export function CreateWorkspaceExperience({
             notice={notice}
           />
         ) : stage === "generating" ? (
-          <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} />
+          <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} experience={experience} />
         ) : stage === "provisioning" ? (
-          <ProvisioningView isLight={isLight} run={provisioningRun} />
+          <ProvisioningView isLight={isLight} run={provisioningRun} experience={experience} />
         ) : (
           <ReviewView
             isLight={isLight}
@@ -703,6 +701,7 @@ export function CreateWorkspaceExperience({
             isSavingCustomization={isSavingCustomization}
             provisioningRun={provisioningRun}
             provisioningError={provisioningError}
+            experience={experience}
           />
         )}
       </div>
@@ -838,20 +837,23 @@ function IntakeView({
         </div>
       ) : null}
 
-      <div className="mt-7 flex flex-col items-center gap-3">
-        <div className={cn("inline-flex rounded-lg border p-1", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.035]")} role="group" aria-label="Architect mode">
-          <ModeButton isLight={isLight} active={mode === "automatic"} onClick={() => setMode("automatic")} label="Automatic" />
-          <ModeButton isLight={isLight} active={mode === "customize"} onClick={() => setMode("customize")} label="Customize" />
-        </div>
-        {mode === "customize" ? (
-          <div className="w-full max-w-[600px]">
-            <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
-            <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
+      <details className={cn("mt-7 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white/70" : "border-white/10 bg-white/[0.025]")}>
+        <summary className={cn("cursor-pointer text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Advanced options</summary>
+        <div className="mt-4 flex flex-col items-center gap-3">
+          <div className={cn("inline-flex rounded-lg border p-1", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.035]")} role="group" aria-label="Architect mode">
+            <ModeButton isLight={isLight} active={mode === "automatic"} onClick={() => setMode("automatic")} label="Automatic" />
+            <ModeButton isLight={isLight} active={mode === "customize"} onClick={() => setMode("customize")} label="Customize" />
           </div>
-        ) : (
-          <p className={cn("text-center text-xs", isLight ? "text-[#8a7b6e]" : "text-slate-500")}>Automatic chooses the smallest useful architecture from your project.</p>
-        )}
-      </div>
+          {mode === "customize" ? (
+            <div className="w-full max-w-[600px]">
+              <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
+              <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
+            </div>
+          ) : (
+            <p className={cn("text-center text-xs", isLight ? "text-[#8a7b6e]" : "text-slate-500")}>Automatic chooses the smallest useful architecture from your project.</p>
+          )}
+        </div>
+      </details>
 
       <p className={cn("mt-8 text-center text-xs", isLight ? "text-[#9b8d80]" : "text-slate-600")}>Understand <span className="px-1">→</span> Organize <span className="px-1">→</span> Design <span className="px-1">→</span> Review</p>
     </main>
@@ -879,11 +881,11 @@ function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
   );
 }
 
-function GeneratingView({ isLight, activePhase, contextWasRequested, sources, sourceStates }: { isLight: boolean; activePhase: GenerationPhase; contextWasRequested: boolean; sources: WorkspaceKnowledgeSource[]; sourceStates: Record<string, ContextSourceState> }) {
+function GeneratingView({ isLight, activePhase, contextWasRequested, sources, sourceStates, experience }: { isLight: boolean; activePhase: GenerationPhase; contextWasRequested: boolean; sources: WorkspaceKnowledgeSource[]; sourceStates: Record<string, ContextSourceState>; experience: WorkspaceCreationExperienceModel }) {
   const chips = buildProgressChips(sources, sourceStates);
   const currentStep = progressSteps.findIndex((step) => step.id === activePhase);
-  const steps = contextWasRequested ? progressSteps : progressSteps.filter((step) => step.id !== "reading-context");
   const activeLabel = progressSteps.find((step) => step.id === activePhase)?.label ?? "Working on the first draft";
+  const visibleActivities = contextWasRequested ? experience.activities : experience.activities.filter((activity) => activity.id !== "reading");
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[640px] flex-col justify-center px-5 py-12 md:px-10">
@@ -891,21 +893,20 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
         <div className="flex items-center gap-3">
           <div className={cn("flex size-10 items-center justify-center rounded-xl", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Sparkles className="h-5 w-5" /></div>
           <div>
-            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")} aria-live="polite">{activeLabel}</p>
+            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")} aria-live="polite">{experience.phaseLabel || activeLabel}</p>
             <p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{sources.length ? `Using ${sources.length} context source${sources.length === 1 ? "" : "s"}.` : "Starting from your brief."}</p>
           </div>
         </div>
         <div className="mt-7 space-y-4">
-          {steps.map((step) => {
-            const index = progressSteps.findIndex((candidate) => candidate.id === step.id);
-            const completed = index < currentStep;
-            const active = index === currentStep;
+          {visibleActivities.map((activity, index) => {
+            const completed = activity.status === "complete" || index < currentStep;
+            const active = activity.status === "active" || index === currentStep;
             return (
-              <div key={step.id} className="flex items-center gap-3">
+              <div key={activity.id} className="flex items-center gap-3">
                 <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", completed ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-500" : active ? (isLight ? "border-[#b8895f] bg-[#f3e7db] text-[#9a6d45]" : "border-violet-300/50 bg-violet-400/10 text-violet-200") : (isLight ? "border-[#e5dbd0] text-[#b6a89c]" : "border-white/10 text-slate-600"))} aria-hidden="true">
                   {completed ? <Check className="h-3 w-3" /> : active ? <LoaderCircle className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : <span className="size-1 rounded-full bg-current" />}
                 </span>
-                <span className={cn("text-sm", completed || active ? (isLight ? "text-[#4d4036]" : "text-slate-200") : (isLight ? "text-[#a99b8f]" : "text-slate-600"))}>{step.label}</span>
+                <span className={cn("text-sm", completed || active ? (isLight ? "text-[#4d4036]" : "text-slate-200") : (isLight ? "text-[#a99b8f]" : "text-slate-600"))}>{activity.label}</span>
               </div>
             );
           })}
@@ -917,11 +918,18 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
 }
 
 function ProgressChipRail({ isLight, chips }: { isLight: boolean; chips: ProgressChip[] }) {
+  const stagedChip = chips.find((chip) => /staged$/.test(chip.label));
+  const sourceChips = chips.filter((chip) => chip !== stagedChip);
   return (
     <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-live="polite" aria-label="Project context status">
-      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project context</p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {chips.map((chip, index) => {
+      <div className="flex items-center justify-between gap-3">
+        <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project context</p>
+        {stagedChip ? <span className={cn("text-[10px]", isLight ? "text-[#7c6b5c]" : "text-slate-400")}>{stagedChip.label}</span> : null}
+      </div>
+      {sourceChips.length ? <details className="mt-2">
+        <summary className={cn("cursor-pointer text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>View source progress ({sourceChips.length})</summary>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+        {sourceChips.map((chip, index) => {
           const state = chip.state;
           return (
             <span
@@ -940,7 +948,8 @@ function ProgressChipRail({ isLight, chips }: { isLight: boolean; chips: Progres
             </span>
           );
         })}
-      </div>
+        </div>
+      </details> : null}
     </div>
   );
 }
@@ -986,18 +995,18 @@ function formatContextSourceStatus(status: ContextSourceStatus) {
   }
 }
 
-function ProvisioningView({ isLight, run }: { isLight: boolean; run: ProvisioningRun | null }) {
-  const steps = run?.steps ?? [];
+function ProvisioningView({ isLight, run, experience }: { isLight: boolean; run: ProvisioningRun | null; experience: WorkspaceCreationExperienceModel }) {
+  const steps = experience.activities;
   const signals = run?.signals ?? [];
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center px-5 py-12 md:px-10">
       <div className={cn("rounded-2xl border p-5 md:p-7", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-busy="true" aria-live="polite">
         <div className="flex items-center gap-3">
           <div className={cn("flex size-10 items-center justify-center rounded-xl", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><LoaderCircle className="h-5 w-5 animate-spin motion-reduce:animate-none" /></div>
-          <div className="min-w-0"><p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{run?.progress?.label || "Preparing workspace"}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{run?.progress?.detail || "AgentOS is starting the approved workspace bootstrap."}</p></div>
+          <div className="min-w-0"><p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{experience.phaseLabel}</p><p className={cn("mt-1 text-xs", isLight ? "text-[#84766b]" : "text-slate-400")}>{run?.progress?.detail || "AgentOS is starting the approved workspace bootstrap."}</p></div>
         </div>
         <div className="mt-7 space-y-3">
-          {steps.map((step, index) => <div key={step.id} className="flex items-center gap-3"><span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", step.status === "complete" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-500" : step.status === "failed" ? "border-red-400/50 bg-red-400/10 text-red-500" : step.status === "active" ? (isLight ? "border-[#b8895f] bg-[#f3e7db] text-[#9a6d45]" : "border-violet-300/50 bg-violet-400/10 text-violet-200") : (isLight ? "border-[#e5dbd0] text-[#b6a89c]" : "border-white/10 text-slate-600"))} aria-hidden="true">{step.status === "complete" ? <Check className="h-3 w-3" /> : step.status === "active" ? <LoaderCircle className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : step.status === "failed" ? <CircleAlert className="h-3 w-3" /> : <span className="size-1 rounded-full bg-current" />}</span><span className={cn("text-sm", step.status === "pending" ? (isLight ? "text-[#a99b8f]" : "text-slate-600") : (isLight ? "text-[#4d4036]" : "text-slate-200"))}>{step.label}</span><span className="sr-only">Step {index + 1} of {steps.length}</span></div>)}
+          {steps.map((step, index) => <div key={step.id} className="flex items-center gap-3"><span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", step.status === "complete" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-500" : step.status === "attention" ? "border-amber-400/50 bg-amber-400/10 text-amber-500" : step.status === "active" ? (isLight ? "border-[#b8895f] bg-[#f3e7db] text-[#9a6d45]" : "border-violet-300/50 bg-violet-400/10 text-violet-200") : (isLight ? "border-[#e5dbd0] text-[#b6a89c]" : "border-white/10 text-slate-600"))} aria-hidden="true">{step.status === "complete" ? <Check className="h-3 w-3" /> : step.status === "active" ? <LoaderCircle className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : step.status === "attention" ? <CircleAlert className="h-3 w-3" /> : <span className="size-1 rounded-full bg-current" />}</span><span className={cn("text-sm", step.status === "pending" ? (isLight ? "text-[#a99b8f]" : "text-slate-600") : (isLight ? "text-[#4d4036]" : "text-slate-200"))}>{step.label}</span><span className="sr-only">Step {index + 1} of {steps.length}</span></div>)}
         </div>
         {signals.length ? <div className="mt-7 border-t pt-5" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }}><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live provisioning signals</p><div className="mt-2 flex flex-wrap gap-1.5">{signals.map((signal, index) => <span key={signal} className={cn("workspace-architect-chip-enter inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")} style={{ animationDelay: `${index * 55}ms` }}><span className={cn("size-1.5 rounded-full", isLight ? "bg-[#cdbcae]" : "bg-slate-600")} aria-hidden="true" />{signal}</span>)}</div></div> : null}
       </div>
@@ -1023,7 +1032,8 @@ function ReviewView({
   onSaveCustomization,
   isSavingCustomization,
   provisioningRun,
-  provisioningError
+  provisioningError,
+  experience
 }: {
   isLight: boolean;
   model: WorkspaceBlueprintReviewModel | null;
@@ -1043,6 +1053,7 @@ function ReviewView({
   isSavingCustomization: boolean;
   provisioningRun: ProvisioningRun | null;
   provisioningError: string | null;
+  experience: WorkspaceCreationExperienceModel;
 }) {
   if (!model) return null;
   const identity = model.identity;
@@ -1086,10 +1097,18 @@ function ReviewView({
 
       {model.composition ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", model.composition.status === "blocked" || model.composition.status === "conflict" || model.composition.status === "fallback" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
-          <p className="text-sm font-medium">{compositionLabel}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">Workspace</p>
+          <p className="mt-2 text-sm font-medium">{compositionLabel}</p>
           <p className="mt-1 text-xs opacity-75">{model.composition.artifactCount} bounded project and workspace document proposals · {model.composition.conflictCount} conflict{model.composition.conflictCount === 1 ? "" : "s"}.</p>
           {model.composition.status === "fallback" ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
         </div>
+      ) : null}
+
+      {experience.attentionItems.length ? (
+        <section className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} aria-labelledby="needs-attention-heading">
+          <h2 id="needs-attention-heading" className="text-sm font-semibold">Needs attention</h2>
+          <ul className="mt-2 space-y-1 text-xs opacity-85">{experience.attentionItems.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
       ) : null}
 
       {model.extraction?.status === "partial" ? (
@@ -1142,12 +1161,12 @@ function ReviewView({
 
       <section className={cn("rounded-2xl border p-5 md:p-6", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Workspace identity</p><h1 className={cn("mt-2 break-words font-display text-2xl font-semibold tracking-[-0.03em]", isLight ? "text-[#32271f]" : "text-white")}>{identity.name}</h1><p className={cn("mt-2 max-w-2xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{identity.purpose}</p></div>
+          <div className="min-w-0"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Project</p><h1 className={cn("mt-2 break-words font-display text-2xl font-semibold tracking-[-0.03em]", isLight ? "text-[#32271f]" : "text-white")}>{identity.name}</h1><p className={cn("mt-2 max-w-2xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{identity.purpose}</p></div>
           <Badge variant="muted" className="shrink-0">{identity.projectType}</Badge>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <ReviewSection isLight={isLight} title="Primary agent" icon={Bot}>
+          <ReviewSection isLight={isLight} title="AI Workforce" icon={Bot}>
             <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-slate-100")}>{model.primaryAgent.name}</p>
             <p className={cn("mt-1 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{model.primaryAgent.purpose}</p>
             {model.primaryAgent.skillIds.length || model.primaryAgent.toolIds.length ? <p className={cn("mt-3 text-xs", isLight ? "text-[#766e64]" : "text-slate-300")}>{model.primaryAgent.skillIds.length + model.primaryAgent.toolIds.length} selected {model.primaryAgent.skillIds.length + model.primaryAgent.toolIds.length === 1 ? "capability" : "capabilities"}.</p> : null}
@@ -1178,9 +1197,9 @@ function BlueprintSignalRail({ isLight, model }: { isLight: boolean; model: Work
   if (!signals.length) return null;
 
   return (
-    <section className="mt-5 border-t pt-4" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-label="Blueprint signals">
+    <section className="mt-5 border-t pt-4" style={{ borderColor: isLight ? "rgba(185, 145, 114, 0.18)" : "rgba(255,255,255,0.08)" }} aria-label="Included from your project">
       <div className="flex items-baseline justify-between gap-3">
-        <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Blueprint signals</p>
+        <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Included from your project</p>
         <p className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Selections surfaced from the brief and staged context</p>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1223,6 +1242,7 @@ function ReviewDetailSections({ isLight, model }: { isLight: boolean; model: Wor
       <ReviewSection isLight={isLight} title="Memory" icon={FileText}><p className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}>{model.memory.durableFacts.length ? `${model.memory.durableFacts.length} durable fact${model.memory.durableFacts.length === 1 ? "" : "s"} proposed` : "No custom project memory yet."}</p></ReviewSection>
       {model.connections.length ? <ReviewSection isLight={isLight} title="Connections" icon={Link2}><div className="space-y-1.5">{model.connections.map((connection) => <p key={connection.id} className={cn("text-sm", isLight ? "text-[#55483e]" : "text-slate-200")}><span className="font-medium">{connection.provider}</span><span className="ml-2 text-xs opacity-70">{connection.status === "recommended" ? "Recommended" : connection.status === "required" ? "Required" : "Selected"}</span></p>)}</div></ReviewSection> : null}
       {model.specialists.length ? <ReviewSection isLight={isLight} title="Additional agents" icon={Bot}><div className="space-y-2">{model.specialists.map((agent) => <div key={agent.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{agent.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{agent.purpose}</p></div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Additional agents" value="No additional agents needed." />}
+      {model.workflows.length ? <ReviewSection isLight={isLight} title="Workflows" icon={WandSparkles}><div className="space-y-2">{model.workflows.map((workflow) => <div key={workflow.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{workflow.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{workflow.goal}</p></div>)}</div></ReviewSection> : null}
       {model.automations.length ? <ReviewSection isLight={isLight} title="Automations" icon={RefreshCw}><div className="space-y-2">{model.automations.map((automation) => <div key={automation.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{automation.name}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{formatWorkspaceSchedule(automation.scheduleKind, automation.scheduleValue)}</p></div>)}</div></ReviewSection> : <QuietReviewLine isLight={isLight} label="Automations" value="No automations added." />}
       {model.channels.length ? <ReviewSection isLight={isLight} title="Channels" icon={MessageCircle}><div className="space-y-2">{model.channels.map((channel) => <div key={channel.id}><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{channel.name || channel.type}</p><p className={cn("text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{formatWorkspaceChannelSetup(channel)}</p></div>)}</div></ReviewSection> : null}
       {model.warnings.length ? <ReviewSection isLight={isLight} title="Warnings" icon={FileText} tone="warning"><div className="space-y-1.5">{model.warnings.slice(0, 4).map((warning) => <p key={warning} className="text-xs leading-5">{warning}</p>)}</div></ReviewSection> : null}
