@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { ProjectIntelligencePack } from "@/lib/agentos/domains/project-intelligence";
+import type { OfficialResource, ProjectConflict, ProjectFact, ProjectIntelligencePack } from "@/lib/agentos/domains/project-intelligence";
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 
@@ -98,21 +98,21 @@ export function summarizeWorkspaceDrift(input: {
       if (previous || current) unknown.push("Project Intelligence pack comparison unavailable");
       return;
     }
-    if (fingerprint({ facts: previous.facts }) !== fingerprint({ facts: current.facts })) { categories.push("facts"); changes.push("Project facts changed"); }
-    if (fingerprint({ resources: previous.officialResources }) !== fingerprint({ resources: current.officialResources })) { categories.push("resources"); changes.push("Official resources changed"); }
-    if (fingerprint({ conflicts: previous.conflicts }) !== fingerprint({ conflicts: current.conflicts })) { categories.push("conflicts"); changes.push("Project conflicts changed"); }
+    if (fingerprint({ facts: projectFactsDriftView(previous.facts) }) !== fingerprint({ facts: projectFactsDriftView(current.facts) })) { categories.push("facts"); changes.push("Project facts changed"); }
+    if (fingerprint({ resources: officialResourcesDriftView(previous.officialResources) }) !== fingerprint({ resources: officialResourcesDriftView(current.officialResources) })) { categories.push("resources"); changes.push("Official resources changed"); }
+    if (fingerprint({ conflicts: projectConflictsDriftView(previous.conflicts, previous.facts, previous.officialResources) }) !== fingerprint({ conflicts: projectConflictsDriftView(current.conflicts, current.facts, current.officialResources) })) { categories.push("conflicts"); changes.push("Project conflicts changed"); }
   };
   comparePack(input.previousPack, input.currentPack);
   if (input.previousBlueprint || input.currentBlueprint) {
     if (!input.previousBlueprint || !input.currentBlueprint) unknown.push("Workspace blueprint comparison unavailable");
-    else if (fingerprint(blueprintDriftView(input.previousBlueprint)) !== fingerprint(blueprintDriftView(input.currentBlueprint))) {
+    else if (fingerprint(workspaceBlueprintDriftView(input.previousBlueprint)) !== fingerprint(workspaceBlueprintDriftView(input.currentBlueprint))) {
       categories.push("blueprint");
       changes.push("Workspace blueprint decisions changed");
     }
   }
   if (input.previousComposition || input.currentComposition) {
     if (!input.previousComposition || !input.currentComposition) unknown.push("Workspace composition comparison unavailable");
-    else if (fingerprint(compositionDriftView(input.previousComposition)) !== fingerprint(compositionDriftView(input.currentComposition))) {
+    else if (fingerprint(workspaceCompositionDriftView(input.previousComposition)) !== fingerprint(workspaceCompositionDriftView(input.currentComposition))) {
       categories.push("composition");
       changes.push("Workspace composition plan changed");
     }
@@ -138,30 +138,105 @@ export function stableWorkspaceFingerprint(value: unknown) {
   return fingerprint(value);
 }
 
-function blueprintDriftView(blueprint: WorkspaceBlueprint) {
+export function projectFactDriftView(fact: ProjectFact) {
   return {
-    identity: blueprint.identity,
-    knowledge: blueprint.knowledge,
-    workforce: blueprint.workforce,
-    operations: blueprint.operations,
-    capabilities: blueprint.capabilities,
-    connections: blueprint.connections,
-    memory: blueprint.memory,
-    warnings: blueprint.warnings
+    category: fact.category,
+    key: fact.key,
+    normalizedValue: fact.normalizedValue,
+    verification: fact.verification
   };
 }
 
-function compositionDriftView(plan: WorkspaceCompositionPlan) {
+export function officialResourceDriftView(resource: OfficialResource) {
   return {
-    artifacts: plan.artifacts.map((artifact) => ({ artifactId: artifact.artifactId, path: artifact.path, operation: artifact.operation, content: artifact.content, warnings: artifact.warnings })),
-    existingFileHashes: normalizeFiles(plan.existingFileHashes),
-    conflicts: plan.conflicts,
-    warnings: plan.warnings
+    category: resource.category,
+    locator: {
+      kind: resource.locator.kind,
+      value: resource.locator.value.trim().toLowerCase()
+    },
+    label: resource.label.trim(),
+    verification: resource.verification
+  };
+}
+
+export function projectFactsDriftView(facts: readonly ProjectFact[]) {
+  return [...facts].map(projectFactDriftView).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)));
+}
+
+export function officialResourcesDriftView(resources: readonly OfficialResource[]) {
+  return [...resources].map(officialResourceDriftView).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)));
+}
+
+export function projectConflictsDriftView(
+  conflicts: readonly ProjectConflict[],
+  facts: readonly ProjectFact[] = [],
+  resources: readonly OfficialResource[] = []
+) {
+  const factsById = new Map(facts.map((fact) => [fact.id, projectFactDriftView(fact)]));
+  const resourcesById = new Map(resources.map((resource) => [resource.id, officialResourceDriftView(resource)]));
+  return [...conflicts].map((conflict) => ({
+    status: conflict.status,
+    summary: conflict.summary.trim(),
+    subjects: conflict.subjects.map((subject) => subject.kind === "fact"
+      ? { kind: subject.kind, claim: factsById.get(subject.id) ?? { kind: subject.kind, unresolved: true } }
+      : { kind: subject.kind, resource: resourcesById.get(subject.id) ?? { kind: subject.kind, unresolved: true } }
+    ).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
+  })).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)));
+}
+
+export function workspaceBlueprintDriftView(blueprint: WorkspaceBlueprint) {
+  return {
+    identity: blueprint.identity,
+    brief: blueprint.brief,
+    materialization: blueprint.materialization,
+    knowledge: {
+      // Retrieval queries and evidence ids are generation metadata. The
+      // selected retrieval mode remains part of the architecture decision.
+      retrieval: { mode: blueprint.knowledge.retrieval.mode }
+    },
+    workforce: {
+      primaryAgent: blueprint.workforce.primaryAgent,
+      specialists: [...blueprint.workforce.specialists].sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      allowEphemeralSubagents: blueprint.workforce.allowEphemeralSubagents,
+      maxParallelRuns: blueprint.workforce.maxParallelRuns
+    },
+    capabilities: {
+      skills: blueprint.capabilities.skills.map((skill) => withoutField(skill, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      tools: blueprint.capabilities.tools.map((tool) => withoutField(tool, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
+    },
+    connections: blueprint.connections.map((connection) => withoutField(connection, "sourceId")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+    operations: {
+      workflows: [...blueprint.operations.workflows].map((workflow) => withoutField(workflow, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      automations: [...blueprint.operations.automations].map((automation) => withoutField(automation, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      channels: [...blueprint.operations.channels].map((channel) => withoutField(channel, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
+    },
+    memory: blueprint.memory,
+    safety: blueprint.safety
+  };
+}
+
+export function workspaceCompositionDriftView(plan: WorkspaceCompositionPlan) {
+  return {
+    artifacts: plan.artifacts.map((artifact) => ({
+      artifactId: artifact.artifactId,
+      path: artifact.path,
+      operation: artifact.operation,
+      ownership: artifact.ownership,
+      sections: artifact.sections,
+      content: artifact.content
+    })).sort((left, right) => left.path.localeCompare(right.path)),
+    conflicts: [...plan.conflicts].sort()
   };
 }
 
 function normalizeFiles(files: readonly WorkspaceFileInventoryEntry[]) {
   return files.map((file) => ({ path: file.path.replace(/\\/g, "/"), hash: file.hash })).sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function withoutField<T extends object>(value: T, field: string) {
+  const copy = { ...value } as T & Record<string, unknown>;
+  delete copy[field];
+  return copy;
 }
 
 function fingerprint(value: unknown) {

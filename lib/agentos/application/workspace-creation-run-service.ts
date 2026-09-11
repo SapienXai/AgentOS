@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import {
   persistWorkspaceCreationIntake,
+  cloneWorkspaceCreationContext,
   persistWorkspaceCreationIntelligencePack,
   readWorkspaceCreationCompositionPlan,
   readWorkspaceCreationIntelligencePack,
@@ -43,6 +44,8 @@ import {
   readWorkspaceCreationRunFile,
   resolveWorkspaceCreationRunRoot
 } from "@/lib/agentos/application/workspace-creation-run-store";
+import { readWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
+import { findRunById, resolveProvisioningRoot } from "@/lib/agentos/application/workspace-provisioning-store";
 import { normalizeWorkspaceMaterialization, type WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import type { WorkspaceArchitectIntelligenceInput, WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
@@ -76,9 +79,12 @@ export type WorkspaceCreationBudget = Partial<typeof DEFAULT_WORKSPACE_CREATION_
 
 export type WorkspaceCreationRunDependencies = {
   rootPath?: string;
+  provisioningRootPath?: string;
+  workspaceIntelligenceBindingRootPath?: string;
   now?: () => Date;
   budget?: WorkspaceCreationBudget;
   persistIntake?: typeof persistWorkspaceCreationIntake;
+  cloneContext?: typeof cloneWorkspaceCreationContext;
   stageContext?: typeof stageWorkspaceCreationKnowledge;
   readContext?: typeof readWorkspaceCreationContext;
   readContextMetadata?: typeof readWorkspaceCreationContextMetadata;
@@ -93,11 +99,14 @@ export type WorkspaceCreationRunDependencies = {
   persistCompositionPlan?: typeof persistWorkspaceCreationCompositionPlan;
   readCompositionPlan?: typeof readWorkspaceCreationCompositionPlan;
   inspectCompositionFiles?: typeof inspectWorkspaceCompositionFiles;
+  readWorkspaceIntelligenceBinding?: typeof readWorkspaceIntelligenceBinding;
+  findProvisioningRunById?: typeof findRunById;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "reviseArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "provisioningRootPath" | "now" | "persistIntake" | "cloneContext" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "reviseArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles" | "readWorkspaceIntelligenceBinding" | "findProvisioningRunById">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
   nativeComposer: boolean;
+  workspaceIntelligenceBindingRootPath: string | undefined;
 };
 
 const inFlight = new Map<string, Promise<WorkspaceCreationRun>>();
@@ -410,7 +419,7 @@ export async function listResumableWorkspaceCreationRuns(actorId: string, depend
 
 /** Start a new immutable run using the prior durable intake as its parent. */
 export async function refreshWorkspaceCreationRun(
-  input: { actorId: string; runId: string },
+  input: { actorId: string; runId: string; refreshIntent?: string },
   dependencies: WorkspaceCreationRunDependencies = {}
 ) {
   const resolved = resolveDependencies(dependencies);
@@ -420,8 +429,28 @@ export async function refreshWorkspaceCreationRun(
   if (parent.snapshot.state !== "review-ready" || !isWorkspaceArchitectResult(parent.result)) {
     throw new Error("Only a review-ready workspace creation run can be refreshed.");
   }
+  const refreshFingerprint = sha256(stableSerialize({
+    version: 1,
+    parentRunId: parent.runId,
+    parentInputFingerprint: parent.inputFingerprint ?? null,
+    parentRevision: parent.snapshot.revision?.number ?? 0,
+    parentBlueprintFingerprint: parent.snapshot.revision?.blueprintFingerprint ?? createWorkspaceCompositionBlueprintFingerprint(parent.result.blueprint),
+    parentCompositionPlanId: parent.snapshot.composition?.planId ?? null,
+    parentCompositionFingerprint: parent.snapshot.composition?.inputFingerprint ?? null,
+    refreshIntent: redactSecretText(input.refreshIntent?.trim() ?? "").slice(0, 500)
+  }));
+  const refreshKey = `reanalysis:${parent.runId}:${refreshFingerprint}`;
+  const childContextId = parent.draftContextId
+    ? deterministicDraftContextId(`workspace-reanalysis-context:v1:${refreshKey}`)
+    : null;
+  if (parent.draftContextId && childContextId) {
+    await resolved.cloneContext({
+      actorId: input.actorId,
+      sourceDraftContextId: parent.draftContextId,
+      targetDraftContextId: childContextId
+    });
+  }
   const rootRunId = parent.lineage?.rootRunId || parent.runId;
-  const refreshKey = `reanalysis:${parent.runId}:${Date.now()}`;
   const refreshedDependencies: WorkspaceCreationRunDependencies = {
     ...dependencies,
     stageContext: async (stageInput) => resolved.stageContext({ ...stageInput, forceRefresh: true })
@@ -434,7 +463,7 @@ export async function refreshWorkspaceCreationRun(
     operatorConstraints: parent.input.operatorConstraints,
     materialization: parent.input.materialization,
     sources: parent.input.sources,
-    draftContextId: parent.draftContextId,
+    draftContextId: childContextId,
     lineage: { rootRunId, parentRunId: parent.runId, relation: "reanalysis" }
   }, refreshedDependencies);
 }
@@ -829,20 +858,38 @@ async function recordLineageDrift(filePath: string, actorId: string, run: Worksp
       }
     }));
   }
+  const liveBaseline = await resolveLiveProvisioningBaseline(actorId, parent.run, dependencies);
   const currentPack = run.draftContextId ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null) : null;
-  const previousPack = parent.run.draftContextId ? await dependencies.readIntelligencePack({ actorId, draftContextId: parent.run.draftContextId }).catch(() => null) : null;
+  const previousContextId = liveBaseline?.draftContextId ?? parent.run.draftContextId;
+  const previousPack = previousContextId ? await dependencies.readIntelligencePack({ actorId, draftContextId: previousContextId }).catch(() => null) : null;
   const currentPlan = run.draftContextId ? await dependencies.readCompositionPlan({ actorId, draftContextId: run.draftContextId }).catch(() => null) : null;
-  const previousPlan = parent.run.draftContextId ? await dependencies.readCompositionPlan({ actorId, draftContextId: parent.run.draftContextId }).catch(() => null) : null;
+  const previousPlan = liveBaseline?.compositionPlan ?? (parent.run.draftContextId ? await dependencies.readCompositionPlan({ actorId, draftContextId: parent.run.draftContextId }).catch(() => null) : null);
   const drift = summarizeWorkspaceDrift({
     previousPack,
     currentPack,
-    previousBlueprint: previousResult.blueprint,
+    previousBlueprint: liveBaseline?.blueprint ?? previousResult.blueprint,
     currentBlueprint: currentResult.blueprint,
     previousComposition: previousPlan,
     currentComposition: currentPlan,
     partial: run.snapshot.context.status === "partial"
   });
   return mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, snapshot: { ...current.snapshot, drift } }));
+}
+
+async function resolveLiveProvisioningBaseline(actorId: string, parent: WorkspaceCreationRun, dependencies: ResolvedDependencies) {
+  const provisioningRunId = parent.snapshot.provisioningRunId;
+  if (!provisioningRunId) return null;
+  const locator = await dependencies.findProvisioningRunById(dependencies.provisioningRootPath, actorId, provisioningRunId);
+  if (!locator || !locator.run.workspaceId) return null;
+  const binding = await dependencies.readWorkspaceIntelligenceBinding({ actorId, workspaceId: locator.run.workspaceId, rootPath: dependencies.workspaceIntelligenceBindingRootPath });
+  if (!binding || binding.provisioningRunId !== locator.run.runId) return null;
+  const blueprint = locator.run.blueprint;
+  if (!blueprint || typeof blueprint !== "object" || !("id" in blueprint)) return null;
+  return {
+    blueprint: blueprint as WorkspaceArchitectResult["blueprint"],
+    draftContextId: locator.run.draftContextId,
+    compositionPlan: locator.run.compositionPlan ?? null
+  };
 }
 
 async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, context: WorkspaceCreationContextStageResult, partial: boolean, failed: boolean) {
@@ -1370,8 +1417,11 @@ function isWorkspaceArchitectResult(value: unknown): value is WorkspaceArchitect
 function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedDependencies {
   return {
     rootPath: resolveWorkspaceCreationRunRoot(input.rootPath),
+    provisioningRootPath: resolveProvisioningRoot(input.provisioningRootPath),
+    workspaceIntelligenceBindingRootPath: input.workspaceIntelligenceBindingRootPath,
     now: input.now ?? (() => new Date()),
     persistIntake: input.persistIntake ?? persistWorkspaceCreationIntake,
+    cloneContext: input.cloneContext ?? cloneWorkspaceCreationContext,
     stageContext: input.stageContext ?? stageWorkspaceCreationKnowledge,
     readContext: input.readContext ?? readWorkspaceCreationContext,
     readContextMetadata: input.readContextMetadata ?? (input.readContext ? input.readContext : readWorkspaceCreationContextMetadata),
@@ -1388,6 +1438,8 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     readCompositionPlan: input.readCompositionPlan ?? readWorkspaceCreationCompositionPlan,
     reviseArchitect: input.reviseArchitect ?? reviseWorkspaceBlueprint,
     inspectCompositionFiles: input.inspectCompositionFiles ?? inspectWorkspaceCompositionFiles,
+    readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding,
+    findProvisioningRunById: input.findProvisioningRunById ?? findRunById,
     budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
     nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake
   };
@@ -1541,6 +1593,13 @@ function sha256(value: string | Buffer) {
 
 function workspaceCreationActorHash(actorId: string) {
   return sha256(actorId.trim()).slice(0, 32);
+}
+
+function deterministicDraftContextId(seed: string) {
+  const hex = sha256(seed).slice(0, 32).split("");
+  hex[12] = "4";
+  hex[16] = ((Number.parseInt(hex[16] ?? "8", 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20, 32).join("")}`;
 }
 
 function buildWorkspaceCreationStorageKey(actorId: string, idempotencyKey: string) {

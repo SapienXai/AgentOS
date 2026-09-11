@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { copyFile, lstat, mkdir, open, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -286,6 +287,102 @@ export async function persistWorkspaceCreationIntake(input: {
       intakeStatus: "staged"
     }));
     return { draftContextId, sources: sources.map(publicSource), fingerprint };
+  });
+}
+
+/**
+ * Create an immutable reanalysis context from an existing context. Only the
+ * normalized source declarations and protected upload bytes are copied; the
+ * corpus, extraction, intelligence pack, and composition plan are always
+ * generated in the child namespace.
+ */
+export async function cloneWorkspaceCreationContext(input: {
+  actorId: string;
+  sourceDraftContextId: string;
+  targetDraftContextId: string;
+}) {
+  const actorId = input.actorId.trim();
+  if (!actorId) throw new Error("Workspace context ownership is unavailable.");
+  const sourceDraftContextId = assertDraftContextId(input.sourceDraftContextId);
+  const targetDraftContextId = assertDraftContextId(input.targetDraftContextId);
+  if (sourceDraftContextId === targetDraftContextId) throw new Error("Workspace reanalysis requires a new context generation.");
+
+  const lockKeys = [`${actorHash(actorId)}:${sourceDraftContextId}`, `${actorHash(actorId)}:${targetDraftContextId}`].sort();
+  return withContextLocks(lockKeys, async () => {
+    await cleanupExpiredWorkspaceCreationContexts();
+    const sourceRoot = resolveDraftRoot(actorId, sourceDraftContextId);
+    const targetRoot = resolveDraftRoot(actorId, targetDraftContextId);
+    const existing = await readStoredContext(targetRoot);
+    if (existing) {
+      if (existing.actorHash !== actorHash(actorId)) throw new Error("Workspace context is unavailable.");
+      return { draftContextId: targetDraftContextId, sources: existing.sources, fingerprint: existing.fingerprint };
+    }
+    const source = await readStoredContext(sourceRoot);
+    if (!source || source.actorHash !== actorHash(actorId) || Date.parse(source.expiresAt) <= Date.now()) {
+      throw new Error("Workspace context is unavailable or expired.");
+    }
+
+    const sourceById = new Map(source.sources.map((entry) => [entry.id, entry]));
+    const copiedUploads: Record<string, StoredUpload[]> = {};
+    try {
+      let aggregateBytes = 0;
+      for (const [sourceId, entries] of Object.entries(source.uploads)) {
+        const sourceEntry = sourceById.get(sourceId);
+        if (!sourceEntry || (sourceEntry.kind !== "file" && sourceEntry.kind !== "folder")) throw new Error("Workspace context upload metadata is invalid.");
+        if (entries.length > MAX_UPLOAD_FILES) throw new Error("Too many uploaded project files were supplied.");
+        let sourceBytes = 0;
+        const targetEntries: StoredUpload[] = [];
+        const seenPaths = new Set<string>();
+        for (const entry of entries) {
+          if (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > MAX_UPLOAD_BYTES_PER_FILE) throw new Error("Uploaded project context exceeds the size limit.");
+          sourceBytes += entry.size;
+          aggregateBytes += entry.size;
+          if (sourceBytes > MAX_UPLOAD_BYTES || aggregateBytes > MAX_UPLOAD_BYTES_TOTAL) throw new Error("Uploaded project context exceeds the size limit.");
+          const relativePath = normalizeUploadRelativePath(entry.relativePath, sourceEntry.kind === "file");
+          if (seenPaths.has(relativePath)) throw new Error("Uploaded project files must have unique relative paths.");
+          seenPaths.add(relativePath);
+          const sourcePath = path.join(resolveUploadRoot(sourceRoot, sourceId), ...relativePath.split("/"));
+          const targetPath = path.join(resolveUploadRoot(targetRoot, sourceId), ...relativePath.split("/"));
+          await assertNoSymlinkAlongPath(sourceRoot, sourcePath);
+          const sourceMetadata = await lstat(sourcePath).catch(() => null);
+          if (!sourceMetadata?.isFile() || sourceMetadata.size !== entry.size) throw new Error("Workspace context upload material is unavailable.");
+          await assertNoSymlinkAlongPath(targetRoot, targetPath);
+          await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+          await copyFile(sourcePath, targetPath);
+          await syncFile(targetPath);
+          if (await hashFileWithinLimits(targetPath, MAX_UPLOAD_BYTES_PER_FILE) !== entry.contentHash) throw new Error("Workspace context upload integrity could not be verified.");
+          targetEntries.push({ ...entry, relativePath });
+        }
+        copiedUploads[sourceId] = targetEntries;
+      }
+      const cloned = createStoredContext({
+        actorId,
+        draftContextId: targetDraftContextId,
+        fingerprint: createContextFingerprint(source.sources, copiedUploads),
+        generationId: null,
+        sources: source.sources,
+        uploads: copiedUploads,
+        sourceReports: source.sources.map((entry) => ({
+          sourceId: entry.id,
+          sourceKind: entry.kind,
+          status: "attached",
+          support: "partial",
+          discoveredItems: 0,
+          fetchedItems: 0,
+          storedDocuments: 0,
+          warningCount: 0,
+          warnings: [],
+          error: null
+        })),
+        warnings: [],
+        intakeStatus: "staged"
+      });
+      await writeStoredContext(targetRoot, cloned);
+      return { draftContextId: targetDraftContextId, sources: cloned.sources, fingerprint: cloned.fingerprint };
+    } catch (error) {
+      await rm(targetRoot, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
   });
 }
 
@@ -1122,6 +1219,28 @@ async function writeDurableFile(target: string, content: string | Buffer) {
   }
 }
 
+async function syncFile(filePath: string) {
+  const handle = await open(filePath, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function hashFileWithinLimits(filePath: string, limit: number) {
+  const hash = createHash("sha256");
+  let total = 0;
+  const stream = createReadStream(filePath, { highWaterMark: 64 * 1024 });
+  for await (const chunk of stream) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += bytes.byteLength;
+    if (total > limit) throw new Error("Uploaded project context exceeds the size limit.");
+    hash.update(bytes);
+  }
+  return hash.digest("hex");
+}
+
 async function cleanupExpiredWorkspaceCreationContexts() {
   const actorRoots = await readdir(WORKSPACE_CREATION_CONTEXT_ROOT, { withFileTypes: true }).catch(() => []);
   for (const actorRoot of actorRoots) {
@@ -1175,4 +1294,10 @@ async function withContextLock<T>(key: string, task: () => Promise<T>): Promise<
     release();
     if (contextLocks.get(key) === chain) contextLocks.delete(key);
   }
+}
+
+async function withContextLocks<T>(keys: readonly string[], task: () => Promise<T>): Promise<T> {
+  if (keys.length === 0) return task();
+  const [first, ...rest] = keys;
+  return withContextLock(first!, () => withContextLocks(rest, task));
 }

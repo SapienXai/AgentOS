@@ -72,6 +72,8 @@ export type StoredWorkspaceProvisioningRun = {
   attempt: number;
   workspaceId: string | null;
   workspacePath: string | null;
+  /** Binding predecessor captured before this run mutates the workspace. */
+  expectedCurrentProvisioningRunId?: string | null;
   result: WorkspaceCreateResult | null;
   completedSteps: Partial<Record<ProvisioningCompletedStepId, ProvisioningCheckpoint>>;
   warnings: string[];
@@ -164,6 +166,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     attempt: 1,
     workspaceId: null,
     workspacePath: null,
+    // Captured after OpenClaw returns the canonical workspace identity.
     result: null,
     completedSteps: {},
     warnings: [],
@@ -272,6 +275,7 @@ function assertImmutableRunFields(run: StoredWorkspaceProvisioningRun, updates: 
     || ("blueprintFingerprint" in updates && updates.blueprintFingerprint !== run.blueprintFingerprint)
     || ("draftContextId" in updates && updates.draftContextId !== run.draftContextId)
     || ("expectedKnowledgeGenerationId" in updates && updates.expectedKnowledgeGenerationId !== run.expectedKnowledgeGenerationId)
+    || ("expectedCurrentProvisioningRunId" in updates && "expectedCurrentProvisioningRunId" in run && updates.expectedCurrentProvisioningRunId !== run.expectedCurrentProvisioningRunId)
     || ("blueprint" in updates && stableStringify(updates.blueprint) !== stableStringify(run.blueprint))
     || ("compositionPlan" in updates && stableStringify(updates.compositionPlan) !== stableStringify(run.compositionPlan))
   ) {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
+  cloneWorkspaceCreationContext,
   readWorkspaceCreationContext,
   readWorkspaceCreationFileWithinLimits,
   stageWorkspaceCreationKnowledge,
@@ -234,6 +235,36 @@ test("folder uploads preserve safe relative paths and are read by Phase 2", asyn
     assert.equal((context.knowledge.documents ?? []).length, 2);
     assert.ok((context.knowledge.documents ?? []).some((document) => document.content?.includes("Product requirements")));
   });
+});
+
+test("reanalysis clones protected intake into a new immutable context generation", async () => {
+  const actorId = "context-test-reanalysis";
+  const parentContextId = randomUUID();
+  const childContextId = randomUUID();
+  const actorHash = createHash("sha256").update(actorId).digest("hex").slice(0, 32);
+  const parentRoot = `${missionControlRootPath}/workspace-create/${actorHash}/${parentContextId}`;
+  const childRoot = `${missionControlRootPath}/workspace-create/${actorHash}/${childContextId}`;
+  try {
+    const file = fileSource("reanalysis-file");
+    const bytes = Buffer.from("The durable project brief survives reanalysis.");
+    await stageWorkspaceCreationKnowledge({
+      actorId,
+      draftContextId: parentContextId,
+      sources: [file],
+      uploads: [upload(file.id, "brief.md", bytes.toString())]
+    });
+    const cloned = await cloneWorkspaceCreationContext({ actorId, sourceDraftContextId: parentContextId, targetDraftContextId: childContextId });
+    const child = JSON.parse(await readFile(`${childRoot}/context.json`, "utf8")) as { draftContextId: string; generationId: string | null; uploads: Record<string, Array<{ relativePath: string; size: number; contentHash: string }>>; sources: unknown[] };
+    assert.equal(cloned.draftContextId, childContextId);
+    assert.equal(child.draftContextId, childContextId);
+    assert.equal(child.generationId, null);
+    assert.equal(child.sources.length, 1);
+    assert.deepEqual(child.uploads[file.id]?.map(({ relativePath, size, contentHash }) => ({ relativePath, size, contentHash })), [{ relativePath: "brief.md", size: bytes.byteLength, contentHash: createHash("sha256").update(bytes).digest("hex") }]);
+    assert.notEqual(parentContextId, childContextId);
+  } finally {
+    await rm(parentRoot, { recursive: true, force: true });
+    await rm(childRoot, { recursive: true, force: true });
+  }
 });
 
 test("partial source failure preserves surviving project context", async () => {

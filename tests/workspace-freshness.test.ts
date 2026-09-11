@@ -66,7 +66,7 @@ test("freshness distinguishes partial context from unknown current evidence", ()
 test("drift reports bounded canonical artifact categories without changing presentation order", () => {
   const previousPack = goldenProjectFixtures[1].pack;
   const currentPack = structuredClone(previousPack);
-  currentPack.facts = currentPack.facts.map((fact, index) => index === 0 ? { ...fact, statement: `${fact.statement} Updated.` } : fact);
+  currentPack.facts = currentPack.facts.map((fact, index) => index === 0 ? { ...fact, normalizedValue: "changed-project-meaning", statement: `${fact.statement} Updated.` } : fact);
   currentPack.officialResources = [...currentPack.officialResources, {
     ...currentPack.officialResources[0],
     id: "orbitdesk-new-resource",
@@ -97,4 +97,18 @@ test("drift reports bounded canonical artifact categories without changing prese
     stableWorkspaceFingerprint({ members: ["second", "first"] }),
     "fingerprints preserve intentional collection order"
   );
+});
+
+test("semantic drift ignores generation metadata and retrieval noise", () => {
+  const previousPack = structuredClone(goldenProjectFixtures[1].pack);
+  const currentPack = structuredClone(previousPack);
+  currentPack.id = "orbitdesk-refresh-2";
+  currentPack.createdAt = "2026-09-11T00:00:00.000Z";
+  currentPack.updatedAt = "2026-09-11T00:00:00.000Z";
+  currentPack.provenance = { ...currentPack.provenance, generationId: "orbitdesk-refresh-generation" };
+  currentPack.generation = { ...currentPack.generation!, id: "orbitdesk-refresh-generation", createdAt: "2026-09-11T00:00:00.000Z" };
+  currentPack.evidence = currentPack.evidence.map((entry) => ({ ...entry, id: `${entry.id}-refresh`, retrievedAt: "2026-09-11T01:00:00.000Z" }));
+  currentPack.facts = currentPack.facts.map((fact) => ({ ...fact, id: `${fact.id}-refresh`, evidence: fact.evidence.map((reference) => ({ ...reference, evidenceRefId: `${reference.evidenceRefId}-refresh` })), retrievedAt: "2026-09-11T01:00:00.000Z" }));
+  currentPack.officialResources = currentPack.officialResources.map((resource) => ({ ...resource, id: `${resource.id}-refresh`, evidence: resource.evidence.map((reference) => ({ ...reference, evidenceRefId: `${reference.evidenceRefId}-refresh` })) }));
+  assert.equal(summarizeWorkspaceDrift({ previousPack, currentPack }).status, "none");
 });

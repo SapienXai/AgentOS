@@ -30,7 +30,7 @@ import {
   ProvisioningLeaseLostError,
   type ProvisioningLeaseHandle
 } from "@/lib/agentos/application/workspace-provisioning-lease";
-import { persistWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
+import { persistWorkspaceIntelligenceBinding, readWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
 import {
   buildProvisioningStorageKey,
   createRunAtomically,
@@ -152,6 +152,7 @@ type PreparedProvisioning = {
 
 export type WorkspaceProvisioningDependencies = {
   rootPath?: string;
+  workspaceIntelligenceBindingRootPath?: string;
   now?: () => Date;
   /** Test-only barrier used to deterministically exercise the atomic-create race. */
   beforeAtomicRunCreate?: () => Promise<void>;
@@ -165,10 +166,12 @@ export type WorkspaceProvisioningDependencies = {
   ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
   updateAgent?: typeof updateAgent;
   persistWorkspaceIntelligenceBinding?: typeof persistWorkspaceIntelligenceBinding;
+  readWorkspaceIntelligenceBinding?: typeof readWorkspaceIntelligenceBinding;
 };
 
 type ResolvedWorkspaceProvisioningDependencies = {
   rootPath: string;
+  workspaceIntelligenceBindingRootPath: string | undefined;
   now: () => Date;
   beforeAtomicRunCreate?: () => Promise<void>;
   createWorkspaceProject: typeof createWorkspaceProject;
@@ -181,6 +184,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
   ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
   updateAgent: typeof updateAgent;
   persistWorkspaceIntelligenceBinding: typeof persistWorkspaceIntelligenceBinding;
+  readWorkspaceIntelligenceBinding: typeof readWorkspaceIntelligenceBinding;
 };
 
 const inFlight = new Map<string, Promise<WorkspaceProvisioningRun>>();
@@ -188,6 +192,8 @@ const inFlight = new Map<string, Promise<WorkspaceProvisioningRun>>();
 function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): ResolvedWorkspaceProvisioningDependencies {
   return {
     rootPath: resolveProvisioningRoot(input.rootPath),
+    workspaceIntelligenceBindingRootPath: input.workspaceIntelligenceBindingRootPath
+      ?? (input.rootPath ? path.join(resolveProvisioningRoot(input.rootPath), "..", "workspace-intelligence-bindings") : undefined),
     now: input.now ?? (() => new Date()),
     beforeAtomicRunCreate: input.beforeAtomicRunCreate,
     createWorkspaceProject: input.createWorkspaceProject ?? createWorkspaceProject,
@@ -199,7 +205,8 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
     promoteWorkspaceCreationKnowledge: input.promoteWorkspaceCreationKnowledge ?? promoteWorkspaceCreationKnowledge,
     ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
     updateAgent: input.updateAgent ?? updateAgent,
-    persistWorkspaceIntelligenceBinding: input.persistWorkspaceIntelligenceBinding ?? persistWorkspaceIntelligenceBinding
+    persistWorkspaceIntelligenceBinding: input.persistWorkspaceIntelligenceBinding ?? persistWorkspaceIntelligenceBinding,
+    readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding
   };
 }
 
@@ -569,6 +576,8 @@ async function executeWorkspaceProvisioning(
     run = ensured.run;
     const created = ensured.created;
 
+    run = await captureBindingPrecondition(filePath, run, prepared, created, lease, dependencies);
+
     throwIfProvisioningAborted(signal);
     if (prepared.compositionPlan && !isCompleted(run, "composition-applied")) {
       run = await transition(filePath, run, "applying-composition", "Applying the reviewed workspace composition plan.", lease, dependencies);
@@ -644,7 +653,8 @@ async function executeWorkspaceProvisioning(
     run = await transition(filePath, run, "verifying", "Verifying the physical workspace, agents, bootstrap files, and native bindings.", lease, dependencies);
     const verification = await verifyProvisionedWorkspace(created, prepared.blueprint, nativeBinding, dependencies, run);
     const warnings = uniqueStrings([...run.warnings, ...verification.warnings]);
-    const finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : warnings.length > 0 ? "partial" : "ready";
+    let finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : warnings.length > 0 ? "partial" : "ready";
+    let finalWarnings = warnings;
     const verifiedAt = dependencies.now().toISOString();
     const verificationError = verification.coreErrors.length > 0
       ? { code: "verification-failed", message: verification.coreErrors[0] }
@@ -658,7 +668,7 @@ async function executeWorkspaceProvisioning(
     const terminalRun: StoredWorkspaceProvisioningRun = {
       ...run,
       state: finalState,
-      warnings,
+      warnings: finalWarnings,
       error: verificationError,
       completedSteps,
       verifiedAt,
@@ -669,15 +679,6 @@ async function executeWorkspaceProvisioning(
     // while the final manifest write is still in flight.
     await lease.assertOwned();
     await writeProvisioningManifest(created.workspacePath, terminalRun, prepared.blueprint, pendingSetup);
-    await lease.assertOwned();
-    run = await updateStoredRun(filePath, run, {
-      state: finalState,
-      warnings,
-      error: verificationError,
-      completedSteps,
-      verifiedAt,
-      updatedAt: verifiedAt
-    });
     if (finalState === "ready" || finalState === "partial") {
       try {
         await dependencies.persistWorkspaceIntelligenceBinding({
@@ -691,19 +692,26 @@ async function executeWorkspaceProvisioning(
           compositionPlan: prepared.compositionPlan,
           provisioningRunId: run.runId,
           status: finalState === "partial" ? "partial" : "current",
-          now: verifiedAt
+          now: verifiedAt,
+          expectedCurrentProvisioningRunId: run.expectedCurrentProvisioningRunId,
+          rootPath: dependencies.workspaceIntelligenceBindingRootPath
         });
       } catch (error) {
-        const warning = "Workspace intelligence binding could not be recorded; freshness will remain unknown until the workspace is refreshed.";
-        run = await updateStoredRun(filePath, run, {
-          state: "partial",
-          warnings: uniqueStrings([...run.warnings, warning]),
-          updatedAt: dependencies.now().toISOString()
-        });
-        await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup).catch(() => undefined);
+        finalState = "partial";
+        finalWarnings = uniqueStrings([...finalWarnings, "Workspace intelligence binding could not be recorded; freshness will remain unknown until the workspace is refreshed."]);
+        await writeProvisioningManifest(created.workspacePath, { ...terminalRun, state: finalState, warnings: finalWarnings }, prepared.blueprint, pendingSetup).catch(() => undefined);
         void error;
       }
     }
+    await lease.assertOwned();
+    run = await updateStoredRun(filePath, run, {
+      state: finalState,
+      warnings: finalWarnings,
+      error: verificationError,
+      completedSteps,
+      verifiedAt,
+      updatedAt: verifiedAt
+    });
     return publicRun(run);
   } catch (error) {
     if (error instanceof ProvisioningLeaseBusyError || error instanceof ProvisioningLeaseLostError) {
@@ -726,6 +734,28 @@ async function executeWorkspaceProvisioning(
   } finally {
     await lease?.release().catch(() => undefined);
   }
+}
+
+async function captureBindingPrecondition(
+  filePath: string,
+  run: StoredWorkspaceProvisioningRun,
+  prepared: PreparedProvisioning,
+  created: WorkspaceCreateResult,
+  lease: ProvisioningLeaseHandle,
+  dependencies: ResolvedWorkspaceProvisioningDependencies
+) {
+  if ("expectedCurrentProvisioningRunId" in run) return run;
+  await lease.assertOwned();
+  const currentBinding = await dependencies.readWorkspaceIntelligenceBinding({
+    actorId: prepared.actorId,
+    workspaceId: created.workspaceId,
+    rootPath: dependencies.workspaceIntelligenceBindingRootPath
+  });
+  await lease.assertOwned();
+  return updateStoredRun(filePath, run, {
+    expectedCurrentProvisioningRunId: currentBinding?.provisioningRunId ?? null,
+    updatedAt: dependencies.now().toISOString()
+  });
 }
 
 async function ensureWorkspaceBootstrap(
@@ -1357,6 +1387,7 @@ function assertStoredRunIntegrity(run: StoredWorkspaceProvisioningRun): asserts 
     || !Array.isArray(run.pendingSetup.channels)
     || !Array.isArray(run.pendingSetup.connections)
     || !Array.isArray(run.pendingSetup.automations)
+    || ("expectedCurrentProvisioningRunId" in run && run.expectedCurrentProvisioningRunId !== null && typeof run.expectedCurrentProvisioningRunId !== "string")
     || (run.compositionPlan !== undefined && run.compositionPlan !== null && !validateWorkspaceCompositionPlan(run.compositionPlan))
     || (run.compositionPlan !== undefined && run.compositionPlan !== null && (
       run.compositionPlan.workspaceBlueprintId !== run.blueprintId

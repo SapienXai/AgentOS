@@ -9,6 +9,7 @@ import {
   startWorkspaceCreationRun,
   cancelWorkspaceCreationRun,
   ensureCreationRunExecution,
+  refreshWorkspaceCreationRun,
   reviseWorkspaceCreationRun,
   listResumableWorkspaceCreationRuns,
   type WorkspaceCreationRunDependencies
@@ -270,6 +271,65 @@ test("creation idempotency covers normalized intent and upload content", async (
     ]) {
       await assert.rejects(() => startWorkspaceCreationRun({ ...stableInput, ...changed }, deps), /different creation intent/);
     }
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("reanalysis uses one deterministic child context and never mutates the accepted parent", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-reanalysis-"));
+  const actorId = "reanalysis-actor";
+  const parentContextId = "22222222-2222-4222-8222-222222222222";
+  const cloneTargets: string[] = [];
+  try {
+    const architectResult = await generateWorkspaceBlueprint({ brief: "Build a workspace", materialization: { mode: "empty" }, operatorConstraints: [] }, {
+      runId: "parent-architect",
+      modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+    });
+    const parent = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "parent"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "parent-key",
+      attempt: 1,
+      input: { brief: "Build a workspace", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId: parentContextId,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result: architectResult,
+      lineage: { rootRunId: "parent", parentRunId: null, relation: "initial" }
+    });
+    const deps = dependencies(rootPath, {
+      cloneContext: async ({ targetDraftContextId }) => {
+        cloneTargets.push(targetDraftContextId);
+        return { draftContextId: targetDraftContextId, sources: [], fingerprint: "f".repeat(64) };
+      },
+      persistIntake: async ({ draftContextId }) => ({ draftContextId: draftContextId!, sources: [], fingerprint: "f".repeat(64) }),
+      stageContext: async ({ draftContextId }) => ({ draftContextId: draftContextId!, generationId: null, runStatus: "ready", reused: false, sources: [], sourceReports: [], warnings: [] }),
+      readContextMetadata: async ({ draftContextId }) => ({ draftContextId, generationId: null, runStatus: "ready", reused: false, sources: [], sourceReports: [], warnings: [], knowledge: { generationId: null, sources: [], documents: [], warnings: [] } }),
+      readIntelligencePack: async () => null,
+      readIntelligenceSummary: async () => null,
+      readCompositionPlan: async () => null,
+      persistCompositionPlan: async ({ plan }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status }),
+      generateArchitect: async () => architectResult,
+      composeWorkspace: async (input, options) => createDeterministicWorkspaceComposition(input, { runId: options?.runId ?? "reanalysis-composition" })
+    });
+
+    const refreshed = await Promise.all(Array.from({ length: 4 }, () => refreshWorkspaceCreationRun({ actorId, runId: parent.run.runId }, deps)));
+    const childIds = new Set(refreshed.map((run) => run?.runId));
+    const childContextIds = new Set(refreshed.map((run) => run?.draftContextId));
+    assert.equal(childIds.size, 1);
+    assert.equal(childContextIds.size, 1);
+    assert.equal(cloneTargets.length, 4);
+    assert.equal(new Set(cloneTargets).size, 1);
+    const child = refreshed[0];
+    assert.ok(child);
+    let finished = await waitForTerminal(actorId, child.runId, deps);
+    for (let index = 0; index < 100 && !finished.snapshot.drift; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      finished = await getWorkspaceCreationRun({ actorId, runId: child.runId }, deps) ?? finished;
+    }
+    assert.equal(finished.snapshot.state, "review-ready");
+    const unchangedParent = await readWorkspaceCreationRunFile(parent.filePath);
+    assert.equal(unchangedParent?.draftContextId, parentContextId);
+    assert.equal(unchangedParent?.lineage?.parentRunId, null);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }
