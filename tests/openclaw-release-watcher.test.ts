@@ -328,14 +328,14 @@ test("runner returns intake-blocked and writes incomplete evidence for an author
   const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-"));
   const result = await runOpenClawReleaseWatch({
     mode: "manual",
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.9.5",
     dryRun: true,
     forceRefresh: true,
     outputDir,
     agentosCommit: "c".repeat(40),
     agentosVersion: "0.8.0",
     now: () => new Date("2026-09-06T00:00:00.000Z"),
-    fetchImpl: releaseWatchIncompleteContractFetch("2026.9.4")
+    fetchImpl: releaseWatchIncompleteContractFetch("2026.9.5")
   });
 
   assert.equal(result.status, "intake-blocked");
@@ -391,7 +391,7 @@ test("issue rendering is deduplicated across open and closed issues and surfaces
 
 test("unmanifested releases remain blocked from normal updates and watcher code has no mutation path", () => {
   const decision = resolveOpenClawUpdateDecision({
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.9.5",
     agentOsVersion: "0.8.0",
     manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
     mode: "recommended"
@@ -423,7 +423,7 @@ test("an exact certified target is not re-intaken while candidate and blocked ta
   };
   assert.deepEqual(
     selectOpenClawReleasesForIntake(releases, manifest).map((release) => release.version),
-    ["2026.9.2", "2026.9.10"]
+    ["2026.9.2", "2026.9.3", "2026.9.10"]
   );
 });
 

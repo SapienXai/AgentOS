@@ -611,7 +611,7 @@ function readJson(context, relativePath) {
 }
 
 function readTypeScriptStringConstant(source, name) {
-  const pattern = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*"([^"]+)"\\s*;`);
+  const pattern = new RegExp(`export\\s+const\\s+${name}(?:\\s*:\\s*string)?\\s*=\\s*"([^"]+)"\\s*;`);
   return source.match(pattern)?.[1] ?? null;
 }
 
