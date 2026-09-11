@@ -28,6 +28,7 @@ import {
 } from "@/lib/agentos/domains/workspace-creation-run";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
+import { composeWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
 
 const source = createWorkspaceKnowledgeSource({
   id: "project-file",
@@ -145,7 +146,7 @@ test("recovery fails closed for ambiguous Architect execution and resumes only d
       brief: "Build a workspace",
       mode: "automatic" as const,
       operatorConstraints: [],
-      materialization: { mode: "empty" },
+      materialization: { mode: "empty" as const },
       sources: []
     };
     const ambiguousCreated = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "ambiguous"), {
@@ -167,6 +168,16 @@ test("recovery fails closed for ambiguous Architect execution and resumes only d
     assert.equal(failed.snapshot.state, "failed");
     assert.equal(failed.snapshot.architect.failure?.code, "remote-execution-ambiguous");
 
+    const durableArchitectResult = await generateWorkspaceBlueprint({
+      brief: input.brief,
+      mode: input.mode,
+      materialization: input.materialization,
+      operatorConstraints: input.operatorConstraints
+    }, {
+      runId: "durable-architect-result",
+      nativeSearch: async () => ({ status: "unavailable", results: [] }),
+      modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+    });
     const completedCreated = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "completed"), {
       actorHash: workspaceCreationActorHash(actorId),
       idempotencyKeyHash: "key-2",
@@ -174,14 +185,20 @@ test("recovery fails closed for ambiguous Architect execution and resumes only d
       input,
       draftContextId: null,
       snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "running", stage: "architect-reasoning" },
-      result: { blueprint: { status: "draft" } }
+      result: durableArchitectResult
     });
     const completedRun = {
       ...completedCreated.run,
       remoteExecution: { ...completedCreated.run.remoteExecution, outcome: "completed" as const }
     };
     await updateWorkspaceCreationRun(completedCreated.filePath, completedRun, { remoteExecution: completedRun.remoteExecution, snapshot: completedRun.snapshot });
-    await ensureCreationRunExecution({ actorId, runId: completedRun.runId }, { rootPath });
+    await ensureCreationRunExecution({ actorId, runId: completedRun.runId }, {
+      rootPath,
+      composeWorkspace: async (compositionInput) => composeWorkspaceComposition(compositionInput, {
+        runId: "recovery-composition",
+        modelExecutor: async () => ({ text: JSON.stringify({ schemaVersion: 1, policyVersion: "phase7-safe-workspace-composition-v1", artifacts: [], warnings: [] }), runtime: "model-runtime" as const, runId: null, sessionKey: null })
+      })
+    });
     const resumed = await waitForTerminal(actorId, completedRun.runId, { rootPath });
     assert.equal(resumed.snapshot.state, "review-ready");
     assert.deepEqual(resumed.result, completedRun.result);

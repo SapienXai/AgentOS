@@ -14,6 +14,7 @@ import {
   WorkspaceProvisioningError,
   type WorkspaceProvisioningDependencies
 } from "@/lib/agentos/application/workspace-provisioning-service";
+import { composeWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
 import {
   acquireProvisioningLease,
   resolveLeasePath,
@@ -300,6 +301,55 @@ test("fresh provisioning executes through the injected canonical OpenClaw worksp
     assert.equal(harness.counts().createCount, 1);
     assert.ok(finished.completedSteps["workspace-materialized"]);
     assert.ok(finished.completedSteps["final-verification-complete"]);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("provisioning applies the reviewed composition plan in its own durable step", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-composition-"));
+  try {
+    const harness = createHarness(rootPath);
+    const value = blueprint();
+    const composition = await composeWorkspaceComposition({
+      blueprint: value,
+      operatorIntent: { brief: value.brief, constraints: [] }
+    }, {
+      runId: "provisioned-composition",
+      modelExecutor: async () => ({
+        text: JSON.stringify({
+          schemaVersion: 1,
+          policyVersion: "phase7-safe-workspace-composition-v1",
+          artifacts: [{
+            artifactId: "project-profile",
+            title: "Project profile",
+            sections: ["Overview"],
+            body: "# Project Profile\n\nProvisioned from a reviewed plan.",
+            sourceRefs: { factIds: [], resourceIds: [], evidenceRefIds: [] },
+            blueprintRefs: []
+          }],
+          warnings: []
+        }),
+        runtime: "model-runtime" as const,
+        runId: null,
+        sessionKey: null
+      })
+    });
+    const input = {
+      actorId: "actor-composition",
+      blueprint: value,
+      idempotencyKey: "composition-run",
+      acceptDraft: true,
+      compositionPlan: composition.plan
+    };
+    const finished = await waitForWorkspaceProvisioning(input, harness.dependencies);
+    assert.equal(finished.state, "ready");
+    assert.equal(finished.composition?.status, "ready");
+    assert.equal(finished.composition?.artifactCount, 1);
+    assert.ok(finished.completedSteps["composition-applied"]);
+    const workspacePath = finished.result?.workspacePath;
+    assert.ok(workspacePath);
+    assert.match(await readFile(path.join(workspacePath, "docs", "project-profile.md"), "utf8"), /Provisioned from a reviewed plan/);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

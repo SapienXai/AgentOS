@@ -16,6 +16,7 @@ import type {
   WorkspaceArchitectModelExecutionRequest,
   WorkspaceArchitectModelExecutionResult
 } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceCompositionModelExecutionRequest, WorkspaceCompositionModelExecutionResult } from "@/lib/agentos/domains/workspace-composition";
 import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 
 export const DEFAULT_WORKSPACE_ARCHITECT_AGENT_ID = PLANNER_RUNTIME_ARCHITECT_AGENT_ID;
@@ -183,6 +184,50 @@ export async function runStructuredProjectIntelligenceAgent(
     sessionKey: payload.sessionKey?.trim() || sessionKey,
     runtime: "native-openclaw"
   };
+}
+
+/** Hidden OpenClaw execution boundary for content-only workspace composition proposals. */
+export async function runStructuredWorkspaceComposerAgent(
+  request: WorkspaceCompositionModelExecutionRequest,
+  options: { adapter?: OpenClawAdapter; runtimeDependencies?: PlannerRuntimeEnsureDependencies } = {}
+): Promise<WorkspaceCompositionModelExecutionResult> {
+  const adapter = options.adapter ?? getOpenClawAdapter();
+  const runtime = await ensureWorkspaceArchitectRuntime({ dependencies: options.runtimeDependencies });
+  if (runtime.status !== "ready" || !runtime.architectAgentId) {
+    throw new WorkspaceArchitectRuntimeUnavailableError(
+      runtime.warning ?? "The hidden AgentOS composition runtime is unavailable.",
+      runtime.failureKind === "gateway" || runtime.failureKind === "authorization" ? runtime.failureKind : "runtime-bootstrap"
+    );
+  }
+  const agentId = runtime.architectAgentId;
+  const sessionKey = `agent:${agentId}:workspace-composer:${request.runId}`;
+  const timeoutMs = Math.max(1_000, Math.min(request.timeoutMs, 125_000));
+  const abortHandler = () => {
+    void adapter.abortAgentTurn?.({ agentId, sessionKey }, { timeoutMs: 15_000 }).catch(() => undefined);
+  };
+  request.signal.addEventListener("abort", abortHandler, { once: true });
+  try {
+    const payload = await adapter.runAgentTurn({
+      agentId,
+      sessionKey,
+      message: `${request.systemPrompt}\n\n${request.userPrompt}`,
+      thinking: "high",
+      timeoutSeconds: Math.ceil(timeoutMs / 1_000),
+      idempotencyKey: `workspace-composer:${request.runId}:${request.attempt}`
+    }, { timeoutMs, signal: request.signal });
+    return {
+      text: extractMissionCommandPayloads(payload).map((entry) => entry.text.trim()).filter(Boolean).join("\n\n") || payload.summary?.trim() || "",
+      runId: payload.runId ?? null,
+      sessionKey: payload.sessionKey?.trim() || sessionKey,
+      runtime: "native-openclaw"
+    };
+  } catch (error) {
+    const classification = classifyNativeMutationError(error);
+    if (classification.disposition === "definite-rejection") throw error;
+    throw new Error("Workspace composition execution outcome is ambiguous.");
+  } finally {
+    request.signal.removeEventListener("abort", abortHandler);
+  }
 }
 
 export function buildArchitectExecutionPrompt(

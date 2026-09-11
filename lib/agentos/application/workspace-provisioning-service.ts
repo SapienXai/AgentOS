@@ -13,8 +13,11 @@ import { readKnowledgeSnapshot } from "@/lib/agentos/domains/workspace-knowledge
 import {
   promoteWorkspaceCreationKnowledge,
   readWorkspaceCreationContext,
+  readWorkspaceCreationCompositionPlan,
   type WorkspaceCreationContextResult
 } from "@/lib/agentos/application/workspace-creation-context-service";
+import { applyWorkspaceCompositionPlan } from "@/lib/agentos/application/workspace-composer";
+import { validateWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 import {
   ensureWorkspaceNativeKnowledge,
   type WorkspaceNativeKnowledgeBindingResult,
@@ -66,7 +69,7 @@ import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
 const POLL_INTERVAL_MS = 100;
 const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "Documents", "Shared", "projects");
-const PROVISIONING_STEP_ORDER: WorkspaceProvisioningState[] = ["validating", "materializing", "bootstrapping", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying"];
+const PROVISIONING_STEP_ORDER: WorkspaceProvisioningState[] = ["validating", "materializing", "bootstrapping", "applying-composition", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying"];
 
 export { WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH, WORKSPACE_PROVISIONING_ROOT, WORKSPACE_PROVISIONING_SCHEMA_VERSION, workspaceProvisioningStates };
 export type { ProvisioningCheckpoint, ProvisioningCompletedStepId, StoredWorkspaceProvisioningRun };
@@ -104,6 +107,7 @@ export type WorkspaceProvisioningRun = {
   knowledge: StoredWorkspaceProvisioningRun["knowledge"];
   nativeKnowledge: StoredWorkspaceProvisioningRun["nativeKnowledge"];
   pendingSetup: StoredWorkspaceProvisioningRun["pendingSetup"];
+  composition: StoredWorkspaceProvisioningRun["composition"];
   verifiedAt: string | null;
 };
 
@@ -114,6 +118,7 @@ export type ProvisionWorkspaceFromBlueprintInput = {
   expectedKnowledgeGenerationId?: string | null;
   idempotencyKey: string;
   acceptDraft?: boolean;
+  compositionPlan?: unknown;
   signal?: AbortSignal;
 };
 
@@ -136,6 +141,7 @@ type PreparedProvisioning = {
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
   context: WorkspaceCreationContextResult | null;
+  compositionPlan: WorkspaceCompositionPlan | null;
   createInput: Parameters<typeof createWorkspaceProject>[0];
 };
 
@@ -147,6 +153,7 @@ export type WorkspaceProvisioningDependencies = {
   createWorkspaceProject?: typeof createWorkspaceProject;
   getMissionControlSnapshot?: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext?: typeof readWorkspaceCreationContext;
+  readWorkspaceCreationCompositionPlan?: typeof readWorkspaceCreationCompositionPlan;
   readKnowledgeSnapshot?: typeof readKnowledgeSnapshot;
   promoteWorkspaceCreationKnowledge?: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
@@ -160,6 +167,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
   createWorkspaceProject: typeof createWorkspaceProject;
   getMissionControlSnapshot: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext: typeof readWorkspaceCreationContext;
+  readWorkspaceCreationCompositionPlan: typeof readWorkspaceCreationCompositionPlan;
   readKnowledgeSnapshot: typeof readKnowledgeSnapshot;
   promoteWorkspaceCreationKnowledge: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
@@ -176,6 +184,7 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
     createWorkspaceProject: input.createWorkspaceProject ?? createWorkspaceProject,
     getMissionControlSnapshot: input.getMissionControlSnapshot ?? getMissionControlSnapshot,
     readWorkspaceCreationContext: input.readWorkspaceCreationContext ?? readWorkspaceCreationContext,
+    readWorkspaceCreationCompositionPlan: input.readWorkspaceCreationCompositionPlan ?? readWorkspaceCreationCompositionPlan,
     readKnowledgeSnapshot: input.readKnowledgeSnapshot ?? readKnowledgeSnapshot,
     promoteWorkspaceCreationKnowledge: input.promoteWorkspaceCreationKnowledge ?? promoteWorkspaceCreationKnowledge,
     ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
@@ -202,7 +211,8 @@ export async function startWorkspaceProvisioning(
       blueprint: prepared.blueprint,
       blueprintFingerprint: prepared.blueprintFingerprint,
       draftContextId: prepared.draftContextId,
-      expectedKnowledgeGenerationId: prepared.expectedKnowledgeGenerationId
+      expectedKnowledgeGenerationId: prepared.expectedKnowledgeGenerationId,
+      compositionPlan: prepared.compositionPlan
     });
     run = created.run;
   }
@@ -296,6 +306,7 @@ export async function resumeWorkspaceProvisioningRun(input: {
     blueprint: locator.run.blueprint,
     draftContextId: locator.run.draftContextId,
     expectedKnowledgeGenerationId: locator.run.expectedKnowledgeGenerationId,
+    compositionPlan: locator.run.compositionPlan,
     idempotencyKey: `resume:${locator.run.idempotencyKeyHash}`,
     acceptDraft: true
   }, resolved, {
@@ -365,6 +376,17 @@ async function prepareProvisioning(
   }
   if (context || !options.allowCompletedKnowledgeRecovery) validateKnowledgeFreshness(blueprint, context);
 
+  let compositionPlan: WorkspaceCompositionPlan | null = null;
+  if (input.compositionPlan !== undefined && input.compositionPlan !== null) {
+    if (!validateWorkspaceCompositionPlan(input.compositionPlan)) throw new WorkspaceProvisioningError("composition-invalid", "The workspace composition plan is invalid or tampered with.", 409);
+    compositionPlan = input.compositionPlan;
+  } else if (draftContextId) {
+    compositionPlan = await dependencies.readWorkspaceCreationCompositionPlan({ actorId, draftContextId });
+  }
+  if (compositionPlan?.status === "blocked") {
+    throw new WorkspaceProvisioningError("composition-blocked", "The workspace composition plan contains unresolved conflicts and cannot be provisioned.", 409);
+  }
+
   const blueprintFingerprint = fingerprintBlueprint(blueprint);
   const template = inferWorkspaceTemplate(blueprint.identity.projectType);
   const agents = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists].map((agent) => ({
@@ -387,6 +409,7 @@ async function prepareProvisioning(
     draftContextId,
     expectedKnowledgeGenerationId,
     context,
+    compositionPlan,
     createInput: {
       name: blueprint.identity.name,
       brief: blueprint.brief,
@@ -421,6 +444,8 @@ function assertProvisioningIntentMatches(
     || run.blueprintFingerprint !== prepared.blueprintFingerprint
     || normalizeOptionalIntent(run.draftContextId) !== draftContextId
     || normalizeOptionalIntent(run.expectedKnowledgeGenerationId) !== expectedKnowledgeGenerationId
+    || (run.compositionPlan?.planId ?? null) !== (prepared.compositionPlan?.planId ?? null)
+    || (run.compositionPlan?.inputFingerprint ?? null) !== (prepared.compositionPlan?.inputFingerprint ?? null)
   ) {
     throw new WorkspaceProvisioningError(
       "idempotency-conflict",
@@ -481,6 +506,29 @@ async function executeWorkspaceProvisioning(
     const ensured = await ensureWorkspaceBootstrap(filePath, run, prepared, lease, dependencies);
     run = ensured.run;
     const created = ensured.created;
+
+    throwIfProvisioningAborted(signal);
+    if (prepared.compositionPlan && !isCompleted(run, "composition-applied")) {
+      run = await transition(filePath, run, "applying-composition", "Applying the reviewed workspace composition plan.", lease, dependencies);
+      const applied = await applyWorkspaceCompositionPlan({ workspacePath: created.workspacePath, plan: prepared.compositionPlan });
+      const compositionConflicts = applied.results.filter((result) => result.status === "conflict").length;
+      const compositionWarnings = uniqueStrings([...prepared.compositionPlan.warnings, ...applied.warnings]);
+      run = await updateStoredRun(filePath, run, {
+        composition: {
+          planId: prepared.compositionPlan.planId,
+          status: compositionConflicts > 0 ? "partial" : prepared.compositionPlan.status,
+          artifactCount: prepared.compositionPlan.artifacts.length,
+          appliedCount: applied.results.filter((result) => ["created", "updated", "unchanged"].includes(result.status)).length,
+          conflictCount: compositionConflicts,
+          warnings: compositionWarnings.slice(0, 24)
+        },
+        warnings: uniqueStrings([...run.warnings, ...compositionWarnings]),
+        updatedAt: dependencies.now().toISOString()
+      });
+      if (compositionConflicts === 0) {
+        run = await completeStep(filePath, run, "composition-applied", { planId: prepared.compositionPlan.planId, artifactCount: String(prepared.compositionPlan.artifacts.length) }, lease, dependencies);
+      }
+    }
 
     throwIfProvisioningAborted(signal);
     run = await transition(filePath, run, "promoting-knowledge", "Promoting the accepted staged knowledge.", lease, dependencies);
@@ -996,6 +1044,7 @@ async function writeProvisioningManifest(
       agentIds: run.result?.agentIds ?? [],
       primaryAgentId: run.result?.primaryAgentId ?? null,
       pendingSetup,
+      composition: run.composition,
       verifiedAt: run.verifiedAt
     }
   });
@@ -1090,6 +1139,7 @@ function publicRun(run: StoredWorkspaceProvisioningRun): WorkspaceProvisioningRu
     completedSteps: run.completedSteps,
     knowledge: run.knowledge,
     nativeKnowledge: run.nativeKnowledge,
+    composition: run.composition,
     pendingSetup: run.pendingSetup,
     verifiedAt: run.verifiedAt
   };
@@ -1100,6 +1150,7 @@ const completedStepForState: Record<WorkspaceProvisioningState, ProvisioningComp
   validating: "validated",
   materializing: "workspace-materialized",
   bootstrapping: "bootstrap-verified",
+  "applying-composition": "composition-applied",
   "promoting-knowledge": "knowledge-promoted",
   "provisioning-agents": "agents-verified",
   "binding-knowledge": "knowledge-bound",
@@ -1135,6 +1186,7 @@ function buildSignals(run: StoredWorkspaceProvisioningRun) {
     run.knowledge?.sourceIds.length ? `${run.knowledge.sourceIds.length} knowledge source${run.knowledge.sourceIds.length === 1 ? "" : "s"}` : null,
     run.knowledge?.documentCount ? `${run.knowledge.documentCount} document${run.knowledge.documentCount === 1 ? "" : "s"} promoted` : null,
     run.nativeKnowledge?.status === "configured" ? "Native memory bound" : run.nativeKnowledge?.status === "unknown" ? "Native memory needs verification" : null,
+    run.composition?.status === "fallback" ? "Workspace documents use a safe fallback" : run.composition?.status === "partial" ? "Workspace documents are partial" : run.composition?.conflictCount ? "Workspace document conflict needs review" : null,
     run.pendingSetup.connections.length ? `${run.pendingSetup.connections.length} connection setup pending` : null,
     run.pendingSetup.channels.length ? `${run.pendingSetup.channels.length} channel setup pending` : null,
     run.pendingSetup.automations.length ? `${run.pendingSetup.automations.length} automation setup pending` : null
@@ -1147,6 +1199,7 @@ function provisioningLabel(state: WorkspaceProvisioningState) {
     validating: "Validating blueprint",
     materializing: "Creating workspace folder",
     bootstrapping: "Writing workspace bootstrap",
+    "applying-composition": "Applying workspace documents",
     "promoting-knowledge": "Promoting project knowledge",
     "provisioning-agents": "Provisioning selected agents",
     "binding-knowledge": "Binding native memory",
@@ -1216,6 +1269,8 @@ function assertStoredRunIntegrity(run: StoredWorkspaceProvisioningRun): asserts 
     || !Array.isArray(run.pendingSetup.channels)
     || !Array.isArray(run.pendingSetup.connections)
     || !Array.isArray(run.pendingSetup.automations)
+    || (run.compositionPlan !== undefined && run.compositionPlan !== null && !validateWorkspaceCompositionPlan(run.compositionPlan))
+    || (run.composition !== null && !validateStoredCompositionSummary(run.composition))
   ) {
     throw new WorkspaceProvisioningError("provisioning-state-integrity-failed", "The durable provisioning record is invalid and cannot be resumed.", 500);
   }
@@ -1223,6 +1278,17 @@ function assertStoredRunIntegrity(run: StoredWorkspaceProvisioningRun): asserts 
   if (!validation.valid || run.blueprintFingerprint !== fingerprintBlueprint(blueprint)) {
     throw new WorkspaceProvisioningError("provisioning-state-integrity-failed", "The durable provisioning record is invalid and cannot be resumed.", 500);
   }
+}
+
+function validateStoredCompositionSummary(value: unknown): value is NonNullable<StoredWorkspaceProvisioningRun["composition"]> {
+  if (!isRecord(value)) return false;
+  const keys = ["planId", "status", "artifactCount", "appliedCount", "conflictCount", "warnings"];
+  if (Object.keys(value).some((key) => !keys.includes(key))) return false;
+  return typeof value.planId === "string"
+    && ["ready", "partial", "fallback", "blocked"].includes(value.status as string)
+    && ["artifactCount", "appliedCount", "conflictCount"].every((key) => Number.isSafeInteger(value[key]) && (value[key] as number) >= 0)
+    && Array.isArray(value.warnings)
+    && value.warnings.every((warning) => typeof warning === "string");
 }
 
 function isProvisioningState(value: unknown): value is WorkspaceProvisioningState {

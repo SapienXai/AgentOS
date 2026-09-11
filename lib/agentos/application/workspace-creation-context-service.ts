@@ -38,6 +38,10 @@ import type {
   WorkspaceArchitectCorpusDocument,
   WorkspaceArchitectKnowledgeInput
 } from "@/lib/agentos/domains/workspace-blueprint";
+import {
+  validateWorkspaceCompositionPlan,
+  type WorkspaceCompositionPlan
+} from "@/lib/agentos/domains/workspace-composition";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { redactSecretText } from "@/lib/security/redaction";
 
@@ -610,6 +614,47 @@ export async function readWorkspaceCreationIntelligenceSummary(input: { actorId:
   return stored.intelligenceSummary ?? null;
 }
 
+export async function readWorkspaceCreationCompositionPlan(input: { actorId: string; draftContextId: string }): Promise<WorkspaceCompositionPlan | null> {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) return null;
+  const target = path.join(draftRoot, "workspace-composition.json");
+  await assertNoSymlinkAlongPath(draftRoot, target);
+  let raw: string | null;
+  try {
+    raw = await readFile(target, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!validateWorkspaceCompositionPlan(parsed)) throw new Error("Workspace composition plan failed normalized validation.");
+    return parsed;
+  } catch {
+    throw new Error("Stored workspace composition plan is invalid or tampered with.");
+  }
+}
+
+export async function persistWorkspaceCreationCompositionPlan(input: { actorId: string; draftContextId: string; plan: WorkspaceCompositionPlan }) {
+  const actorId = input.actorId.trim();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  if (!validateWorkspaceCompositionPlan(input.plan)) throw new Error("Workspace composition plan failed normalized validation.");
+  const lockKey = `${actorHash(actorId)}:${draftContextId}`;
+  return withContextLock(lockKey, async () => {
+    const draftRoot = resolveDraftRoot(actorId, draftContextId);
+    const stored = await readStoredContext(draftRoot);
+    if (!stored || stored.actorHash !== actorHash(actorId)) throw new Error("Workspace context is unavailable.");
+    const target = path.join(draftRoot, "workspace-composition.json");
+    await assertNoSymlinkAlongPath(draftRoot, target);
+    await writeAtomicJson(target, input.plan);
+    return { planId: input.plan.planId, inputFingerprint: input.plan.inputFingerprint, status: input.plan.status };
+  });
+}
+
 export async function persistWorkspaceCreationIntelligencePack(input: {
   actorId: string;
   draftContextId: string;
@@ -824,6 +869,9 @@ async function removeStoredIntelligence(draftRoot: string) {
   const target = path.join(draftRoot, "project-intelligence.json");
   await assertNoSymlinkAlongPath(draftRoot, target);
   await rm(target, { force: true });
+  const compositionTarget = path.join(draftRoot, "workspace-composition.json");
+  await assertNoSymlinkAlongPath(draftRoot, compositionTarget);
+  await rm(compositionTarget, { force: true });
 }
 
 function toIngestionSource(source: WorkspaceKnowledgeSource, draftRoot: string, uploads: StoredUpload[]): WorkspaceKnowledgeSource {
@@ -1106,6 +1154,10 @@ async function assertNoSymlinkAlongPath(root: string, target: string) {
 
 function sanitizeDiagnostic(value: string) {
   return redactSecretText(value).replace(/https?:\/\/\S+/gi, "[url]").slice(0, 300);
+}
+
+function isMissingFileError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 async function withContextLock<T>(key: string, task: () => Promise<T>): Promise<T> {

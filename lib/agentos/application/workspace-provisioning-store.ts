@@ -5,6 +5,7 @@ import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 import type { WorkspaceNativeKnowledgeStatus } from "@/lib/agentos/application/workspace-native-knowledge-service";
 import type { WorkspaceCreateResult } from "@/lib/openclaw/types";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
@@ -18,6 +19,7 @@ export const workspaceProvisioningStates = [
   "validating",
   "materializing",
   "bootstrapping",
+  "applying-composition",
   "promoting-knowledge",
   "provisioning-agents",
   "binding-knowledge",
@@ -36,6 +38,7 @@ export const provisioningCompletedStepIds = [
   "validated",
   "workspace-materialized",
   "bootstrap-verified",
+  "composition-applied",
   "knowledge-promoted",
   "agents-verified",
   "knowledge-bound",
@@ -60,6 +63,7 @@ export type StoredWorkspaceProvisioningRun = {
   blueprintFingerprint: string;
   /** Exact validated input snapshot required for process-restart recovery. */
   blueprint: unknown;
+  compositionPlan?: WorkspaceCompositionPlan | null;
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
   state: WorkspaceProvisioningState;
@@ -83,6 +87,14 @@ export type StoredWorkspaceProvisioningRun = {
     status: WorkspaceNativeKnowledgeStatus["status"];
     indexActionRequired: WorkspaceNativeKnowledgeStatus["indexActionRequired"];
     restartRequired: boolean | null;
+  } | null;
+  composition: {
+    planId: string;
+    status: "ready" | "partial" | "fallback" | "blocked";
+    artifactCount: number;
+    appliedCount: number;
+    conflictCount: number;
+    warnings: string[];
   } | null;
   pendingSetup: {
     channels: string[];
@@ -130,6 +142,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
   blueprintFingerprint: string;
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
+  compositionPlan?: WorkspaceCompositionPlan | null;
 }): Promise<CreateProvisioningRunResult> {
   const root = resolveProvisioningRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -144,6 +157,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     blueprint: input.blueprint,
     draftContextId: input.draftContextId,
     expectedKnowledgeGenerationId: input.expectedKnowledgeGenerationId,
+    compositionPlan: input.compositionPlan ?? null,
     state: "pending",
     createdAt: now,
     updatedAt: now,
@@ -157,6 +171,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     progress: { label: "Preparing workspace", detail: "Provisioning is queued." },
     knowledge: null,
     nativeKnowledge: null,
+    composition: null,
     pendingSetup: { channels: [], connections: [], automations: [] },
     verifiedAt: null
   };
@@ -190,7 +205,11 @@ export async function readStoredRunFile(filePath: string): Promise<StoredWorkspa
   try {
     const parsed = JSON.parse(raw) as StoredWorkspaceProvisioningRun;
     if (parsed.schemaVersion !== WORKSPACE_PROVISIONING_SCHEMA_VERSION || !RUN_ID_PATTERN.test(parsed.runId)) return null;
-    return parsed;
+    return {
+      ...parsed,
+      compositionPlan: parsed.compositionPlan ?? null,
+      composition: parsed.composition ?? null
+    };
   } catch {
     return null;
   }
@@ -254,6 +273,7 @@ function assertImmutableRunFields(run: StoredWorkspaceProvisioningRun, updates: 
     || ("draftContextId" in updates && updates.draftContextId !== run.draftContextId)
     || ("expectedKnowledgeGenerationId" in updates && updates.expectedKnowledgeGenerationId !== run.expectedKnowledgeGenerationId)
     || ("blueprint" in updates && stableStringify(updates.blueprint) !== stableStringify(run.blueprint))
+    || ("compositionPlan" in updates && stableStringify(updates.compositionPlan) !== stableStringify(run.compositionPlan))
   ) {
     throw new Error("Provisioning intent is immutable after run creation.");
   }

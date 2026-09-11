@@ -3,7 +3,7 @@ import type {
   WorkspaceBlueprint,
   WorkspaceBlueprintChannel
 } from "@/lib/agentos/domains/workspace-blueprint";
-import type { WorkspaceCreationExtractionSnapshot, WorkspaceCreationIntelligenceSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
+import type { WorkspaceCreationCompositionSnapshot, WorkspaceCreationExtractionSnapshot, WorkspaceCreationIntelligenceSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
 
 export type WorkspaceBlueprintReviewModel = {
   identity: WorkspaceBlueprint["identity"];
@@ -27,6 +27,7 @@ export type WorkspaceBlueprintReviewModel = {
   retryAvailable: boolean;
   extraction: WorkspaceCreationExtractionSnapshot | null;
   intelligence: WorkspaceCreationIntelligenceSnapshot | null;
+  composition: WorkspaceCreationCompositionSnapshot | null;
   freshness: WorkspaceArchitectResult["freshness"];
 };
 
@@ -38,6 +39,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
   failureCategory?: string | null;
   extraction?: WorkspaceCreationExtractionSnapshot | null;
   intelligence?: WorkspaceCreationIntelligenceSnapshot | null;
+  composition?: WorkspaceCreationCompositionSnapshot | null;
 } = {}): WorkspaceBlueprintReviewModel {
   const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
   const partialContext = options.partialContext === true || result.blueprint.warnings.some((warning) => /partial project context/i.test(warning));
@@ -63,6 +65,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
     retryAvailable: options.retryAvailable ?? (result.reasoning.retryability === "transient" || result.reasoning.retryability === "repairable"),
     extraction: options.extraction ?? null,
     intelligence: options.intelligence ?? null,
+    composition: options.composition ?? null,
     freshness: result.freshness
   };
 }

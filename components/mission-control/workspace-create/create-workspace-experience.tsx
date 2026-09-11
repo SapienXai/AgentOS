@@ -66,7 +66,7 @@ type ContextSourceState = {
 type UploadGroup = { sourceId: string; files: File[] };
 type ProvisioningRun = {
   runId: string;
-  state: "pending" | "validating" | "materializing" | "bootstrapping" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
+  state: "pending" | "validating" | "materializing" | "bootstrapping" | "applying-composition" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
   result: WorkspaceCreateResult | null;
   warnings: string[];
   error: { code: string; message: string } | null;
@@ -149,7 +149,8 @@ export function CreateWorkspaceExperience({
       retryAvailable: creationRun?.snapshot.architect.retryAvailable,
       failureCategory: creationRun?.snapshot.architect.failure?.code ?? null,
       extraction: creationRun?.snapshot.extraction ?? null,
-      intelligence: creationRun?.snapshot.intelligence ?? null
+      intelligence: creationRun?.snapshot.intelligence ?? null,
+      composition: creationRun?.snapshot.composition ?? null
     }) : null),
     [creationRun, result]
   );
@@ -1048,6 +1049,13 @@ function ReviewView({
   const freshnessStatus = model.freshness.status;
   const fallbackDiagnostic = model.warnings.find((warning) => /Architect/i.test(warning));
   const provisioningComplete = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
+  const compositionLabel = model.composition?.status === "fallback"
+    ? "AI workspace document proposals unavailable"
+    : model.composition?.status === "partial"
+      ? "Workspace documents partially planned"
+      : model.composition?.status === "blocked" || model.composition?.status === "conflict"
+        ? "Workspace documents need conflict review"
+        : "Workspace documents planned";
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
@@ -1073,6 +1081,14 @@ function ReviewView({
         <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <p className="text-sm font-semibold">AI project intelligence unavailable</p>
           <p className="mt-1 text-xs opacity-80">Canonical extracted evidence was preserved and a partial intelligence pack was created.</p>
+        </div>
+      ) : null}
+
+      {model.composition ? (
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", model.composition.status === "blocked" || model.composition.status === "conflict" || model.composition.status === "fallback" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
+          <p className="text-sm font-medium">{compositionLabel}</p>
+          <p className="mt-1 text-xs opacity-75">{model.composition.artifactCount} bounded project and workspace document proposals · {model.composition.conflictCount} conflict{model.composition.conflictCount === 1 ? "" : "s"}.</p>
+          {model.composition.status === "fallback" ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
         </div>
       ) : null}
 

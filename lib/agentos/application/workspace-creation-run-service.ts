@@ -10,10 +10,12 @@ import {
   readWorkspaceCreationContext,
   readWorkspaceCreationContextMetadata,
   readWorkspaceCreationContextDocuments,
+  persistWorkspaceCreationCompositionPlan,
   stageWorkspaceCreationKnowledge,
   type WorkspaceCreationContextStageResult,
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
+import { composeWorkspaceComposition, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import {
   acquireProvisioningLease,
@@ -80,10 +82,14 @@ export type WorkspaceCreationRunDependencies = {
   readIntelligenceSummary?: typeof readWorkspaceCreationIntelligenceSummary;
   persistIntelligencePack?: typeof persistWorkspaceCreationIntelligencePack;
   generateArchitect?: typeof generateWorkspaceBlueprint;
+  composeWorkspace?: typeof composeWorkspaceComposition;
+  persistCompositionPlan?: typeof persistWorkspaceCreationCompositionPlan;
+  inspectCompositionFiles?: typeof inspectWorkspaceCompositionFiles;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "composeWorkspace" | "persistCompositionPlan" | "inspectCompositionFiles">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
+  nativeComposer: boolean;
 };
 
 const inFlight = new Map<string, Promise<WorkspaceCreationRun>>();
@@ -265,7 +271,11 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       if (run.result === null) {
         return await failRun(filePath, run, dependencies, failure("unknown", "remote-execution-ambiguous", "terminal", "Architect execution completed without a durable review result."));
       }
-      return await updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+      const durableArchitectResult = run.result as WorkspaceArchitectResult;
+      const intelligencePack = run.draftContextId
+        ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+        : null;
+      return completeWorkspaceComposition(filePath, actorId, run, dependencies, durableArchitectResult, intelligencePack, controller, deadline);
     }
     run = await updateSnapshot(filePath, run, dependencies, { state: "running", stage: "context-staging" }, "state-changed");
     const cancellationCheck = await readWorkspaceCreationRunFile(filePath);
@@ -383,8 +393,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       }
     }));
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, result }));
-    run = await updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
-    return run;
+    return completeWorkspaceComposition(filePath, actorId, run, dependencies, result, intelligencePack, controller, deadline);
   } catch (error) {
     if (run.snapshot.cancelRequested || controller.signal.aborted && Date.now() < deadline) {
       return await failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
@@ -397,6 +406,36 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     clearTimeout(timeout);
     await lease.release().catch(() => undefined);
   }
+}
+
+async function completeWorkspaceComposition(
+  filePath: string,
+  actorId: string,
+  initialRun: WorkspaceCreationRun,
+  dependencies: ResolvedDependencies,
+  result: WorkspaceArchitectResult,
+  intelligencePack: Awaited<ReturnType<typeof readWorkspaceCreationIntelligencePack>>,
+  controller: AbortController,
+  deadline: number
+) {
+  let run = await updateSnapshot(filePath, initialRun, dependencies, { state: "running", stage: "workspace-composition" }, "state-changed");
+  const composition = await dependencies.composeWorkspace({
+    projectIntelligence: intelligencePack,
+    blueprint: result.blueprint,
+    operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
+    existingFiles: result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
+      ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
+      : [],
+    materializationMode: result.blueprint.materialization.mode
+  }, {
+    runId: run.runId,
+    signal: controller.signal,
+    timeoutMs: Math.max(5_000, Math.min(90_000, deadline - Date.now())),
+    ...(dependencies.nativeComposer ? {} : { modelExecutor: async () => { throw new Error("Workspace composition model is unavailable in the test boundary."); } })
+  });
+  if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: composition.plan });
+  run = await updateCompositionSnapshot(filePath, run, dependencies, composition);
+  return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
 }
 
 async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, context: WorkspaceCreationContextStageResult, partial: boolean, failed: boolean) {
@@ -685,6 +724,39 @@ async function updateArchitectSnapshot(filePath: string, run: WorkspaceCreationR
   return appendAndPersist(filePath, run, dependencies, snapshot, "architect-updated", partialContext ? "partial-context" : null, architectFailure ? { kind: architectFailure.kind, code: architectFailure.code, retryability: architectFailure.retryability } : null, dependencies.now().toISOString());
 }
 
+async function updateCompositionSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, result: WorkspaceCompositionResult) {
+  const status = result.summary.conflictCount > 0
+    ? "conflict" as const
+    : result.summary.status === "ready"
+      ? "ready" as const
+      : result.summary.status === "partial"
+        ? "partial" as const
+        : "fallback" as const;
+  const composition = {
+    status,
+    planId: result.summary.planId,
+    artifactCount: result.summary.artifactCount,
+    createCount: result.summary.createCount,
+    mergeCount: result.summary.mergeCount,
+    preserveCount: result.summary.preserveCount,
+    conflictCount: result.summary.conflictCount,
+    modelExecutionOccurred: result.summary.modelExecutionOccurred,
+    attempts: result.summary.attempts,
+    elapsedMs: result.summary.elapsedMs,
+    failure: result.summary.failure ? failure("model", result.summary.failure.code, "terminal", result.summary.failure.message) : null
+  };
+  return appendAndPersist(filePath, run, dependencies, {
+    ...run.snapshot,
+    composition
+  }, "context-updated", result.summary.conflictCount > 0 ? "composition-conflict" : result.summary.status === "fallback" ? "composition-fallback" : null, null, dependencies.now().toISOString(), result.summary.status === "fallback" ? "composition-fallback" : "composition-completed", {
+    compositionStatus: status,
+    compositionPlanId: result.summary.planId,
+    compositionArtifactCount: result.summary.artifactCount,
+    compositionConflictCount: result.summary.conflictCount,
+    compositionModelExecutionOccurred: result.summary.modelExecutionOccurred
+  });
+}
+
 async function recordArchitectLifecycle(filePath: string, dependencies: ResolvedDependencies, event: WorkspaceArchitectLifecycleEvent) {
   const current = await readWorkspaceCreationRunFile(filePath);
   if (!current || isWorkspaceCreationTerminal(current.snapshot.state)) return;
@@ -845,7 +917,13 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     readIntelligenceSummary: input.readIntelligenceSummary ?? readWorkspaceCreationIntelligenceSummary,
     persistIntelligencePack: input.persistIntelligencePack ?? persistWorkspaceCreationIntelligencePack,
     generateArchitect: input.generateArchitect ?? generateWorkspaceBlueprint,
-    budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) }
+    composeWorkspace: input.composeWorkspace ?? composeWorkspaceComposition,
+    persistCompositionPlan: input.persistCompositionPlan ?? (input.persistIntake
+      ? async ({ plan }: { actorId: string; draftContextId: string; plan: Parameters<typeof persistWorkspaceCreationCompositionPlan>[0]["plan"] }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status })
+      : persistWorkspaceCreationCompositionPlan),
+    inspectCompositionFiles: input.inspectCompositionFiles ?? inspectWorkspaceCompositionFiles,
+    budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
+    nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake
   };
 }
 

@@ -9,9 +9,10 @@ workspace-architecture work. Phase 2 adds reliable observation around the
 existing context and Architect path; Phase 3 adds bounded website discovery;
 Phase 3.1 hardens its resource, policy, and locator boundaries; Phase 5 adds
 evidence-grounded interpretation; Phase 6 feeds validated intelligence into
-the existing Workspace Architect through bounded context.
+the existing Workspace Architect through bounded context; Phase 7 adds a
+bounded content-proposal and workspace-document composition sidecar.
 None of these phases implements a future verification engine, Workspace
-Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
+Architect 2.0, or a parallel OpenClaw runtime.
 
 ## Ownership and boundaries
 
@@ -35,6 +36,8 @@ ProjectIntelligencePack (Phase 5 sidecar; Phase 6 validated Architect input)
 Workspace Architect
         ↓
 WorkspaceBlueprint (existing architecture contract)
+        ↓
+bounded Workspace Composition plan and review
         ↓
 OpenClaw-native workspace materialization
 ```
@@ -349,7 +352,7 @@ Project Intelligence is an additive normalized sidecar. Phase 5 does not
 consume it downstream; Phase 6 passes a validated pack and bounded targeted
 evidence to Workspace Architect without changing the pack or making it part of
 the final Blueprint. No retrieval, embeddings, composer, project-aware
-document generation, or Phase 7+ runtime is introduced.
+document generation, or later-phase runtime is introduced by Phase 5 itself.
 
 ## Phase 6 intelligence-aware Workspace Architect
 
@@ -433,6 +436,40 @@ idempotency identity. The OpenClaw adapter contract is the authority for
 whether interrupted remote execution can be replayed safely; ambiguous
 outcomes fail closed rather than creating a duplicate turn.
 
+## Phase 7 Workspace Composition planning
+
+Phase 7 adds a bounded composition sidecar after Workspace Architect review
+preparation. The Composer consumes only the validated `WorkspaceBlueprint`,
+the validated Project Intelligence pack, explicit operator intent, and a
+bounded inventory of allowlisted existing workspace documents. It returns
+content-only proposals. Paths, filesystem operations, merge strategy,
+ownership, permissions, runtime configuration, credentials, tools, skills,
+channels, connections, and provisioning instructions are AgentOS policy
+outputs, never model-authorized outputs.
+
+The normalized `WorkspaceCompositionPlan` is versioned and policy-bound. Its
+artifact IDs and paths are allowlisted to the established OpenClaw document
+roles (`AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, and `MEMORY.md`) plus
+AgentOS project sidecars under `docs/`. Existing operator content is preserved;
+only one valid managed section may be created or replaced. Existing file
+hashes, materialized hashes, atomic writes, and conflict results make replay
+idempotent and prevent stale review plans from overwriting operator edits.
+Symlink traversal is rejected at the normalized workspace-document boundary.
+
+Composition plans are persisted in the existing protected workspace-creation
+context when a draft context exists. Provisioning receives the immutable plan
+snapshot and applies it in its own `WorkspaceProvisioningRun` step after
+OpenClaw has materialized the workspace. Creation and provisioning remain
+separate lifecycles; composition is not a second provisioning engine.
+
+The native OpenClaw boundary is used only for the hidden content-proposal
+turn, with a dedicated session namespace and idempotency key. If an
+interrupted turn has an ambiguous remote outcome, AgentOS does not replay it
+and falls back to deterministic safe content. Model failure, fallback source,
+attempts, conflicts, and applied counts are retained as structured run
+metadata and surfaced honestly in review. No generic daemon, retrieval
+system, Composer 2.0, or Phase 8 UX redesign is introduced.
+
 ## Intelligence roles and future boundaries
 
 The future system separates responsibilities at explicit boundaries:
@@ -443,9 +480,9 @@ The future system separates responsibilities at explicit boundaries:
 - Workspace Architect consumes a validated Project Intelligence pack in Phase
   6 and produces the existing WorkspaceBlueprint contract with bounded
   traceability references. It does not own or mutate the pack.
-- AI Workspace Composer is a later composition layer that may use approved
-  intelligence and architecture to propose workspace artifacts. Composer,
-  retrieval, persistence, and UI runtime are out of scope for Phase 1.
+- AI Workspace Composer is now a bounded Phase 7 content-proposal sidecar;
+  broader retrieval, refresh, document governance, and Phase 8 UX remain
+  future work.
 
 OpenClaw remains the runtime, orchestration, agent, tool, model, session, and
 gateway owner. AgentOS provides the operator-facing control and normalized
@@ -453,8 +490,8 @@ domain layer above it.
 
 ## OpenClaw workspace document semantics
 
-Future workspace composition must preserve the established OpenClaw document
-roles rather than inventing parallel runtime concepts:
+Workspace composition preserves the established OpenClaw document roles rather
+than inventing parallel runtime concepts:
 
 - `AGENTS.md` describes workspace operating instructions and constraints.
 - `SOUL.md` describes the agent's durable character and interaction posture.
@@ -463,9 +500,10 @@ roles rather than inventing parallel runtime concepts:
 - `MEMORY.md` contains durable promoted memory according to the applicable
   OpenClaw memory rules.
 
-Phase 1 models none of these documents and does not write them. Future phases
-must define their source, approval, promotion, and recovery boundaries before
-implementing composition.
+Phase 7 may create or update bounded managed sections in these documents
+through the composition plan. OpenClaw remains the owner of their runtime
+meaning, agent loading, and native memory behavior; AgentOS owns only the
+reviewable content proposal and safe materialization boundary.
 
 ## Phase boundaries
 
@@ -479,12 +517,14 @@ interpretation. Phase 5 adds the bounded Project Intelligence Agent synthesis
 sidecar. Phase 6 makes the existing Workspace Architect consume validated
 intelligence through bounded inputs without changing `WorkspaceBlueprint`
 ownership.
+Phase 7 adds the bounded Workspace Composition plan and its provisioning
+handoff without changing `WorkspaceBlueprint` ownership.
 The following remain future work:
 
 - broader Project Intelligence discovery, verification, refresh, and review
   workflows;
-- later phases: verification runtime, retrieval, persistence, refresh,
-  transport/event streaming, AI Workspace Composer, and all Phase 7-9 work;
+- later phases: verification runtime, broader retrieval, refresh,
+  transport/event streaming, and all Phase 8-9 work;
 - all phases: no duplicate OpenClaw runtime, model, tool, session, gateway, or
   workspace ownership inside AgentOS.
 
