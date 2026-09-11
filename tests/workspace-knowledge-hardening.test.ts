@@ -12,6 +12,7 @@ import {
   normalizeKnowledgeRepositoryRemoteUrl,
   promoteKnowledgeCorpus,
   readKnowledgeIngestionState,
+  readKnowledgeSnapshot,
   runSafeGitClone
 } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 
@@ -172,6 +173,130 @@ test("a second writer fails busy and can retry after the first writer releases",
   }
 });
 
+test("writer ownership stays exclusive across 100 deterministic acquisition contenders", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-lock-contention-");
+  try {
+    await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    let releaseWriter!: () => void;
+    let writerEntered!: () => void;
+    const writerEnteredPromise = new Promise<void>((resolve) => { writerEntered = resolve; });
+    const writerRelease = new Promise<void>((resolve) => { releaseWriter = resolve; });
+    const writer = ingestKnowledgeSources({
+      sources: [promptSource("brief", "serialized generation")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        afterStage: async () => {
+          writerEntered();
+          await writerRelease;
+        }
+      }
+    });
+    await writerEnteredPromise;
+    const attempts = await Promise.allSettled(Array.from({ length: 100 }, (_, index) => ingestKnowledgeSources({
+      sources: [promptSource(`contender-${index}`, `contender ${index}`)],
+      corpusRoot,
+      stateRoot
+    })));
+    assert.equal(attempts.length, 100);
+    assert.ok(attempts.every((attempt) => attempt.status === "rejected" && attempt.reason instanceof KnowledgeIngestionBusyError));
+    releaseWriter();
+    await writer;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("readers observe stable knowledge during 128 concurrent writer observations", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-reader-stress-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    let releaseWriter!: () => void;
+    let writerEntered!: () => void;
+    const writerEnteredPromise = new Promise<void>((resolve) => { writerEntered = resolve; });
+    const writerRelease = new Promise<void>((resolve) => { releaseWriter = resolve; });
+    const writer = ingestKnowledgeSources({
+      sources: [promptSource("brief", "next generation")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        afterStage: async () => {
+          writerEntered();
+          await writerRelease;
+        }
+      }
+    });
+    await writerEnteredPromise;
+    const publishedLock = JSON.parse(await readFile(path.join(stateRoot, "writer-lock.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(publishedLock.schemaVersion, 1);
+    assert.equal(typeof publishedLock.lockId, "string");
+    const observations = await Promise.all(Array.from({ length: 128 }, () => readKnowledgeSnapshot(corpusRoot, stateRoot)));
+    assert.ok(observations.every((snapshot) => snapshot?.state.generationId === first.state.generationId));
+    releaseWriter();
+    await writer;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a late stale owner cannot remove a replacement writer lock", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-late-release-");
+  try {
+    let releaseFirst!: () => void;
+    let firstEntered!: () => void;
+    const firstEnteredPromise = new Promise<void>((resolve) => { firstEntered = resolve; });
+    const firstRelease = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const first = ingestKnowledgeSources({
+      sources: [promptSource("first", "first writer")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        afterStage: async () => {
+          firstEntered();
+          await firstRelease;
+        }
+      }
+    });
+    await firstEnteredPromise;
+    await writeFile(path.join(stateRoot, "writer-lock.json"), JSON.stringify({
+      schemaVersion: 1,
+      lockId: "stale-first-owner",
+      pid: 99_999_999,
+      hostname: "stale-test-host",
+      startedAt: "2020-01-01T00:00:00.000Z",
+      heartbeatAt: "2020-01-01T00:00:00.000Z",
+      operation: "ingestion",
+      ownerStartIdentity: null
+    }));
+
+    let releaseSecond!: () => void;
+    let secondEntered!: () => void;
+    const secondEnteredPromise = new Promise<void>((resolve) => { secondEntered = resolve; });
+    const secondRelease = new Promise<void>((resolve) => { releaseSecond = resolve; });
+    const second = ingestKnowledgeSources({
+      sources: [promptSource("second", "replacement writer")],
+      corpusRoot,
+      stateRoot,
+      transactionHooks: {
+        afterStage: async () => {
+          secondEntered();
+          await secondRelease;
+        }
+      }
+    });
+    await secondEnteredPromise;
+    releaseFirst();
+    await assert.rejects(first);
+    const replacementLock = JSON.parse(await readFile(path.join(stateRoot, "writer-lock.json"), "utf8")) as Record<string, unknown>;
+    assert.notEqual(replacementLock.lockId, "stale-first-owner");
+    releaseSecond();
+    const completed = await second;
+    assert.equal(completed.run.status, "ready");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("stale writer ownership is reclaimed before transaction recovery", async () => {
   const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-stale-lock-");
   try {
@@ -219,6 +344,22 @@ test("malformed writer control state fails closed", async () => {
     await rm(path.join(stateRoot, "writer-lock.json"), { force: true });
     await writeFile(path.join(stateRoot, "current.json"), "not-json\n");
     await assert.rejects(() => readKnowledgeIngestionState(stateRoot, corpusRoot), /generation pointer|malformed/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an initializing writer control guard is busy, not malformed", async () => {
+  const { root, corpusRoot, stateRoot } = await makeRoots("agentos-knowledge-initializing-lock-");
+  try {
+    const first = await ingestKnowledgeSources({ sources: [promptSource("brief", "stable generation")], corpusRoot, stateRoot });
+    await mkdir(path.join(stateRoot, "writer-lock-control"));
+    await assert.rejects(
+      () => ingestKnowledgeSources({ sources: [promptSource("brief", "contender")], corpusRoot, stateRoot }),
+      KnowledgeIngestionBusyError
+    );
+    await rm(path.join(stateRoot, "writer-lock-control"), { recursive: true, force: true });
+    assert.equal((await readKnowledgeIngestionState(stateRoot, corpusRoot))?.generationId, first.state.generationId);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
-import { access, copyFile, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, link, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { hostname as osHostname } from "node:os";
 import path from "node:path";
@@ -30,12 +30,16 @@ export const MIN_PINNED_GIT_VERSION = "2.37.0";
 const CURRENT_FILE = "current.json";
 const TRANSACTION_FILE = "transaction.json";
 const WRITER_LOCK_FILE = "writer-lock.json";
+const WRITER_LOCK_CONTROL_DIR = "writer-lock-control";
 const GENERATIONS_DIR = "generations";
 const GENERATION_MARKER = ".agentos-generation";
 const KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION = 1;
+const KNOWLEDGE_WRITER_LOCK_CONTROL_SCHEMA_VERSION = 1;
 const ACTIVATION_READER_WAIT_MS = 5_000;
 const WRITER_HEARTBEAT_MS = 2_000;
 const WRITER_STALE_AFTER_MS = 15_000;
+
+let localProcessStartIdentity: Promise<string | null> | undefined;
 
 export const DEFAULT_KNOWLEDGE_INGESTION_LIMITS = {
   maxPagesPerSource: 24,
@@ -289,13 +293,32 @@ type KnowledgeWriterLockRecord = {
   heartbeatAt: string;
   operation: "ingestion" | "promotion" | "reader-recovery";
   ownerStartIdentity: string | null;
+  heartbeatFile?: string;
 };
 
 type KnowledgeWriterLockHandle = {
   lockPath: string;
+  heartbeatPath: string;
   record: KnowledgeWriterLockRecord;
   heartbeat: NodeJS.Timeout;
   inFlight: Promise<void> | null;
+  released: boolean;
+};
+
+type KnowledgeWriterLockControlRecord = {
+  schemaVersion: typeof KNOWLEDGE_WRITER_LOCK_CONTROL_SCHEMA_VERSION;
+  guardId: string;
+  pid: number;
+  hostname: string;
+  startedAt: string;
+  ownerStartIdentity: string | null;
+};
+
+type KnowledgeWriterLockControlHandle = {
+  guardPath: string;
+  ownerPath: string;
+  guardIdentity: { dev: number; ino: number };
+  record: KnowledgeWriterLockControlRecord;
   released: boolean;
 };
 
@@ -303,6 +326,7 @@ async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation:
   await assertNoSymlinkAlongPath(path.dirname(input.stateRoot), input.stateRoot, true);
   await mkdir(input.stateRoot, { recursive: true });
   const lockPath = path.join(input.stateRoot, WRITER_LOCK_FILE);
+  const control = await acquireKnowledgeWriterLockControl(input.stateRoot);
   const record: KnowledgeWriterLockRecord = {
     schemaVersion: KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION,
     lockId: randomUUID(),
@@ -311,45 +335,61 @@ async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation:
     startedAt: new Date().toISOString(),
     heartbeatAt: new Date().toISOString(),
     operation: input.operation,
-    ownerStartIdentity: await processStartIdentity(process.pid)
+    ownerStartIdentity: await currentProcessStartIdentity(),
+    heartbeatFile: `writer-heartbeat-${randomUUID()}.json`
   };
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    try {
-      const handle = await open(lockPath, "wx", 0o600);
+  try {
+    const heartbeatPath = path.join(input.stateRoot, record.heartbeatFile!);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidatePath = `${lockPath}.candidate-${record.lockId}-${randomUUID()}`;
+      let published = false;
       try {
-        await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      const lockHandle = { lockPath, record, heartbeat: undefined as unknown as NodeJS.Timeout, inFlight: null, released: false } as KnowledgeWriterLockHandle;
-      lockHandle.heartbeat = setInterval(() => {
-        if (lockHandle.released || lockHandle.inFlight) return;
-        const refresh = refreshKnowledgeWriterLock(lockHandle);
-        lockHandle.inFlight = refresh;
-        void refresh.then(
-          () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; },
-          () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; }
-        );
-      }, WRITER_HEARTBEAT_MS);
-      lockHandle.heartbeat.unref?.();
-      return lockHandle;
-    } catch (error) {
-      if (!isNodeError(error, "EEXIST")) throw error;
-      const existing = await readKnowledgeWriterLock(input.stateRoot);
-      if (!existing) continue;
-      if (await isKnowledgeWriterLive(existing)) throw new KnowledgeIngestionBusyError();
-      const stalePath = `${lockPath}.stale-${randomUUID()}`;
-      try {
-        await rename(lockPath, stalePath);
-        await rm(stalePath, { force: true });
-      } catch (renameError) {
-        if (!isNodeError(renameError, "ENOENT")) throw renameError;
+        // The candidate is complete and durable before link() publishes it.
+        // link() is an atomic, non-overwriting publication primitive, so a
+        // reader can never observe the old open/write window.
+        await writeDurableJson(candidatePath, record);
+        await writeDurableJson(heartbeatPath, {
+          schemaVersion: KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION,
+          lockId: record.lockId,
+          heartbeatAt: record.heartbeatAt
+        });
+        await link(candidatePath, lockPath);
+        published = true;
+        await rm(candidatePath, { force: true });
+        const lockHandle = { lockPath, heartbeatPath, record, heartbeat: undefined as unknown as NodeJS.Timeout, inFlight: null, released: false } as KnowledgeWriterLockHandle;
+        lockHandle.heartbeat = setInterval(() => {
+          if (lockHandle.released || lockHandle.inFlight) return;
+          const refresh = refreshKnowledgeWriterLock(lockHandle);
+          lockHandle.inFlight = refresh;
+          void refresh.then(
+            () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; },
+            () => { if (lockHandle.inFlight === refresh) lockHandle.inFlight = null; }
+          );
+        }, WRITER_HEARTBEAT_MS);
+        lockHandle.heartbeat.unref?.();
+        return lockHandle;
+      } catch (error) {
+        await rm(candidatePath, { force: true }).catch(() => undefined);
+        if (!isNodeError(error, "EEXIST")) throw error;
+        if (published) throw error;
+        const existing = await readKnowledgeWriterLock(input.stateRoot);
+        if (!existing) continue;
+        if (await isKnowledgeWriterLive(existing)) throw new KnowledgeIngestionBusyError();
+        const stalePath = `${lockPath}.stale-${randomUUID()}`;
+        try {
+          await rename(lockPath, stalePath);
+          await rm(stalePath, { force: true });
+          if (existing.heartbeatFile) await rm(path.join(input.stateRoot, existing.heartbeatFile), { force: true });
+        } catch (renameError) {
+          if (!isNodeError(renameError, "ENOENT")) throw renameError;
+        }
       }
     }
+    throw new KnowledgeIngestionBusyError();
+  } finally {
+    await releaseKnowledgeWriterLockControl(control);
   }
-  throw new KnowledgeIngestionBusyError();
 }
 
 async function refreshKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
@@ -358,8 +398,16 @@ async function refreshKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
     clearInterval(handle.heartbeat);
     return;
   }
-  handle.record.heartbeatAt = new Date().toISOString();
-  await writeDurableJson(handle.lockPath, handle.record);
+  const heartbeatAt = new Date().toISOString();
+  handle.record.heartbeatAt = heartbeatAt;
+  // Heartbeats are published to an owner-specific path. A late heartbeat
+  // from a recovered stale owner therefore cannot overwrite a new owner's
+  // canonical lock record.
+  await writeDurableJson(handle.heartbeatPath, {
+    schemaVersion: KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION,
+    lockId: handle.record.lockId,
+    heartbeatAt
+  });
 }
 
 async function releaseKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
@@ -367,10 +415,22 @@ async function releaseKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
   handle.released = true;
   clearInterval(handle.heartbeat);
   if (handle.inFlight) await handle.inFlight.catch(() => undefined);
-  const current = await readKnowledgeWriterLock(path.dirname(handle.lockPath));
-  if (!current) return;
-  if (current.lockId !== handle.record.lockId) throw new KnowledgeIngestionLockError("Knowledge writer lock ownership changed before release.");
-  await rm(handle.lockPath, { force: true });
+  const control = await acquireKnowledgeWriterLockControl(path.dirname(handle.lockPath));
+  try {
+    const current = await readKnowledgeWriterLock(path.dirname(handle.lockPath));
+    if (!current) {
+      await rm(handle.heartbeatPath, { force: true });
+      return;
+    }
+    if (current.lockId !== handle.record.lockId) {
+      await rm(handle.heartbeatPath, { force: true });
+      throw new KnowledgeIngestionLockError("Knowledge writer lock ownership changed before release.");
+    }
+    await rm(handle.lockPath, { force: true });
+    await rm(handle.heartbeatPath, { force: true });
+  } finally {
+    await releaseKnowledgeWriterLockControl(control);
+  }
 }
 
 async function readKnowledgeWriterLock(stateRoot: string): Promise<KnowledgeWriterLockRecord | null> {
@@ -378,7 +438,86 @@ async function readKnowledgeWriterLock(stateRoot: string): Promise<KnowledgeWrit
   if (!(await pathExists(lockPath))) return null;
   const value = await readJson(lockPath);
   if (!isKnowledgeWriterLock(value)) throw new KnowledgeIngestionLockError("Knowledge writer lock is malformed; refusing recovery.");
+  if (value.heartbeatFile) {
+    const heartbeatPath = path.join(stateRoot, value.heartbeatFile);
+    if (await pathExists(heartbeatPath)) {
+      const heartbeat = await readJson(heartbeatPath);
+      if (!isKnowledgeWriterHeartbeat(heartbeat) || heartbeat.lockId !== value.lockId) throw new KnowledgeIngestionLockError("Knowledge writer heartbeat is malformed; refusing recovery.");
+      return { ...value, heartbeatAt: heartbeat.heartbeatAt };
+    }
+  }
   return value;
+}
+
+async function acquireKnowledgeWriterLockControl(stateRoot: string): Promise<KnowledgeWriterLockControlHandle> {
+  await assertNoSymlinkAlongPath(path.dirname(stateRoot), stateRoot, true);
+  await mkdir(stateRoot, { recursive: true });
+  const guardPath = path.join(stateRoot, WRITER_LOCK_CONTROL_DIR);
+  const record: KnowledgeWriterLockControlRecord = {
+    schemaVersion: KNOWLEDGE_WRITER_LOCK_CONTROL_SCHEMA_VERSION,
+    guardId: randomUUID(),
+    pid: process.pid,
+    hostname: osHostname(),
+    startedAt: new Date().toISOString(),
+    ownerStartIdentity: await currentProcessStartIdentity()
+  };
+  const ownerPath = path.join(guardPath, `owner-${record.guardId}.json`);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await mkdir(guardPath, { recursive: false, mode: 0o700 });
+      try {
+        await writeDurableJson(ownerPath, record);
+      } catch (error) {
+        await rm(ownerPath, { force: true }).catch(() => undefined);
+        await rmdir(guardPath).catch(() => undefined);
+        throw error;
+      }
+      const guardStats = await lstat(guardPath);
+      return { guardPath, ownerPath, guardIdentity: { dev: guardStats.dev, ino: guardStats.ino }, record, released: false };
+    } catch (error) {
+      if (!isNodeError(error, "EEXIST")) throw error;
+      const existing = await readKnowledgeWriterLockControl(stateRoot);
+      if (!existing) continue;
+      if (!existing.stale) throw new KnowledgeIngestionBusyError();
+      const stalePath = `${guardPath}.stale-${randomUUID()}`;
+      try {
+        await rename(guardPath, stalePath);
+        await rm(stalePath, { recursive: true, force: true });
+      } catch (renameError) {
+        if (!isNodeError(renameError, "ENOENT")) throw renameError;
+      }
+    }
+  }
+  throw new KnowledgeIngestionBusyError();
+}
+
+async function releaseKnowledgeWriterLockControl(handle: KnowledgeWriterLockControlHandle) {
+  if (handle.released) return;
+  handle.released = true;
+  // The owner path is unique to this guard. If stale recovery has already
+  // replaced the canonical guard, this cannot remove the replacement owner.
+  await rm(handle.ownerPath, { force: true });
+  const currentStats = await lstat(handle.guardPath).catch(() => null);
+  if (!currentStats || currentStats.dev !== handle.guardIdentity.dev || currentStats.ino !== handle.guardIdentity.ino) return;
+  await rmdir(handle.guardPath).catch((error) => {
+    if (!isNodeError(error, "ENOENT") && !isNodeError(error, "ENOTEMPTY")) throw error;
+  });
+}
+
+async function readKnowledgeWriterLockControl(stateRoot: string): Promise<{ record: KnowledgeWriterLockControlRecord | null; stale: boolean } | null> {
+  const guardPath = path.join(stateRoot, WRITER_LOCK_CONTROL_DIR);
+  if (!(await pathExists(guardPath))) return null;
+  const entries = await readdir(guardPath, { withFileTypes: true });
+  const ownerEntries = entries.filter((entry) => entry.isFile() && /^owner-[a-f0-9-]+\.json$/i.test(entry.name));
+  if (ownerEntries.length > 1) throw new KnowledgeIngestionLockError("Knowledge writer control lock has multiple owners; refusing recovery.");
+  if (ownerEntries.length === 1) {
+    const value = await readJson(path.join(guardPath, ownerEntries[0]!.name));
+    if (!isKnowledgeWriterLockControlRecord(value)) throw new KnowledgeIngestionLockError("Knowledge writer control lock is malformed; refusing recovery.");
+    return { record: value, stale: !(await isKnowledgeWriterLockControlLive(value)) };
+  }
+  const stats = await lstat(guardPath);
+  return { record: null, stale: Date.now() - stats.mtimeMs > WRITER_STALE_AFTER_MS };
 }
 
 async function isKnowledgeWriterLive(record: KnowledgeWriterLockRecord): Promise<boolean> {
@@ -388,7 +527,20 @@ async function isKnowledgeWriterLive(record: KnowledgeWriterLockRecord): Promise
   }
   const processAlive = isProcessAlive(record.pid);
   if (!processAlive) return false;
-  const currentIdentity = await processStartIdentity(record.pid);
+  const currentIdentity = await (record.pid === process.pid ? currentProcessStartIdentity() : processStartIdentity(record.pid));
+  if (record.ownerStartIdentity && currentIdentity) return record.ownerStartIdentity === currentIdentity;
+  if (record.ownerStartIdentity && !currentIdentity) return true;
+  return true;
+}
+
+async function isKnowledgeWriterLockControlLive(record: KnowledgeWriterLockControlRecord): Promise<boolean> {
+  if (record.hostname !== osHostname()) {
+    const startedAt = Date.parse(record.startedAt);
+    return Number.isFinite(startedAt) && Date.now() - startedAt <= WRITER_STALE_AFTER_MS;
+  }
+  const processAlive = isProcessAlive(record.pid);
+  if (!processAlive) return false;
+  const currentIdentity = await (record.pid === process.pid ? currentProcessStartIdentity() : processStartIdentity(record.pid));
   if (record.ownerStartIdentity && currentIdentity) return record.ownerStartIdentity === currentIdentity;
   if (record.ownerStartIdentity && !currentIdentity) return true;
   return true;
@@ -402,6 +554,11 @@ async function processStartIdentity(pid: number): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function currentProcessStartIdentity() {
+  localProcessStartIdentity ??= processStartIdentity(process.pid);
+  return localProcessStartIdentity;
 }
 
 function isProcessAlive(pid: number) {
@@ -1627,6 +1784,28 @@ function isKnowledgeWriterLock(value: unknown): value is KnowledgeWriterLockReco
     && typeof value.heartbeatAt === "string"
     && Number.isFinite(Date.parse(value.heartbeatAt))
     && (value.operation === "ingestion" || value.operation === "promotion" || value.operation === "reader-recovery")
+    && (value.ownerStartIdentity === null || typeof value.ownerStartIdentity === "string")
+    && (value.heartbeatFile === undefined || typeof value.heartbeatFile === "string" && /^writer-heartbeat-[a-f0-9-]+\.json$/i.test(value.heartbeatFile));
+}
+
+function isKnowledgeWriterHeartbeat(value: unknown): value is { schemaVersion: typeof KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION; lockId: string; heartbeatAt: string } {
+  return isRecord(value)
+    && value.schemaVersion === KNOWLEDGE_WRITER_LOCK_SCHEMA_VERSION
+    && typeof value.lockId === "string"
+    && typeof value.heartbeatAt === "string"
+    && Number.isFinite(Date.parse(value.heartbeatAt));
+}
+
+function isKnowledgeWriterLockControlRecord(value: unknown): value is KnowledgeWriterLockControlRecord {
+  return isRecord(value)
+    && value.schemaVersion === KNOWLEDGE_WRITER_LOCK_CONTROL_SCHEMA_VERSION
+    && typeof value.guardId === "string"
+    && typeof value.pid === "number"
+    && Number.isInteger(value.pid)
+    && value.pid > 0
+    && typeof value.hostname === "string"
+    && typeof value.startedAt === "string"
+    && Number.isFinite(Date.parse(value.startedAt))
     && (value.ownerStartIdentity === null || typeof value.ownerStartIdentity === "string");
 }
 

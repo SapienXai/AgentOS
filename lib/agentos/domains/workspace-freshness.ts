@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { normalizeDiscoveryHttpUrl } from "@/lib/agentos/domains/project-discovery";
 import type { OfficialResource, ProjectConflict, ProjectFact, ProjectIntelligencePack } from "@/lib/agentos/domains/project-intelligence";
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
@@ -152,11 +153,27 @@ export function officialResourceDriftView(resource: OfficialResource) {
     category: resource.category,
     locator: {
       kind: resource.locator.kind,
-      value: resource.locator.value.trim().toLowerCase()
+      value: canonicalResourceLocatorForComparison(resource.locator)
     },
-    label: resource.label.trim(),
     verification: resource.verification
   };
+}
+
+/**
+ * Canonicalizes resource identity for comparison without changing the stored
+ * domain value. URL hosts and schemes are case-insensitive, while URL paths,
+ * queries, and public identifiers retain their meaningful case.
+ */
+export function canonicalResourceLocatorForComparison(locator: OfficialResource["locator"]): string {
+  const value = locator.value.trim();
+  if (locator.kind === "url") {
+    try { return normalizeDiscoveryHttpUrl(value).toString(); } catch { return value; }
+  }
+  if (locator.kind === "email") {
+    const separator = value.lastIndexOf("@");
+    return separator > 0 ? `${value.slice(0, separator)}@${value.slice(separator + 1).toLowerCase()}` : value;
+  }
+  return value;
 }
 
 export function projectFactsDriftView(facts: readonly ProjectFact[]) {
@@ -176,7 +193,6 @@ export function projectConflictsDriftView(
   const resourcesById = new Map(resources.map((resource) => [resource.id, officialResourceDriftView(resource)]));
   return [...conflicts].map((conflict) => ({
     status: conflict.status,
-    summary: conflict.summary.trim(),
     subjects: conflict.subjects.map((subject) => subject.kind === "fact"
       ? { kind: subject.kind, claim: factsById.get(subject.id) ?? { kind: subject.kind, unresolved: true } }
       : { kind: subject.kind, resource: resourcesById.get(subject.id) ?? { kind: subject.kind, unresolved: true } }
@@ -185,9 +201,60 @@ export function projectConflictsDriftView(
 }
 
 export function workspaceBlueprintDriftView(blueprint: WorkspaceBlueprint) {
+  const agent = (value: WorkspaceBlueprint["workforce"]["primaryAgent"]) => ({
+    role: value.role,
+    name: value.name,
+    persistence: value.persistence,
+    isPrimary: value.isPrimary,
+    purpose: value.purpose,
+    responsibilities: value.responsibilities,
+    outputs: value.outputs,
+    skillIds: value.skillIds,
+    toolIds: value.toolIds,
+    policy: value.policy
+  });
+  const workflow = (value: WorkspaceBlueprint["operations"]["workflows"][number]) => ({
+    id: value.id,
+    name: value.name,
+    goal: value.goal,
+    trigger: value.trigger,
+    ownerAgentId: value.ownerAgentId,
+    collaboratorAgentIds: value.collaboratorAgentIds,
+    successDefinition: value.successDefinition,
+    outputs: value.outputs,
+    enabled: value.enabled
+  });
+  const automation = (value: WorkspaceBlueprint["operations"]["automations"][number]) => ({
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    enabled: value.enabled,
+    scheduleKind: value.scheduleKind,
+    scheduleValue: value.scheduleValue,
+    agentId: value.agentId,
+    mission: value.mission,
+    thinking: value.thinking,
+    announce: value.announce,
+    selection: value.selection
+  });
+  const channel = (value: WorkspaceBlueprint["operations"]["channels"][number]) => ({
+    id: value.id,
+    type: value.type,
+    name: value.name,
+    purpose: value.purpose,
+    target: value.target ?? null,
+    enabled: value.enabled,
+    announce: value.announce,
+    authenticationKind: value.authenticationKind,
+    requiresCredentials: value.requiresCredentials,
+    requiresAuthentication: value.requiresAuthentication,
+    primaryAgentId: value.primaryAgentId,
+    selection: value.selection
+  });
   return {
     identity: blueprint.identity,
     brief: blueprint.brief,
+    operatorConstraints: blueprint.operatorConstraints,
     materialization: blueprint.materialization,
     knowledge: {
       // Retrieval queries and evidence ids are generation metadata. The
@@ -195,30 +262,38 @@ export function workspaceBlueprintDriftView(blueprint: WorkspaceBlueprint) {
       retrieval: { mode: blueprint.knowledge.retrieval.mode }
     },
     workforce: {
-      primaryAgent: blueprint.workforce.primaryAgent,
-      specialists: [...blueprint.workforce.specialists].sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      primaryAgent: agent(blueprint.workforce.primaryAgent),
+      specialists: blueprint.workforce.specialists.map(agent).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
       allowEphemeralSubagents: blueprint.workforce.allowEphemeralSubagents,
       maxParallelRuns: blueprint.workforce.maxParallelRuns
     },
     capabilities: {
-      skills: blueprint.capabilities.skills.map((skill) => withoutField(skill, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
-      tools: blueprint.capabilities.tools.map((tool) => withoutField(tool, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
+      skills: blueprint.capabilities.skills.map((skill) => ({ id: skill.id, status: skill.status, source: skill.source })).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      tools: blueprint.capabilities.tools.map((tool) => ({ id: tool.id, status: tool.status })).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
     },
-    connections: blueprint.connections.map((connection) => withoutField(connection, "sourceId")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+    connections: blueprint.connections.map((connection) => ({ id: connection.id, provider: connection.provider, status: connection.status, purpose: connection.purpose })).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
     operations: {
-      workflows: [...blueprint.operations.workflows].map((workflow) => withoutField(workflow, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
-      automations: [...blueprint.operations.automations].map((automation) => withoutField(automation, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
-      channels: [...blueprint.operations.channels].map((channel) => withoutField(channel, "evidenceRefs")).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
+      workflows: blueprint.operations.workflows.map(workflow).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      automations: blueprint.operations.automations.map(automation).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right))),
+      channels: blueprint.operations.channels.map(channel).sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)))
     },
-    memory: blueprint.memory,
-    safety: blueprint.safety
+    memory: {
+      ownership: blueprint.memory.ownership,
+      search: blueprint.memory.search,
+      seedRequired: blueprint.memory.seedRequired,
+      durableFacts: blueprint.memory.durableFacts
+    },
+    safety: {
+      workspaceOnly: blueprint.safety.workspaceOnly,
+      generationSideEffectFree: blueprint.safety.generationSideEffectFree,
+      importedKnowledgeUntrusted: blueprint.safety.importedKnowledgeUntrusted
+    }
   };
 }
 
 export function workspaceCompositionDriftView(plan: WorkspaceCompositionPlan) {
   return {
     artifacts: plan.artifacts.map((artifact) => ({
-      artifactId: artifact.artifactId,
       path: artifact.path,
       operation: artifact.operation,
       ownership: artifact.ownership,
@@ -231,12 +306,6 @@ export function workspaceCompositionDriftView(plan: WorkspaceCompositionPlan) {
 
 function normalizeFiles(files: readonly WorkspaceFileInventoryEntry[]) {
   return files.map((file) => ({ path: file.path.replace(/\\/g, "/"), hash: file.hash })).sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function withoutField<T extends object>(value: T, field: string) {
-  const copy = { ...value } as T & Record<string, unknown>;
-  delete copy[field];
-  return copy;
 }
 
 function fingerprint(value: unknown) {
