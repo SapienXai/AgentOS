@@ -65,8 +65,9 @@ export function selectProjectIntelligenceContextExcerpts(input: {
     const documentId = document.documentId?.trim() || `${document.sourceId}:document-${index + 1}`;
     const title = safeText(document.title || document.canonicalLocator || documentId, 160);
     const classification = safeText(document.classification || "other", 80).toLowerCase();
-    const content = safeText(document.content, limits.maxExcerptCharacters);
     const relatedEvidence = (input.evidence ?? []).filter((entry) => entry.documentId === document.documentId || entry.sourceId === document.sourceId && entry.canonicalLocator === document.canonicalLocator);
+    const evidenceContent = relatedEvidence.map((entry) => entry.excerpt || entry.summary).filter(Boolean).join(" ");
+    const content = safeText(evidenceContent || document.content, limits.maxExcerptCharacters);
     const evidenceRefIds = relatedEvidence.map((entry) => entry.id).slice(0, 64);
     const factIds = unique(evidenceRefIds.flatMap((id) => factByEvidenceId.get(id) ?? [])).slice(0, 64);
     const resourceIds = unique(evidenceRefIds.flatMap((id) => resourceByEvidenceId.get(id) ?? [])).slice(0, 32);

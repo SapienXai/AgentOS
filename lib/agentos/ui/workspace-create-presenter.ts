@@ -40,7 +40,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
   intelligence?: WorkspaceCreationIntelligenceSnapshot | null;
 } = {}): WorkspaceBlueprintReviewModel {
   const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
-  const partialContext = options.partialContext === true;
+  const partialContext = options.partialContext === true || result.blueprint.warnings.some((warning) => /partial project context/i.test(warning));
   return {
     identity: result.blueprint.identity,
     primaryAgent: result.blueprint.workforce.primaryAgent,

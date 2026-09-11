@@ -2,12 +2,14 @@
 
 This document defines the Phase 1 Project Intelligence foundation, the Phase
 2 creation-runtime boundary, the Phase 3 deterministic discovery boundary,
-and the Phase 5 bounded intelligence-synthesis sidecar. It is a normalized,
+and the Phase 5 bounded intelligence-synthesis sidecar plus Phase 6
+intelligence-aware Architect projection. It is a normalized,
 versioned AgentOS domain contract for evidence collection, synthesis, and
 workspace-architecture work. Phase 2 adds reliable observation around the
 existing context and Architect path; Phase 3 adds bounded website discovery;
 Phase 3.1 hardens its resource, policy, and locator boundaries; Phase 5 adds
-evidence-grounded interpretation without changing Workspace Architect input.
+evidence-grounded interpretation; Phase 6 feeds validated intelligence into
+the existing Workspace Architect through bounded context.
 None of these phases implements a future verification engine, Workspace
 Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
 
@@ -28,7 +30,7 @@ normalized Project Intelligence candidate
         ↓
 strict Project Intelligence validation
         ↓
-ProjectIntelligencePack (Phase 5 sidecar; future approved input)
+ProjectIntelligencePack (Phase 5 sidecar; Phase 6 validated Architect input)
         ↓
 Workspace Architect
         ↓
@@ -343,10 +345,41 @@ runtime. If the adapter cannot prove an interrupted turn's outcome, recovery
 fails closed with an ambiguous-execution diagnostic rather than replaying a
 possibly completed turn.
 
-Project Intelligence is an additive review sidecar. The pack is not passed to
-Workspace Architect in Phase 5, `WorkspaceBlueprint` remains unchanged, and
-no retrieval, embeddings, composer, project-aware document generation, or
-Phase 6+ runtime is introduced.
+Project Intelligence is an additive normalized sidecar. Phase 5 does not
+consume it downstream; Phase 6 passes a validated pack and bounded targeted
+evidence to Workspace Architect without changing the pack or making it part of
+the final Blueprint. No retrieval, embeddings, composer, project-aware
+document generation, or Phase 7+ runtime is introduced.
+
+## Phase 6 intelligence-aware Workspace Architect
+
+Phase 6 consumes a validated `ProjectIntelligencePack` as bounded project
+context while keeping the operator brief, constraints, mode, and
+materialization as a separate operator-intent input. Architect selection uses
+deterministic evidence-bearing, architecture-classified, operator-matching,
+root-surface, and diversity signals over the staged corpus. It does not use a
+first-N shortcut, network retrieval, crawling, embeddings, or a vector store.
+
+Only bounded targeted excerpts enter the Architect evidence pack. The full
+immutable Project Intelligence pack remains the canonical claim layer; the
+Architect produces an interpretation and records only bounded
+`projectContextRefs` in the existing `WorkspaceBlueprint`. Those references
+may identify contributing fact, resource, evidence, and conflict records but
+do not copy the pack into the Blueprint or create a second source of truth.
+
+Architect validation rejects unknown canonical references, unsupported fields,
+secret material, and specialist proposals without a distinct evidence-backed
+boundary. Social or other public resources do not create channels by
+themselves; public integrations do not prove credentials, active connections,
+or provisioning. Open conflicts remain visible and are not silently resolved.
+The default workforce remains one primary agent, with persistent specialists
+requiring a distinct rationale.
+
+Fallback and partial-context semantics remain explicit. A deterministic safe
+fallback is a draft and carries bounded failure metadata. If usable but
+incomplete context is supplied, the Blueprint warning says the architecture
+was generated from partial project context; this is structured runtime state,
+not UI text inferred from missing fields.
 
 ## Phase 2 creation execution
 
@@ -407,9 +440,9 @@ The future system separates responsibilities at explicit boundaries:
 - The Project Intelligence Agent now synthesizes evidence-grounded inferred
   claims from the bounded Phase 4 extraction sidecar. Broader discovery,
   verification, refresh, and review workflows remain future work.
-- Workspace Architect will consume approved intelligence and produce the
-  existing WorkspaceBlueprint contract. Phase 5 deliberately does not change
-  its input or runtime.
+- Workspace Architect consumes a validated Project Intelligence pack in Phase
+  6 and produces the existing WorkspaceBlueprint contract with bounded
+  traceability references. It does not own or mutate the pack.
 - AI Workspace Composer is a later composition layer that may use approved
   intelligence and architecture to propose workspace artifacts. Composer,
   retrieval, persistence, and UI runtime are out of scope for Phase 1.
@@ -443,14 +476,15 @@ bounded project discovery and its corpus/creation-progress projection. Phase
 4 and Phase 4.1 establish deterministic structured extraction, claim-scoped
 evidence, lock recovery certification, and evidence-qualified resource
 interpretation. Phase 5 adds the bounded Project Intelligence Agent synthesis
-sidecar without changing Workspace Architect input or `WorkspaceBlueprint`.
+sidecar. Phase 6 makes the existing Workspace Architect consume validated
+intelligence through bounded inputs without changing `WorkspaceBlueprint`
+ownership.
 The following remain future work:
 
 - broader Project Intelligence discovery, verification, refresh, and review
   workflows;
 - later phases: verification runtime, retrieval, persistence, refresh,
-  transport/event streaming, Workspace Architect evolution, and AI Workspace
-  Composer;
+  transport/event streaming, AI Workspace Composer, and all Phase 7-9 work;
 - all phases: no duplicate OpenClaw runtime, model, tool, session, gateway, or
   workspace ownership inside AgentOS.
 

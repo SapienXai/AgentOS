@@ -70,7 +70,7 @@ function minimalResult(overrides: Partial<WorkspaceArchitectResult["reasoning"]>
         runtime: "bounded-local",
         reasoningMode: "model-runtime",
         failureKind: "none",
-        policyVersion: "phase4.1-structured-architect-v1"
+        policyVersion: "phase6-intelligence-aware-architect-v1"
       }
     },
     summary: "Acme workspace",

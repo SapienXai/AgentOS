@@ -108,7 +108,7 @@ function blueprint(overrides: Partial<WorkspaceBlueprint> = {}): WorkspaceBluepr
       runtime: "native-openclaw",
       reasoningMode: "openclaw-agent",
       failureKind: "none",
-      policyVersion: "phase4.1-structured-architect-v1"
+      policyVersion: "phase6-intelligence-aware-architect-v1"
     }
   };
   return { ...base, ...overrides };

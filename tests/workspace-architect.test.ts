@@ -841,7 +841,7 @@ test("model execution is structured, bounded, and provenance-aware", async () =>
 
   assert.equal(calls, 1);
   assert.equal(result.blueprint.provenance.reasoningMode, "model-runtime");
-  assert.equal(result.blueprint.provenance.policyVersion, "phase4.1-structured-architect-v1");
+  assert.equal(result.blueprint.provenance.policyVersion, "phase6-intelligence-aware-architect-v1");
   assert.equal(result.blueprint.status, "ready");
 });
 

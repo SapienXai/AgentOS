@@ -5,10 +5,14 @@ import type {
 } from "@/lib/agentos/domains/workspace-knowledge";
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import type { PlannerRuntimeEnsureDependencies } from "@/lib/openclaw/application/planner-runtime-service";
+import type {
+  ProjectIntelligencePack,
+  ProjectIntelligencePackState
+} from "@/lib/agentos/domains/project-intelligence";
 
 export const WORKSPACE_BLUEPRINT_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_BLUEPRINT_POLICY_VERSION = "phase4-minimum-topology-v1" as const;
-export const WORKSPACE_ARCHITECT_POLICY_VERSION = "phase4.1-structured-architect-v1" as const;
+export const WORKSPACE_ARCHITECT_POLICY_VERSION = "phase6-intelligence-aware-architect-v1" as const;
 
 export type WorkspaceBlueprintStatus = "draft" | "ready" | "blocked";
 export type WorkspaceBlueprintFreshness = "fresh" | "stale" | "unknown";
@@ -56,6 +60,46 @@ export type WorkspaceArchitectLifecycleEvent = {
   runtimeMode?: WorkspaceArchitectReasoningMode;
   modelId?: string | null;
   structuredOutputAccepted?: boolean;
+};
+
+export type WorkspaceArchitectTargetedEvidence = {
+  id: string;
+  sourceId: string;
+  documentId?: string;
+  title: string;
+  classification: string;
+  excerpt: string;
+  selectionReason: string;
+  evidenceRefIds: readonly string[];
+  factIds: readonly string[];
+  resourceIds: readonly string[];
+  canonicalLocator?: string;
+};
+
+export type WorkspaceArchitectProjectContextRefs = {
+  packId: string | null;
+  packState: ProjectIntelligencePackState | null;
+  factIds: string[];
+  resourceIds: string[];
+  evidenceRefIds: string[];
+  conflictIds: string[];
+};
+
+export type WorkspaceArchitectIntelligenceInput = {
+  pack: ProjectIntelligencePack;
+  operatorIntent: {
+    brief: string;
+    constraints: string[];
+    mode: WorkspaceArchitectMode;
+    materialization: WorkspaceMaterialization;
+  };
+  targetedEvidence?: readonly WorkspaceArchitectTargetedEvidence[];
+  contextStatus: {
+    intelligenceStatus: "model" | "fallback" | "pending" | "blocked";
+    packState: ProjectIntelligencePackState;
+    partialContext: boolean;
+    warnings: string[];
+  };
 };
 
 export type WorkspaceArchitectProposalBoundary =
@@ -327,6 +371,8 @@ export type WorkspaceBlueprint = {
   assumptions: string[];
   warnings: string[];
   evidence: WorkspaceBlueprintEvidence[];
+  /** Bounded traceability back to the immutable Project Intelligence claims. */
+  projectContextRefs?: WorkspaceArchitectProjectContextRefs;
   operatorOverrides: WorkspaceBlueprintOperatorOverrides;
   provenance: {
     architectRunId: string;
@@ -344,7 +390,10 @@ export type WorkspaceBlueprint = {
 };
 
 export type WorkspaceArchitectCorpusDocument = {
+  documentId?: string;
   sourceId: string;
+  classification?: string;
+  canonicalLocator?: string;
   title?: string;
   summary?: string;
   content?: string;
@@ -372,6 +421,7 @@ export type WorkspaceArchitectInput = {
   mode?: WorkspaceArchitectMode;
   operatorConstraints?: string[];
   operatorOverrides?: Partial<WorkspaceBlueprintOperatorOverrides>;
+  projectIntelligence?: WorkspaceArchitectIntelligenceInput;
 };
 
 export type WorkspaceBlueprintFreshnessResult = {
@@ -434,6 +484,7 @@ export type WorkspaceBlueprintRevisionInput = {
   };
   operatorConstraints?: string[];
   knowledge?: WorkspaceArchitectKnowledgeInput;
+  projectIntelligence?: WorkspaceArchitectIntelligenceInput;
 };
 
 export type WorkspaceArchitectNativeSearchResult = {

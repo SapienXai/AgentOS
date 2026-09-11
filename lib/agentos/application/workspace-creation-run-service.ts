@@ -38,7 +38,7 @@ import {
   resolveWorkspaceCreationRunRoot
 } from "@/lib/agentos/application/workspace-creation-run-store";
 import { normalizeWorkspaceMaterialization, type WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
-import type { WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceArchitectIntelligenceInput, WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import { normalizeWorkspaceKnowledgeSources, workspaceKnowledgeSourceIdentity, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
@@ -314,6 +314,27 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     if (staged?.extraction) {
       run = await synthesizeCreationIntelligence(filePath, actorId, run, dependencies, staged.extraction, contextPartial && usableContext, deadline, controller.signal);
     }
+    const intelligencePack = run.draftContextId
+      ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+      : null;
+    const intelligenceSummary = run.draftContextId
+      ? await dependencies.readIntelligenceSummary({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+      : null;
+    const architectIntelligence: WorkspaceArchitectIntelligenceInput | undefined = intelligencePack ? {
+      pack: intelligencePack,
+      operatorIntent: {
+        brief: run.input.brief,
+        constraints: run.input.operatorConstraints,
+        mode: run.input.mode,
+        materialization: run.input.materialization as WorkspaceMaterialization
+      },
+      contextStatus: {
+        intelligenceStatus: intelligenceSummary?.synthesisStatus ?? (run.snapshot.intelligence.status === "blocked" ? "blocked" : run.snapshot.intelligence.status === "fallback" ? "fallback" : "model"),
+        packState: intelligencePack.state,
+        partialContext: contextPartial && usableContext,
+        warnings: context?.warnings.slice(0, 8) ?? []
+      }
+    } : undefined;
     const remaining = Math.max(1, deadline - Date.now());
     const attempts = Math.max(1, Math.min(dependencies.budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
     const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxArchitectAttemptMs, Math.floor(remaining / attempts)));
@@ -333,7 +354,8 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       mode: run.input.mode,
       materialization: run.input.materialization as WorkspaceMaterialization,
       operatorConstraints: run.input.operatorConstraints,
-      ...(staged ? { knowledge: staged.knowledge } : {})
+      ...(staged ? { knowledge: staged.knowledge } : {}),
+      ...(architectIntelligence ? { projectIntelligence: architectIntelligence } : {})
     }, {
       runId: run.runId,
       signal: controller.signal,

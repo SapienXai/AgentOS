@@ -634,9 +634,9 @@ export async function promoteWorkspaceCreationKnowledge(input: {
   };
 }
 
-async function readBoundedArchitectDocuments(corpusRoot: string, documents: Array<{ sourceId: string; outputPath: string; title: string; classification: string; contentLength: number }>): Promise<WorkspaceArchitectCorpusDocument[]> {
+async function readBoundedArchitectDocuments(corpusRoot: string, documents: Array<{ id: string; sourceId: string; outputPath: string; title: string; classification: string; canonicalLocator: string; contentLength: number }>): Promise<WorkspaceArchitectCorpusDocument[]> {
   const result: WorkspaceArchitectCorpusDocument[] = [];
-  for (const document of documents.slice(0, 12)) {
+  for (const document of documents.slice(0, 48)) {
     const relativePath = document.outputPath.replace(/\\/g, "/");
     const normalized = path.posix.normalize(relativePath);
     if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) continue;
@@ -645,10 +645,13 @@ async function readBoundedArchitectDocuments(corpusRoot: string, documents: Arra
     const content = await readFile(absolutePath, "utf8").catch(() => null);
     if (content === null) continue;
     result.push({
+      documentId: document.id,
       sourceId: document.sourceId,
+      classification: document.classification,
+      canonicalLocator: document.canonicalLocator,
       title: redactSecretText(document.title).slice(0, 160),
       summary: `${document.classification} document read from the staged project corpus.`,
-      content: redactSecretText(content).slice(0, 1_200),
+      content: redactSecretText(content).slice(0, 6_000),
       contentLength: document.contentLength
     });
   }
