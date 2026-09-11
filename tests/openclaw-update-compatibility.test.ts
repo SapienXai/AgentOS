@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
   LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
+  resolveEffectiveOpenClawCompatibilityManifest,
   resolveOpenClawUpdateCompatibilitySnapshot,
   resolveOpenClawUpdateDecision,
   shouldShowDefaultOpenClawUpdate,
@@ -199,6 +200,30 @@ test("offline mode uses local fallback manifest", () => {
     ),
     true
   );
+});
+
+test("an older local override cannot hide a newer shipped compatibility entry", () => {
+  const effective = resolveEffectiveOpenClawCompatibilityManifest({
+    localManifest: {
+      schemaVersion: 1,
+      source: "local-fallback",
+      recommendedVersion: "2026.9.4",
+      versions: [
+        { version: "2026.9.1", status: "certified" },
+        { version: "2026.9.4", status: "certified" }
+      ]
+    },
+    overrideManifest: {
+      schemaVersion: 1,
+      source: "override",
+      recommendedVersion: "2026.9.1",
+      versions: [{ version: "2026.9.1", status: "candidate", reason: "Local retest" }]
+    }
+  });
+
+  assert.equal(effective.recommendedVersion, "2026.9.4");
+  assert.equal(effective.versions.find((entry) => entry.version === "2026.9.4")?.status, "certified");
+  assert.equal(effective.versions.find((entry) => entry.version === "2026.9.1")?.status, "candidate");
 });
 
 test("failed post-update verification keeps the target installed by default", () => {

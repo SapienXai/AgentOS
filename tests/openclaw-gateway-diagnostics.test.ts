@@ -319,9 +319,11 @@ test("gateway diagnostics block registry latest versions below the required base
 
   assert.equal(diagnostics.version, "2026.6.8");
   assert.equal(diagnostics.latestVersion, "2026.6.6");
-  assert.equal(diagnostics.updateAvailable, false);
+  assert.equal(diagnostics.updateAvailable, true);
   assert.equal(diagnostics.updateCompatibility?.latestDecision?.version, "2026.6.6");
   assert.equal(diagnostics.updateCompatibility?.latestDecision?.status, "blocked");
+  assert.equal(diagnostics.updateProductState?.state, "blocked");
+  assert.equal(diagnostics.updateProductState?.availableVersion, "2026.6.6");
 });
 
 test("version diagnostics expose update.status errors instead of reporting loading", () => {

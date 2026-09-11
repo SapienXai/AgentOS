@@ -81,6 +81,10 @@ import type {
   OpenClawUpdateDecision,
   OpenClawUpdateSafetyReport
 } from "@/lib/openclaw/types";
+import {
+  formatOpenClawProductUpdateStateLabel,
+  type OpenClawProductUpdateProjection
+} from "@/lib/openclaw/update-presentation";
 import { OPENCLAW_DEFAULT_GATEWAY_BIND_MODE } from "@/lib/openclaw/gateway-defaults";
 import type {
   OpenClawCodexFixBundle,
@@ -293,9 +297,11 @@ export function SettingsControlCenter(
         : "Unknown"
   );
   const updateCompatibility = snapshot.diagnostics.updateCompatibility;
+  const productUpdate = snapshot.diagnostics.updateProductState;
   const currentVersion = snapshot.diagnostics.version || "unknown";
   const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
   const latestVersion =
+    productUpdate?.availableVersion ??
     updateCompatibility?.latestDecision?.version ??
     resolveLatestVersionFromUpdateInfo(updateInfo) ??
     snapshot.diagnostics.latestVersion ??
@@ -304,30 +310,44 @@ export function SettingsControlCenter(
   const normalizedCurrentVersion = normalizeUpdateVersion(currentVersion);
   const normalizedRecommendedVersion = normalizeUpdateVersion(recommendedVersion);
   const normalizedLatestVersion = normalizeUpdateVersion(latestVersion);
-  const hasCertifiedUpdateAvailable = Boolean(
-    updateCompatibility?.recommendedDecision.allowed &&
-      normalizedRecommendedVersion &&
-      normalizedRecommendedVersion !== normalizedCurrentVersion
+  const productUpdateHasTarget = Boolean(
+    productUpdate?.availableVersion &&
+      productUpdate.state !== "up-to-date" &&
+      productUpdate.state !== "unknown" &&
+      productUpdate.state !== "unavailable"
   );
-  const hasRegistryUpdateAvailable = Boolean(
-    normalizedLatestVersion &&
-      normalizedLatestVersion !== normalizedCurrentVersion
-  );
+  const hasCertifiedUpdateAvailable = productUpdate
+    ? productUpdate.state === "available-certified"
+    : Boolean(
+        updateCompatibility?.recommendedDecision.allowed &&
+          normalizedRecommendedVersion &&
+          normalizedRecommendedVersion !== normalizedCurrentVersion
+      );
+  const hasRegistryUpdateAvailable = productUpdate
+    ? productUpdateHasTarget
+    : Boolean(
+        normalizedLatestVersion &&
+          normalizedLatestVersion !== normalizedCurrentVersion
+      );
   const defaultUpdateTargetVersion =
-    hasCertifiedUpdateAvailable && recommendedVersion
+    productUpdate?.availableVersion
+      ? productUpdate.availableVersion
+      : hasCertifiedUpdateAvailable && recommendedVersion
       ? recommendedVersion
       : hasRegistryUpdateAvailable && latestVersion
         ? latestVersion
         : recommendedVersion ?? latestVersion ?? undefined;
   const defaultUpdateMode =
-    hasCertifiedUpdateAvailable
+    productUpdate?.state === "available-fallback"
+      ? "advanced"
+      : productUpdate?.state === "available-certified" || hasCertifiedUpdateAvailable
       ? "recommended"
       : resolveUpdateDecisionMode(updateCompatibility?.latestDecision);
   const canVerifyLatestUpdate = Boolean(
     hasRegistryUpdateAvailable &&
       latestVersion &&
       defaultUpdateMode === "advanced" &&
-      updateCompatibility?.latestDecision?.status === "unknown"
+      (updateCompatibility?.latestDecision?.status === "unknown" || productUpdate?.state === "available-fallback")
   );
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !recommendedVersion && !snapshot.diagnostics.updateError
@@ -2493,6 +2513,7 @@ export function SettingsControlCenter(
                       isUpdateRegistryLoading={isUpdateRegistryLoading}
                       hasCertifiedUpdateAvailable={hasCertifiedUpdateAvailable}
                       hasRegistryUpdateAvailable={hasRegistryUpdateAvailable}
+                      productUpdate={productUpdate}
                       currentVersion={currentVersion}
                       recommendedVersion={recommendedVersion}
                       latestVersion={latestVersion}
@@ -5096,6 +5117,7 @@ function UpdateRegistryPanel({
   isUpdateRegistryLoading,
   hasCertifiedUpdateAvailable,
   hasRegistryUpdateAvailable,
+  productUpdate,
   currentVersion,
   recommendedVersion,
   latestVersion,
@@ -5112,6 +5134,7 @@ function UpdateRegistryPanel({
   isUpdateRegistryLoading: boolean;
   hasCertifiedUpdateAvailable: boolean;
   hasRegistryUpdateAvailable: boolean;
+  productUpdate: OpenClawProductUpdateProjection | null | undefined;
   currentVersion: string;
   recommendedVersion: string | null;
   latestVersion: string | null;
@@ -5128,15 +5151,17 @@ function UpdateRegistryPanel({
     ? "Checking registry"
     : isUpdateRunning
       ? "Updating"
-      : hasCertifiedUpdateAvailable
-        ? "Certified update"
-        : hasRegistryUpdateAvailable
-          ? "Latest needs review"
-        : updateError
-          ? "Check failed"
-          : isUpdateRegistryLoading
-            ? "Registry loading"
-            : "Up to date";
+      : productUpdate
+        ? formatOpenClawProductUpdateStateLabel(productUpdate.state)
+        : hasCertifiedUpdateAvailable
+          ? "Certified update"
+          : hasRegistryUpdateAvailable
+            ? "Latest needs review"
+            : updateError
+              ? "Check failed"
+              : isUpdateRegistryLoading
+                ? "Registry loading"
+                : "Up to date";
   const statusToneClass = hasCertifiedUpdateAvailable
     ? surfaceTheme === "light"
       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -5161,15 +5186,17 @@ function UpdateRegistryPanel({
     ? "Refreshing OpenClaw update registry..."
     : isUpdateRunning
       ? "Installing the selected OpenClaw update."
-      : hasCertifiedUpdateAvailable
-        ? "A certified recommended OpenClaw release is ready to install."
-        : hasRegistryUpdateAvailable
-          ? "OpenClaw reports a newer latest release, but AgentOS must classify it before it can be applied safely."
-        : updateError
-          ? "OpenClaw returned an error while checking updates."
-          : isUpdateRegistryLoading
-            ? "OpenClaw has not reported a latest release yet."
-            : "No newer release is currently available.";
+      : productUpdate
+        ? productUpdate.reason
+        : hasCertifiedUpdateAvailable
+          ? "A certified recommended OpenClaw release is ready to install."
+          : hasRegistryUpdateAvailable
+            ? "OpenClaw reports a newer latest release, but AgentOS must classify it before it can be applied safely."
+            : updateError
+              ? "OpenClaw returned an error while checking updates."
+              : isUpdateRegistryLoading
+                ? "OpenClaw has not reported a latest release yet."
+                : "No newer release is currently available.";
 
   return (
     <div className={cn("mt-3 rounded-[20px] border p-3.5", insetPanelClassName(surfaceTheme))}>
@@ -5180,7 +5207,7 @@ function UpdateRegistryPanel({
             {isBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : null}
             <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{statusLabel}</p>
             <span className={cn("rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", statusToneClass)}>
-              {hasCertifiedUpdateAvailable ? "Certified" : hasRegistryUpdateAvailable ? "Review" : isBusy ? "Working" : updateError ? "Attention" : "Stable"}
+              {hasCertifiedUpdateAvailable ? "Certified" : productUpdate?.state === "available-fallback" ? "Advanced" : hasRegistryUpdateAvailable ? "Review" : isBusy ? "Working" : updateError ? "Attention" : "Stable"}
             </span>
           </div>
         </div>
@@ -5264,6 +5291,9 @@ function UpdateRegistryPanel({
           <p className="mt-1.5 opacity-90">
             Latest detected status: {formatUpdateCompatibilityStatus(latestDecision.status)}. {latestDecision.reason}
           </p>
+        ) : null}
+        {productUpdate?.availabilitySource === "openclaw-cli-fallback" ? (
+          <p className="mt-1.5 opacity-90">Availability source: OpenClaw CLI status (read-only fallback). Native update.run remains gated until the Gateway exposes the exact target.</p>
         ) : null}
         {hasRegistryUpdateAvailable && !hasCertifiedUpdateAvailable ? (
           <p className="mt-1.5 opacity-90">

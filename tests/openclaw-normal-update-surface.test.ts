@@ -33,7 +33,7 @@ test("normal native update endpoint enforces the shared server policy and target
   assert.match(route, /UPDATE_SECURITY_POLICY_REQUIRED/);
   assert.doesNotMatch(route, /override\s*:/);
   assert.match(policyDomain, /resolveOpenClawUpdateDecision/);
-  assert.doesNotMatch(policyDomain, /compareVersionStrings/);
+  assert.match(policyDomain, /resolveOpenClawProductUpdateState/);
   assert.match(policyService, /readOpenClawCompatibilityManifestOverride/);
 });
 

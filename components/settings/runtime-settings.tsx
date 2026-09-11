@@ -7,6 +7,7 @@ import { OpenClawAppConnectDialog } from "@/components/mission-control/openclaw-
 import { Button } from "@/components/ui/button";
 import { SettingsList, SettingsRow, SettingsSection, SettingsStatus } from "@/components/settings/settings-section";
 import type { GatewayControlAction, SettingsPageProps } from "@/components/settings/settings-types";
+import { formatOpenClawProductUpdateStateLabel } from "@/lib/openclaw/update-presentation";
 import { cn } from "@/lib/utils";
 
 export function RuntimeSettings({
@@ -29,7 +30,18 @@ export function RuntimeSettings({
   const openClawConnected = snapshot.diagnostics.loaded;
   const gatewayReady = isGatewayServiceOnline && snapshot.diagnostics.rpcOk;
   const version = snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Version unavailable";
-  const updateAvailable = Boolean(snapshot.diagnostics.updateCompatibility?.latestDecision?.version && snapshot.diagnostics.updateCompatibility.latestDecision.version !== snapshot.diagnostics.version);
+  const updateState = snapshot.diagnostics.updateProductState?.state ?? (
+    snapshot.diagnostics.updateAvailable === true
+      ? "available-fallback"
+      : snapshot.diagnostics.updateAvailable === false
+        ? "up-to-date"
+        : "unknown"
+  );
+  const updateTarget = snapshot.diagnostics.updateProductState?.availableVersion || snapshot.diagnostics.latestVersion || null;
+  const updateVisible = updateState !== "up-to-date" && updateState !== "unknown" && updateState !== "unavailable";
+  const updateDescription = snapshot.diagnostics.updateProductState?.reason || (
+    updateTarget && updateVisible ? `OpenClaw v${updateTarget} is available.` : "OpenClaw update status could not be verified."
+  );
   const gatewayAction = gatewayActionGuidance.action as GatewayControlAction | null;
   const showRecovery = gatewayActionGuidance.state === "attention" && Boolean(gatewayAction);
 
@@ -54,8 +66,8 @@ export function RuntimeSettings({
         <SettingsRow label="OpenClaw App" description="Pair the mobile app with this Gateway." surfaceTheme={surfaceTheme} action={<Button type="button" size="sm" variant="secondary" onClick={() => onOpenClawAppConnectOpenChange(true)} disabled={!openClawConnected} title={!openClawConnected ? "Start OpenClaw before connecting the app." : undefined} className="min-h-10 rounded-md text-xs sm:min-h-9"><Plug className="h-3.5 w-3.5" /> Connect</Button>}>
           <SettingsStatus label="Not connected" tone="muted" surfaceTheme={surfaceTheme} />
         </SettingsRow>
-        <SettingsRow label="Updates" description={updateAvailable ? "A newer OpenClaw version is available." : "OpenClaw is up to date."} surfaceTheme={surfaceTheme} action={<Button asChild type="button" size="sm" variant="ghost" className="min-h-10 rounded-md px-2 text-xs sm:min-h-9"><Link href="/updates">Manage updates <span aria-hidden="true">→</span></Link></Button>}>
-          <SettingsStatus label={updateAvailable ? "Update available" : "Up to date"} tone={updateAvailable ? "warning" : "success"} surfaceTheme={surfaceTheme} />
+        <SettingsRow label="Updates" description={updateDescription} surfaceTheme={surfaceTheme} action={<Button asChild type="button" size="sm" variant="ghost" className="min-h-10 rounded-md px-2 text-xs sm:min-h-9"><Link href="/updates">Manage updates <span aria-hidden="true">→</span></Link></Button>}>
+          <SettingsStatus label={formatOpenClawProductUpdateStateLabel(updateState)} tone={updateState === "up-to-date" ? "success" : updateState === "unknown" || updateState === "unavailable" ? "muted" : "warning"} surfaceTheme={surfaceTheme} />
         </SettingsRow>
       </SettingsList>
 

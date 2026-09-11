@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   auditResultForNativeDoctorMutation,
+  buildNativeDoctorConfirmation,
   confirmationMatches,
   executeNativeDoctorMutation,
   getNativeDoctorSnapshot,
@@ -166,6 +167,47 @@ test("native Doctor keeps status separate and sends probe only when requested", 
   assert.equal(snapshot.status.gatewayReachable, true);
   assert.equal(snapshot.status.gatewayMode, "local");
   assert.equal(refreshCheckout, true);
+});
+
+test("native Doctor records a read-only update target when Gateway status omits it", async () => {
+  let fallbackCount = 0;
+  const snapshot = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      getConnectionIdentity() {
+        return {
+          connectionId: "connection-fallback",
+          client: {
+            async getOperatorIdentity() {
+              return {
+                requestedRole: "operator",
+                role: "operator",
+                requestedScopes: ["operator.admin", "operator.read"],
+                grantedScopes: ["operator.admin", "operator.read"],
+                grantedScopesKnown: true,
+                deviceId: "device",
+                connectionId: "connection-fallback",
+                authenticated: true,
+                source: "native-handshake" as const
+              };
+            },
+            getDiagnostics() {
+              return { fallbackCounts: { "update.status": fallbackCount } };
+            }
+          } as unknown as OpenClawGatewayClient
+        };
+      },
+      async getUpdateStatus() {
+        fallbackCount += 1;
+        return { latestVersion: "2026.9.4" };
+      }
+    })
+  });
+
+  assert.equal(snapshot.update.status, "current");
+  assert.equal(snapshot.update.latestVersion, null);
+  assert.equal(snapshot.update.discoveredAvailableVersion, "2026.9.4");
+  assert.equal(snapshot.update.availabilitySource, "openclaw-cli-fallback");
+  assert.equal(buildNativeDoctorConfirmation(snapshot).availableVersion, null);
 });
 
 test("config revision mismatch is restart-required, not silently applied", async () => {

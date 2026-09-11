@@ -205,6 +205,9 @@ const collapsedSidebarItems = sidebarItems.slice(
   0,
   sidebarItems.findIndex((item) => item.label === "Accounts") + 1
 );
+const collapsedSidebarItemsWithUpdates = sidebarItems.filter(
+  (item) => collapsedSidebarItems.includes(item) || item.label === "Updates"
+);
 
 const agentOsLogoSrc = "/assets/logo.webp";
 const emptyOperatorProfile: OperatorProfileSummary = {
@@ -213,6 +216,23 @@ const emptyOperatorProfile: OperatorProfileSummary = {
   email: "",
   avatarDataUrl: null
 };
+
+function hasDiscoverableOpenClawUpdate(snapshot: MissionControlSnapshot) {
+  const state = snapshot.diagnostics.updateProductState?.state;
+  if (
+    state === "available-certified" ||
+    state === "available-agentos-required" ||
+    state === "available-uncertified" ||
+    state === "available-fallback" ||
+    state === "blocked" ||
+    state === "held" ||
+    state === "running"
+  ) {
+    return true;
+  }
+
+  return snapshot.diagnostics.updateAvailable === true;
+}
 
 type WorkspaceMenuEntry = (
   | {
@@ -251,6 +271,7 @@ export function MissionSidebar({
   onAgentActionRequestDismiss
 }: MissionSidebarProps) {
   const pathname = usePathname();
+  const hasUpdateNotice = hasDiscoverableOpenClawUpdate(snapshot);
   const [activeHash, setActiveHash] = useState("");
   const [isEditAgentOpen, setIsEditAgentOpen] = useState(false);
   const [showEditIdentityDetails, setShowEditIdentityDetails] = useState(false);
@@ -573,6 +594,7 @@ export function MissionSidebar({
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
           workspaceDetail={activeWorkspaceId === null ? `${workspaceCount} workspaces` : activePendingWorkspace ? "Creating workspace" : "Workspace"}
           snapshot={snapshot}
+          updateNotice={hasUpdateNotice}
           activeWorkspaceId={activeWorkspace?.id ?? null}
           onRefresh={onRefresh}
           onSnapshotChange={onSnapshotChange}
@@ -639,6 +661,7 @@ export function MissionSidebar({
                     activeHash={activeHash}
                     pathname={pathname}
                     section={section}
+                    updateNotice={hasUpdateNotice}
                     onNavigate={handleNavigate}
                   />
                 ))}
@@ -2118,12 +2141,14 @@ function SidebarSectionGroup({
   activeHash,
   onNavigate,
   pathname,
-  section
+  section,
+  updateNotice
 }: {
   activeHash: string;
   onNavigate: (item: SidebarItem) => void;
   pathname: string;
   section: { id: SidebarSection; label: string };
+  updateNotice: boolean;
 }) {
   return (
     <section className="flex flex-col gap-2" aria-labelledby={`sidebar-${section.id}`}>
@@ -2136,14 +2161,18 @@ function SidebarSectionGroup({
       <div className="flex flex-col gap-1">
         {sidebarItems
           .filter((item) => item.section === section.id)
-          .map((item) => (
+          .map((item) => {
+            const displayedItem = item.label === "Updates" && updateNotice ? { ...item, badge: 1 } : item;
+
+            return (
             <SidebarNavItem
               key={item.label}
-              item={item}
-              active={isSidebarItemActive(item, pathname, activeHash)}
+              item={displayedItem}
+              active={isSidebarItemActive(displayedItem, pathname, activeHash)}
               onNavigate={() => onNavigate(item)}
             />
-          ))}
+            );
+          })}
       </div>
     </section>
   );
@@ -2519,6 +2548,7 @@ function CollapsedSidebar({
   workspaceLabel,
   workspaceDetail,
   snapshot,
+  updateNotice,
   activeWorkspaceId,
   onRefresh,
   onSnapshotChange,
@@ -2535,6 +2565,7 @@ function CollapsedSidebar({
   workspaceLabel: string;
   workspaceDetail: string;
   snapshot: MissionControlSnapshot;
+  updateNotice: boolean;
   activeWorkspaceId: string | null;
   onRefresh: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -2597,23 +2628,24 @@ function CollapsedSidebar({
       <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">
         {sidebarSections.map((section) => (
           <div key={section.id} className="flex flex-col items-center gap-1.5">
-            {collapsedSidebarItems
+            {collapsedSidebarItemsWithUpdates
               .filter((item) => item.section === section.id)
               .map((item) => {
+                const displayedItem = item.label === "Updates" && updateNotice ? { ...item, badge: 1 } : item;
                 const active = isSidebarItemActive(item, pathname, activeHash);
-                const Icon = item.icon;
+                const Icon = displayedItem.icon;
 
                 return (
                   <RailTooltip
                     key={item.label}
-                    label={item.label}
+                    label={displayedItem.label}
                     side="right"
                     surfaceTheme={surfaceTheme}
                   >
                     <Link
-                      href={item.href ?? "#"}
-                      scroll={item.href?.startsWith("/settings#") ? false : undefined}
-                      aria-label={item.label}
+                      href={displayedItem.href ?? "#"}
+                      scroll={displayedItem.href?.startsWith("/settings#") ? false : undefined}
+                      aria-label={displayedItem.label}
                       aria-current={active ? "page" : undefined}
                       onClick={() => {
                         onItemNavigate(item);
@@ -2626,9 +2658,9 @@ function CollapsedSidebar({
                       )}
                     >
                       <Icon className="h-4 w-4" />
-                      {typeof item.badge === "number" ? (
+                      {typeof displayedItem.badge === "number" ? (
                         <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-card bg-primary px-1 text-[0.58rem] font-bold leading-none text-primary-foreground shadow-card">
-                          {item.badge}
+                          {displayedItem.badge}
                         </span>
                       ) : null}
                     </Link>

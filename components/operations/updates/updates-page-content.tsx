@@ -43,7 +43,9 @@ import {
   formatAutomaticUpdateState,
   formatNativeChannel,
   formatNativeUpdateStateLabel,
+  formatOpenClawProductUpdateStateLabel,
   type NormalOpenClawUpdatePolicy,
+  type OpenClawProductUpdateState,
   type NativeUpdateUserState
 } from "@/lib/openclaw/update-presentation";
 import type {
@@ -81,7 +83,7 @@ type CommunityResponse = {
 
 type UpdateActionState = "idle" | "running" | "success" | "error" | "unknown";
 
-export function UpdatesPageContent({ refresh }: UpdatesPageContentProps) {
+export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProps) {
   const [native, setNative] = useState<NativeDoctorSnapshot | null>(null);
   const [confirmation, setConfirmation] = useState<NativeDoctorConfirmation | null>(null);
   const [policy, setPolicy] = useState<NormalOpenClawUpdatePolicy | null>(null);
@@ -146,12 +148,23 @@ export function UpdatesPageContent({ refresh }: UpdatesPageContentProps) {
     };
   }, [loadCommunity, loadNative, refresh]);
 
+  const productUpdate = policy?.productUpdate ?? snapshot.diagnostics.updateProductState ?? null;
   const currentVersion = normalizeVersion(
-    policy?.currentVersion || native?.update.currentVersion || native?.status.runtimeVersion || native?.status.version
+    productUpdate?.currentVersion ||
+      policy?.currentVersion ||
+      native?.update.currentVersion ||
+      native?.status.runtimeVersion ||
+      native?.status.version ||
+      snapshot.diagnostics.version
   );
-  const availableVersion = normalizeVersion(policy?.nativeAvailableVersion || native?.update.latestVersion);
-  const channel = formatNativeChannel(policy?.effectiveChannel || native?.update.effectiveChannel || native?.status.updateChannel);
-  const userState: NativeUpdateUserState = policy?.state ?? "unknown";
+  const availableVersion = normalizeVersion(
+    productUpdate?.availableVersion || policy?.nativeAvailableVersion || native?.update.latestVersion
+  );
+  const channel = formatNativeChannel(
+    policy?.effectiveChannel || native?.update.effectiveChannel || native?.status.updateChannel || snapshot.diagnostics.updateChannel
+  );
+  const userState: OpenClawProductUpdateState = productUpdate?.state ?? policy?.state ?? "unknown";
+  const nativeState: NativeUpdateUserState = productUpdate?.nativeState ?? policy?.state ?? "unknown";
   const canRunNativeUpdate = Boolean(policy?.canRunNormalUpdate && confirmation?.connectionId);
   const canHoldNativeUpdate = Boolean(policy?.canHoldUpdate && confirmation?.connectionId);
   const communityRelease = useMemo(
@@ -303,9 +316,11 @@ export function UpdatesPageContent({ refresh }: UpdatesPageContentProps) {
               currentVersion={currentVersion}
               availableVersion={availableVersion}
               agentOsDecision={policy?.agentOsDecision ?? null}
-              policyReason={policy?.reason ?? null}
+              policyReason={productUpdate?.reason ?? policy?.reason ?? null}
               channel={channel}
               state={userState}
+              nativeState={nativeState}
+              availabilitySource={productUpdate?.availabilitySource ?? null}
               native={native}
               nativeError={nativeError}
               actionState={actionState}
@@ -322,9 +337,18 @@ export function UpdatesPageContent({ refresh }: UpdatesPageContentProps) {
                 <div className="grid gap-2 p-3 sm:grid-cols-2">
                   <KeyValue label="Update channel" value={channel} />
                   <KeyValue label="Automatic updates" value={formatAutomaticUpdateState(native.update.schedule)} />
-                  <KeyValue label="Native status" value={native.update.readStatus === "available" ? "Authoritative" : native.update.readStatus} />
+                  <KeyValue
+                    label="Native status"
+                    value={
+                      productUpdate?.availabilitySource === "openclaw-cli-fallback"
+                        ? "Gateway read + read-only fallback"
+                        : native.update.readStatus === "available"
+                          ? "Authoritative"
+                          : native.update.readStatus
+                    }
+                  />
                   <KeyValue label="Runtime" value={native.runtime.status.replaceAll("-", " ")} />
-                  <KeyValue label="OpenClaw update state" value={formatNativeUpdateStateLabel(userState)} />
+                  <KeyValue label="OpenClaw update state" value={formatOpenClawProductUpdateStateLabel(userState)} />
                   <KeyValue label="Last native read" value={formatTimestamp(native.generatedAt)} />
                 </div>
                 <div className="border-t border-border px-3 py-3 text-xs leading-5 text-muted-foreground">
@@ -400,6 +424,8 @@ function PrimaryUpdateCard({
   policyReason,
   channel,
   state,
+  nativeState,
+  availabilitySource,
   native,
   nativeError,
   actionState,
@@ -415,7 +441,9 @@ function PrimaryUpdateCard({
   agentOsDecision: NormalOpenClawUpdatePolicy["agentOsDecision"];
   policyReason: string | null;
   channel: string;
-  state: NativeUpdateUserState;
+  state: OpenClawProductUpdateState;
+  nativeState: NativeUpdateUserState;
+  availabilitySource: NormalOpenClawUpdatePolicy["productUpdate"]["availabilitySource"];
   native: NativeDoctorSnapshot | null;
   nativeError: string | null;
   actionState: UpdateActionState;
@@ -448,7 +476,7 @@ function PrimaryUpdateCard({
           </div>
         </div>
 
-        {availableVersion && (state === "available-certified" || state === "available-uncertified" || state === "blocked" || state === "running") ? (
+        {availableVersion && (state === "available-certified" || state === "available-agentos-required" || state === "available-uncertified" || state === "available-fallback" || state === "blocked" || state === "running") ? (
           <div className="mt-5 grid grid-cols-2 gap-2 sm:max-w-md">
             <VersionTile label="Current" value={currentVersion ? `v${currentVersion}` : "Unknown"} />
             <VersionTile label="Available" value={`v${availableVersion}`} accent />
@@ -465,6 +493,30 @@ function PrimaryUpdateCard({
               <div>
                 <p className="font-medium text-foreground">AgentOS has not certified this exact OpenClaw release.</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">Wait for AgentOS certification before using the normal update action. Advanced compatibility tools remain available if you need to test this release.</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {state === "available-agentos-required" ? (
+          <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-warning-foreground))]" />
+              <div>
+                <p className="font-medium text-foreground">Update AgentOS before OpenClaw.</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">This OpenClaw target requires a newer AgentOS release. The native OpenClaw updater stays unavailable until that prerequisite is met.</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {state === "available-fallback" ? (
+          <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-warning-foreground))]" />
+              <div>
+                <p className="font-medium text-foreground">Update found through a read-only fallback.</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">The connected Gateway has not exposed an exact native update target yet. AgentOS will not turn this fallback into a normal native update action.</p>
               </div>
             </div>
           </div>
@@ -504,9 +556,11 @@ function PrimaryUpdateCard({
               Hold this update
             </Button>
           ) : null}
-          {state === "available-uncertified" || state === "blocked" ? (
+          {state === "available-uncertified" || state === "available-fallback" || state === "blocked" || state === "available-agentos-required" ? (
             <Button asChild type="button" variant="secondary" className="min-h-11 sm:min-h-9">
-              <Link href="/settings#advanced">{state === "blocked" ? "View compatibility tools" : "Advanced options"}</Link>
+              <Link href="/settings#developer">
+                {state === "blocked" ? "View compatibility tools" : state === "available-agentos-required" ? "View AgentOS update options" : "Open in-app update tools"}
+              </Link>
             </Button>
           ) : null}
           {(state === "unavailable" || state === "unknown") ? (
@@ -520,7 +574,17 @@ function PrimaryUpdateCard({
       <div className="grid gap-2 bg-muted/25 px-4 py-3 text-xs text-muted-foreground sm:grid-cols-3 sm:px-6">
         <StatusFact label="Channel" value={channel} />
         <StatusFact label="AgentOS compatibility" value={formatAgentOsPolicy(agentOsDecision)} />
-        <StatusFact label="Source" value={native ? "OpenClaw update.status" : "Waiting for native status"} />
+        <StatusFact label="Native state" value={formatNativeUpdateStateLabel(nativeState)} />
+        <StatusFact
+          label="Source"
+          value={
+            availabilitySource === "openclaw-cli-fallback"
+              ? "OpenClaw CLI status (read-only fallback)"
+              : native
+                ? "OpenClaw update.status"
+                : "Waiting for native status"
+          }
+        />
       </div>
     </SectionCard>
   );
@@ -638,7 +702,7 @@ function VersionTile({ label, value, accent = false }: { label: string; value: s
 }
 
 function resolvePrimaryCopy(input: {
-  state: NativeUpdateUserState;
+  state: OpenClawProductUpdateState;
   currentVersion: string | null;
   availableVersion: string | null;
   agentOsDecision: NormalOpenClawUpdatePolicy["agentOsDecision"];
@@ -657,6 +721,18 @@ function resolvePrimaryCopy(input: {
         statusLabel: "Update available",
         title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
         description: "AgentOS has verified this OpenClaw release. Updating will use OpenClaw's native updater and restart the Gateway if required."
+      };
+    case "available-agentos-required":
+      return {
+        statusLabel: "AgentOS update required",
+        title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
+        description: input.agentOsDecision?.reason || "Update AgentOS before updating OpenClaw to this target."
+      };
+    case "available-fallback":
+      return {
+        statusLabel: "Update found",
+        title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
+        description: input.policyReason || "AgentOS found an update through OpenClaw's read-only status fallback. The normal native action remains gated until the Gateway exposes the exact target."
       };
     case "available-uncertified":
       return {
@@ -697,16 +773,17 @@ function resolvePrimaryCopy(input: {
   }
 }
 
-function primaryTone(state: NativeUpdateUserState, actionState: UpdateActionState): StatusTone {
+function primaryTone(state: OpenClawProductUpdateState, actionState: UpdateActionState): StatusTone {
   if (actionState === "success") return "success";
   if (actionState === "error") return "danger";
   if (actionState === "running" || actionState === "unknown" || state === "running") return "warning";
   if (state === "up-to-date" || state === "available-certified") return state === "up-to-date" ? "success" : "info";
-  if (state === "available-uncertified" || state === "blocked" || state === "held") return "warning";
+  if (state === "available-agentos-required" || state === "available-uncertified" || state === "available-fallback" || state === "blocked" || state === "held") return "warning";
   return "muted";
 }
 
 function formatAgentOsPolicy(decision: NormalOpenClawUpdatePolicy["agentOsDecision"]) {
+  if (decision?.requiresAgentOsUpdate) return "AgentOS update required";
   switch (decision?.status) {
     case "certified":
       return "Certified";

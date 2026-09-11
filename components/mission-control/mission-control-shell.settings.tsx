@@ -26,6 +26,7 @@ import type {
 import type { GatewayNativeAuthStatus } from "@/lib/openclaw/gateway-auth";
 import type { OpenClawCapabilityDiffReport } from "@/lib/openclaw/types";
 import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
+import { formatOpenClawProductUpdateStateLabel } from "@/lib/openclaw/update-presentation";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -85,7 +86,12 @@ export function MissionControlShellSettingsPanel({
   const [isRepairingGatewayAccess, setIsRepairingGatewayAccess] = useState(false);
   const isOpenClawReady = isOpenClawOnboardingModelReady(snapshot);
   const certifiedVersion = snapshot.diagnostics.updateCompatibility?.recommendedVersion;
-  const updateSummary = "Native status on Updates";
+  const productUpdate = snapshot.diagnostics.updateProductState;
+  const updateSummary = productUpdate
+    ? productUpdate.availableVersion && productUpdate.state !== "up-to-date"
+      ? `${formatOpenClawProductUpdateStateLabel(productUpdate.state)}: v${productUpdate.availableVersion}`
+      : formatOpenClawProductUpdateStateLabel(productUpdate.state)
+    : "Native status on Updates";
   const defaultModel =
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
     snapshot.diagnostics.modelReadiness.defaultModel ||
@@ -183,7 +189,11 @@ export function MissionControlShellSettingsPanel({
             <p className="mt-1 truncate text-[13px]">{updateSummary}</p>
             <p className={cn("mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
               {snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Version unknown"}
-              {certifiedVersion ? ` · AgentOS certified version v${certifiedVersion}` : " · AgentOS certification unavailable"}
+              {productUpdate?.availableVersion && productUpdate.state !== "up-to-date"
+                ? ` · Target v${productUpdate.availableVersion}`
+                : certifiedVersion
+                  ? ` · AgentOS certified version v${certifiedVersion}`
+                  : " · AgentOS certification unavailable"}
             </p>
             <div className="mt-2">
               <Button asChild type="button" size="sm" variant="secondary" className={cn("w-full px-2 text-[10px]", quickButtonClassName(surfaceTheme))}>

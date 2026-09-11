@@ -239,13 +239,13 @@ function buildAvailableProductUpdateProjection(
     );
   }
 
-  if (state === "available-certified" && input.agentOsDecision?.status === "certified" && input.agentOsDecision.allowed && input.agentOsDecision.defaultVisible) {
+  if ((state === "available-certified" || state === "available-fallback") && input.agentOsDecision?.status === "certified" && input.agentOsDecision.allowed && input.agentOsDecision.defaultVisible) {
     if (input.availabilitySource === "openclaw-cli-fallback") {
       return buildProductUpdateProjection(
         input,
         "available-fallback",
         "advanced",
-        "OpenClaw's CLI status fallback found an update, but the connected Gateway did not expose a native target for update.run."
+        "OpenClaw's read-only CLI status fallback found an update, but the connected Gateway did not expose a native target for update.run."
       );
     }
 

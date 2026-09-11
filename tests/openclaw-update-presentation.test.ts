@@ -5,6 +5,7 @@ import {
   formatAutomaticUpdateState,
   formatNativeChannel,
   guardNormalOpenClawUpdate,
+  resolveOpenClawProductUpdateState,
   resolveNativeUpdateUserState,
   resolveNormalOpenClawUpdatePolicy
 } from "@/lib/openclaw/update-presentation";
@@ -206,6 +207,95 @@ test("native forbidden, unavailable, and unknown reads are not reported as up to
       agentOsDecision: null
     }),
     "unknown"
+  );
+});
+
+test("product update state keeps a discovered target visible when native mutation is unavailable", () => {
+  const policy = resolveNormalOpenClawUpdatePolicy({
+    snapshot: {
+      status: { runtimeVersion: "2026.9.3", version: null, updateChannel: "stable" },
+      update: {
+        ...update({ currentVersion: "2026.9.3" }),
+        discoveredAvailableVersion: "2026.9.4",
+        availabilitySource: "openclaw-cli-fallback"
+      }
+    },
+    agentOsVersion: "0.7.9",
+    manifest: manifest([{ version: "2026.9.4", status: "certified" }])
+  });
+
+  assert.equal(policy.nativeAvailableVersion, null);
+  assert.equal(policy.productUpdate.state, "available-fallback");
+  assert.equal(policy.productUpdate.action, "advanced");
+  assert.equal(policy.productUpdate.availableVersion, "2026.9.4");
+  assert.match(policy.productUpdate.reason, /read-only CLI status fallback/);
+  assert.equal(policy.canRunNormalUpdate, false);
+});
+
+test("product update state separates availability from certification and AgentOS prerequisites", () => {
+  const available = resolveOpenClawProductUpdateState({
+    nativeState: "available-uncertified",
+    currentVersion: "2026.9.3",
+    availableVersion: "2026.9.4",
+    availabilitySource: "native-gateway",
+    agentOsDecision: {
+      version: "2026.9.4",
+      status: "candidate",
+      allowed: false,
+      defaultVisible: true,
+      requiresExplicitOptIn: true,
+      requiresAgentOsUpdate: false,
+      minRequiredAgentOsVersion: null,
+      reason: "Certification pending",
+      notes: null
+    }
+  });
+  const required = resolveOpenClawProductUpdateState({
+    nativeState: "available-uncertified",
+    currentVersion: "2026.9.3",
+    availableVersion: "2026.9.4",
+    availabilitySource: "native-gateway",
+    agentOsDecision: {
+      version: "2026.9.4",
+      status: "certified",
+      allowed: false,
+      defaultVisible: false,
+      requiresExplicitOptIn: false,
+      requiresAgentOsUpdate: true,
+      minRequiredAgentOsVersion: "0.8.0",
+      reason: "AgentOS 0.8.0 is required",
+      notes: null
+    }
+  });
+  const blocked = resolveOpenClawProductUpdateState({
+    nativeState: "blocked",
+    currentVersion: "2026.9.3",
+    availableVersion: "2026.9.4",
+    availabilitySource: "native-gateway",
+    agentOsDecision: {
+      version: "2026.9.4",
+      status: "blocked",
+      allowed: false,
+      defaultVisible: false,
+      requiresExplicitOptIn: false,
+      requiresAgentOsUpdate: false,
+      minRequiredAgentOsVersion: null,
+      reason: "Blocked by policy",
+      notes: null
+    }
+  });
+
+  assert.deepEqual(
+    { state: available.state, action: available.action },
+    { state: "available-uncertified", action: "advanced" }
+  );
+  assert.deepEqual(
+    { state: required.state, action: required.action },
+    { state: "available-agentos-required", action: "update-agentos" }
+  );
+  assert.deepEqual(
+    { state: blocked.state, action: blocked.action },
+    { state: "blocked", action: "view-compatibility" }
   );
 });
 
