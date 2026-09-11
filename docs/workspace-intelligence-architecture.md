@@ -5,8 +5,9 @@ This document defines the Phase 1 Project Intelligence foundation, the Phase
 boundary. It is a normalized, versioned AgentOS domain contract for evidence
 collection and workspace-architecture work. Phase 2 adds reliable
 observation around the existing context and Architect path; Phase 3 adds
-bounded website discovery without implementing verification, Workspace
-Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
+bounded website discovery; Phase 3.1 hardens its resource, policy, and
+locator boundaries. None of these phases implements verification,
+Workspace Architect 2.0, Workspace Composer, or a parallel OpenClaw runtime.
 
 ## Ownership and boundaries
 
@@ -207,10 +208,11 @@ bounded, parsed without execution, and remains untrusted observation data.
 The scheduler uses deterministic priority signals so root, documentation,
 developer, product, support, contact, security, integration, and similar
 project surfaces are favored over boilerplate, archives, and pagination. URL
-normalization removes fragments, default ports, and common tracking
-parameters while preserving meaningful query parameters. Safe progress
-locators remove query strings and fragments before entering
-`WorkspaceCreationRun` events or snapshots.
+normalization removes fragments, default ports, and common tracking or
+credential-like parameters while preserving benign query parameters. Safe
+display locators remove query strings and fragments before entering
+`WorkspaceCreationRun` events or snapshots; durable locators preserve safe
+identity-bearing query parameters for manifests and evidence.
 
 The static fetch path is the default. Low-information JavaScript shell pages
 are detected with bounded deterministic signals. No new browser runtime is
@@ -224,6 +226,32 @@ future extraction without rescanning raw HTML. Phase 3 does not create a
 second memory system, raw-source abstraction, verifier, fact extractor, or
 Project Intelligence Agent. Phase 4 may consume these manifests to perform
 structured extraction and official-source verification.
+
+## Phase 3.1 discovery hardening
+
+The discovery engine uses one `ProjectDiscoverySourceByteBudget` per source.
+Robots, sitemap/index, redirect, and page responses reserve capacity before
+fetching, receive that reservation as their maximum body size, and settle the
+reservation with actual bytes. Unused capacity is released; failed requests
+are accounted for conservatively. The invariant
+`committed + reserved <= capacity` is maintained even while page batches run
+concurrently, so document-level limits cannot multiply into an unbounded
+source total.
+
+All URL-derived discovery paths use the same typed crawl policy:
+`crawl`, `shallow`, `record-only`, or `blocked`. Root and `www` hosts are
+normal, documentation/developer/API/help/support subdomains are high-value,
+`app` and `blog` are shallow, and infrastructure subdomains are recorded
+without crawling. Sitemap and robots declarations, canonical links, anchors,
+and JSON-LD links cannot bypass this policy.
+
+JSON-LD is treated as untrusted observation material. It is parsed without
+execution under bounded script, object, depth, array, and string limits.
+Names, URLs, contact observations, application categories, operating systems,
+and repository/documentation candidates retain page provenance; malformed or
+instruction-shaped content is ignored. New manifests use schema version 2;
+the validator remains read-compatible with version 1 manifests, whose absent
+JSON-LD observation fields are treated as empty by consumers.
 
 ## Phase 2 creation execution
 

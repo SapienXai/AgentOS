@@ -1,10 +1,18 @@
 import { getDomain } from "tldts";
 
-export const PROJECT_DISCOVERY_SCHEMA_VERSION = 1 as const;
+export const PROJECT_DISCOVERY_SCHEMA_VERSION = 2 as const;
+export type ProjectDiscoverySchemaVersion = 1 | typeof PROJECT_DISCOVERY_SCHEMA_VERSION;
 
 export type ProjectDiscoveryFirstPartyClass = "root" | "subdomain" | "external";
 
 export type ProjectDiscoveryFetchStatus = "queued" | "fetched" | "skipped" | "failed" | "blocked";
+
+export type ProjectDiscoveryCrawlDisposition = "crawl" | "shallow" | "record-only" | "blocked";
+
+export type ProjectDiscoveryCrawlPolicy = {
+  disposition: ProjectDiscoveryCrawlDisposition;
+  reason: "root-host" | "www-host" | "high-value-subdomain" | "shallow-subdomain" | "infrastructure-subdomain" | "unknown-subdomain" | "outside-site-family" | "unsafe-url";
+};
 
 export type ProjectDiscoveryCandidateKind =
   | "page"
@@ -68,6 +76,11 @@ export type ProjectDiscoveryPage = {
     openGraphDescription: string | null;
     twitterTitle: string | null;
     jsonLdTypes: string[];
+    jsonLdNames?: string[];
+    jsonLdLegalNames?: string[];
+    jsonLdUrls?: string[];
+    jsonLdApplicationCategories?: string[];
+    jsonLdOperatingSystems?: string[];
   };
   discoveredLinkCount: number;
   contentHash: string | null;
@@ -76,7 +89,7 @@ export type ProjectDiscoveryPage = {
 };
 
 export type ProjectDiscoveryManifest = {
-  schemaVersion: typeof PROJECT_DISCOVERY_SCHEMA_VERSION;
+  schemaVersion: ProjectDiscoverySchemaVersion;
   sourceId: string;
   rootUrl: string;
   registrableDomain: string | null;
@@ -102,20 +115,55 @@ export function normalizeDiscoveryHttpUrl(value: string, options: { stripQuery?:
   if (!url.pathname) url.pathname = "/";
   url.pathname = url.pathname.replace(/\/+/g, "/");
   if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
-  for (const key of [...url.searchParams.keys()]) {
-    if (/^(?:utm_[^=]+|fbclid|gclid|msclkid|mc_cid|mc_eid|ref|referrer)$/i.test(key)) url.searchParams.delete(key);
-  }
+  for (const key of [...url.searchParams.keys()]) if (isUnsafeDiscoveryQueryParameter(key)) url.searchParams.delete(key);
   if (options.stripQuery) url.search = "";
   return url;
 }
 
-export function safeDiscoveryLocator(value: string) {
+/** Query-free locator for progress, diagnostics, and operator-visible activity. */
+export function safeDisplayDiscoveryLocator(value: string) {
   try {
     const url = normalizeDiscoveryHttpUrl(value, { stripQuery: true });
     return `${url.protocol}//${url.host}${url.pathname}`;
   } catch {
     return "[invalid-url]";
   }
+}
+
+/** Stable locator for manifests, evidence identity, and candidate deduplication. */
+export function safeDurableDiscoveryLocator(value: string) {
+  try { return normalizeDiscoveryHttpUrl(value).toString(); } catch { return "[invalid-url]"; }
+}
+
+/** Backward-compatible alias for the display/progress form. */
+export const safeDiscoveryLocator = safeDisplayDiscoveryLocator;
+
+export function classifyProjectDiscoveryCrawlPolicy(value: string, root: string, label: string | null = null): ProjectDiscoveryCrawlPolicy {
+  try {
+    const candidate = normalizeDiscoveryHttpUrl(value);
+    const rootUrl = normalizeDiscoveryHttpUrl(root);
+    if (!isSameProjectSiteFamily(candidate.toString(), rootUrl.toString())) return { disposition: "blocked", reason: "outside-site-family" };
+    const host = candidate.hostname.toLowerCase();
+    const rootHost = rootUrl.hostname.toLowerCase();
+    if (host === rootHost) return { disposition: "crawl", reason: "root-host" };
+    if (host === "www." + rootHost || (rootHost === "www." + host)) return { disposition: "crawl", reason: "www-host" };
+    const firstLabel = host.split(".")[0] ?? "";
+    if (["cdn", "assets", "static", "images", "status", "mail", "tracking"].includes(firstLabel)) {
+      return { disposition: "record-only", reason: "infrastructure-subdomain" };
+    }
+    if (["app", "blog"].includes(firstLabel)) return { disposition: "shallow", reason: "shallow-subdomain" };
+    if (["docs", "doc", "documentation", "developer", "developers", "api", "help", "support"].includes(firstLabel)
+      || /docs?|documentation|developer|api|help|support/i.test(label ?? "")) {
+      return { disposition: "crawl", reason: "high-value-subdomain" };
+    }
+    return { disposition: "record-only", reason: "unknown-subdomain" };
+  } catch {
+    return { disposition: "blocked", reason: "unsafe-url" };
+  }
+}
+
+function isUnsafeDiscoveryQueryParameter(key: string) {
+  return /^(?:utm_[^=]+|fbclid|gclid|msclkid|mc_cid|mc_eid|ref|referrer|token|access_token|refresh_token|id_token|api_key|apikey|secret|password|passwd|auth|authorization|signature|sig|session|sessionid|sid|jwt|code|state|key)$/i.test(key);
 }
 
 export function registrableDomainForHostname(hostname: string) {
@@ -165,7 +213,7 @@ export function isDiscoveryManifest(value: unknown): value is ProjectDiscoveryMa
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return hasOnlyKeys(candidate, ["schemaVersion", "sourceId", "rootUrl", "registrableDomain", "pages", "candidates", "contacts", "warnings", "limits"])
-    && candidate.schemaVersion === PROJECT_DISCOVERY_SCHEMA_VERSION
+    && (candidate.schemaVersion === 1 || candidate.schemaVersion === PROJECT_DISCOVERY_SCHEMA_VERSION)
     && typeof candidate.sourceId === "string" && candidate.sourceId.length > 0 && candidate.sourceId.length <= 120
     && typeof candidate.rootUrl === "string" && candidate.rootUrl.length > 0 && candidate.rootUrl.length <= 500
     && (candidate.registrableDomain === null || typeof candidate.registrableDomain === "string")
@@ -211,10 +259,12 @@ function isDiscoveryPage(value: unknown): value is ProjectDiscoveryPage {
 function isDiscoveryMetadata(value: unknown) {
   if (!value || typeof value !== "object") return false;
   const metadata = value as Record<string, unknown>;
-  return hasOnlyKeys(metadata, ["description", "siteName", "openGraphTitle", "openGraphDescription", "twitterTitle", "jsonLdTypes"])
+  return hasOnlyKeys(metadata, ["description", "siteName", "openGraphTitle", "openGraphDescription", "twitterTitle", "jsonLdTypes", "jsonLdNames", "jsonLdLegalNames", "jsonLdUrls", "jsonLdApplicationCategories", "jsonLdOperatingSystems"])
     && ["description", "siteName", "openGraphTitle", "openGraphDescription", "twitterTitle"].every((key) => metadata[key] === null || typeof metadata[key] === "string")
     && Array.isArray(metadata.jsonLdTypes)
-    && metadata.jsonLdTypes.every((entry) => typeof entry === "string");
+    && metadata.jsonLdTypes.length <= 32
+    && metadata.jsonLdTypes.every((entry) => typeof entry === "string")
+    && ["jsonLdNames", "jsonLdLegalNames", "jsonLdUrls", "jsonLdApplicationCategories", "jsonLdOperatingSystems"].every((key) => metadata[key] === undefined || (Array.isArray(metadata[key]) && metadata[key].length <= 32 && metadata[key].every((entry) => typeof entry === "string")));
 }
 
 function isDiscoveryCandidate(value: unknown): value is ProjectDiscoveryCandidate {

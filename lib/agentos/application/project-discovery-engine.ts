@@ -8,17 +8,21 @@ import type {
 } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import {
   classifyDiscoveryRelation,
+  classifyProjectDiscoveryCrawlPolicy,
   isLikelyDocumentUrl,
   isLikelySocialUrl,
   isSameProjectSiteFamily,
   normalizeDiscoveryHttpUrl,
   PROJECT_DISCOVERY_SCHEMA_VERSION,
   registrableDomainForHostname,
+  safeDisplayDiscoveryLocator,
+  safeDurableDiscoveryLocator,
   safeDiscoveryLocator,
   type ProjectDiscoveryCandidate,
   type ProjectDiscoveryContactCandidate,
   type ProjectDiscoveryManifest,
   type ProjectDiscoveryPage,
+  type ProjectDiscoveryCrawlDisposition,
   type ProjectDiscoveryRelation
 } from "@/lib/agentos/domains/project-discovery";
 import type { WorkspaceKnowledgeSourceKind } from "@/lib/agentos/domains/workspace-knowledge";
@@ -79,6 +83,7 @@ type QueueEntry = {
   depth: number;
   firstParty: "root" | "subdomain";
   priority: number;
+  crawlDisposition: ProjectDiscoveryCrawlDisposition;
 };
 
 type Anchor = { href: string; label: string | null; area: "navigation" | "footer" | null };
@@ -91,12 +96,58 @@ type ParsedHtml = {
   contacts: ProjectDiscoveryContactCandidate[];
   markdown: string;
   jsonLdTypes: string[];
+  jsonLdLinks: Array<{ url: string; relation: ProjectDiscoveryRelation; label: string | null }>;
 };
 
 type RobotsPolicy = { disallow: string[]; sitemaps: string[] };
 
 const MAX_METADATA_TEXT = 500;
 const MAX_JSON_LD_BYTES = 64_000;
+const MAX_JSON_LD_BLOCKS = 8;
+const MAX_JSON_LD_OBJECTS = 64;
+const MAX_JSON_LD_DEPTH = 4;
+const MAX_JSON_LD_ARRAY_ITEMS = 32;
+const MAX_JSON_LD_STRING = 500;
+
+export class ProjectDiscoverySourceByteBudget {
+  readonly capacity: number;
+  committed = 0;
+  reserved = 0;
+
+  constructor(capacity: number) {
+    if (!Number.isSafeInteger(capacity) || capacity <= 0) throw new Error("Website source byte limit is invalid.");
+    this.capacity = capacity;
+  }
+
+  get remaining() { return this.capacity - this.committed - this.reserved; }
+
+  reserve(requested: number) {
+    const amount = Math.min(Math.max(0, requested), this.remaining);
+    if (amount <= 0) return null;
+    this.reserved += amount;
+    this.assertInvariant();
+    return { amount, settled: false };
+  }
+
+  settle(reservation: { amount: number; settled: boolean }, actualBytes: number) {
+    if (reservation.settled) return;
+    const actual = Math.min(Math.max(0, actualBytes), reservation.amount);
+    reservation.settled = true;
+    this.reserved -= reservation.amount;
+    this.committed += actual;
+    this.assertInvariant();
+  }
+
+  settleConservatively(reservation: { amount: number; settled: boolean }) {
+    this.settle(reservation, reservation.amount);
+  }
+
+  private assertInvariant() {
+    if (this.committed < 0 || this.reserved < 0 || this.committed + this.reserved > this.capacity) {
+      throw new Error("Website source byte budget invariant failed.");
+    }
+  }
+}
 const MAX_DISCOVERY_CANDIDATES = 256;
 const MAX_DISCOVERY_CONTACTS = 64;
 const MAX_SITEMAP_LOCATIONS = 256;
@@ -105,7 +156,7 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   const root = normalizeDiscoveryHttpUrl(input.rootUrl);
   const rootHost = root.hostname.toLowerCase();
   const registrableDomain = registrableDomainForHostname(rootHost);
-  const queue: QueueEntry[] = [{ url: root.toString(), discoveredFrom: null, relation: "reference", label: null, depth: 0, firstParty: "root", priority: 10_000 }];
+  const queue: QueueEntry[] = [{ url: root.toString(), discoveredFrom: null, relation: "reference", label: null, depth: 0, firstParty: "root", priority: 10_000, crawlDisposition: "crawl" }];
   const queued = new Set<string>([canonicalQueueUrl(root.toString())]);
   const fetched = new Set<string>();
   const contentHashes = new Set<string>();
@@ -115,7 +166,7 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   const documents: ProjectDiscoveryFetchedPage[] = [];
   const warnings: string[] = [];
   const robotsByHost = new Map<string, RobotsPolicy>();
-  let bytesFetched = 0;
+  const sourceByteBudget = new ProjectDiscoverySourceByteBudget(input.limits.maxTotalBytesPerSource);
   let discoveredItems = 1;
   let fetchedItems = 0;
   let skippedItems = 0;
@@ -133,16 +184,14 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
     currentLocator: safeDiscoveryLocator(root.toString())
   });
 
-  const rootRobots = await readRobots(input, root, rootHost, bytesFetched);
-  bytesFetched = rootRobots.bytesFetched;
+  const rootRobots = await readRobots(input, root, rootHost, sourceByteBudget);
   robotsByHost.set(rootHost, rootRobots.policy);
   for (const sitemapUrl of rootRobots.policy.sitemaps) {
     enqueueSitemapCandidate(sitemapUrl, root.toString());
   }
   enqueueSitemapCandidate(new URL("/sitemap.xml", root).toString(), root.toString());
 
-  const sitemapResult = await discoverSitemapCandidates({ input, root, rootHost, queue, queued, robotsByHost, declaredSitemaps: rootRobots.policy.sitemaps, bytesFetched, warnings, candidates });
-  bytesFetched = sitemapResult.bytesFetched;
+  const sitemapResult = await discoverSitemapCandidates({ input, root, rootHost, queue, queued, robotsByHost, declaredSitemaps: rootRobots.policy.sitemaps, budget: sourceByteBudget, warnings, candidates });
   discoveredItems += sitemapResult.discoveredItems;
 
   while (queue.length > 0 && fetched.size < input.limits.maxPagesPerSource) {
@@ -161,9 +210,8 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
       warningCount: warnings.length,
       currentLocator: safeDiscoveryLocator(entry.url)
     })));
-    const results = await Promise.all(batch.map((entry) => fetchDiscoveryPage(input, entry, root, rootHost, registrableDomain, robotsByHost, bytesFetched)));
+    const results = await Promise.all(batch.map((entry) => fetchDiscoveryPage(input, entry, root, rootHost, registrableDomain, robotsByHost, sourceByteBudget)));
     for (const result of results) {
-      bytesFetched = result.bytesFetched;
       const page = result.page;
       fetched.add(canonicalQueueUrl(page.requestedUrl));
       pages.push(page);
@@ -196,7 +244,8 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
       }
 
       for (const discovered of result.discovered) {
-        if (discovered.depth > input.limits.maxDepth) continue;
+        if (discovered.depth > input.limits.maxDepth || discovered.crawlDisposition === "record-only" || discovered.crawlDisposition === "blocked") continue;
+        if (result.crawlDisposition === "shallow") continue;
         const normalized = canonicalQueueUrl(discovered.url);
         if (queued.has(normalized) || fetched.has(normalized) || fetched.size + queue.length >= input.limits.maxPagesPerSource * 2) continue;
         queued.add(normalized);
@@ -234,7 +283,7 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   const manifest: ProjectDiscoveryManifest = {
     schemaVersion: PROJECT_DISCOVERY_SCHEMA_VERSION,
     sourceId: input.sourceId,
-    rootUrl: safeDiscoveryLocator(root.toString()),
+    rootUrl: safeDurableDiscoveryLocator(root.toString()),
     registrableDomain,
     pages: pages.slice(0, input.limits.maxPagesPerSource),
     candidates: candidates.map((entry) => {
@@ -267,8 +316,9 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   function enqueueSitemapCandidate(value: string, discoveredFrom: string) {
     try {
       const url = normalizeDiscoveryHttpUrl(value);
-      if (!isSameProjectSiteFamily(url.toString(), root.toString())) return;
-      addBoundedCandidate(candidates, candidate("sitemap", url.toString(), discoveredFrom, "sitemap", "Sitemap", true, 0, "queued", "application/xml"));
+      const policy = classifyProjectDiscoveryCrawlPolicy(url.toString(), root.toString(), "Sitemap");
+      if (policy.disposition === "blocked") return;
+      addBoundedCandidate(candidates, candidate("sitemap", url.toString(), discoveredFrom, "sitemap", "Sitemap", true, 0, policy.disposition === "record-only" ? "skipped" : "queued", "application/xml"));
     } catch {
       // Malformed sitemap locations are bounded discovery misses.
     }
@@ -283,11 +333,10 @@ async function discoverSitemapCandidates(input: {
   queued: Set<string>;
   robotsByHost: Map<string, RobotsPolicy>;
   declaredSitemaps: string[];
-  bytesFetched: number;
+  budget: ProjectDiscoverySourceByteBudget;
   warnings: string[];
   candidates: ProjectDiscoveryCandidate[];
 }) {
-  let bytesFetched = input.bytesFetched;
   let discoveredItems = 0;
   const sitemapQueue = [...input.declaredSitemaps];
   const visited = new Set<string>();
@@ -302,8 +351,13 @@ async function discoverSitemapCandidates(input: {
     const normalized = canonicalQueueUrl(url.toString());
     if (visited.has(normalized) || !isSameProjectSiteFamily(url.toString(), input.root.toString())) continue;
     visited.add(normalized);
-    const response = await fetchDiscoveryResource(input.input, url.toString(), input.rootHost, input.root, bytesFetched);
-    bytesFetched = response.bytesFetched;
+    let response;
+    try {
+      response = await fetchDiscoveryResource(input.input, url.toString(), input.rootHost, input.root, input.budget);
+    } catch (error) {
+      input.warnings.push(safeError(error, "Website sitemap could not be fetched."));
+      continue;
+    }
     if (response.response.status < 200 || response.response.status >= 300) continue;
     const locations = parseSitemapLocations(response.response.body).slice(0, MAX_SITEMAP_LOCATIONS);
     const isIndex = /<sitemapindex\b/i.test(response.response.body);
@@ -311,23 +365,24 @@ async function discoverSitemapCandidates(input: {
       try {
         const candidateUrl = normalizeDiscoveryHttpUrl(location);
         if (!isSameProjectSiteFamily(candidateUrl.toString(), input.root.toString())) continue;
+        const policy = classifyProjectDiscoveryCrawlPolicy(candidateUrl.toString(), input.root.toString(), "Sitemap");
         if (isIndex && visited.size < input.input.limits.maxSitemaps) {
-          sitemapQueue.push(candidateUrl.toString());
+          if (policy.disposition === "crawl" || policy.disposition === "shallow") sitemapQueue.push(candidateUrl.toString());
           continue;
         }
         const candidateKey = canonicalQueueUrl(candidateUrl.toString());
         if (input.queued.has(candidateKey)) continue;
-        input.queued.add(candidateKey);
+        if (policy.disposition !== "blocked") input.queued.add(candidateKey);
         const firstParty = candidateUrl.hostname.toLowerCase() === input.rootHost ? "root" : "subdomain";
-        addBoundedCandidate(input.candidates, candidate("page", candidateUrl.toString(), safeDiscoveryLocator(url.toString()), "sitemap", "Sitemap", true, 0, "queued", null));
-        input.queue.push({ url: candidateUrl.toString(), discoveredFrom: safeDiscoveryLocator(url.toString()), relation: "sitemap", label: "Sitemap", depth: 0, firstParty, priority: 7_500 + pagePriority(candidateUrl.toString(), "Sitemap") });
+        addBoundedCandidate(input.candidates, candidate("page", candidateUrl.toString(), safeDurableDiscoveryLocator(url.toString()), "sitemap", "Sitemap", true, 0, policy.disposition === "crawl" || policy.disposition === "shallow" ? "queued" : "skipped", null));
+        if (policy.disposition === "crawl" || policy.disposition === "shallow") input.queue.push({ url: candidateUrl.toString(), discoveredFrom: safeDurableDiscoveryLocator(url.toString()), relation: "sitemap", label: "Sitemap", depth: 0, firstParty, priority: 7_500 + pagePriority(candidateUrl.toString(), "Sitemap"), crawlDisposition: policy.disposition });
         discoveredItems += 1;
       } catch {
         // Ignore malformed sitemap locations.
       }
     }
   }
-  return { bytesFetched, discoveredItems };
+  return { discoveredItems };
 }
 
 async function fetchDiscoveryPage(
@@ -337,24 +392,24 @@ async function fetchDiscoveryPage(
   rootHost: string,
   registrableDomain: string | null,
   robotsByHost: Map<string, RobotsPolicy>,
-  bytesFetched: number
+  budget: ProjectDiscoverySourceByteBudget
 ) {
   const requestedUrl = normalizeDiscoveryHttpUrl(entry.url);
-  const locator = safeDiscoveryLocator(requestedUrl.toString());
+  const locator = safeDurableDiscoveryLocator(requestedUrl.toString());
   const firstParty = requestedUrl.hostname.toLowerCase() === rootHost ? "root" : "subdomain";
   const basePage = (overrides: Partial<ProjectDiscoveryPage> = {}): ProjectDiscoveryPage => ({
     requestedUrl: locator,
     finalUrl: null,
     canonicalUrl: null,
     locator,
-    discoveredFrom: entry.discoveredFrom ? safeDiscoveryLocator(entry.discoveredFrom) : null,
+    discoveredFrom: entry.discoveredFrom ? safeDurableDiscoveryLocator(entry.discoveredFrom) : null,
     depth: entry.depth,
     firstParty,
     fetchStatus: "queued",
     statusCode: null,
     contentType: null,
     title: null,
-    metadata: { description: null, siteName: null, openGraphTitle: null, openGraphDescription: null, twitterTitle: null, jsonLdTypes: [] },
+    metadata: { description: null, siteName: null, openGraphTitle: null, openGraphDescription: null, twitterTitle: null, jsonLdTypes: [], jsonLdNames: [], jsonLdLegalNames: [], jsonLdUrls: [], jsonLdApplicationCategories: [], jsonLdOperatingSystems: [] },
     discoveredLinkCount: 0,
     contentHash: null,
     contentLength: 0,
@@ -363,32 +418,30 @@ async function fetchDiscoveryPage(
   });
 
   if (!registrableDomain || registrableDomainForHostname(requestedUrl.hostname) !== registrableDomain || !isSameProjectSiteFamily(requestedUrl.toString(), root.toString())) {
-    return { page: basePage({ fetchStatus: "blocked", warnings: ["Website page was outside the first-party site family."] }), candidates: [], contacts: [], discovered: [], document: null, bytesFetched };
+    return { page: basePage({ fetchStatus: "blocked", warnings: ["Website page was outside the first-party site family."] }), candidates: [], contacts: [], discovered: [], document: null, crawlDisposition: entry.crawlDisposition };
   }
-  const robots = await getRobots(input, requestedUrl, robotsByHost, bytesFetched);
-  bytesFetched = robots.bytesFetched;
+  const robots = await getRobots(input, requestedUrl, robotsByHost, budget);
   if (robots.policy.disallow.some((prefix) => requestedUrl.pathname.startsWith(prefix))) {
-    return { page: basePage({ fetchStatus: "blocked", warnings: ["Website page was disallowed by robots.txt."] }), candidates: [], contacts: [], discovered: [], document: null, bytesFetched };
+    return { page: basePage({ fetchStatus: "blocked", warnings: ["Website page was disallowed by robots.txt."] }), candidates: [], contacts: [], discovered: [], document: null, crawlDisposition: entry.crawlDisposition };
   }
   try {
-    const response = await fetchDiscoveryResource(input, requestedUrl.toString(), rootHost, root, bytesFetched);
-    bytesFetched = response.bytesFetched;
+    const response = await fetchDiscoveryResource(input, requestedUrl.toString(), rootHost, root, budget);
     const responseUrl = normalizeDiscoveryHttpUrl(response.response.finalUrl ?? requestedUrl.toString());
     const contentType = response.response.headers["content-type"] ?? null;
     const base = basePage({
-      finalUrl: safeDiscoveryLocator(responseUrl.toString()),
-      locator: safeDiscoveryLocator(responseUrl.toString()),
+      finalUrl: safeDurableDiscoveryLocator(responseUrl.toString()),
+      locator: safeDurableDiscoveryLocator(responseUrl.toString()),
       statusCode: response.response.status,
       contentType
     });
     if (response.response.status < 200 || response.response.status >= 300) {
-      return { page: { ...base, fetchStatus: "failed" as const, warnings: [`Website page returned HTTP ${response.response.status}.`] }, candidates: [], contacts: [], discovered: [], document: null, bytesFetched };
+      return { page: { ...base, fetchStatus: "failed" as const, warnings: [`Website page returned HTTP ${response.response.status}.`] }, candidates: [], contacts: [], discovered: [], document: null, crawlDisposition: entry.crawlDisposition };
     }
     if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
       const documentCandidate = isLikelyDocumentUrl(responseUrl.toString())
         ? [candidate("document", responseUrl.toString(), entry.discoveredFrom ?? root.toString(), classifyDiscoveryRelation(entry.label, responseUrl.toString()), entry.label, true, entry.depth, "skipped", contentType)]
         : [];
-      return { page: { ...base, fetchStatus: "skipped" as const, warnings: ["Non-HTML resource recorded as a discovery candidate."] }, candidates: documentCandidate, contacts: [], discovered: [], document: null, bytesFetched };
+      return { page: { ...base, fetchStatus: "skipped" as const, warnings: ["Non-HTML resource recorded as a discovery candidate."] }, candidates: documentCandidate, contacts: [], discovered: [], document: null, crawlDisposition: entry.crawlDisposition };
     }
     const parsed = parseDiscoveryHtml(response.response.body, responseUrl.toString());
     const canonicalUrl = parsed.canonicalUrl && safeDiscoveryUrlInFamily(parsed.canonicalUrl, root.toString()) ? parsed.canonicalUrl : responseUrl.toString();
@@ -399,8 +452,8 @@ async function fetchDiscoveryPage(
       : null;
     const page: ProjectDiscoveryPage = {
       ...base,
-      canonicalUrl: canonicalUrl ? safeDiscoveryLocator(canonicalUrl) : null,
-      locator: safeDiscoveryLocator(canonicalUrl),
+      canonicalUrl: canonicalUrl ? safeDurableDiscoveryLocator(canonicalUrl) : null,
+      locator: safeDurableDiscoveryLocator(canonicalUrl),
       fetchStatus: content ? "fetched" : "skipped",
       title: parsed.title,
       metadata: parsed.metadata,
@@ -411,7 +464,7 @@ async function fetchDiscoveryPage(
         ? shellWarning ? [shellWarning] : []
         : ["Website page contained no readable text.", ...(shellWarning ? [shellWarning] : [])]
     };
-    const sourceLocator = safeDiscoveryLocator(canonicalUrl);
+    const sourceLocator = safeDurableDiscoveryLocator(canonicalUrl);
     const candidates: ProjectDiscoveryCandidate[] = [];
     const contacts: ProjectDiscoveryContactCandidate[] = [];
     const discovered: QueueEntry[] = [];
@@ -426,6 +479,7 @@ async function fetchDiscoveryPage(
       const candidateKind: ProjectDiscoveryCandidate["kind"] = !sameFamily
         ? documentUrl ? "document" : "external-resource"
         : documentUrl ? "document" : sameHost ? "page" : "subdomain";
+      const policy = classifyProjectDiscoveryCrawlPolicy(discoveredUrl, root.toString(), anchor.label);
       const linkCandidate = candidate(
         candidateKind,
         discoveredUrl,
@@ -434,7 +488,7 @@ async function fetchDiscoveryPage(
         anchor.label,
         sameFamily,
         entry.depth + 1,
-        sameFamily && shouldQueueSubdomain(discoveredUrl, anchor.label) ? "queued" : "skipped",
+        policy.disposition === "crawl" || policy.disposition === "shallow" ? "queued" : policy.disposition === "blocked" ? "blocked" : "skipped",
         null
       );
       addBoundedCandidate(candidates, linkCandidate);
@@ -443,11 +497,10 @@ async function fetchDiscoveryPage(
       }
       if (/^mailto:/i.test(anchor.href)) continue;
       if (/^tel:/i.test(anchor.href)) continue;
-      if (!sameFamily) continue;
+      if (!sameFamily || policy.disposition === "record-only" || policy.disposition === "blocked" || entry.crawlDisposition === "shallow") continue;
       const target = new URL(discoveredUrl);
       const targetFirstParty = sameHost ? "root" : "subdomain";
       if (entry.depth + 1 > input.limits.maxDepth) continue;
-      if (!sameHost && !shouldQueueSubdomain(discoveredUrl, anchor.label)) continue;
       discovered.push({
         url: target.toString(),
         discoveredFrom: sourceLocator,
@@ -455,8 +508,26 @@ async function fetchDiscoveryPage(
         label: anchor.label,
         depth: entry.depth + 1,
         firstParty: targetFirstParty,
-        priority: pagePriority(target.toString(), anchor.label)
+        priority: pagePriority(target.toString(), anchor.label),
+        crawlDisposition: policy.disposition
       });
+    }
+    const canonicalPolicy = classifyProjectDiscoveryCrawlPolicy(canonicalUrl, root.toString(), "Canonical");
+    if (canonicalUrl !== responseUrl.toString() && canonicalPolicy.disposition !== "blocked") {
+      addBoundedCandidate(candidates, candidate("page", canonicalUrl, sourceLocator, "canonical", "Canonical", true, entry.depth, canonicalPolicy.disposition === "crawl" || canonicalPolicy.disposition === "shallow" ? "queued" : "skipped", null));
+      if ((canonicalPolicy.disposition === "crawl" || canonicalPolicy.disposition === "shallow") && entry.crawlDisposition !== "shallow") {
+        discovered.push({ url: canonicalUrl, discoveredFrom: sourceLocator, relation: "canonical", label: "Canonical", depth: entry.depth, firstParty: new URL(canonicalUrl).hostname.toLowerCase() === rootHost ? "root" : "subdomain", priority: pagePriority(canonicalUrl, "Canonical"), crawlDisposition: canonicalPolicy.disposition });
+      }
+    }
+    for (const jsonLdLink of parsed.jsonLdLinks) {
+      const policy = classifyProjectDiscoveryCrawlPolicy(jsonLdLink.url, root.toString(), jsonLdLink.label);
+      const sameFamily = isSameProjectSiteFamily(jsonLdLink.url, root.toString());
+      const kind: ProjectDiscoveryCandidate["kind"] = sameFamily ? isLikelyDocumentUrl(jsonLdLink.url) ? "document" : "page" : "external-resource";
+      addBoundedCandidate(candidates, candidate(kind, jsonLdLink.url, sourceLocator, jsonLdLink.relation, jsonLdLink.label, sameFamily, entry.depth + 1, policy.disposition === "crawl" || policy.disposition === "shallow" ? "queued" : policy.disposition === "blocked" ? "blocked" : "skipped", null));
+      if (sameFamily && (policy.disposition === "crawl" || policy.disposition === "shallow") && entry.crawlDisposition !== "shallow" && entry.depth + 1 <= input.limits.maxDepth) {
+        const target = new URL(jsonLdLink.url);
+        discovered.push({ url: jsonLdLink.url, discoveredFrom: sourceLocator, relation: jsonLdLink.relation, label: jsonLdLink.label, depth: entry.depth + 1, firstParty: target.hostname.toLowerCase() === rootHost ? "root" : "subdomain", priority: pagePriority(jsonLdLink.url, jsonLdLink.label), crawlDisposition: policy.disposition });
+      }
     }
     const allContacts = [...parsed.contacts, ...contacts.filter((contact) => !parsed.contacts.some((existing) => existing.kind === contact.kind && existing.value === contact.value))];
     for (const contact of allContacts) contactsPush(candidates, contact, sourceLocator);
@@ -468,31 +539,34 @@ async function fetchDiscoveryPage(
       content,
       links: parsed.anchors.map((anchor) => anchor.href)
     } : null;
-    return { page, candidates, contacts: allContacts, discovered, document, bytesFetched };
+    return { page, candidates, contacts: allContacts, discovered, document, crawlDisposition: entry.crawlDisposition };
   } catch (error) {
-    return { page: basePage({ fetchStatus: "failed", warnings: [safeError(error, "Website page could not be fetched.")] }), candidates: [], contacts: [], discovered: [], document: null, bytesFetched };
+    return { page: basePage({ fetchStatus: "failed", warnings: [safeError(error, "Website page could not be fetched.")] }), candidates: [], contacts: [], discovered: [], document: null, crawlDisposition: entry.crawlDisposition };
   }
 }
 
-async function fetchDiscoveryResource(input: ProjectDiscoveryEngineInput, requestedUrl: string, rootHost: string, root: URL, bytesFetched: number) {
+async function fetchDiscoveryResource(input: ProjectDiscoveryEngineInput, requestedUrl: string, _rootHost: string, root: URL, budget: ProjectDiscoverySourceByteBudget) {
   let current = normalizeDiscoveryHttpUrl(requestedUrl);
   for (let redirect = 0; redirect <= input.limits.maxRedirects; redirect += 1) {
     throwIfAborted(input.signal);
     if (!isSameProjectSiteFamily(current.toString(), root.toString())) throw new Error("Website page request left the first-party host scope.");
     const addresses = await input.resolveHost(current.hostname);
     input.assertPublicAddresses(addresses);
-    const remaining = input.limits.maxTotalBytesPerSource - bytesFetched;
-    if (remaining <= 0) throw new Error("Website source byte limit reached.");
-    const maxBytes = Math.min(input.limits.maxBytesPerDocument, remaining);
-    const response = await input.websiteFetcher.fetch(current.toString(), {
-      maxBytes,
-      timeoutMs: input.limits.requestTimeoutMs,
-      signal: input.signal,
-      resolvedAddresses: addresses
-    });
-    const responseBytes = Buffer.byteLength(response.body, "utf8");
-    if (responseBytes > maxBytes) throw new Error("Website document byte limit reached.");
-    bytesFetched += responseBytes;
+    const reservation = budget.reserve(input.limits.maxBytesPerDocument);
+    if (!reservation) throw new Error("Website source byte limit reached.");
+    try {
+      const response = await input.websiteFetcher.fetch(current.toString(), {
+        maxBytes: reservation.amount,
+        timeoutMs: input.limits.requestTimeoutMs,
+        signal: input.signal,
+        resolvedAddresses: addresses
+      });
+      const responseBytes = Buffer.byteLength(response.body, "utf8");
+      if (responseBytes > reservation.amount) {
+        budget.settleConservatively(reservation);
+        throw new Error("Website document byte limit reached.");
+      }
+      budget.settle(reservation, responseBytes);
     const reportedFinalUrl = response.finalUrl
       ? normalizeDiscoveryHttpUrl(response.finalUrl)
       : current;
@@ -507,16 +581,19 @@ async function fetchDiscoveryResource(input: ProjectDiscoveryEngineInput, reques
       current = next;
       continue;
     }
-    return { response: { ...response, finalUrl: reportedFinalUrl.toString() }, bytesFetched };
+      return { response: { ...response, finalUrl: reportedFinalUrl.toString() } };
+    } catch (error) {
+      budget.settleConservatively(reservation);
+      throw error;
+    }
   }
   throw new Error("Website redirect limit reached.");
 }
 
-async function readRobots(input: ProjectDiscoveryEngineInput, root: URL, host: string, bytesFetched: number) {
+async function readRobots(input: ProjectDiscoveryEngineInput, root: URL, host: string, budget: ProjectDiscoverySourceByteBudget) {
   try {
-    const response = await fetchDiscoveryResource(input, new URL("/robots.txt", root).toString(), host, root, bytesFetched);
-    bytesFetched = response.bytesFetched;
-    if (response.response.status < 200 || response.response.status >= 300) return { policy: { disallow: [], sitemaps: [] } as RobotsPolicy, bytesFetched };
+    const response = await fetchDiscoveryResource(input, new URL("/robots.txt", root).toString(), host, root, budget);
+    if (response.response.status < 200 || response.response.status >= 300) return { policy: { disallow: [], sitemaps: [] } as RobotsPolicy };
     const disallow: string[] = [];
     const sitemaps: string[] = [];
     let active = false;
@@ -526,19 +603,24 @@ async function readRobots(input: ProjectDiscoveryEngineInput, root: URL, host: s
       const value = rest.join(":").trim();
       if (key === "user-agent") active = value === "*";
       else if (active && key === "disallow" && value) disallow.push(value.slice(0, 200));
-      else if (key === "sitemap" && value && isSameProjectSiteFamily(value, root.toString())) sitemaps.push(normalizeDiscoveryHttpUrl(value).toString());
+      else if (key === "sitemap" && value) {
+        try {
+          const sitemapUrl = normalizeDiscoveryHttpUrl(value).toString();
+          if (classifyProjectDiscoveryCrawlPolicy(sitemapUrl, root.toString(), "Sitemap").disposition !== "blocked") sitemaps.push(sitemapUrl);
+        } catch { /* Ignore malformed sitemap locations. */ }
+      }
     }
-    return { policy: { disallow: unique(disallow), sitemaps: unique(sitemaps) }, bytesFetched };
+    return { policy: { disallow: unique(disallow), sitemaps: unique(sitemaps) } };
   } catch {
-    return { policy: { disallow: [], sitemaps: [] } as RobotsPolicy, bytesFetched };
+    return { policy: { disallow: [], sitemaps: [] } as RobotsPolicy };
   }
 }
 
-async function getRobots(input: ProjectDiscoveryEngineInput, url: URL, cache: Map<string, RobotsPolicy>, bytesFetched: number) {
+async function getRobots(input: ProjectDiscoveryEngineInput, url: URL, cache: Map<string, RobotsPolicy>, budget: ProjectDiscoverySourceByteBudget) {
   const host = url.hostname.toLowerCase();
   const cached = cache.get(host);
-  if (cached) return { policy: cached, bytesFetched };
-  const result = await readRobots(input, url, host, bytesFetched);
+  if (cached) return { policy: cached };
+  const result = await readRobots(input, url, host, budget);
   cache.set(host, result.policy);
   return result;
 }
@@ -551,7 +633,7 @@ function parseDiscoveryHtml(html: string, baseUrl: string): ParsedHtml {
     openGraphTitle: metaContent(html, "property", "og:title"),
     openGraphDescription: metaContent(html, "property", "og:description"),
     twitterTitle: metaContent(html, "name", "twitter:title"),
-    jsonLdTypes: parseJsonLdTypes(html)
+    jsonLdTypes: []
   };
   const canonicalRaw = html.match(/<link\b[^>]*\brel=["']?canonical["']?[^>]*\bhref=["']([^"']+)["'][^>]*>/i)?.[1]
     ?? html.match(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*\brel=["']?canonical["']?[^>]*>/i)?.[1];
@@ -592,7 +674,25 @@ function parseDiscoveryHtml(html: string, baseUrl: string): ParsedHtml {
     .replace(/<\/?(em|i)\b[^>]*>/gi, "*")
     .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_match, inner: string) => `\`${stripInlineHtml(inner)}\``)
     .replace(/<[^>]+>/g, " ");
-  return { title: title ? cleanText(title).slice(0, MAX_METADATA_TEXT) : null, canonicalUrl, metadata, anchors, contacts, markdown: decodeHtmlEntities(markdown), jsonLdTypes: metadata.jsonLdTypes };
+  const jsonLd = parseJsonLdSignals(html, baseUrl);
+  return {
+    title: title ? cleanText(title).slice(0, MAX_METADATA_TEXT) : null,
+    canonicalUrl,
+    metadata: {
+      ...metadata,
+      jsonLdTypes: jsonLd.types,
+      jsonLdNames: jsonLd.names,
+      jsonLdLegalNames: jsonLd.legalNames,
+      jsonLdUrls: jsonLd.urls,
+      jsonLdApplicationCategories: jsonLd.applicationCategories,
+      jsonLdOperatingSystems: jsonLd.operatingSystems
+    },
+    anchors,
+    contacts: [...contacts, ...jsonLd.contacts].slice(0, MAX_DISCOVERY_CONTACTS),
+    markdown: decodeHtmlEntities(markdown),
+    jsonLdTypes: jsonLd.types,
+    jsonLdLinks: jsonLd.links
+  };
 }
 
 function tagRanges(html: string, tag: "nav" | "footer") {
@@ -631,19 +731,6 @@ function safeDiscoveryUrlInFamily(value: string, root: string) {
   }
 }
 
-function shouldQueueSubdomain(url: string, label: string | null) {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    const first = host.split(".")[0] ?? "";
-    if (["status", "cdn", "assets", "static", "images", "mail", "tracking"].includes(first)) return false;
-    if (["app", "www", "blog"].includes(first)) return true;
-    return ["docs", "doc", "documentation", "developer", "developers", "api", "help", "support"].includes(first)
-      || /docs?|documentation|developer|api|help|support/i.test(label ?? "");
-  } catch {
-    return false;
-  }
-}
-
 function pagePriority(url: string, label: string | null) {
   const value = `${url} ${label ?? ""}`.toLowerCase();
   let score = 100;
@@ -660,7 +747,7 @@ function isLikelySocialUrlSafe(value: string) {
 }
 
 function candidate(kind: ProjectDiscoveryCandidate["kind"], locator: string, discoveredFrom: string, relation: ProjectDiscoveryRelation, label: string | null, firstParty: boolean, depth: number, fetchStatus: ProjectDiscoveryCandidate["fetchStatus"], contentType: string | null): ProjectDiscoveryCandidate {
-  return { kind, locator: kind === "contact" ? safeContactLocator(locator) : safeDiscoveryLocator(locator), discoveredFrom: safeDiscoveryLocator(discoveredFrom), relation, label: label ? cleanText(label).slice(0, 200) : null, firstParty, depth, fetchStatus, contentType };
+  return { kind, locator: kind === "contact" ? safeContactLocator(locator) : safeDurableDiscoveryLocator(locator), discoveredFrom: safeDurableDiscoveryLocator(discoveredFrom), relation, label: label ? cleanText(label).slice(0, 200) : null, firstParty, depth, fetchStatus, contentType };
 }
 
 function safeContactLocator(value: string) {
@@ -686,24 +773,85 @@ function parseSitemapLocations(xml: string) {
   return Array.from(xml.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi)).map((match) => decodeHtmlEntities(match[1].trim())).filter(Boolean);
 }
 
-function parseJsonLdTypes(html: string) {
-  const result: string[] = [];
+function parseJsonLdSignals(html: string, baseUrl: string) {
+  const types: string[] = [];
+  const names: string[] = [];
+  const legalNames: string[] = [];
+  const urls: string[] = [];
+  const applicationCategories: string[] = [];
+  const operatingSystems: string[] = [];
+  const links: Array<{ url: string; relation: ProjectDiscoveryRelation; label: string | null }> = [];
+  const contacts: ProjectDiscoveryContactCandidate[] = [];
+  let objectCount = 0;
+  let blocks = 0;
+
   for (const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    if (blocks >= MAX_JSON_LD_BLOCKS) break;
+    blocks += 1;
     const raw = match[1].slice(0, MAX_JSON_LD_BYTES);
     try {
       const parsed: unknown = JSON.parse(raw);
-      const entries = Array.isArray(parsed) ? parsed.slice(0, 16) : [parsed];
-      for (const entry of entries) {
-        if (!entry || typeof entry !== "object") continue;
-        const type = (entry as Record<string, unknown>)["@type"];
-        if (typeof type === "string") result.push(type.slice(0, 80));
-        if (Array.isArray(type)) result.push(...type.filter((value): value is string => typeof value === "string").slice(0, 16).map((value) => value.slice(0, 80)));
-      }
+      walkJsonLd(parsed, 0);
     } catch {
       // Malformed JSON-LD remains an ignored discovery signal.
     }
   }
-  return unique(result).slice(0, 16);
+
+  return {
+    types: unique(types).slice(0, 32),
+    names: unique(names).slice(0, 32),
+    legalNames: unique(legalNames).slice(0, 32),
+    urls: unique(urls).slice(0, 32),
+    applicationCategories: unique(applicationCategories).slice(0, 32),
+    operatingSystems: unique(operatingSystems).slice(0, 32),
+    links: links.slice(0, MAX_DISCOVERY_CANDIDATES),
+    contacts: contacts.slice(0, MAX_DISCOVERY_CONTACTS)
+  };
+
+  function walkJsonLd(value: unknown, depth: number) {
+    if (depth > MAX_JSON_LD_DEPTH || objectCount >= MAX_JSON_LD_OBJECTS) return;
+    if (Array.isArray(value)) {
+      for (const entry of value.slice(0, MAX_JSON_LD_ARRAY_ITEMS)) walkJsonLd(entry, depth + 1);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    objectCount += 1;
+    const record = value as Record<string, unknown>;
+    for (const key of Object.keys(record).slice(0, MAX_JSON_LD_OBJECTS)) {
+      if (key === "__proto__" || key === "prototype" || key === "constructor") continue;
+      const child = record[key];
+      const keyLower = key.toLowerCase();
+      const strings = jsonLdStrings(child);
+      if (key === "@type") types.push(...strings.map((entry) => entry.slice(0, 80)));
+      if (keyLower === "name") names.push(...strings);
+      if (keyLower === "legalname") legalNames.push(...strings);
+      if (keyLower === "applicationcategory") applicationCategories.push(...strings);
+      if (keyLower === "operatingsystem") operatingSystems.push(...strings);
+      if (keyLower === "email") for (const email of strings) if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) contacts.push({ kind: "email", value: email.toLowerCase(), discoveredFrom: safeDisplayDiscoveryLocator(baseUrl), label: "JSON-LD email" });
+      if (keyLower === "telephone") for (const telephone of strings) if (/^[+\d][\d ()-]{3,}$/.test(telephone)) contacts.push({ kind: "phone", value: telephone, discoveredFrom: safeDisplayDiscoveryLocator(baseUrl), label: "JSON-LD telephone" });
+      if (["url", "mainentityofpage", "sameas", "downloadurl", "coderepository", "softwarehelp", "documentation"].includes(keyLower) || /docs?|documentation|developer|reference|api/i.test(keyLower)) {
+        for (const rawUrl of strings) {
+          const normalized = normalizeAnchorUrl(rawUrl, baseUrl);
+          if (!normalized || /^(?:mailto|tel):/i.test(normalized)) continue;
+          urls.push(normalized);
+          const relation = keyLower === "coderepository" ? "repository" : keyLower === "sameas" ? classifyDiscoveryRelation(key, normalized) : keyLower === "downloadurl" ? "document" : /docs?|documentation|softwarehelp/i.test(keyLower) ? "documentation" : "metadata";
+          links.push({ url: normalized, relation, label: key.slice(0, 120) });
+        }
+      }
+      walkJsonLd(child, depth + 1);
+    }
+  }
+
+  function jsonLdStrings(value: unknown): string[] {
+    if (typeof value === "string") return [cleanText(value).slice(0, MAX_JSON_LD_STRING)].filter(Boolean);
+    if (Array.isArray(value)) return value.slice(0, MAX_JSON_LD_ARRAY_ITEMS).flatMap(jsonLdStrings).slice(0, MAX_JSON_LD_ARRAY_ITEMS);
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const nested = record.url ?? record.email ?? record.telephone ?? record.name;
+      return typeof nested === "string" ? [cleanText(nested).slice(0, MAX_JSON_LD_STRING)] : [];
+    }
+    return [];
+  }
 }
 
 function isLikelyJavaScriptShell(html: string, markdown: string) {
@@ -745,7 +893,7 @@ function decodeHtmlEntities(value: string) {
 }
 
 function canonicalQueueUrl(value: string) {
-  try { return normalizeDiscoveryHttpUrl(value).toString(); } catch { return value; }
+  return safeDurableDiscoveryLocator(value);
 }
 
 function sha256(value: string) {

@@ -7,7 +7,7 @@ import {
   ingestKnowledgeSources,
   type KnowledgeIngestionLimits
 } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
-import { discoverProjectWebsite } from "@/lib/agentos/application/project-discovery-engine";
+import { discoverProjectWebsite, ProjectDiscoverySourceByteBudget } from "@/lib/agentos/application/project-discovery-engine";
 import {
   coinCollectProjectDiscoveryFixture,
   createProjectDiscoveryFixtureFetcher,
@@ -16,8 +16,11 @@ import {
 } from "@/tests/fixtures/project-discovery";
 import {
   isSameProjectSiteFamily,
+  classifyProjectDiscoveryCrawlPolicy,
   normalizeDiscoveryHttpUrl,
-  registrableDomainForHostname
+  registrableDomainForHostname,
+  safeDisplayDiscoveryLocator,
+  safeDurableDiscoveryLocator
 } from "@/lib/agentos/domains/project-discovery";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 
@@ -96,9 +99,102 @@ test("URL and site-family policy is public-suffix aware and rejects unsafe looka
   assert.equal(isSameProjectSiteFamily("https://example.co.uk.evil.test/", "https://example.co.uk/"), false);
   assert.equal(isSameProjectSiteFamily("https://coincollect.org.evil.test/", "https://coincollect.org/"), false);
   assert.equal(normalizeDiscoveryHttpUrl("https://coincollect.org:443/product/?utm_source=nav#details").toString(), "https://coincollect.org/product");
+  assert.equal(safeDurableDiscoveryLocator("https://coincollect.org/docs?version=v2&lang=en&utm_source=nav#guide"), "https://coincollect.org/docs?version=v2&lang=en");
+  assert.equal(safeDisplayDiscoveryLocator("https://coincollect.org/docs?version=v2&lang=en#guide"), "https://coincollect.org/docs");
+  assert.equal(safeDurableDiscoveryLocator("https://coincollect.org/docs?token=secret&api_key=secret"), "https://coincollect.org/docs");
+  assert.equal(classifyProjectDiscoveryCrawlPolicy("https://docs.coincollect.org/guide", "https://coincollect.org/", "Documentation").disposition, "crawl");
+  assert.equal(classifyProjectDiscoveryCrawlPolicy("https://app.coincollect.org/dashboard", "https://coincollect.org/").disposition, "shallow");
+  assert.equal(classifyProjectDiscoveryCrawlPolicy("https://cdn.coincollect.org/assets/app.js", "https://coincollect.org/").disposition, "record-only");
+  assert.equal(classifyProjectDiscoveryCrawlPolicy("https://evil.example/", "https://coincollect.org/").disposition, "blocked");
   assert.throws(() => normalizeDiscoveryHttpUrl("https://user:password@example.com/"), /credentials/i);
   assert.throws(() => assertPublicAddresses(["127.0.0.1"]), /blocked|non-public/i);
   assert.throws(() => assertPublicAddresses(["::1"]), /blocked|non-public/i);
+});
+
+test("shared source byte reservations bound concurrent website responses and release unused capacity", async () => {
+  const budget = new ProjectDiscoverySourceByteBudget(1_500);
+  const first = budget.reserve(1_000);
+  const second = budget.reserve(1_000);
+  assert.equal(first?.amount, 1_000);
+  assert.equal(second?.amount, 500);
+  assert.equal(budget.committed + budget.reserved <= budget.capacity, true);
+  budget.settle(first!, 100);
+  const third = budget.reserve(1_000);
+  assert.equal(third?.amount, 900);
+  budget.settleConservatively(second!);
+  budget.settle(third!, 50);
+  assert.equal(budget.committed, 650);
+  assert.equal(budget.reserved, 0);
+
+  const accepted: number[] = [];
+  const fixture = {
+    rootUrl: "https://bounded.example/",
+    pages: {
+      "https://bounded.example/robots.txt": { body: "User-agent: *\nAllow: /\n" },
+      "https://bounded.example/sitemap.xml": { body: "<urlset></urlset>" },
+      "https://bounded.example/": { body: "<main><a href='/one'>One</a><a href='/two'>Two</a></main>" },
+      "https://bounded.example/one": { body: "x".repeat(600) },
+      "https://bounded.example/two": { body: "y".repeat(600) }
+    }
+  } as const;
+  const result = await discoverProjectWebsite({
+    runId: "byte-budget-test",
+    sourceId: "bounded",
+    sourceKind: "website",
+    rootUrl: fixture.rootUrl,
+    limits: limits({ maxPagesPerSource: 3, maxDepth: 1, maxSitemaps: 1, maxConcurrentRequests: 2, maxBytesPerDocument: 1_000, maxTotalBytesPerSource: 1_500 }),
+    resolveHost: async () => ["93.184.216.34"],
+    assertPublicAddresses,
+    websiteFetcher: {
+      resolve: async () => ["93.184.216.34"],
+      fetch: async (url, options) => {
+        const page = fixture.pages[url as keyof typeof fixture.pages];
+        const body = page?.body ?? "Not found";
+        accepted.push(Math.min(Buffer.byteLength(body), options.maxBytes));
+        return { status: page ? 200 : 404, headers: { "content-type": "text/html" }, body };
+      }
+    }
+  });
+  assert.ok(accepted.reduce((sum, value) => sum + value, 0) <= 1_500);
+  assert.ok(result.warnings.length > 0 || result.documents.length < 3);
+  assert.ok(result.manifest.pages.length <= 3);
+});
+
+test("bounded JSON-LD yields ordinary observations and first-party policy controls links", async () => {
+  const fixture = {
+    rootUrl: "https://jsonld.example/",
+    pages: {
+      "https://jsonld.example/robots.txt": { body: "User-agent: *\nAllow: /\n" },
+      "https://jsonld.example/sitemap.xml": { body: "<urlset></urlset>" },
+      "https://jsonld.example/": { body: `<html><head><title>JSONLD Product</title><script type="application/ld+json">${JSON.stringify({ "@type": ["SoftwareApplication"], name: "JSONLD Product", legalName: "JSONLD Holdings", url: "https://jsonld.example/", sameAs: ["https://github.com/example/project"], softwareHelp: { url: "https://docs.jsonld.example/guide" }, applicationCategory: "Operations", operatingSystem: "Web", email: "hello@jsonld.example" })}</script></head><body><main>Product</main></body></html>` },
+      "https://docs.jsonld.example/guide": { body: "<article><h1>Guide</h1><p>Install the product.</p></article>" }
+    }
+  } as const;
+  const result = await discoverProjectWebsite({
+    runId: "jsonld-test",
+    sourceId: "jsonld",
+    sourceKind: "website",
+    rootUrl: fixture.rootUrl,
+    limits: limits({ maxPagesPerSource: 4, maxDepth: 1, maxSitemaps: 1 }),
+    resolveHost: async () => ["93.184.216.34"],
+    assertPublicAddresses,
+    websiteFetcher: {
+      resolve: async () => ["93.184.216.34"],
+      fetch: async (url) => {
+        const page = fixture.pages[url as keyof typeof fixture.pages];
+        return { status: page ? 200 : 404, headers: { "content-type": "text/html" }, body: page?.body ?? "Not found" };
+      }
+    }
+  });
+  const root = result.manifest.pages.find((page) => page.locator === "https://jsonld.example/");
+  assert.ok(root);
+  assert.deepEqual(root.metadata.jsonLdNames, ["JSONLD Product"]);
+  assert.deepEqual(root.metadata.jsonLdLegalNames, ["JSONLD Holdings"]);
+  assert.deepEqual(root.metadata.jsonLdApplicationCategories, ["Operations"]);
+  assert.deepEqual(root.metadata.jsonLdOperatingSystems, ["Web"]);
+  assert.ok(result.manifest.candidates.some((entry) => entry.relation === "documentation" && entry.locator === "https://docs.jsonld.example/guide"));
+  assert.ok(result.manifest.candidates.some((entry) => entry.relation === "repository" && entry.locator === "https://github.com/example/project" && entry.firstParty === false));
+  assert.ok(result.manifest.contacts.some((entry) => entry.kind === "email" && entry.value === "hello@jsonld.example"));
 });
 
 test("malformed and low-information source material stays bounded and explicit", async () => {
