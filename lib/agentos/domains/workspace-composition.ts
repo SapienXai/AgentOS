@@ -75,8 +75,11 @@ export type WorkspaceCompositionPlan = {
   inputFingerprint: string;
   status: WorkspaceCompositionStatus;
   projectIntelligencePackId: string | null;
+  projectIntelligenceGenerationId: string | null;
   workspaceBlueprintId: string;
+  workspaceBlueprintFingerprint: string;
   materializationMode: "empty" | "clone" | "existing";
+  existingFileHashes: readonly { path: string; hash: string }[];
   artifacts: readonly WorkspaceCompositionArtifact[];
   warnings: readonly string[];
   conflicts: readonly string[];
@@ -105,6 +108,7 @@ export type WorkspaceCompositionSummary = {
 export type WorkspaceCompositionModelExecutionRequest = {
   runId: string;
   attempt: number;
+  idempotencyKey: string;
   signal: AbortSignal;
   timeoutMs: number;
   systemPrompt: string;
@@ -116,6 +120,17 @@ export type WorkspaceCompositionModelExecutionResult = {
   runId: string | null;
   sessionKey: string | null;
   runtime: "native-openclaw" | "model-runtime";
+};
+
+export type WorkspaceCompositionExecutionStarted = {
+  runId: string;
+  attempt: number;
+  idempotencyKey: string;
+};
+
+export type WorkspaceCompositionExecutionKnownCompleted = WorkspaceCompositionExecutionStarted & {
+  remoteRunId: string | null;
+  remoteSessionKey: string | null;
 };
 
 export function normalizeWorkspaceCompositionProposal(value: unknown): WorkspaceCompositionProposal {
@@ -141,13 +156,14 @@ export function normalizeWorkspaceCompositionProposal(value: unknown): Workspace
 
 export function validateWorkspaceCompositionPlan(value: unknown): value is WorkspaceCompositionPlan {
   if (!isRecord(value) || Object.keys(value).some((key) => ![
-    "schemaVersion", "policyVersion", "planId", "inputFingerprint", "status", "projectIntelligencePackId", "workspaceBlueprintId", "materializationMode", "artifacts", "warnings", "conflicts", "provenance"
+    "schemaVersion", "policyVersion", "planId", "inputFingerprint", "status", "projectIntelligencePackId", "projectIntelligenceGenerationId", "workspaceBlueprintId", "workspaceBlueprintFingerprint", "materializationMode", "existingFileHashes", "artifacts", "warnings", "conflicts", "provenance"
   ].includes(key))) return false;
   if (value.schemaVersion !== WORKSPACE_COMPOSITION_SCHEMA_VERSION || value.policyVersion !== WORKSPACE_COMPOSITION_POLICY_VERSION) return false;
   if (typeof value.planId !== "string" || value.planId.length === 0 || value.planId.length > 160 || typeof value.inputFingerprint !== "string" || !/^[a-f0-9]{64}$/i.test(value.inputFingerprint)) return false;
-  if (typeof value.projectIntelligencePackId !== "string" && value.projectIntelligencePackId !== null) return false;
-  if (typeof value.workspaceBlueprintId !== "string" || !["empty", "clone", "existing"].includes(value.materializationMode as string)) return false;
-  if (!workspaceCompositionStatuses.includes(value.status as WorkspaceCompositionStatus) || !Array.isArray(value.artifacts) || value.artifacts.length > WORKSPACE_COMPOSITION_MAX_ARTIFACTS || !Array.isArray(value.warnings) || !value.warnings.every((warning) => typeof warning === "string") || !Array.isArray(value.conflicts) || !value.conflicts.every((conflict) => typeof conflict === "string")) return false;
+  if ((typeof value.projectIntelligencePackId !== "string" && value.projectIntelligencePackId !== null) || (typeof value.projectIntelligenceGenerationId !== "string" && value.projectIntelligenceGenerationId !== null)) return false;
+  if (typeof value.workspaceBlueprintId !== "string" || !/^[a-f0-9]{64}$/i.test(String(value.workspaceBlueprintFingerprint)) || !["empty", "clone", "existing"].includes(value.materializationMode as string)) return false;
+  if (!Array.isArray(value.existingFileHashes) || value.existingFileHashes.length > 16 || !value.existingFileHashes.every(validateExistingFileHash)) return false;
+  if (!workspaceCompositionStatuses.includes(value.status as WorkspaceCompositionStatus) || !Array.isArray(value.artifacts) || value.artifacts.length > WORKSPACE_COMPOSITION_MAX_ARTIFACTS || !Array.isArray(value.warnings) || value.warnings.length > 24 || !value.warnings.every((warning) => typeof warning === "string" && warning.length <= 300) || !Array.isArray(value.conflicts) || value.conflicts.length > 24 || !value.conflicts.every((conflict) => typeof conflict === "string" && conflict.length <= 300)) return false;
   if (!isRecord(value.provenance) || Object.keys(value.provenance).some((key) => !["source", "modelExecutionOccurred", "attempts", "composerRunId"].includes(key))) return false;
   const provenance = value.provenance;
   if (!["model", "fallback"].includes(provenance.source as string) || typeof provenance.modelExecutionOccurred !== "boolean" || !Number.isSafeInteger(provenance.attempts) || (provenance.attempts as number) < 0 || (provenance.attempts as number) > 2 || typeof provenance.composerRunId !== "string" || provenance.composerRunId.length === 0) return false;
@@ -227,6 +243,16 @@ function normalizePlanArtifact(value: unknown): WorkspaceCompositionArtifact {
   if (value.body !== value.content) throw new Error("Workspace composition artifact body and content must agree.");
   if (sha256(value.content) !== value.proposedContentHash) throw new Error("Workspace composition artifact content hash is inconsistent.");
   return { ...proposal, path: value.path, operation: value.operation as WorkspaceCompositionOperation, ownership: value.ownership as WorkspaceCompositionOwnership, expectedExistingHash: value.expectedExistingHash as string | null, expectedMaterializedHash: value.expectedMaterializedHash as string | null, proposedContentHash: value.proposedContentHash, content: value.content, warnings: value.warnings.filter((entry): entry is string => typeof entry === "string").slice(0, 12) };
+}
+
+function validateExistingFileHash(value: unknown): value is { path: string; hash: string } {
+  return isRecord(value)
+    && typeof value.path === "string"
+    && value.path.length > 0
+    && typeof value.hash === "string"
+    && /^[a-f0-9]{64}$/i.test(value.hash)
+    && Object.values(WORKSPACE_COMPOSITION_ARTIFACT_PATHS).includes(value.path)
+    && Object.keys(value).every((key) => key === "path" || key === "hash");
 }
 
 function normalizeIds(value: unknown) {

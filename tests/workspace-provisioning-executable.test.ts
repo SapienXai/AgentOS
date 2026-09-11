@@ -340,9 +340,23 @@ test("provisioning applies the reviewed composition plan in its own durable step
       blueprint: value,
       idempotencyKey: "composition-run",
       acceptDraft: true,
-      compositionPlan: composition.plan
+      draftContextId: "11111111-1111-4111-8111-111111111111",
+      compositionPlanId: composition.plan.planId,
+      compositionPlanFingerprint: composition.plan.inputFingerprint
     };
-    const finished = await waitForWorkspaceProvisioning(input, harness.dependencies);
+    const finished = await waitForWorkspaceProvisioning(input, {
+      ...harness.dependencies,
+      readWorkspaceCreationContext: async () => ({
+        runStatus: "ready",
+        reused: false,
+        generationId: null,
+        sources: [],
+        documents: [],
+        warnings: [],
+        knowledge: { generationId: null, sources: [], documents: [], warnings: [] }
+      } as never),
+      readWorkspaceCreationCompositionPlan: async () => composition.plan
+    });
     assert.equal(finished.state, "ready");
     assert.equal(finished.composition?.status, "ready");
     assert.equal(finished.composition?.artifactCount, 1);

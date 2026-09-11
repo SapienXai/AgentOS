@@ -99,6 +99,7 @@ export type WorkspaceCreationActivityCode =
 export type WorkspaceCreationCompositionSnapshot = {
   status: "pending" | "model" | "fallback" | "ready" | "partial" | "conflict" | "blocked";
   planId: string | null;
+  inputFingerprint: string | null;
   artifactCount: number;
   createCount: number;
   mergeCount: number;
@@ -248,6 +249,12 @@ export type WorkspaceCreationRun = {
     sessionKey: string | null;
     outcome: "not-started" | "in-flight" | "completed" | "ambiguous";
   };
+  compositionExecution: {
+    idempotencyKey: string;
+    runId: string | null;
+    sessionKey: string | null;
+    outcome: "not-started" | "in-flight" | "completed" | "ambiguous";
+  };
 };
 
 export function isWorkspaceCreationTerminal(state: WorkspaceCreationState) {
@@ -308,6 +315,7 @@ export function createInitialWorkspaceCreationSnapshot(sourceCount: number): Wor
     composition: {
       status: "pending",
       planId: null,
+      inputFingerprint: null,
       artifactCount: 0,
       createCount: 0,
       mergeCount: 0,
@@ -328,8 +336,9 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
   const input = candidate.input;
   const remote = candidate.remoteExecution;
   const intelligenceExecution = candidate.intelligenceExecution;
+  const compositionExecution = candidate.compositionExecution;
   return candidate.schemaVersion === WORKSPACE_CREATION_RUN_SCHEMA_VERSION
-    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "remoteExecution", "intelligenceExecution"])
+    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "remoteExecution", "intelligenceExecution", "compositionExecution"])
     && typeof candidate.runId === "string"
     && typeof candidate.actorHash === "string"
     && typeof candidate.idempotencyKeyHash === "string"
@@ -359,7 +368,8 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && ((remote as Record<string, unknown>).runId === null || typeof (remote as Record<string, unknown>).runId === "string")
     && ((remote as Record<string, unknown>).sessionKey === null || typeof (remote as Record<string, unknown>).sessionKey === "string")
     && ["not-started", "in-flight", "completed", "ambiguous"].includes((remote as Record<string, unknown>).outcome as string)
-    && validateRemoteExecution(intelligenceExecution);
+    && validateRemoteExecution(intelligenceExecution)
+    && validateRemoteExecution(compositionExecution);
 }
 
 function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCreationSnapshot {
@@ -387,9 +397,10 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
 function validateWorkspaceCreationCompositionSnapshot(value: unknown): value is WorkspaceCreationCompositionSnapshot {
   if (!value || typeof value !== "object") return false;
   const composition = value as Record<string, unknown>;
-  return hasOnlyKeys(composition, ["status", "planId", "artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "modelExecutionOccurred", "attempts", "elapsedMs", "failure"])
+  return hasOnlyKeys(composition, ["status", "planId", "inputFingerprint", "artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "modelExecutionOccurred", "attempts", "elapsedMs", "failure"])
     && ["pending", "model", "fallback", "ready", "partial", "conflict", "blocked"].includes(composition.status as string)
     && (composition.planId === null || typeof composition.planId === "string")
+    && (composition.inputFingerprint === null || typeof composition.inputFingerprint === "string" && /^[a-f0-9]{64}$/i.test(composition.inputFingerprint))
     && ["artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "attempts", "elapsedMs"].every((key) => Number.isSafeInteger(composition[key]) && (composition[key] as number) >= 0)
     && typeof composition.modelExecutionOccurred === "boolean"
     && (composition.failure === null || validateWorkspaceCreationFailure(composition.failure));

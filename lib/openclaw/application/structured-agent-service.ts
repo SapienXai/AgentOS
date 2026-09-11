@@ -213,7 +213,7 @@ export async function runStructuredWorkspaceComposerAgent(
       message: `${request.systemPrompt}\n\n${request.userPrompt}`,
       thinking: "high",
       timeoutSeconds: Math.ceil(timeoutMs / 1_000),
-      idempotencyKey: `workspace-composer:${request.runId}:${request.attempt}`
+      idempotencyKey: request.idempotencyKey
     }, { timeoutMs, signal: request.signal });
     return {
       text: extractMissionCommandPayloads(payload).map((entry) => entry.text.trim()).filter(Boolean).join("\n\n") || payload.summary?.trim() || "",

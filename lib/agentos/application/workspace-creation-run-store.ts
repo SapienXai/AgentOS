@@ -43,10 +43,11 @@ export async function createWorkspaceCreationRunAtomically(
   const root = resolveWorkspaceCreationRunRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const now = new Date().toISOString();
+  const runId = randomUUID();
   const run: WorkspaceCreationRun = {
     ...input,
     schemaVersion: WORKSPACE_CREATION_RUN_SCHEMA_VERSION,
-    runId: randomUUID(),
+    runId,
     createdAt: now,
     updatedAt: now,
     events: [],
@@ -60,6 +61,12 @@ export async function createWorkspaceCreationRunAtomically(
     },
     intelligenceExecution: {
       idempotencyKey: `${sha256(storageKey)}:intelligence:${input.attempt}`,
+      runId: null,
+      sessionKey: null,
+      outcome: "not-started"
+    },
+    compositionExecution: {
+      idempotencyKey: `workspace-composer:${runId}:${input.attempt}`,
       runId: null,
       sessionKey: null,
       outcome: "not-started"
@@ -111,14 +118,19 @@ function migrateLegacyCreationRun(value: unknown): unknown {
       sessionKey: null,
       outcome: "not-started"
     },
+    compositionExecution: isRecord(value.compositionExecution) ? value.compositionExecution : {
+      idempotencyKey: typeof value.runId === "string" ? `workspace-composer:${value.runId}:1` : "workspace-composer:legacy:1",
+      runId: null,
+      sessionKey: null,
+      outcome: "not-started"
+    },
     events: Array.isArray(value.events) ? value.events.map((event) => isRecord(event) ? { ...event, snapshot: migrateLegacySnapshot(event.snapshot) } : event) : value.events
   };
 }
 
 function migrateLegacySnapshot(value: unknown): unknown {
   if (!isRecord(value)) return value;
-  if ("extraction" in value && "intelligence" in value) return value;
-  return {
+  const migrated: Record<string, unknown> = {
     ...value,
     ...("extraction" in value ? {} : { extraction: {
       status: "not-requested",
@@ -133,7 +145,7 @@ function migrateLegacySnapshot(value: unknown): unknown {
       warningCount: 0,
       unknownCount: 0
       } }),
-    intelligence: {
+    intelligence: isRecord(value.intelligence) ? value.intelligence : {
       status: "pending",
       attempts: 0,
       elapsedMs: 0,
@@ -145,6 +157,13 @@ function migrateLegacySnapshot(value: unknown): unknown {
       partialContext: false
     }
   };
+  if (isRecord(value.composition)) {
+    migrated.composition = {
+      ...value.composition,
+      inputFingerprint: typeof value.composition.inputFingerprint === "string" ? value.composition.inputFingerprint : null
+    };
+  }
+  return migrated;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -226,6 +245,7 @@ function preserveMonotonicRunState(current: WorkspaceCreationRun, next: Workspac
       : next.snapshot;
   const remote = remoteExecutionAtLeast(current.remoteExecution, next.remoteExecution);
   const intelligenceExecution = remoteExecutionAtLeast(current.intelligenceExecution, next.intelligenceExecution);
+  const compositionExecution = remoteExecutionAtLeast(current.compositionExecution, next.compositionExecution);
   const latestSequence = current.events.at(-1)?.sequence ?? 0;
   const nextSequence = next.events.at(-1)?.sequence ?? 0;
   return {
@@ -234,6 +254,7 @@ function preserveMonotonicRunState(current: WorkspaceCreationRun, next: Workspac
     cancelRequestedAt: current.cancelRequestedAt ?? next.cancelRequestedAt ?? (cancelRequested ? next.updatedAt : null),
     remoteExecution: remote,
     intelligenceExecution,
+    compositionExecution,
     events: nextSequence >= latestSequence ? next.events : current.events,
     oldestRetainedSequence: nextSequence >= latestSequence ? next.oldestRetainedSequence : current.oldestRetainedSequence,
     updatedAt: nextSequence >= latestSequence ? next.updatedAt : current.updatedAt

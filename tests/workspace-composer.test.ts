@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { composeWorkspaceComposition, applyWorkspaceCompositionPlan } from "@/lib/agentos/application/workspace-composer";
+import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, createWorkspaceCompositionBlueprintFingerprint, applyWorkspaceCompositionPlan } from "@/lib/agentos/application/workspace-composer";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import { WORKSPACE_COMPOSITION_MARKER_START, WORKSPACE_COMPOSITION_MARKER_END } from "@/lib/agentos/application/workspace-composer";
 import { normalizeWorkspaceCompositionProposal, validateWorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
@@ -133,6 +134,42 @@ test("composition never follows an allowlisted workspace path through a symlink"
   }
 });
 
+test("composition execution is recorded before a remote attempt and ambiguous outcomes are never replayed", async () => {
+  const value = await blueprint();
+  const started: string[] = [];
+  let calls = 0;
+  const result = await composeWorkspaceComposition({ blueprint: value, operatorIntent: { brief: value.brief, constraints: [] } }, {
+    runId: "composer-ambiguous",
+    maxAttempts: 2,
+    onExecutionStarted: async ({ idempotencyKey }) => { started.push(idempotencyKey); },
+    modelExecutor: async (request) => {
+      calls += 1;
+      assert.equal(request.idempotencyKey, "workspace-composer:composer-ambiguous:1");
+      throw new Error("Workspace composition execution outcome is ambiguous.");
+    }
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(started, ["workspace-composer:composer-ambiguous:1"]);
+  assert.equal(result.plan.provenance.source, "fallback");
+  assert.match(result.summary.failure?.code ?? "", /workspace-composer-execution-ambiguous/);
+});
+
+test("composition plans carry strong blueprint and existing-file bindings", async () => {
+  const value = await blueprint();
+  const result = createDeterministicWorkspaceComposition({
+    blueprint: value,
+    operatorIntent: { brief: value.brief, constraints: [] },
+    existingFiles: [{ path: "docs/project-profile.md", content: "# Existing" }]
+  }, { runId: "composer-bindings" });
+  assert.equal(result.plan.workspaceBlueprintId, value.id);
+  assert.equal(result.plan.workspaceBlueprintFingerprint, createWorkspaceCompositionBlueprintFingerprint(value));
+  assert.deepEqual(result.plan.existingFileHashes, [{ path: "docs/project-profile.md", hash: createHash("sha256").update("# Existing").digest("hex") }]);
+  const tampered = structuredClone(result.plan);
+  tampered.workspaceBlueprintFingerprint = "b".repeat(64);
+  assert.equal(validateWorkspaceCompositionPlan(tampered), true);
+  assert.notEqual(tampered.workspaceBlueprintFingerprint, result.plan.workspaceBlueprintFingerprint);
+});
+
 test("native Project Intelligence execution uses the high-reasoning OpenClaw contract and isolated identity", async () => {
   let call: Record<string, unknown> | null = null;
   const workspaceId = "planner-runtime-workspace";
@@ -169,6 +206,7 @@ test("native Project Intelligence execution uses the high-reasoning OpenClaw con
     attempt: 2,
     signal: new AbortController().signal,
     timeoutMs: 30_000,
+    idempotencyKey: "workspace-composer:composer-contract:2",
     systemPrompt: "system",
     userPrompt: "user"
   }, { adapter, runtimeDependencies });

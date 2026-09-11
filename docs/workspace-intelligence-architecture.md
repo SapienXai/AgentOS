@@ -468,7 +468,7 @@ interrupted turn has an ambiguous remote outcome, AgentOS does not replay it
 and falls back to deterministic safe content. Model failure, fallback source,
 attempts, conflicts, and applied counts are retained as structured run
 metadata and surfaced honestly in review. No generic daemon, retrieval
-system, Composer 2.0, or Phase 8 UX redesign is introduced.
+system, or Composer 2.0 is introduced.
 
 ## Intelligence roles and future boundaries
 
@@ -480,9 +480,9 @@ The future system separates responsibilities at explicit boundaries:
 - Workspace Architect consumes a validated Project Intelligence pack in Phase
   6 and produces the existing WorkspaceBlueprint contract with bounded
   traceability references. It does not own or mutate the pack.
-- AI Workspace Composer is now a bounded Phase 7 content-proposal sidecar;
-  broader retrieval, refresh, document governance, and Phase 8 UX remain
-  future work.
+- AI Workspace Composer is a bounded content-proposal sidecar with an
+  independent durable composition execution record; broader retrieval,
+  refresh, and document governance remain future work.
 
 OpenClaw remains the runtime, orchestration, agent, tool, model, session, and
 gateway owner. AgentOS provides the operator-facing control and normalized
@@ -518,13 +518,18 @@ sidecar. Phase 6 makes the existing Workspace Architect consume validated
 intelligence through bounded inputs without changing `WorkspaceBlueprint`
 ownership.
 Phase 7 adds the bounded Workspace Composition plan and its provisioning
-handoff without changing `WorkspaceBlueprint` ownership.
+handoff without changing `WorkspaceBlueprint` ownership. Phase 7.1 certifies
+composition idempotency, crash recovery, canonical plan binding, shared
+analysis budgeting, and fail-closed cancellation. Phase 8 presents the same
+server-owned run and review state through a goal-first Create Workspace
+experience; it does not change the underlying blueprint or provisioning
+ownership.
 The following remain future work:
 
 - broader Project Intelligence discovery, verification, refresh, and review
   workflows;
 - later phases: verification runtime, broader retrieval, refresh,
-  transport/event streaming, and all Phase 8-9 work;
+  transport/event streaming, and Phase 9 work;
 - all phases: no duplicate OpenClaw runtime, model, tool, session, gateway, or
   workspace ownership inside AgentOS.
 
@@ -532,3 +537,37 @@ Source identifiers are intentionally opaque in this foundation. Phase 1 checks
 their internal consistency across facts, evidence, resources, coverage, and
 pack provenance, but does not resolve them against `WorkspaceKnowledgeSource`
 until the future ingestion integration defines that boundary.
+
+## Phase 7.1 durable execution and Phase 8 presentation
+
+`WorkspaceCreationRun` owns the intelligence-to-review envelope. Its
+`compositionExecution` record is independent from Architect and Project
+Intelligence remote execution: the idempotency key is persisted before the
+Composer turn, known remote identity is persisted after the turn, and the
+execution is marked complete only after the canonical composition plan is
+durable. A crash with no durable plan is ambiguous and is recovered with
+deterministic safe content without replaying the remote turn. Cancellation
+aborts the native OpenClaw turn and remains terminal; it cannot reopen review.
+
+The overall analysis deadline is shared by context staging, Project
+Intelligence, Architect, and Composer. Context is bounded by both ingestion
+limits and reserved time for the later stages. Each model stage divides its
+available budget across its bounded attempts, so independent timeout stacks
+cannot exceed the single deadline.
+
+Provisioning accepts a composition reference only after actor-scoped canonical
+plan lookup. The plan is bound to the exact `WorkspaceBlueprint` fingerprint,
+materialization mode, Project Intelligence pack/generation when present, and
+its semantic input fingerprint. Inline plan data is accepted only as a
+backward-compatible exact copy of the canonical server plan; inline-only
+composition is rejected. Composition conflicts are preserved and cause the
+composition provisioning step to remain incomplete while later provisioning
+steps may continue, resulting in a truthful partial provisioning state.
+
+The Phase 8 presenter maps structured run stages to operator language:
+Reading project, Understanding project, Designing workspace, Preparing
+workspace, and Almost ready. Review is organized around Project, AI
+Workforce, Workspace, and Needs attention. It shows fallback and partial
+context as explicit structured states, keeps internal diagnostics behind
+progressive disclosure, and leaves provisioning labels to the existing
+OpenClaw-backed provisioning run.

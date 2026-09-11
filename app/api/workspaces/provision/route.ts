@@ -18,7 +18,9 @@ const provisionRequestSchema = z.object({
   expectedKnowledgeGenerationId: z.string().trim().min(1).nullable().optional(),
   idempotencyKey: z.string().trim().min(1).max(200),
   acceptDraft: z.boolean().default(false),
-  compositionPlan: z.unknown().optional()
+  compositionPlan: z.unknown().optional(),
+  compositionPlanId: z.string().trim().min(1).max(160).nullable().optional(),
+  compositionPlanFingerprint: z.string().regex(/^[a-f0-9]{64}$/i).nullable().optional()
 }).strict();
 
 export async function POST(request: Request) {
@@ -34,7 +36,9 @@ export async function POST(request: Request) {
       expectedKnowledgeGenerationId: parsed.expectedKnowledgeGenerationId ?? null,
       idempotencyKey: parsed.idempotencyKey,
       acceptDraft: parsed.acceptDraft,
-      compositionPlan: parsed.compositionPlan
+      compositionPlan: parsed.compositionPlan,
+      compositionPlanId: parsed.compositionPlanId ?? null,
+      compositionPlanFingerprint: parsed.compositionPlanFingerprint ?? null
     });
     return NextResponse.json(redactSecrets(run), { status: 202 });
   } catch (error) {

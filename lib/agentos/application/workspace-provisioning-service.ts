@@ -14,10 +14,11 @@ import {
   promoteWorkspaceCreationKnowledge,
   readWorkspaceCreationContext,
   readWorkspaceCreationCompositionPlan,
+  readWorkspaceCreationIntelligencePack,
   type WorkspaceCreationContextResult
 } from "@/lib/agentos/application/workspace-creation-context-service";
-import { applyWorkspaceCompositionPlan } from "@/lib/agentos/application/workspace-composer";
-import { validateWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
+import { applyWorkspaceCompositionPlan, createWorkspaceCompositionBlueprintFingerprint } from "@/lib/agentos/application/workspace-composer";
+import { createWorkspaceCompositionInputFingerprint, validateWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 import {
   ensureWorkspaceNativeKnowledge,
   type WorkspaceNativeKnowledgeBindingResult,
@@ -119,6 +120,8 @@ export type ProvisionWorkspaceFromBlueprintInput = {
   idempotencyKey: string;
   acceptDraft?: boolean;
   compositionPlan?: unknown;
+  compositionPlanId?: string | null;
+  compositionPlanFingerprint?: string | null;
   signal?: AbortSignal;
 };
 
@@ -154,6 +157,7 @@ export type WorkspaceProvisioningDependencies = {
   getMissionControlSnapshot?: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext?: typeof readWorkspaceCreationContext;
   readWorkspaceCreationCompositionPlan?: typeof readWorkspaceCreationCompositionPlan;
+  readWorkspaceCreationIntelligencePack?: typeof readWorkspaceCreationIntelligencePack;
   readKnowledgeSnapshot?: typeof readKnowledgeSnapshot;
   promoteWorkspaceCreationKnowledge?: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
@@ -168,6 +172,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
   getMissionControlSnapshot: typeof getMissionControlSnapshot;
   readWorkspaceCreationContext: typeof readWorkspaceCreationContext;
   readWorkspaceCreationCompositionPlan: typeof readWorkspaceCreationCompositionPlan;
+  readWorkspaceCreationIntelligencePack: typeof readWorkspaceCreationIntelligencePack;
   readKnowledgeSnapshot: typeof readKnowledgeSnapshot;
   promoteWorkspaceCreationKnowledge: typeof promoteWorkspaceCreationKnowledge;
   ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
@@ -185,6 +190,7 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
     getMissionControlSnapshot: input.getMissionControlSnapshot ?? getMissionControlSnapshot,
     readWorkspaceCreationContext: input.readWorkspaceCreationContext ?? readWorkspaceCreationContext,
     readWorkspaceCreationCompositionPlan: input.readWorkspaceCreationCompositionPlan ?? readWorkspaceCreationCompositionPlan,
+    readWorkspaceCreationIntelligencePack: input.readWorkspaceCreationIntelligencePack ?? readWorkspaceCreationIntelligencePack,
     readKnowledgeSnapshot: input.readKnowledgeSnapshot ?? readKnowledgeSnapshot,
     promoteWorkspaceCreationKnowledge: input.promoteWorkspaceCreationKnowledge ?? promoteWorkspaceCreationKnowledge,
     ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
@@ -310,7 +316,8 @@ export async function resumeWorkspaceProvisioningRun(input: {
     idempotencyKey: `resume:${locator.run.idempotencyKeyHash}`,
     acceptDraft: true
   }, resolved, {
-    allowCompletedKnowledgeRecovery: true
+    allowCompletedKnowledgeRecovery: true,
+    trustedCompositionPlan: locator.run.compositionPlan
   });
   ensureExecution(locator.filePath, prepared, input.signal, resolved);
   return publicRun(await readStoredRunFile(locator.filePath) ?? locator.run);
@@ -335,7 +342,7 @@ export async function getWorkspaceProvisioningRun(input: {
 async function prepareProvisioning(
   input: ProvisionWorkspaceFromBlueprintInput,
   dependencies: ResolvedWorkspaceProvisioningDependencies,
-  options: { allowCompletedKnowledgeRecovery?: boolean } = {}
+  options: { allowCompletedKnowledgeRecovery?: boolean; trustedCompositionPlan?: WorkspaceCompositionPlan | null } = {}
 ): Promise<PreparedProvisioning> {
   const actorId = input.actorId.trim();
   if (!actorId) throw new WorkspaceProvisioningError("actor-unavailable", "Workspace ownership is unavailable.");
@@ -377,17 +384,63 @@ async function prepareProvisioning(
   if (context || !options.allowCompletedKnowledgeRecovery) validateKnowledgeFreshness(blueprint, context);
 
   let compositionPlan: WorkspaceCompositionPlan | null = null;
+  const hasCompositionReference = Boolean(
+    input.compositionPlan !== undefined && input.compositionPlan !== null
+    || normalizeOptionalIntent(input.compositionPlanId)
+    || normalizeOptionalIntent(input.compositionPlanFingerprint)
+  );
+  const storedCompositionPlan = options.trustedCompositionPlan ?? (draftContextId && hasCompositionReference
+    ? await dependencies.readWorkspaceCreationCompositionPlan({ actorId, draftContextId })
+    : null);
   if (input.compositionPlan !== undefined && input.compositionPlan !== null) {
     if (!validateWorkspaceCompositionPlan(input.compositionPlan)) throw new WorkspaceProvisioningError("composition-invalid", "The workspace composition plan is invalid or tampered with.", 409);
+    if (!storedCompositionPlan || stableStringify(storedCompositionPlan) !== stableStringify(input.compositionPlan)) {
+      throw new WorkspaceProvisioningError("composition-canonical-mismatch", "The workspace composition plan must match the durable server plan.", 409);
+    }
     compositionPlan = input.compositionPlan;
-  } else if (draftContextId) {
-    compositionPlan = await dependencies.readWorkspaceCreationCompositionPlan({ actorId, draftContextId });
+  } else {
+    compositionPlan = storedCompositionPlan;
+  }
+  if (input.compositionPlanId !== undefined && normalizeOptionalIntent(input.compositionPlanId) !== (compositionPlan?.planId ?? null)) {
+    throw new WorkspaceProvisioningError("composition-reference-mismatch", "The requested composition plan is not the reviewed server plan.", 409);
+  }
+  if (input.compositionPlanFingerprint !== undefined && normalizeOptionalIntent(input.compositionPlanFingerprint) !== (compositionPlan?.inputFingerprint ?? null)) {
+    throw new WorkspaceProvisioningError("composition-reference-mismatch", "The requested composition fingerprint is not the reviewed server plan.", 409);
   }
   if (compositionPlan?.status === "blocked") {
     throw new WorkspaceProvisioningError("composition-blocked", "The workspace composition plan contains unresolved conflicts and cannot be provisioned.", 409);
   }
 
   const blueprintFingerprint = fingerprintBlueprint(blueprint);
+  if (compositionPlan) {
+    if (compositionPlan.workspaceBlueprintId !== blueprint.id
+      || compositionPlan.workspaceBlueprintFingerprint !== createWorkspaceCompositionBlueprintFingerprint(blueprint)
+      || compositionPlan.materializationMode !== materialization.mode) {
+      throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan does not belong to this blueprint.", 409);
+    }
+    if (compositionPlan.projectIntelligencePackId) {
+      if (!draftContextId) throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan requires its staged project intelligence context.", 409);
+      const pack = await dependencies.readWorkspaceCreationIntelligencePack({ actorId, draftContextId });
+      if (!pack
+        || pack.id !== compositionPlan.projectIntelligencePackId
+        || (pack.provenance.generationId ?? pack.generation?.id ?? null) !== compositionPlan.projectIntelligenceGenerationId) {
+        throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan is bound to a different project intelligence generation.", 409);
+      }
+    } else if (compositionPlan.projectIntelligenceGenerationId !== null) {
+      throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan has an invalid project intelligence binding.", 409);
+    }
+    const expectedInputFingerprint = createWorkspaceCompositionInputFingerprint({
+      policyVersion: compositionPlan.policyVersion,
+      packId: compositionPlan.projectIntelligencePackId,
+      blueprint,
+      operatorIntent: { brief: blueprint.brief, constraints: blueprint.operatorConstraints },
+      materializationMode: compositionPlan.materializationMode,
+      existingFiles: compositionPlan.existingFileHashes
+    });
+    if (compositionPlan.inputFingerprint !== expectedInputFingerprint) {
+      throw new WorkspaceProvisioningError("composition-binding-mismatch", "The workspace composition plan input binding is invalid.", 409);
+    }
+  }
   const template = inferWorkspaceTemplate(blueprint.identity.projectType);
   const agents = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists].map((agent) => ({
     id: agent.id,
@@ -1270,6 +1323,11 @@ function assertStoredRunIntegrity(run: StoredWorkspaceProvisioningRun): asserts 
     || !Array.isArray(run.pendingSetup.connections)
     || !Array.isArray(run.pendingSetup.automations)
     || (run.compositionPlan !== undefined && run.compositionPlan !== null && !validateWorkspaceCompositionPlan(run.compositionPlan))
+    || (run.compositionPlan !== undefined && run.compositionPlan !== null && (
+      run.compositionPlan.workspaceBlueprintId !== run.blueprintId
+      || run.compositionPlan.workspaceBlueprintFingerprint !== createWorkspaceCompositionBlueprintFingerprint(blueprint)
+      || run.compositionPlan.materializationMode !== blueprint.materialization.mode
+    ))
     || (run.composition !== null && !validateStoredCompositionSummary(run.composition))
   ) {
     throw new WorkspaceProvisioningError("provisioning-state-integrity-failed", "The durable provisioning record is invalid and cannot be resumed.", 500);

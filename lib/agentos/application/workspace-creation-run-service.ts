@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import {
   persistWorkspaceCreationIntake,
   persistWorkspaceCreationIntelligencePack,
+  readWorkspaceCreationCompositionPlan,
   readWorkspaceCreationIntelligencePack,
   readWorkspaceCreationIntelligenceSummary,
   readWorkspaceCreationContext,
@@ -15,7 +16,8 @@ import {
   type WorkspaceCreationContextStageResult,
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
-import { composeWorkspaceComposition, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
+import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
+import { summarizeWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import {
   acquireProvisioningLease,
@@ -63,7 +65,10 @@ export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
   maxArchitectAttempts: 3,
   maxArchitectAttemptMs: 90_000,
   maxIntelligenceAttempts: 2,
-  maxIntelligenceAttemptMs: 75_000
+  maxIntelligenceAttemptMs: 75_000,
+  composerReserveMs: 45_000,
+  maxComposerAttempts: 2,
+  maxComposerAttemptMs: 60_000
 } as const;
 
 export type WorkspaceCreationBudget = Partial<typeof DEFAULT_WORKSPACE_CREATION_BUDGET>;
@@ -84,10 +89,11 @@ export type WorkspaceCreationRunDependencies = {
   generateArchitect?: typeof generateWorkspaceBlueprint;
   composeWorkspace?: typeof composeWorkspaceComposition;
   persistCompositionPlan?: typeof persistWorkspaceCreationCompositionPlan;
+  readCompositionPlan?: typeof readWorkspaceCreationCompositionPlan;
   inspectCompositionFiles?: typeof inspectWorkspaceCompositionFiles;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "composeWorkspace" | "persistCompositionPlan" | "inspectCompositionFiles">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
   nativeComposer: boolean;
 };
@@ -180,7 +186,7 @@ export async function ensureCreationRunExecution(
   const current = inFlight.get(locator.filePath);
   if (current) return publicRun(await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run);
   const execution = executeCreationRun(locator.filePath, input.actorId, resolved)
-    .catch((error) => recoverUnexpectedCreationFailure(locator.filePath, error, resolved))
+    .catch((error) => recoverUnexpectedCreationFailure(locator.filePath, input.actorId, error, resolved))
     .finally(() => {
       if (inFlight.get(locator.filePath) === execution) inFlight.delete(locator.filePath);
       activeControllers.delete(locator.filePath);
@@ -284,7 +290,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     }
     const contextBudget = Math.max(1, Math.min(
       DEFAULT_KNOWLEDGE_INGESTION_LIMITS.totalRunTimeoutMs,
-      dependencies.budget.overallAnalysisBudgetMs - dependencies.budget.architectReserveMs - dependencies.budget.intelligenceReserveMs
+      dependencies.budget.overallAnalysisBudgetMs - dependencies.budget.architectReserveMs - dependencies.budget.intelligenceReserveMs - dependencies.budget.composerReserveMs
     ));
     const contextController = linkAbortSignals(controller.signal, contextBudget);
     let context: WorkspaceCreationContextStageResult;
@@ -349,7 +355,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
         warnings: context?.warnings.slice(0, 8) ?? []
       }
     } : undefined;
-    const remaining = Math.max(1, deadline - Date.now());
+    const remaining = Math.max(1, deadline - Date.now() - dependencies.budget.composerReserveMs);
     const attempts = Math.max(1, Math.min(dependencies.budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
     const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxArchitectAttemptMs, Math.floor(remaining / attempts)));
     run = await updateSnapshot(filePath, run, dependencies, { stage: "architect-runtime-preparation" }, "state-changed");
@@ -419,23 +425,121 @@ async function completeWorkspaceComposition(
   deadline: number
 ) {
   let run = await updateSnapshot(filePath, initialRun, dependencies, { state: "running", stage: "workspace-composition" }, "state-changed");
-  const composition = await dependencies.composeWorkspace({
+  const existingFiles = result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
+    ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
+    : [];
+  const compositionInput = {
     projectIntelligence: intelligencePack,
     blueprint: result.blueprint,
     operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
-    existingFiles: result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
-      ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
-      : [],
+    existingFiles,
     materializationMode: result.blueprint.materialization.mode
-  }, {
-    runId: run.runId,
-    signal: controller.signal,
-    timeoutMs: Math.max(5_000, Math.min(90_000, deadline - Date.now())),
-    ...(dependencies.nativeComposer ? {} : { modelExecutor: async () => { throw new Error("Workspace composition model is unavailable in the test boundary."); } })
-  });
-  if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: composition.plan });
+  };
+  const storedPlan = run.draftContextId
+    ? await dependencies.readCompositionPlan({ actorId, draftContextId: run.draftContextId })
+    : null;
+  const priorOutcome = run.compositionExecution.outcome;
+  if (storedPlan && (priorOutcome === "completed" || storedPlan.provenance.source === "model" && priorOutcome === "in-flight")) {
+    if (priorOutcome !== "completed") {
+      run = await mutateWorkspaceCreationRun(filePath, (current) => ({
+        ...current,
+        compositionExecution: {
+          ...current.compositionExecution,
+          runId: storedPlan.provenance.composerRunId,
+          outcome: "completed"
+        }
+      }));
+    }
+    run = await updateCompositionSnapshot(filePath, run, dependencies, compositionResultFromPlan(storedPlan));
+    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  }
+
+  if (priorOutcome === "in-flight" || priorOutcome === "ambiguous") {
+    if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+    const recovered = createDeterministicWorkspaceComposition(compositionInput, {
+      runId: run.runId,
+      warning: "Workspace composition execution was not safely recoverable; a deterministic safe draft was used."
+    });
+    if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: recovered.plan });
+    run = await updateCompositionSnapshot(filePath, run, dependencies, recovered);
+    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  }
+
+  const remaining = Math.max(0, deadline - Date.now() - dependencies.budget.composerReserveMs);
+  const canUseModel = remaining >= 5_000;
+  const composerAttempts = canUseModel ? Math.max(1, Math.min(dependencies.budget.maxComposerAttempts, Math.floor(remaining / 5_000))) : 0;
+  const composerTimeout = composerAttempts > 0
+    ? Math.max(5_000, Math.min(dependencies.budget.maxComposerAttemptMs, Math.floor(remaining / composerAttempts)))
+    : 0;
+  if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+  if (!canUseModel) {
+    const fallback = createDeterministicWorkspaceComposition(compositionInput, { runId: run.runId, warning: "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used." });
+    if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: fallback.plan });
+    run = await updateCompositionSnapshot(filePath, run, dependencies, fallback);
+    run = await mutateWorkspaceCreationRun(filePath, (current) => ({
+      ...current,
+      compositionExecution: { ...current.compositionExecution, outcome: "completed" }
+    }));
+    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  }
+
+  run = await mutateWorkspaceCreationRun(filePath, (current) => ({
+    ...current,
+    compositionExecution: {
+      ...current.compositionExecution,
+      idempotencyKey: `workspace-composer:${current.runId}:1`,
+      outcome: "in-flight"
+    }
+  }));
+  let composition: WorkspaceCompositionResult;
+  try {
+    composition = await dependencies.composeWorkspace(compositionInput, {
+      runId: run.runId,
+      signal: controller.signal,
+      timeoutMs: composerTimeout,
+      maxAttempts: composerAttempts,
+      onExecutionStarted: async (execution) => {
+        await mutateWorkspaceCreationRun(filePath, (current) => ({
+          ...current,
+          compositionExecution: { ...current.compositionExecution, idempotencyKey: execution.idempotencyKey, outcome: "in-flight" }
+        }));
+      },
+      onExecutionKnownCompleted: async (execution) => {
+        await mutateWorkspaceCreationRun(filePath, (current) => ({
+          ...current,
+          compositionExecution: { ...current.compositionExecution, idempotencyKey: execution.idempotencyKey, runId: execution.remoteRunId, sessionKey: execution.remoteSessionKey, outcome: "in-flight" }
+        }));
+      },
+      ...(dependencies.nativeComposer ? {} : { modelExecutor: async () => { throw new Error("Workspace composition model is unavailable in the test boundary."); } })
+    });
+  } catch (error) {
+    const current = await readWorkspaceCreationRunFile(filePath) ?? run;
+    if (current.snapshot.cancelRequested || controller.signal.aborted && Date.now() < deadline) return failRun(filePath, current, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+    throw error;
+  }
+  const afterComposition = await readWorkspaceCreationRunFile(filePath) ?? run;
+  if (afterComposition.snapshot.cancelRequested || controller.signal.aborted && Date.now() < deadline) return failRun(filePath, afterComposition, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+  run = afterComposition;
+  try {
+    if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: composition.plan });
+  } catch (error) {
+    await mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, compositionExecution: { ...current.compositionExecution, outcome: "ambiguous" } })).catch(() => undefined);
+    throw error;
+  }
+  if (composition.summary.failure?.code === "workspace-composer-execution-ambiguous") {
+    run = await mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, compositionExecution: { ...current.compositionExecution, outcome: "ambiguous" } }));
+  } else {
+    run = await mutateWorkspaceCreationRun(filePath, (current) => ({
+      ...current,
+      compositionExecution: { ...current.compositionExecution, outcome: "completed" }
+    }));
+  }
   run = await updateCompositionSnapshot(filePath, run, dependencies, composition);
   return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+}
+
+function compositionResultFromPlan(plan: WorkspaceCompositionPlan): WorkspaceCompositionResult {
+  return { plan, summary: summarizeWorkspaceCompositionPlan(plan, 0, plan.status === "fallback" ? { code: "composition-fallback", message: plan.warnings[0] ?? "A deterministic safe draft was used." } : null) };
 }
 
 async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, context: WorkspaceCreationContextStageResult, partial: boolean, failed: boolean) {
@@ -518,8 +622,9 @@ async function synthesizeCreationIntelligence(
     }));
     return updateIntelligenceSnapshot(filePath, recoveredRun, dependencies, recovered, partialContext, false);
   }
-  const remaining = Math.max(1_000, deadline - Date.now() - dependencies.budget.architectReserveMs);
-  const attemptTimeout = Math.min(dependencies.budget.maxIntelligenceAttemptMs, remaining);
+  const remaining = Math.max(1_000, deadline - Date.now() - dependencies.budget.architectReserveMs - dependencies.budget.composerReserveMs);
+  const attempts = Math.max(1, Math.min(dependencies.budget.maxIntelligenceAttempts, Math.floor(remaining / 5_000)));
+  const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxIntelligenceAttemptMs, Math.floor(remaining / attempts)));
   let current = await appendAndPersist(
     filePath,
     run,
@@ -549,7 +654,7 @@ async function synthesizeCreationIntelligence(
     }, {
       runId: run.runId,
       attempt: 1,
-      maxAttempts: dependencies.budget.maxIntelligenceAttempts,
+      maxAttempts: attempts,
       signal,
       timeoutMs: attemptTimeout
     });
@@ -735,6 +840,7 @@ async function updateCompositionSnapshot(filePath: string, run: WorkspaceCreatio
   const composition = {
     status,
     planId: result.summary.planId,
+    inputFingerprint: result.plan.inputFingerprint,
     artifactCount: result.summary.artifactCount,
     createCount: result.summary.createCount,
     mergeCount: result.summary.mergeCount,
@@ -796,6 +902,10 @@ async function failRun(filePath: string, run: WorkspaceCreationRun, dependencies
     const intelligenceFailure = intelligenceBlocked
       ? failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered.")
       : current.snapshot.intelligence.failure;
+    const compositionBlocked = state !== "cancelled" && (current.compositionExecution.outcome === "in-flight" || current.compositionExecution.outcome === "ambiguous");
+    const compositionFailure = compositionBlocked
+      ? failure("unknown", "workspace-composer-execution-ambiguous", "terminal", "Workspace composition execution could not be safely recovered.")
+      : current.snapshot.composition?.failure ?? null;
     const snapshot: WorkspaceCreationSnapshot = {
       ...current.snapshot,
       state,
@@ -803,11 +913,14 @@ async function failRun(filePath: string, run: WorkspaceCreationRun, dependencies
       intelligence: intelligenceBlocked
         ? { ...current.snapshot.intelligence, status: "blocked", failure: intelligenceFailure, retryAvailable: false }
         : current.snapshot.intelligence,
+      composition: compositionBlocked && current.snapshot.composition
+        ? { ...current.snapshot.composition, status: "blocked", failure: compositionFailure }
+        : current.snapshot.composition,
       architect: { ...current.snapshot.architect, status: "blocked", failure: problem, retryAvailable: problem.retryability === "transient" || problem.retryability === "repairable" },
       cancelRequested: state === "cancelled" || current.snapshot.cancelRequested,
       elapsedMs: elapsedMs(current.createdAt, now)
     };
-    return appendWorkspaceCreationEvent(current, {
+    const next = appendWorkspaceCreationEvent(current, {
       schemaVersion: 1,
       createdAt: now,
       kind: "state-changed",
@@ -822,6 +935,9 @@ async function failRun(filePath: string, run: WorkspaceCreationRun, dependencies
       activityCode: state === "cancelled" ? null : "source-failed",
       activityData: null
     });
+    return compositionBlocked
+      ? { ...next, compositionExecution: { ...current.compositionExecution, outcome: "ambiguous" as const } }
+      : next;
   });
 }
 
@@ -890,10 +1006,31 @@ function upsertSourceProgress(run: WorkspaceCreationRun, sourceId: string, data:
     .sort((left, right) => sourceOrder(run, left.sourceId) - sourceOrder(run, right.sourceId));
 }
 
-async function recoverUnexpectedCreationFailure(filePath: string, error: unknown, dependencies: ResolvedDependencies) {
+async function recoverUnexpectedCreationFailure(filePath: string, actorId: string, error: unknown, dependencies: ResolvedDependencies) {
   const run = await readWorkspaceCreationRunFile(filePath);
   if (!run) throw error;
   if (isWorkspaceCreationTerminal(run.snapshot.state)) return run;
+  if (run.compositionExecution.outcome === "in-flight" || run.compositionExecution.outcome === "ambiguous") {
+    if (run.snapshot.cancelRequested) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+    const architectResult = run.result && isWorkspaceArchitectResult(run.result) ? run.result : null;
+    if (!architectResult) return failRun(filePath, run, dependencies, failure("unknown", "workspace-composer-execution-ambiguous", "terminal", "Workspace composition execution could not be safely recovered."));
+    const intelligencePack = run.draftContextId
+      ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
+      : null;
+    const existingFiles = architectResult.blueprint.materialization.mode === "existing" && "existingPath" in architectResult.blueprint.materialization
+      ? await dependencies.inspectCompositionFiles(architectResult.blueprint.materialization.existingPath)
+      : [];
+    const recovered = createDeterministicWorkspaceComposition({
+      projectIntelligence: intelligencePack,
+      blueprint: architectResult.blueprint,
+      operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
+      existingFiles,
+      materializationMode: architectResult.blueprint.materialization.mode
+    }, { runId: run.runId, warning: "Workspace composition execution was not safely recoverable; a deterministic safe draft was used." });
+    if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: recovered.plan });
+    const updated = await updateCompositionSnapshot(filePath, run, dependencies, recovered);
+    return updateSnapshot(filePath, updated, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  }
   if (run.intelligenceExecution.outcome === "in-flight" || run.intelligenceExecution.outcome === "ambiguous") {
     return failRun(filePath, run, dependencies, failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered."));
   }
@@ -901,6 +1038,10 @@ async function recoverUnexpectedCreationFailure(filePath: string, error: unknown
     return failRun(filePath, run, dependencies, failure("unknown", "remote-execution-ambiguous", "terminal", "Architect execution could not be safely recovered."));
   }
   return failRun(filePath, run, dependencies, failure("unknown", "creation-run-failed", "terminal", redactErrorMessage(error, "Workspace creation failed.")));
+}
+
+function isWorkspaceArchitectResult(value: unknown): value is WorkspaceArchitectResult {
+  return Boolean(value && typeof value === "object" && "blueprint" in value && "reasoning" in value);
 }
 
 function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedDependencies {
@@ -921,6 +1062,7 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     persistCompositionPlan: input.persistCompositionPlan ?? (input.persistIntake
       ? async ({ plan }: { actorId: string; draftContextId: string; plan: Parameters<typeof persistWorkspaceCreationCompositionPlan>[0]["plan"] }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status })
       : persistWorkspaceCreationCompositionPlan),
+    readCompositionPlan: input.readCompositionPlan ?? readWorkspaceCreationCompositionPlan,
     inspectCompositionFiles: input.inspectCompositionFiles ?? inspectWorkspaceCompositionFiles,
     budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
     nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake

@@ -19,6 +19,8 @@ import {
   type WorkspaceCompositionModelExecutionRequest,
   type WorkspaceCompositionModelExecutionResult,
   type WorkspaceCompositionProposal,
+  type WorkspaceCompositionExecutionKnownCompleted,
+  type WorkspaceCompositionExecutionStarted,
   type WorkspaceCompositionSummary,
   WORKSPACE_COMPOSITION_MAX_ARTIFACTS
 } from "@/lib/agentos/domains/workspace-composition";
@@ -29,7 +31,7 @@ import { validateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-
 import { runStructuredWorkspaceComposerAgent } from "@/lib/openclaw/application/structured-agent-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { PlannerRuntimeEnsureDependencies } from "@/lib/openclaw/application/planner-runtime-service";
-import { redactErrorMessage } from "@/lib/security/redaction";
+import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
 export const WORKSPACE_COMPOSITION_MARKER_START = "<!-- agentos:managed:start workspace-composition -->";
 export const WORKSPACE_COMPOSITION_MARKER_END = "<!-- agentos:managed:end workspace-composition -->";
@@ -58,6 +60,8 @@ export type WorkspaceComposerOptions = {
   modelExecutor?: (request: WorkspaceCompositionModelExecutionRequest) => Promise<WorkspaceCompositionModelExecutionResult>;
   adapter?: OpenClawAdapter;
   runtimeDependencies?: PlannerRuntimeEnsureDependencies;
+  onExecutionStarted?: (execution: WorkspaceCompositionExecutionStarted) => Promise<void>;
+  onExecutionKnownCompleted?: (execution: WorkspaceCompositionExecutionKnownCompleted) => Promise<void>;
 };
 
 export type WorkspaceCompositionResult = {
@@ -93,15 +97,29 @@ export async function composeWorkspaceComposition(input: WorkspaceComposerInput,
     attempts = attempt;
     if (options.signal?.aborted) throw new DOMException("Workspace composition was cancelled.", "AbortError");
     try {
+      const idempotencyKey = `workspace-composer:${runId}:${attempt}`;
+      await options.onExecutionStarted?.({ runId, attempt, idempotencyKey });
       const response = await withDeadline((signal) => modelExecutor({
         runId,
         attempt,
+        idempotencyKey,
         signal,
         timeoutMs: Math.max(5_000, Math.min(options.timeoutMs ?? 90_000, 125_000)),
         systemPrompt: COMPOSER_SYSTEM_POLICY,
         userPrompt: buildComposerPrompt(input, existing, attempt > 1)
       }), Math.max(5_000, Math.min(options.timeoutMs ?? 90_000, 125_000)), options.signal);
       modelExecutionOccurred = true;
+      try {
+        await options.onExecutionKnownCompleted?.({
+          runId,
+          attempt,
+          idempotencyKey,
+          remoteRunId: response.runId,
+          remoteSessionKey: response.sessionKey
+        });
+      } catch {
+        throw new Error("Workspace composition execution outcome is ambiguous.");
+      }
       const parsed = normalizeWorkspaceCompositionProposal(parseJson(response.text));
       validateProposalReferences(parsed, input);
       proposal = parsed;
@@ -110,36 +128,104 @@ export async function composeWorkspaceComposition(input: WorkspaceComposerInput,
     } catch (error) {
       if (options.signal?.aborted || /cancelled|canceled|aborted/i.test(redactErrorMessage(error, ""))) throw new DOMException("Workspace composition was cancelled.", "AbortError");
       const message = redactErrorMessage(error, "Workspace composition was unavailable.");
-      failure = { code: attempt === maxAttempts ? "composition-fallback" : "composition-structured-output-invalid", message: message.slice(0, 300) };
-      if (attempt === maxAttempts || /ambiguous/i.test(message)) break;
+      const ambiguous = /ambiguous/i.test(message);
+      failure = { code: ambiguous ? "workspace-composer-execution-ambiguous" : attempt === maxAttempts ? "composition-fallback" : "composition-structured-output-invalid", message: message.slice(0, 300) };
+      if (attempt === maxAttempts || ambiguous) break;
     }
   }
 
-  const artifacts = materializePlanArtifacts(proposal, existing);
-  const status = artifacts.some((artifact) => artifact.operation === "conflict")
-    ? "blocked"
-    : modelExecutionOccurred && failure === null ? "ready" : "fallback";
-  const plan: WorkspaceCompositionPlan = {
-    schemaVersion: WORKSPACE_COMPOSITION_SCHEMA_VERSION,
-    policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
-    planId: `composition-${runId}`,
+  const plan = buildWorkspaceCompositionPlan(input, existing, {
+    runId,
     inputFingerprint: fingerprint,
-    status,
-    projectIntelligencePackId: input.projectIntelligence?.id ?? null,
-    workspaceBlueprintId: input.blueprint.id,
     materializationMode,
-    artifacts,
-    warnings: [...proposal.warnings, ...(failure ? ["AI workspace document proposals were unavailable; deterministic content was used."] : [])].slice(0, 24),
-    conflicts: artifacts.filter((artifact) => artifact.operation === "conflict").map((artifact) => `${artifact.artifactId}: ${artifact.warnings[0] ?? "Existing workspace content requires review."}`).slice(0, 24),
-    provenance: {
-      source: modelExecutionOccurred && failure === null ? "model" : "fallback",
-      modelExecutionOccurred,
-      attempts,
-      composerRunId: runId
-    }
-  };
+    proposal,
+    modelExecutionOccurred,
+    attempts,
+    failure
+  });
   if (!validateWorkspaceCompositionPlan(plan)) throw new Error("Workspace composition produced an invalid plan.");
   return { plan, summary: summarizeWorkspaceCompositionPlan(plan, Date.now() - startedAt, failure) };
+}
+
+export function createDeterministicWorkspaceComposition(input: WorkspaceComposerInput, options: {
+  runId?: string;
+  warning?: string;
+} = {}): WorkspaceCompositionResult {
+  const blueprintValidation = validateWorkspaceBlueprint(input.blueprint);
+  if (!blueprintValidation.valid) throw new Error("Workspace composition requires a validated WorkspaceBlueprint.");
+  if (input.projectIntelligence && !validateProjectIntelligencePack(input.projectIntelligence).valid) throw new Error("Workspace composition requires a validated Project Intelligence pack.");
+  const runId = options.runId?.trim() || randomUUID();
+  const existing = normalizeExistingFiles(input.existingFiles ?? []);
+  const materializationMode = input.materializationMode ?? input.blueprint.materialization.mode;
+  const inputFingerprint = createWorkspaceCompositionInputFingerprint({
+    policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
+    packId: input.projectIntelligence?.id ?? null,
+    blueprint: input.blueprint,
+    operatorIntent: input.operatorIntent,
+    materializationMode,
+    existingFiles: existing.map((file) => ({ path: file.path, hash: file.currentHash ?? sha256(file.content) }))
+  });
+  const startedAt = Date.now();
+  const plan = buildWorkspaceCompositionPlan(input, existing, {
+    runId,
+    inputFingerprint,
+    materializationMode,
+    proposal: createFallbackProposal(input),
+    modelExecutionOccurred: false,
+    attempts: 0,
+    failure: { code: options.warning ? "workspace-composer-execution-ambiguous" : "composition-fallback", message: options.warning ?? "Deterministic workspace document content was used." }
+  });
+  return { plan, summary: summarizeWorkspaceCompositionPlan(plan, Date.now() - startedAt, plan.provenance.source === "fallback" ? { code: plan.warnings.some((warning) => warning.includes("ambiguous")) ? "workspace-composer-execution-ambiguous" : "composition-fallback", message: options.warning ?? "Deterministic workspace document content was used." } : null) };
+}
+
+export function createWorkspaceCompositionBlueprintFingerprint(blueprint: WorkspaceBlueprint) {
+  return sha256(stableStringify(blueprint));
+}
+
+function buildWorkspaceCompositionPlan(
+  input: WorkspaceComposerInput,
+  existing: readonly WorkspaceCompositionExistingFile[],
+  options: {
+    runId: string;
+    inputFingerprint: string;
+    materializationMode: "empty" | "clone" | "existing";
+    proposal: WorkspaceCompositionProposal;
+    modelExecutionOccurred: boolean;
+    attempts: number;
+    failure: { code: string; message: string } | null;
+  }
+): WorkspaceCompositionPlan {
+  const artifacts = materializePlanArtifacts(options.proposal, existing);
+  const conflicts = artifacts
+    .filter((artifact) => artifact.operation === "conflict")
+    .map((artifact) => `${artifact.artifactId}: ${artifact.warnings[0] ?? "Existing workspace content requires review."}`)
+    .slice(0, 24);
+  const warnings = [
+    ...options.proposal.warnings,
+    ...(options.failure ? [options.failure.message] : [])
+  ].map((warning) => redactSecretText(warning).slice(0, 300)).filter(Boolean).slice(0, 24);
+  return {
+    schemaVersion: WORKSPACE_COMPOSITION_SCHEMA_VERSION,
+    policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
+    planId: `composition-${options.runId}`,
+    inputFingerprint: options.inputFingerprint,
+    status: conflicts.length > 0 ? "blocked" : options.modelExecutionOccurred && options.failure === null ? "ready" : "fallback",
+    projectIntelligencePackId: input.projectIntelligence?.id ?? null,
+    projectIntelligenceGenerationId: input.projectIntelligence?.provenance.generationId ?? input.projectIntelligence?.generation?.id ?? null,
+    workspaceBlueprintId: input.blueprint.id,
+    workspaceBlueprintFingerprint: createWorkspaceCompositionBlueprintFingerprint(input.blueprint),
+    materializationMode: options.materializationMode,
+    existingFileHashes: existing.map((file) => ({ path: file.path, hash: file.currentHash ?? sha256(file.content) })),
+    artifacts,
+    warnings,
+    conflicts,
+    provenance: {
+      source: options.modelExecutionOccurred && options.failure === null ? "model" : "fallback",
+      modelExecutionOccurred: options.modelExecutionOccurred,
+      attempts: options.attempts,
+      composerRunId: options.runId
+    }
+  };
 }
 
 export async function applyWorkspaceCompositionPlan(input: {
@@ -388,3 +474,12 @@ function buildComposerPrompt(input: WorkspaceComposerInput, existing: readonly W
 }
 
 function sha256(value: string) { return createHash("sha256").update(value).digest("hex"); }
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}

@@ -74,6 +74,7 @@ test("creation events retain a bounded tail while the current snapshot remains a
     cancelRequestedAt: null,
     remoteExecution: { idempotencyKey: "run:1", runId: null, sessionKey: null, outcome: "not-started" },
     intelligenceExecution: { idempotencyKey: "run:intelligence:1", runId: null, sessionKey: null, outcome: "not-started" }
+    , compositionExecution: { idempotencyKey: "workspace-composer:run:1", runId: null, sessionKey: null, outcome: "not-started" }
   };
   for (let index = 0; index < WORKSPACE_CREATION_MAX_EVENTS + 4; index += 1) {
     run = appendWorkspaceCreationEvent(run, {
