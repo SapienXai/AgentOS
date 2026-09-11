@@ -139,3 +139,36 @@ test("an interrupted synthesis does not become a reusable fallback", async () =>
     modelExecutor: async () => { throw new Error("cancelled"); }
   }));
 });
+
+test("synthesis repairs one invalid structured response and rejects prose or high-confidence inference", async () => {
+  const input = extraction();
+  const brief = "Build a support workspace";
+  const fingerprint = createProjectIntelligenceSynthesisInputFingerprint({ brief, extraction: input });
+  let calls = 0;
+  const repaired = await synthesizeProjectIntelligence({ brief, extraction: input, packId: "pack-repaired" }, {
+    runId: "run-repaired",
+    attempt: 1,
+    signal: new AbortController().signal,
+    timeoutMs: 5_000,
+    modelExecutor: async (_bundle, options) => {
+      calls += 1;
+      if (calls === 1) return { text: `Here is the answer: ${JSON.stringify({ schemaVersion: 1, policyVersion: 1, proposalId: "bad", inputFingerprint: fingerprint, status: "ready", inferredClaims: [{ category: "overview", key: "businessContext", value: "Support", statement: "Support", confidence: "high", evidenceRefIds: [input.evidence[0]?.id] }], unknowns: [], warnings: [], recommendations: [] })}`, runId: "remote-bad", sessionKey: "session-bad", runtime: "model-runtime" };
+      assert.equal(options.attempt, 2);
+      assert.ok(options.repairInstruction);
+      return { text: JSON.stringify({ schemaVersion: 1, policyVersion: 1, proposalId: "good", inputFingerprint: fingerprint, status: "ready", inferredClaims: [], unknowns: [], warnings: [], recommendations: [] }), runId: "remote-good", sessionKey: "session-good", runtime: "model-runtime" };
+    }
+  });
+  assert.equal(calls, 2);
+  assert.equal(repaired.execution.status, "model");
+  assert.equal(repaired.execution.attempts, 2);
+});
+
+test("synthesis input fingerprint includes semantic selected context", () => {
+  const base = extraction();
+  const first = createProjectIntelligenceSynthesisInputFingerprint({ brief: "Brief", extraction: base });
+  const second = createProjectIntelligenceSynthesisInputFingerprint({
+    brief: "Brief",
+    extraction: { ...base, contextExcerpts: [{ documentId: "doc-2", sourceId: "operator-brief", title: "Architecture", classification: "documentation", excerpt: "A different selected semantic excerpt.", selectionKind: "architecture-classification", evidenceRefIds: [], factIds: [], resourceIds: [] }] }
+  });
+  assert.notEqual(first, second);
+});

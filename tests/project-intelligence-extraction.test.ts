@@ -189,3 +189,38 @@ test("imported instructions and credential-shaped material remain untrusted sour
   assert.doesNotMatch(JSON.stringify(extraction), /abc123/);
   assert.doesNotMatch(JSON.stringify({ facts: extraction.facts, resources: extraction.resources }), /Telegram agent|operator constraint|automation|channel/i);
 });
+
+test("claim-local evidence windows remain useful beyond the document prefix and stay distinct", () => {
+  const address = "0x1111111111111111111111111111111111111111";
+  const content = `${"unrelated prefix ".repeat(290)}\nNetwork: Ethereum. Contract: ${address}\n# Features\n- Batch ingestion\nAPI key: sk-test-secret`;
+  const result = extractProjectIntelligence({
+    generationId: "generation-long-document",
+    inputFingerprint: "4".repeat(64),
+    now: NOW,
+    documents: [plainDocument("long-document", "website", "https://example.test/readme", content)]
+  });
+  const contract = result.facts.find((fact) => fact.key === "contractAddress:ethereum");
+  const network = result.facts.find((fact) => fact.key === "networks");
+  const feature = result.facts.find((fact) => fact.key === "features");
+  assert.ok(contract);
+  assert.ok(network);
+  assert.ok(feature);
+  assert.ok(contract.evidence.some((reference) => result.evidence.find((entry) => entry.id === reference.evidenceRefId)?.excerpt?.includes(address)));
+  assert.ok(new Set([...contract.evidence, ...network.evidence, ...feature.evidence].map((reference) => reference.evidenceRefId)).size >= 3);
+  assert.doesNotMatch(JSON.stringify(result), /sk-test-secret/);
+});
+
+test("structured metadata and relationship evidence carries bounded claim scope", async () => {
+  const discovered = await discoverFixture(coinCollectProjectDiscoveryFixture, "scoped-coincollect");
+  const result = extractProjectIntelligence({
+    generationId: "generation-scoped",
+    inputFingerprint: "5".repeat(64),
+    now: NOW,
+    sources: [websiteSource("scoped-coincollect", coinCollectProjectDiscoveryFixture.rootUrl)],
+    documents: extractionDocuments(discovered, "scoped-coincollect"),
+    discoveryManifests: [discovered.manifest]
+  });
+  assert.ok(result.evidence.some((entry) => entry.summary.includes("JSON-LD") && entry.claimScopes?.length));
+  assert.ok(result.evidence.some((entry) => entry.summary.includes("relationship:") || entry.summary.includes("Project discovery relationship")));
+  assert.ok(result.contextExcerpts?.length);
+});

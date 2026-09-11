@@ -27,6 +27,11 @@ import {
 import type { ProjectDiscoveryManifest, ProjectDiscoveryPage } from "@/lib/agentos/domains/project-discovery";
 import type { WorkspaceKnowledgeSource, WorkspaceKnowledgeSourceKind } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactSecretText } from "@/lib/security/redaction";
+import {
+  PROJECT_INTELLIGENCE_CONTEXT_LIMITS,
+  selectProjectIntelligenceContextExcerpts,
+  type ProjectIntelligenceContextExcerpt
+} from "@/lib/agentos/application/project-intelligence-context";
 
 export const PROJECT_INTELLIGENCE_EXTRACTION_SCHEMA_VERSION = 1 as const;
 export const PROJECT_INTELLIGENCE_EXTRACTION_POLICY_VERSION = 1 as const;
@@ -112,6 +117,7 @@ export type ProjectIntelligenceExtraction = {
   warnings: readonly string[];
   coverage: ProjectIntelligenceExtractionCoverage;
   limits: ProjectIntelligenceExtractionLimits;
+  contextExcerpts?: readonly ProjectIntelligenceContextExcerpt[];
   createdAt: string;
 };
 
@@ -175,6 +181,12 @@ type ResourceDraft = {
   origin: ProjectEvidenceOrigin;
   sourceId?: string;
   baseVerification: "declared" | "discovered";
+};
+
+type ClaimObservation = {
+  kind: string;
+  excerpt: string;
+  summary?: string;
 };
 
 export function extractProjectIntelligence(input: ProjectIntelligenceExtractionInput): ProjectIntelligenceExtraction {
@@ -257,9 +269,11 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
   if (primaryPage) {
     const ref = pageEvidence.get(`${primaryPage.manifest.sourceId}|${primaryPage.page.locator}`);
     const name = primaryPage.page.metadata.jsonLdNames?.[0] ?? primaryPage.page.title;
-    if (ref && name && !isInstructionalText(name)) addFact("identity", "projectName", name, `The project is named ${name}.`, [ref], primaryPage.manifest.sourceId, ref.provenance.origin);
+    const nameRef = ref && name ? structuredMetadataEvidence(ref, "name", name, primaryPage.page.metadata.jsonLdNames?.length ? "JSON-LD" : "HTML title") : undefined;
+    if (nameRef && name && !isInstructionalText(name)) addFact("identity", "projectName", name, `The project is named ${name}.`, [nameRef], primaryPage.manifest.sourceId, nameRef.provenance.origin);
     const description = primaryPage.page.metadata.description ?? primaryPage.page.metadata.openGraphDescription;
-    if (ref && description && !isInstructionalText(description)) addFact("overview", "description", description, `The project describes itself as ${description}.`, [ref], primaryPage.manifest.sourceId, ref.provenance.origin);
+    const descriptionRef = ref && description ? structuredMetadataEvidence(ref, primaryPage.page.metadata.description ? "description" : "og:description", description, primaryPage.page.metadata.description ? "HTML meta description" : "HTML Open Graph metadata") : undefined;
+    if (descriptionRef && description && !isInstructionalText(description)) addFact("overview", "description", description, `The project describes itself as ${description}.`, [descriptionRef], primaryPage.manifest.sourceId, descriptionRef.provenance.origin);
   }
 
   for (const document of documents) {
@@ -271,19 +285,23 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     if (!ref) continue;
     const sourceOrigin = ref.provenance.origin;
     const projectType = explicitProjectType(content);
-    if (projectType) addFact("identity", "projectType", projectType, `The project explicitly identifies its type as ${projectType}.`, [ref], document.sourceId, sourceOrigin);
+    if (projectType) addFact("identity", "projectType", projectType.value, `The project explicitly identifies its type as ${projectType.value}.`, [ref], document.sourceId, sourceOrigin, observationForContent(content, projectType, "explicit-project-type"));
 
     for (const network of explicitNetworks(content)) {
-      addFact("technical", "networks", network, `The project explicitly references the ${network} network.`, [ref], document.sourceId, sourceOrigin);
-      addFact("identifier", "networkIdentifier", { kind: "network", value: network, label: "Explicit network" }, `The project publishes ${network} as a network identifier.`, [ref], document.sourceId, sourceOrigin);
+      const observation = observationForContent(content, network, "explicit-network");
+      addFact("technical", "networks", network.value, `The project explicitly references the ${network.value} network.`, [ref], document.sourceId, sourceOrigin, observation);
+      addFact("identifier", "networkIdentifier", { kind: "network", value: network.value, label: "Explicit network" }, `The project publishes ${network.value} as a network identifier.`, [ref], document.sourceId, sourceOrigin, observation);
     }
     for (const address of explicitContractAddresses(content)) {
       const network = networkNear(content, address.index);
       const label = network ? `Contract address on ${network}` : "Contract address";
-      addFact("identifier", `contractAddress:${(network ?? "unknown").toLowerCase()}`, { kind: "contract-address", value: address.value, ...(network ? { label } : { label: "Contract address" }) }, `The project publishes a public ${label.toLowerCase()}.`, [ref], document.sourceId, sourceOrigin);
+      addFact("identifier", `contractAddress:${(network ?? "unknown").toLowerCase()}`, { kind: "contract-address", value: address.value, ...(network ? { label } : { label: "Contract address" }) }, `The project publishes a public ${label.toLowerCase()}.`, [ref], document.sourceId, sourceOrigin, observationForContent(content, address, "explicit-contract-address"));
     }
-    for (const feature of headingListMembers(content)) addFact("product", "features", feature, `The project lists ${feature} as a feature.`, [ref], document.sourceId, sourceOrigin);
-    for (const category of sourcePageJsonLdCategories(document, input.discoveryManifests ?? [])) addFact("product", "applicationCategory", category, `Structured project metadata categorizes the application as ${category}.`, [ref], document.sourceId, sourceOrigin);
+    for (const feature of headingListMembers(content)) addFact("product", "features", feature.value, `The project lists ${feature.value} as a feature.`, [ref], document.sourceId, sourceOrigin, observationForContent(content, feature, "heading-list-member"));
+    for (const metadata of sourcePageJsonLdCategories(document, input.discoveryManifests ?? [])) {
+      const metadataRef = structuredMetadataEvidence(ref, metadata.field, metadata.value, "JSON-LD");
+      addFact("product", "applicationCategory", metadata.value, `Structured project metadata categorizes the application as ${metadata.value}.`, [metadataRef], document.sourceId, sourceOrigin);
+    }
   }
 
   for (const manifest of input.discoveryManifests ?? []) {
@@ -291,25 +309,34 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     const root = manifest.pages.find((page) => page.firstParty === "root" && page.depth === 0 && page.fetchStatus === "fetched") ?? manifest.pages.find((page) => page.firstParty === "root" && page.fetchStatus === "fetched");
     if (root) {
       const ref = pageEvidence.get(`${manifest.sourceId}|${root.locator}`);
-      if (ref && root.metadata.jsonLdApplicationCategories) for (const category of root.metadata.jsonLdApplicationCategories) addFact("product", "applicationCategory", category, `Structured project metadata categorizes the application as ${category}.`, [ref], manifest.sourceId, ref.provenance.origin);
-      if (ref && root.metadata.jsonLdOperatingSystems) for (const operatingSystem of root.metadata.jsonLdOperatingSystems) addFact("technical", "operatingSystem", operatingSystem, `Structured project metadata identifies ${operatingSystem} as a supported operating system.`, [ref], manifest.sourceId, ref.provenance.origin);
-      if (ref && root.metadata.jsonLdLegalNames?.[0] && !isInstructionalText(root.metadata.jsonLdLegalNames[0])) addFact("identity", "organizationName", root.metadata.jsonLdLegalNames[0], `Structured project metadata identifies ${root.metadata.jsonLdLegalNames[0]} as the organization.`, [ref], manifest.sourceId, ref.provenance.origin);
-      if (ref && source?.kind === "website") addResource("website", { kind: "url", value: manifest.rootUrl }, source.label, [ref], ref.provenance.origin, manifest.sourceId);
+      if (ref && root.metadata.jsonLdApplicationCategories) for (const category of root.metadata.jsonLdApplicationCategories) addFact("product", "applicationCategory", category, `Structured project metadata categorizes the application as ${category}.`, [structuredMetadataEvidence(ref, "applicationCategory", category, "JSON-LD")], manifest.sourceId, ref.provenance.origin);
+      if (ref && root.metadata.jsonLdOperatingSystems) for (const operatingSystem of root.metadata.jsonLdOperatingSystems) addFact("technical", "operatingSystem", operatingSystem, `Structured project metadata identifies ${operatingSystem} as a supported operating system.`, [structuredMetadataEvidence(ref, "operatingSystem", operatingSystem, "JSON-LD")], manifest.sourceId, ref.provenance.origin);
+      if (ref && root.metadata.jsonLdLegalNames?.[0] && !isInstructionalText(root.metadata.jsonLdLegalNames[0])) addFact("identity", "organizationName", root.metadata.jsonLdLegalNames[0], `Structured project metadata identifies ${root.metadata.jsonLdLegalNames[0]} as the organization.`, [structuredMetadataEvidence(ref, "legalName", root.metadata.jsonLdLegalNames[0], "JSON-LD")], manifest.sourceId, ref.provenance.origin);
+      if (ref && source?.kind === "website") {
+        const rootRelationshipRef = claimScopedEvidence(ref, "relationship:website", manifest.rootUrl, {
+          kind: "relationship:website",
+          excerpt: safeExcerpt(`Source: ${manifest.rootUrl}\nRelation: website\nLabel: ${source.label}\nTarget: ${manifest.rootUrl}`, 1_200),
+          summary: `Project discovery relationship: website -> ${manifest.rootUrl}.`
+        });
+        addResource("website", { kind: "url", value: manifest.rootUrl }, source.label, [rootRelationshipRef], rootRelationshipRef.provenance.origin, manifest.sourceId);
+      }
     }
     for (const candidate of manifest.candidates) {
       if (candidate.kind === "sitemap" || candidate.kind === "contact" || candidate.locator === "[invalid-url]") continue;
       const ref = pageEvidence.get(`${manifest.sourceId}|${candidate.discoveredFrom}`);
       const category = categoryForCandidate(candidate.relation, candidate.kind, candidate.locator);
       if (!category) continue;
-      const resource = addResource(category, { kind: "url", value: candidate.locator }, candidate.label ?? category, ref ? [ref] : [], ref?.provenance.origin ?? (candidate.firstParty ? "first-party-website" : "discovered-external"), manifest.sourceId);
-      if (resource && (candidate.relation === "repository" || candidate.relation === "developer" || candidate.relation === "documentation")) addFact("technical", candidate.relation === "repository" ? "repositories" : candidate.relation === "documentation" ? "documentation" : "apis", candidate.locator, `The project references ${candidate.locator} as a ${candidate.relation} resource.`, ref ? [ref] : [], manifest.sourceId, ref?.provenance.origin ?? "discovered-external");
+      const relationshipRef = ref ? relationshipEvidence(ref, manifest, candidate) : undefined;
+      const resource = addResource(category, { kind: "url", value: candidate.locator }, candidate.label ?? category, relationshipRef ? [relationshipRef] : [], relationshipRef?.provenance.origin ?? (candidate.firstParty ? "first-party-website" : "discovered-external"), manifest.sourceId);
+      if (resource && (candidate.relation === "repository" || candidate.relation === "developer" || candidate.relation === "documentation")) addFact("technical", candidate.relation === "repository" ? "repositories" : candidate.relation === "documentation" ? "documentation" : "apis", candidate.locator, `The project references ${candidate.locator} as a ${candidate.relation} resource.`, relationshipRef ? [relationshipRef] : [], manifest.sourceId, relationshipRef?.provenance.origin ?? "discovered-external");
     }
     for (const contact of manifest.contacts) {
       const ref = pageEvidence.get(`${manifest.sourceId}|${contact.discoveredFrom}`);
       const category = contact.kind === "email" ? "email" : contact.kind === "support-url" ? "support" : "contact";
       const locator = contact.kind === "email" ? { kind: "email" as const, value: contact.value } : contact.kind === "phone" ? { kind: "phone" as const, value: contact.value } : { kind: "url" as const, value: contact.value };
-      addResource(category, locator, contact.label ?? category, ref ? [ref] : [], ref?.provenance.origin ?? "discovered-external", manifest.sourceId);
-      if (contact.kind !== "support-url") addFact("contact", "contacts", { kind: contact.kind === "email" ? "email" : "phone", value: contact.value, ...(contact.label ? { label: contact.label } : {}) }, `The project publishes ${contact.value} as a public contact.`, ref ? [ref] : [], manifest.sourceId, ref?.provenance.origin ?? "discovered-external");
+      const contactRef = ref ? claimScopedEvidence(ref, `resource:${category}`, locator, { kind: `contact:${contact.kind}`, excerpt: `${contact.kind}: ${contact.value}`, summary: `Contact field: ${contact.kind} = ${contact.value}.` }) : undefined;
+      addResource(category, locator, contact.label ?? category, contactRef ? [contactRef] : [], contactRef?.provenance.origin ?? "discovered-external", manifest.sourceId);
+      if (contact.kind !== "support-url") addFact("contact", "contacts", { kind: contact.kind === "email" ? "email" : "phone", value: contact.value, ...(contact.label ? { label: contact.label } : {}) }, `The project publishes ${contact.value} as a public contact.`, contactRef ? [contactRef] : [], manifest.sourceId, contactRef?.provenance.origin ?? "discovered-external", { kind: `contact:${contact.kind}`, excerpt: `${contact.kind}: ${contact.value}`, summary: `Contact field: ${contact.kind} = ${contact.value}.` });
     }
   }
 
@@ -327,6 +354,13 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
   const conflicts = detectConflicts(facts, resources, evidence, now, limits.maxConflicts);
   if (conflicts.length >= limits.maxConflicts) addWarning("Extraction conflict limit stopped additional conflict records.");
   const unknowns = buildUnknowns(facts, resources, evidence);
+  const contextExcerpts = selectProjectIntelligenceContextExcerpts({
+    documents,
+    evidence,
+    facts,
+    resources,
+    limits: PROJECT_INTELLIGENCE_CONTEXT_LIMITS
+  });
   const status: ProjectIntelligenceExtraction["status"] = evidence.length === 0 && facts.length === 0 && resources.length === 0 ? "empty" : partial || warnings.length > 0 ? "partial" : "ready";
   const artifact: ProjectIntelligenceExtraction = {
     schemaVersion: PROJECT_INTELLIGENCE_EXTRACTION_SCHEMA_VERSION,
@@ -355,6 +389,7 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
       unknownCount: unknowns.length
     },
     limits,
+    contextExcerpts,
     createdAt: now
   };
   const validation = validateProjectIntelligenceExtraction(artifact);
@@ -403,11 +438,11 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     return normalized;
   }
 
-  function claimScopedEvidence(base: EvidenceRef, key: string, value: ProjectFactValue) {
+  function claimScopedEvidence(base: EvidenceRef, key: string, value: ProjectFactValue, observation?: ClaimObservation) {
     const normalizedValue = normalizeProjectFactValue(value);
-    if (isEvidenceClaimScopeCompatible(base, key, normalizedValue)) return base;
+    if (!observation && isEvidenceClaimScopeCompatible(base, key, normalizedValue)) return base;
     const scope: ProjectEvidenceClaimScope = { key, normalizedValue };
-    const identity = `${base.id}|claim|${scope.key}|${stableStringify(scope.normalizedValue)}`;
+    const identity = `${base.sourceId}|${base.documentId ?? base.canonicalLocator ?? base.id}|${observation?.kind ?? "claim"}|${scope.key}|${stableStringify(scope.normalizedValue)}|${sha256(observation?.excerpt ?? base.excerpt ?? base.summary).slice(0, 16)}`;
     const existing = evidenceByIdentity.get(identity);
     if (existing) return existing;
     if (evidence.length >= limits.maxEvidence) {
@@ -418,7 +453,9 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     const normalized = normalizeEvidenceRef({
       ...base,
       id: `evidence-${sha256(identity).slice(0, 32)}`,
-      claimScopes: [...(base.claimScopes ?? []), scope]
+      ...(observation?.excerpt ? { excerpt: observation.excerpt } : {}),
+      summary: observation?.summary ?? base.summary,
+      claimScopes: [scope]
     });
     evidence.push(normalized);
     evidenceByIdentity.set(identity, normalized);
@@ -426,10 +463,10 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     return normalized;
   }
 
-  function addFact(category: ProjectFact["category"], key: string, value: ProjectFactValue, statement: string, refs: readonly EvidenceRef[], sourceId: string, origin: ProjectEvidenceOrigin) {
+  function addFact(category: ProjectFact["category"], key: string, value: ProjectFactValue, statement: string, refs: readonly EvidenceRef[], sourceId: string, origin: ProjectEvidenceOrigin, observation?: ClaimObservation) {
     if (factDrafts.size >= limits.maxFacts && !factDrafts.has(`${key}|${stableStringify(value)}`)) { partial = true; addWarning("Extraction fact limit stopped additional claims."); return; }
     if (refs.length === 0) return;
-    const scopedRefs = refs.map((ref) => claimScopedEvidence(ref, key, value));
+    const scopedRefs = refs.map((ref) => claimScopedEvidence(ref, key, value, observation));
     const identity = `${key}|${stableStringify(normalizeProjectFactValue(value))}`;
     const existing = factDrafts.get(identity);
     if (existing) {
@@ -459,6 +496,27 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     if (capability && capabilityMatches(capability, value.origin, value.evidenceType)) return { status: "qualified" as const, capability, qualifiedAt: now };
     return { status: "unqualified" as const, reason: unqualifiedReason(value.origin) };
   }
+
+  function structuredMetadataEvidence(base: EvidenceRef, field: string, value: string, sourceKind: "JSON-LD" | "HTML title" | "HTML meta description" | "HTML Open Graph metadata") {
+    return claimScopedEvidence(base, field, value, {
+      kind: `structured:${field}`,
+      excerpt: `${sourceKind} ${field}: ${safeExcerpt(value, 500)}`,
+      summary: `${sourceKind} field: ${field} = ${safeExcerpt(value, 500)}.`
+    });
+  }
+
+  function relationshipEvidence(base: EvidenceRef, manifest: ProjectDiscoveryManifest, candidate: ProjectDiscoveryManifest["candidates"][number]) {
+    return claimScopedEvidence(base, `relationship:${candidate.relation}`, candidate.locator, {
+      kind: `relationship:${candidate.relation}`,
+      excerpt: safeExcerpt([
+        `Source: ${manifest.rootUrl}`,
+        `Relation: ${candidate.relation}`,
+        `Label: ${candidate.label ?? ""}`,
+        `Target: ${candidate.locator}`
+      ].join("\n"), 1_200),
+      summary: `Project discovery relationship: ${candidate.relation} -> ${candidate.locator}.`
+    });
+  }
 }
 
 export function summarizeProjectIntelligenceExtraction(value: ProjectIntelligenceExtraction): ProjectIntelligenceExtractionSummary {
@@ -484,7 +542,7 @@ export type ProjectIntelligenceExtractionValidation = { valid: boolean; issues: 
 export function validateProjectIntelligenceExtraction(value: unknown): ProjectIntelligenceExtractionValidation {
   const issues: ProjectIntelligenceExtractionValidationIssue[] = [];
   if (!isRecord(value)) return { valid: false, issues: [{ path: "extraction", code: "invalid_type", message: "Extraction must be an object." }] };
-  assertOnlyKeys(value, ["schemaVersion", "policyVersion", "extractionId", "generationId", "inputFingerprint", "status", "sourceIds", "evidence", "facts", "resources", "conflicts", "unknowns", "warnings", "coverage", "limits", "createdAt"], "extraction", issues);
+  assertOnlyKeys(value, ["schemaVersion", "policyVersion", "extractionId", "generationId", "inputFingerprint", "status", "sourceIds", "evidence", "facts", "resources", "conflicts", "unknowns", "warnings", "coverage", "limits", "contextExcerpts", "createdAt"], "extraction", issues);
   if (value.schemaVersion !== PROJECT_INTELLIGENCE_EXTRACTION_SCHEMA_VERSION) addIssue("extraction.schemaVersion", "invalid_value", "Unsupported extraction schema version.");
   if (value.policyVersion !== PROJECT_INTELLIGENCE_EXTRACTION_POLICY_VERSION) addIssue("extraction.policyVersion", "invalid_value", "Unsupported extraction policy version.");
   for (const key of ["extractionId", "inputFingerprint", "createdAt"]) if (typeof value[key] !== "string" || !value[key]) addIssue(`extraction.${key}`, "missing_field", "A bounded extraction identifier or timestamp is required.");
@@ -522,6 +580,7 @@ export function validateProjectIntelligenceExtraction(value: unknown): ProjectIn
   });
   validateCoverage(value.coverage, "extraction.coverage", issues);
   validateLimits(value.limits, "extraction.limits", issues);
+  if (value.contextExcerpts !== undefined) validateContextExcerpts(value.contextExcerpts, "extraction.contextExcerpts", issues);
   validateExtractionConsistency(value, evidence, facts, resources, conflicts, issues);
   return { valid: issues.length === 0, issues };
 
@@ -671,53 +730,68 @@ function categoryForCandidate(relation: string, kind: string, locator: string): 
   return null;
 }
 
-function explicitProjectType(content: string): ProjectFactValue | null {
+type TextObservation = { value: string; index: number; length: number };
+
+function explicitProjectType(content: string): TextObservation | null {
   const match = content.match(/\b(?:project|product|application)\s+type\s*[:\-]\s*(saas|website|mobile-app|backend-api|web3|company|research|content-media|open-source|internal-business|other)\b/i);
-  return match?.[1]?.toLowerCase() ?? null;
+  return match?.[1] && match.index !== undefined ? { value: match[1].toLowerCase(), index: match.index, length: match[0].length } : null;
 }
 
 function explicitNetworks(content: string) {
-  const result: string[] = [];
+  const result: TextObservation[] = [];
   const labeled = /\b(?:network|networks|chain)\s*[:\-]\s*([A-Za-z][A-Za-z0-9_-]*(?:\s+[A-Za-z][A-Za-z0-9_-]*){0,3})/gi;
   const deployed = /\b(?:supported network|deployed on)\s+([A-Za-z][A-Za-z0-9_-]*(?:\s+[A-Za-z][A-Za-z0-9_-]*){0,3})/gi;
   for (const match of [...content.matchAll(labeled), ...content.matchAll(deployed)]) {
-    const value = match[1].trim();
-    if (value && value.length <= 40) result.push(value);
+    const value = match[1]?.trim();
+    if (value && value.length <= 40 && match.index !== undefined) result.push({ value, index: match.index, length: match[0].length });
   }
-  return unique(result).slice(0, 16);
+  const seen = new Set<string>();
+  return result.filter((entry) => !seen.has(entry.value.toLowerCase()) && seen.add(entry.value.toLowerCase())).slice(0, 16);
 }
 
 function explicitContractAddresses(content: string) {
-  const result: Array<{ value: string; index: number }> = [];
+  const result: Array<{ value: string; index: number; length: number }> = [];
   for (const match of content.matchAll(/0x[a-fA-F0-9]{40}/g)) {
     const index = match.index ?? 0;
     const window = content.slice(Math.max(0, index - 180), Math.min(content.length, index + match[0].length + 120));
-    if (/(?:contract(?: address)?|token address|smart contract|token contract)/i.test(window)) result.push({ value: match[0], index });
+    if (/(?:contract(?: address)?|token address|smart contract|token contract)/i.test(window)) result.push({ value: match[0], index, length: match[0].length });
   }
   return result.slice(0, 32);
 }
 
 function networkNear(content: string, index: number) {
   const window = content.slice(Math.max(0, index - 240), Math.min(content.length, index + 240));
-  return explicitNetworks(window)[0] ?? null;
+  return explicitNetworks(window)[0]?.value ?? null;
 }
 
 function headingListMembers(content: string) {
-  const values: string[] = [];
+  const values: TextObservation[] = [];
   const heading = /(?:^|\n)#{1,3}\s*(features?|products?|services?|platforms?)\s*\n([\s\S]{0,1200})/gi;
   for (const match of content.matchAll(heading)) {
     for (const item of (match[2] ?? "").matchAll(/(?:^|\n)\s*[-*]\s+([^\n]{2,160})/g)) {
       const value = safeExcerpt(item[1], 160);
-      if (value && !isInstructionalText(value)) values.push(value);
-      if (values.length >= 32) return unique(values);
+      const index = (match.index ?? 0) + (match[0]?.indexOf(item[0]) ?? 0);
+      if (value && !isInstructionalText(value)) values.push({ value, index, length: item[0].length });
+      if (values.length >= 32) return uniqueObservations(values);
     }
   }
-  return unique(values);
+  return uniqueObservations(values);
 }
 
 function sourcePageJsonLdCategories(document: ProjectIntelligenceExtractionDocument, manifests: readonly ProjectDiscoveryManifest[]) {
   const page = manifests.flatMap((manifest) => manifest.pages).find((value) => value.locator === document.canonicalLocator);
-  return [...(page?.metadata.jsonLdApplicationCategories ?? [])];
+  return (page?.metadata.jsonLdApplicationCategories ?? []).map((value) => ({ field: "applicationCategory", value }));
+}
+
+function observationForContent(content: string, observation: TextObservation, kind: string): ClaimObservation {
+  const start = Math.max(0, observation.index - 300);
+  const end = Math.min(content.length, observation.index + observation.length + 300);
+  return { kind, excerpt: safeExcerpt(content.slice(start, end), 1_200) };
+}
+
+function uniqueObservations(values: readonly TextObservation[]) {
+  const seen = new Set<string>();
+  return values.filter((entry) => !seen.has(entry.value.toLowerCase()) && seen.add(entry.value.toLowerCase()));
 }
 
 function safeContent(value: string, maxLength: number) {
@@ -740,6 +814,23 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string[], path: string, issues: ProjectIntelligenceExtractionValidationIssue[]) { const set = new Set(allowed); for (const key of Object.keys(value)) if (!set.has(key)) issues.push({ path: `${path}.${key}`, code: "unknown_field", message: "Unknown normalized extraction field." }); }
 function validateCoverage(value: unknown, path: string, issues: ProjectIntelligenceExtractionValidationIssue[]) { if (!isRecord(value)) return issues.push({ path, code: "invalid_type", message: "Coverage must be an object." }); const keys = ["sourceCount", "documentCount", "manifestCount", "evidenceCount", "factCount", "resourceCount", "verifiedFactCount", "verifiedResourceCount", "conflictCount", "unknownCount"]; assertOnlyKeys(value, keys, path, issues); for (const key of keys) if (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0) issues.push({ path: `${path}.${key}`, code: "invalid_value", message: "Coverage counts must be non-negative integers." }); }
 function validateLimits(value: unknown, path: string, issues: ProjectIntelligenceExtractionValidationIssue[]) { if (!isRecord(value)) return issues.push({ path, code: "invalid_type", message: "Limits must be an object." }); const keys = ["maxDocuments", "maxDocumentCharacters", "maxEvidence", "maxFacts", "maxResources", "maxConflicts", "maxWarnings"]; assertOnlyKeys(value, keys, path, issues); for (const key of keys) if (!Number.isSafeInteger(value[key]) || (value[key] as number) <= 0) issues.push({ path: `${path}.${key}`, code: "invalid_value", message: "Extraction limits must be positive integers." }); }
+function validateContextExcerpts(value: unknown, path: string, issues: ProjectIntelligenceExtractionValidationIssue[]) {
+  if (!Array.isArray(value)) return issues.push({ path, code: "invalid_type", message: "Context excerpts must be an array." });
+  if (value.length > PROJECT_INTELLIGENCE_CONTEXT_LIMITS.maxExcerpts) issues.push({ path, code: "invalid_value", message: "Context excerpts exceed the bounded selection limit." });
+  let total = 0;
+  value.forEach((entry, index) => {
+    if (!isRecord(entry)) return issues.push({ path: `${path}[${index}]`, code: "invalid_type", message: "Context excerpt must be an object." });
+    assertOnlyKeys(entry, ["documentId", "sourceId", "title", "classification", "canonicalLocator", "excerpt", "selectionKind", "evidenceRefIds", "factIds", "resourceIds"], `${path}[${index}]`, issues);
+    for (const key of ["documentId", "sourceId", "title", "classification", "excerpt"]) if (typeof entry[key] !== "string" || !entry[key]) issues.push({ path: `${path}[${index}].${key}`, code: "missing_field", message: "Context excerpt metadata is required." });
+    if (typeof entry.excerpt === "string") {
+      if (entry.excerpt.length > PROJECT_INTELLIGENCE_CONTEXT_LIMITS.maxExcerptCharacters) issues.push({ path: `${path}[${index}].excerpt`, code: "invalid_value", message: "Context excerpt is too large." });
+      total += entry.excerpt.length;
+    }
+    if (entry.canonicalLocator !== undefined && typeof entry.canonicalLocator !== "string") issues.push({ path: `${path}[${index}].canonicalLocator`, code: "invalid_type", message: "Context locator must be a safe string." });
+    if (!Array.isArray(entry.evidenceRefIds) || !Array.isArray(entry.factIds) || !Array.isArray(entry.resourceIds) || !["root-surface", "evidence-bearing", "architecture-classification", "operator-match", "diversity"].includes(entry.selectionKind as string)) issues.push({ path: `${path}[${index}]`, code: "invalid_value", message: "Context excerpt linkage is invalid." });
+  });
+  if (total > PROJECT_INTELLIGENCE_CONTEXT_LIMITS.maxTotalCharacters) issues.push({ path, code: "invalid_value", message: "Context excerpts exceed the total character limit." });
+}
 function validateExtractionConsistency(value: Record<string, unknown>, evidence: readonly EvidenceRef[], facts: readonly ProjectFact[], resources: readonly OfficialResource[], conflicts: readonly ProjectConflict[], issues: ProjectIntelligenceExtractionValidationIssue[]) {
   if (!isRecord(value.coverage) || !isRecord(value.limits)) return;
   const coverage = value.coverage;

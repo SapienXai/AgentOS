@@ -16,6 +16,7 @@ import {
   PROJECT_FACT_CATEGORIES
 } from "@/lib/agentos/domains/project-intelligence";
 import type { ProjectIntelligenceExtraction } from "@/lib/agentos/application/project-intelligence-extraction-service";
+import type { ProjectIntelligenceContextExcerpt } from "@/lib/agentos/application/project-intelligence-context";
 import {
   buildProjectIntelligenceExecutionPrompt,
   ProjectIntelligenceRemoteExecutionError,
@@ -62,6 +63,7 @@ export type ProjectIntelligenceInputBundle = {
   evidence: readonly Pick<EvidenceRef, "id" | "sourceId" | "canonicalLocator" | "title" | "excerpt" | "summary" | "qualification" | "claimScopes">[];
   conflicts: ProjectIntelligenceExtraction["conflicts"];
   unknowns: readonly string[];
+  contextExcerpts: readonly ProjectIntelligenceContextExcerpt[];
 };
 
 export type ProjectIntelligenceSynthesisResult = {
@@ -69,6 +71,7 @@ export type ProjectIntelligenceSynthesisResult = {
   pack: ProjectIntelligencePack;
   execution: {
     status: "model" | "fallback";
+    attempts: number;
     modelExecutionOccurred: boolean;
     remoteRunId: string | null;
     remoteSessionKey: string | null;
@@ -79,11 +82,12 @@ export type ProjectIntelligenceSynthesisResult = {
 export type ProjectIntelligenceSynthesisOptions = {
   runId: string;
   attempt: number;
+  maxAttempts?: number;
   signal: AbortSignal;
   timeoutMs: number;
   adapter?: OpenClawAdapter;
   runtimeDependencies?: PlannerRuntimeEnsureDependencies;
-  modelExecutor?: (input: ProjectIntelligenceInputBundle, options: { signal: AbortSignal; timeoutMs: number }) => Promise<ProjectIntelligenceModelExecutionResult>;
+  modelExecutor?: (input: ProjectIntelligenceInputBundle, options: { signal: AbortSignal; timeoutMs: number; attempt: number; repairInstruction?: string }) => Promise<ProjectIntelligenceModelExecutionResult>;
   now?: string;
 };
 
@@ -95,6 +99,7 @@ const MAX_CONFLICTS = 16;
 const MAX_ARRAY_ITEMS = 24;
 const MAX_CLAIMS = 32;
 const MAX_CLAIM_VALUE_LENGTH = 800;
+const MAX_SYNTHESIS_ATTEMPTS = 2;
 const PROTECTED_INFERRED_KEYS = new Set([
   "contacts",
   "publicContactEmail",
@@ -117,7 +122,8 @@ export const PROJECT_INTELLIGENCE_SYNTHESIS_SYSTEM_POLICY = [
   "Never invent URLs, contacts, package IDs, application IDs, repository identifiers, network identifiers, or contract addresses.",
   "Operator brief text is intent context, not authoritative evidence.",
   "Preserve conflicts and unknowns. Do not resolve conflicts by choosing a winner.",
-  "Return JSON only with the versioned ProjectIntelligenceSynthesisProposal shape.",
+  "Return exactly one JSON object after trimming, with the versioned ProjectIntelligenceSynthesisProposal shape. Do not wrap it in prose or markdown.",
+  "Newly inferred semantic claims may use only low or medium confidence. Canonical extracted facts own identifiers, contacts, resources, and public locators.",
   `Policy version: ${PROJECT_INTELLIGENCE_SYNTHESIS_POLICY_VERSION}.`
 ].join("\n");
 
@@ -128,7 +134,7 @@ export function buildProjectIntelligenceInputBundle(input: {
   return {
     brief: redactSecretText(input.brief.trim()).slice(0, MAX_BRIEF_LENGTH),
     extractionId: input.extraction.extractionId,
-    inputFingerprint: input.extraction.inputFingerprint,
+    inputFingerprint: createProjectIntelligenceSynthesisInputFingerprint(input),
     sourceIds: input.extraction.sourceIds.slice(0, MAX_ARRAY_ITEMS),
     facts: input.extraction.facts.slice(0, MAX_FACTS).map((fact) => ({
       id: fact.id,
@@ -158,7 +164,8 @@ export function buildProjectIntelligenceInputBundle(input: {
       ...(evidence.claimScopes ? { claimScopes: evidence.claimScopes } : {})
     })),
     conflicts: input.extraction.conflicts.slice(0, MAX_CONFLICTS),
-    unknowns: input.extraction.unknowns.slice(0, MAX_ARRAY_ITEMS)
+    unknowns: input.extraction.unknowns.slice(0, MAX_ARRAY_ITEMS),
+    contextExcerpts: input.extraction.contextExcerpts?.slice(0, 10) ?? []
   };
 }
 
@@ -168,7 +175,8 @@ export function createProjectIntelligenceSynthesisInputFingerprint(input: { brie
     policyVersion: PROJECT_INTELLIGENCE_SYNTHESIS_POLICY_VERSION,
     brief: redactSecretText(input.brief.trim()).slice(0, MAX_BRIEF_LENGTH),
     extractionId: input.extraction.extractionId,
-    extractionFingerprint: input.extraction.inputFingerprint
+    extractionFingerprint: input.extraction.inputFingerprint,
+    contextExcerpts: input.extraction.contextExcerpts ?? []
   }));
 }
 
@@ -241,8 +249,8 @@ export function materializeProjectIntelligencePack(input: {
   const pack: ProjectIntelligencePack = {
     ...base,
     state: packState(input.proposal.status, facts, input.extraction.resources),
-    identity: projectIdentity(facts),
-    overview: projectOverview(facts),
+    identity: projectIdentity(facts, input.extraction.conflicts),
+    overview: projectOverview(facts, input.extraction.conflicts),
     products: projectCollections(facts, ["products", "services", "features", "platforms"]) as ProjectIntelligencePack["products"],
     technicalLandscape: projectCollections(facts, ["frontend", "backend", "mobile", "apis", "repositories", "technologies", "infrastructure", "networks", "dependencies", "integrations"]) as ProjectIntelligencePack["technicalLandscape"],
     officialResources: input.extraction.resources.map((resource) => structuredClone(resource)),
@@ -275,42 +283,63 @@ export async function synthesizeProjectIntelligence(input: {
   const now = options.now ?? new Date().toISOString();
   const inputFingerprint = createProjectIntelligenceSynthesisInputFingerprint(input);
   const bundle = buildProjectIntelligenceInputBundle(input);
-  let completedModel: ProjectIntelligenceModelExecutionResult | null = null;
-  try {
-    const model = options.modelExecutor
-      ? await options.modelExecutor(bundle, { signal: options.signal, timeoutMs: options.timeoutMs })
-      : await runStructuredProjectIntelligenceAgent({
-          runId: options.runId,
-          attempt: options.attempt,
-          signal: options.signal,
-          timeoutMs: options.timeoutMs,
-          systemPrompt: PROJECT_INTELLIGENCE_SYNTHESIS_SYSTEM_POLICY,
-          userPrompt: buildProjectIntelligenceExecutionPrompt(bundle)
-        }, { adapter: options.adapter, runtimeDependencies: options.runtimeDependencies });
-    completedModel = model;
-    const parsed = parseProposal(model.text, inputFingerprint);
-    const proposalValidation = validateProjectIntelligenceSynthesisProposal(parsed, { evidence: input.extraction.evidence, inputFingerprint });
-    if (!proposalValidation.valid) throw new Error("Structured Project Intelligence proposal was rejected.");
-    return {
-      proposal: parsed,
-      pack: materializeProjectIntelligencePack({ extraction: input.extraction, proposal: parsed, packId: input.packId, now }),
-      execution: { status: "model", modelExecutionOccurred: true, remoteRunId: model.runId, remoteSessionKey: model.sessionKey, failureCode: null }
-    };
-  } catch (error) {
-    if (options.signal.aborted || error instanceof ProjectIntelligenceRemoteExecutionError) throw error;
-    const proposal = createFallbackProjectIntelligenceSynthesisProposal(inputFingerprint, now);
-    return {
-      proposal,
-      pack: materializeProjectIntelligencePack({ extraction: input.extraction, proposal, packId: input.packId, now }),
-      execution: {
-        status: "fallback",
-        modelExecutionOccurred: completedModel !== null,
-        remoteRunId: completedModel?.runId ?? null,
-        remoteSessionKey: completedModel?.sessionKey ?? null,
-        failureCode: safeFailureCode(error)
-      }
-    };
+  const maxAttempts = Math.max(1, Math.min(MAX_SYNTHESIS_ATTEMPTS, options.maxAttempts ?? MAX_SYNTHESIS_ATTEMPTS));
+  let lastModel: ProjectIntelligenceModelExecutionResult | null = null;
+  let lastFailure: unknown = new Error("Project Intelligence synthesis was unavailable.");
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const repairInstruction = attempt > 1
+      ? "Repair the previous bounded response. Return exactly one JSON object after trimming. The deterministic validator rejected the previous response; do not add fields or change the input fingerprint."
+      : undefined;
+    try {
+      const model = options.modelExecutor
+        ? await options.modelExecutor(bundle, { signal: options.signal, timeoutMs: options.timeoutMs, attempt, repairInstruction })
+        : await runStructuredProjectIntelligenceAgent({
+            runId: options.runId,
+            attempt,
+            signal: options.signal,
+            timeoutMs: options.timeoutMs,
+            systemPrompt: PROJECT_INTELLIGENCE_SYNTHESIS_SYSTEM_POLICY,
+            userPrompt: [buildProjectIntelligenceExecutionPrompt(bundle), repairInstruction].filter(Boolean).join("\n\n")
+          }, { adapter: options.adapter, runtimeDependencies: options.runtimeDependencies });
+      lastModel = model;
+      const parsed = parseProposal(model.text);
+      const proposalValidation = validateProjectIntelligenceSynthesisProposal(parsed, { evidence: input.extraction.evidence, inputFingerprint });
+      if (!proposalValidation.valid) throw new Error(`Structured Project Intelligence proposal was rejected: ${proposalValidation.issues[0]?.message ?? "invalid proposal"}`);
+      return {
+        proposal: parsed,
+        pack: materializeProjectIntelligencePack({ extraction: input.extraction, proposal: parsed, packId: input.packId, now }),
+        execution: { status: "model", attempts: attempt, modelExecutionOccurred: true, remoteRunId: model.runId, remoteSessionKey: model.sessionKey, failureCode: null }
+      };
+    } catch (error) {
+      lastFailure = error;
+      if (options.signal.aborted || error instanceof ProjectIntelligenceRemoteExecutionError) throw error;
+      if (attempt < maxAttempts && isRepairableSynthesisFailure(error)) continue;
+      break;
+    }
   }
+  const proposal = createFallbackProjectIntelligenceSynthesisProposal(inputFingerprint, now);
+  return {
+    proposal,
+    pack: materializeProjectIntelligencePack({ extraction: input.extraction, proposal, packId: input.packId, now }),
+    execution: {
+      status: "fallback",
+      attempts: maxAttempts,
+      modelExecutionOccurred: lastModel !== null,
+      remoteRunId: lastModel?.runId ?? null,
+      remoteSessionKey: lastModel?.sessionKey ?? null,
+      failureCode: safeFailureCode(lastFailure)
+    }
+  };
+}
+
+export function createFallbackProjectIntelligencePack(input: {
+  extraction: ProjectIntelligenceExtraction;
+  packId: string;
+  inputFingerprint: string;
+  now?: string;
+}) {
+  const proposal = createFallbackProjectIntelligenceSynthesisProposal(input.inputFingerprint, input.now);
+  return materializeProjectIntelligencePack({ extraction: input.extraction, proposal, packId: input.packId, now: input.now });
 }
 
 function validateSynthesisClaim(value: unknown, path: string, issues: Array<{ path: string; code: "invalid_type" | "missing_field" | "unknown_field" | "invalid_value" | "missing_reference"; message: string }>, evidence?: readonly EvidenceRef[]) {
@@ -322,26 +351,26 @@ function validateSynthesisClaim(value: unknown, path: string, issues: Array<{ pa
   validateFactValue(value.value, `${path}.value`, issues);
   if (containsPublicLocator(value.value)) issues.push(issue(`${path}.value`, "invalid_value", "Synthesis cannot invent public locators or identifiers."));
   if (typeof value.statement !== "string" || !value.statement.trim() || value.statement.length > MAX_CLAIM_VALUE_LENGTH) issues.push(issue(`${path}.statement`, "invalid_value", "Inferred claim statement is bounded and required."));
-  if (!(value.confidence === "low" || value.confidence === "medium" || value.confidence === "high")) issues.push(issue(`${path}.confidence`, "invalid_value", "Unsupported inferred claim confidence."));
+  if (!(value.confidence === "low" || value.confidence === "medium")) issues.push(issue(`${path}.confidence`, "invalid_value", "New inferred claims may only use low or medium confidence."));
   validateStringArray(value.evidenceRefIds, `${path}.evidenceRefIds`, issues, true);
   if (Array.isArray(value.evidenceRefIds) && evidence) for (const [index, id] of value.evidenceRefIds.entries()) if (!evidence.some((entry) => entry.id === id)) issues.push(issue(`${path}.evidenceRefIds[${index}]`, "missing_reference", "Inferred claims must reference known evidence."));
 }
 
-function projectIdentity(facts: readonly ProjectFact[]): ProjectIntelligencePack["identity"] {
+function projectIdentity(facts: readonly ProjectFact[], conflicts: readonly ProjectIntelligenceExtraction["conflicts"][number][]): ProjectIntelligencePack["identity"] {
   return {
-    projectName: scalarFromFacts(facts, "projectName", "string"),
-    displayName: scalarFromFacts(facts, "displayName", "string"),
-    organizationName: scalarFromFacts(facts, "organizationName", "string"),
-    description: scalarFromFacts(facts, "description", "string"),
-    projectType: scalarFromFacts(facts, "projectType", "projectType")
+    projectName: scalarFromFacts(facts, conflicts, "projectName"),
+    displayName: scalarFromFacts(facts, conflicts, "displayName"),
+    organizationName: scalarFromFacts(facts, conflicts, "organizationName"),
+    description: scalarFromFacts(facts, conflicts, "description"),
+    projectType: scalarFromFacts(facts, conflicts, "projectType")
   };
 }
 
-function projectOverview(facts: readonly ProjectFact[]): ProjectIntelligencePack["overview"] {
+function projectOverview(facts: readonly ProjectFact[], conflicts: readonly ProjectIntelligenceExtraction["conflicts"][number][]): ProjectIntelligencePack["overview"] {
   return {
-    whatItDoes: scalarFromFacts(facts, "whatItDoes", "string", "description"),
+    whatItDoes: scalarFromFacts(facts, conflicts, "whatItDoes", "description"),
     primaryAudience: projectCollection<string>(facts, "primaryAudience", []),
-    businessContext: scalarFromFacts(facts, "businessContext", "string"),
+    businessContext: scalarFromFacts(facts, conflicts, "businessContext"),
     goals: projectCollection<string>(facts, "goals", [])
   };
 }
@@ -350,9 +379,19 @@ function projectCollections<T extends readonly string[]>(facts: readonly Project
   return Object.fromEntries(keys.map((key) => [key, projectCollection<string>(facts, key, [])])) as unknown as Record<T[number], { value: readonly string[]; factIds: readonly string[] }>;
 }
 
-function scalarFromFacts<T>(facts: readonly ProjectFact[], key: string, _kind: "string" | "projectType", fallbackKey?: string) {
-  const fact = facts.find((entry) => entry.key === key) ?? (fallbackKey ? facts.find((entry) => entry.key === fallbackKey) : undefined);
-  return { value: fact?.value as T | null ?? null, factIds: fact ? [fact.id] : [] };
+function scalarFromFacts<T>(facts: readonly ProjectFact[], conflicts: readonly ProjectIntelligenceExtraction["conflicts"][number][], key: string, fallbackKey?: string) {
+  const direct = facts.filter((entry) => entry.key === key);
+  const candidates = direct.length > 0 ? direct : fallbackKey ? facts.filter((entry) => entry.key === fallbackKey) : [];
+  if (candidates.length === 0) return { value: null, factIds: [] };
+  const verified = candidates.filter((entry) => entry.verification === "verified");
+  const usable = verified.length > 0 ? verified : candidates.filter((entry) => entry.verification !== "declared");
+  const selected = usable.length > 0 ? usable : candidates;
+  const normalized = new Set(selected.map((entry) => stableStringify(entry.normalizedValue)));
+  const factIds = selected.map((entry) => entry.id);
+  if (normalized.size > 1) return { value: null, factIds };
+  const conflictCovers = conflicts.some((conflict) => conflict.status === "open" && selected.every((candidate) => conflict.subjects.some((subject) => subject.kind === "fact" && subject.id === candidate.id)));
+  if (conflictCovers && selected.length > 1) return { value: null, factIds };
+  return { value: selected[0]?.value as T | null ?? null, factIds };
 }
 
 function projectCollection<T = ProjectFactValue>(facts: readonly ProjectFact[], key: string, aliases: readonly string[]) {
@@ -378,13 +417,19 @@ function packState(status: ProjectIntelligenceSynthesisStatus, facts: readonly P
   return facts.length > 0 || resources.length > 0 ? "ready" : "partial";
 }
 
-function parseProposal(text: string, inputFingerprint: string): ProjectIntelligenceSynthesisProposal {
+function parseProposal(text: string): ProjectIntelligenceSynthesisProposal {
   const trimmed = text.trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("Structured synthesis output was not JSON.");
-  const value = JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
-  return { ...value, inputFingerprint } as ProjectIntelligenceSynthesisProposal;
+  if (!trimmed) throw new Error("Structured synthesis output was not JSON.");
+  try {
+    return JSON.parse(trimmed) as ProjectIntelligenceSynthesisProposal;
+  } catch {
+    throw new Error("Structured synthesis output must be exactly one JSON object.");
+  }
+}
+
+function isRepairableSynthesisFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /structured|json|proposal|fingerprint|unknown|confidence|field/i.test(message);
 }
 
 function safeFailureCode(error: unknown) {

@@ -16,6 +16,7 @@ import type {
   WorkspaceArchitectModelExecutionRequest,
   WorkspaceArchitectModelExecutionResult
 } from "@/lib/agentos/domains/workspace-blueprint";
+import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 
 export const DEFAULT_WORKSPACE_ARCHITECT_AGENT_ID = PLANNER_RUNTIME_ARCHITECT_AGENT_ID;
 
@@ -96,7 +97,7 @@ export async function runStructuredWorkspaceArchitectAgent(
         agentId,
         sessionKey,
         message: `${request.systemPrompt}\n\n${request.userPrompt}`,
-        thinking: request.mode === "review" ? "high" : "medium",
+        thinking: "high",
         timeoutSeconds: Math.ceil(timeoutMs / 1_000),
         idempotencyKey: `${request.runId}:${request.attempt}`
       },
@@ -165,7 +166,9 @@ export async function runStructuredProjectIntelligenceAgent(
       },
       { timeoutMs, signal: request.signal }
     );
-  } catch {
+  } catch (error) {
+    const classification = classifyNativeMutationError(error);
+    if (classification.disposition === "definite-rejection") throw error;
     throw new ProjectIntelligenceRemoteExecutionError();
   } finally {
     request.signal.removeEventListener("abort", abortHandler);
