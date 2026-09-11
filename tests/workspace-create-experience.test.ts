@@ -183,7 +183,7 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /fetch\("\/api\/workspaces\/creation-runs"/);
   assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\?afterSequence=/);
   assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{runId\}\/cancel`/);
-  assert.match(source, /fetch\("\/api\/workspaces\/architect\/revise"/);
+  assert.match(source, /fetch\(`\/api\/workspaces\/creation-runs\/\$\{creationRun\.runId\}\/revise`/);
   assert.match(source, /WORKSPACE_KNOWLEDGE_FILE_ACCEPT/);
   assert.match(source, /Project context/);
   assert.match(source, /Included from your project/);

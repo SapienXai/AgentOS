@@ -193,6 +193,32 @@ export type WorkspaceCreationSnapshot = {
   provisioningHandoffReady: boolean;
   provisioningRunId: string | null;
   composition?: WorkspaceCreationCompositionSnapshot;
+  revision?: WorkspaceCreationRevisionSnapshot;
+  freshness?: WorkspaceCreationFreshnessSnapshot;
+  drift?: WorkspaceCreationDriftSummary;
+};
+
+export type WorkspaceCreationRevisionSnapshot = {
+  number: number;
+  previousBlueprintFingerprint: string | null;
+  blueprintFingerprint: string | null;
+  compositionPlanId: string | null;
+};
+
+export type WorkspaceCreationFreshnessSnapshot = {
+  status: "fresh" | "stale" | "unknown" | "partial";
+  reason: string;
+  checkedAt: string;
+  knowledgeGenerationId: string | null;
+  blueprintFingerprint: string | null;
+  compositionPlanFingerprint: string | null;
+};
+
+export type WorkspaceCreationDriftSummary = {
+  status: "none" | "detected" | "unknown" | "partial";
+  categories: readonly ("facts" | "resources" | "conflicts" | "blueprint" | "composition" | "files")[];
+  changes: readonly string[];
+  warning: string | null;
 };
 
 export type WorkspaceCreationEvent = {
@@ -255,6 +281,13 @@ export type WorkspaceCreationRun = {
     sessionKey: string | null;
     outcome: "not-started" | "in-flight" | "completed" | "ambiguous";
   };
+  lineage?: WorkspaceCreationRunLineage;
+};
+
+export type WorkspaceCreationRunLineage = {
+  rootRunId: string;
+  parentRunId: string | null;
+  relation: "initial" | "reanalysis";
 };
 
 export function isWorkspaceCreationTerminal(state: WorkspaceCreationState) {
@@ -312,6 +345,12 @@ export function createInitialWorkspaceCreationSnapshot(sourceCount: number): Wor
     cancelRequested: false,
     provisioningHandoffReady: false,
     provisioningRunId: null,
+    revision: {
+      number: 0,
+      previousBlueprintFingerprint: null,
+      blueprintFingerprint: null,
+      compositionPlanId: null
+    },
     composition: {
       status: "pending",
       planId: null,
@@ -338,7 +377,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
   const intelligenceExecution = candidate.intelligenceExecution;
   const compositionExecution = candidate.compositionExecution;
   return candidate.schemaVersion === WORKSPACE_CREATION_RUN_SCHEMA_VERSION
-    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "remoteExecution", "intelligenceExecution", "compositionExecution"])
+    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "remoteExecution", "intelligenceExecution", "compositionExecution", "lineage"])
     && typeof candidate.runId === "string"
     && typeof candidate.actorHash === "string"
     && typeof candidate.idempotencyKeyHash === "string"
@@ -369,7 +408,8 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && ((remote as Record<string, unknown>).sessionKey === null || typeof (remote as Record<string, unknown>).sessionKey === "string")
     && ["not-started", "in-flight", "completed", "ambiguous"].includes((remote as Record<string, unknown>).outcome as string)
     && validateRemoteExecution(intelligenceExecution)
-    && validateRemoteExecution(compositionExecution);
+    && validateRemoteExecution(compositionExecution)
+    && (candidate.lineage === undefined || validateWorkspaceCreationRunLineage(candidate.lineage));
 }
 
 function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCreationSnapshot {
@@ -378,7 +418,7 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
   const context = snapshot.context;
   const architect = snapshot.architect;
   const intelligence = snapshot.intelligence;
-  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId"])
+  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId", "revision", "freshness", "drift"])
     && typeof snapshot.state === "string"
     && workspaceCreationStates.includes(snapshot.state as WorkspaceCreationState)
     && (snapshot.stage === null || workspaceCreationStages.includes(snapshot.stage as WorkspaceCreationStage))
@@ -391,7 +431,51 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
     && validateWorkspaceCreationExtractionSnapshot(snapshot.extraction)
     && validateWorkspaceCreationIntelligenceSnapshot(intelligence)
     && validateWorkspaceCreationArchitectSnapshot(architect)
-    && (snapshot.composition === undefined || validateWorkspaceCreationCompositionSnapshot(snapshot.composition));
+    && (snapshot.composition === undefined || validateWorkspaceCreationCompositionSnapshot(snapshot.composition))
+    && (snapshot.revision === undefined || validateWorkspaceCreationRevisionSnapshot(snapshot.revision))
+    && (snapshot.freshness === undefined || validateWorkspaceCreationFreshnessSnapshot(snapshot.freshness))
+    && (snapshot.drift === undefined || validateWorkspaceCreationDriftSummary(snapshot.drift));
+}
+
+function validateWorkspaceCreationRevisionSnapshot(value: unknown): value is WorkspaceCreationRevisionSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const revision = value as Record<string, unknown>;
+  return hasOnlyKeys(revision, ["number", "previousBlueprintFingerprint", "blueprintFingerprint", "compositionPlanId"])
+    && Number.isSafeInteger(revision.number) && (revision.number as number) >= 0
+    && (revision.previousBlueprintFingerprint === null || typeof revision.previousBlueprintFingerprint === "string")
+    && (revision.blueprintFingerprint === null || typeof revision.blueprintFingerprint === "string")
+    && (revision.compositionPlanId === null || typeof revision.compositionPlanId === "string");
+}
+
+function validateWorkspaceCreationFreshnessSnapshot(value: unknown): value is WorkspaceCreationFreshnessSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const freshness = value as Record<string, unknown>;
+  return hasOnlyKeys(freshness, ["status", "reason", "checkedAt", "knowledgeGenerationId", "blueprintFingerprint", "compositionPlanFingerprint"])
+    && ["fresh", "stale", "unknown", "partial"].includes(freshness.status as string)
+    && typeof freshness.reason === "string"
+    && typeof freshness.checkedAt === "string"
+    && (freshness.knowledgeGenerationId === null || typeof freshness.knowledgeGenerationId === "string")
+    && (freshness.blueprintFingerprint === null || typeof freshness.blueprintFingerprint === "string")
+    && (freshness.compositionPlanFingerprint === null || typeof freshness.compositionPlanFingerprint === "string");
+}
+
+function validateWorkspaceCreationDriftSummary(value: unknown): value is WorkspaceCreationDriftSummary {
+  if (!value || typeof value !== "object") return false;
+  const drift = value as Record<string, unknown>;
+  return hasOnlyKeys(drift, ["status", "categories", "changes", "warning"])
+    && ["none", "detected", "unknown", "partial"].includes(drift.status as string)
+    && Array.isArray(drift.categories) && drift.categories.every((entry) => ["facts", "resources", "conflicts", "blueprint", "composition", "files"].includes(entry as string))
+    && arrayOfStrings(drift.changes)
+    && (drift.warning === null || typeof drift.warning === "string");
+}
+
+function validateWorkspaceCreationRunLineage(value: unknown): value is WorkspaceCreationRunLineage {
+  if (!value || typeof value !== "object") return false;
+  const lineage = value as Record<string, unknown>;
+  return hasOnlyKeys(lineage, ["rootRunId", "parentRunId", "relation"])
+    && typeof lineage.rootRunId === "string"
+    && (lineage.parentRunId === null || typeof lineage.parentRunId === "string")
+    && ["initial", "reanalysis"].includes(lineage.relation as string);
 }
 
 function validateWorkspaceCreationCompositionSnapshot(value: unknown): value is WorkspaceCreationCompositionSnapshot {

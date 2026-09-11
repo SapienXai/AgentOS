@@ -10,6 +10,7 @@ import {
 } from "@/lib/agentos/application/workspace-creation-context-service";
 import {
   listActiveWorkspaceCreationRuns,
+  listResumableWorkspaceCreationRuns,
   startWorkspaceCreationRun
 } from "@/lib/agentos/application/workspace-creation-run-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -92,7 +93,10 @@ export async function GET(request: Request) {
   const permission = await requireAgentOsProductPermission(request, "workspace.manage");
   if ("response" in permission) return permission.response;
   try {
-    const runs = await listActiveWorkspaceCreationRuns(permission.actor.actorId);
+    const resumable = new URL(request.url).searchParams.get("resumable") === "true";
+    const runs = resumable
+      ? await listResumableWorkspaceCreationRuns(permission.actor.actorId)
+      : await listActiveWorkspaceCreationRuns(permission.actor.actorId);
     return NextResponse.json(redactSecrets({ runs }));
   } catch (error) {
     return NextResponse.json({ error: redactErrorMessage(error, "Unable to load workspace creation runs.") }, { status: 400 });

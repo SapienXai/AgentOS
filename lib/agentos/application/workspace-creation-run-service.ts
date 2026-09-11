@@ -16,9 +16,9 @@ import {
   type WorkspaceCreationContextStageResult,
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
-import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
+import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, createWorkspaceCompositionBlueprintFingerprint, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
 import { summarizeWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
-import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
+import { generateWorkspaceBlueprint, reviseWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import {
   acquireProvisioningLease,
 } from "@/lib/agentos/application/workspace-provisioning-lease";
@@ -57,6 +57,7 @@ import {
   type ProjectIntelligenceSynthesisResult
 } from "@/lib/agentos/application/project-intelligence-synthesis-service";
 import { ProjectIntelligenceRemoteExecutionError } from "@/lib/openclaw/application/structured-agent-service";
+import { summarizeWorkspaceDrift } from "@/lib/agentos/domains/workspace-freshness";
 
 export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
   overallAnalysisBudgetMs: 300_000,
@@ -87,18 +88,20 @@ export type WorkspaceCreationRunDependencies = {
   readIntelligenceSummary?: typeof readWorkspaceCreationIntelligenceSummary;
   persistIntelligencePack?: typeof persistWorkspaceCreationIntelligencePack;
   generateArchitect?: typeof generateWorkspaceBlueprint;
+  reviseArchitect?: typeof reviseWorkspaceBlueprint;
   composeWorkspace?: typeof composeWorkspaceComposition;
   persistCompositionPlan?: typeof persistWorkspaceCreationCompositionPlan;
   readCompositionPlan?: typeof readWorkspaceCreationCompositionPlan;
   inspectCompositionFiles?: typeof inspectWorkspaceCompositionFiles;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "reviseArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
   nativeComposer: boolean;
 };
 
 const inFlight = new Map<string, Promise<WorkspaceCreationRun>>();
+const revisionInFlight = new Map<string, Promise<WorkspaceCreationRun>>();
 const activeControllers = new Map<string, AbortController>();
 
 export type StartWorkspaceCreationRunInput = {
@@ -111,6 +114,7 @@ export type StartWorkspaceCreationRunInput = {
   sources?: unknown[];
   uploads?: WorkspaceCreationUpload[];
   draftContextId?: string | null;
+  lineage?: WorkspaceCreationRun["lineage"];
 };
 
 export async function startWorkspaceCreationRun(
@@ -166,8 +170,14 @@ export async function startWorkspaceCreationRun(
     inputFingerprint,
     draftContextId: staged.draftContextId,
     snapshot: createInitialWorkspaceCreationSnapshot(staged.sources.length),
-    result: null
+    result: null,
+    lineage: input.lineage ?? { rootRunId: "pending", parentRunId: null, relation: "initial" }
   });
+  if (created.created) {
+    await mutateWorkspaceCreationRun(created.filePath, (current) => current.lineage?.rootRunId === "pending"
+      ? { ...current, lineage: { ...current.lineage, rootRunId: current.runId } }
+      : current);
+  }
   if (!created.created && created.run.inputFingerprint && created.run.inputFingerprint !== inputFingerprint) {
     throw new Error("This creation idempotency key is already in use with different creation intent.");
   }
@@ -210,11 +220,223 @@ export async function getWorkspaceCreationRun(
   });
 }
 
+/**
+ * Revise a review-ready Create Workspace run from its durable server state.
+ * The request intentionally contains no blueprint: the run result, staged
+ * context, and Project Intelligence pack are the authoritative inputs.
+ */
+export async function reviseWorkspaceCreationRun(
+  input: {
+    actorId: string;
+    runId: string;
+    instruction?: string;
+    operatorEdits?: Parameters<typeof reviseWorkspaceBlueprint>[1]["operatorEdits"];
+    operatorConstraints?: string[];
+    signal?: AbortSignal;
+  },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const existing = revisionInFlight.get(locator.filePath);
+  if (existing) return publicRun(await existing);
+  const current = await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run;
+  if (current.snapshot.state !== "review-ready" || !isWorkspaceArchitectResult(current.result)) {
+    throw new Error("Only a review-ready workspace creation run can be revised.");
+  }
+  const lease = await acquireProvisioningLease({ runFilePath: locator.filePath, runId: current.runId, attempt: current.attempt });
+  if (!lease) throw new Error("This workspace draft is being updated in another tab. Refresh and try again.");
+  const execution = (async () => {
+    try {
+      await lease.assertOwned();
+      const latest = await readWorkspaceCreationRunFile(locator.filePath) ?? current;
+      if (latest.snapshot.state !== "review-ready" || !isWorkspaceArchitectResult(latest.result)) {
+        throw new Error("This workspace draft is no longer ready for revision.");
+      }
+      if (latest.remoteExecution.outcome === "in-flight" || latest.remoteExecution.outcome === "ambiguous") {
+        throw new Error("The previous Architect revision outcome is ambiguous; refresh the saved workspace draft before trying again.");
+      }
+      const oldResult = latest.result;
+      const context = latest.draftContextId
+        ? await resolved.readContextMetadata({ actorId: input.actorId, draftContextId: latest.draftContextId })
+        : null;
+      const intelligencePack = latest.draftContextId
+        ? await resolved.readIntelligencePack({ actorId: input.actorId, draftContextId: latest.draftContextId }).catch(() => null)
+        : null;
+      const revisionNumber = (latest.snapshot.revision?.number ?? 0) + 1;
+      const architectRunId = `${latest.runId}:revision:${revisionNumber}`;
+      const projectIntelligence = intelligencePack ? {
+        pack: intelligencePack,
+        operatorIntent: {
+          brief: latest.input.brief,
+          constraints: latest.input.operatorConstraints,
+          mode: latest.input.mode,
+          materialization: latest.input.materialization as WorkspaceMaterialization
+        },
+        contextStatus: {
+          intelligenceStatus: latest.snapshot.intelligence.status === "blocked" ? "blocked" as const : latest.snapshot.intelligence.status === "fallback" ? "fallback" as const : "model" as const,
+          packState: intelligencePack.state,
+          partialContext: latest.snapshot.context.status === "partial",
+          warnings: context?.warnings.slice(0, 8) ?? []
+        }
+      } satisfies WorkspaceArchitectIntelligenceInput : undefined;
+      await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+        ...stored,
+        remoteExecution: {
+          ...stored.remoteExecution,
+          idempotencyKey: architectRunId,
+          outcome: "in-flight"
+        }
+      }));
+      let revised: WorkspaceArchitectResult;
+      try {
+        revised = await resolved.reviseArchitect(
+          oldResult.blueprint,
+          {
+            ...(input.instruction?.trim() ? { revisionInstruction: input.instruction.trim() } : {}),
+            ...(input.operatorEdits ? { operatorEdits: input.operatorEdits } : {}),
+            ...(input.operatorConstraints ? { operatorConstraints: normalizeCreationConstraints(input.operatorConstraints) } : {}),
+            ...(context ? { knowledge: context.knowledge } : {}),
+            ...(projectIntelligence ? { projectIntelligence } : {}),
+            materialization: normalizeWorkspaceMaterialization(oldResult.blueprint.materialization)
+          },
+          {
+            runId: architectRunId,
+            signal: input.signal,
+            currentKnowledgeGenerationId: context?.generationId ?? null
+          }
+        );
+      } catch (error) {
+        await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+          ...stored,
+          remoteExecution: { ...stored.remoteExecution, outcome: "ambiguous" }
+        })).catch(() => undefined);
+        throw error;
+      }
+      await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+        ...stored,
+        remoteExecution: {
+          ...stored.remoteExecution,
+          runId: revised.reasoning.remoteRunId ?? null,
+          sessionKey: revised.reasoning.remoteSessionKey ?? null,
+          outcome: "completed"
+        }
+      }));
+      if (!revised.validation.valid) throw new Error("The revised workspace draft failed normalized validation.");
+      const oldBlueprintFingerprint = latest.snapshot.revision?.blueprintFingerprint
+        ?? createWorkspaceCompositionBlueprintFingerprint(oldResult.blueprint);
+      const newBlueprintFingerprint = createWorkspaceCompositionBlueprintFingerprint(revised.blueprint);
+      await lease.assertOwned();
+      let updated = await updateArchitectSnapshot(locator.filePath, latest, resolved, revised, 0, latest.snapshot.context.status === "partial");
+      updated = await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+        ...stored,
+        result: revised,
+        snapshot: {
+          ...stored.snapshot,
+          revision: {
+            number: revisionNumber,
+            previousBlueprintFingerprint: oldBlueprintFingerprint,
+            blueprintFingerprint: newBlueprintFingerprint,
+            compositionPlanId: null
+          },
+          freshness: {
+            status: revised.freshness.status,
+            reason: revised.freshness.reason,
+            checkedAt: resolved.now().toISOString(),
+            knowledgeGenerationId: revised.freshness.currentGenerationId,
+            blueprintFingerprint: newBlueprintFingerprint,
+            compositionPlanFingerprint: null
+          }
+        }
+      }));
+      await completeWorkspaceComposition(
+        locator.filePath,
+        input.actorId,
+        updated,
+        resolved,
+        revised,
+        intelligencePack,
+        new AbortController(),
+        Date.now() + resolved.budget.overallAnalysisBudgetMs,
+        `revision:${revisionNumber}`
+      );
+      const completed = await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+        ...stored,
+        snapshot: {
+          ...stored.snapshot,
+          revision: {
+            ...stored.snapshot.revision!,
+            compositionPlanId: stored.snapshot.composition?.planId ?? null
+          },
+          freshness: stored.snapshot.freshness ? {
+            ...stored.snapshot.freshness,
+            compositionPlanFingerprint: stored.snapshot.composition?.inputFingerprint ?? null
+          } : undefined
+        }
+      }));
+      return completed;
+    } finally {
+      await lease.release().catch(() => undefined);
+    }
+  })();
+  revisionInFlight.set(locator.filePath, execution);
+  try {
+    return publicRun(await execution);
+  } finally {
+    if (revisionInFlight.get(locator.filePath) === execution) revisionInFlight.delete(locator.filePath);
+  }
+}
+
 export async function listActiveWorkspaceCreationRuns(actorId: string, dependencies: WorkspaceCreationRunDependencies = {}) {
   const resolved = resolveDependencies(dependencies);
   const locators = await listWorkspaceCreationRuns(resolved.rootPath, actorId, true);
   await Promise.all(locators.map((locator) => ensureCreationRunExecution({ actorId, runId: locator.run.runId }, resolved)));
   return (await listWorkspaceCreationRuns(resolved.rootPath, actorId, true)).map(({ run }) => publicRun(run));
+}
+
+/** Review-ready runs are resumable drafts; failed and cancelled runs are not. */
+export async function listResumableWorkspaceCreationRuns(actorId: string, dependencies: WorkspaceCreationRunDependencies = {}) {
+  const resolved = resolveDependencies(dependencies);
+  const locators = await listWorkspaceCreationRuns(resolved.rootPath, actorId, false);
+  const resumable = locators.filter(({ run }) => ["pending", "running", "review-ready"].includes(run.snapshot.state));
+  await Promise.all(resumable
+    .filter(({ run }) => run.snapshot.state !== "review-ready")
+    .map(({ run }) => ensureCreationRunExecution({ actorId, runId: run.runId }, resolved)));
+  return (await listWorkspaceCreationRuns(resolved.rootPath, actorId, false))
+    .filter(({ run }) => ["pending", "running", "review-ready"].includes(run.snapshot.state))
+    .map(({ run }) => publicRun(run));
+}
+
+/** Start a new immutable run using the prior durable intake as its parent. */
+export async function refreshWorkspaceCreationRun(
+  input: { actorId: string; runId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const parent = locator.run;
+  if (parent.snapshot.state !== "review-ready" || !isWorkspaceArchitectResult(parent.result)) {
+    throw new Error("Only a review-ready workspace creation run can be refreshed.");
+  }
+  const rootRunId = parent.lineage?.rootRunId || parent.runId;
+  const refreshKey = `reanalysis:${parent.runId}:${Date.now()}`;
+  const refreshedDependencies: WorkspaceCreationRunDependencies = {
+    ...dependencies,
+    stageContext: async (stageInput) => resolved.stageContext({ ...stageInput, forceRefresh: true })
+  };
+  return startWorkspaceCreationRun({
+    actorId: input.actorId,
+    idempotencyKey: refreshKey,
+    brief: parent.input.brief,
+    mode: parent.input.mode,
+    operatorConstraints: parent.input.operatorConstraints,
+    materialization: parent.input.materialization,
+    sources: parent.input.sources,
+    draftContextId: parent.draftContextId,
+    lineage: { rootRunId, parentRunId: parent.runId, relation: "reanalysis" }
+  }, refreshedDependencies);
 }
 
 export async function cancelWorkspaceCreationRun(input: { actorId: string; runId: string }, dependencies: WorkspaceCreationRunDependencies = {}) {
@@ -255,6 +477,44 @@ export async function cancelWorkspaceCreationRun(input: { actorId: string; runId
   return publicRun(next);
 }
 
+export async function attachWorkspaceProvisioningRun(
+  input: { actorId: string; runId: string; provisioningRunId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const provisioningRunId = input.provisioningRunId.trim();
+  if (!provisioningRunId) throw new Error("A provisioning run id is required.");
+  return publicRun(await mutateWorkspaceCreationRun(locator.filePath, (current) => {
+    if (current.snapshot.provisioningRunId && current.snapshot.provisioningRunId !== provisioningRunId) {
+      throw new Error("This creation run is already linked to another provisioning run.");
+    }
+    if (current.snapshot.provisioningRunId === provisioningRunId && current.snapshot.provisioningHandoffReady) return current;
+    const now = resolved.now().toISOString();
+    const snapshot: WorkspaceCreationSnapshot = {
+      ...current.snapshot,
+      provisioningHandoffReady: true,
+      provisioningRunId
+    };
+    return appendWorkspaceCreationEvent(current, {
+      schemaVersion: 1,
+      createdAt: now,
+      kind: "handoff-ready",
+      stage: current.snapshot.stage,
+      snapshot,
+      attempt: current.attempt,
+      maxAttempts: resolved.budget.maxArchitectAttempts,
+      elapsedMs: elapsedMs(current.createdAt, now),
+      sourceId: null,
+      warningCode: null,
+      failure: null,
+      activityCode: null,
+      activityData: null
+    });
+  }));
+}
+
 async function executeCreationRun(filePath: string, actorId: string, dependencies: ResolvedDependencies): Promise<WorkspaceCreationRun> {
   let run = await readWorkspaceCreationRunFile(filePath);
   if (!run) throw new Error("Workspace creation run is unavailable.");
@@ -281,7 +541,8 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       const intelligencePack = run.draftContextId
         ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
         : null;
-      return completeWorkspaceComposition(filePath, actorId, run, dependencies, durableArchitectResult, intelligencePack, controller, deadline);
+      const completed = await completeWorkspaceComposition(filePath, actorId, run, dependencies, durableArchitectResult, intelligencePack, controller, deadline);
+      return recordLineageDrift(filePath, actorId, completed, dependencies);
     }
     run = await updateSnapshot(filePath, run, dependencies, { state: "running", stage: "context-staging" }, "state-changed");
     const cancellationCheck = await readWorkspaceCreationRunFile(filePath);
@@ -399,7 +660,8 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       }
     }));
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, result }));
-    return completeWorkspaceComposition(filePath, actorId, run, dependencies, result, intelligencePack, controller, deadline);
+    const completed = await completeWorkspaceComposition(filePath, actorId, run, dependencies, result, intelligencePack, controller, deadline);
+    return recordLineageDrift(filePath, actorId, completed, dependencies);
   } catch (error) {
     if (run.snapshot.cancelRequested || controller.signal.aborted && Date.now() < deadline) {
       return await failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
@@ -422,7 +684,8 @@ async function completeWorkspaceComposition(
   result: WorkspaceArchitectResult,
   intelligencePack: Awaited<ReturnType<typeof readWorkspaceCreationIntelligencePack>>,
   controller: AbortController,
-  deadline: number
+  deadline: number,
+  compositionRunSuffix?: string
 ) {
   let run = await updateSnapshot(filePath, initialRun, dependencies, { state: "running", stage: "workspace-composition" }, "state-changed");
   const existingFiles = result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
@@ -439,7 +702,9 @@ async function completeWorkspaceComposition(
     ? await dependencies.readCompositionPlan({ actorId, draftContextId: run.draftContextId })
     : null;
   const priorOutcome = run.compositionExecution.outcome;
-  if (storedPlan && (priorOutcome === "completed" || storedPlan.provenance.source === "model" && priorOutcome === "in-flight")) {
+  const currentBlueprintFingerprint = createWorkspaceCompositionBlueprintFingerprint(result.blueprint);
+  const storedPlanBelongsToBlueprint = storedPlan?.workspaceBlueprintFingerprint === currentBlueprintFingerprint;
+  if (storedPlan && storedPlanBelongsToBlueprint && (priorOutcome === "completed" || storedPlan.provenance.source === "model" && priorOutcome === "in-flight")) {
     if (priorOutcome !== "completed") {
       run = await mutateWorkspaceCreationRun(filePath, (current) => ({
         ...current,
@@ -457,7 +722,7 @@ async function completeWorkspaceComposition(
   if (priorOutcome === "in-flight" || priorOutcome === "ambiguous") {
     if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
     const recovered = createDeterministicWorkspaceComposition(compositionInput, {
-      runId: run.runId,
+      runId: compositionRunId(run, compositionRunSuffix),
       warning: "Workspace composition execution was not safely recoverable; a deterministic safe draft was used."
     });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: recovered.plan });
@@ -465,7 +730,10 @@ async function completeWorkspaceComposition(
     return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
   }
 
-  const remaining = Math.max(0, deadline - Date.now() - dependencies.budget.composerReserveMs);
+  // The deadline already reserves Composer time by the way Architect and
+  // Intelligence calculate their budgets. Composer owns the remaining shared
+  // deadline and must not subtract its reserve a second time.
+  const remaining = Math.max(0, deadline - Date.now());
   const canUseModel = remaining >= 5_000;
   const composerAttempts = canUseModel ? Math.max(1, Math.min(dependencies.budget.maxComposerAttempts, Math.floor(remaining / 5_000))) : 0;
   const composerTimeout = composerAttempts > 0
@@ -473,7 +741,7 @@ async function completeWorkspaceComposition(
     : 0;
   if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
   if (!canUseModel) {
-    const fallback = createDeterministicWorkspaceComposition(compositionInput, { runId: run.runId, warning: "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used." });
+    const fallback = createDeterministicWorkspaceComposition(compositionInput, { runId: compositionRunId(run, compositionRunSuffix), warning: "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used." });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: fallback.plan });
     run = await updateCompositionSnapshot(filePath, run, dependencies, fallback);
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({
@@ -487,14 +755,14 @@ async function completeWorkspaceComposition(
     ...current,
     compositionExecution: {
       ...current.compositionExecution,
-      idempotencyKey: `workspace-composer:${current.runId}:1`,
+      idempotencyKey: `workspace-composer:${compositionRunId(current, compositionRunSuffix)}:1`,
       outcome: "in-flight"
     }
   }));
   let composition: WorkspaceCompositionResult;
   try {
     composition = await dependencies.composeWorkspace(compositionInput, {
-      runId: run.runId,
+      runId: compositionRunId(run, compositionRunSuffix),
       signal: controller.signal,
       timeoutMs: composerTimeout,
       maxAttempts: composerAttempts,
@@ -540,6 +808,41 @@ async function completeWorkspaceComposition(
 
 function compositionResultFromPlan(plan: WorkspaceCompositionPlan): WorkspaceCompositionResult {
   return { plan, summary: summarizeWorkspaceCompositionPlan(plan, 0, plan.status === "fallback" ? { code: "composition-fallback", message: plan.warnings[0] ?? "A deterministic safe draft was used." } : null) };
+}
+
+function compositionRunId(run: WorkspaceCreationRun, suffix?: string) {
+  return suffix ? `${run.runId}:${suffix}` : run.runId;
+}
+
+async function recordLineageDrift(filePath: string, actorId: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies) {
+  const parentRunId = run.lineage?.parentRunId;
+  if (!parentRunId) return run;
+  const parent = await findWorkspaceCreationRunById(dependencies.rootPath, actorId, parentRunId);
+  const currentResult = isWorkspaceArchitectResult(run.result) ? run.result : null;
+  const previousResult = parent && isWorkspaceArchitectResult(parent.run.result) ? parent.run.result : null;
+  if (!parent || !currentResult || !previousResult) {
+    return mutateWorkspaceCreationRun(filePath, (current) => ({
+      ...current,
+      snapshot: {
+        ...current.snapshot,
+        drift: { status: "unknown", categories: [], changes: [], warning: "An upstream workspace artifact could not be compared." }
+      }
+    }));
+  }
+  const currentPack = run.draftContextId ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null) : null;
+  const previousPack = parent.run.draftContextId ? await dependencies.readIntelligencePack({ actorId, draftContextId: parent.run.draftContextId }).catch(() => null) : null;
+  const currentPlan = run.draftContextId ? await dependencies.readCompositionPlan({ actorId, draftContextId: run.draftContextId }).catch(() => null) : null;
+  const previousPlan = parent.run.draftContextId ? await dependencies.readCompositionPlan({ actorId, draftContextId: parent.run.draftContextId }).catch(() => null) : null;
+  const drift = summarizeWorkspaceDrift({
+    previousPack,
+    currentPack,
+    previousBlueprint: previousResult.blueprint,
+    currentBlueprint: currentResult.blueprint,
+    previousComposition: previousPlan,
+    currentComposition: currentPlan,
+    partial: run.snapshot.context.status === "partial"
+  });
+  return mutateWorkspaceCreationRun(filePath, (current) => ({ ...current, snapshot: { ...current.snapshot, drift } }));
 }
 
 async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, context: WorkspaceCreationContextStageResult, partial: boolean, failed: boolean) {
@@ -824,6 +1127,20 @@ async function updateArchitectSnapshot(filePath: string, run: WorkspaceCreationR
       structuredOutputAccepted: result.reasoning.status === "model" && result.validation.valid,
       retryAvailable: retryability === "transient" || retryability === "repairable",
       partialContext
+    },
+    revision: {
+      number: run.snapshot.revision?.number ?? 0,
+      previousBlueprintFingerprint: run.snapshot.revision?.previousBlueprintFingerprint ?? null,
+      blueprintFingerprint: createWorkspaceCompositionBlueprintFingerprint(result.blueprint),
+      compositionPlanId: run.snapshot.revision?.compositionPlanId ?? null
+    },
+    freshness: {
+      status: partialContext && result.freshness.status === "fresh" ? "partial" : result.freshness.status,
+      reason: partialContext ? "The workspace architecture was generated from usable but incomplete project context." : result.freshness.reason,
+      checkedAt: dependencies.now().toISOString(),
+      knowledgeGenerationId: result.freshness.currentGenerationId,
+      blueprintFingerprint: createWorkspaceCompositionBlueprintFingerprint(result.blueprint),
+      compositionPlanFingerprint: run.snapshot.freshness?.compositionPlanFingerprint ?? null
     }
   };
   return appendAndPersist(filePath, run, dependencies, snapshot, "architect-updated", partialContext ? "partial-context" : null, architectFailure ? { kind: architectFailure.kind, code: architectFailure.code, retryability: architectFailure.retryability } : null, dependencies.now().toISOString());
@@ -851,9 +1168,15 @@ async function updateCompositionSnapshot(filePath: string, run: WorkspaceCreatio
     elapsedMs: result.summary.elapsedMs,
     failure: result.summary.failure ? failure("model", result.summary.failure.code, "terminal", result.summary.failure.message) : null
   };
+  const freshness = run.snapshot.freshness ? {
+    ...run.snapshot.freshness,
+    compositionPlanFingerprint: result.plan.inputFingerprint,
+    checkedAt: dependencies.now().toISOString()
+  } : undefined;
   return appendAndPersist(filePath, run, dependencies, {
     ...run.snapshot,
-    composition
+    composition,
+    freshness
   }, "context-updated", result.summary.conflictCount > 0 ? "composition-conflict" : result.summary.status === "fallback" ? "composition-fallback" : null, null, dependencies.now().toISOString(), result.summary.status === "fallback" ? "composition-fallback" : "composition-completed", {
     compositionStatus: status,
     compositionPlanId: result.summary.planId,
@@ -1063,6 +1386,7 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
       ? async ({ plan }: { actorId: string; draftContextId: string; plan: Parameters<typeof persistWorkspaceCreationCompositionPlan>[0]["plan"] }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status })
       : persistWorkspaceCreationCompositionPlan),
     readCompositionPlan: input.readCompositionPlan ?? readWorkspaceCreationCompositionPlan,
+    reviseArchitect: input.reviseArchitect ?? reviseWorkspaceBlueprint,
     inspectCompositionFiles: input.inspectCompositionFiles ?? inspectWorkspaceCompositionFiles,
     budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
     nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake

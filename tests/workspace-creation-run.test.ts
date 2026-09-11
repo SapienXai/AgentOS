@@ -9,6 +9,8 @@ import {
   startWorkspaceCreationRun,
   cancelWorkspaceCreationRun,
   ensureCreationRunExecution,
+  reviseWorkspaceCreationRun,
+  listResumableWorkspaceCreationRuns,
   type WorkspaceCreationRunDependencies
 } from "@/lib/agentos/application/workspace-creation-run-service";
 import {
@@ -28,7 +30,8 @@ import {
 } from "@/lib/agentos/domains/workspace-creation-run";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
-import { composeWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
+import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
+import { composeWorkspaceComposition, createDeterministicWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
 
 const source = createWorkspaceKnowledgeSource({
   id: "project-file",
@@ -304,6 +307,82 @@ test("concurrent run mutations serialize against the latest durable snapshot", a
     assert.equal(final.events.length, 12);
     assert.deepEqual(final.events.map((event) => event.sequence), Array.from({ length: 12 }, (_, index) => index + 1));
     assert.equal(validateWorkspaceCreationRun(final), true);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("server-authoritative revision creates a new composition lineage without accepting a client blueprint", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-revision-"));
+  const actorId = "revision-actor";
+  try {
+    const initialResult = await generateWorkspaceBlueprint({
+      brief: "Build a workspace for a small software team.",
+      mode: "automatic",
+      materialization: { mode: "empty" },
+      operatorConstraints: []
+    }, {
+      runId: "revision-initial-architect",
+      nativeSearch: async () => ({ status: "unavailable", results: [] }),
+      modelExecutor: async () => ({
+        text: JSON.stringify({ identity: { name: "Initial Workspace", purpose: "Operate the project", projectType: "general" }, workforce: { specialists: [] } }),
+        runtime: "model-runtime"
+      })
+    });
+    assert.equal(initialResult.validation.valid, true);
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "revision-key"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "revision-key",
+      attempt: 1,
+      input: { brief: "Build a workspace for a small software team.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId: null,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result: initialResult,
+      lineage: { rootRunId: "pending", parentRunId: null, relation: "initial" }
+    });
+    await updateWorkspaceCreationRun(created.filePath, created.run, {
+      snapshot: {
+        ...created.run.snapshot,
+        state: "review-ready",
+        stage: "review-preparation",
+        revision: {
+          number: 0,
+          previousBlueprintFingerprint: null,
+          blueprintFingerprint: null,
+          compositionPlanId: null
+        }
+      },
+      result: initialResult
+    });
+
+    const revised = await reviseWorkspaceCreationRun({
+      actorId,
+      runId: created.run.runId,
+      instruction: "Use the name Revised Workspace."
+    }, {
+      rootPath,
+      reviseArchitect: async (blueprint) => {
+        const next = structuredClone(initialResult);
+        next.blueprint = {
+          ...blueprint,
+          identity: { ...blueprint.identity, name: "Revised Workspace" },
+          updatedAt: "2026-09-11T00:01:00.000Z"
+        };
+        return next;
+      },
+      composeWorkspace: async (compositionInput, options) => createDeterministicWorkspaceComposition(compositionInput, { runId: options?.runId, warning: "Deterministic revision test draft." })
+    }) as WorkspaceCreationRun | null;
+
+    if (!revised) throw new Error("The revised run was not returned.");
+    const revisedResult = revised.result as WorkspaceArchitectResult;
+    assert.equal(revisedResult.blueprint.identity.name, "Revised Workspace");
+    assert.equal(revised.snapshot.revision?.number, 1);
+    assert.notEqual(revised.snapshot.revision?.previousBlueprintFingerprint, revised.snapshot.revision?.blueprintFingerprint);
+    assert.match(revised.snapshot.revision?.compositionPlanId ?? "", /revision:1/);
+    assert.equal(revised.snapshot.state, "review-ready");
+
+    const resumable = await listResumableWorkspaceCreationRuns(actorId, { rootPath });
+    assert.deepEqual(resumable.map((run) => run.runId), [created.run.runId]);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

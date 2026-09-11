@@ -130,6 +130,7 @@ export function CreateWorkspaceExperience({
   const [revisionValue, setRevisionValue] = useState("");
   const [revisionError, setRevisionError] = useState<string | null>(null);
   const [isRevising, setIsRevising] = useState(false);
+  const [isRefreshingProject, setIsRefreshingProject] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customPrimaryName, setCustomPrimaryName] = useState("");
@@ -181,6 +182,7 @@ export function CreateWorkspaceExperience({
       setNotice(null);
       setRevisionValue("");
       setRevisionError(null);
+      setIsRefreshingProject(false);
       setIsCustomizing(false);
       setProvisioningRun(null);
       setProvisioningError(null);
@@ -305,7 +307,7 @@ export function CreateWorkspaceExperience({
         setIsCustomizing(false);
         setCustomName(generated.blueprint.identity.name);
         setCustomPrimaryName(generated.blueprint.workforce.primaryAgent.name);
-        return;
+        return payload;
       }
       if (payload.snapshot.state === "cancelled") throw new DOMException("Workspace creation was cancelled.", "AbortError");
       if (payload.snapshot.state === "failed") throw new Error(payload.snapshot.architect.failure?.message || "Workspace creation failed.");
@@ -318,7 +320,7 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch("/api/workspaces/creation-runs?active=true", { signal: controller.signal });
+        const response = await fetch("/api/workspaces/creation-runs?resumable=true", { signal: controller.signal });
         const payload = (await response.json().catch(() => null)) as { runs?: WorkspaceCreationRun[] } | null;
         const activeRun = payload?.runs?.[0];
         if (!response.ok || !activeRun || controller.signal.aborted) return;
@@ -326,18 +328,57 @@ export function CreateWorkspaceExperience({
         setBrief(activeRun.input.brief);
         setMode(activeRun.input.mode === "automatic" ? "automatic" : "customize");
         setSources(recoveredSources);
+        setConstraints(activeRun.input.operatorConstraints.join("\n"));
         setDraftContextId(activeRun.draftContextId);
+        setMaterialization(activeRun.input.materialization as WorkspaceMaterialization);
         setCreationRun(activeRun);
         setStage("generating");
         setContextWasRequested(recoveredSources.length > 0);
         abortControllerRef.current = controller;
-        await pollCreationRun(activeRun.runId, controller, activeRun, recoveredSources);
+        const recoveredRun = await pollCreationRun(activeRun.runId, controller, activeRun, recoveredSources);
+        if (recoveredRun.snapshot.provisioningRunId) {
+          const provisioningResponse = await fetch(`/api/workspaces/provision?runId=${encodeURIComponent(recoveredRun.snapshot.provisioningRunId)}`, { signal: controller.signal });
+          const recoveredProvisioning = (await provisioningResponse.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
+          if (provisioningResponse.ok && recoveredProvisioning?.runId) {
+            setProvisioningRun(recoveredProvisioning);
+            if (!isProvisioningTerminal(recoveredProvisioning.state)) setStage("provisioning");
+          }
+        }
       } catch {
         // Reload recovery is best-effort; the durable run remains available to a later poll.
       }
     })();
     return () => controller.abort();
   }, [open, pollCreationRun]);
+
+  const refreshProject = async () => {
+    if (!creationRun || isRefreshingProject) return;
+    const controller = new AbortController();
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = controller;
+    setIsRefreshingProject(true);
+    setRevisionError(null);
+    setStage("generating");
+    setContextWasRequested(sources.length > 0);
+    setProgressPhase(sources.length > 0 ? "reading-context" : "designing-workspace");
+    try {
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/refresh`, { method: "POST", signal: controller.signal });
+      const next = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      if (!response.ok || !next?.runId) throw new Error(next?.error || "AgentOS could not refresh the project context.");
+      setCreationRun(next);
+      setDraftContextId(next.draftContextId);
+      setResult(null);
+      setFreshness(null);
+      await pollCreationRun(next.runId, controller, next, sources);
+      setContextDirty(false);
+    } catch (error) {
+      if (!controller.signal.aborted) setRevisionError(error instanceof Error ? error.message : "The project context could not be refreshed.");
+      if (!controller.signal.aborted) setStage("review");
+    } finally {
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
+      setIsRefreshingProject(false);
+    }
+  };
 
   const cancelGeneration = () => {
     const runId = creationRun?.runId;
@@ -353,12 +394,11 @@ export function CreateWorkspaceExperience({
     setIsRevising(true);
     setRevisionError(null);
     try {
-      const response = await fetch("/api/workspaces/architect/revise", {
+      if (!creationRun) throw new Error("The saved workspace creation run is unavailable.");
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/revise`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          blueprint: result.blueprint,
-          ...(draftContextId ? { draftContextId } : {}),
           instruction: revisionValue.trim(),
           operatorConstraints: constraints
             .split("\n")
@@ -366,20 +406,21 @@ export function CreateWorkspaceExperience({
             .filter(Boolean)
         })
       });
-      const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
-      if (!response.ok || !payload?.blueprint) {
+      const payload = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      const revised = payload?.result as WorkspaceArchitectResult | null;
+      if (!response.ok || !payload?.runId || !revised?.blueprint) {
         throw new Error(payload?.error || "AgentOS could not revise the workspace draft.");
       }
 
-      setResult(payload);
-      setFreshness(payload.freshness);
+      setCreationRun(payload);
+      setResult(revised);
+      setFreshness(revised.freshness);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
-      setCreationRun((current) => current ? { ...current, snapshot: { ...current.snapshot, composition: undefined } } : current);
       setRevisionValue("");
-      setCustomName(payload.blueprint.identity.name);
-      setCustomPrimaryName(payload.blueprint.workforce.primaryAgent.name);
+      setCustomName(revised.blueprint.identity.name);
+      setCustomPrimaryName(revised.blueprint.workforce.primaryAgent.name);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The revision could not be applied.");
     } finally {
@@ -396,29 +437,29 @@ export function CreateWorkspaceExperience({
     setIsSavingCustomization(true);
     setRevisionError(null);
     try {
-      const response = await fetch("/api/workspaces/architect/revise", {
+      if (!creationRun) throw new Error("The saved workspace creation run is unavailable.");
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/revise`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          blueprint: result.blueprint,
-          ...(draftContextId ? { draftContextId } : {}),
           operatorEdits: {
             identity: { name: nextName },
             workforce: { primaryAgent: { name: nextPrimaryName } }
           },
         })
       });
-      const payload = (await response.json().catch(() => null)) as WorkspaceArchitectResult & { error?: string } | null;
-      if (!response.ok || !payload?.blueprint) {
+      const payload = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      const revised = payload?.result as WorkspaceArchitectResult | null;
+      if (!response.ok || !payload?.runId || !revised?.blueprint) {
         throw new Error(payload?.error || "The workspace edits could not be saved.");
       }
 
-      setResult(payload);
-      setFreshness(payload.freshness);
+      setCreationRun(payload);
+      setResult(revised);
+      setFreshness(revised.freshness);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
-      setCreationRun((current) => current ? { ...current, snapshot: { ...current.snapshot, composition: undefined } } : current);
       setIsCustomizing(false);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The workspace edits could not be saved.");
@@ -451,6 +492,7 @@ export function CreateWorkspaceExperience({
           expectedKnowledgeGenerationId: (freshness ?? result.freshness).currentGenerationId,
           idempotencyKey,
           acceptDraft: result.blueprint.status === "draft",
+          creationRunId: creationRun?.runId ?? null,
           compositionPlanId: creationRun?.snapshot.composition?.planId ?? null,
           compositionPlanFingerprint: creationRun?.snapshot.composition?.inputFingerprint ?? null
         })
@@ -691,6 +733,8 @@ export function CreateWorkspaceExperience({
             isRevising={isRevising}
             revisionError={revisionError}
             onRetry={() => { setStage("intake"); void generate(); }}
+            onRefreshProject={() => void refreshProject()}
+            isRefreshingProject={isRefreshingProject}
             isCustomizing={isCustomizing}
             customName={customName}
             setCustomName={setCustomName}
@@ -1023,6 +1067,8 @@ function ReviewView({
   isRevising,
   revisionError,
   onRetry,
+  onRefreshProject,
+  isRefreshingProject,
   isCustomizing,
   customName,
   setCustomName,
@@ -1043,6 +1089,8 @@ function ReviewView({
   isRevising: boolean;
   revisionError: string | null;
   onRetry: () => void;
+  onRefreshProject: () => void;
+  isRefreshingProject: boolean;
   isCustomizing: boolean;
   customName: string;
   setCustomName: (value: string) => void;
@@ -1083,8 +1131,7 @@ function ReviewView({
 
       {model.partialContext ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <p className="text-sm font-semibold">Architecture generated from partial project context</p>
-          <p className="mt-1 text-xs opacity-80">Some available project evidence could not be fully staged within the analysis budget.</p>
+          <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">Architecture generated from partial project context</p><p className="mt-1 text-xs opacity-80">Some available project evidence could not be fully staged within the analysis budget.</p></div><Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh context"}</Button></div>
         </div>
       ) : null}
 
@@ -1144,7 +1191,7 @@ function ReviewView({
       {freshnessStatus !== "fresh" ? (
         <div className={cn("mb-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", freshnessStatus === "stale" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#61554b]" : "border-white/10 bg-white/[0.04] text-slate-300"))} role="status">
           <div><p className="text-sm font-medium">{freshnessStatus === "stale" ? "Project context changed." : "Project context freshness is unknown."}</p><p className="mt-1 text-xs opacity-75">{freshnessStatus === "stale" ? "Review the workspace again before continuing." : "AgentOS could not prove a current knowledge generation."}</p></div>
-          {freshnessStatus === "stale" ? <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>Refresh Blueprint</Button> : null}
+          <Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh project context"}</Button>
         </div>
       ) : null}
 

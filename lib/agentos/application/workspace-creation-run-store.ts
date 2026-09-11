@@ -38,7 +38,7 @@ export type WorkspaceCreationRunLocator = { run: WorkspaceCreationRun; filePath:
 export async function createWorkspaceCreationRunAtomically(
   rootPath: string,
   storageKey: string,
-  input: Pick<WorkspaceCreationRun, "actorHash" | "idempotencyKeyHash" | "attempt" | "input" | "inputFingerprint" | "draftContextId" | "snapshot" | "result">
+  input: Pick<WorkspaceCreationRun, "actorHash" | "idempotencyKeyHash" | "attempt" | "input" | "inputFingerprint" | "draftContextId" | "snapshot" | "result"> & Pick<WorkspaceCreationRun, "lineage">
 ): Promise<{ run: WorkspaceCreationRun; created: boolean; filePath: string }> {
   const root = resolveWorkspaceCreationRunRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -70,7 +70,8 @@ export async function createWorkspaceCreationRunAtomically(
       runId: null,
       sessionKey: null,
       outcome: "not-started"
-    }
+    },
+    ...(input.lineage ? { lineage: input.lineage } : {})
   };
   const filePath = workspaceCreationRunPath(root, storageKey);
   try {
@@ -161,6 +162,14 @@ function migrateLegacySnapshot(value: unknown): unknown {
     migrated.composition = {
       ...value.composition,
       inputFingerprint: typeof value.composition.inputFingerprint === "string" ? value.composition.inputFingerprint : null
+    };
+  }
+  if (!isRecord(value.revision)) {
+    migrated.revision = {
+      number: 0,
+      previousBlueprintFingerprint: null,
+      blueprintFingerprint: null,
+      compositionPlanId: isRecord(value.composition) && typeof value.composition.planId === "string" ? value.composition.planId : null
     };
   }
   return migrated;
