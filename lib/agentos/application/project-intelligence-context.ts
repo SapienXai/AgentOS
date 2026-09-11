@@ -7,7 +7,13 @@ import type {
 } from "@/lib/agentos/domains/project-intelligence";
 import { redactSecretText } from "@/lib/security/redaction";
 
-export const PROJECT_INTELLIGENCE_CONTEXT_LIMITS = {
+export type ProjectIntelligenceContextLimits = {
+  maxExcerpts: number;
+  maxExcerptCharacters: number;
+  maxTotalCharacters: number;
+};
+
+export const PROJECT_INTELLIGENCE_CONTEXT_LIMITS: ProjectIntelligenceContextLimits = {
   maxExcerpts: 10,
   maxExcerptCharacters: 2_000,
   maxTotalCharacters: 20_000
@@ -67,7 +73,7 @@ export function selectProjectIntelligenceContextExcerpts(input: {
     const classification = safeText(document.classification || "other", 80).toLowerCase();
     const relatedEvidence = (input.evidence ?? []).filter((entry) => entry.documentId === document.documentId || entry.sourceId === document.sourceId && entry.canonicalLocator === document.canonicalLocator);
     const evidenceContent = relatedEvidence.map((entry) => entry.excerpt || entry.summary).filter(Boolean).join(" ");
-    const content = safeText(evidenceContent || document.content, limits.maxExcerptCharacters);
+    const content = safeText([evidenceContent, document.content].filter(Boolean).join(" "), limits.maxExcerptCharacters);
     const evidenceRefIds = relatedEvidence.map((entry) => entry.id).slice(0, 64);
     const factIds = unique(evidenceRefIds.flatMap((id) => factByEvidenceId.get(id) ?? [])).slice(0, 64);
     const resourceIds = unique(evidenceRefIds.flatMap((id) => resourceByEvidenceId.get(id) ?? [])).slice(0, 32);

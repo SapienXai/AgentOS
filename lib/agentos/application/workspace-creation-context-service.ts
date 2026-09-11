@@ -511,6 +511,80 @@ export async function readWorkspaceCreationContext(input: {
   };
 }
 
+/**
+ * Returns only the durable corpus manifest for Architect metadata ranking.
+ * Full document bodies remain behind the selected-document reader below.
+ */
+export async function readWorkspaceCreationContextMetadata(input: {
+  actorId: string;
+  draftContextId: string;
+}): Promise<WorkspaceCreationContextResult> {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) {
+    throw new Error("Workspace context is unavailable or expired.");
+  }
+  if (stored.intakeStatus === "staged" && !stored.generationId) throw new Error("Workspace context is still being analyzed.");
+  const snapshot = stored.generationId
+    ? await readKnowledgeSnapshot(path.join(draftRoot, "corpus"), path.join(draftRoot, "state"))
+    : null;
+  const failedSourceIds = new Set(stored.sourceReports.filter((report) => report.status === "error" || report.status === "unsupported").map((report) => report.sourceId));
+  const sources = stored.sources.map((source) => failedSourceIds.has(source.id) ? { ...source, status: "error" as const, error: stored.sourceReports.find((report) => report.sourceId === source.id)?.error ?? "Source content could not be read." } : source);
+  const runStatus = stored.intakeStatus === "staged"
+    ? "partial"
+    : stored.sourceReports.some((report) => report.status === "error" || report.status === "unsupported")
+      ? stored.sourceReports.some((report) => report.status === "ready" || report.status === "partial") ? "partial" : "error"
+      : "ready";
+  return {
+    ...stored,
+    runStatus,
+    reused: false,
+    knowledge: {
+      generationId: stored.generationId,
+      sources,
+      documents: (snapshot?.documents ?? []).map((document) => ({
+        documentId: document.id,
+        sourceId: document.sourceId,
+        classification: document.classification,
+        canonicalLocator: document.canonicalLocator,
+        title: redactSecretText(document.title).slice(0, 160),
+        summary: `${document.classification} document metadata from the staged project corpus.`,
+        contentLength: document.contentLength
+      })),
+      warnings: stored.warnings
+    },
+    extractionSummary: stored.extraction,
+    intelligenceSummary: stored.intelligenceSummary,
+    extraction: (await readStoredExtraction(draftRoot)) ?? undefined,
+    discoveryManifests: snapshot?.state.discoveryManifests
+  };
+}
+
+/** Read only the manifest-selected bodies requested by the Architect. */
+export async function readWorkspaceCreationContextDocuments(input: {
+  actorId: string;
+  draftContextId: string;
+  documentIds: readonly string[];
+  signal?: AbortSignal;
+}): Promise<WorkspaceArchitectCorpusDocument[]> {
+  await cleanupExpiredWorkspaceCreationContexts();
+  const draftContextId = assertDraftContextId(input.draftContextId);
+  const draftRoot = resolveDraftRoot(input.actorId, draftContextId);
+  const stored = await readStoredContext(draftRoot);
+  if (!stored || stored.actorHash !== actorHash(input.actorId) || Date.parse(stored.expiresAt) <= Date.now()) {
+    throw new Error("Workspace context is unavailable or expired.");
+  }
+  const snapshot = stored.generationId
+    ? await readKnowledgeSnapshot(path.join(draftRoot, "corpus"), path.join(draftRoot, "state"))
+    : null;
+  if (!snapshot) return [];
+  const selected = new Set(input.documentIds.slice(0, 16));
+  if (input.signal?.aborted) throw new DOMException("Architect document reading was cancelled.", "AbortError");
+  return readBoundedArchitectDocuments(path.join(draftRoot, "corpus"), snapshot.documents, selected, input.signal);
+}
+
 export async function readWorkspaceCreationIntelligencePack(input: { actorId: string; draftContextId: string }) {
   await cleanupExpiredWorkspaceCreationContexts();
   const draftContextId = assertDraftContextId(input.draftContextId);
@@ -634,9 +708,11 @@ export async function promoteWorkspaceCreationKnowledge(input: {
   };
 }
 
-async function readBoundedArchitectDocuments(corpusRoot: string, documents: Array<{ id: string; sourceId: string; outputPath: string; title: string; classification: string; canonicalLocator: string; contentLength: number }>): Promise<WorkspaceArchitectCorpusDocument[]> {
+async function readBoundedArchitectDocuments(corpusRoot: string, documents: Array<{ id: string; sourceId: string; outputPath: string; title: string; classification: string; canonicalLocator: string; contentLength: number }>, selectedIds?: ReadonlySet<string>, signal?: AbortSignal): Promise<WorkspaceArchitectCorpusDocument[]> {
   const result: WorkspaceArchitectCorpusDocument[] = [];
-  for (const document of documents.slice(0, 48)) {
+  for (const document of documents) {
+    if (selectedIds && !selectedIds.has(document.id)) continue;
+    if (signal?.aborted) throw new DOMException("Architect document reading was cancelled.", "AbortError");
     const relativePath = document.outputPath.replace(/\\/g, "/");
     const normalized = path.posix.normalize(relativePath);
     if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) continue;

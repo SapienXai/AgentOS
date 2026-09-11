@@ -8,6 +8,8 @@ import {
   readWorkspaceCreationIntelligencePack,
   readWorkspaceCreationIntelligenceSummary,
   readWorkspaceCreationContext,
+  readWorkspaceCreationContextMetadata,
+  readWorkspaceCreationContextDocuments,
   stageWorkspaceCreationKnowledge,
   type WorkspaceCreationContextStageResult,
   type WorkspaceCreationUpload
@@ -71,6 +73,8 @@ export type WorkspaceCreationRunDependencies = {
   persistIntake?: typeof persistWorkspaceCreationIntake;
   stageContext?: typeof stageWorkspaceCreationKnowledge;
   readContext?: typeof readWorkspaceCreationContext;
+  readContextMetadata?: typeof readWorkspaceCreationContextMetadata;
+  readContextDocuments?: typeof readWorkspaceCreationContextDocuments;
   synthesizeIntelligence?: typeof synthesizeProjectIntelligence;
   readIntelligencePack?: typeof readWorkspaceCreationIntelligencePack;
   readIntelligenceSummary?: typeof readWorkspaceCreationIntelligenceSummary;
@@ -78,7 +82,7 @@ export type WorkspaceCreationRunDependencies = {
   generateArchitect?: typeof generateWorkspaceBlueprint;
 };
 
-type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect">> & {
+type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "now" | "persistIntake" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
 };
 
@@ -310,7 +314,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       { extractionStatus: "pending" }
     );
     if (context.extractionSummary) run = await updateExtractionSnapshot(filePath, run, dependencies, context.extractionSummary);
-    const staged = await dependencies.readContext({ actorId, draftContextId: run.draftContextId! }).catch(() => null);
+    const staged = await dependencies.readContextMetadata({ actorId, draftContextId: run.draftContextId! }).catch(() => null);
     if (staged?.extraction) {
       run = await synthesizeCreationIntelligence(filePath, actorId, run, dependencies, staged.extraction, contextPartial && usableContext, deadline, controller.signal);
     }
@@ -349,12 +353,16 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       }
     }));
     const architectStarted = Date.now();
+    const architectDraftContextId = run.draftContextId;
     const result = await dependencies.generateArchitect({
       brief: run.input.brief,
       mode: run.input.mode,
       materialization: run.input.materialization as WorkspaceMaterialization,
       operatorConstraints: run.input.operatorConstraints,
       ...(staged ? { knowledge: staged.knowledge } : {}),
+      ...(staged && architectDraftContextId ? {
+        readKnowledgeDocuments: (documentIds: readonly string[], options?: { signal?: AbortSignal }) => dependencies.readContextDocuments({ actorId, draftContextId: architectDraftContextId, documentIds, signal: options?.signal })
+      } : {}),
       ...(architectIntelligence ? { projectIntelligence: architectIntelligence } : {})
     }, {
       runId: run.runId,
@@ -830,6 +838,8 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     persistIntake: input.persistIntake ?? persistWorkspaceCreationIntake,
     stageContext: input.stageContext ?? stageWorkspaceCreationKnowledge,
     readContext: input.readContext ?? readWorkspaceCreationContext,
+    readContextMetadata: input.readContextMetadata ?? (input.readContext ? input.readContext : readWorkspaceCreationContextMetadata),
+    readContextDocuments: input.readContextDocuments ?? readWorkspaceCreationContextDocuments,
     synthesizeIntelligence: input.synthesizeIntelligence ?? synthesizeProjectIntelligence,
     readIntelligencePack: input.readIntelligencePack ?? readWorkspaceCreationIntelligencePack,
     readIntelligenceSummary: input.readIntelligenceSummary ?? readWorkspaceCreationIntelligenceSummary,

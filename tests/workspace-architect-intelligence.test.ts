@@ -152,3 +152,51 @@ test("targeted Architect selection can choose an evidence-bearing late document 
   });
   assert.match(prompt, /OrbitDesk evidence-bearing home/);
 });
+
+test("Architect ranks full metadata before bounded body reads and preserves deterministic late-document selection", async () => {
+  const fixture = goldenProjectFixtures[1];
+  const criticalEvidence = { ...fixture.evidence[0], documentId: "critical-document" };
+  const projectIntelligence = {
+    ...intelligenceFor(fixture),
+    pack: { ...fixture.pack, evidence: [criticalEvidence, ...fixture.pack.evidence.slice(1)] }
+  };
+  const documents: WorkspaceArchitectCorpusDocument[] = Array.from({ length: 120 }, (_, index) => ({
+    documentId: `noise-${index}`,
+    sourceId: "orbitdesk-site",
+    title: `Generic document ${index}`,
+    classification: "general",
+    contentLength: 40
+  }));
+  documents[100] = {
+    documentId: "critical-document",
+    sourceId: "orbitdesk-site",
+    title: "OrbitDesk architecture reference",
+    classification: "documentation",
+    canonicalLocator: criticalEvidence.canonicalLocator,
+    contentLength: 120
+  };
+  const readIds: string[][] = [];
+  let prompt = "";
+  const input = {
+    brief: "Build a workspace for OrbitDesk.",
+    knowledge: { sources: [source("orbitdesk-site")], documents },
+    projectIntelligence
+  };
+  const options = {
+    runId: "architect-full-manifest",
+    readKnowledgeDocuments: async (ids: readonly string[]) => {
+      readIds.push([...ids]);
+      return [{ ...documents[100], content: "OrbitDesk architecture uses an authoritative support-request workflow." }];
+    },
+    modelExecutor: async (request: { userPrompt: string }) => {
+      prompt = request.userPrompt;
+      return { text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" as const };
+    }
+  };
+  await generateWorkspaceBlueprint(input, options);
+  const firstSelection = readIds[0] ?? [];
+  assert.ok(firstSelection.includes("critical-document"));
+  assert.ok(firstSelection.length <= 16);
+  assert.match(prompt, /OrbitDesk architecture reference/);
+  assert.match(prompt, /authoritative support-request workflow/);
+});

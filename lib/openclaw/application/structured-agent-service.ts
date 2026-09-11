@@ -160,7 +160,7 @@ export async function runStructuredProjectIntelligenceAgent(
         agentId,
         sessionKey,
         message: `${request.systemPrompt}\n\n${request.userPrompt}`,
-        thinking: "medium",
+        thinking: "high",
         timeoutSeconds: Math.ceil(timeoutMs / 1_000),
         idempotencyKey: `project-intelligence:${request.runId}:${request.attempt}`
       },

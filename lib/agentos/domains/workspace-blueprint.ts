@@ -511,6 +511,8 @@ export type WorkspaceArchitectRunOptions = {
   timeoutMs?: number;
   maxRetries?: number;
   signal?: AbortSignal;
+  /** Trusted server-side retrieval seam. The caller supplies selected document ids only. */
+  readKnowledgeDocuments?: (documentIds: readonly string[], options?: { signal?: AbortSignal }) => Promise<WorkspaceArchitectCorpusDocument[]>;
   onLifecycleEvent?: (event: WorkspaceArchitectLifecycleEvent) => void | Promise<void>;
 };
 

@@ -72,8 +72,12 @@ import type { WorkspacePlan } from "@/lib/openclaw/types";
 const MAX_BRIEF_LENGTH = 12_000;
 const MAX_EVIDENCE_ITEMS = 24;
 const MAX_EVIDENCE_TEXT_LENGTH = 500;
-const MAX_DOCUMENTS = 48;
+/** Maximum normalized corpus metadata accepted by the Architect boundary. Bodies are read separately. */
+const MAX_DOCUMENTS = 2_880;
 const MAX_DOCUMENT_TEXT_LENGTH = 6_000;
+const MAX_ARCHITECT_BODY_DOCUMENTS = 16;
+const MAX_ARCHITECT_TARGETED_EXCERPTS = 12;
+const MAX_ARCHITECT_TARGETED_CHARACTERS = 24_000;
 const MAX_SOURCE_TEXT_LENGTH = 600;
 const MAX_REVISION_INSTRUCTION_LENGTH = 2_000;
 const DEFAULT_GENERATION_ID = null;
@@ -351,10 +355,65 @@ function assertKnownArchitectKeys(value: unknown, allowed: readonly string[], pa
   if (unknown.length) throw new Error(`${path} contains an unsupported normalized field.`);
 }
 
-function selectArchitectTargetedEvidence(input: WorkspaceArchitectIntelligenceInput, knowledge: KnowledgeContext, operatorText: string) {
+export function rankArchitectCorpusMetadata(input: {
+  documents: readonly WorkspaceArchitectCorpusDocument[];
+  projectIntelligence?: WorkspaceArchitectIntelligenceInput;
+  operatorText?: string;
+}) {
+  const evidence = input.projectIntelligence?.pack.evidence ?? [];
+  const operatorTerms = tokenizeArchitectText(input.operatorText ?? "");
+  const factEvidence = new Map<string, Set<string>>();
+  for (const fact of input.projectIntelligence?.pack.facts ?? []) {
+    for (const relation of fact.evidence) {
+      const ids = factEvidence.get(relation.evidenceRefId) ?? new Set<string>();
+      ids.add(fact.id);
+      factEvidence.set(relation.evidenceRefId, ids);
+    }
+  }
+  const resourceEvidence = new Map<string, Set<string>>();
+  for (const resource of input.projectIntelligence?.pack.officialResources ?? []) {
+    for (const relation of resource.evidence) {
+      const ids = resourceEvidence.get(relation.evidenceRefId) ?? new Set<string>();
+      ids.add(resource.id);
+      resourceEvidence.set(relation.evidenceRefId, ids);
+    }
+  }
+  const candidates = input.documents.map((document, index) => {
+    const documentId = document.documentId?.trim() || `${document.sourceId}:architect-document-${index + 1}`;
+    const title = `${document.title ?? ""} ${document.summary ?? ""}`.toLowerCase();
+    const classification = (document.classification ?? "other").toLowerCase();
+    const locator = (document.canonicalLocator ?? "").toLowerCase();
+    const relatedEvidence = evidence.filter((entry) =>
+      entry.documentId === document.documentId
+      || (entry.sourceId === document.sourceId && entry.canonicalLocator && entry.canonicalLocator === document.canonicalLocator)
+    );
+    const evidenceIds = relatedEvidence.map((entry) => entry.id);
+    const factIds = [...new Set(evidenceIds.flatMap((id) => [...(factEvidence.get(id) ?? [])]))];
+    const resourceIds = [...new Set(evidenceIds.flatMap((id) => [...(resourceEvidence.get(id) ?? [])]))];
+    const searchable = `${title} ${classification} ${locator}`;
+    const operatorMatch = operatorTerms.some((term) => searchable.includes(term));
+    const architectureMatch = /architecture|readme|developer|api|integration|product|feature|operation|technical|documentation|docs|schema|deployment|workflow/i.test(searchable);
+    const rootImportance = /(^|[/\s_-])(readme|index|home|overview|architecture)([.\s_-]|$)/i.test(searchable) ? 30 : 0;
+    const score = relatedEvidence.length * 140 + factIds.length * 15 + resourceIds.length * 10
+      + (architectureMatch ? 40 : 0) + (operatorMatch ? 35 : 0) + rootImportance;
+    return { document, documentId, score, index, sourceId: document.sourceId, classification, evidenceIds, factIds, resourceIds };
+  });
+  return candidates.sort((left, right) => right.score - left.score || left.documentId.localeCompare(right.documentId) || left.index - right.index);
+}
+
+async function selectArchitectTargetedEvidence(input: WorkspaceArchitectIntelligenceInput, knowledge: KnowledgeContext, operatorText: string, options: WorkspaceArchitectRunOptions) {
   if (input.targetedEvidence?.length) return input.targetedEvidence;
+  const ranked = rankArchitectCorpusMetadata({ documents: knowledge.documents, projectIntelligence: input, operatorText });
+  const selectedMetadata = ranked.slice(0, MAX_ARCHITECT_BODY_DOCUMENTS);
+  const existingById = new Map(knowledge.documents.map((document, index) => [document.documentId || `${document.sourceId}:architect-document-${index + 1}`, document]));
+  const missingIds = selectedMetadata.filter((entry) => !existingById.get(entry.documentId)?.content).map((entry) => entry.documentId);
+  if (missingIds.length && options.readKnowledgeDocuments) {
+    const read = await options.readKnowledgeDocuments(missingIds, { signal: options.signal });
+    for (const document of read) if (document.documentId) existingById.set(document.documentId, document);
+  }
+  const selectedDocuments = selectedMetadata.map((entry) => existingById.get(entry.documentId)).filter((document): document is WorkspaceArchitectCorpusDocument => Boolean(document));
   const excerpts = selectProjectIntelligenceContextExcerpts({
-    documents: knowledge.documents.map((document, index) => ({
+    documents: selectedDocuments.map((document, index) => ({
       documentId: document.documentId || document.sourceId + ":architect-document-" + (index + 1),
       sourceId: document.sourceId,
       title: document.title,
@@ -365,7 +424,8 @@ function selectArchitectTargetedEvidence(input: WorkspaceArchitectIntelligenceIn
     evidence: input.pack.evidence,
     facts: input.pack.facts,
     resources: input.pack.officialResources,
-    operatorText
+    operatorText,
+    limits: { maxExcerpts: MAX_ARCHITECT_TARGETED_EXCERPTS, maxTotalCharacters: MAX_ARCHITECT_TARGETED_CHARACTERS }
   });
   return excerpts.map((excerpt) => ({
     ...excerpt,
@@ -374,8 +434,8 @@ function selectArchitectTargetedEvidence(input: WorkspaceArchitectIntelligenceIn
   } satisfies WorkspaceArchitectTargetedEvidence));
 }
 
-function buildProjectIntelligenceEvidence(input: WorkspaceArchitectIntelligenceInput, knowledge: KnowledgeContext, operatorText: string) {
-  const targetedEvidence = selectArchitectTargetedEvidence(input, knowledge, operatorText);
+async function buildProjectIntelligenceEvidence(input: WorkspaceArchitectIntelligenceInput, knowledge: KnowledgeContext, operatorText: string, options: WorkspaceArchitectRunOptions) {
+  const targetedEvidence = await selectArchitectTargetedEvidence(input, knowledge, operatorText, options);
   const evidence: WorkspaceBlueprintEvidence[] = [];
   const seen = new Set<string>();
   for (const target of targetedEvidence) {
@@ -468,7 +528,9 @@ export async function generateWorkspaceBlueprint(
   const knowledgeEvidence = await buildKnowledgeEvidence(brief, knowledge, {
     nativeSearch: projectIntelligence ? undefined : nativeSearch,
     now,
-    projectIntelligence
+    projectIntelligence,
+    readKnowledgeDocuments: options.readKnowledgeDocuments,
+    signal: options.signal
   });
   const operatorEvidence = operatorConstraints.map((constraint) =>
     createEvidence("operator", null, constraint, 100, false)
@@ -491,7 +553,7 @@ export async function generateWorkspaceBlueprint(
     evidence,
     operatorConstraints,
     projectIntelligence,
-    targetedEvidence: knowledgeEvidence.targetedEvidence,
+      targetedEvidence: knowledgeEvidence.targetedEvidence,
     mode: input.mode ?? "automatic",
     runId: architectRunId,
     options
@@ -571,7 +633,7 @@ export async function generateWorkspaceBlueprint(
     operatorOverrides: overrides,
     provenance: {
       architectRunId,
-      inputFingerprint: fingerprintInput({ brief, revisionInstruction, materialization, knowledge, operatorConstraints, overrides, projectIntelligence: projectIntelligence ? projectContextRefs(projectIntelligence, knowledgeEvidence.targetedEvidence ?? []) : null }),
+    inputFingerprint: fingerprintInput({ brief, revisionInstruction, materialization, knowledge, operatorConstraints, overrides, projectIntelligence: projectIntelligence ? projectContextRefs(projectIntelligence, knowledgeEvidence.targetedEvidence ?? []) : null, targetedEvidence: knowledgeEvidence.targetedEvidence ?? [] }),
       knowledgeGenerationId: knowledge.generationId,
       sourceIds,
       createdAt,
@@ -959,6 +1021,10 @@ function normalizeKnowledgeContext(input?: WorkspaceArchitectKnowledgeInput): Kn
   };
 }
 
+function tokenizeArchitectText(value: string) {
+  return [...new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length >= 4))].slice(0, 32);
+}
+
 function sanitizeKnowledgeSource(source: WorkspaceKnowledgeSource): WorkspaceKnowledgeSource {
   const locator = source.locator;
   return {
@@ -993,7 +1059,13 @@ function sanitizeKnowledgeSource(source: WorkspaceKnowledgeSource): WorkspaceKno
 async function buildKnowledgeEvidence(
   brief: string,
   knowledge: KnowledgeContext,
-  options: { nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>; now: () => string; projectIntelligence?: WorkspaceArchitectIntelligenceInput }
+  options: {
+    nativeSearch?: (query: string) => Promise<WorkspaceArchitectNativeSearchResult>;
+    now: () => string;
+    projectIntelligence?: WorkspaceArchitectIntelligenceInput;
+    readKnowledgeDocuments?: WorkspaceArchitectRunOptions["readKnowledgeDocuments"];
+    signal?: AbortSignal;
+  }
 ): Promise<KnowledgeEvidenceResult> {
   const sourceIds = new Set(knowledge.sources.map((source) => source.id));
   const ingestedSourceIds = new Set(knowledge.documents.map((document) => document.sourceId));
@@ -1001,7 +1073,10 @@ async function buildKnowledgeEvidence(
     createEvidence("knowledge-source", source.id, `${source.label}: ${source.summary}`, Math.round((source.confidence ?? 65)), true)
   );
   if (options.projectIntelligence) {
-    const selected = buildProjectIntelligenceEvidence(options.projectIntelligence, knowledge, brief);
+    const selected = await buildProjectIntelligenceEvidence(options.projectIntelligence, knowledge, brief, {
+      signal: options.signal,
+      readKnowledgeDocuments: options.readKnowledgeDocuments
+    });
     return {
       evidence: [...sourceEvidence, ...selected.evidence].slice(0, MAX_EVIDENCE_ITEMS),
       targetedEvidence: selected.targetedEvidence,
@@ -2095,6 +2170,7 @@ function fingerprintInput(input: {
   operatorConstraints: string[];
   overrides: WorkspaceBlueprint["operatorOverrides"];
   projectIntelligence?: WorkspaceArchitectProjectContextRefs | null;
+  targetedEvidence?: readonly WorkspaceArchitectTargetedEvidence[];
 }) {
   const canonical = JSON.stringify({
     policy: WORKSPACE_BLUEPRINT_POLICY_VERSION,
@@ -2115,7 +2191,16 @@ function fingerprintInput(input: {
     documents: input.knowledge.documents.map((document) => ({ sourceId: document.sourceId, title: document.title, contentLength: document.contentLength })),
     warnings: input.knowledge.warnings,
     overrides: input.overrides,
-    projectIntelligence: input.projectIntelligence ?? null
+    projectIntelligence: input.projectIntelligence ?? null,
+    targetedEvidence: (input.targetedEvidence ?? []).map((entry) => ({
+      id: entry.id,
+      documentId: entry.documentId ?? null,
+      sourceId: entry.sourceId,
+      evidenceRefIds: entry.evidenceRefIds,
+      factIds: entry.factIds,
+      resourceIds: entry.resourceIds,
+      excerptHash: createHash("sha256").update(entry.excerpt).digest("hex")
+    }))
   });
   return createHash("sha256").update(canonical).digest("hex");
 }
