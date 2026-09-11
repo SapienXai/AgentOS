@@ -9,6 +9,7 @@ export const workspaceCreationStages = [
   "intake",
   "context-staging",
   "source-ingestion",
+  "structured-extraction",
   "architect-runtime-preparation",
   "architect-reasoning",
   "architect-validation",
@@ -75,7 +76,15 @@ export type WorkspaceCreationActivityCode =
   | "architect-retry-scheduled"
   | "architect-attempt-completed"
   | "architect-fallback"
-  | "architect-completed";
+  | "architect-completed"
+  | "extraction-started"
+  | "extraction-completed"
+  | "extraction-partial"
+  | "evidence-created"
+  | "fact-extracted"
+  | "resource-extracted"
+  | "resource-verified"
+  | "conflict-detected";
 
 export type WorkspaceCreationActivityData = {
   sourceKind?: WorkspaceCreationSourceProgress["sourceKind"];
@@ -92,6 +101,13 @@ export type WorkspaceCreationActivityData = {
   retryability?: WorkspaceCreationRetryability;
   remoteRunId?: string | null;
   remoteSessionKey?: string | null;
+  evidenceCount?: number;
+  factCount?: number;
+  resourceCount?: number;
+  verifiedFactCount?: number;
+  verifiedResourceCount?: number;
+  conflictCount?: number;
+  extractionStatus?: "not-requested" | "pending" | "empty" | "partial" | "ready" | "failed";
 };
 
 export type WorkspaceCreationArchitectSnapshot = {
@@ -106,10 +122,25 @@ export type WorkspaceCreationArchitectSnapshot = {
   partialContext: boolean;
 };
 
+export type WorkspaceCreationExtractionSnapshot = {
+  status: "not-requested" | "pending" | "empty" | "partial" | "ready" | "failed";
+  extractionId: string | null;
+  generationId: string | null;
+  evidenceCount: number;
+  factCount: number;
+  resourceCount: number;
+  verifiedFactCount: number;
+  verifiedResourceCount: number;
+  conflictCount: number;
+  warningCount: number;
+  unknownCount: number;
+};
+
 export type WorkspaceCreationSnapshot = {
   state: WorkspaceCreationState;
   stage: WorkspaceCreationStage | null;
   context: WorkspaceCreationContextSnapshot;
+  extraction: WorkspaceCreationExtractionSnapshot;
   architect: WorkspaceCreationArchitectSnapshot;
   elapsedMs: number;
   cancelRequested: boolean;
@@ -183,6 +214,19 @@ export function createInitialWorkspaceCreationSnapshot(sourceCount: number): Wor
       warningCodes: [],
       sourceProgress: []
     },
+    extraction: {
+      status: sourceCount > 0 ? "pending" : "not-requested",
+      extractionId: null,
+      generationId: null,
+      evidenceCount: 0,
+      factCount: 0,
+      resourceCount: 0,
+      verifiedFactCount: 0,
+      verifiedResourceCount: 0,
+      conflictCount: 0,
+      warningCount: 0,
+      unknownCount: 0
+    },
     architect: {
       status: "pending",
       attempts: 0,
@@ -245,7 +289,7 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
   const snapshot = value as Record<string, unknown>;
   const context = snapshot.context;
   const architect = snapshot.architect;
-  return hasOnlyKeys(snapshot, ["state", "stage", "context", "architect", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId"])
+  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "architect", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId"])
     && typeof snapshot.state === "string"
     && workspaceCreationStates.includes(snapshot.state as WorkspaceCreationState)
     && (snapshot.stage === null || workspaceCreationStages.includes(snapshot.stage as WorkspaceCreationStage))
@@ -255,7 +299,18 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
     && typeof snapshot.provisioningHandoffReady === "boolean"
     && (snapshot.provisioningRunId === null || typeof snapshot.provisioningRunId === "string")
     && validateWorkspaceCreationContextSnapshot(context)
+    && validateWorkspaceCreationExtractionSnapshot(snapshot.extraction)
     && validateWorkspaceCreationArchitectSnapshot(architect);
+}
+
+function validateWorkspaceCreationExtractionSnapshot(value: unknown): value is WorkspaceCreationSnapshot["extraction"] {
+  if (!value || typeof value !== "object") return false;
+  const extraction = value as Record<string, unknown>;
+  return hasOnlyKeys(extraction, ["status", "extractionId", "generationId", "evidenceCount", "factCount", "resourceCount", "verifiedFactCount", "verifiedResourceCount", "conflictCount", "warningCount", "unknownCount"])
+    && ["not-requested", "pending", "empty", "partial", "ready", "failed"].includes(extraction.status as string)
+    && (extraction.extractionId === null || typeof extraction.extractionId === "string")
+    && (extraction.generationId === null || typeof extraction.generationId === "string")
+    && ["evidenceCount", "factCount", "resourceCount", "verifiedFactCount", "verifiedResourceCount", "conflictCount", "warningCount", "unknownCount"].every((key) => Number.isSafeInteger(extraction[key]) && (extraction[key] as number) >= 0);
 }
 
 function validateWorkspaceCreationContextSnapshot(value: unknown): value is WorkspaceCreationSnapshot["context"] {
@@ -326,20 +381,23 @@ function validateWorkspaceCreationEvent(value: unknown): value is WorkspaceCreat
 
 const workspaceCreationActivityCodes: readonly WorkspaceCreationActivityCode[] = [
   "source-started", "page-discovered", "page-fetch-started", "page-fetched", "document-stored", "source-partial", "source-completed", "source-failed",
-  "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed"
+  "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
+  "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected"
 ];
 
 function validateWorkspaceCreationActivityData(value: unknown): value is WorkspaceCreationActivityData {
   if (!value || typeof value !== "object") return false;
   const data = value as Record<string, unknown>;
-  return hasOnlyKeys(data, ["sourceKind", "sourceState", "discoveredItems", "fetchedItems", "storedDocuments", "warningCount", "currentActivity", "currentLocator", "runtimeMode", "modelId", "structuredOutputAccepted", "retryability", "remoteRunId", "remoteSessionKey"])
+  return hasOnlyKeys(data, ["sourceKind", "sourceState", "discoveredItems", "fetchedItems", "storedDocuments", "warningCount", "currentActivity", "currentLocator", "runtimeMode", "modelId", "structuredOutputAccepted", "retryability", "remoteRunId", "remoteSessionKey", "evidenceCount", "factCount", "resourceCount", "verifiedFactCount", "verifiedResourceCount", "conflictCount", "extractionStatus"])
     && (data.sourceKind === undefined || ["prompt", "website", "repository", "file", "folder", "connector"].includes(data.sourceKind as string))
     && (data.sourceState === undefined || ["pending", "discovering", "fetching", "normalizing", "ready", "partial", "failed"].includes(data.sourceState as string))
     && ["discoveredItems", "fetchedItems", "storedDocuments", "warningCount"].every((key) => data[key] === undefined || Number.isSafeInteger(data[key]) && (data[key] as number) >= 0)
     && ["currentActivity", "currentLocator", "modelId", "remoteRunId", "remoteSessionKey"].every((key) => data[key] === undefined || data[key] === null || typeof data[key] === "string")
     && (data.runtimeMode === undefined || ["openclaw-agent", "model-runtime", "deterministic-safe-fallback", "unknown"].includes(data.runtimeMode as string))
     && (data.structuredOutputAccepted === undefined || typeof data.structuredOutputAccepted === "boolean")
-    && (data.retryability === undefined || ["terminal", "transient", "repairable", "cancelled"].includes(data.retryability as string));
+    && (data.retryability === undefined || ["terminal", "transient", "repairable", "cancelled"].includes(data.retryability as string))
+    && ["evidenceCount", "factCount", "resourceCount", "verifiedFactCount", "verifiedResourceCount", "conflictCount"].every((key) => data[key] === undefined || Number.isSafeInteger(data[key]) && (data[key] as number) >= 0)
+    && (data.extractionStatus === undefined || ["not-requested", "pending", "empty", "partial", "ready", "failed"].includes(data.extractionStatus as string));
 }
 
 function validateWorkspaceCreationFailure(value: unknown): value is WorkspaceCreationFailure {

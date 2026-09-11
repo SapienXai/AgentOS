@@ -39,6 +39,7 @@ import type { WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult } from 
 import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import { normalizeWorkspaceKnowledgeSources, workspaceKnowledgeSourceIdentity, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
+import type { ProjectIntelligenceExtractionSummary } from "@/lib/agentos/application/project-intelligence-extraction-service";
 
 export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
   overallAnalysisBudgetMs: 180_000,
@@ -277,6 +278,20 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     if (!usableContext && contextPartial && run.input.sources.length > 0) {
       return await failRun(filePath, run, dependencies, failure("timeout", "context-budget-exhausted", "terminal", "Project context could not be staged within the shared analysis budget."));
     }
+    run = await updateSnapshot(filePath, run, dependencies, { stage: "structured-extraction" }, "state-changed");
+    run = await appendAndPersist(
+      filePath,
+      run,
+      dependencies,
+      { ...run.snapshot, extraction: { ...run.snapshot.extraction, status: "pending" } },
+      "context-updated",
+      null,
+      null,
+      dependencies.now().toISOString(),
+      "extraction-started",
+      { extractionStatus: "pending" }
+    );
+    if (context.extractionSummary) run = await updateExtractionSnapshot(filePath, run, dependencies, context.extractionSummary);
     const staged = await dependencies.readContext({ actorId, draftContextId: run.draftContextId! }).catch(() => null);
     const remaining = Math.max(1, deadline - Date.now());
     const attempts = Math.max(1, Math.min(dependencies.budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
@@ -347,6 +362,36 @@ async function updateContextSnapshot(filePath: string, run: WorkspaceCreationRun
     }
   };
   return appendAndPersist(filePath, run, dependencies, snapshot, "context-updated", partial ? "partial-context" : null, null, now);
+}
+
+async function updateExtractionSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, summary: ProjectIntelligenceExtractionSummary) {
+  const snapshot: WorkspaceCreationSnapshot = {
+    ...run.snapshot,
+    extraction: {
+      status: summary.status,
+      extractionId: summary.extractionId,
+      generationId: summary.generationId,
+      evidenceCount: summary.evidenceCount,
+      factCount: summary.factCount,
+      resourceCount: summary.resourceCount,
+      verifiedFactCount: summary.verifiedFactCount,
+      verifiedResourceCount: summary.verifiedResourceCount,
+      conflictCount: summary.conflictCount,
+      warningCount: summary.warningCount,
+      unknownCount: summary.unknownCount
+    }
+  };
+  const activityCode: WorkspaceCreationActivityCode = summary.status === "partial" ? "extraction-partial" : "extraction-completed";
+  const activityData: WorkspaceCreationActivityData = {
+    evidenceCount: summary.evidenceCount,
+    factCount: summary.factCount,
+    resourceCount: summary.resourceCount,
+    verifiedFactCount: summary.verifiedFactCount,
+    verifiedResourceCount: summary.verifiedResourceCount,
+    conflictCount: summary.conflictCount,
+    extractionStatus: summary.status
+  };
+  return appendAndPersist(filePath, run, dependencies, snapshot, "context-updated", summary.status === "partial" ? "extraction-partial" : null, null, dependencies.now().toISOString(), activityCode, activityData);
 }
 
 async function recordIngestionProgress(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, progress: KnowledgeIngestionProgress) {
@@ -617,7 +662,8 @@ function progressStateActivity(status: KnowledgeIngestionProgress["status"], pha
 function asCreationActivityCode(value: string): WorkspaceCreationActivityCode {
   const codes: readonly WorkspaceCreationActivityCode[] = [
     "source-started", "page-discovered", "page-fetch-started", "page-fetched", "document-stored", "source-partial", "source-completed", "source-failed",
-    "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed"
+    "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
+    "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected"
   ];
   return codes.includes(value as WorkspaceCreationActivityCode) ? value as WorkspaceCreationActivityCode : "source-started";
 }

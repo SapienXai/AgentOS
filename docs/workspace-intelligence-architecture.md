@@ -20,7 +20,7 @@ existing AgentOS ingestion and source abstractions
         ↓
 deterministic Project Discovery Engine (Phase 3)
         ↓
-parsing and extraction (future)
+deterministic structured extraction (Phase 4)
         ↓
 normalized Project Intelligence candidate
         ↓
@@ -162,7 +162,7 @@ bounded security behavior without live network access.
 
 ## Existing Create Workspace flow
 
-Phase 1 does not change the existing Create Workspace runtime. Its current
+Phase 1 and Phase 4 do not change the existing Create Workspace runtime. Its current
 flow remains:
 
 ```text
@@ -252,6 +252,48 @@ and repository/documentation candidates retain page provenance; malformed or
 instruction-shaped content is ignored. New manifests use schema version 2;
 the validator remains read-compatible with version 1 manifests, whose absent
 JSON-LD observation fields are treated as empty by consumers.
+
+## Phase 4 deterministic structured extraction
+
+Phase 4 consumes the bounded normalized knowledge corpus and the
+`ProjectDiscoveryManifest` already staged by Phase 3. It does not introduce a
+raw-source domain abstraction: raw HTML, JSON-LD, connected-source payloads,
+and ingestion metadata remain untrusted material upstream of the existing
+ingestion boundary.
+
+The extractor writes one deterministic, versioned
+`intelligence-extraction.json` artifact inside the protected workspace-
+creation context. Its input fingerprint and knowledge generation identify the
+artifact for safe reuse. Document, evidence, fact, resource, conflict,
+warning, unknown, and coverage limits are explicit and bounded. Normalization
+canonicalizes and redacts before validation; validation is strict,
+deterministic, non-mutating, and applied only to the normalized extraction
+contract.
+
+Extraction is evidence-first. `EvidenceRef` owns bounded proof and the
+qualification capability. A fact or resource is marked `verified` only when
+its claim relationship is `supports` and the referenced evidence has a
+matching deterministic qualification capability. First-party website,
+documentation, and repository evidence qualify by default. The contract also
+accepts explicitly qualified authoritative uploaded documents and connected
+sources without hard-coding provenance origin as the future verifier. Merely
+existing evidence, operator declarations, inferred claims, unknown external
+sources, and discovered external references remain unqualified.
+
+`ProjectFact` remains the canonical factual claim layer. `OfficialResource`
+contains only resource interpretation plus discovery/origin metadata; it has
+no independent trust source. `ProjectConflict` records competing claims
+orthogonally, so verified claims and verified resource interpretations may
+participate in open conflicts. No inferred claims or future verification
+engine is implemented.
+
+The extraction summary is carried through the `WorkspaceCreationRun`
+snapshot and structured activity events. The current run snapshot remains
+authoritative even when the bounded event tail is truncated. The review
+presenter exposes bounded counts and honest partial-coverage status. Phase 4
+does not feed Project Intelligence into Workspace Architect, change
+`WorkspaceBlueprint`, alter provisioning, or implement the Project
+Intelligence Agent runtime.
 
 ## Phase 2 creation execution
 
@@ -344,11 +386,12 @@ implementing composition.
 Phase 1 and Phase 1.1 establish normalized claims, evidence qualification
 semantics, projections, conflicts, source-coverage invariants, lifecycle
 contracts, fixtures, and validation. Phase 3 establishes deterministic
-bounded project discovery and its corpus/creation-progress projection. The
-following remain future work:
+bounded project discovery and its corpus/creation-progress projection. Phase
+4 establishes deterministic structured extraction and evidence-qualified
+resource interpretation. The following remain future work:
 
-- Phase 4+: structured extraction, synthesis, official-resource verification,
-  and any Project Intelligence Agent runtime;
+- the Project Intelligence Agent runtime, broader synthesis, and future
+  verification/review workflows;
 - later phases: verification runtime, retrieval, persistence, refresh,
   transport/event streaming, Workspace Architect evolution, and AI Workspace
   Composer;

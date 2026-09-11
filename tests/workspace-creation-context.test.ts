@@ -124,8 +124,11 @@ test("website and uploaded files are ingested through the Phase 2 corpus before 
     assert.equal(result.runStatus, "ready");
     assert.equal(result.sourceReports.every((report) => report.status === "ready"), true);
     assert.ok(result.generationId);
+    assert.equal(result.extractionSummary?.status, "ready");
+    assert.ok((result.extractionSummary?.factCount ?? 0) > 0);
     assert.ok((context.knowledge.documents ?? []).some((document) => document.content?.includes("B2B reservation platform")));
     assert.ok((context.knowledge.documents ?? []).some((document) => document.content?.includes("restaurant operators")));
+    assert.equal(context.extractionSummary?.extractionId, result.extractionSummary?.extractionId);
     assert.match(promptCapture[0] ?? "", /B2B reservation platform/);
   });
 });

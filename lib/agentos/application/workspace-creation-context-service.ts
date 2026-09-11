@@ -20,6 +20,16 @@ import {
   type WorkspaceKnowledgeSource
 } from "@/lib/agentos/domains/workspace-knowledge";
 import { writeAtomicJson } from "@/lib/agentos/application/workspace-provisioning-store";
+import {
+  createProjectIntelligenceExtractionInputFingerprint,
+  extractProjectIntelligence,
+  summarizeProjectIntelligenceExtraction,
+  validateProjectIntelligenceExtraction,
+  type ProjectIntelligenceExtraction,
+  type ProjectIntelligenceExtractionDocument,
+  type ProjectIntelligenceExtractionSummary
+} from "@/lib/agentos/application/project-intelligence-extraction-service";
+import type { ProjectDiscoveryManifest } from "@/lib/agentos/domains/project-discovery";
 import type {
   WorkspaceArchitectCorpusDocument,
   WorkspaceArchitectKnowledgeInput
@@ -157,10 +167,12 @@ export type WorkspaceCreationContextStageResult = {
   sources: WorkspaceKnowledgeSource[];
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
+  extractionSummary?: ProjectIntelligenceExtractionSummary;
 };
 
 export type WorkspaceCreationContextResult = WorkspaceCreationContextStageResult & {
   knowledge: WorkspaceArchitectKnowledgeInput;
+  discoveryManifests?: ProjectDiscoveryManifest[];
 };
 
 export type WorkspaceCreationContextOptions = {
@@ -191,6 +203,7 @@ type StoredContext = {
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
   intakeStatus?: "staged" | "analyzed";
+  extraction?: ProjectIntelligenceExtractionSummary;
 };
 
 const contextLocks = new Map<string, Promise<void>>();
@@ -219,6 +232,7 @@ export async function persistWorkspaceCreationIntake(input: {
     await cleanupRemovedUploadRoots(draftRoot, previous?.uploads ?? {}, sourceById);
     const fingerprint = createContextFingerprint(sources, storedUploads);
     const sameIntake = previous?.fingerprint === fingerprint;
+    if (!sameIntake) await removeStoredExtraction(draftRoot);
     await writeStoredContext(draftRoot, createStoredContext({
       actorId,
       draftContextId,
@@ -239,6 +253,7 @@ export async function persistWorkspaceCreationIntake(input: {
         error: null
       })),
       warnings: sameIntake ? previous?.warnings ?? [] : [],
+      extraction: sameIntake ? previous?.extraction : undefined,
       intakeStatus: "staged"
     }));
     return { draftContextId, sources: sources.map(publicSource), fingerprint };
@@ -290,10 +305,19 @@ async function stageWorkspaceCreationKnowledgeLocked(
       path.join(draftRoot, "state")
     );
     if (snapshot?.state.generationId === previous.generationId) {
+      const extraction = await ensureProjectIntelligenceExtraction({
+        draftRoot,
+        generationId: previous.generationId,
+        inputFingerprint: fingerprint,
+        sources,
+        documents: snapshot.documents,
+        discoveryManifests: snapshot.state.discoveryManifests ?? []
+      });
       await writeStoredContext(draftRoot, {
         ...previous,
         updatedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + WORKSPACE_CREATION_CONTEXT_TTL_MS).toISOString(),
+        extraction: summarizeProjectIntelligenceExtraction(extraction),
         intakeStatus: "analyzed"
       });
       return {
@@ -303,13 +327,22 @@ async function stageWorkspaceCreationKnowledgeLocked(
         reused: true,
         sources: publicSources,
         sourceReports: previous.sourceReports,
-        warnings: previous.warnings
+        warnings: previous.warnings,
+        extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
       };
     }
   }
 
   const ingestionSources = sources.map((source) => toIngestionSource(source, draftRoot, storedUploads[source.id] ?? []));
   if (sources.length === 0) {
+    const extraction = await ensureProjectIntelligenceExtraction({
+      draftRoot,
+      generationId: null,
+      inputFingerprint: fingerprint,
+      sources,
+      documents: [],
+      discoveryManifests: []
+    });
     const emptyContext = createStoredContext({
       actorId: input.actorId,
       draftContextId: input.draftContextId,
@@ -319,6 +352,7 @@ async function stageWorkspaceCreationKnowledgeLocked(
       uploads: storedUploads,
       sourceReports: [],
       warnings: [],
+      extraction: summarizeProjectIntelligenceExtraction(extraction),
       intakeStatus: "analyzed"
     });
     await writeStoredContext(draftRoot, emptyContext);
@@ -329,7 +363,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
       reused: false,
       sources: publicSources,
       sourceReports: [],
-      warnings: []
+      warnings: [],
+      extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
     };
   }
 
@@ -378,7 +413,19 @@ async function stageWorkspaceCreationKnowledgeLocked(
     warnings,
     intakeStatus: "analyzed"
   });
-  await writeStoredContext(draftRoot, storedContext);
+  const snapshot = ingestion.state.generationId
+    ? await readKnowledgeSnapshot(path.join(draftRoot, "corpus"), path.join(draftRoot, "state"))
+    : null;
+  const extraction = await ensureProjectIntelligenceExtraction({
+    draftRoot,
+    generationId: ingestion.state.generationId ?? null,
+    inputFingerprint: fingerprint,
+    sources,
+    documents: snapshot?.documents ?? [],
+    discoveryManifests: ingestion.state.discoveryManifests ?? []
+  });
+  const finalizedContext = { ...storedContext, extraction: summarizeProjectIntelligenceExtraction(extraction) };
+  await writeStoredContext(draftRoot, finalizedContext);
   return {
     draftContextId: input.draftContextId,
     generationId: ingestion.state.generationId ?? null,
@@ -386,7 +433,8 @@ async function stageWorkspaceCreationKnowledgeLocked(
     reused: false,
     sources: publicSources,
     sourceReports,
-    warnings
+    warnings,
+    extractionSummary: summarizeProjectIntelligenceExtraction(extraction)
   };
 }
 
@@ -423,7 +471,9 @@ export async function readWorkspaceCreationContext(input: {
       sources,
       documents,
       warnings: stored.warnings
-    }
+    },
+    extractionSummary: stored.extraction,
+    discoveryManifests: snapshot?.state.discoveryManifests
   };
 }
 
@@ -504,6 +554,91 @@ async function readBoundedArchitectDocuments(corpusRoot: string, documents: Arra
     });
   }
   return result;
+}
+
+async function ensureProjectIntelligenceExtraction(input: {
+  draftRoot: string;
+  generationId: string | null;
+  inputFingerprint: string;
+  sources: readonly WorkspaceKnowledgeSource[];
+  documents: Array<{ id: string; sourceId: string; sourceKind: WorkspaceKnowledgeSource["kind"]; title: string; classification: string; canonicalLocator: string; retrievedAt: string; outputPath: string }>;
+  discoveryManifests: readonly ProjectDiscoveryManifest[];
+}): Promise<ProjectIntelligenceExtraction> {
+  const documents = await readBoundedExtractionDocuments(input.draftRoot, input.documents);
+  const extractionInputFingerprint = createProjectIntelligenceExtractionInputFingerprint({
+    generationId: input.generationId,
+    baseInputFingerprint: input.inputFingerprint,
+    sourceIds: input.sources.map((source) => source.id),
+    documents,
+    discoveryManifests: input.discoveryManifests
+  });
+  const existing = await readStoredExtraction(input.draftRoot);
+  if (existing?.generationId === input.generationId && existing.inputFingerprint === extractionInputFingerprint) return existing;
+  const extraction = extractProjectIntelligence({
+    generationId: input.generationId,
+    inputFingerprint: extractionInputFingerprint,
+    sourceIds: input.sources.map((source) => source.id),
+    sources: input.sources,
+    documents,
+    discoveryManifests: input.discoveryManifests
+  });
+  await writeStoredExtraction(input.draftRoot, extraction);
+  return extraction;
+}
+
+async function readBoundedExtractionDocuments(
+  draftRoot: string,
+  documents: Array<{ id: string; sourceId: string; sourceKind: WorkspaceKnowledgeSource["kind"]; title: string; classification: string; canonicalLocator: string; retrievedAt: string; outputPath: string }>
+): Promise<ProjectIntelligenceExtractionDocument[]> {
+  const corpusRoot = path.join(draftRoot, "corpus");
+  const result: ProjectIntelligenceExtractionDocument[] = [];
+  for (const document of documents.slice(0, 48)) {
+    const normalized = path.posix.normalize(document.outputPath.replace(/\\/g, "/"));
+    if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) continue;
+    const absolutePath = path.join(corpusRoot, ...normalized.split("/"));
+    await assertNoSymlinkAlongPath(corpusRoot, absolutePath);
+    const content = await readFile(absolutePath, "utf8").catch(() => null);
+    if (content === null) continue;
+    result.push({
+      documentId: document.id,
+      sourceId: document.sourceId,
+      sourceKind: document.sourceKind,
+      title: document.title,
+      classification: document.classification,
+      canonicalLocator: document.canonicalLocator,
+      retrievedAt: document.retrievedAt,
+      content: content.slice(0, 6_000)
+    });
+  }
+  return result;
+}
+
+async function readStoredExtraction(draftRoot: string): Promise<ProjectIntelligenceExtraction | null> {
+  const value = await readFile(path.join(draftRoot, "intelligence-extraction.json"), "utf8").catch(() => null);
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return validateProjectIntelligenceExtraction(parsed).valid ? parsed as ProjectIntelligenceExtraction : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredExtraction(draftRoot: string, extraction: ProjectIntelligenceExtraction) {
+  const validation = validateProjectIntelligenceExtraction(extraction);
+  if (!validation.valid) throw new Error("Project intelligence extraction failed normalized validation.");
+  await assertNoSymlinkAlongPath(WORKSPACE_CREATION_CONTEXT_ROOT, draftRoot);
+  await mkdir(draftRoot, { recursive: true, mode: 0o700 });
+  const target = path.join(draftRoot, "intelligence-extraction.json");
+  await assertNoSymlinkAlongPath(draftRoot, target);
+  await writeAtomicJson(target, extraction);
+}
+
+async function removeStoredExtraction(draftRoot: string) {
+  await assertNoSymlinkAlongPath(WORKSPACE_CREATION_CONTEXT_ROOT, draftRoot);
+  const target = path.join(draftRoot, "intelligence-extraction.json");
+  await assertNoSymlinkAlongPath(draftRoot, target);
+  await rm(target, { force: true });
 }
 
 function toIngestionSource(source: WorkspaceKnowledgeSource, draftRoot: string, uploads: StoredUpload[]): WorkspaceKnowledgeSource {
@@ -600,6 +735,7 @@ function createStoredContext(input: {
   uploads: Record<string, StoredUpload[]>;
   sourceReports: WorkspaceCreationContextSourceReport[];
   warnings: string[];
+  extraction?: ProjectIntelligenceExtractionSummary;
   intakeStatus?: "staged" | "analyzed";
 }): StoredContext {
   const now = new Date().toISOString();
@@ -616,6 +752,7 @@ function createStoredContext(input: {
     uploads: input.uploads,
     sourceReports: input.sourceReports,
     warnings: input.warnings.slice(0, 24),
+    ...(input.extraction ? { extraction: input.extraction } : {}),
     intakeStatus: input.intakeStatus ?? "analyzed"
   };
 }

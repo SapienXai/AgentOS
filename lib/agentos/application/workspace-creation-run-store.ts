@@ -85,11 +85,44 @@ export async function readWorkspaceCreationRunFile(filePath: string): Promise<Wo
   const raw = await readFile(filePath, "utf8").catch(() => null);
   if (!raw) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = migrateLegacyCreationRun(JSON.parse(raw));
     return validateWorkspaceCreationRun(parsed) ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function migrateLegacyCreationRun(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return {
+    ...value,
+    snapshot: migrateLegacySnapshot(value.snapshot),
+    events: Array.isArray(value.events) ? value.events.map((event) => isRecord(event) ? { ...event, snapshot: migrateLegacySnapshot(event.snapshot) } : event) : value.events
+  };
+}
+
+function migrateLegacySnapshot(value: unknown): unknown {
+  if (!isRecord(value) || "extraction" in value) return value;
+  return {
+    ...value,
+    extraction: {
+      status: "not-requested",
+      extractionId: null,
+      generationId: null,
+      evidenceCount: 0,
+      factCount: 0,
+      resourceCount: 0,
+      verifiedFactCount: 0,
+      verifiedResourceCount: 0,
+      conflictCount: 0,
+      warningCount: 0,
+      unknownCount: 0
+    }
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function findWorkspaceCreationRunById(rootPath: string, actorId: string, runId: string): Promise<WorkspaceCreationRunLocator | null> {

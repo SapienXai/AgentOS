@@ -122,6 +122,26 @@ test("blueprint presenter preserves structured partial-context and fallback diag
   assert.equal(model.failureCategory, "architect-timeout");
 });
 
+test("blueprint presenter carries structured extraction coverage into review", () => {
+  const model = presentWorkspaceBlueprint(minimalResult(), {
+    extraction: {
+      status: "partial",
+      extractionId: "intelligence-extraction-test",
+      generationId: "knowledge-generation-test",
+      evidenceCount: 4,
+      factCount: 3,
+      resourceCount: 2,
+      verifiedFactCount: 1,
+      verifiedResourceCount: 1,
+      conflictCount: 1,
+      warningCount: 1,
+      unknownCount: 2
+    }
+  });
+  assert.equal(model.extraction?.status, "partial");
+  assert.equal(model.extraction?.verifiedFactCount, 1);
+});
+
 test("channel setup copy distinguishes WhatsApp QR sessions from token channels", () => {
   assert.equal(formatWorkspaceChannelSetup({ authenticationKind: "qr-session", requiresCredentials: false, requiresAuthentication: true }), "Setup required · QR sign-in");
   assert.equal(formatWorkspaceChannelSetup({ authenticationKind: "token", requiresCredentials: true, requiresAuthentication: true }), "Setup required · Token");
