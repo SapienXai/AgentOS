@@ -112,6 +112,7 @@ type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "roo
 const inFlight = new Map<string, Promise<WorkspaceCreationRun>>();
 const revisionInFlight = new Map<string, Promise<WorkspaceCreationRun>>();
 const activeControllers = new Map<string, AbortController>();
+const executionStarting = new Map<string, Promise<void>>();
 
 export type StartWorkspaceCreationRunInput = {
   actorId: string;
@@ -204,14 +205,47 @@ export async function ensureCreationRunExecution(
   if (isWorkspaceCreationTerminal(locator.run.snapshot.state)) return publicRun(locator.run);
   const current = inFlight.get(locator.filePath);
   if (current) return publicRun(await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run);
-  const execution = executeCreationRun(locator.filePath, input.actorId, resolved)
-    .catch((error) => recoverUnexpectedCreationFailure(locator.filePath, input.actorId, error, resolved))
-    .finally(() => {
-      if (inFlight.get(locator.filePath) === execution) inFlight.delete(locator.filePath);
-      activeControllers.delete(locator.filePath);
-    });
-  inFlight.set(locator.filePath, execution);
+  const starting = executionStarting.get(locator.filePath);
+  if (starting) {
+    await starting;
+    return publicRun(await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run);
+  }
+  const executionStart = Promise.resolve().then(() => {
+    if (inFlight.has(locator.filePath)) return;
+    const execution = executeCreationRun(locator.filePath, input.actorId, resolved)
+      .catch((error) => recoverUnexpectedCreationFailure(locator.filePath, input.actorId, error, resolved))
+      .finally(() => {
+        if (inFlight.get(locator.filePath) === execution) inFlight.delete(locator.filePath);
+        activeControllers.delete(locator.filePath);
+      });
+    inFlight.set(locator.filePath, execution);
+  });
+  executionStarting.set(locator.filePath, executionStart);
+  try {
+    await executionStart;
+  } finally {
+    if (executionStarting.get(locator.filePath) === executionStart) executionStarting.delete(locator.filePath);
+  }
   return publicRun(await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run);
+}
+
+/**
+ * Wait for the in-process executor to finish releasing its lease after a run
+ * reaches a durable terminal snapshot. This is intentionally separate from
+ * polling: active callers remain non-blocking while lifecycle owners can
+ * safely clean up their storage after execution is idle.
+ */
+export async function waitForWorkspaceCreationRunIdle(
+  input: { actorId: string; runId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  await ensureCreationRunExecution(input, resolved);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  await inFlight.get(locator.filePath)?.catch(() => undefined);
+  const latest = await readWorkspaceCreationRunFile(locator.filePath);
+  return latest ? publicRun(latest) : null;
 }
 
 export async function getWorkspaceCreationRun(
@@ -222,10 +256,14 @@ export async function getWorkspaceCreationRun(
   await ensureCreationRunExecution({ actorId: input.actorId, runId: input.runId }, resolved);
   const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
   if (!locator) return null;
+  if (isWorkspaceCreationTerminal(locator.run.snapshot.state)) {
+    await inFlight.get(locator.filePath)?.catch(() => undefined);
+  }
+  const latest = await readWorkspaceCreationRunFile(locator.filePath);
   const after = Number.isSafeInteger(input.afterSequence) ? input.afterSequence! : 0;
   return publicRun({
-    ...locator.run,
-    events: locator.run.events.filter((event) => event.sequence > after)
+    ...(latest ?? locator.run),
+    events: (latest ?? locator.run).events.filter((event) => event.sequence > after)
   });
 }
 

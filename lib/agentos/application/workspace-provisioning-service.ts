@@ -188,6 +188,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
 };
 
 const inFlight = new Map<string, Promise<WorkspaceProvisioningRun>>();
+const startInFlight = new Map<string, Promise<void>>();
 
 function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): ResolvedWorkspaceProvisioningDependencies {
   return {
@@ -237,18 +238,41 @@ export async function startWorkspaceProvisioning(
 
   assertProvisioningIntentMatches(run, prepared);
 
-  if (run.state === "failed" || run.state === "cancelled") {
-    run = await retryFailedProvisioningRun(filePath, run, resolved);
-  }
+  // Serialize the short retry-and-schedule handoff as well as the executor
+  // itself. Without this boundary, two callers can both observe a failed run:
+  // one releases the retry lease while the other returns the old failed
+  // snapshot before the first caller has published the new executor.
+  const existingStart = startInFlight.get(filePath);
+  if (existingStart) {
+    await existingStart;
+  } else {
+    const coordination = (async () => {
+      let current = await readStoredRunFile(filePath) ?? run;
+      if (isTerminalFailure(current.state)) {
+        await inFlight.get(filePath)?.catch(() => undefined);
+        current = await readStoredRunFile(filePath) ?? current;
+      }
 
-  const existing = inFlight.get(filePath);
-  if (!existing && !isTerminal(run.state)) {
-    const execution = executeWorkspaceProvisioning(filePath, prepared, input.signal, resolved)
-      .catch((error) => recoverUnexpectedProvisioningFailure(filePath, error, resolved))
-      .finally(() => {
-        if (inFlight.get(filePath) === execution) inFlight.delete(filePath);
-      });
-    inFlight.set(filePath, execution);
+      if (current.state === "failed" || current.state === "cancelled") {
+        current = await retryFailedProvisioningRun(filePath, current, resolved);
+      }
+
+      const existing = inFlight.get(filePath);
+      if (!existing && !isTerminal(current.state)) {
+        const execution = executeWorkspaceProvisioning(filePath, prepared, input.signal, resolved)
+          .catch((error) => recoverUnexpectedProvisioningFailure(filePath, error, resolved))
+          .finally(() => {
+            if (inFlight.get(filePath) === execution) inFlight.delete(filePath);
+          });
+        inFlight.set(filePath, execution);
+      }
+    })();
+    startInFlight.set(filePath, coordination);
+    try {
+      await coordination;
+    } finally {
+      if (startInFlight.get(filePath) === coordination) startInFlight.delete(filePath);
+    }
   }
 
   return publicRun(await readStoredRun(resolved.rootPath, storageKey) ?? run);
@@ -302,7 +326,11 @@ export async function waitForWorkspaceProvisioning(
   for (;;) {
     const run = await readStoredRun(resolved.rootPath, storageKey);
     if (!run) throw new WorkspaceProvisioningError("run-unavailable", "Workspace provisioning run is unavailable.", 500);
-    if (isTerminal(run.state)) return publicRun(run);
+    if (isTerminal(run.state)) {
+      const filePath = runPath(resolved.rootPath, storageKey);
+      await inFlight.get(filePath)?.catch(() => undefined);
+      return publicRun(await readStoredRunFile(filePath) ?? run);
+    }
     await delay(POLL_INTERVAL_MS);
   }
 }
@@ -348,7 +376,16 @@ export async function getWorkspaceProvisioningRun(input: {
   runId: string;
   signal?: AbortSignal;
 }, dependencies: WorkspaceProvisioningDependencies = {}): Promise<WorkspaceProvisioningRun | null> {
-  return ensureWorkspaceProvisioningRunActive(input, dependencies);
+  const result = await ensureWorkspaceProvisioningRunActive(input, dependencies);
+  if (!result) return null;
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (locator && isTerminal(locator.run.state)) {
+    await inFlight.get(locator.filePath)?.catch(() => undefined);
+    const latest = await readStoredRunFile(locator.filePath);
+    return latest ? publicRun(latest) : result;
+  }
+  return result;
 }
 
 async function prepareProvisioning(
@@ -1333,6 +1370,10 @@ function provisioningLabel(state: WorkspaceProvisioningState) {
 
 function isTerminal(state: WorkspaceProvisioningState) {
   return state === "ready" || state === "partial" || state === "failed" || state === "cancelled";
+}
+
+function isTerminalFailure(state: WorkspaceProvisioningState) {
+  return state === "failed" || state === "cancelled";
 }
 
 async function transition(

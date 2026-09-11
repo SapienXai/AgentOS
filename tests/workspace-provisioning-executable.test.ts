@@ -736,6 +736,30 @@ test("runtime bootstrap failure is durable and retryable without a final workspa
   }
 });
 
+test("concurrent retries converge on one durable provisioning attempt", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-retry-race-"));
+  try {
+    const failing = createHarness(rootPath, { failCreate: true });
+    const input = { actorId: "actor-retry-race", blueprint: blueprint(), idempotencyKey: "retry-race-key", acceptDraft: true };
+    const failed = await waitForWorkspaceProvisioning(input, failing.dependencies);
+    assert.equal(failed.state, "failed");
+
+    const succeeding = createHarness(rootPath, { delayMs: 20 });
+    const retries = await Promise.all([
+      waitForWorkspaceProvisioning(input, succeeding.dependencies),
+      waitForWorkspaceProvisioning(input, succeeding.dependencies)
+    ]);
+
+    assert.ok(retries.every((retry) => retry.state === "ready"));
+    assert.equal(new Set(retries.map((retry) => retry.runId)).size, 1);
+    assert.equal(new Set(retries.map((retry) => retry.attempt)).size, 1);
+    assert.equal(retries[0]?.attempt, 2);
+    assert.equal(succeeding.counts().createCount, 1);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
 test("stale staged context is rejected before any workspace side effect", async () => {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-"));
   try {

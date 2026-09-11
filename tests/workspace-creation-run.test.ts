@@ -9,6 +9,7 @@ import {
   startWorkspaceCreationRun,
   cancelWorkspaceCreationRun,
   ensureCreationRunExecution,
+  waitForWorkspaceCreationRunIdle,
   refreshWorkspaceCreationRun,
   reviseWorkspaceCreationRun,
   listResumableWorkspaceCreationRuns,
@@ -44,6 +45,8 @@ const source = createWorkspaceKnowledgeSource({
 });
 
 async function waitForTerminal(actorId: string, runId: string, dependencies: WorkspaceCreationRunDependencies) {
+  const settled = await waitForWorkspaceCreationRunIdle({ actorId, runId }, dependencies);
+  if (settled && ["review-ready", "failed", "cancelled"].includes(settled.snapshot.state)) return settled;
   for (let index = 0; index < 100; index += 1) {
     const run = await getWorkspaceCreationRun({ actorId, runId }, dependencies);
     if (run && ["review-ready", "failed", "cancelled"].includes(run.snapshot.state)) return run;

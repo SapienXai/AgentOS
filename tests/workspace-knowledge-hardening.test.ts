@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -200,8 +200,12 @@ test("writer ownership stays exclusive across 100 deterministic acquisition cont
     })));
     assert.equal(attempts.length, 100);
     assert.ok(attempts.every((attempt) => attempt.status === "rejected" && attempt.reason instanceof KnowledgeIngestionBusyError));
+    const activeLock = JSON.parse(await readFile(path.join(stateRoot, "writer-lock.json"), "utf8")) as { heartbeatFile?: string };
+    const contenderHeartbeats = (await readdir(stateRoot)).filter((entry) => entry.startsWith("writer-heartbeat-"));
+    assert.deepEqual(contenderHeartbeats, activeLock.heartbeatFile ? [activeLock.heartbeatFile] : []);
     releaseWriter();
     await writer;
+    assert.deepEqual((await readdir(stateRoot)).filter((entry) => entry.startsWith("writer-heartbeat-")), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

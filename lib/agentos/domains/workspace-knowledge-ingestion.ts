@@ -344,6 +344,7 @@ async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation:
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const candidatePath = `${lockPath}.candidate-${record.lockId}-${randomUUID()}`;
       let published = false;
+      let acquired = false;
       try {
         // The candidate is complete and durable before link() publishes it.
         // link() is an atomic, non-overwriting publication primitive, so a
@@ -368,9 +369,11 @@ async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation:
           );
         }, WRITER_HEARTBEAT_MS);
         lockHandle.heartbeat.unref?.();
+        acquired = true;
         return lockHandle;
       } catch (error) {
         await rm(candidatePath, { force: true }).catch(() => undefined);
+        if (published) await removePublishedKnowledgeWriterLockIfOwned(lockPath, heartbeatPath, record.lockId);
         if (!isNodeError(error, "EEXIST")) throw error;
         if (published) throw error;
         const existing = await readKnowledgeWriterLock(input.stateRoot);
@@ -384,12 +387,21 @@ async function acquireKnowledgeWriterLock(input: { stateRoot: string; operation:
         } catch (renameError) {
           if (!isNodeError(renameError, "ENOENT")) throw renameError;
         }
+      } finally {
+        if (!acquired) await rm(heartbeatPath, { force: true }).catch(() => undefined);
       }
     }
     throw new KnowledgeIngestionBusyError();
   } finally {
     await releaseKnowledgeWriterLockControl(control);
   }
+}
+
+async function removePublishedKnowledgeWriterLockIfOwned(lockPath: string, heartbeatPath: string, lockId: string) {
+  const current = await readKnowledgeWriterLock(path.dirname(lockPath)).catch(() => null);
+  if (current?.lockId !== lockId) return;
+  await rm(lockPath, { force: true }).catch(() => undefined);
+  await rm(heartbeatPath, { force: true }).catch(() => undefined);
 }
 
 async function refreshKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
@@ -435,16 +447,15 @@ async function releaseKnowledgeWriterLock(handle: KnowledgeWriterLockHandle) {
 
 async function readKnowledgeWriterLock(stateRoot: string): Promise<KnowledgeWriterLockRecord | null> {
   const lockPath = path.join(stateRoot, WRITER_LOCK_FILE);
-  if (!(await pathExists(lockPath))) return null;
-  const value = await readJson(lockPath);
+  const value = await readJsonIfPresent(lockPath);
+  if (value === undefined) return null;
   if (!isKnowledgeWriterLock(value)) throw new KnowledgeIngestionLockError("Knowledge writer lock is malformed; refusing recovery.");
   if (value.heartbeatFile) {
     const heartbeatPath = path.join(stateRoot, value.heartbeatFile);
-    if (await pathExists(heartbeatPath)) {
-      const heartbeat = await readJson(heartbeatPath);
-      if (!isKnowledgeWriterHeartbeat(heartbeat) || heartbeat.lockId !== value.lockId) throw new KnowledgeIngestionLockError("Knowledge writer heartbeat is malformed; refusing recovery.");
-      return { ...value, heartbeatAt: heartbeat.heartbeatAt };
-    }
+    const heartbeat = await readJsonIfPresent(heartbeatPath);
+    if (heartbeat === undefined) return value;
+    if (!isKnowledgeWriterHeartbeat(heartbeat) || heartbeat.lockId !== value.lockId) throw new KnowledgeIngestionLockError("Knowledge writer heartbeat is malformed; refusing recovery.");
+    return { ...value, heartbeatAt: heartbeat.heartbeatAt };
   }
   return value;
 }
@@ -508,15 +519,24 @@ async function releaseKnowledgeWriterLockControl(handle: KnowledgeWriterLockCont
 async function readKnowledgeWriterLockControl(stateRoot: string): Promise<{ record: KnowledgeWriterLockControlRecord | null; stale: boolean } | null> {
   const guardPath = path.join(stateRoot, WRITER_LOCK_CONTROL_DIR);
   if (!(await pathExists(guardPath))) return null;
-  const entries = await readdir(guardPath, { withFileTypes: true });
+  const entries = await readdir(guardPath, { withFileTypes: true }).catch((error) => {
+    if (isNodeError(error, "ENOENT")) return null;
+    throw error;
+  });
+  if (!entries) return null;
   const ownerEntries = entries.filter((entry) => entry.isFile() && /^owner-[a-f0-9-]+\.json$/i.test(entry.name));
   if (ownerEntries.length > 1) throw new KnowledgeIngestionLockError("Knowledge writer control lock has multiple owners; refusing recovery.");
   if (ownerEntries.length === 1) {
-    const value = await readJson(path.join(guardPath, ownerEntries[0]!.name));
+    const value = await readJsonIfPresent(path.join(guardPath, ownerEntries[0]!.name));
+    if (value === undefined) return null;
     if (!isKnowledgeWriterLockControlRecord(value)) throw new KnowledgeIngestionLockError("Knowledge writer control lock is malformed; refusing recovery.");
     return { record: value, stale: !(await isKnowledgeWriterLockControlLive(value)) };
   }
-  const stats = await lstat(guardPath);
+  const stats = await lstat(guardPath).catch((error) => {
+    if (isNodeError(error, "ENOENT")) return null;
+    throw error;
+  });
+  if (!stats) return null;
   return { record: null, stale: Date.now() - stats.mtimeMs > WRITER_STALE_AFTER_MS };
 }
 
@@ -1963,6 +1983,19 @@ async function readJson(filePath: string): Promise<unknown> {
     return JSON.parse(await readFile(filePath, "utf8"));
   } catch {
     return null;
+  }
+}
+
+async function readJsonIfPresent(filePath: string): Promise<unknown | undefined> {
+  const raw = await readFile(filePath, "utf8").catch((error) => {
+    if (isNodeError(error, "ENOENT")) return null;
+    throw error;
+  });
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new KnowledgeIngestionLockError("Knowledge writer lock is malformed; refusing recovery.");
   }
 }
 
