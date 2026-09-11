@@ -8,6 +8,7 @@ import {
 } from "@/lib/agentos/ui/workspace-create-presenter";
 import { friendlyCreationPhase, friendlyProvisioningPhase, presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-creation-experience-presenter";
 import { createInitialWorkspaceCreationSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
+import { presentWorkspaceCreationDiscovery } from "@/lib/agentos/domains/workspace-creation-discovery";
 import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 
 const componentPath = "components/mission-control/workspace-create/create-workspace-experience.tsx";
@@ -167,8 +168,67 @@ test("creation experience presenter uses friendly stages and preserves structure
   assert.equal(model.phaseLabel, "Review your workspace");
   assert.match(model.attentionItems.join("\n"), /partial project context/);
   assert.match(model.attentionItems.join("\n"), /deterministic safe fallback/);
+  assert.equal(model.currentActivity, "Reading project context");
+  assert.equal(model.coverage.status, "partial");
+  assert.deepEqual(model.metrics, { pagesRead: 0, documentsRead: 0, factsFound: 0, officialResources: 0 });
   assert.equal(friendlyCreationPhase("workspace-composition"), "Preparing workspace");
   assert.equal(friendlyProvisioningPhase("applying-composition"), "Preparing workspace");
+});
+
+test("live creation discovery is derived from bounded events and keeps aggregate metrics current", () => {
+  const snapshot = createInitialWorkspaceCreationSnapshot(1);
+  snapshot.context.sourceProgress = [{ sourceId: "website", sourceKind: "website", state: "ready", discoveredItems: 4, fetchedItems: 3, storedDocuments: 2, warningCount: 0, currentActivity: "Source read", currentLocator: "https://acme.example/docs" }];
+  snapshot.extraction = { ...snapshot.extraction, factCount: 2, resourceCount: 3, conflictCount: 1 };
+  const run = {
+    runId: "run-signals",
+    snapshot,
+    oldestRetainedSequence: 1,
+    events: [
+      { sequence: 1, activityCode: "page-fetch-started", sourceId: "website", activityData: { currentLocator: "https://acme.example/" } },
+      { sequence: 2, activityCode: "page-fetched", sourceId: "website", activityData: { currentLocator: "https://acme.example/" } },
+      { sequence: 3, activityCode: "fact-extracted", sourceId: "website", activityData: { currentActivity: "The project publishes a public name." } },
+      { sequence: 4, activityCode: "conflict-detected", sourceId: "website", activityData: { currentActivity: "Project name conflict" } }
+    ]
+  } as never;
+  const model = presentWorkspaceCreationDiscovery(run);
+  assert.equal(model.aggregate.pages, 3);
+  assert.equal(model.aggregate.documents, 2);
+  assert.equal(model.aggregate.facts, 2);
+  assert.equal(model.aggregate.resources, 3);
+  assert.equal(model.aggregate.conflicts, 1);
+  assert.equal(model.signals.filter((signal) => signal.kind === "page").length, 1);
+  assert.ok(model.signals.some((signal) => signal.state === "attention"));
+});
+
+test("review presenter exposes only bounded intelligence and composition projections", () => {
+  const result = minimalResult();
+  const review = presentWorkspaceBlueprint(result, {
+    intelligence: {
+      ...createInitialWorkspaceCreationSnapshot(1).intelligence,
+      status: "model",
+      review: {
+        projectName: "Acme",
+        description: "A useful project.",
+        projectType: "software",
+        understanding: ["A useful project."],
+        facts: [{ id: "fact-1", key: "projectName", statement: "The project is named Acme.", verification: "verified", conflicted: false }],
+        resources: [{ id: "resource-1", label: "Documentation", category: "documentation", locator: "https://acme.example/docs", verification: "discovered", origin: "first-party-documentation" }],
+        conflicts: [{ id: "conflict-1", summary: "Two names were found.", status: "open", subjectCount: 2 }],
+        unknowns: [],
+        sourceCount: 1,
+        evidenceCount: 2
+      }
+    }
+  });
+  assert.equal(review.projectIntelligence?.projectName, "Acme");
+  assert.equal(review.projectIntelligence?.facts[0]?.verification, "verified");
+  assert.equal(review.projectIntelligence?.conflicts[0]?.status, "open");
+  assert.equal(review.project.name, "Acme");
+  assert.equal(review.project.keyFacts[0]?.key, "projectName");
+  assert.deepEqual(review.project.understanding, ["A useful project."]);
+  assert.equal(review.sourceSummary.evidenceCount, 2);
+  assert.equal(review.coverage.status, "full");
+  assert.equal(review.technicalDetails.intelligenceStatus, "model");
 });
 
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {

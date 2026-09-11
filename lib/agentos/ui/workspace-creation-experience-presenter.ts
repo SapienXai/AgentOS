@@ -1,5 +1,6 @@
 import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun, WorkspaceCreationStage } from "@/lib/agentos/domains/workspace-creation-run";
+import { presentWorkspaceCreationDiscovery, type WorkspaceCreationDiscoveryProjection } from "@/lib/agentos/domains/workspace-creation-discovery";
 import type { WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 
 export type WorkspaceCreationExperienceStage = "input" | "analyzing" | "review" | "provisioning" | "complete" | "error";
@@ -20,6 +21,20 @@ export type WorkspaceCreationExperienceModel = {
   attentionItems: string[];
   primaryAction: "generate" | "review" | "create" | "open" | "retry";
   debug: { runState: string | null; internalStage: WorkspaceCreationStage | null; attempts: number; elapsedMs: number };
+  discovery: WorkspaceCreationDiscoveryProjection;
+  /** The bounded live projection used by the analysis surface. */
+  discoveries: WorkspaceCreationDiscoveryProjection["signals"];
+  metrics: {
+    pagesRead: number;
+    documentsRead: number;
+    factsFound: number;
+    officialResources: number;
+  };
+  coverage: {
+    status: "none" | "partial" | "full";
+    reason: string | null;
+  };
+  currentActivity: string;
 };
 
 type ProvisioningLike = {
@@ -52,6 +67,13 @@ export function presentWorkspaceCreationExperience(input: {
     };
   });
   const snapshot = run?.snapshot;
+  const discovery = run ? presentWorkspaceCreationDiscovery(run) : {
+    signals: [],
+    aggregate: { pages: 0, documents: 0, facts: 0, resources: 0, conflicts: 0 },
+    currentActivity: "Reading project context",
+    currentLocator: null,
+    historyTruncated: false
+  } satisfies WorkspaceCreationDiscoveryProjection;
   const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
   const stage: WorkspaceCreationExperienceStage = isProvisioned
     ? "complete"
@@ -92,6 +114,7 @@ export function presentWorkspaceCreationExperience(input: {
     channelCount: result.blueprint.operations.channels.length
   } : null;
   const composition = snapshot?.composition;
+  const coverage = presentCoverage(snapshot, discovery);
   return {
     stage,
     title: stage === "input" ? "Create a workspace" : stage === "analyzing" ? "Understanding your project" : stage === "review" ? "Review your workspace" : stage === "provisioning" ? "Creating workspace" : stage === "complete" ? "Workspace ready" : "Workspace needs attention",
@@ -106,8 +129,32 @@ export function presentWorkspaceCreationExperience(input: {
     workspaceFileSummary: composition ? { planned: composition.artifactCount, conflicts: composition.conflictCount, status: composition.status } : null,
     attentionItems: [...new Set(attentionItems)].slice(0, 8),
     primaryAction: stage === "input" ? "generate" : stage === "review" ? "create" : stage === "complete" ? "open" : stage === "error" ? "retry" : "review",
-    debug: { runState: snapshot?.state ?? null, internalStage: snapshot?.stage ?? null, attempts: snapshot?.architect.attempts ?? 0, elapsedMs: snapshot?.elapsedMs ?? 0 }
+    debug: { runState: snapshot?.state ?? null, internalStage: snapshot?.stage ?? null, attempts: snapshot?.architect.attempts ?? 0, elapsedMs: snapshot?.elapsedMs ?? 0 },
+    discovery,
+    discoveries: discovery.signals,
+    metrics: {
+      pagesRead: discovery.aggregate.pages,
+      documentsRead: discovery.aggregate.documents,
+      factsFound: discovery.aggregate.facts,
+      officialResources: discovery.aggregate.resources
+    },
+    coverage,
+    currentActivity: discovery.currentActivity
   };
+}
+
+function presentCoverage(snapshot: WorkspaceCreationRun["snapshot"] | undefined, discovery: WorkspaceCreationDiscoveryProjection) {
+  const partial = snapshot?.context.status === "partial"
+    || snapshot?.extraction.status === "partial"
+    || snapshot?.intelligence.packState === "partial"
+    || snapshot?.architect.partialContext === true;
+  const hasProjectMaterial = discovery.aggregate.documents > 0
+    || discovery.aggregate.facts > 0
+    || discovery.aggregate.resources > 0
+    || (snapshot?.context.sourceProgress.length ?? 0) > 0;
+  if (partial) return { status: "partial" as const, reason: "Some project context could not be fully staged within the analysis budget." };
+  if (!hasProjectMaterial) return { status: "none" as const, reason: null };
+  return { status: "full" as const, reason: null };
 }
 
 export function friendlyCreationPhase(stage: WorkspaceCreationStage | null | undefined, partialContext = false) {

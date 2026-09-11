@@ -64,6 +64,8 @@ export type WorkspaceCreationActivityCode =
   | "page-discovered"
   | "page-fetch-started"
   | "page-fetched"
+  | "rendered-fallback-started"
+  | "rendered-fallback-used"
   | "document-stored"
   | "source-partial"
   | "source-completed"
@@ -109,6 +111,53 @@ export type WorkspaceCreationCompositionSnapshot = {
   attempts: number;
   elapsedMs: number;
   failure: WorkspaceCreationFailure | null;
+  artifacts?: WorkspaceCreationArtifactReviewSummary[];
+};
+
+export type WorkspaceCreationArtifactReviewSummary = {
+  artifactId: string;
+  path: string;
+  title: string;
+  operation: "create" | "merge-managed-section" | "preserve" | "conflict";
+  preview: string;
+  sourceRefCount: number;
+};
+
+export type WorkspaceCreationIntelligenceReviewFact = {
+  id: string;
+  key: string;
+  statement: string;
+  verification: "declared" | "discovered" | "inferred" | "verified";
+  conflicted: boolean;
+};
+
+export type WorkspaceCreationIntelligenceReviewResource = {
+  id: string;
+  label: string;
+  category: string;
+  locator: string;
+  verification: "declared" | "discovered" | "inferred" | "verified";
+  origin: string;
+};
+
+export type WorkspaceCreationIntelligenceReviewConflict = {
+  id: string;
+  summary: string;
+  status: "open" | "resolved" | "dismissed";
+  subjectCount: number;
+};
+
+export type WorkspaceCreationIntelligenceReviewSnapshot = {
+  projectName: string | null;
+  description: string | null;
+  projectType: string | null;
+  understanding: string[];
+  facts: WorkspaceCreationIntelligenceReviewFact[];
+  resources: WorkspaceCreationIntelligenceReviewResource[];
+  conflicts: WorkspaceCreationIntelligenceReviewConflict[];
+  unknowns: string[];
+  sourceCount: number;
+  evidenceCount: number;
 };
 
 export type WorkspaceCreationIntelligenceSnapshot = {
@@ -121,6 +170,7 @@ export type WorkspaceCreationIntelligenceSnapshot = {
   packId: string | null;
   packState: "empty" | "partial" | "ready" | null;
   partialContext: boolean;
+  review?: WorkspaceCreationIntelligenceReviewSnapshot;
 };
 
 export type WorkspaceCreationActivityData = {
@@ -481,19 +531,20 @@ function validateWorkspaceCreationRunLineage(value: unknown): value is Workspace
 function validateWorkspaceCreationCompositionSnapshot(value: unknown): value is WorkspaceCreationCompositionSnapshot {
   if (!value || typeof value !== "object") return false;
   const composition = value as Record<string, unknown>;
-  return hasOnlyKeys(composition, ["status", "planId", "inputFingerprint", "artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "modelExecutionOccurred", "attempts", "elapsedMs", "failure"])
+  return hasOnlyKeys(composition, ["status", "planId", "inputFingerprint", "artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "modelExecutionOccurred", "attempts", "elapsedMs", "failure", "artifacts"])
     && ["pending", "model", "fallback", "ready", "partial", "conflict", "blocked"].includes(composition.status as string)
     && (composition.planId === null || typeof composition.planId === "string")
     && (composition.inputFingerprint === null || typeof composition.inputFingerprint === "string" && /^[a-f0-9]{64}$/i.test(composition.inputFingerprint))
     && ["artifactCount", "createCount", "mergeCount", "preserveCount", "conflictCount", "attempts", "elapsedMs"].every((key) => Number.isSafeInteger(composition[key]) && (composition[key] as number) >= 0)
     && typeof composition.modelExecutionOccurred === "boolean"
-    && (composition.failure === null || validateWorkspaceCreationFailure(composition.failure));
+    && (composition.failure === null || validateWorkspaceCreationFailure(composition.failure))
+    && (composition.artifacts === undefined || Array.isArray(composition.artifacts) && composition.artifacts.length <= 16 && composition.artifacts.every(validateWorkspaceCreationArtifactReviewSummary));
 }
 
 function validateWorkspaceCreationIntelligenceSnapshot(value: unknown): value is WorkspaceCreationIntelligenceSnapshot {
   if (!value || typeof value !== "object") return false;
   const intelligence = value as Record<string, unknown>;
-  return hasOnlyKeys(intelligence, ["status", "attempts", "elapsedMs", "failure", "modelExecutionOccurred", "retryAvailable", "packId", "packState", "partialContext"])
+  return hasOnlyKeys(intelligence, ["status", "attempts", "elapsedMs", "failure", "modelExecutionOccurred", "retryAvailable", "packId", "packState", "partialContext", "review"])
     && ["pending", "model", "fallback", "blocked"].includes(intelligence.status as string)
     && Number.isSafeInteger(intelligence.attempts) && (intelligence.attempts as number) >= 0
     && Number.isSafeInteger(intelligence.elapsedMs) && (intelligence.elapsedMs as number) >= 0
@@ -502,7 +553,63 @@ function validateWorkspaceCreationIntelligenceSnapshot(value: unknown): value is
     && typeof intelligence.retryAvailable === "boolean"
     && (intelligence.packId === null || typeof intelligence.packId === "string")
     && (intelligence.packState === null || ["empty", "partial", "ready"].includes(intelligence.packState as string))
-    && typeof intelligence.partialContext === "boolean";
+    && typeof intelligence.partialContext === "boolean"
+    && (intelligence.review === undefined || validateWorkspaceCreationIntelligenceReviewSnapshot(intelligence.review));
+}
+
+function validateWorkspaceCreationArtifactReviewSummary(value: unknown): value is WorkspaceCreationArtifactReviewSummary {
+  if (!value || typeof value !== "object") return false;
+  const artifact = value as Record<string, unknown>;
+  return hasOnlyKeys(artifact, ["artifactId", "path", "title", "operation", "preview", "sourceRefCount"])
+    && typeof artifact.artifactId === "string" && artifact.artifactId.length > 0 && artifact.artifactId.length <= 120
+    && typeof artifact.path === "string" && artifact.path.length > 0 && artifact.path.length <= 240
+    && typeof artifact.title === "string" && artifact.title.length <= 160
+    && ["create", "merge-managed-section", "preserve", "conflict"].includes(artifact.operation as string)
+    && typeof artifact.preview === "string" && artifact.preview.length <= 360
+    && Number.isSafeInteger(artifact.sourceRefCount) && (artifact.sourceRefCount as number) >= 0;
+}
+
+function validateWorkspaceCreationIntelligenceReviewSnapshot(value: unknown): value is WorkspaceCreationIntelligenceReviewSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const review = value as Record<string, unknown>;
+  return hasOnlyKeys(review, ["projectName", "description", "projectType", "understanding", "facts", "resources", "conflicts", "unknowns", "sourceCount", "evidenceCount"])
+    && (review.projectName === null || boundedString(review.projectName, 4000))
+    && (review.description === null || boundedString(review.description, 4000))
+    && (review.projectType === null || boundedString(review.projectType, 80))
+    && Array.isArray(review.understanding) && review.understanding.length <= 8 && review.understanding.every((entry) => boundedString(entry, 400))
+    && Array.isArray(review.facts) && review.facts.length <= 32 && review.facts.every(validateWorkspaceCreationIntelligenceReviewFact)
+    && Array.isArray(review.resources) && review.resources.length <= 24 && review.resources.every(validateWorkspaceCreationIntelligenceReviewResource)
+    && Array.isArray(review.conflicts) && review.conflicts.length <= 16 && review.conflicts.every(validateWorkspaceCreationIntelligenceReviewConflict)
+    && Array.isArray(review.unknowns) && review.unknowns.length <= 24 && review.unknowns.every((unknown) => boundedString(unknown, 160))
+    && Number.isSafeInteger(review.sourceCount) && (review.sourceCount as number) >= 0
+    && Number.isSafeInteger(review.evidenceCount) && (review.evidenceCount as number) >= 0;
+}
+
+function validateWorkspaceCreationIntelligenceReviewFact(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const fact = value as Record<string, unknown>;
+  return hasOnlyKeys(fact, ["id", "key", "statement", "verification", "conflicted"])
+    && boundedString(fact.id, 120) && boundedString(fact.key, 160) && boundedString(fact.statement, 320)
+    && ["declared", "discovered", "inferred", "verified"].includes(fact.verification as string)
+    && typeof fact.conflicted === "boolean";
+}
+
+function validateWorkspaceCreationIntelligenceReviewResource(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const resource = value as Record<string, unknown>;
+  return hasOnlyKeys(resource, ["id", "label", "category", "locator", "verification", "origin"])
+    && boundedString(resource.id, 120) && boundedString(resource.label, 160) && boundedString(resource.category, 64)
+    && boundedString(resource.locator, 300) && boundedString(resource.origin, 64)
+    && ["declared", "discovered", "inferred", "verified"].includes(resource.verification as string);
+}
+
+function validateWorkspaceCreationIntelligenceReviewConflict(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const conflict = value as Record<string, unknown>;
+  return hasOnlyKeys(conflict, ["id", "summary", "status", "subjectCount"])
+    && boundedString(conflict.id, 120) && boundedString(conflict.summary, 300)
+    && ["open", "resolved", "dismissed"].includes(conflict.status as string)
+    && Number.isSafeInteger(conflict.subjectCount) && (conflict.subjectCount as number) > 0;
 }
 
 function validateWorkspaceCreationExtractionSnapshot(value: unknown): value is WorkspaceCreationSnapshot["extraction"] {
@@ -582,7 +689,7 @@ function validateWorkspaceCreationEvent(value: unknown): value is WorkspaceCreat
 }
 
 const workspaceCreationActivityCodes: readonly WorkspaceCreationActivityCode[] = [
-  "source-started", "page-discovered", "page-fetch-started", "page-fetched", "document-stored", "source-partial", "source-completed", "source-failed",
+  "source-started", "page-discovered", "page-fetch-started", "page-fetched", "rendered-fallback-started", "rendered-fallback-used", "document-stored", "source-partial", "source-completed", "source-failed",
   "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
   "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected",
   "intelligence-synthesis-started", "intelligence-fallback", "intelligence-completed", "intelligence-failed",
@@ -642,6 +749,10 @@ function validateWorkspaceCreationEventFailure(value: unknown): value is Workspa
 
 function arrayOfStrings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function boundedString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.length <= maxLength;
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {

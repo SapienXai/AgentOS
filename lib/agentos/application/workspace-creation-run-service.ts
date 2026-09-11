@@ -52,6 +52,7 @@ import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } f
 import { normalizeWorkspaceKnowledgeSources, workspaceKnowledgeSourceIdentity, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 import type { ProjectIntelligenceExtractionSummary } from "@/lib/agentos/application/project-intelligence-extraction-service";
+import type { ProjectIntelligencePack } from "@/lib/agentos/domains/project-intelligence";
 import {
   createFallbackProjectIntelligenceSynthesisProposal,
   createFallbackProjectIntelligencePack,
@@ -1115,10 +1116,49 @@ async function updateIntelligenceSnapshot(filePath: string, run: WorkspaceCreati
       retryAvailable: Boolean(intelligenceFailure),
       packId: result.pack.id,
       packState: result.pack.state,
-      partialContext
+      partialContext,
+      review: createIntelligenceReviewSnapshot(result.pack)
     }
   };
   return appendAndPersist(filePath, run, dependencies, snapshot, "intelligence-updated", fallback ? result.execution.failureCode : null, intelligenceFailure ? { kind: intelligenceFailure.kind, code: intelligenceFailure.code, retryability: intelligenceFailure.retryability } : null, dependencies.now().toISOString(), fallback ? "intelligence-fallback" : "intelligence-completed", { intelligenceStatus: fallback ? "fallback" : "model", packState: result.pack.state, packId: result.pack.id });
+}
+
+function createIntelligenceReviewSnapshot(pack: ProjectIntelligencePack) {
+  const conflictedFactIds = new Set(pack.conflicts.flatMap((conflict) => conflict.subjects.filter((subject) => subject.kind === "fact").map((subject) => subject.id)));
+  return {
+    projectName: pack.identity.projectName.value,
+    description: pack.identity.description.value,
+    projectType: pack.identity.projectType.value,
+    understanding: [
+      pack.overview.whatItDoes.value,
+      pack.overview.businessContext.value,
+      ...pack.overview.goals.value
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => redactSecretText(value).slice(0, 400)).slice(0, 8),
+    facts: pack.facts.slice(0, 32).map((fact) => ({
+      id: fact.id,
+      key: fact.key,
+      statement: redactSecretText(fact.statement).slice(0, 320),
+      verification: fact.verification,
+      conflicted: conflictedFactIds.has(fact.id)
+    })),
+    resources: pack.officialResources.slice(0, 24).map((resource) => ({
+      id: resource.id,
+      label: redactSecretText(resource.label).slice(0, 160),
+      category: resource.category,
+      locator: redactSecretText(resource.locator.value).slice(0, 300),
+      verification: resource.verification,
+      origin: resource.origin.origin
+    })),
+    conflicts: pack.conflicts.slice(0, 16).map((conflict) => ({
+      id: conflict.id,
+      summary: redactSecretText(conflict.summary).slice(0, 300),
+      status: conflict.status,
+      subjectCount: conflict.subjects.length
+    })),
+    unknowns: pack.unknowns.slice(0, 24).map((unknown) => redactSecretText(unknown).slice(0, 160)),
+    sourceCount: pack.sourceCoverage.sourceIds.length,
+    evidenceCount: pack.evidence.length
+  } satisfies NonNullable<WorkspaceCreationSnapshot["intelligence"]["review"]>;
 }
 
 async function updateExtractionSnapshot(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, summary: ProjectIntelligenceExtractionSummary) {
@@ -1251,7 +1291,15 @@ async function updateCompositionSnapshot(filePath: string, run: WorkspaceCreatio
     modelExecutionOccurred: result.summary.modelExecutionOccurred,
     attempts: result.summary.attempts,
     elapsedMs: result.summary.elapsedMs,
-    failure: result.summary.failure ? failure("model", result.summary.failure.code, "terminal", result.summary.failure.message) : null
+    failure: result.summary.failure ? failure("model", result.summary.failure.code, "terminal", result.summary.failure.message) : null,
+    artifacts: result.plan.artifacts.slice(0, 16).map((artifact) => ({
+      artifactId: artifact.artifactId,
+      path: artifact.path,
+      title: redactSecretText(artifact.title).slice(0, 160),
+      operation: artifact.operation,
+      preview: redactSecretText(artifact.content.replace(/\s+/g, " ").trim()).slice(0, 360),
+      sourceRefCount: artifact.sourceRefs.factIds.length + artifact.sourceRefs.resourceIds.length + artifact.sourceRefs.evidenceRefIds.length
+    }))
   };
   const freshness = run.snapshot.freshness ? {
     ...run.snapshot.freshness,
@@ -1540,7 +1588,7 @@ function progressStateActivity(status: KnowledgeIngestionProgress["status"], pha
 
 function asCreationActivityCode(value: string): WorkspaceCreationActivityCode {
   const codes: readonly WorkspaceCreationActivityCode[] = [
-    "source-started", "page-discovered", "page-fetch-started", "page-fetched", "document-stored", "source-partial", "source-completed", "source-failed",
+    "source-started", "page-discovered", "page-fetch-started", "page-fetched", "rendered-fallback-started", "rendered-fallback-used", "document-stored", "source-partial", "source-completed", "source-failed",
     "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
     "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected"
   ];
