@@ -1070,14 +1070,14 @@ function ReviewView({
 
       {model.extraction?.status === "partial" ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <p className="text-sm font-semibold">Project intelligence is partial</p>
-          <p className="mt-1 text-xs opacity-80">Some bounded project material was not included in the structured intelligence summary.</p>
+          <p className="text-sm font-semibold">Project evidence is partial</p>
+          <p className="mt-1 text-xs opacity-80">Some bounded project material was not included in the structured evidence summary.</p>
         </div>
       ) : null}
 
       {model.extraction && ["empty", "partial", "ready"].includes(model.extraction.status) ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200")} role="status">
-          <p className="text-sm font-medium">Project intelligence summary</p>
+          <p className="text-sm font-medium">Project evidence summary</p>
           <p className="mt-1 text-xs opacity-75">{model.extraction.factCount} fact{model.extraction.factCount === 1 ? "" : "s"} · {model.extraction.resourceCount} resource{model.extraction.resourceCount === 1 ? "" : "s"} · {model.extraction.verifiedFactCount} verified claim{model.extraction.verifiedFactCount === 1 ? "" : "s"}</p>
         </div>
       ) : null}

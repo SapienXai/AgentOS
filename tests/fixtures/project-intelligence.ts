@@ -1,5 +1,6 @@
 import {
   createEmptyProjectIntelligencePack,
+  normalizeProjectFactValue,
   type EvidenceRef,
   type OfficialResource,
   type ProjectConflict,
@@ -142,6 +143,20 @@ function resource(input: {
   };
 }
 
+function attachFixtureClaimScopes(evidence: readonly EvidenceRef[], facts: readonly ProjectFact[], resources: readonly OfficialResource[]) {
+  for (const evidenceRef of evidence) {
+    const scopes = [
+      ...facts
+        .filter((candidate) => candidate.evidence.some((reference) => reference.evidenceRefId === evidenceRef.id && reference.relation === "supports"))
+        .map((candidate) => ({ key: candidate.key, normalizedValue: normalizeProjectFactValue(candidate.normalizedValue) })),
+      ...resources
+        .filter((candidate) => candidate.evidence.some((reference) => reference.evidenceRefId === evidenceRef.id && reference.relation === "supports"))
+        .map((candidate) => ({ key: `resource:${candidate.category}`, normalizedValue: normalizeProjectFactValue(candidate.locator) }))
+    ];
+    Object.assign(evidenceRef, { claimScopes: scopes });
+  }
+}
+
 function conflict(id: string, subjects: ProjectConflict["subjects"], evidenceRefIds: readonly string[], summary: string): ProjectConflict {
   return {
     schemaVersion: 1,
@@ -245,6 +260,7 @@ const coinCollectResources = [
   resource({ id: "cc-repository-resource", category: "repository", kind: "url", value: "https://github.com/coincollect/coincollect", label: "CoinCollect repository", evidence: [{ evidenceRefId: "cc-repo", relation: "supports" }], origin: "first-party-repository", sourceId: "coincollect-repo", evidenceRefId: "cc-repo" }),
   resource({ id: "cc-stale-resource", category: "other", kind: "url", value: "https://listing.invalid/coincollect", label: "Historical listing", evidence: [{ evidenceRefId: "cc-stale", relation: "supports" }], origin: "discovered-external", sourceId: "external-reference", evidenceRefId: "cc-stale", verification: "discovered" })
 ] satisfies readonly OfficialResource[];
+attachFixtureClaimScopes(coinCollectEvidence, coinCollectFacts, coinCollectResources);
 
 const coinCollectConflicts = [
   conflict("cc-contract-conflict", [{ kind: "fact", id: "fact-contract" }, { kind: "fact", id: "fact-stale-contract" }], ["cc-docs", "cc-stale"], "Current documentation and a historical external listing publish different contract addresses.")
@@ -321,6 +337,7 @@ const saasResources = [
   resource({ id: "saas-website", category: "website", kind: "url", value: "https://orbitdesk.test/", label: "OrbitDesk website", evidence: [{ evidenceRefId: "saas-home", relation: "supports" }], origin: "first-party-website" }),
   resource({ id: "saas-docs-resource", category: "documentation", kind: "url", value: "https://docs.orbitdesk.test/", label: "OrbitDesk documentation", evidence: [{ evidenceRefId: "saas-docs", relation: "supports" }], origin: "first-party-documentation" })
 ] satisfies readonly OfficialResource[];
+attachFixtureClaimScopes(saasEvidence, saasFacts, saasResources);
 
 const saasPack = pack({ id: "orbitdesk", projectName: "OrbitDesk", projectType: "saas", audience: ["support teams"], audienceFactIds: ["fact-saas-audience"], facts: saasFacts, evidence: saasEvidence, resources: saasResources, sourceIds: ["orbitdesk-site", "orbitdesk-docs"] });
 
@@ -342,6 +359,7 @@ const docsResources = [
   resource({ id: "docs-api-resource", category: "api", kind: "url", value: "https://docs.riverkit.test/api", label: "RiverKit API reference", evidence: [{ evidenceRefId: "docs-api", relation: "supports" }], origin: "first-party-documentation" }),
   resource({ id: "docs-repository-resource", category: "repository", kind: "url", value: "https://github.com/riverkit/riverkit", label: "RiverKit repository", evidence: [{ evidenceRefId: "docs-repository", relation: "supports" }], origin: "first-party-repository" })
 ] satisfies readonly OfficialResource[];
+attachFixtureClaimScopes(docsEvidence, docsFacts, docsResources);
 
 export const goldenProjectFixtures: readonly GoldenProjectFixture[] = [
   {

@@ -7,6 +7,7 @@ import {
   normalizeProjectConflict,
   normalizeProjectFact,
   normalizeProjectFactValue,
+  isEvidenceClaimScopeCompatible,
   PROJECT_INTELLIGENCE_SCHEMA_VERSION,
   validateEvidenceRef,
   validateOfficialResource,
@@ -21,6 +22,7 @@ import {
   type ProjectEvidenceType,
   type ProjectFact,
   type ProjectFactValue,
+  type ProjectEvidenceClaimScope,
 } from "@/lib/agentos/domains/project-intelligence";
 import type { ProjectDiscoveryManifest, ProjectDiscoveryPage } from "@/lib/agentos/domains/project-discovery";
 import type { WorkspaceKnowledgeSource, WorkspaceKnowledgeSourceKind } from "@/lib/agentos/domains/workspace-knowledge";
@@ -401,28 +403,53 @@ export function extractProjectIntelligence(input: ProjectIntelligenceExtractionI
     return normalized;
   }
 
+  function claimScopedEvidence(base: EvidenceRef, key: string, value: ProjectFactValue) {
+    const normalizedValue = normalizeProjectFactValue(value);
+    if (isEvidenceClaimScopeCompatible(base, key, normalizedValue)) return base;
+    const scope: ProjectEvidenceClaimScope = { key, normalizedValue };
+    const identity = `${base.id}|claim|${scope.key}|${stableStringify(scope.normalizedValue)}`;
+    const existing = evidenceByIdentity.get(identity);
+    if (existing) return existing;
+    if (evidence.length >= limits.maxEvidence) {
+      partial = true;
+      addWarning("Extraction evidence limit stopped additional observations.");
+      return base;
+    }
+    const normalized = normalizeEvidenceRef({
+      ...base,
+      id: `evidence-${sha256(identity).slice(0, 32)}`,
+      claimScopes: [...(base.claimScopes ?? []), scope]
+    });
+    evidence.push(normalized);
+    evidenceByIdentity.set(identity, normalized);
+    if (normalized.canonicalLocator) evidenceByLocator.set(`${normalized.sourceId}|${normalized.canonicalLocator}|${identity}`, normalized);
+    return normalized;
+  }
+
   function addFact(category: ProjectFact["category"], key: string, value: ProjectFactValue, statement: string, refs: readonly EvidenceRef[], sourceId: string, origin: ProjectEvidenceOrigin) {
     if (factDrafts.size >= limits.maxFacts && !factDrafts.has(`${key}|${stableStringify(value)}`)) { partial = true; addWarning("Extraction fact limit stopped additional claims."); return; }
     if (refs.length === 0) return;
+    const scopedRefs = refs.map((ref) => claimScopedEvidence(ref, key, value));
     const identity = `${key}|${stableStringify(normalizeProjectFactValue(value))}`;
     const existing = factDrafts.get(identity);
     if (existing) {
-      mergeIds(existing.evidenceIds, refs.map((ref) => ref.id));
+      mergeIds(existing.evidenceIds, scopedRefs.map((ref) => ref.id));
       mergeIds(existing.sourceIds, [sourceId]);
       return;
     }
-    factDrafts.set(identity, { category, key, value, statement, evidenceIds: refs.map((ref) => ref.id), sourceIds: [sourceId], origin });
+    factDrafts.set(identity, { category, key, value, statement, evidenceIds: scopedRefs.map((ref) => ref.id), sourceIds: [sourceId], origin });
   }
 
   function addResource(category: OfficialResource["category"], locator: OfficialResource["locator"], label: string, refs: readonly EvidenceRef[], origin: ProjectEvidenceOrigin, sourceId?: string) {
     if (resourceDrafts.size >= limits.maxResources && !resourceDrafts.has(`${category}|${locator.kind}|${locator.value}`)) { partial = true; addWarning("Extraction resource limit stopped additional candidates."); return undefined; }
     const identity = `${category}|${locator.kind}|${locator.value.toLowerCase()}`;
+    const scopedRefs = refs.map((ref) => claimScopedEvidence(ref, `resource:${category}`, locator));
     const existing = resourceDrafts.get(identity);
     if (existing) {
-      mergeIds(existing.evidenceIds, refs.map((ref) => ref.id));
+      mergeIds(existing.evidenceIds, scopedRefs.map((ref) => ref.id));
       return existing;
     }
-    resourceDrafts.set(identity, { category, locator, label: safeExcerpt(label, 240), evidenceIds: refs.map((ref) => ref.id), origin, baseVerification: origin === "operator" ? "declared" : "discovered", ...(sourceId ? { sourceId } : {}) });
+    resourceDrafts.set(identity, { category, locator, label: safeExcerpt(label, 240), evidenceIds: scopedRefs.map((ref) => ref.id), origin, baseVerification: origin === "operator" ? "declared" : "discovered", ...(sourceId ? { sourceId } : {}) });
     return resourceDrafts.get(identity);
   }
 

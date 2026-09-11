@@ -418,8 +418,11 @@ async function recoverKnowledgeTransactionForReader(corpusRoot: string, stateRoo
   while (true) {
     const writer = await readKnowledgeWriterLock(stateRoot);
     if (writer && await isKnowledgeWriterLive(writer)) {
-      const transaction = await readKnowledgeTransactionJournal(stateRoot);
-      if (!transaction || transaction.phase === "prepared") return;
+      // A live writer may be atomically replacing or removing the journal. A
+      // transient missing/partial read is not evidence of corruption; wait for
+      // the writer to publish or clean up its durable transaction state.
+      const transaction = await readKnowledgeTransactionJournalIfValid(stateRoot);
+      if (transaction?.phase === "prepared" || !(await pathExists(path.join(stateRoot, TRANSACTION_FILE)))) return;
       if (Date.now() >= deadline) throw new KnowledgeIngestionBusyError("Knowledge corpus activation is in progress; retry the read.");
       await delay(25);
       continue;
@@ -1589,6 +1592,11 @@ async function readKnowledgeTransactionJournal(stateRoot: string): Promise<Knowl
   const value = await readJson(path.join(stateRoot, TRANSACTION_FILE));
   if (!isKnowledgeTransactionJournal(value)) throw new Error("Knowledge transaction recovery found an invalid journal.");
   return value;
+}
+
+async function readKnowledgeTransactionJournalIfValid(stateRoot: string): Promise<KnowledgeTransactionJournal | null> {
+  const value = await readJson(path.join(stateRoot, TRANSACTION_FILE));
+  return isKnowledgeTransactionJournal(value) ? value : null;
 }
 
 async function isTransactionOwnerLive(journal: KnowledgeTransactionJournal) {

@@ -273,7 +273,8 @@ contract.
 Extraction is evidence-first. `EvidenceRef` owns bounded proof and the
 qualification capability. A fact or resource is marked `verified` only when
 its claim relationship is `supports` and the referenced evidence has a
-matching deterministic qualification capability. First-party website,
+matching deterministic qualification capability and claim-scoped observation
+matching the canonical claim. First-party website,
 documentation, and repository evidence qualify by default. The contract also
 accepts explicitly qualified authoritative uploaded documents and connected
 sources without hard-coding provenance origin as the future verifier. Merely
@@ -294,6 +295,20 @@ presenter exposes bounded counts and honest partial-coverage status. Phase 4
 does not feed Project Intelligence into Workspace Architect, change
 `WorkspaceBlueprint`, alter provisioning, or implement the Project
 Intelligence Agent runtime.
+
+## Phase 4.1 claim-scoped evidence and lock certification
+
+Phase 4.1 makes every verified interpretation traceable to a bounded evidence
+window for the exact claim or resource locator it supports. Evidence may
+support multiple observations, but a generic document or page reference cannot
+promote an unrelated claim. Conflicts retain the evidence references attached
+to the competing canonical claims.
+
+The knowledge corpus uses atomic durable file publication and an ownership-
+checked writer lease. Reader recovery treats a journal that is being replaced
+or removed by a live writer as transient state, while malformed durable control
+state still fails closed. Concurrent-reader validation is isolated per test
+workspace so cleanup cannot remove another active test's corpus.
 
 ## Phase 2 creation execution
 
@@ -387,8 +402,11 @@ Phase 1 and Phase 1.1 establish normalized claims, evidence qualification
 semantics, projections, conflicts, source-coverage invariants, lifecycle
 contracts, fixtures, and validation. Phase 3 establishes deterministic
 bounded project discovery and its corpus/creation-progress projection. Phase
-4 establishes deterministic structured extraction and evidence-qualified
-resource interpretation. The following remain future work:
+4 and Phase 4.1 establish deterministic structured extraction, claim-scoped
+evidence, lock recovery certification, and evidence-qualified resource
+interpretation. Phase 5 adds the bounded Project Intelligence Agent synthesis
+sidecar without changing Workspace Architect input or `WorkspaceBlueprint`.
+The following remain future work:
 
 - the Project Intelligence Agent runtime, broader synthesis, and future
   verification/review workflows;

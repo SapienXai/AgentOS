@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { test, type TestContext } from "node:test";
 
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { ingestKnowledgeSources } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
@@ -18,12 +18,6 @@ import type {
   OpenClawMemoryStatusPayload
 } from "@/lib/openclaw/client/types";
 import { searchWorkerMemory } from "@/lib/openclaw/application/native-memory-service";
-
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 function adapterFixture(initialConfig: Record<string, unknown>, search?: OpenClawAdapter["searchMemory"]) {
   const config = structuredClone(initialConfig) as Record<string, unknown>;
@@ -69,9 +63,9 @@ function adapterFixture(initialConfig: Record<string, unknown>, search?: OpenCla
   return { adapter, config, mutations };
 }
 
-async function makeWorkspace() {
+async function makeWorkspace(t: TestContext) {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-native-knowledge-"));
-  tempRoots.push(root);
+  t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
 
@@ -94,8 +88,8 @@ function entries(...agentIds: string[]) {
   return Object.fromEntries(agentIds.map((agentId) => [agentId, {}]));
 }
 
-test("native binding preserves per-agent and global memory settings, is idempotent, and removes only its canonical entry", async () => {
-  const workspacePath = await makeWorkspace();
+test("native binding preserves per-agent and global memory settings, is idempotent, and removes only its canonical entry", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "ALPHA_ONLY_FACT");
   const existingUserPath = { path: "/srv/operator-notes", pattern: "runbooks/**/*.md" };
   const fixture = adapterFixture({
@@ -159,8 +153,8 @@ test("native binding preserves per-agent and global memory settings, is idempote
   });
 });
 
-test("two agents in one workspace receive the same native knowledge binding without a global path", async () => {
-  const workspacePath = await makeWorkspace();
+test("two agents in one workspace receive the same native knowledge binding without a global path", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "SHARED_WORKSPACE_FACT");
   const fixture = adapterFixture({
     memory: { search: { provider: "none" } },
@@ -184,8 +178,8 @@ test("two agents in one workspace receive the same native knowledge binding with
   assert.equal(((fixture.config.memory as Record<string, unknown>).search as Record<string, unknown>).extraPaths, undefined);
 });
 
-test("a later agent receives the existing workspace binding without rewriting the first agent", async () => {
-  const workspacePath = await makeWorkspace();
+test("a later agent receives the existing workspace binding without rewriting the first agent", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "SHARED_WORKSPACE_FACT");
   const fixture = adapterFixture({
     agents: {
@@ -211,8 +205,8 @@ test("a later agent receives the existing workspace binding without rewriting th
   assert.deepEqual(secondSearch.extraPaths, [{ path: "knowledge/sources" }]);
 });
 
-test("concurrent binding readers observe the canonical corpus snapshot without mutating config", async () => {
-  const workspacePath = await makeWorkspace();
+test("concurrent binding readers observe the canonical corpus snapshot without mutating config", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "CONCURRENT_READER_FACT");
   const fixture = adapterFixture({
     agents: { entries: entries("agent-a") }
@@ -231,9 +225,9 @@ test("concurrent binding readers observe the canonical corpus snapshot without m
   assert.equal(fixture.mutations.length, 0);
 });
 
-test("native search contract keeps workspace facts isolated and preserves untrusted provenance", async () => {
-  const workspaceA = await makeWorkspace();
-  const workspaceB = await makeWorkspace();
+test("native search contract keeps workspace facts isolated and preserves untrusted provenance", async (t) => {
+  const workspaceA = await makeWorkspace(t);
+  const workspaceB = await makeWorkspace(t);
   await ingestPrompt(workspaceA, "ALPHA_ONLY_FACT");
   await ingestPrompt(workspaceB, "BETA_ONLY_FACT");
 
@@ -279,8 +273,8 @@ test("native search contract keeps workspace facts isolated and preserves untrus
   assert.doesNotMatch(beta.results.map((result) => result.snippet).join(" "), /ALPHA_ONLY_FACT/);
 });
 
-test("coverage reports markdown and non-markdown final corpus documents without claiming native index counts", async () => {
-  const workspacePath = await makeWorkspace();
+test("coverage reports markdown and non-markdown final corpus documents without claiming native index counts", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   const sourcePath = path.join(workspacePath, "input");
   await mkdir(sourcePath, { recursive: true });
   await writeFile(path.join(sourcePath, "guide.md"), "Markdown guide");
@@ -310,8 +304,8 @@ test("coverage reports markdown and non-markdown final corpus documents without 
   assert.match(status.warnings.join(" "), /OpenClaw owns native memory watching/);
 });
 
-test("ensure refreshes a dirty OpenClaw index through the explicit CLI fallback and skips clean indexes", async () => {
-  const workspacePath = await makeWorkspace();
+test("ensure refreshes a dirty OpenClaw index through the explicit CLI fallback and skips clean indexes", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "INDEX_REFRESH_FACT");
   const fixture = adapterFixture({
     agents: {
@@ -368,8 +362,8 @@ test("ensure refreshes a dirty OpenClaw index through the explicit CLI fallback 
   assert.equal(rebuildCount, 1);
 });
 
-test("workspace status projects OpenClaw CLI index health without exposing native paths", async () => {
-  const workspacePath = await makeWorkspace();
+test("workspace status projects OpenClaw CLI index health without exposing native paths", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "INDEX_STATUS_FACT");
   const fixture = adapterFixture({
     agents: {
@@ -415,8 +409,8 @@ test("workspace status projects OpenClaw CLI index health without exposing nativ
   assert.doesNotMatch(JSON.stringify(status), /dbPath|workspaceDir/);
 });
 
-test("malformed native config and missing native status remain explicit failure or unknown states", async () => {
-  const workspacePath = await makeWorkspace();
+test("malformed native config and missing native status remain explicit failure or unknown states", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "FACT");
   const fixture = adapterFixture({
     agents: {
@@ -443,8 +437,8 @@ test("malformed native config and missing native status remain explicit failure 
   assert.equal(status.indexActionRequired, "unknown");
 });
 
-test("workspace status keeps a configured binding but projects unproven index locality as unknown", async () => {
-  const workspacePath = await makeWorkspace();
+test("workspace status keeps a configured binding but projects unproven index locality as unknown", async (t) => {
+  const workspacePath = await makeWorkspace(t);
   await ingestPrompt(workspacePath, "LOCALITY_UNKNOWN_FACT");
   const fixture = adapterFixture({
     agents: {

@@ -108,7 +108,14 @@ export type EvidenceRef = {
   evidenceType: ProjectEvidenceType;
   provenance: ProjectEvidenceProvenance;
   qualification: ProjectEvidenceQualification;
+  /** The bounded claim observation this proof window actually supports. */
+  claimScopes?: readonly ProjectEvidenceClaimScope[];
   confidence?: ProjectConfidence;
+};
+
+export type ProjectEvidenceClaimScope = {
+  key: string;
+  normalizedValue: ProjectFactValue;
 };
 
 export type ProjectEvidenceRelation = "supports" | "contradicts" | "context";
@@ -500,6 +507,7 @@ const EVIDENCE_KEYS = [
   "evidenceType",
   "provenance",
   "qualification",
+  "claimScopes",
   "confidence"
 ] as const;
 
@@ -579,6 +587,7 @@ export function normalizeEvidenceRef(raw: unknown): EvidenceRef {
     evidenceType: requireEvidenceType(normalized.evidenceType),
     provenance,
     qualification,
+    ...(Array.isArray(normalized.claimScopes) ? { claimScopes: normalizeClaimScopes(normalized.claimScopes) } : {}),
     ...(isConfidence(normalized.confidence) ? { confidence: normalized.confidence } : {})
   };
   assertValidOrThrow(validateEvidenceRef(result));
@@ -953,6 +962,7 @@ function validateEvidenceRefAt(value: unknown, path: string, issues: ProjectInte
     addIssue(issues, `${path}.qualification`, "unsupported_verification", "Evidence from operator-only or external discovery cannot qualify as authoritative proof.");
   }
   validateOptionalEnum(value.confidence, CONFIDENCE_VALUES, `${path}.confidence`, issues);
+  if (value.claimScopes !== undefined) validateClaimScopes(value.claimScopes, `${path}.claimScopes`, issues);
 }
 
 function validateFactAt(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1173,12 +1183,43 @@ function validateEvidenceQualification(value: unknown, path: string, issues: Pro
   }
 }
 
+function normalizeClaimScopes(value: readonly unknown[]): readonly ProjectEvidenceClaimScope[] {
+  const seen = new Set<string>();
+  const scopes: ProjectEvidenceClaimScope[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.key !== "string") continue;
+    const normalizedValue = normalizeProjectFactValue(requireFactValue(entry.normalizedValue, "EvidenceRef.claimScopes.normalizedValue"));
+    const scope = { key: normalizeProjectIntelligenceText(entry.key, 160), normalizedValue };
+    const identity = `${scope.key}|${projectMembershipKey(scope.normalizedValue)}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    scopes.push(scope);
+  }
+  return scopes;
+}
+
+function validateClaimScopes(value: unknown, path: string, issues: ProjectIntelligenceValidationIssue[]) {
+  if (!Array.isArray(value)) return addIssue(issues, path, "invalid_type", "Evidence claim scopes must be an array.");
+  const seen = new Set<string>();
+  value.forEach((entry, index) => {
+    if (!isRecord(entry)) return addIssue(issues, `${path}[${index}]`, "invalid_type", "Evidence claim scope must be an object.");
+    assertKnownKeysForValidation(entry, ["key", "normalizedValue"], `${path}[${index}]`, issues);
+    validateBoundedText(entry.key, `${path}[${index}].key`, 160, issues);
+    validateFactValue(entry.normalizedValue, `${path}[${index}].normalizedValue`, issues);
+    if (typeof entry.key === "string" && isProjectFactValue(entry.normalizedValue)) {
+      const identity = `${entry.key}|${projectMembershipKey(entry.normalizedValue)}`;
+      if (seen.has(identity)) addIssue(issues, `${path}[${index}]`, "duplicate_reference", "Evidence claim scopes must be unique.");
+      seen.add(identity);
+    }
+  });
+}
+
 function validateFactEvidence(fact: ProjectFact, evidence: readonly EvidenceRef[] | undefined, path: string, issues: ProjectIntelligenceValidationIssue[]) {
   if (!evidence) {
     if (fact.verification === "verified") addIssue(issues, `${path}.${fact.id}.verification`, "unsupported_verification", "A verified fact requires resolvable supporting evidence.");
     return;
   }
-  validateClaimVerification(fact.verification, fact.evidence, evidence, `${path}.${fact.id}`, issues);
+  validateClaimVerification(fact.verification, fact.evidence, evidence, `${path}.${fact.id}`, issues, fact.key, fact.normalizedValue);
 }
 
 function validateResourceEvidence(resource: OfficialResource, evidence: readonly EvidenceRef[] | undefined, path: string, issues: ProjectIntelligenceValidationIssue[]) {
@@ -1186,11 +1227,11 @@ function validateResourceEvidence(resource: OfficialResource, evidence: readonly
     if (resource.verification === "verified") addIssue(issues, `${path}.${resource.id}.verification`, "unsupported_verification", "A verified resource requires resolvable supporting evidence.");
     return;
   }
-  validateClaimVerification(resource.verification, resource.evidence, evidence, `${path}.${resource.id}`, issues);
+  validateClaimVerification(resource.verification, resource.evidence, evidence, `${path}.${resource.id}`, issues, `resource:${resource.category}`, normalizeProjectFactValue(resource.locator));
   if (resource.origin.evidenceRefId) validateEvidenceReferences([resource.origin.evidenceRefId], evidence, `${path}.${resource.id}.origin.evidenceRefId`, issues);
 }
 
-function validateClaimVerification(verification: ProjectVerificationState, claimEvidence: readonly ProjectClaimEvidence[], evidence: readonly EvidenceRef[], path: string, issues: ProjectIntelligenceValidationIssue[]) {
+function validateClaimVerification(verification: ProjectVerificationState, claimEvidence: readonly ProjectClaimEvidence[], evidence: readonly EvidenceRef[], path: string, issues: ProjectIntelligenceValidationIssue[], claimKey?: string, normalizedValue?: ProjectFactValue) {
   const byId = new Map(evidence.map((entry) => [entry.id, entry]));
   for (const [index, relation] of claimEvidence.entries()) {
     const referenced = byId.get(relation.evidenceRefId);
@@ -1199,9 +1240,25 @@ function validateClaimVerification(verification: ProjectVerificationState, claim
       continue;
     }
   }
-  if (verification === "verified" && !claimEvidence.some((relation) => relation.relation === "supports" && isEvidenceQualificationEligible(byId.get(relation.evidenceRefId)))) {
+  if (verification !== "verified") return;
+  const qualifyingSupport = claimEvidence.find((relation) => relation.relation === "supports" && isEvidenceQualificationEligible(byId.get(relation.evidenceRefId)));
+  if (!qualifyingSupport) {
     addIssue(issues, `${path}.verification`, "unsupported_verification", "Verified claims require at least one qualifying supporting EvidenceRef.");
+    return;
   }
+  const supportingEvidence = byId.get(qualifyingSupport.evidenceRefId);
+  if (!claimKey || normalizedValue === undefined || !isEvidenceClaimScopeCompatible(supportingEvidence, claimKey, normalizedValue)) {
+    addIssue(issues, `${path}.verification`, "unsupported_verification", "Verified claims require qualifying evidence scoped to the exact canonical claim.");
+  }
+}
+
+export function isEvidenceClaimScopeCompatible(
+  evidence: Pick<EvidenceRef, "claimScopes"> | undefined,
+  claimKey: string,
+  normalizedValue: ProjectFactValue
+) {
+  const expected = projectMembershipKey(normalizeProjectFactValue(normalizedValue));
+  return Boolean(evidence?.claimScopes?.some((scope) => scope.key === claimKey && projectMembershipKey(scope.normalizedValue) === expected));
 }
 
 function validatePackProjections(pack: ProjectIntelligencePack, facts: readonly ProjectFact[], issues: ProjectIntelligenceValidationIssue[]) {
@@ -1802,6 +1859,14 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 function requireFactValue(value: unknown, label: string): ProjectFactValue {
   if (value === undefined) throw new Error(`${label} is required.`);
   return value as ProjectFactValue;
+}
+
+function isProjectFactValue(value: unknown): value is ProjectFactValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isProjectFactValue);
+  if (!isRecord(value)) return false;
+  return Object.entries(value).every(([key, entry]) => !SECRET_KEY.test(key) && isProjectFactValue(entry));
 }
 
 function requiredText(value: unknown, label: string): string {
