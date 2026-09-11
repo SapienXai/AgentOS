@@ -13,7 +13,11 @@ import {
   PHASE_6_NATIVE_METHODS
 } from "@/lib/openclaw/certification/upstream-scope";
 import type { OpenClawGatewayRequestPolicy } from "@/lib/openclaw/client/types";
-import { OPENCLAW_STATIC_METHOD_SCOPES, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import { OPENCLAW_STATIC_METHOD_SCOPES } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
 
 const execFileAsync = promisify(execFile);

@@ -18,7 +18,11 @@ import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { projectApprovalRecords, projectQuestionRecords } from "@/lib/openclaw/application/human-control-inbox-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 
 const execFileAsync = promisify(execFile);

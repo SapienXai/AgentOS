@@ -16,7 +16,10 @@ import type {
 } from "@/lib/openclaw/client/types";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
-import { OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 
 const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;

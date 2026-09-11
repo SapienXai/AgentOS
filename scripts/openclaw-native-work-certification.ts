@@ -14,7 +14,11 @@ import { MissionControlCacheService } from "@/lib/openclaw/application/mission-c
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
-import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import type { OpenClawCapabilityMatrix } from "@/lib/openclaw/types";
 
 const execFileAsync = promisify(execFile);

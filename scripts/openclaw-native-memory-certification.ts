@@ -11,7 +11,10 @@ import type {
   OpenClawMemoryDreamActionPayload,
   OpenClawMemoryStatusPayload
 } from "@/lib/openclaw/client/types";
-import { OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_ROOT = process.env.OPENCLAW_MEMORY_CERT_PACKAGE?.trim() || `/tmp/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-source-agentos`;

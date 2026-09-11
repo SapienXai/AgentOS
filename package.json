@@ -24,6 +24,7 @@
     "smoke:mission-control": "node scripts/mission-control-browser-smoke.mjs",
     "smoke:secure-browser": "node scripts/secure-browser-integration-smoke.mjs",
     "smoke:runtime-golden": "node scripts/openclaw-runtime-golden-smoke.mjs",
+    "openclaw:contract-audit": "node scripts/openclaw-2026-9-3-to-9-4-contract-audit.mjs",
     "openclaw:runtime-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-runtime-certification.ts",
     "openclaw:official-transport-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-official-transport-certification.ts",
     "openclaw:official-lifecycle-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-official-gateway-lifecycle-certification.ts",
@@ -45,7 +46,9 @@
     "openclaw:fresh-baseline-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-fresh-baseline-e2e.ts",
     "openclaw:migration-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-migration-e2e.ts",
     "openclaw:migration-9-3-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-2026-9-2-to-9-3-migration-e2e.ts",
+    "openclaw:migration-9-4-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-2026-9-3-to-9-4-migration-e2e.ts",
     "openclaw:final-certification": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-2026-9-3-final-certification.ts",
+    "openclaw:final-certification-9-4": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-2026-9-4-final-certification.ts",
     "start": "next start",
     "lint": "eslint .",
     "openclaw:compat": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-compat.ts",
@@ -56,8 +59,8 @@
     "publish:agentos": "pnpm check:release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"
   },
   "dependencies": {
-    "@openclaw/gateway-client": "2026.9.3",
-    "@openclaw/gateway-protocol": "2026.9.3",
+    "@openclaw/gateway-client": "2026.9.4",
+    "@openclaw/gateway-protocol": "2026.9.4",
     "@radix-ui/react-avatar": "^1.1.3",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",

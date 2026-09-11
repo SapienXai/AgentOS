@@ -12,7 +12,11 @@ import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
-import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import { createMissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { buildMissionDispatchTranscriptRuntime } from "@/lib/openclaw/domains/mission-dispatch-runtime";

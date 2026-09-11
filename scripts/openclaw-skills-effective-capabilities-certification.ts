@@ -12,11 +12,13 @@ import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client
 import type { OpenClawToolsCatalogPayload } from "@/lib/openclaw/client/types";
 import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
 import {
-  OPENCLAW_IDENTITY_CONTRACT_BUILD,
-  OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
-  OPENCLAW_IDENTITY_CONTRACT_VERSION,
   OPENCLAW_STATIC_METHOD_SCOPES
 } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SKILLS_EFFECTIVE_PACKAGE?.trim() || `/tmp/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-source-agentos`;

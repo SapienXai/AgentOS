@@ -12,11 +12,13 @@ import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
   OPENCLAW_8_2_IDENTITY_INVENTORY,
-  OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_IDENTITY_CONTRACT_SCHEMA_VERSION,
-  OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
-  OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import {
   buildOpenClawNativeAuthorizationProof,
   OpenClawAuthorizationService

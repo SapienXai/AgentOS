@@ -10,8 +10,10 @@ import path from "node:path";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
-import { OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/certification-target";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import { OpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { requestSupervisorCommand, type SupervisorResponse } from "@/lib/openclaw/lifecycle/supervisor-ipc";
@@ -49,7 +51,7 @@ async function main() {
   if (!PACKAGE_INPUT) throw new Error(`Set OPENCLAW_LIFECYCLE_PACKAGE to an exact OpenClaw ${OPENCLAW_IDENTITY_CONTRACT_VERSION} package root.`);
   const packageRoot = path.resolve(PACKAGE_INPUT);
   const identity = await readPackageIdentity(packageRoot);
-  assert.equal(identity.version, OPENCLAW_RECOMMENDED_VERSION);
+  assert.equal(identity.version, OPENCLAW_IDENTITY_CONTRACT_VERSION);
   assert.equal(identity.sourceCommit, TARGET_COMMIT);
 
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-lifecycle-"));
@@ -145,7 +147,7 @@ async function runManagedLifecycle(input: { fixtureRoot: string; packageRoot: st
   const started = await service.start();
   assert.equal(started.descriptor.ownership, "agentos-managed");
   assert.equal(started.descriptor.state, "ready");
-  assert.equal(started.descriptor.version, OPENCLAW_RECOMMENDED_VERSION);
+  assert.equal(started.descriptor.version, OPENCLAW_IDENTITY_CONTRACT_VERSION);
   assert.equal(started.descriptor.sourceCommit, TARGET_COMMIT);
   const client = createNativeClient(started.descriptor.gatewayUrl, token);
   let firstSessionKey = "";
@@ -195,7 +197,7 @@ async function runManagedLifecycle(input: { fixtureRoot: string; packageRoot: st
         recoveredPid: recovered.descriptor.pid
       },
       checks: {
-        canonicalRuntime: started.descriptor.version === OPENCLAW_RECOMMENDED_VERSION && started.descriptor.sourceCommit === TARGET_COMMIT,
+        canonicalRuntime: started.descriptor.version === OPENCLAW_IDENTITY_CONTRACT_VERSION && started.descriptor.sourceCommit === TARGET_COMMIT,
         start: started.descriptor.state === "ready" && resumed.descriptor.state === "ready",
         stop: stopped.descriptor.state === "stopped",
         restart: restarted.descriptor.state === "ready",

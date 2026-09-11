@@ -8,14 +8,14 @@ import path from "node:path";
 import { getOpenClawInstallCommand } from "@/lib/openclaw/install";
 import { redactGatewayUrl } from "@/lib/openclaw/compat/targets";
 import { OpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
-import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
-import { OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT } from "@/lib/openclaw/identity/contract";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_CERTIFICATION_TARGET_COMMIT, OPENCLAW_CERTIFICATION_TARGET_VERSION } from "@/lib/openclaw/certification-target";
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
 import { redactSecretText } from "@/lib/security/redaction";
 
-const TARGET_VERSION = OPENCLAW_RECOMMENDED_VERSION;
+const TARGET_VERSION = OPENCLAW_CERTIFICATION_TARGET_VERSION;
 const TARGET_LABEL = TARGET_VERSION.split(".").slice(1).join(".");
-const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;
+const TARGET_COMMIT = OPENCLAW_CERTIFICATION_TARGET_COMMIT;
 const TARGET_PACKAGE_INPUT = process.env.OPENCLAW_FRESH_BASELINE_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_FRESH_BASELINE_OUTPUT?.trim() ||
   path.resolve(`docs/evidence/openclaw-${TARGET_VERSION}-fresh-baseline.json`);
@@ -191,7 +191,7 @@ async function main() {
         targetPackageHash: provisionedIdentity.packageHash
       },
       baselinePolicy: {
-        recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
+        recommendedVersion: TARGET_VERSION,
         supportedBaselineVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION
       },
       install: {
