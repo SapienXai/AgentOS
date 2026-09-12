@@ -19,6 +19,7 @@ const encoder = new TextEncoder();
 const STREAM_RECONCILIATION_INTERVAL_MS = 60_000;
 const STREAM_EVENT_DEBOUNCE_MS = 300;
 const STREAM_SYSTEM_STATUS_INTERVAL_MS = 10_000;
+const STREAM_INITIAL_SNAPSHOT_DELAY_MS = 0;
 
 export async function GET(request: Request) {
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -211,7 +212,7 @@ export async function GET(request: Request) {
       systemStatusInterval = setInterval(() => {
         void sendSystemStatus();
       }, STREAM_SYSTEM_STATUS_INTERVAL_MS);
-      scheduleSnapshot(5_000);
+      scheduleSnapshot(STREAM_INITIAL_SNAPSHOT_DELAY_MS);
     },
     cancel() {
       closed = true;

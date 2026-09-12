@@ -545,6 +545,13 @@ export function shouldDeferWorkspaceSelectionHydration(snapshot: Pick<MissionCon
   return snapshot.mode === "fallback" && snapshot.diagnostics.loaded && !snapshot.diagnostics.rpcOk;
 }
 
+export function shouldDeferOnboardingUntilLiveSnapshot(
+  snapshot: Pick<MissionControlSnapshot, "mode" | "diagnostics">,
+  hasReceivedLiveSnapshot: boolean
+) {
+  return !hasReceivedLiveSnapshot && snapshot.mode === "fallback" && snapshot.diagnostics.loaded && !snapshot.diagnostics.rpcOk;
+}
+
 export function resolveModelOnboardingStartPhase(intent: ModelOnboardingIntent): OpenClawModelOnboardingPhase {
   if (intent === "refresh") {
     return "refreshing";

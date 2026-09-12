@@ -73,6 +73,7 @@ type WorkspaceWizardDialogProps = {
   onWorkspaceCreationFinished?: () => void;
   onWorkspaceUpdated?: (workspaceId: string) => void;
   creationReviewRunId?: string | null;
+  creationReopenRequest?: { runId: string; nonce: number } | null;
 };
 
 export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
@@ -85,6 +86,7 @@ export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
         onWorkspaceCreated={(result) => props.onWorkspaceCreated(result)}
         onRefresh={props.onRefresh}
         reviewRunId={props.creationReviewRunId}
+        reopenRequest={props.creationReopenRequest}
       />
     );
   }

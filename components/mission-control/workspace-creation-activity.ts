@@ -1,10 +1,28 @@
 export const workspaceCreationMinimizedRunStorageKey = "agentos:workspace-creation:minimized-run";
 export const workspaceCreationActivityChangeEvent = "agentos:workspace-creation-activity-change";
+export const workspaceCreationReopenEvent = "agentos:workspace-creation-reopen";
+
+export type WorkspaceCreationReopenDetail = {
+  runId: string;
+};
 
 function notifyWorkspaceCreationActivityChange() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(workspaceCreationActivityChangeEvent));
   }
+}
+
+export function requestWorkspaceCreationReopen(runId: string) {
+  if (typeof window === "undefined" || !runId.trim()) {
+    return false;
+  }
+
+  const event = new CustomEvent<WorkspaceCreationReopenDetail>(workspaceCreationReopenEvent, {
+    cancelable: true,
+    detail: { runId: runId.trim() }
+  });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
 }
 
 export function readWorkspaceCreationMinimizedRunId() {

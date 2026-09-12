@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearWorkspaceCreationMinimizedRun,
   readWorkspaceCreationMinimizedRunId,
+  requestWorkspaceCreationReopen,
   workspaceCreationActivityChangeEvent
 } from "@/components/mission-control/workspace-creation-activity";
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
@@ -115,6 +116,11 @@ export function WorkspaceCreationActivityIndicator() {
     <button
       type="button"
       onClick={() => {
+        if (requestWorkspaceCreationReopen(run.runId)) {
+          setRun(null);
+          return;
+        }
+
         const url = new URL("/", window.location.origin);
         url.searchParams.set("workspaceCreationReopen", Date.now().toString());
         window.location.assign(`${url.pathname}${url.search}`);

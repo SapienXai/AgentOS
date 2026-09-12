@@ -13,6 +13,13 @@ test("initial pages render before a slow OpenClaw snapshot blocks navigation", a
   assert.ok(Number(timeout.replaceAll("_", "")) <= 1_000);
 });
 
+test("runtime stream publishes the initial snapshot without a setup-screen delay", async () => {
+  const source = await readFile("app/api/stream/route.ts", "utf8");
+
+  assert.match(source, /STREAM_INITIAL_SNAPSHOT_DELAY_MS\s*=\s*0/);
+  assert.match(source, /scheduleSnapshot\(STREAM_INITIAL_SNAPSHOT_DELAY_MS\)/);
+});
+
 test("runtime stream uses event-first status updates with bounded reconciliation", async () => {
   const [source, bridgeSource] = await Promise.all([
     readFile("app/api/stream/route.ts", "utf8"),

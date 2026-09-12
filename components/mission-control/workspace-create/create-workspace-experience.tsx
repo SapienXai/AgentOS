@@ -26,6 +26,7 @@ import {
   missionControlDialogButtonClassName,
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import {
   clearWorkspaceCreationMinimizedRun,
   persistWorkspaceCreationMinimizedRun,
@@ -95,6 +96,7 @@ type CreateWorkspaceExperienceProps = {
   onWorkspaceCreated?: (result: WorkspaceCreateResult) => void;
   onRefresh?: () => Promise<void>;
   reviewRunId?: string | null;
+  reopenRequest?: { runId: string; nonce: number } | null;
 };
 
 export function CreateWorkspaceExperience({
@@ -103,7 +105,8 @@ export function CreateWorkspaceExperience({
   surfaceTheme,
   onWorkspaceCreated,
   onRefresh,
-  reviewRunId = null
+  reviewRunId = null,
+  reopenRequest = null
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
@@ -244,6 +247,12 @@ export function CreateWorkspaceExperience({
     }
   }, [creationRun?.runId]);
 
+  useEffect(() => {
+    if (reopenRequest) {
+      setIsMinimized(false);
+    }
+  }, [reopenRequest]);
+
   const handleDialogOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && isActiveRun) {
       minimizeWorkspaceCreation();
@@ -378,11 +387,11 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open || hasLocalDraftRef.current && !reviewRunId) return;
+    if (!open || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
     const controller = new AbortController();
     void (async () => {
       try {
-        const minimizedRunId = reviewRunId?.trim() || readWorkspaceCreationMinimizedRunId();
+        const minimizedRunId = reopenRequest?.runId.trim() || reviewRunId?.trim() || readWorkspaceCreationMinimizedRunId();
         const response = await fetch(
           minimizedRunId
             ? `/api/workspaces/creation-runs/${encodeURIComponent(minimizedRunId)}`
@@ -392,6 +401,7 @@ export function CreateWorkspaceExperience({
         const payload = await response.json().catch(() => null) as WorkspaceCreationRun & { runs?: WorkspaceCreationRun[] } | null;
         const activeRun = minimizedRunId ? payload : payload?.runs?.[0];
         if (!response.ok || !activeRun || controller.signal.aborted) return;
+        clearWorkspaceCreationMinimizedRun();
         const recoveredSources = activeRun.input.sources as WorkspaceKnowledgeSource[];
         setBrief(activeRun.input.brief);
         setProfile(normalizeWorkspaceCreationProfile(activeRun.input.profile));
@@ -435,7 +445,7 @@ export function CreateWorkspaceExperience({
       }
     })();
     return () => controller.abort();
-  }, [open, pollCreationRun, reviewRunId]);
+  }, [open, pollCreationRun, reopenRequest, reviewRunId]);
 
   const refreshProject = async () => {
     if (!creationRun || isRefreshingProject) return;
@@ -788,6 +798,11 @@ export function CreateWorkspaceExperience({
 
   return (
     <>
+      <PikoLoader
+        open={open && !isMinimized && isActiveRun}
+        title={stage === "provisioning" ? "Creating your workspace" : "Learning about your project"}
+        description={experience.primaryStatus}
+      />
       <MissionControlDialogShell
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
@@ -1143,20 +1158,67 @@ function CreationProgressView({ run, provisioning, isLight, onContinueNow }: {
   run: WorkspaceCreationRun | null; provisioning?: ProvisioningRun | null; isLight: boolean; onContinueNow?: () => void;
 }) {
   const display = presentWorkspaceCreationDisplay(run, provisioning);
+  const experience = presentWorkspaceCreationExperience({ run, provisioningRun: provisioning });
   const progress = workspaceCreationProgress(run, provisioning);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const updateClock = () => setClockNow(Date.now());
+    updateClock();
+    const timer = window.setInterval(updateClock, 1_000);
+    return () => window.clearInterval(timer);
+  }, [run?.runId, provisioning?.runId]);
+  const startedAt = run?.createdAt ? Date.parse(run.createdAt) : Number.NaN;
+  const liveElapsedMs = Number.isFinite(startedAt) ? Math.max(0, clockNow - startedAt) : 0;
+  const elapsedMs = Math.max(run?.snapshot.elapsedMs ?? 0, liveElapsedMs);
   const canExpedite = run && normalizeWorkspaceCreationProfile(run.input.profile) !== "fast" && !run.expediteRequestedAt
     && (run.snapshot.context.status === "ready" || run.snapshot.context.status === "partial" && run.snapshot.context.usableEvidence);
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center px-7 py-12 sm:px-10" aria-busy="true">
-      <p className="text-xl font-medium tracking-tight" role="status">{display.activity}</p>
-      <div className={cn("my-8 h-0.5 overflow-hidden rounded-full", isLight ? "bg-black/5" : "bg-white/10")} role="progressbar" aria-label="Creating workspace" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-        <div className="h-full rounded-full bg-violet-400/80 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+    <main className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center px-7 py-10 sm:px-10" aria-busy="true">
+      <div className="flex items-center justify-between gap-3">
+        <p className={cn("flex items-center gap-2 text-xl font-medium tracking-tight", isLight ? "text-[#382d25]" : "text-slate-100")} role="status" aria-live="polite">
+          <LoaderCircle className="size-4 shrink-0 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" />
+          {display.activity}
+        </p>
+        <span className={cn("shrink-0 text-[11px] tabular-nums", isLight ? "text-[#8f8074]" : "text-slate-500")} aria-label={`Working for ${formatElapsed(elapsedMs)}`}>
+          {formatElapsed(elapsedMs)}
+        </span>
       </div>
-      <ul className="flex min-h-32 content-start flex-wrap gap-x-6 gap-y-4" aria-label="Completed results" aria-live="polite">
-        {display.events.map((event) => <li key={event.label} className="workspace-architect-chip-enter flex items-center gap-2 text-sm motion-reduce:[animation:none]">
-          <Check className="size-3.5 text-emerald-500" aria-hidden="true" />{event.label}
-        </li>)}
-      </ul>
+      <div className={cn("relative my-6 h-2 overflow-hidden rounded-full", isLight ? "bg-black/5" : "bg-white/10")} role="progressbar" aria-label="Creating workspace" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <div className="h-full rounded-full bg-violet-400/80 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+        {progress < 100 ? <div className={cn("workspace-progress-shimmer absolute inset-y-0 left-0 w-1/3 rounded-full", isLight ? "bg-white/70" : "bg-white/25")} aria-hidden="true" /> : null}
+      </div>
+      <ol className="grid gap-2 sm:grid-cols-2" aria-label="Workspace creation progress" aria-live="polite">
+        {experience.activities.map((activity) => {
+          const isComplete = activity.status === "complete";
+          const isActive = activity.status === "active";
+          return (
+            <li
+              key={activity.id}
+              className={cn(
+                "flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs transition-colors",
+                isComplete
+                  ? (isLight ? "border-emerald-200 bg-emerald-50/70 text-emerald-900" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100")
+                  : isActive
+                    ? (isLight ? "border-violet-200 bg-violet-50 text-violet-950" : "border-violet-300/25 bg-violet-300/10 text-violet-100")
+                    : (isLight ? "border-[#e5dbd0] bg-white/70 text-[#8f8074]" : "border-white/10 bg-white/[0.03] text-slate-500")
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {isComplete ? <Check className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" /> : isActive ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" /> : <span className="size-1.5 shrink-0 rounded-full bg-current opacity-45" aria-hidden="true" />}
+                <span className="truncate">{activity.label}</span>
+              </span>
+              <span className="shrink-0 text-[10px] opacity-70">{isComplete ? "Complete" : isActive ? "Working" : "Next"}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {display.events.length ? (
+        <ul className={cn("mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[11px]", isLight ? "text-[#786b60]" : "text-slate-400")} aria-label="Completed results" aria-live="polite">
+          {display.events.map((event) => <li key={event.label} className="workspace-architect-chip-enter flex items-center gap-1.5 motion-reduce:[animation:none]">
+            <Check className="size-3.5 text-emerald-500" aria-hidden="true" />{event.label}
+          </li>)}
+        </ul>
+      ) : null}
       {canExpedite && onContinueNow ? <Button variant="ghost" onClick={onContinueNow} className="mt-8 self-start px-0 text-xs opacity-65">Finish with current context</Button> : null}
     </main>
   );

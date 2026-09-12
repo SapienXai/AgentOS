@@ -1495,6 +1495,20 @@
   animation: workspace-architect-chip-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes workspace-progress-shimmer {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(360%);
+  }
+}
+
+.workspace-progress-shimmer {
+  animation: workspace-progress-shimmer 1.8s ease-in-out infinite;
+}
+
 html:not(.dark) .agent-node {
   color: rgb(15 23 42);
 }
@@ -1908,6 +1922,10 @@ html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute
 
   .workspace-architect-card-enter,
   .workspace-architect-chip-enter {
+    animation: none !important;
+  }
+
+  .workspace-progress-shimmer {
     animation: none !important;
   }
 

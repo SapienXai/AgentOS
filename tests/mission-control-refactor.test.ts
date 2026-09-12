@@ -32,6 +32,7 @@ import {
   shouldShowOnboardingLaunchpad,
   resolveWorkspaceSelection,
   resolveWorkspaceContextEngineAgent,
+  shouldDeferOnboardingUntilLiveSnapshot,
   shouldDeferWorkspaceSelectionHydration
 } from "@/components/mission-control/mission-control-shell.utils";
 import { shouldPreserveComposerOnBlur } from "@/components/mission-control/command-bar.utils";
@@ -1116,6 +1117,35 @@ test("workspace selection hydration waits for real snapshots", () => {
   assert.equal(shouldDeferWorkspaceSelectionHydration(loadingSnapshot), true);
   assert.equal(shouldDeferWorkspaceSelectionHydration(fallbackSnapshot), false);
   assert.equal(shouldDeferWorkspaceSelectionHydration(liveSnapshot), false);
+});
+
+test("onboarding waits for the live snapshot before showing transient setup", () => {
+  const loadingSnapshot = {
+    mode: "fallback",
+    diagnostics: {
+      loaded: true,
+      rpcOk: false
+    }
+  } as unknown as MissionControlSnapshot;
+  const unavailableSnapshot = {
+    mode: "fallback",
+    diagnostics: {
+      loaded: false,
+      rpcOk: false
+    }
+  } as unknown as MissionControlSnapshot;
+  const liveSnapshot = {
+    mode: "live",
+    diagnostics: {
+      loaded: true,
+      rpcOk: true
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(shouldDeferOnboardingUntilLiveSnapshot(loadingSnapshot, false), true);
+  assert.equal(shouldDeferOnboardingUntilLiveSnapshot(loadingSnapshot, true), false);
+  assert.equal(shouldDeferOnboardingUntilLiveSnapshot(unavailableSnapshot, false), false);
+  assert.equal(shouldDeferOnboardingUntilLiveSnapshot(liveSnapshot, false), false);
 });
 
 test("Mission Control shell delegates operator workflow state to focused hooks", () => {

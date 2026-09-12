@@ -48,6 +48,10 @@ import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-rev
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
+import {
+  workspaceCreationReopenEvent,
+  type WorkspaceCreationReopenDetail
+} from "@/components/mission-control/workspace-creation-activity";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import {
   buildPendingAgentsForWorkspaceResult,
@@ -91,6 +95,7 @@ import {
   resolveWorkspaceContextEngineAgent,
   serializeWorkspaceSelection,
   shouldShowOnboardingLaunchpad,
+  shouldDeferOnboardingUntilLiveSnapshot,
   shouldDeferWorkspaceSelectionHydration,
   updateOptimisticMissionTask
 } from "@/components/mission-control/mission-control-shell.utils";
@@ -177,6 +182,7 @@ type ModelOnboardingRunOptions = {
   verifyProvider?: AddModelsProviderId;
 };
 type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
+type WorkspaceCreationReopenRequest = WorkspaceCreationReopenDetail & { nonce: number };
 
 const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
 const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_000];
@@ -560,6 +566,8 @@ export function MissionControlShell({
     isSidebarPinned || isSidebarCreateAgentDialogOpen || isSidebarAgentActionModalOpen;
 
   const [pendingWorkspaceOpenId, setPendingWorkspaceOpenId] = useState<string | null>(null);
+  const [workspaceCreationReopenRequest, setWorkspaceCreationReopenRequest] =
+    useState<WorkspaceCreationReopenRequest | null>(null);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
   const fallbackSnapshotRecoveryKeyRef = useRef<string | null>(null);
   const hydratedOnboardingModelIdRef = useRef<string | null>(null);
@@ -864,10 +872,34 @@ export function MissionControlShell({
     setWorkspaceCreationReviewRunId(creationRunId);
     openWorkspaceWizard("basic");
   }, [openWorkspaceWizard]);
+  const reopenWorkspaceCreation = useCallback((runId?: string | null) => {
+    const normalizedRunId = runId?.trim() || null;
+    setWorkspaceCreationReviewRunId(null);
+    setWorkspaceCreationReopenRequest(
+      normalizedRunId
+        ? { runId: normalizedRunId, nonce: Date.now() }
+        : null
+    );
+    openWorkspaceWizard("basic");
+  }, [openWorkspaceWizard]);
   const handleWorkspaceWizardOpenChangeWithReview = useCallback((nextOpen: boolean) => {
-    if (!nextOpen) setWorkspaceCreationReviewRunId(null);
+    if (!nextOpen) {
+      setWorkspaceCreationReviewRunId(null);
+      setWorkspaceCreationReopenRequest(null);
+    }
     handleWorkspaceWizardOpenChange(nextOpen);
   }, [handleWorkspaceWizardOpenChange]);
+
+  useEffect(() => {
+    const handleWorkspaceCreationReopen = (event: Event) => {
+      event.preventDefault();
+      const detail = (event as CustomEvent<WorkspaceCreationReopenDetail>).detail;
+      reopenWorkspaceCreation(detail?.runId);
+    };
+
+    window.addEventListener(workspaceCreationReopenEvent, handleWorkspaceCreationReopen);
+    return () => window.removeEventListener(workspaceCreationReopenEvent, handleWorkspaceCreationReopen);
+  }, [reopenWorkspaceCreation]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -875,10 +907,10 @@ export function MissionControlShell({
       return;
     }
 
-    openWorkspaceWizard("basic");
+    reopenWorkspaceCreation();
     url.searchParams.delete("workspaceCreationReopen");
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [openWorkspaceWizard]);
+  }, [reopenWorkspaceCreation]);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const canvasNodeInteractionActiveRef = useRef(false);
   const pendingComposerBlurRef = useRef(false);
@@ -916,11 +948,13 @@ export function MissionControlShell({
     isOpenClawOnboardingSystemReady &&
     isOpenClawOnboardingModelReady &&
     !hasWorkspaceSetup;
+  const shouldDeferOnboarding = shouldDeferOnboardingUntilLiveSnapshot(snapshot, hasReceivedLiveSnapshot);
   const isOnboardingFullyReady =
     isOpenClawOnboardingSystemReady &&
     isOpenClawOnboardingModelReady &&
     hasWorkspaceSetup;
   const shouldAutoShowOnboarding =
+    !shouldDeferOnboarding &&
     !hasActiveMissionWork &&
     (!isOnboardingDismissed || needsWorkspaceSetup) &&
     (!isOpenClawOnboardingModelReady || needsWorkspaceSetup) &&
@@ -4105,6 +4139,7 @@ export function MissionControlShell({
         workspaceEditId={workspaceWizardEditId}
         surfaceTheme={surfaceTheme}
         creationReviewRunId={workspaceCreationReviewRunId}
+        creationReopenRequest={workspaceCreationReopenRequest}
         snapshot={snapshot}
         onRefresh={refresh}
         onWorkspaceCreated={handleWorkspaceCreated}
@@ -5268,6 +5303,7 @@ export function MissionControlShell({
           workspaceEditId={workspaceWizardEditId}
           surfaceTheme={surfaceTheme}
           creationReviewRunId={workspaceCreationReviewRunId}
+          creationReopenRequest={workspaceCreationReopenRequest}
           snapshot={snapshot}
           onRefresh={refresh}
           onWorkspaceCreated={handleWorkspaceCreated}
