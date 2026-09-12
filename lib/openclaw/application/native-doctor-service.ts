@@ -524,7 +524,7 @@ async function waitForNativeReconnect(adapter: OpenClawAdapter, beforeGeneration
   let subscription: { close: () => void; reconnectManagedByClient?: boolean } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let settled = false;
-  const subscribeNativeRuntimeEvents = adapter.subscribeNativeRuntimeEvents;
+  const subscribeNativeRuntimeEvents = adapter.subscribeNativeRuntimeEvents.bind(adapter);
   return await new Promise<number | null>((resolve) => {
     const finish = (generation: number | null) => {
       if (settled) return;

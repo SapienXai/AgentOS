@@ -344,6 +344,7 @@ test("accepted restart becomes verified only after a fresh native generation", a
       return { ok: true, status: "scheduled" };
     },
     async subscribeNativeRuntimeEvents(_input, callbacks) {
+      assert.equal(this.getNativeConnectionGeneration?.(), generation);
       generation = 2;
       await callbacks.onReconnected?.({ generation });
       return {
