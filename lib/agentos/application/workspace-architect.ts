@@ -567,7 +567,8 @@ export async function generateWorkspaceBlueprint(
     operatorConstraints,
     operatorIntentText,
     projectIntelligence,
-    targetedEvidence: knowledgeEvidence.targetedEvidence
+    targetedEvidence: knowledgeEvidence.targetedEvidence,
+    maxSpecialists: options.maxSpecialists
   });
   const warnings = [
     ...(knowledgeEvidence.warning ? [knowledgeEvidence.warning] : []),
@@ -1533,6 +1534,7 @@ function normalizeArchitectProposal(input: {
   operatorIntentText: string;
   projectIntelligence?: WorkspaceArchitectIntelligenceInput;
   targetedEvidence?: readonly WorkspaceArchitectTargetedEvidence[];
+  maxSpecialists?: number;
 }): ArchitectNormalizationResult {
   const fallbackIdentity = inferIdentity(input.brief, input.knowledge.sources, input.projectIntelligence?.pack);
   const identity = {
@@ -1556,7 +1558,8 @@ function normalizeArchitectProposal(input: {
     input.proposal.workforce?.specialists ?? [],
     input.evidence,
     input.operatorConstraints,
-    warnings
+    warnings,
+    input.maxSpecialists
   );
   const operations = normalizeArchitectOperations(
     input.proposal.operations,
@@ -1628,7 +1631,8 @@ function normalizeSpecialists(
   proposals: NonNullable<WorkspaceArchitectProposal["workforce"]>["specialists"],
   evidence: WorkspaceBlueprintEvidence[],
   operatorConstraints: string[],
-  warnings: string[]
+  warnings: string[],
+  maxSpecialists = 8
 ): WorkspaceBlueprintAgent[] {
   if (hasConstraint(operatorConstraints, "single-agent") || hasConstraint(operatorConstraints, "no-specialists")) {
     return [];
@@ -1636,7 +1640,8 @@ function normalizeSpecialists(
   const evidenceIds = new Set(evidence.map((entry) => entry.id));
   const evidenceById = new Map(evidence.map((entry) => [entry.id, entry]));
   const seen = new Set<string>();
-  return (proposals ?? []).slice(0, 8).flatMap((proposal) => {
+  const boundedMax = Math.max(0, Math.min(8, Math.floor(maxSpecialists)));
+  return (proposals ?? []).slice(0, boundedMax).flatMap((proposal) => {
     const id = normalizeId(proposal.id);
     const refs = proposal.justification.evidenceRefs.filter((ref) => evidenceIds.has(ref));
     if (!id || id === "primary-operator" || seen.has(id)) {

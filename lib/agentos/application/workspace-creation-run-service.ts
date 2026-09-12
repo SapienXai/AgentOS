@@ -63,21 +63,18 @@ import {
 import { ProjectIntelligenceRemoteExecutionError } from "@/lib/openclaw/application/structured-agent-service";
 import { summarizeWorkspaceDrift } from "@/lib/agentos/domains/workspace-freshness";
 import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
+import {
+  normalizeWorkspaceCreationProfile,
+  normalizeWorkspaceCreationTrigger,
+  resolveWorkspaceCreationPolicy,
+  type WorkspaceCreationExecutionBudget,
+  type WorkspaceCreationProfile,
+  type WorkspaceCreationTrigger
+} from "@/lib/agentos/domains/workspace-creation-policy";
 
-export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
-  overallAnalysisBudgetMs: 300_000,
-  architectReserveMs: 90_000,
-  intelligenceReserveMs: 90_000,
-  maxArchitectAttempts: 3,
-  maxArchitectAttemptMs: 90_000,
-  maxIntelligenceAttempts: 2,
-  maxIntelligenceAttemptMs: 75_000,
-  composerReserveMs: 45_000,
-  maxComposerAttempts: 2,
-  maxComposerAttemptMs: 60_000
-} as const;
+export const DEFAULT_WORKSPACE_CREATION_BUDGET = resolveWorkspaceCreationPolicy("deep").budget;
 
-export type WorkspaceCreationBudget = Partial<typeof DEFAULT_WORKSPACE_CREATION_BUDGET>;
+export type WorkspaceCreationBudget = Partial<WorkspaceCreationExecutionBudget>;
 
 export type WorkspaceCreationRunDependencies = {
   rootPath?: string;
@@ -107,6 +104,7 @@ export type WorkspaceCreationRunDependencies = {
 
 type ResolvedDependencies = Required<Pick<WorkspaceCreationRunDependencies, "rootPath" | "provisioningRootPath" | "now" | "persistIntake" | "cloneContext" | "stageContext" | "readContext" | "readContextMetadata" | "readContextDocuments" | "synthesizeIntelligence" | "readIntelligencePack" | "readIntelligenceSummary" | "persistIntelligencePack" | "generateArchitect" | "reviseArchitect" | "composeWorkspace" | "persistCompositionPlan" | "readCompositionPlan" | "inspectCompositionFiles" | "readWorkspaceIntelligenceBinding" | "findProvisioningRunById">> & {
   budget: typeof DEFAULT_WORKSPACE_CREATION_BUDGET;
+  budgetOverrides: WorkspaceCreationBudget;
   nativeComposer: boolean;
   workspaceIntelligenceBindingRootPath: string | undefined;
 };
@@ -127,6 +125,9 @@ export type StartWorkspaceCreationRunInput = {
   uploads?: WorkspaceCreationUpload[];
   draftContextId?: string | null;
   lineage?: WorkspaceCreationRun["lineage"];
+  profile?: WorkspaceCreationProfile;
+  continueLearningAfterCreation?: boolean;
+  trigger?: WorkspaceCreationTrigger;
 };
 
 export async function startWorkspaceCreationRun(
@@ -141,6 +142,9 @@ export async function startWorkspaceCreationRun(
   const brief = redactSecretText(input.brief.trim()).slice(0, 12_000);
   if (!brief) throw new Error("Workspace architect brief is required.");
   const mode = input.mode ?? "automatic";
+  const profile = normalizeWorkspaceCreationProfile(input.profile);
+  const trigger = normalizeWorkspaceCreationTrigger(input.trigger);
+  const continueLearningAfterCreation = input.continueLearningAfterCreation !== false;
   const operatorConstraints = normalizeCreationConstraints(input.operatorConstraints ?? []);
   const materialization = normalizeWorkspaceMaterialization(input.materialization ?? { mode: "empty" });
   const normalizedSources = normalizeWorkspaceKnowledgeSources(input.sources ?? []);
@@ -151,13 +155,18 @@ export async function startWorkspaceCreationRun(
     materialization,
     sources: normalizedSources,
     draftContextId: input.draftContextId ?? null,
-    uploads: input.uploads ?? []
+    uploads: input.uploads ?? [],
+    profile,
+    continueLearningAfterCreation,
+    trigger
   });
   const storageKey = buildWorkspaceCreationStorageKey(actorId, idempotencyKey);
   const existing = await readWorkspaceCreationRun(resolved.rootPath, storageKey);
   if (existing) {
-    if (existing.inputFingerprint && existing.inputFingerprint !== inputFingerprint) throw new Error("This creation idempotency key is already in use with different creation intent.");
-    if (!existing.inputFingerprint && legacyCreationIntentFingerprint(existing, input.draftContextId ?? null) !== inputFingerprint) throw new Error("This creation idempotency key is already in use with different creation intent.");
+    const existingFingerprint = existing.input.profile === undefined
+      ? legacyCreationIntentFingerprint(existing, input.draftContextId ?? null)
+      : existing.inputFingerprint;
+    if (existingFingerprint && existingFingerprint !== inputFingerprint) throw new Error("This creation idempotency key is already in use with different creation intent.");
     return publicRun(existing);
   }
   const sources = input.sources ?? [];
@@ -172,7 +181,10 @@ export async function startWorkspaceCreationRun(
     mode,
     operatorConstraints,
     materialization,
-    sources: staged.sources
+    sources: staged.sources,
+    profile,
+    continueLearningAfterCreation,
+    trigger
   };
   const created = await createWorkspaceCreationRunAtomically(resolved.rootPath, storageKey, {
     actorHash: workspaceCreationActorHash(actorId),
@@ -183,7 +195,7 @@ export async function startWorkspaceCreationRun(
     draftContextId: staged.draftContextId,
     snapshot: createInitialWorkspaceCreationSnapshot(staged.sources.length),
     result: null,
-    lineage: input.lineage ?? { rootRunId: "pending", parentRunId: null, relation: "initial" }
+    lineage: input.lineage ?? { rootRunId: "pending", parentRunId: null, relation: "initial", trigger }
   });
   if (created.created) {
     await mutateWorkspaceCreationRun(created.filePath, (current) => current.lineage?.rootRunId === "pending"
@@ -263,7 +275,7 @@ export async function getWorkspaceCreationRun(
   }
   let latest = await readWorkspaceCreationRunFile(locator.filePath);
   if (latest?.snapshot.state === "review-ready") {
-    const certified = await getWorkspaceCreationReviewReadiness({ actorId: input.actorId, runId: input.runId }, resolved);
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId: input.actorId, runId: input.runId, repair: false, persist: false }, resolved);
     latest = certified?.run ?? latest;
   }
   const after = Number.isSafeInteger(input.afterSequence) ? input.afterSequence! : 0;
@@ -274,7 +286,7 @@ export async function getWorkspaceCreationRun(
 }
 
 export async function getWorkspaceCreationReviewReadiness(
-  input: { actorId: string; runId: string; acceptDraft?: boolean; repair?: boolean; forceRepair?: boolean },
+  input: { actorId: string; runId: string; acceptDraft?: boolean; repair?: boolean; forceRepair?: boolean; persist?: boolean },
   dependencies: WorkspaceCreationRunDependencies = {}
 ): Promise<{ run: WorkspaceCreationRun; readiness: WorkspaceCreationReviewReadiness } | null> {
   const resolved = resolveDependencies(dependencies);
@@ -305,11 +317,86 @@ export async function getWorkspaceCreationReviewReadiness(
       if (readiness.reasonCode !== "composition-rebuild-failed") readiness = await evaluateWorkspaceCreationReviewReadiness(run, input.actorId, input.acceptDraft === true, resolved);
     }
   }
-  const persisted = await mutateWorkspaceCreationRun(locator.filePath, (current) => ({
-    ...current,
-    snapshot: { ...current.snapshot, reviewReadiness: readiness }
-  }));
+  const persisted = input.persist === false
+    ? run
+    : await mutateWorkspaceCreationRun(locator.filePath, (current) => ({
+      ...current,
+      snapshot: { ...current.snapshot, reviewReadiness: readiness }
+    }));
   return { run: publicRun(persisted), readiness };
+}
+
+/**
+ * Resolve the only provisioning intent that may be used for a creation run.
+ * The browser may submit stale blueprint data, but it cannot choose a second
+ * server-side identity for the certified run.
+ */
+export async function getWorkspaceCreationProvisioningIntent(
+  input: { actorId: string; runId: string; acceptDraft?: boolean },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const certified = await getWorkspaceCreationReviewReadiness({
+    actorId: input.actorId,
+    runId: input.runId,
+    acceptDraft: input.acceptDraft,
+    repair: false,
+    persist: false
+  }, dependencies);
+  if (!certified) return null;
+  const { run, readiness } = certified;
+  if (!readiness.provisionable || !isWorkspaceArchitectResult(run.result)) return { run, readiness, idempotencyKey: null };
+  return {
+    run,
+    readiness,
+    idempotencyKey: `workspace-creation-provision:${run.runId}:${readiness.blueprintFingerprint ?? "none"}:${readiness.planFingerprint ?? "none"}`
+  };
+}
+
+export function isWorkspaceCreationMinimumContextReady(run: WorkspaceCreationRun) {
+  const contextReady = run.snapshot.context.status === "ready"
+    || run.snapshot.context.status === "partial" && run.snapshot.context.usableEvidence;
+  const briefOnlyReady = run.input.sources.length === 0 && run.snapshot.extraction.status === "not-requested";
+  return contextReady || briefOnlyReady;
+}
+
+/** Request a durable conversion to the quick remainder at the next safe boundary. */
+export async function continueWorkspaceCreationNow(
+  input: { actorId: string; runId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const next = await mutateWorkspaceCreationRun(locator.filePath, (current) => {
+    if (isWorkspaceCreationTerminal(current.snapshot.state)) return current;
+    if (!isWorkspaceCreationMinimumContextReady(current)) throw new Error("Minimum project context is not ready yet.");
+    if (current.expediteRequestedAt) return current;
+    const now = resolved.now().toISOString();
+    const snapshot = {
+      ...current.snapshot,
+      timings: current.snapshot.timings
+    };
+    return {
+      ...appendWorkspaceCreationEvent(current, {
+        schemaVersion: 1,
+        createdAt: now,
+        kind: "state-changed",
+        stage: current.snapshot.stage,
+        snapshot,
+        attempt: current.attempt,
+        maxAttempts: resolveWorkspaceCreationPolicy("quick").budget.maxArchitectAttempts,
+        elapsedMs: elapsedMs(current.createdAt, now),
+        sourceId: null,
+        warningCode: "continue-now-requested",
+        failure: null,
+        activityCode: "continue-now-requested",
+        activityData: { runtimeMode: "deterministic-safe-fallback" }
+      }),
+      expediteRequestedAt: now
+    };
+  });
+  await ensureCreationRunExecution({ actorId: input.actorId, runId: next.runId }, resolved);
+  return publicRun(next);
 }
 
 async function evaluateWorkspaceCreationReviewReadiness(run: WorkspaceCreationRun, actorId: string, acceptDraft: boolean, dependencies: ResolvedDependencies): Promise<WorkspaceCreationReviewReadiness> {
@@ -327,7 +414,8 @@ async function evaluateWorkspaceCreationReviewReadiness(run: WorkspaceCreationRu
   const blueprintValidation = validateWorkspaceBlueprint(result.blueprint);
   if (!blueprintValidation.valid) return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "blueprint-invalid", requiredAction: "retry-design", message: "The workspace blueprint needs to be regenerated before it can be created." };
   if (result.blueprint.status === "blocked") return { ...base, status: "blocked", provisionable: false, reasonCode: "blueprint-blocked", requiredAction: "resolve-conflict", message: "The workspace blueprint contains a blocking issue." };
-  if ((result.blueprint.status === "draft" || result.reasoning.status === "fallback") && !acceptDraft) {
+  const quickDraftIsSafe = run.input.profile === "quick";
+  if ((result.blueprint.status === "draft" || result.reasoning.status === "fallback") && !acceptDraft && !quickDraftIsSafe) {
     return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "draft-acceptance-required", requiredAction: "accept-draft", message: "Use the basic draft explicitly before creating this workspace." };
   }
   if (result.freshness.status === "stale") return { ...base, status: "refresh-required", provisionable: false, reasonCode: "context-stale", requiredAction: "refresh-context", message: "Project context changed after this design was produced." };
@@ -570,7 +658,7 @@ export async function listResumableWorkspaceCreationRuns(actorId: string, depend
 
 /** Start a new immutable run using the prior durable intake as its parent. */
 export async function refreshWorkspaceCreationRun(
-  input: { actorId: string; runId: string; refreshIntent?: string },
+  input: { actorId: string; runId: string; refreshIntent?: string; profileOverride?: WorkspaceCreationProfile; trigger?: WorkspaceCreationTrigger },
   dependencies: WorkspaceCreationRunDependencies = {}
 ) {
   const resolved = resolveDependencies(dependencies);
@@ -591,6 +679,8 @@ export async function refreshWorkspaceCreationRun(
     refreshIntent: redactSecretText(input.refreshIntent?.trim() ?? "").slice(0, 500)
   }));
   const refreshKey = `reanalysis:${parent.runId}:${refreshFingerprint}`;
+  const profile = input.profileOverride ?? parent.input.profile ?? "deep";
+  const trigger = input.trigger ?? "manual-refresh";
   const childContextId = parent.draftContextId
     ? deterministicDraftContextId(`workspace-reanalysis-context:v1:${refreshKey}`)
     : null;
@@ -615,8 +705,30 @@ export async function refreshWorkspaceCreationRun(
     materialization: parent.input.materialization,
     sources: parent.input.sources,
     draftContextId: childContextId,
-    lineage: { rootRunId, parentRunId: parent.runId, relation: "reanalysis" }
+    profile,
+    continueLearningAfterCreation: trigger === "post-create-enrichment" ? false : parent.input.continueLearningAfterCreation,
+    trigger,
+    lineage: { rootRunId, parentRunId: parent.runId, relation: "reanalysis", trigger }
   }, refreshedDependencies);
+}
+
+/** Start one durable child analysis after a Quick workspace is provisioned. */
+export async function startWorkspacePostCreateEnrichment(
+  input: { actorId: string; parentRunId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.parentRunId.trim());
+  if (!locator) return null;
+  const parent = locator.run;
+  if (parent.snapshot.state !== "review-ready" || parent.input.profile !== "quick" || parent.input.continueLearningAfterCreation === false) return null;
+  return refreshWorkspaceCreationRun({
+    actorId: input.actorId,
+    runId: parent.runId,
+    refreshIntent: "post-create-enrichment:v1",
+    profileOverride: "deep",
+    trigger: "post-create-enrichment"
+  }, dependencies);
 }
 
 export async function cancelWorkspaceCreationRun(input: { actorId: string; runId: string }, dependencies: WorkspaceCreationRunDependencies = {}) {
@@ -711,15 +823,57 @@ export async function attachWorkspaceProvisioningRun(
   }));
 }
 
+export async function markWorkspaceCreationProvisioningReady(
+  input: { actorId: string; runId: string; provisioningRunId: string },
+  dependencies: WorkspaceCreationRunDependencies = {}
+) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const provisioningRunId = input.provisioningRunId.trim();
+  if (!provisioningRunId) return publicRun(locator.run);
+  const updated = await mutateWorkspaceCreationRun(locator.filePath, (current) => {
+    if (current.snapshot.provisioningRunId && current.snapshot.provisioningRunId !== provisioningRunId) return current;
+    const now = resolved.now().toISOString();
+    const snapshot: WorkspaceCreationSnapshot = {
+      ...current.snapshot,
+      provisioningHandoffReady: true,
+      provisioningRunId,
+      timings: {
+        ...(current.snapshot.timings ?? { firstUsefulSignalMs: null, minimumContextMs: null, reviewReadyMs: null, enrichmentDurationMs: null }),
+        provisioningReadyMs: elapsedMs(current.createdAt, now)
+      }
+    };
+    return appendWorkspaceCreationEvent(current, {
+      schemaVersion: 1,
+      createdAt: now,
+      kind: "handoff-ready",
+      stage: current.snapshot.stage,
+      snapshot,
+      attempt: current.attempt,
+      maxAttempts: resolveWorkspaceCreationPolicy(current.input.profile ?? "deep").budget.maxArchitectAttempts,
+      elapsedMs: elapsedMs(current.createdAt, now),
+      sourceId: null,
+      warningCode: null,
+      failure: null,
+      activityCode: null,
+      activityData: null
+    });
+  });
+  return publicRun(updated);
+}
+
 async function executeCreationRun(filePath: string, actorId: string, dependencies: ResolvedDependencies): Promise<WorkspaceCreationRun> {
   let run = await readWorkspaceCreationRunFile(filePath);
   if (!run) throw new Error("Workspace creation run is unavailable.");
+  let budget = workspaceCreationBudgetForRun(run, dependencies);
+  let policy = resolveWorkspaceCreationPolicy(run.input.profile ?? "deep");
   const lease = await acquireProvisioningLease({ runFilePath: filePath, runId: run.runId, attempt: run.attempt });
   if (!lease) return await readWorkspaceCreationRunFile(filePath) ?? run;
   const controller = new AbortController();
   activeControllers.set(filePath, controller);
-  const deadline = Date.now() + dependencies.budget.overallAnalysisBudgetMs;
-  const timeout = setTimeout(() => controller.abort(), dependencies.budget.overallAnalysisBudgetMs);
+  let deadline = Date.now() + budget.overallAnalysisBudgetMs;
+  const timeout = setTimeout(() => controller.abort(), budget.overallAnalysisBudgetMs);
   timeout.unref?.();
   try {
     await lease.assertOwned();
@@ -746,8 +900,8 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       return await failRun(filePath, cancellationCheck, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
     }
     const contextBudget = Math.max(1, Math.min(
-      DEFAULT_KNOWLEDGE_INGESTION_LIMITS.totalRunTimeoutMs,
-      dependencies.budget.overallAnalysisBudgetMs - dependencies.budget.architectReserveMs - dependencies.budget.intelligenceReserveMs - dependencies.budget.composerReserveMs
+      policy.contextLimits.totalRunTimeoutMs ?? DEFAULT_KNOWLEDGE_INGESTION_LIMITS.totalRunTimeoutMs,
+      budget.overallAnalysisBudgetMs - budget.architectReserveMs - budget.intelligenceReserveMs - budget.composerReserveMs
     ));
     const contextController = linkAbortSignals(controller.signal, contextBudget);
     let context: WorkspaceCreationContextStageResult;
@@ -758,6 +912,8 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
         actorId,
         draftContextId: stagedRun.draftContextId ?? undefined,
         sources: stagedRun.input.sources,
+        limits: policy.contextLimits,
+        stopWhenSufficient: policy.stopWhenSufficient,
         signal: contextController.signal,
         onProgress: async (progress) => { await recordIngestionProgress(filePath, stagedRun, dependencies, progress); }
       });
@@ -767,6 +923,12 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     const usableContext = context.runStatus === "ready" || context.runStatus === "reused" || (context.runStatus === "partial" && hasUsableContext(context));
     const contextPartial = context.runStatus === "partial" || context.runStatus === "cancelled";
     run = await updateContextSnapshot(filePath, run, dependencies, context, contextPartial && usableContext, !usableContext && (contextPartial || context.runStatus === "error"));
+    run = await readWorkspaceCreationRunFile(filePath) ?? run;
+    if (run.expediteRequestedAt) {
+      policy = resolveWorkspaceCreationPolicy("quick");
+      budget = workspaceCreationBudgetForRun({ ...run, input: { ...run.input, profile: "quick" } }, dependencies);
+      deadline = Math.min(deadline, Date.now() + budget.overallAnalysisBudgetMs);
+    }
     if (run.snapshot.cancelRequested) {
       return await failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
     }
@@ -812,9 +974,9 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
         warnings: context?.warnings.slice(0, 8) ?? []
       }
     } : undefined;
-    const remaining = Math.max(1, deadline - Date.now() - dependencies.budget.composerReserveMs);
-    const attempts = Math.max(1, Math.min(dependencies.budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
-    const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxArchitectAttemptMs, Math.floor(remaining / attempts)));
+    const remaining = Math.max(1, deadline - Date.now() - budget.composerReserveMs);
+    const attempts = Math.max(1, Math.min(budget.maxArchitectAttempts, Math.floor(remaining / 5_000)));
+    const attemptTimeout = Math.max(5_000, Math.min(budget.maxArchitectAttemptMs, Math.floor(remaining / attempts)));
     run = await updateSnapshot(filePath, run, dependencies, { stage: "architect-runtime-preparation" }, "state-changed");
     run = await updateSnapshot(filePath, run, dependencies, { stage: "architect-reasoning" }, "state-changed");
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({
@@ -827,7 +989,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     }));
     const architectStarted = Date.now();
     const architectDraftContextId = run.draftContextId;
-    const result = await dependencies.generateArchitect({
+    const generatedResult = await dependencies.generateArchitect({
       brief: run.input.brief,
       mode: run.input.mode,
       materialization: run.input.materialization as WorkspaceMaterialization,
@@ -843,8 +1005,10 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       timeoutMs: attemptTimeout,
       maxRetries: attempts - 1,
       ...(staged ? { currentKnowledgeGenerationId: staged.generationId } : {}),
+      maxSpecialists: policy.maxSpecialists,
       onLifecycleEvent: (event) => recordArchitectLifecycle(filePath, dependencies, event)
     });
+    const result = applyCreationProfileLimits(generatedResult, policy);
     run = await updateArchitectSnapshot(filePath, run, dependencies, result, Date.now() - architectStarted, contextPartial && usableContext);
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({
       ...current,
@@ -884,6 +1048,8 @@ async function completeWorkspaceComposition(
   compositionRunSuffix?: string
 ) {
   let run = await updateSnapshot(filePath, initialRun, dependencies, { state: "running", stage: "workspace-composition" }, "state-changed");
+  const policy = resolveWorkspaceCreationPolicy(run.input.profile ?? "deep");
+  const budget = workspaceCreationBudgetForRun(run, dependencies);
   const existingFiles = result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
     ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
     : [];
@@ -930,14 +1096,19 @@ async function completeWorkspaceComposition(
   // Intelligence calculate their budgets. Composer owns the remaining shared
   // deadline and must not subtract its reserve a second time.
   const remaining = Math.max(0, deadline - Date.now());
-  const canUseModel = remaining >= 5_000;
-  const composerAttempts = canUseModel ? Math.max(1, Math.min(dependencies.budget.maxComposerAttempts, Math.floor(remaining / 5_000))) : 0;
+  const canUseModel = policy.compositionStrategy === "model" && remaining >= 5_000;
+  const composerAttempts = canUseModel ? Math.max(1, Math.min(budget.maxComposerAttempts, Math.floor(remaining / 5_000))) : 0;
   const composerTimeout = composerAttempts > 0
-    ? Math.max(5_000, Math.min(dependencies.budget.maxComposerAttemptMs, Math.floor(remaining / composerAttempts)))
+    ? Math.max(5_000, Math.min(budget.maxComposerAttemptMs, Math.floor(remaining / composerAttempts)))
     : 0;
   if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
   if (!canUseModel) {
-    const fallback = createDeterministicWorkspaceComposition(compositionInput, { runId: compositionRunId(run, compositionRunSuffix), warning: "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used." });
+    const fallback = createDeterministicWorkspaceComposition(compositionInput, {
+      runId: compositionRunId(run, compositionRunSuffix),
+      warning: policy.profile === "quick"
+        ? "Quick profile uses deterministic safe composition as its primary plan."
+        : "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used."
+    });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: fallback.plan });
     run = await updateCompositionSnapshot(filePath, run, dependencies, fallback);
     run = await mutateWorkspaceCreationRun(filePath, (current) => ({
@@ -1091,6 +1262,7 @@ async function synthesizeCreationIntelligence(
   deadline: number,
   signal: AbortSignal
 ) {
+  const budget = workspaceCreationBudgetForRun(run, dependencies);
   const input = { brief: run.input.brief, extraction };
   const inputFingerprint = createProjectIntelligenceSynthesisInputFingerprint(input);
   const fallbackResult = (failureCode: string, attempts: number): ProjectIntelligenceSynthesisResult => {
@@ -1145,9 +1317,9 @@ async function synthesizeCreationIntelligence(
     }));
     return updateIntelligenceSnapshot(filePath, recoveredRun, dependencies, recovered, partialContext, false);
   }
-  const remaining = Math.max(1_000, deadline - Date.now() - dependencies.budget.architectReserveMs - dependencies.budget.composerReserveMs);
-  const attempts = Math.max(1, Math.min(dependencies.budget.maxIntelligenceAttempts, Math.floor(remaining / 5_000)));
-  const attemptTimeout = Math.max(5_000, Math.min(dependencies.budget.maxIntelligenceAttemptMs, Math.floor(remaining / attempts)));
+  const remaining = Math.max(1_000, deadline - Date.now() - budget.architectReserveMs - budget.composerReserveMs);
+  const attempts = Math.max(1, Math.min(budget.maxIntelligenceAttempts, Math.floor(remaining / 5_000)));
+  const attemptTimeout = Math.max(5_000, Math.min(budget.maxIntelligenceAttemptMs, Math.floor(remaining / attempts)));
   let current = await appendAndPersist(
     filePath,
     run,
@@ -1519,7 +1691,7 @@ async function failRun(filePath: string, run: WorkspaceCreationRun, dependencies
       stage: null,
       snapshot,
       attempt: current.attempt,
-      maxAttempts: dependencies.budget.maxArchitectAttempts,
+      maxAttempts: workspaceCreationBudgetForRun(current, dependencies).maxArchitectAttempts,
       elapsedMs: elapsedMs(current.createdAt, now),
       sourceId: null,
       warningCode: problem.code,
@@ -1545,7 +1717,7 @@ async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dep
     const sourceProgress = sourceId && activityData?.sourceKind
       ? upsertSourceProgress(current, sourceId, activityData)
       : current.snapshot.context.sourceProgress ?? snapshot.context.sourceProgress ?? [];
-    const nextSnapshot: WorkspaceCreationSnapshot = {
+    const nextSnapshotBase: WorkspaceCreationSnapshot = {
       ...snapshot,
       context: {
         ...current.snapshot.context,
@@ -1559,6 +1731,10 @@ async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dep
       stage: requestedCancel ? null : snapshot.stage,
       elapsedMs: elapsedMs(current.createdAt, now)
     };
+    const nextSnapshot: WorkspaceCreationSnapshot = {
+      ...nextSnapshotBase,
+      timings: updateCreationTimings(current, nextSnapshotBase, activityCode)
+    };
     const next = appendWorkspaceCreationEvent(current, {
       schemaVersion: 1,
       createdAt: now,
@@ -1566,7 +1742,7 @@ async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dep
       stage: nextSnapshot.stage,
       snapshot: nextSnapshot,
       attempt: current.attempt,
-      maxAttempts: dependencies.budget.maxArchitectAttempts,
+      maxAttempts: workspaceCreationBudgetForRun(current, dependencies).maxArchitectAttempts,
       elapsedMs: elapsedMs(current.createdAt, now),
       sourceId,
       warningCode,
@@ -1576,6 +1752,25 @@ async function appendAndPersist(filePath: string, run: WorkspaceCreationRun, dep
     });
     return next;
   });
+}
+
+function updateCreationTimings(run: WorkspaceCreationRun, snapshot: WorkspaceCreationSnapshot, activityCode: WorkspaceCreationActivityCode | null) {
+  const previous = run.snapshot.timings ?? {
+    firstUsefulSignalMs: null,
+    minimumContextMs: null,
+    reviewReadyMs: null,
+    provisioningReadyMs: null,
+    enrichmentDurationMs: null
+  };
+  const signalCodes: WorkspaceCreationActivityCode[] = ["page-fetched", "document-stored", "evidence-created", "fact-extracted", "resource-extracted", "intelligence-completed", "architect-completed", "composition-completed"];
+  const elapsed = snapshot.elapsedMs;
+  return {
+    firstUsefulSignalMs: previous.firstUsefulSignalMs ?? (activityCode && signalCodes.includes(activityCode) ? elapsed : null),
+    minimumContextMs: previous.minimumContextMs ?? ((snapshot.context.status === "ready" || snapshot.context.status === "partial" && snapshot.context.usableEvidence || run.input.sources.length === 0 && snapshot.extraction.status === "not-requested") ? elapsed : null),
+    reviewReadyMs: previous.reviewReadyMs ?? (snapshot.state === "review-ready" ? elapsed : null),
+    provisioningReadyMs: previous.provisioningReadyMs,
+    enrichmentDurationMs: previous.enrichmentDurationMs ?? (run.lineage?.trigger === "post-create-enrichment" && snapshot.state === "review-ready" ? elapsed : null)
+  };
 }
 
 type WorkspaceCreationEventFailure = { kind: WorkspaceCreationFailure["kind"]; code: string; retryability: WorkspaceCreationFailure["retryability"] };
@@ -1636,6 +1831,21 @@ function isWorkspaceArchitectResult(value: unknown): value is WorkspaceArchitect
   return Boolean(value && typeof value === "object" && "blueprint" in value && "reasoning" in value);
 }
 
+function applyCreationProfileLimits(result: WorkspaceArchitectResult, policy: ReturnType<typeof resolveWorkspaceCreationPolicy>) {
+  if (policy.profile !== "quick" || result.blueprint.workforce.specialists.length <= policy.maxSpecialists) return result;
+  return {
+    ...result,
+    blueprint: {
+      ...result.blueprint,
+      workforce: {
+        ...result.blueprint.workforce,
+        specialists: result.blueprint.workforce.specialists.slice(0, policy.maxSpecialists)
+      },
+      warnings: [...result.blueprint.warnings, `Quick profile limited persistent specialists to ${policy.maxSpecialists}.`].slice(0, 16)
+    }
+  };
+}
+
 function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedDependencies {
   return {
     rootPath: resolveWorkspaceCreationRunRoot(input.rootPath),
@@ -1663,7 +1873,15 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding,
     findProvisioningRunById: input.findProvisioningRunById ?? findRunById,
     budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
+    budgetOverrides: input.budget ?? {},
     nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake
+  };
+}
+
+function workspaceCreationBudgetForRun(run: WorkspaceCreationRun, dependencies: ResolvedDependencies) {
+  return {
+    ...resolveWorkspaceCreationPolicy(run.expediteRequestedAt ? "quick" : run.input.profile ?? "deep").budget,
+    ...dependencies.budgetOverrides
   };
 }
 
@@ -1726,7 +1944,8 @@ function asCreationActivityCode(value: string): WorkspaceCreationActivityCode {
   const codes: readonly WorkspaceCreationActivityCode[] = [
     "source-started", "page-discovered", "page-fetch-started", "page-fetched", "rendered-fallback-started", "rendered-fallback-used", "document-stored", "source-partial", "source-completed", "source-failed",
     "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
-    "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected"
+    "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected",
+    "continue-now-requested", "enrichment-started", "enrichment-completed"
   ];
   return codes.includes(value as WorkspaceCreationActivityCode) ? value as WorkspaceCreationActivityCode : "source-started";
 }
@@ -1754,6 +1973,9 @@ function createWorkspaceCreationInputFingerprint(input: {
   sources: WorkspaceKnowledgeSource[];
   draftContextId: string | null;
   uploads: WorkspaceCreationUpload[];
+  profile?: WorkspaceCreationProfile;
+  continueLearningAfterCreation?: boolean;
+  trigger?: WorkspaceCreationTrigger;
 }) {
   return sha256(stableSerialize({
     version: 1,
@@ -1763,6 +1985,9 @@ function createWorkspaceCreationInputFingerprint(input: {
     materialization: input.materialization,
     sources: input.sources.map(sourceFingerprintProjection),
     draftContextId: input.draftContextId,
+    profile: input.profile ?? "quick",
+    continueLearningAfterCreation: input.continueLearningAfterCreation !== false,
+    trigger: input.trigger ?? "initial",
     uploads: input.uploads.map((upload) => ({
       sourceId: upload.sourceId,
       relativePath: upload.relativePath.replace(/\\/g, "/"),

@@ -107,6 +107,9 @@ test("blueprint presenter keeps minimum topology compact and preserves fallback 
   assert.deepEqual(model.automations, []);
   assert.deepEqual(model.channels, []);
   assert.equal(model.fallback, true);
+
+  const quickModel = presentWorkspaceBlueprint(minimalResult({ status: "fallback", mode: "deterministic-safe-fallback", failureKind: "gateway" }), { profile: "quick" });
+  assert.doesNotMatch(quickModel.attention.join("\n"), /AI architecture was unavailable/);
 });
 
 test("blueprint presenter preserves structured partial-context and fallback diagnostics", () => {
@@ -316,10 +319,13 @@ test("project highlight identity keys remain unique when canonical claims repeat
 });
 
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
-  const [wrapperSource, source, contextRoute] = await Promise.all([
+  const [wrapperSource, source, contextRoute, activitySource, layoutSource, shellSource] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
     readFile(componentPath, "utf8"),
-    readFile("app/api/workspaces/context/route.ts", "utf8")
+    readFile("app/api/workspaces/context/route.ts", "utf8"),
+    readFile("components/workspace-creation-activity-indicator.tsx", "utf8"),
+    readFile("app/layout.tsx", "utf8"),
+    readFile("components/mission-control/mission-control-shell.tsx", "utf8")
   ]);
 
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
@@ -340,7 +346,14 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /workspace-architect-chip-enter/);
   assert.match(source, /PikoLoader/);
   assert.match(source, /Minimize workspace creation/);
-  assert.match(source, /Reopen workspace creation/);
+  assert.match(activitySource, /Reopen workspace creation/);
+  assert.match(activitySource, /creation-runs\/\$\{encodeURIComponent\(minimizedRunId\)\}/);
+  assert.match(activitySource, /workspaceCreationReopen/);
+  assert.match(activitySource, /clearWorkspaceCreationMinimizedRun/);
+  assert.match(layoutSource, /WorkspaceCreationActivityIndicator/);
+  assert.match(shellSource, /workspaceCreationReopen/);
+  assert.match(source, /persistWorkspaceCreationMinimizedRun/);
+  assert.match(source, /readWorkspaceCreationMinimizedRunId/);
   assert.match(source, /onOutsideInteraction/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
   assert.match(source, /Live provisioning signals/);

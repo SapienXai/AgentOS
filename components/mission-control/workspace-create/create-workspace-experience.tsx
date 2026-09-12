@@ -26,6 +26,11 @@ import {
   missionControlDialogButtonClassName,
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
+import {
+  clearWorkspaceCreationMinimizedRun,
+  persistWorkspaceCreationMinimizedRun,
+  readWorkspaceCreationMinimizedRunId
+} from "@/components/mission-control/workspace-creation-activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
@@ -88,6 +93,7 @@ type CreateWorkspaceExperienceProps = {
   surfaceTheme: SurfaceTheme;
   onWorkspaceCreated?: (result: WorkspaceCreateResult) => void;
   onRefresh?: () => Promise<void>;
+  reviewRunId?: string | null;
 };
 
 const progressSteps = [
@@ -109,10 +115,13 @@ export function CreateWorkspaceExperience({
   onOpenChange,
   surfaceTheme,
   onWorkspaceCreated,
-  onRefresh
+  onRefresh,
+  reviewRunId = null
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
+  const [profile, setProfile] = useState<"quick" | "deep">("quick");
+  const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
   const [mode, setMode] = useState<"automatic" | "customize">("automatic");
   const [constraints, setConstraints] = useState("");
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
@@ -155,6 +164,7 @@ export function CreateWorkspaceExperience({
 
   const review = useMemo(
     () => (result ? presentWorkspaceBlueprint(result, {
+      profile: creationRun?.input.profile === "deep" ? "deep" : profile,
       partialContext: creationRun?.snapshot.context.status === "partial",
       attempts: creationRun?.snapshot.architect.attempts,
       elapsedMs: creationRun?.snapshot.architect.elapsedMs,
@@ -165,7 +175,7 @@ export function CreateWorkspaceExperience({
       composition: creationRun?.snapshot.composition ?? null,
       readiness: reviewReadiness ?? creationRun?.snapshot.reviewReadiness ?? null
     }) : null),
-    [creationRun, result, reviewReadiness]
+    [creationRun, profile, result, reviewReadiness]
   );
   const experience = useMemo(() => presentWorkspaceCreationExperience({ run: creationRun, result, provisioningRun, sources }), [creationRun, provisioningRun, result, sources]);
   const isActiveRun = stage === "generating" || stage === "provisioning";
@@ -174,6 +184,8 @@ export function CreateWorkspaceExperience({
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
     setBrief("");
+    setProfile("quick");
+    setContinueLearningAfterCreation(true);
     setMode("automatic");
     setConstraints("");
     setSources([]);
@@ -203,6 +215,7 @@ export function CreateWorkspaceExperience({
     setIsRebuildingPlan(false);
     setShowStartOverConfirmation(false);
     setIsMinimized(false);
+    clearWorkspaceCreationMinimizedRun();
     provisioningKeyRef.current = null;
     hasLocalDraftRef.current = false;
   };
@@ -228,12 +241,30 @@ export function CreateWorkspaceExperience({
     if (!open || !isActiveRun) setIsMinimized(false);
   }, [isActiveRun, open]);
 
+  useEffect(() => {
+    if (isMinimized && isActiveRun && creationRun?.runId) {
+      persistWorkspaceCreationMinimizedRun(creationRun.runId);
+    }
+
+    if (!isActiveRun && creationRun?.runId) {
+      clearWorkspaceCreationMinimizedRun();
+    }
+  }, [creationRun?.runId, isActiveRun, isMinimized]);
+
+  const minimizeWorkspaceCreation = useCallback(() => {
+    setIsMinimized(true);
+    if (creationRun?.runId) {
+      persistWorkspaceCreationMinimizedRun(creationRun.runId);
+    }
+  }, [creationRun?.runId]);
+
   const handleDialogOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && isActiveRun) {
-      setIsMinimized(true);
+      minimizeWorkspaceCreation();
       return;
     }
     setIsMinimized(false);
+    clearWorkspaceCreationMinimizedRun();
     onOpenChange(nextOpen);
   };
 
@@ -254,6 +285,7 @@ export function CreateWorkspaceExperience({
     const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating") return;
 
+    clearWorkspaceCreationMinimizedRun();
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -269,6 +301,8 @@ export function CreateWorkspaceExperience({
       formData.set("idempotencyKey", crypto.randomUUID());
       formData.set("brief", nextBrief);
       formData.set("mode", mode === "automatic" ? "automatic" : "review");
+      formData.set("profile", profile);
+      formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
       formData.set("materialization", JSON.stringify(materialization));
       formData.set("sources", JSON.stringify(sources));
@@ -364,16 +398,24 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open || hasLocalDraftRef.current) return;
+    if (!open || hasLocalDraftRef.current && !reviewRunId) return;
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch("/api/workspaces/creation-runs?resumable=true", { signal: controller.signal });
-        const payload = (await response.json().catch(() => null)) as { runs?: WorkspaceCreationRun[] } | null;
-        const activeRun = payload?.runs?.[0];
+        const minimizedRunId = reviewRunId?.trim() || readWorkspaceCreationMinimizedRunId();
+        const response = await fetch(
+          minimizedRunId
+            ? `/api/workspaces/creation-runs/${encodeURIComponent(minimizedRunId)}`
+            : "/api/workspaces/creation-runs?resumable=true",
+          { signal: controller.signal }
+        );
+        const payload = await response.json().catch(() => null) as WorkspaceCreationRun & { runs?: WorkspaceCreationRun[] } | null;
+        const activeRun = minimizedRunId ? payload : payload?.runs?.[0];
         if (!response.ok || !activeRun || controller.signal.aborted) return;
         const recoveredSources = activeRun.input.sources as WorkspaceKnowledgeSource[];
         setBrief(activeRun.input.brief);
+        setProfile(activeRun.input.profile === "deep" ? "deep" : "quick");
+        setContinueLearningAfterCreation(activeRun.input.continueLearningAfterCreation !== false);
         setMode(activeRun.input.mode === "automatic" ? "automatic" : "customize");
         setSources(recoveredSources);
         setConstraints(activeRun.input.operatorConstraints.join("\n"));
@@ -382,6 +424,17 @@ export function CreateWorkspaceExperience({
         setCreationRun(activeRun);
         hasLocalDraftRef.current = true;
         if (activeRun.snapshot.reviewReadiness) setReviewReadiness(activeRun.snapshot.reviewReadiness);
+        if (activeRun.snapshot.state === "review-ready") {
+          const recoveredResult = activeRun.result as WorkspaceArchitectResult | null;
+          if (!recoveredResult?.blueprint) return;
+          setProgressPhase("preparing-review");
+          setResult(recoveredResult);
+          setFreshness(recoveredResult.freshness);
+          setCustomName(recoveredResult.blueprint.identity.name);
+          setCustomPrimaryName(recoveredResult.blueprint.workforce.primaryAgent.name);
+          setStage("review");
+          return;
+        }
         setStage("generating");
         setContextWasRequested(recoveredSources.length > 0);
         abortControllerRef.current = controller;
@@ -399,7 +452,7 @@ export function CreateWorkspaceExperience({
       }
     })();
     return () => controller.abort();
-  }, [open, pollCreationRun]);
+  }, [open, pollCreationRun, reviewRunId]);
 
   const refreshProject = async () => {
     if (!creationRun || isRefreshingProject) return;
@@ -436,6 +489,19 @@ export function CreateWorkspaceExperience({
       void fetch(`/api/workspaces/creation-runs/${runId}/cancel`, { method: "POST", keepalive: true }).catch(() => undefined);
     }
     abortControllerRef.current?.abort();
+  };
+
+  const continueNow = async () => {
+    if (!creationRun || creationRun.expediteRequestedAt) return;
+    try {
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/continue-now`, { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
+      if (!response.ok || !payload?.runId) throw new Error(payload?.error || "Minimum project context is not ready yet.");
+      setCreationRun(payload);
+      setNotice({ tone: "muted", title: "Finishing with what we have…", description: "AgentOS is completing the first useful workspace at the quick boundary." });
+    } catch (error) {
+      setNotice({ tone: "warning", title: "Still gathering context", description: error instanceof Error ? error.message : "AgentOS is finishing the current context pass." });
+    }
   };
 
   const revise = async () => {
@@ -571,8 +637,6 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     provisioningPollRef.current?.abort();
     provisioningPollRef.current = controller;
-    const idempotencyKey = provisioningKeyRef.current ?? `workspace-provision:${result.blueprint.id}:${result.blueprint.updatedAt}`;
-    provisioningKeyRef.current = idempotencyKey;
     try {
       const certified = await certifyReview(creationRun.runId, basicDraftApproved);
       if (!certified.readiness.provisionable) {
@@ -596,8 +660,8 @@ export function CreateWorkspaceExperience({
           blueprint: serverResult.blueprint,
           draftContextId: serverRun.draftContextId,
           expectedKnowledgeGenerationId: serverResult.freshness.currentGenerationId,
-          idempotencyKey,
-          acceptDraft: basicDraftApproved && (serverResult.blueprint.status === "draft" || serverResult.reasoning.status === "fallback"),
+          idempotencyKey: "server-certified",
+          acceptDraft: basicDraftApproved || serverRun.input.profile === "quick",
           creationRunId: serverRun.runId,
           compositionPlanId: serverRun.snapshot.composition?.planId ?? null,
           compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null
@@ -727,36 +791,17 @@ export function CreateWorkspaceExperience({
     : null;
 
   const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
-  const title = experience.title;
-  const description = experience.description;
+  const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
+  const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
+  const description = isEnrichmentReview && stage === "review" ? "Review the deeper project understanding before applying anything to the live workspace." : experience.description;
 
   return (
     <>
       <PikoLoader
         open={open && isActiveRun}
-        title={stage === "provisioning" ? "Creating your workspace" : "Understanding your project"}
+        title={stage === "provisioning" ? isEnrichmentReview ? "Applying workspace updates" : "Creating your workspace" : "Understanding your project"}
         description={stage === "provisioning" ? "Setting up the approved workspace." : experience.currentActivity}
       />
-      {open && isMinimized && isActiveRun ? (
-        <button
-          type="button"
-          onClick={() => setIsMinimized(false)}
-          aria-label="Reopen workspace creation"
-          className={cn(
-            "fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 text-left shadow-[0_16px_40px_rgba(15,23,42,0.2)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70",
-            isLight ? "border-[#e4d7ca] bg-white/95 text-[#4d4036]" : "border-white/15 bg-[#111827]/95 text-slate-100"
-          )}
-        >
-          <span className={cn("flex size-6 items-center justify-center rounded-full", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/15 text-violet-200")}>
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-[11px] font-semibold">Workspace creation</span>
-            <span className={cn("block max-w-[190px] truncate text-[10px]", isLight ? "text-[#8b7b6e]" : "text-slate-400")}>{experience.phaseLabel}</span>
-          </span>
-          <span className={cn("ml-1 text-[10px] font-medium", isLight ? "text-[#9a6d45]" : "text-violet-200")}>View</span>
-        </button>
-      ) : null}
       <MissionControlDialogShell
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
@@ -765,19 +810,19 @@ export function CreateWorkspaceExperience({
       description={description}
       icon={stage === "review" ? Bot : Sparkles}
       closeLabel={isActiveRun ? "Minimize workspace creation" : undefined}
-      onOutsideInteraction={isActiveRun ? () => setIsMinimized(true) : undefined}
+      onOutsideInteraction={isActiveRun ? minimizeWorkspaceCreation : undefined}
       headerActions={isActiveRun ? (
         <Button
           type="button"
           variant="ghost"
-          onClick={() => setIsMinimized(true)}
+          onClick={minimizeWorkspaceCreation}
           aria-label="Minimize workspace creation"
           className={cn("h-8 w-8 rounded-lg p-0", isLight ? "text-[#756b61] hover:bg-[#f1ebe3] hover:text-[#2d241f]" : "text-slate-300 hover:bg-white/[0.06] hover:text-white")}
         >
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      chips={stage === "review" ? <Badge variant={isProvisioned ? provisioningRun?.state === "partial" ? "warning" : "success" : reviewModel?.fallback ? "warning" : "muted"}>{isProvisioned ? provisioningRun?.state === "partial" ? "Partial" : "Ready" : reviewModel?.fallback ? "Draft" : "Review"}</Badge> : stage === "provisioning" ? <Badge variant="muted">Working</Badge> : null}
+      chips={stage === "review" ? <Badge variant={isProvisioned ? provisioningRun?.state === "partial" ? "warning" : "success" : profile === "quick" ? "success" : reviewModel?.fallback ? "warning" : "muted"}>{isProvisioned ? provisioningRun?.state === "partial" ? "Partial" : "Ready" : profile === "quick" ? "Quick setup" : reviewModel?.fallback ? "Draft" : "Review"}</Badge> : stage === "provisioning" ? <Badge variant="muted">Working</Badge> : null}
       contentClassName="left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen transform-none rounded-none border-x-0 md:left-1/2 md:top-1/2 md:h-[min(calc(100vh-72px),780px)] md:max-h-[calc(100vh-72px)] md:w-[min(92vw,900px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border-x"
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
@@ -794,7 +839,7 @@ export function CreateWorkspaceExperience({
         ) : stage === "provisioning" ? (
           <div className="flex w-full items-center justify-between gap-3">
             <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} aria-live="polite">{experience.phaseLabel}.</span>
-            <Button type="button" variant="secondary" onClick={() => setIsMinimized(true)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Minimize</Button>
+            <Button type="button" variant="secondary" onClick={minimizeWorkspaceCreation} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Minimize</Button>
           </div>
         ) : stage === "review" ? (
           <div className="flex w-full items-center justify-between gap-3">
@@ -806,7 +851,7 @@ export function CreateWorkspaceExperience({
               {!isProvisioned ? <Button type="button" variant="ghost" onClick={() => setShowStartOverConfirmation(true)} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button> : null}
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : "Review the draft, then create the workspace."}</span>
+              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
               <div className="flex items-center gap-2">
                 <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                   <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -817,10 +862,10 @@ export function CreateWorkspaceExperience({
                   disabled={!result || !reviewReadiness?.provisionable}
                   onClick={isProvisioned ? openProvisionedWorkspace : () => void provision()}
                   title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : undefined}
-                  aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
+                  aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
                   className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                 >
-                  {isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
+                  {isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply updates" : "Create Workspace"}
                 </Button>
               </div>
             </div>
@@ -846,8 +891,10 @@ export function CreateWorkspaceExperience({
             isLight={isLight}
             brief={brief}
             setBrief={setBrief}
-            mode={mode}
-            setMode={setMode}
+            profile={profile}
+            setProfile={setProfile}
+            continueLearningAfterCreation={continueLearningAfterCreation}
+            setContinueLearningAfterCreation={setContinueLearningAfterCreation}
             constraints={constraints}
             setConstraints={setConstraints}
             sources={sources}
@@ -869,12 +916,14 @@ export function CreateWorkspaceExperience({
             notice={notice}
           />
         ) : stage === "generating" ? (
-          <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} experience={experience} />
+          <GeneratingView isLight={isLight} activePhase={progressPhase} contextWasRequested={contextWasRequested} sources={sources} sourceStates={sourceStates} experience={experience} profile={profile} creationRun={creationRun} onContinueNow={() => void continueNow()} />
         ) : stage === "provisioning" ? (
           <ProvisioningView isLight={isLight} run={provisioningRun} experience={experience} />
         ) : (
           <ReviewView
             isLight={isLight}
+            profile={creationRun?.input.profile === "deep" ? "deep" : profile}
+            isEnrichmentReview={isEnrichmentReview}
             model={reviewModel}
             revisionValue={revisionValue}
             setRevisionValue={setRevisionValue}
@@ -912,10 +961,12 @@ export function CreateWorkspaceExperience({
 
 function IntakeView({
   isLight,
+  profile,
+  setProfile,
+  continueLearningAfterCreation,
+  setContinueLearningAfterCreation,
   brief,
   setBrief,
-  mode,
-  setMode,
   constraints,
   setConstraints,
   sources,
@@ -937,10 +988,12 @@ function IntakeView({
   notice
 }: {
   isLight: boolean;
+  profile: "quick" | "deep";
+  setProfile: (profile: "quick" | "deep") => void;
+  continueLearningAfterCreation: boolean;
+  setContinueLearningAfterCreation: (value: boolean) => void;
   brief: string;
   setBrief: (value: string) => void;
-  mode: "automatic" | "customize";
-  setMode: (mode: "automatic" | "customize") => void;
   constraints: string;
   setConstraints: (value: string) => void;
   sources: WorkspaceKnowledgeSource[];
@@ -1038,21 +1091,26 @@ function IntakeView({
         </div>
       ) : null}
 
-      <details className={cn("mt-7 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white/70" : "border-white/10 bg-white/[0.025]")}>
+      <div className="mt-7 flex flex-col items-center gap-3">
+        <div className={cn("inline-flex max-w-full flex-wrap items-center justify-center rounded-lg border p-1", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.035]")} role="group" aria-label="Creation profile">
+          <ModeButton isLight={isLight} active={profile === "quick"} onClick={() => setProfile("quick")} label="Quick setup" />
+          <span className={cn("self-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em]", isLight ? "text-[#9a6d45]" : "text-violet-200")}>Recommended</span>
+          <ModeButton isLight={isLight} active={profile === "deep"} onClick={() => setProfile("deep")} label="Deep analysis" />
+        </div>
+        <p className={cn("text-center text-xs", isLight ? "text-[#8a7b6e]" : "text-slate-500")}>{profile === "quick" ? "Create a useful workspace quickly. AgentOS can keep learning after creation." : "Read more project sources and prepare a more complete workspace before creation."}</p>
+      </div>
+
+      <details className={cn("mt-5 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white/70" : "border-white/10 bg-white/[0.025]")}>
         <summary className={cn("cursor-pointer text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Advanced options</summary>
         <div className="mt-4 flex flex-col items-center gap-3">
-          <div className={cn("inline-flex rounded-lg border p-1", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.035]")} role="group" aria-label="Architect mode">
-            <ModeButton isLight={isLight} active={mode === "automatic"} onClick={() => setMode("automatic")} label="Automatic" />
-            <ModeButton isLight={isLight} active={mode === "customize"} onClick={() => setMode("customize")} label="Customize" />
+          <label className={cn("flex w-full max-w-[600px] items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300", profile === "deep" && "opacity-50")}>
+            <input type="checkbox" checked={continueLearningAfterCreation} disabled={profile === "deep"} onChange={(event) => setContinueLearningAfterCreation(event.target.checked)} className="mt-0.5 accent-violet-500" />
+            <span><span className="font-medium">Continue learning after creation</span><span className="ml-1 opacity-70">(Quick setup)</span><span className="mt-1 block opacity-70">AgentOS will prepare reviewable improvements without changing the workspace automatically.</span></span>
+          </label>
+          <div className="w-full max-w-[600px]">
+            <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
+            <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
           </div>
-          {mode === "customize" ? (
-            <div className="w-full max-w-[600px]">
-              <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
-              <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
-            </div>
-          ) : (
-            <p className={cn("text-center text-xs", isLight ? "text-[#8a7b6e]" : "text-slate-500")}>Automatic chooses the smallest useful architecture from your project.</p>
-          )}
         </div>
       </details>
 
@@ -1082,7 +1140,7 @@ function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
   );
 }
 
-function GeneratingView({ isLight, activePhase, contextWasRequested, sources, sourceStates, experience }: { isLight: boolean; activePhase: GenerationPhase; contextWasRequested: boolean; sources: WorkspaceKnowledgeSource[]; sourceStates: Record<string, ContextSourceState>; experience: WorkspaceCreationExperienceModel }) {
+function GeneratingView({ isLight, activePhase, contextWasRequested, sources, sourceStates, experience, profile, creationRun, onContinueNow }: { isLight: boolean; activePhase: GenerationPhase; contextWasRequested: boolean; sources: WorkspaceKnowledgeSource[]; sourceStates: Record<string, ContextSourceState>; experience: WorkspaceCreationExperienceModel; profile: "quick" | "deep"; creationRun: WorkspaceCreationRun | null; onContinueNow: () => void }) {
   const chips = buildProgressChips(sources, sourceStates);
   const currentStep = progressSteps.findIndex((step) => step.id === activePhase);
   const activeLabel = progressSteps.find((step) => step.id === activePhase)?.label ?? "Working on the first draft";
@@ -1146,6 +1204,14 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
         </div>
         <ProgressChipRail isLight={isLight} chips={chips} />
       </div>
+      {profile === "deep" && creationRun && !creationRun.expediteRequestedAt && (creationRun.snapshot.context.status === "ready" || creationRun.snapshot.context.status === "partial" && creationRun.snapshot.context.usableEvidence) ? (
+        <div className={cn("mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white text-[#65594f]" : "border-white/10 bg-white/[0.04] text-slate-300")} role="status">
+          <div><p className="text-sm font-medium">Enough context for a first workspace.</p><p className="mt-1 text-xs opacity-75">Continue with the current evidence while optional analysis stays out of the critical path.</p></div>
+          <Button type="button" variant="secondary" onClick={onContinueNow} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>Continue now</Button>
+        </div>
+      ) : creationRun?.expediteRequestedAt ? (
+        <p className={cn("mt-4 text-center text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} role="status">Finishing with what we have…</p>
+      ) : null}
     </main>
   );
 }
@@ -1249,6 +1315,8 @@ function ProvisioningView({ isLight, run, experience }: { isLight: boolean; run:
 
 function ReviewView({
   isLight,
+  profile,
+  isEnrichmentReview,
   model,
   revisionValue,
   setRevisionValue,
@@ -1278,6 +1346,8 @@ function ReviewView({
   onConfirmStartOver
 }: {
   isLight: boolean;
+  profile: "quick" | "deep";
+  isEnrichmentReview: boolean;
   model: WorkspaceBlueprintReviewModel | null;
   revisionValue: string;
   setRevisionValue: (value: string) => void;
@@ -1310,17 +1380,20 @@ function ReviewView({
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
   const provisioningComplete = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
-  const compositionLabel = model.composition?.status === "fallback"
+  const compositionLabel = profile === "quick"
+    ? "Basic workspace documents planned"
+    : model.composition?.status === "fallback"
     ? "AI workspace document proposals unavailable"
     : model.composition?.status === "partial"
       ? "Workspace documents partially planned"
       : model.composition?.status === "blocked" || model.composition?.status === "conflict"
         ? "Workspace documents need conflict review"
         : "Workspace documents planned";
+  const showTechnicalFallback = profile === "deep";
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
-      {model.fallback ? (
+      {model.fallback && showTechnicalFallback ? (
         <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <div>
             <p className="text-sm font-semibold">Workspace design needs another try</p>
@@ -1340,6 +1413,11 @@ function ReviewView({
         </div>
       ) : null}
 
+      <div className={cn("mb-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200")} role="status">
+        <div><p className="text-sm font-semibold">{isEnrichmentReview ? "Workspace update available" : profile === "quick" ? "Quick workspace" : "Deep workspace"}</p><p className="mt-1 text-xs opacity-75">{isEnrichmentReview ? "A deeper candidate is ready for review. The live workspace remains unchanged until you apply it." : profile === "quick" ? "A basic workspace is ready now. AgentOS can keep learning without changing it automatically." : "Full project analysis is preserved in this review."}</p></div>
+        <Badge variant={isEnrichmentReview || profile === "quick" ? "success" : "muted"}>{isEnrichmentReview ? "Review updates" : profile === "quick" ? "Quick setup" : "Full analysis"}</Badge>
+      </div>
+
       {readiness && !readiness.provisionable ? (
         <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", readiness.status === "blocked" ? (isLight ? "border-red-200 bg-red-50 text-red-950" : "border-red-400/20 bg-red-400/10 text-red-100") : (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50"))} role="status">
           <div><p className="text-sm font-semibold">{readiness.status === "plan-rebuild-required" ? "Workspace plan needs to be rebuilt" : readiness.status === "refresh-required" ? "Project context needs a refresh" : "Review needs attention"}</p><p className="mt-1 text-xs opacity-80">{readiness.message}</p></div>
@@ -1348,11 +1426,11 @@ function ReviewView({
       ) : null}
 
       {model.composition ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", model.composition.status === "blocked" || model.composition.status === "conflict" || model.composition.status === "fallback" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
+        <div className={cn("mb-5 rounded-xl border px-4 py-3", model.composition.status === "blocked" || model.composition.status === "conflict" || (model.composition.status === "fallback" && showTechnicalFallback) ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">Workspace</p>
           <p className="mt-2 text-sm font-medium">{compositionLabel}</p>
           <p className="mt-1 text-xs opacity-75">{model.composition.artifactCount} bounded project and workspace document proposals · {model.composition.conflictCount} conflict{model.composition.conflictCount === 1 ? "" : "s"}.</p>
-          {model.composition.status === "fallback" ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
+          {model.composition.status === "fallback" && showTechnicalFallback ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
         </div>
       ) : null}
 

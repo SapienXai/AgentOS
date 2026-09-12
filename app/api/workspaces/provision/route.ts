@@ -6,7 +6,10 @@ import {
   provisionWorkspaceFromBlueprint,
   WorkspaceProvisioningError
 } from "@/lib/agentos/application/workspace-provisioning-service";
-import { attachWorkspaceProvisioningRun } from "@/lib/agentos/application/workspace-creation-run-service";
+import {
+  attachWorkspaceProvisioningRun,
+  getWorkspaceCreationProvisioningIntent
+} from "@/lib/agentos/application/workspace-creation-run-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
@@ -31,16 +34,27 @@ export async function POST(request: Request) {
 
   try {
     const parsed = provisionRequestSchema.parse(await request.json());
+    const certified = parsed.creationRunId
+      ? await getWorkspaceCreationProvisioningIntent({ actorId: permission.actor.actorId, runId: parsed.creationRunId, acceptDraft: parsed.acceptDraft })
+      : null;
+    if (parsed.creationRunId && !certified) return NextResponse.json({ error: "Workspace creation run was not found." }, { status: 404 });
+    if (certified && (!certified.readiness.provisionable || !certified.idempotencyKey || !certified.run.result || typeof certified.run.result !== "object" || !("blueprint" in certified.run.result))) {
+      return NextResponse.json({ error: certified.readiness.message, code: certified.readiness.reasonCode }, { status: 409 });
+    }
+    const canonicalResult = certified?.run.result && typeof certified.run.result === "object" && "blueprint" in certified.run.result
+      ? certified.run.result as { blueprint: unknown; freshness?: { currentGenerationId?: string | null } }
+      : null;
     const run = await provisionWorkspaceFromBlueprint({
       actorId: permission.actor.actorId,
-      blueprint: parsed.blueprint,
-      draftContextId: parsed.draftContextId ?? null,
-      expectedKnowledgeGenerationId: parsed.expectedKnowledgeGenerationId ?? null,
-      idempotencyKey: parsed.idempotencyKey,
-      acceptDraft: parsed.acceptDraft,
-      compositionPlan: parsed.compositionPlan,
-      compositionPlanId: parsed.compositionPlanId ?? null,
-      compositionPlanFingerprint: parsed.compositionPlanFingerprint ?? null
+      blueprint: canonicalResult?.blueprint ?? parsed.blueprint,
+      draftContextId: certified?.run.draftContextId ?? parsed.draftContextId ?? null,
+      expectedKnowledgeGenerationId: canonicalResult?.freshness?.currentGenerationId ?? parsed.expectedKnowledgeGenerationId ?? null,
+      idempotencyKey: certified?.idempotencyKey ?? parsed.idempotencyKey,
+      acceptDraft: parsed.acceptDraft || certified?.run.input.profile === "quick",
+      compositionPlan: undefined,
+      compositionPlanId: certified?.readiness.planId ?? parsed.compositionPlanId ?? null,
+      compositionPlanFingerprint: certified?.readiness.planFingerprint ?? parsed.compositionPlanFingerprint ?? null,
+      creationRunId: parsed.creationRunId ?? null
     });
     if (parsed.creationRunId) {
       await attachWorkspaceProvisioningRun({

@@ -96,6 +96,25 @@ test("discovery is deterministic, general-purpose, and handles documentation-hea
   assert.ok(docs.manifest.pages.some((page) => page.locator === "https://docs.library.dev/reference"));
 });
 
+test("Quick discovery stops after the root and one useful supporting page", async () => {
+  const calls: string[] = [];
+  const result = await discoverProjectWebsite({
+    runId: "quick-sufficiency-test",
+    sourceId: "quick-saas",
+    sourceKind: "website",
+    rootUrl: genericSaasProjectDiscoveryFixture.rootUrl,
+    limits: limits({ maxPagesPerSource: 6, maxDepth: 1, maxSitemaps: 2 }),
+    stopWhenSufficient: true,
+    resolveHost: async () => ["93.184.216.34"],
+    assertPublicAddresses,
+    websiteFetcher: createProjectDiscoveryFixtureFetcher(genericSaasProjectDiscoveryFixture, calls)
+  });
+  const pageCalls = calls.filter((url) => !/\/robots\.txt$|\/sitemap\.xml$/.test(url));
+  assert.deepEqual(pageCalls, ["https://acme-saas.com/", "https://acme-saas.com/features"]);
+  assert.ok(result.warnings.some((warning) => /Quick discovery stopped/i.test(warning)));
+  assert.equal(result.documents.length, 2);
+});
+
 test("URL and site-family policy is public-suffix aware and rejects unsafe lookalikes", () => {
   assert.equal(registrableDomainForHostname("docs.example.co.uk"), "example.co.uk");
   assert.equal(isSameProjectSiteFamily("https://docs.example.co.uk/guide", "https://example.co.uk/"), true);

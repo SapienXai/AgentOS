@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { Toaster } from "@/components/ui/sonner";
 import { InstanceProtectionProvider } from "@/components/auth/instance-protection-provider";
 import { PwaServiceWorkerRegistration } from "@/components/pwa/pwa-service-worker-registration";
+import { WorkspaceCreationActivityIndicator } from "@/components/workspace-creation-activity-indicator";
 import { getInstanceProtectionStatus, INSTANCE_PROTECTION_COOKIE } from "@/lib/security/instance-protection";
 
 import "@/app/globals.css";
@@ -109,6 +110,7 @@ export default async function RootLayout({
       <body>
         <InstanceProtectionProvider initialStatus={initialProtectionStatus}>
           {children}
+          <WorkspaceCreationActivityIndicator />
           <PwaServiceWorkerRegistration />
           <Toaster theme="system" richColors closeButton />
         </InstanceProtectionProvider>

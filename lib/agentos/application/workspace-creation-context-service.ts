@@ -11,6 +11,7 @@ import {
   promoteKnowledgeCorpus,
   readKnowledgeSnapshot,
   type KnowledgeHostResolver,
+  type KnowledgeIngestionLimits,
   type KnowledgeIngestionProgress,
   type KnowledgeIngestionSourceReport,
   type KnowledgeWebsiteFetcher
@@ -198,6 +199,10 @@ export type WorkspaceCreationContextOptions = {
   renderedBrowser?: ProjectDiscoveryRenderedBrowser;
   /** Explicit reanalysis bypasses the same-intake reuse shortcut. */
   forceRefresh?: boolean;
+  /** Profile-owned ingestion bounds; the canonical ingestion engine remains shared. */
+  limits?: Partial<KnowledgeIngestionLimits>;
+  /** Quick discovery may stop once a root and one useful project page are known. */
+  stopWhenSufficient?: boolean;
 };
 
 export type WorkspaceCreationIntelligenceSummary = {
@@ -513,7 +518,9 @@ async function stageWorkspaceCreationKnowledgeLocked(
     onProgress: input.onProgress,
     websiteFetcher: input.websiteFetcher,
     networkResolver: input.networkResolver,
-    renderedBrowser: input.renderedBrowser ?? createOpenClawRenderedDiscoveryBrowser()
+    renderedBrowser: input.renderedBrowser ?? createOpenClawRenderedDiscoveryBrowser(),
+    limits: input.limits,
+    stopWhenSufficient: input.stopWhenSufficient
   });
   const sourceReports = ingestion.sourceReports.map((report) => projectSourceReport(report));
   const warnings = ingestion.state.warnings.map((warning) => sanitizeDiagnostic(warning));

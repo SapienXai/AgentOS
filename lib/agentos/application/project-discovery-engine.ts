@@ -62,6 +62,7 @@ export type ProjectDiscoveryEngineInput = {
   assertPublicAddresses: (addresses: string[]) => void;
   onProgress?: (progress: Progress) => void | Promise<void>;
   renderedBrowser?: ProjectDiscoveryRenderedBrowser;
+  stopWhenSufficient?: boolean;
 };
 
 export type ProjectDiscoveryFetchedPage = {
@@ -179,6 +180,7 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
   let skippedItems = 0;
   let renderedFallback: ProjectDiscoveryRenderedFallbackStatus = "not-needed";
   const qualityReasons: ProjectDiscoveryQualityReason[] = [];
+  let stoppedWhenSufficient = false;
 
   await emit(input, {
     phase: "discover",
@@ -285,10 +287,16 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
         warningCount: warnings.length,
         currentLocator: page.locator
       });
+      if (input.stopWhenSufficient && hasSufficientProjectContext(documents)) {
+        stoppedWhenSufficient = true;
+        queue.length = 0;
+        break;
+      }
     }
   }
 
-  if (queue.length > 0 || fetched.size >= input.limits.maxPagesPerSource) warnings.push("Website crawl limits stopped further discovery.");
+  if (stoppedWhenSufficient) warnings.push("Quick discovery stopped after sufficient project context was collected; coverage is intentionally limited.");
+  else if (queue.length > 0 || fetched.size >= input.limits.maxPagesPerSource) warnings.push("Website crawl limits stopped further discovery.");
   const rootPage = pages.find((page) => page.firstParty === "root" && page.depth === 0);
   const shellDetected = Boolean(rootPage?.warnings.some((warning) => /JavaScript shell|no readable text/i.test(warning)));
   if (shellDetected) {
@@ -421,6 +429,13 @@ export async function discoverProjectWebsite(input: ProjectDiscoveryEngineInput)
       // Malformed sitemap locations are bounded discovery misses.
     }
   }
+}
+
+function hasSufficientProjectContext(documents: ProjectDiscoveryFetchedPage[]) {
+  const usable = documents.filter((document) => document.page.fetchStatus === "fetched" && normalizeDiscoveryBody(document.content).length >= 48);
+  const root = usable.some((document) => document.page.depth === 0 && document.page.firstParty === "root");
+  const supportingPage = usable.some((document) => document.page.depth > 0 || document.page.firstParty === "subdomain");
+  return root && supportingPage;
 }
 
 async function discoverSitemapCandidates(input: {

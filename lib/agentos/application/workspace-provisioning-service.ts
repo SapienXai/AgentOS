@@ -31,6 +31,7 @@ import {
   type ProvisioningLeaseHandle
 } from "@/lib/agentos/application/workspace-provisioning-lease";
 import { persistWorkspaceIntelligenceBinding, readWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
+import { markWorkspaceCreationProvisioningReady, startWorkspacePostCreateEnrichment } from "@/lib/agentos/application/workspace-creation-run-service";
 import {
   buildProvisioningStorageKey,
   createRunAtomically,
@@ -91,6 +92,7 @@ export type WorkspaceProvisioningRun = {
   updatedAt: string;
   attempt: number;
   blueprintFingerprint: string;
+  creationRunId?: string | null;
   workspaceId: string | null;
   result: WorkspaceCreateResult | null;
   warnings: string[];
@@ -123,6 +125,7 @@ export type ProvisionWorkspaceFromBlueprintInput = {
   compositionPlan?: unknown;
   compositionPlanId?: string | null;
   compositionPlanFingerprint?: string | null;
+  creationRunId?: string | null;
   signal?: AbortSignal;
 };
 
@@ -144,6 +147,7 @@ type PreparedProvisioning = {
   blueprintFingerprint: string;
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
+  creationRunId: string | null;
   context: WorkspaceCreationContextResult | null;
   compositionPlan: WorkspaceCompositionPlan | null;
   createInput: Parameters<typeof createWorkspaceProject>[0];
@@ -166,6 +170,7 @@ export type WorkspaceProvisioningDependencies = {
   ensureWorkspaceNativeKnowledge?: typeof ensureWorkspaceNativeKnowledge;
   updateAgent?: typeof updateAgent;
   persistWorkspaceIntelligenceBinding?: typeof persistWorkspaceIntelligenceBinding;
+  onWorkspaceProvisioned?: (input: { actorId: string; creationRunId: string; provisioningRunId: string }) => Promise<void>;
   readWorkspaceIntelligenceBinding?: typeof readWorkspaceIntelligenceBinding;
 };
 
@@ -184,6 +189,7 @@ type ResolvedWorkspaceProvisioningDependencies = {
   ensureWorkspaceNativeKnowledge: typeof ensureWorkspaceNativeKnowledge;
   updateAgent: typeof updateAgent;
   persistWorkspaceIntelligenceBinding: typeof persistWorkspaceIntelligenceBinding;
+  onWorkspaceProvisioned: (input: { actorId: string; creationRunId: string; provisioningRunId: string }) => Promise<void>;
   readWorkspaceIntelligenceBinding: typeof readWorkspaceIntelligenceBinding;
 };
 
@@ -207,7 +213,10 @@ function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): Res
     ensureWorkspaceNativeKnowledge: input.ensureWorkspaceNativeKnowledge ?? ensureWorkspaceNativeKnowledge,
     updateAgent: input.updateAgent ?? updateAgent,
     persistWorkspaceIntelligenceBinding: input.persistWorkspaceIntelligenceBinding ?? persistWorkspaceIntelligenceBinding,
-    readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding
+    readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding,
+    onWorkspaceProvisioned: input.onWorkspaceProvisioned ?? (async ({ actorId, creationRunId }) => {
+      await startWorkspacePostCreateEnrichment({ actorId, parentRunId: creationRunId });
+    })
   };
 }
 
@@ -231,7 +240,8 @@ export async function startWorkspaceProvisioning(
       blueprintFingerprint: prepared.blueprintFingerprint,
       draftContextId: prepared.draftContextId,
       expectedKnowledgeGenerationId: prepared.expectedKnowledgeGenerationId,
-      compositionPlan: prepared.compositionPlan
+      compositionPlan: prepared.compositionPlan,
+      creationRunId: input.creationRunId ?? null
     });
     run = created.run;
   }
@@ -352,6 +362,7 @@ export async function resumeWorkspaceProvisioningRun(input: {
     blueprint: locator.run.blueprint,
     draftContextId: locator.run.draftContextId,
     expectedKnowledgeGenerationId: locator.run.expectedKnowledgeGenerationId,
+    creationRunId: locator.run.creationRunId,
     compositionPlan: locator.run.compositionPlan,
     idempotencyKey: `resume:${locator.run.idempotencyKeyHash}`,
     acceptDraft: true
@@ -513,6 +524,7 @@ async function prepareProvisioning(
     blueprintFingerprint,
     draftContextId,
     expectedKnowledgeGenerationId,
+    creationRunId: input.creationRunId?.trim() || null,
     context,
     compositionPlan,
     intelligencePack,
@@ -550,6 +562,7 @@ function assertProvisioningIntentMatches(
     || run.blueprintFingerprint !== prepared.blueprintFingerprint
     || normalizeOptionalIntent(run.draftContextId) !== draftContextId
     || normalizeOptionalIntent(run.expectedKnowledgeGenerationId) !== expectedKnowledgeGenerationId
+    || normalizeOptionalIntent(run.creationRunId) !== normalizeOptionalIntent(prepared.creationRunId)
     || (run.compositionPlan?.planId ?? null) !== (prepared.compositionPlan?.planId ?? null)
     || (run.compositionPlan?.inputFingerprint ?? null) !== (prepared.compositionPlan?.inputFingerprint ?? null)
   ) {
@@ -690,7 +703,8 @@ async function executeWorkspaceProvisioning(
     run = await transition(filePath, run, "verifying", "Verifying the physical workspace, agents, bootstrap files, and native bindings.", lease, dependencies);
     const verification = await verifyProvisionedWorkspace(created, prepared.blueprint, nativeBinding, dependencies, run);
     const warnings = uniqueStrings([...run.warnings, ...verification.warnings]);
-    let finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : warnings.length > 0 ? "partial" : "ready";
+    const actionableWarnings = warnings.filter((warning) => warning !== "Quick profile uses deterministic safe composition as its primary plan.");
+    let finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : actionableWarnings.length > 0 ? "partial" : "ready";
     let finalWarnings = warnings;
     const verifiedAt = dependencies.now().toISOString();
     const verificationError = verification.coreErrors.length > 0
@@ -749,6 +763,18 @@ async function executeWorkspaceProvisioning(
       verifiedAt,
       updatedAt: verifiedAt
     });
+    if (finalState === "ready" && run.creationRunId) {
+      await markWorkspaceCreationProvisioningReady({
+        actorId: prepared.actorId,
+        runId: run.creationRunId,
+        provisioningRunId: run.runId
+      }).catch(() => undefined);
+      await dependencies.onWorkspaceProvisioned({
+        actorId: prepared.actorId,
+        creationRunId: run.creationRunId,
+        provisioningRunId: run.runId
+      }).catch(() => undefined);
+    }
     return publicRun(run);
   } catch (error) {
     if (error instanceof ProvisioningLeaseBusyError || error instanceof ProvisioningLeaseLostError) {
@@ -1284,6 +1310,7 @@ function publicRun(run: StoredWorkspaceProvisioningRun): WorkspaceProvisioningRu
     updatedAt: run.updatedAt,
     attempt: run.attempt,
     blueprintFingerprint: run.blueprintFingerprint,
+    creationRunId: run.creationRunId ?? null,
     workspaceId: run.workspaceId,
     result: run.result,
     warnings: run.warnings.slice(0, 24),

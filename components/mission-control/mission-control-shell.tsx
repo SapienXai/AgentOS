@@ -46,6 +46,7 @@ import { useMissionControlTaskActions } from "@/components/mission-control/use-m
 import { useMissionControlWorkspaceActions } from "@/components/mission-control/use-mission-control-workspace-actions";
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
+import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import {
@@ -298,6 +299,7 @@ export function MissionControlShell({
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const [pendingWorkspaceCreations, setPendingWorkspaceCreations] = useState<PendingWorkspaceMenuEntry[]>([]);
+  const [workspaceCreationReviewRunId, setWorkspaceCreationReviewRunId] = useState<string | null>(null);
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpenState, setIsSidebarOpen] = useState(false);
   const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
@@ -857,6 +859,26 @@ export function MissionControlShell({
     activeWorkspace: activeWorkspaceForDialogs,
     openWorkspaceOnCanvas
   });
+
+  const openWorkspaceUpdateReview = useCallback((creationRunId: string) => {
+    setWorkspaceCreationReviewRunId(creationRunId);
+    openWorkspaceWizard("basic");
+  }, [openWorkspaceWizard]);
+  const handleWorkspaceWizardOpenChangeWithReview = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) setWorkspaceCreationReviewRunId(null);
+    handleWorkspaceWizardOpenChange(nextOpen);
+  }, [handleWorkspaceWizardOpenChange]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("workspaceCreationReopen")) {
+      return;
+    }
+
+    openWorkspaceWizard("basic");
+    url.searchParams.delete("workspaceCreationReopen");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [openWorkspaceWizard]);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const canvasNodeInteractionActiveRef = useRef(false);
   const pendingComposerBlurRef = useRef(false);
@@ -4000,6 +4022,7 @@ export function MissionControlShell({
 
   const settingsSystemOverlays = (
     <>
+      <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspaceForDialogs?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
       {shouldShowOnboarding ? (
         <OpenClawOnboarding
           key={`onboarding-${onboardingSessionKey}`}
@@ -4077,10 +4100,11 @@ export function MissionControlShell({
       <WorkspaceWizardDialog
         key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
         open={isWorkspaceWizardOpen}
-        onOpenChange={handleWorkspaceWizardOpenChange}
+        onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
         initialMode={workspaceWizardInitialMode}
         workspaceEditId={workspaceWizardEditId}
         surfaceTheme={surfaceTheme}
+        creationReviewRunId={workspaceCreationReviewRunId}
         snapshot={snapshot}
         onRefresh={refresh}
         onWorkspaceCreated={handleWorkspaceCreated}
@@ -4601,6 +4625,8 @@ export function MissionControlShell({
           {...settingsPanelProps}
         />
       </div>
+
+      <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspaceForDialogs?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
 
       <div className="relative z-20 min-h-[100dvh] pointer-events-none lg:h-screen">
         {!isInspectorOpen ? (
@@ -5237,10 +5263,11 @@ export function MissionControlShell({
         <WorkspaceWizardDialog
           key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
           open={isWorkspaceWizardOpen}
-          onOpenChange={handleWorkspaceWizardOpenChange}
+          onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
           initialMode={workspaceWizardInitialMode}
           workspaceEditId={workspaceWizardEditId}
           surfaceTheme={surfaceTheme}
+          creationReviewRunId={workspaceCreationReviewRunId}
           snapshot={snapshot}
           onRefresh={refresh}
           onWorkspaceCreated={handleWorkspaceCreated}

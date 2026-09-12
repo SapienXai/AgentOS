@@ -206,6 +206,7 @@ export type IngestKnowledgeSourcesInput = {
   stateRoot: string;
   signal?: AbortSignal;
   limits?: Partial<KnowledgeIngestionLimits>;
+  stopWhenSufficient?: boolean;
   onProgress?: (progress: KnowledgeIngestionProgress) => void | Promise<void>;
   websiteFetcher?: KnowledgeWebsiteFetcher;
   networkResolver?: KnowledgeHostResolver;
@@ -251,6 +252,7 @@ type SourceContext = {
   websiteFetcher: KnowledgeWebsiteFetcher;
   resolveHost: KnowledgeHostResolver;
   renderedBrowser?: ProjectDiscoveryRenderedBrowser;
+  stopWhenSufficient?: boolean;
   onProgress?: IngestKnowledgeSourcesInput["onProgress"];
   bytesFetched: number;
 };
@@ -695,6 +697,7 @@ async function ingestKnowledgeSourcesWithLock(input: IngestKnowledgeSourcesInput
         websiteFetcher,
         resolveHost,
         renderedBrowser: input.renderedBrowser,
+        stopWhenSufficient: input.stopWhenSufficient,
         onProgress: input.onProgress,
         bytesFetched: 0
       };
@@ -1116,6 +1119,7 @@ async function ingestWebsiteSource(context: SourceContext) {
     websiteFetcher: context.websiteFetcher,
     resolveHost: context.resolveHost,
     renderedBrowser: context.renderedBrowser,
+    stopWhenSufficient: context.stopWhenSufficient,
     assertPublicAddresses,
     onProgress: context.onProgress
   });

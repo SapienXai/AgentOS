@@ -59,6 +59,7 @@ export type StoredWorkspaceProvisioningRun = {
   runId: string;
   actorHash: string;
   idempotencyKeyHash: string;
+  creationRunId?: string | null;
   blueprintId: string;
   blueprintFingerprint: string;
   /** Exact validated input snapshot required for process-restart recovery. */
@@ -145,6 +146,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
   draftContextId: string | null;
   expectedKnowledgeGenerationId: string | null;
   compositionPlan?: WorkspaceCompositionPlan | null;
+  creationRunId?: string | null;
 }): Promise<CreateProvisioningRunResult> {
   const root = resolveProvisioningRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -154,6 +156,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     runId: randomUUID(),
     actorHash: actorHash(input.actorId),
     idempotencyKeyHash: sha256(storageKey),
+    creationRunId: input.creationRunId ?? null,
     blueprintId: input.blueprint.id,
     blueprintFingerprint: input.blueprintFingerprint,
     blueprint: input.blueprint,
@@ -275,6 +278,7 @@ function assertImmutableRunFields(run: StoredWorkspaceProvisioningRun, updates: 
     || ("blueprintFingerprint" in updates && updates.blueprintFingerprint !== run.blueprintFingerprint)
     || ("draftContextId" in updates && updates.draftContextId !== run.draftContextId)
     || ("expectedKnowledgeGenerationId" in updates && updates.expectedKnowledgeGenerationId !== run.expectedKnowledgeGenerationId)
+    || ("creationRunId" in updates && updates.creationRunId !== run.creationRunId)
     || ("expectedCurrentProvisioningRunId" in updates && "expectedCurrentProvisioningRunId" in run && updates.expectedCurrentProvisioningRunId !== run.expectedCurrentProvisioningRunId)
     || ("blueprint" in updates && stableStringify(updates.blueprint) !== stableStringify(run.blueprint))
     || ("compositionPlan" in updates && stableStringify(updates.compositionPlan) !== stableStringify(run.compositionPlan))

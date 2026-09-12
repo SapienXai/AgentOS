@@ -24,6 +24,8 @@ const jsonSchema = z.object({
   brief: z.string().trim().min(1).max(12_000),
   draftContextId: z.string().uuid().nullable().optional(),
   mode: z.enum(["automatic", "review"]).default("automatic"),
+  profile: z.enum(["quick", "deep"]).default("quick"),
+  continueLearningAfterCreation: z.boolean().default(true),
   operatorConstraints: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
   materialization: z.unknown().optional(),
   sources: z.array(z.unknown()).max(24).default([])
@@ -62,6 +64,8 @@ export async function POST(request: Request) {
         brief: String(formData.get("brief") ?? ""),
         draftContextId: formData.get("draftContextId") || undefined,
         mode: formData.get("mode") || undefined,
+        profile: formData.get("profile") || undefined,
+        continueLearningAfterCreation: formData.get("continueLearningAfterCreation") === "false" ? false : true,
         operatorConstraints: JSON.parse(String(formData.get("operatorConstraints") ?? "[]")),
         materialization: JSON.parse(String(formData.get("materialization") ?? '{"mode":"empty"}')),
         sources: JSON.parse(String(formData.get("sources") ?? "[]"))

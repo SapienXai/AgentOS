@@ -514,6 +514,8 @@ export type WorkspaceArchitectRunOptions = {
   /** Trusted server-side retrieval seam. The caller supplies selected document ids only. */
   readKnowledgeDocuments?: (documentIds: readonly string[], options?: { signal?: AbortSignal }) => Promise<WorkspaceArchitectCorpusDocument[]>;
   onLifecycleEvent?: (event: WorkspaceArchitectLifecycleEvent) => void | Promise<void>;
+  /** Policy guard supplied by the creation service; does not create a second pipeline. */
+  maxSpecialists?: number;
 };
 
 export type WorkspaceArchitectModelExecutionRequest = {

@@ -104,6 +104,7 @@ export type WorkspaceBlueprintReviewModel = {
 };
 
 export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, options: {
+  profile?: "quick" | "deep";
   partialContext?: boolean;
   attempts?: number;
   elapsedMs?: number;
@@ -115,6 +116,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
   readiness?: WorkspaceCreationReviewReadiness | null;
 } = {}): WorkspaceBlueprintReviewModel {
   const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
+  const intentionalQuickFallback = options.profile === "quick";
   const partialContext = options.partialContext === true || result.blueprint.warnings.some((warning) => /partial project context/i.test(warning));
   const projectIntelligence = options.intelligence?.review ?? null;
   const facts = rankProjectFacts(projectIntelligence?.facts ?? []);
@@ -145,7 +147,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
       ? { status: "partial", reason: "Some project context could not be fully staged within the analysis budget." }
       : { status: "full", reason: null };
   const attention = [...new Set([
-    ...(fallback ? ["AI architecture was unavailable; a basic draft is available."] : []),
+    ...(fallback && !intentionalQuickFallback ? ["AI architecture was unavailable; a basic draft is available."] : []),
     ...(partialContext ? ["Architecture generated from partial project context."] : []),
     ...(project.conflicts.some((conflict) => conflict.status === "open") ? ["Open project conflicts remain visible for review."] : [])
   ])].slice(0, 8);

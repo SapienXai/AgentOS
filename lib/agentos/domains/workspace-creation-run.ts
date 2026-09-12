@@ -2,6 +2,7 @@ import {
   validateWorkspaceCreationReviewReadiness,
   type WorkspaceCreationReviewReadiness
 } from "@/lib/agentos/domains/workspace-creation-review";
+import type { WorkspaceCreationProfile, WorkspaceCreationTrigger } from "@/lib/agentos/domains/workspace-creation-policy";
 
 export const WORKSPACE_CREATION_RUN_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_CREATION_EVENT_SCHEMA_VERSION = 1 as const;
@@ -101,7 +102,10 @@ export type WorkspaceCreationActivityCode =
   | "composition-started"
   | "composition-model-completed"
   | "composition-fallback"
-  | "composition-completed";
+  | "composition-completed"
+  | "continue-now-requested"
+  | "enrichment-started"
+  | "enrichment-completed";
 
 export type WorkspaceCreationCompositionSnapshot = {
   status: "pending" | "model" | "fallback" | "ready" | "partial" | "conflict" | "blocked";
@@ -253,6 +257,15 @@ export type WorkspaceCreationSnapshot = {
   freshness?: WorkspaceCreationFreshnessSnapshot;
   drift?: WorkspaceCreationDriftSummary;
   reviewReadiness?: WorkspaceCreationReviewReadiness;
+  timings?: WorkspaceCreationTimingSnapshot;
+};
+
+export type WorkspaceCreationTimingSnapshot = {
+  firstUsefulSignalMs: number | null;
+  minimumContextMs: number | null;
+  reviewReadyMs: number | null;
+  provisioningReadyMs: number | null;
+  enrichmentDurationMs: number | null;
 };
 
 export type WorkspaceCreationRevisionSnapshot = {
@@ -301,6 +314,9 @@ export type WorkspaceCreationRunInput = {
   operatorConstraints: string[];
   materialization: unknown;
   sources: unknown[];
+  profile?: WorkspaceCreationProfile;
+  continueLearningAfterCreation?: boolean;
+  trigger?: WorkspaceCreationTrigger;
 };
 
 export type WorkspaceCreationRun = {
@@ -321,6 +337,7 @@ export type WorkspaceCreationRun = {
   oldestRetainedSequence: number;
   cancelRequestedAt: string | null;
   abandonedAt?: string | null;
+  expediteRequestedAt?: string | null;
   remoteExecution: {
     idempotencyKey: string;
     runId: string | null;
@@ -346,6 +363,7 @@ export type WorkspaceCreationRunLineage = {
   rootRunId: string;
   parentRunId: string | null;
   relation: "initial" | "reanalysis";
+  trigger?: WorkspaceCreationTrigger;
 };
 
 export function isWorkspaceCreationTerminal(state: WorkspaceCreationState) {
@@ -422,6 +440,13 @@ export function createInitialWorkspaceCreationSnapshot(sourceCount: number): Wor
       attempts: 0,
       elapsedMs: 0,
       failure: null
+    },
+    timings: {
+      firstUsefulSignalMs: null,
+      minimumContextMs: null,
+      reviewReadyMs: null,
+      provisioningReadyMs: null,
+      enrichmentDurationMs: null
     }
   };
 }
@@ -435,7 +460,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
   const intelligenceExecution = candidate.intelligenceExecution;
   const compositionExecution = candidate.compositionExecution;
   return candidate.schemaVersion === WORKSPACE_CREATION_RUN_SCHEMA_VERSION
-    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "abandonedAt", "remoteExecution", "intelligenceExecution", "compositionExecution", "lineage"])
+    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "abandonedAt", "expediteRequestedAt", "remoteExecution", "intelligenceExecution", "compositionExecution", "lineage"])
     && typeof candidate.runId === "string"
     && typeof candidate.actorHash === "string"
     && typeof candidate.idempotencyKeyHash === "string"
@@ -446,11 +471,14 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && (candidate.inputFingerprint === undefined || typeof candidate.inputFingerprint === "string" && /^[a-f0-9]{64}$/i.test(candidate.inputFingerprint))
     && typeof input === "object"
     && input !== null
-    && hasOnlyKeys(input as Record<string, unknown>, ["brief", "mode", "operatorConstraints", "materialization", "sources"])
+    && hasOnlyKeys(input as Record<string, unknown>, ["brief", "mode", "operatorConstraints", "materialization", "sources", "profile", "continueLearningAfterCreation", "trigger"])
     && typeof (input as Record<string, unknown>).brief === "string"
     && ((input as Record<string, unknown>).mode === "automatic" || (input as Record<string, unknown>).mode === "review")
     && arrayOfStrings((input as Record<string, unknown>).operatorConstraints)
     && Array.isArray((input as Record<string, unknown>).sources)
+    && ((input as Record<string, unknown>).profile === undefined || ["quick", "deep"].includes((input as Record<string, unknown>).profile as string))
+    && ((input as Record<string, unknown>).continueLearningAfterCreation === undefined || typeof (input as Record<string, unknown>).continueLearningAfterCreation === "boolean")
+    && ((input as Record<string, unknown>).trigger === undefined || ["initial", "manual-refresh", "post-create-enrichment"].includes((input as Record<string, unknown>).trigger as string))
     && validateWorkspaceCreationSnapshot(snapshot)
     && Array.isArray(candidate.events)
     && candidate.events.every(validateWorkspaceCreationEvent)
@@ -459,6 +487,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && (candidate.draftContextId === null || typeof candidate.draftContextId === "string")
     && (candidate.cancelRequestedAt === null || typeof candidate.cancelRequestedAt === "string")
     && (candidate.abandonedAt === undefined || candidate.abandonedAt === null || typeof candidate.abandonedAt === "string")
+    && (candidate.expediteRequestedAt === undefined || candidate.expediteRequestedAt === null || typeof candidate.expediteRequestedAt === "string")
     && typeof remote === "object"
     && remote !== null
     && hasOnlyKeys(remote as Record<string, unknown>, ["idempotencyKey", "runId", "sessionKey", "outcome"])
@@ -477,7 +506,7 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
   const context = snapshot.context;
   const architect = snapshot.architect;
   const intelligence = snapshot.intelligence;
-  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId", "revision", "freshness", "drift", "reviewReadiness"])
+  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId", "revision", "freshness", "drift", "reviewReadiness", "timings"])
     && typeof snapshot.state === "string"
     && workspaceCreationStates.includes(snapshot.state as WorkspaceCreationState)
     && (snapshot.stage === null || workspaceCreationStages.includes(snapshot.stage as WorkspaceCreationStage))
@@ -494,7 +523,15 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
     && (snapshot.revision === undefined || validateWorkspaceCreationRevisionSnapshot(snapshot.revision))
     && (snapshot.freshness === undefined || validateWorkspaceCreationFreshnessSnapshot(snapshot.freshness))
     && (snapshot.drift === undefined || validateWorkspaceCreationDriftSummary(snapshot.drift))
-    && (snapshot.reviewReadiness === undefined || validateWorkspaceCreationReviewReadiness(snapshot.reviewReadiness));
+    && (snapshot.reviewReadiness === undefined || validateWorkspaceCreationReviewReadiness(snapshot.reviewReadiness))
+    && (snapshot.timings === undefined || validateWorkspaceCreationTimings(snapshot.timings));
+}
+
+function validateWorkspaceCreationTimings(value: unknown): value is WorkspaceCreationTimingSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const timings = value as Record<string, unknown>;
+  return hasOnlyKeys(timings, ["firstUsefulSignalMs", "minimumContextMs", "reviewReadyMs", "provisioningReadyMs", "enrichmentDurationMs"])
+    && ["firstUsefulSignalMs", "minimumContextMs", "reviewReadyMs", "provisioningReadyMs", "enrichmentDurationMs"].every((key) => timings[key] === null || Number.isSafeInteger(timings[key]) && (timings[key] as number) >= 0);
 }
 
 function validateWorkspaceCreationRevisionSnapshot(value: unknown): value is WorkspaceCreationRevisionSnapshot {
@@ -532,10 +569,11 @@ function validateWorkspaceCreationDriftSummary(value: unknown): value is Workspa
 function validateWorkspaceCreationRunLineage(value: unknown): value is WorkspaceCreationRunLineage {
   if (!value || typeof value !== "object") return false;
   const lineage = value as Record<string, unknown>;
-  return hasOnlyKeys(lineage, ["rootRunId", "parentRunId", "relation"])
+  return hasOnlyKeys(lineage, ["rootRunId", "parentRunId", "relation", "trigger"])
     && typeof lineage.rootRunId === "string"
     && (lineage.parentRunId === null || typeof lineage.parentRunId === "string")
-    && ["initial", "reanalysis"].includes(lineage.relation as string);
+    && ["initial", "reanalysis"].includes(lineage.relation as string)
+    && (lineage.trigger === undefined || ["initial", "manual-refresh", "post-create-enrichment"].includes(lineage.trigger as string));
 }
 
 function validateWorkspaceCreationCompositionSnapshot(value: unknown): value is WorkspaceCreationCompositionSnapshot {
@@ -704,7 +742,8 @@ const workspaceCreationActivityCodes: readonly WorkspaceCreationActivityCode[] =
   "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
   "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected",
   "intelligence-synthesis-started", "intelligence-fallback", "intelligence-completed", "intelligence-failed",
-  "composition-started", "composition-model-completed", "composition-fallback", "composition-completed"
+  "composition-started", "composition-model-completed", "composition-fallback", "composition-completed",
+  "continue-now-requested", "enrichment-started", "enrichment-completed"
 ];
 
 function validateWorkspaceCreationActivityData(value: unknown): value is WorkspaceCreationActivityData {

@@ -13,7 +13,7 @@ export async function GET(request: Request, context: { params: Promise<{ runId: 
   try {
     const { runId } = await context.params;
     const acceptDraft = new URL(request.url).searchParams.get("acceptDraft") === "true";
-    const certified = await getWorkspaceCreationReviewReadiness({ actorId: permission.actor.actorId, runId, acceptDraft });
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId: permission.actor.actorId, runId, acceptDraft, repair: false, persist: false });
     if (!certified) return NextResponse.json({ error: "Workspace creation run was not found." }, { status: 404 });
     return NextResponse.json(redactSecrets(certified));
   } catch (error) {

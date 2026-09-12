@@ -67,6 +67,7 @@ export function presentWorkspaceCreationExperience(input: {
     };
   });
   const snapshot = run?.snapshot;
+  const quickProfile = run?.input?.profile === "quick";
   const discovery = run ? presentWorkspaceCreationDiscovery(run) : {
     signals: [],
     aggregate: { pages: 0, documents: 0, facts: 0, resources: 0, conflicts: 0 },
@@ -88,9 +89,9 @@ export function presentWorkspaceCreationExperience(input: {
             : "input";
   const attentionItems = [
     snapshot?.context.status === "partial" ? "Architecture generated from partial project context." : null,
-    snapshot?.intelligence.status === "fallback" ? "AI project intelligence was unavailable; extracted evidence was preserved." : null,
-    snapshot?.architect.status === "fallback" ? "AI architecture was unavailable; a minimal fallback draft was created." : null,
-    snapshot?.composition?.status === "fallback" ? "Workspace documents use a deterministic safe fallback." : null,
+    !quickProfile && snapshot?.intelligence.status === "fallback" ? "AI project intelligence was unavailable; extracted evidence was preserved." : null,
+    !quickProfile && snapshot?.architect.status === "fallback" ? "AI architecture was unavailable; a minimal fallback draft was created." : null,
+    !quickProfile && snapshot?.composition?.status === "fallback" ? "Workspace documents use a deterministic safe fallback." : null,
     snapshot?.composition && snapshot.composition.conflictCount > 0 ? `${snapshot.composition.conflictCount} workspace document conflict${snapshot.composition.conflictCount === 1 ? "" : "s"} need attention.` : null,
     provisioningRun?.state === "partial" ? "The workspace is usable, with setup still pending." : null,
     provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" ? provisioningRun.error?.message ?? "The workspace could not be completed." : null
