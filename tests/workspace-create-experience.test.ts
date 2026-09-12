@@ -348,6 +348,10 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /import \{ PikoLoader \} from "@\/components\/ui\/piko-loader"/);
   assert.match(source, /<PikoLoader/);
   assert.match(source, /CreationProgressView/);
+  assert.match(source, /WorkspaceReadyView/);
+  assert.match(source, /What came online/);
+  assert.match(source, /Finish setup when ready/);
+  assert.match(source, /Background learning is on/);
   assert.match(source, /Minimize workspace creation/);
   assert.match(activitySource, /Reopen workspace creation/);
   assert.match(activitySource, /creation-runs\/\$\{encodeURIComponent\(minimizedRunId\)\}/);

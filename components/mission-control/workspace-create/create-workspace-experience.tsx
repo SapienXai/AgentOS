@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 
 import {
   MissionControlDialogShell,
+  MissionControlDialogChip,
   missionControlDialogButtonClassName,
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
@@ -808,7 +809,9 @@ export function CreateWorkspaceExperience({
       onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
       title={isProvisioned ? "Workspace ready" : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Creating your workspace"}
-      description={<span className="sr-only">Prepare your workspace</span>}
+      description={isProvisioned ? "Your workspace is ready to open." : <span className="sr-only">Prepare your workspace</span>}
+      icon={isProvisioned ? Check : undefined}
+      chips={isProvisioned ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
       variant="quiet"
       closeLabel={isActiveRun ? "Minimize workspace creation" : undefined}
       onOutsideInteraction={isActiveRun ? minimizeWorkspaceCreation : undefined}
@@ -823,7 +826,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName="sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl"
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -840,45 +843,52 @@ export function CreateWorkspaceExperience({
             <Button type="button" variant="secondary" onClick={minimizeWorkspaceCreation} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Minimize</Button>
           </div>
         ) : stage === "review" ? (
-          <div className="flex w-full items-center justify-between gap-3">
-            <div className={cn("flex items-center gap-1", isProvisioned && "hidden")}>
-              <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
-                <ChevronLeft className="mr-1.5 h-4 w-4" />
-                Back to brief
-              </Button>
-              {!isProvisioned ? <Button type="button" variant="ghost" onClick={() => setShowStartOverConfirmation(true)} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button> : null}
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
-              <div className="flex items-center gap-2">
-                {isProvisioned ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => handleDialogOpenChange(false)}
-                    aria-label="Close workspace ready screen"
-                    className={missionControlDialogButtonClassName("secondary", surfaceTheme)}
-                  >
-                    Close
-                  </Button>
-                ) : null}
-                <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), isProvisioned && "hidden")}>
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                  Customize
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!isProvisioned && (!result || !reviewReadiness?.provisionable)}
-                  onClick={isProvisioned ? openProvisionedWorkspace : () => void provision()}
-                  title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : undefined}
-                  aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
-                  className={missionControlDialogButtonClassName("primary", surfaceTheme)}
-                >
-                  {isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply updates" : "Create Workspace"}
-                </Button>
+          isProvisioned ? (
+            <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border", provisioningRun?.state === "partial" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-700" : "border-amber-300/25 bg-amber-300/10 text-amber-100") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"))}>
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className={cn("truncate text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>{provisioningRun?.state === "partial" ? "Workspace is live" : "Workspace ready"}</p>
+                  <p className={cn("truncate text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{provisioningRun?.state === "partial" ? "Finish optional setup whenever you are ready." : "Open it to start working."}</p>
+                </div>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-auto">
+                <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} aria-label="Close workspace ready screen" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Close</Button>
+                <Button type="button" onClick={openProvisionedWorkspace} aria-label="Open Workspace" className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />Open Workspace</Button>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex w-full items-center justify-between gap-3">
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+                  <ChevronLeft className="mr-1.5 h-4 w-4" />
+                  Back to brief
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setShowStartOverConfirmation(true)} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Customize
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!result || !reviewReadiness?.provisionable}
+                    onClick={() => void provision()}
+                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : undefined}
+                    aria-label={provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
+                    className={missionControlDialogButtonClassName("primary", surfaceTheme)}
+                  >
+                    {provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply updates" : "Create Workspace"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )
         ) : (
           <div className="flex w-full items-center justify-end gap-3">
             <Button
@@ -928,13 +938,7 @@ export function CreateWorkspaceExperience({
         ) : stage === "provisioning" ? (
           <CreationProgressView run={creationRun} provisioning={provisioningRun} isLight={isLight} />
         ) : isProvisioned ? (
-          <main className="flex min-h-full flex-col items-center justify-center gap-5 px-6 py-12 text-center">
-            <Check className="size-8 text-emerald-500" aria-hidden="true" />
-            <h1 className="text-3xl font-semibold tracking-tight">{result?.blueprint.identity.name}</h1>
-            <p className="text-sm opacity-65">{provisioningRun?.state === "partial" ? "Ready to use. Some connections need setup." : "Make it yours as you go."}</p>
-            {creationRun && normalizeWorkspaceCreationProfile(creationRun.input.profile) !== "high" && creationRun.input.continueLearningAfterCreation !== false ? <p className="text-xs opacity-55">AgentOS is continuing to learn about this project.</p> : null}
-            {provisioningError ? <p className="max-w-md text-xs text-amber-300" role="status">{provisioningError}</p> : null}
-          </main>
+          <WorkspaceReadyView isLight={isLight} result={result} creationRun={creationRun} provisioningRun={provisioningRun} provisioningError={provisioningError} />
         ) : (
           <ReviewView
             isLight={isLight}
@@ -1220,6 +1224,141 @@ function CreationProgressView({ run, provisioning, isLight, onContinueNow }: {
         </ul>
       ) : null}
       {canExpedite && onContinueNow ? <Button variant="ghost" onClick={onContinueNow} className="mt-8 self-start px-0 text-xs opacity-65">Finish with current context</Button> : null}
+    </main>
+  );
+}
+
+function WorkspaceReadyView({
+  isLight,
+  result,
+  creationRun,
+  provisioningRun,
+  provisioningError
+}: {
+  isLight: boolean;
+  result: WorkspaceArchitectResult | null;
+  creationRun: WorkspaceCreationRun | null;
+  provisioningRun: ProvisioningRun | null;
+  provisioningError: string | null;
+}) {
+  const blueprint = result?.blueprint;
+  const workspaceName = blueprint?.identity.name || "Workspace";
+  const workspacePurpose = blueprint?.identity.purpose || "A focused place for your project and AI workforce.";
+  const primaryAgent = blueprint?.workforce.primaryAgent.name || "Primary agent";
+  const agentCount = blueprint ? 1 + blueprint.workforce.specialists.length : null;
+  const sourceCount = creationRun?.input.sources.length ?? 0;
+  const documentCount = provisioningRun?.knowledge?.documentCount ?? null;
+  const isPartial = provisioningRun?.state === "partial";
+  const backgroundLearning = Boolean(
+    creationRun
+      && normalizeWorkspaceCreationProfile(creationRun.input.profile) !== "high"
+      && creationRun.input.continueLearningAfterCreation !== false
+  );
+  const pendingSetup = [
+    { label: "Channels", icon: MessageCircle, values: provisioningRun?.pendingSetup.channels ?? [] },
+    { label: "Connections", icon: Link2, values: provisioningRun?.pendingSetup.connections ?? [] },
+    { label: "Automations", icon: RefreshCw, values: provisioningRun?.pendingSetup.automations ?? [] }
+  ].filter((item) => item.values.length > 0);
+  const pendingCount = pendingSetup.reduce((count, item) => count + item.values.length, 0);
+  const signals = provisioningRun?.signals.slice(0, 6) ?? [];
+  const metrics = [
+    { icon: Bot, value: agentCount === null ? "—" : String(agentCount), label: agentCount === 1 ? "AI agent" : "AI workforce" },
+    { icon: Globe, value: String(sourceCount), label: sourceCount === 1 ? "Project source" : "Project sources" },
+    ...(documentCount === null ? [] : [{ icon: FileText, value: String(documentCount), label: documentCount === 1 ? "Knowledge document" : "Knowledge documents" }])
+  ];
+
+  return (
+    <main className="mx-auto flex min-h-full w-full max-w-[900px] flex-col px-5 py-6 md:px-10 md:py-7">
+      <div className="mb-4 flex items-center justify-between gap-3 px-1">
+        <div className={cn("flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>
+          <span className={cn("flex h-6 w-6 items-center justify-center rounded-full border", isPartial ? (isLight ? "border-amber-200 bg-amber-50 text-amber-700" : "border-amber-300/25 bg-amber-300/10 text-amber-100") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"))}>
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          Workspace created
+        </div>
+        <span className={cn("text-[10px] font-medium", isPartial ? "text-amber-600" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>
+          {isPartial ? "Setup can continue later" : "Ready to open"}
+        </span>
+      </div>
+
+      <section
+        className={cn(
+          "workspace-architect-card-enter relative overflow-hidden rounded-[28px] border shadow-[0_24px_70px_rgba(60,42,28,0.12)]",
+          isLight
+            ? "border-[#e7d8c8] bg-[radial-gradient(circle_at_82%_12%,rgba(217,180,146,0.24),transparent_34%),linear-gradient(135deg,#fffdfa,#f7efe6)]"
+            : "border-violet-300/20 bg-[radial-gradient(circle_at_82%_12%,rgba(139,92,246,0.22),transparent_34%),linear-gradient(135deg,rgba(30,24,49,0.96),rgba(13,17,29,0.98))] shadow-[0_24px_70px_rgba(0,0,0,0.28)]"
+        )}
+        aria-labelledby="workspace-ready-heading"
+      >
+        <div className="pointer-events-none absolute -left-16 -top-20 h-48 w-48 rounded-full border border-white/20 opacity-40" aria-hidden="true" />
+        <div className="relative grid items-center gap-3 px-5 py-6 sm:grid-cols-[minmax(0,1fr)_228px] sm:gap-7 sm:px-7 sm:py-7">
+          <div className="order-2 min-w-0 sm:order-1">
+            <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>{isPartial ? "Live with setup pending" : "Your workspace is ready"}</p>
+            <h1 id="workspace-ready-heading" className={cn("mt-2 break-words font-display text-[clamp(2rem,5vw,3.2rem)] font-semibold leading-[0.98] tracking-[-0.055em]", isLight ? "text-[#32271f]" : "text-white")}>{workspaceName}</h1>
+            <p className={cn("mt-4 max-w-xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{workspacePurpose}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium", isPartial ? (isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/25 bg-amber-300/10 text-amber-100") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"))}>
+                <Check className="h-3 w-3" aria-hidden="true" />{isPartial ? "Core workspace live" : "Provisioned successfully"}
+              </span>
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium", isLight ? "border-[#e5d7c9] bg-white/70 text-[#6d5c4e]" : "border-white/10 bg-white/[0.06] text-slate-300")}>
+                <Bot className="h-3 w-3" aria-hidden="true" />{primaryAgent}
+              </span>
+            </div>
+          </div>
+
+          <div className="order-1 flex justify-center sm:order-2" role="img" aria-label={`Workspace ready with ${primaryAgent} and project knowledge`}>
+            <div className="relative flex h-[188px] w-[188px] items-center justify-center sm:h-[210px] sm:w-[210px]">
+              <div className={cn("absolute inset-[5%] rounded-full border border-dashed animate-[spin_28s_linear_infinite] motion-reduce:animate-none", isLight ? "border-[#bd9677]/45" : "border-violet-200/25")} aria-hidden="true" />
+              <div className={cn("absolute inset-[18%] rounded-full border", isLight ? "border-[#c9a887]/35" : "border-violet-200/20")} aria-hidden="true" />
+              <div className={cn("absolute inset-[30%] rounded-full", isLight ? "bg-[#c89e73]/12 shadow-[0_0_50px_rgba(184,137,95,0.24)]" : "bg-violet-400/10 shadow-[0_0_60px_rgba(139,92,246,0.28)]")} aria-hidden="true" />
+              <span className={cn("absolute left-[7%] top-[30%] flex h-9 w-9 items-center justify-center rounded-full border shadow-sm", isLight ? "border-[#dfc7b0] bg-[#fffaf4] text-[#9a6d45]" : "border-violet-200/25 bg-[#20183a] text-violet-200")} aria-hidden="true"><Bot className="h-4 w-4" /></span>
+              <span className={cn("absolute bottom-[7%] right-[20%] flex h-8 w-8 items-center justify-center rounded-full border shadow-sm", isLight ? "border-[#dfc7b0] bg-[#fffaf4] text-[#9a6d45]" : "border-violet-200/25 bg-[#20183a] text-violet-200")} aria-hidden="true"><FileText className="h-3.5 w-3.5" /></span>
+              <span className={cn("absolute right-[3%] top-[21%] flex h-7 w-7 items-center justify-center rounded-full border shadow-sm", isLight ? "border-[#dfc7b0] bg-[#fffaf4] text-[#9a6d45]" : "border-violet-200/25 bg-[#20183a] text-violet-200")} aria-hidden="true"><Sparkles className="h-3.5 w-3.5" /></span>
+              <div className={cn("relative z-10 flex h-[84px] w-[84px] items-center justify-center rounded-full border shadow-[0_18px_40px_rgba(82,55,35,0.18)]", isPartial ? (isLight ? "border-amber-300 bg-amber-50 text-amber-700" : "border-amber-200/40 bg-amber-300/15 text-amber-100") : (isLight ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-emerald-200/35 bg-emerald-300/15 text-emerald-100"))}>
+                <Check className="h-9 w-9" strokeWidth={1.8} aria-hidden="true" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={cn("relative border-t px-5 py-3.5 sm:px-7", isLight ? "border-[#eadfd3] bg-white/45" : "border-white/[0.08] bg-black/10")}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>What came online</p>
+            <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>OpenClaw workspace · AgentOS control layer</span>
+          </div>
+          {signals.length ? <div className="mt-2 flex flex-wrap gap-1.5">{signals.map((signal, index) => <span key={`${signal}-${index}`} className={cn("workspace-architect-chip-enter inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] motion-reduce:[animation:none]", isLight ? "border-[#e5d7c9] bg-white/70 text-[#6d5c4e]" : "border-white/10 bg-white/[0.045] text-slate-300")} style={{ animationDelay: `${index * 55}ms` }}>{signal}</span>)}</div> : <p className={cn("mt-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>The core workspace and its first AI agent are ready for your next move.</p>}
+        </div>
+      </section>
+
+      <section className={cn("mt-4 grid gap-2.5", metrics.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")} aria-label="Workspace creation summary">
+        {metrics.map(({ icon: Icon, value, label }) => <div key={label} className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3", isLight ? "border-[#e9dfd5] bg-white text-[#55483e]" : "border-white/[0.08] bg-white/[0.035] text-slate-200")}><span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-xl", isLight ? "bg-[#f7eee5] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Icon className="h-4 w-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-base font-semibold tabular-nums">{value}</span><span className={cn("block truncate text-[10px] uppercase tracking-[0.12em]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{label}</span></span></div>)}
+      </section>
+
+      <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+        <section className={cn("rounded-2xl border px-4 py-4", isLight ? "border-[#e9dfd5] bg-white" : "border-white/[0.08] bg-white/[0.035]")} aria-labelledby="workspace-next-step-heading">
+          <div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", isLight ? "bg-[#f7eee5] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><FolderOpen className="h-3.5 w-3.5" aria-hidden="true" /></span><h2 id="workspace-next-step-heading" className={cn("text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>Your workspace is yours now</h2></div>
+          <p className={cn("mt-3 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>Open the workspace to meet your AI workforce, inspect the canvas, and make the next decision from one place.</p>
+        </section>
+
+        {pendingCount ? (
+          <section className={cn("rounded-2xl border px-4 py-4", isLight ? "border-amber-200 bg-amber-50/70" : "border-amber-300/20 bg-amber-300/10")} aria-labelledby="workspace-pending-setup-heading">
+            <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", isLight ? "bg-white text-amber-700" : "bg-amber-200/10 text-amber-100")}><CircleAlert className="h-3.5 w-3.5" aria-hidden="true" /></span><h2 id="workspace-pending-setup-heading" className={cn("text-xs font-semibold", isLight ? "text-amber-950" : "text-amber-50")}>Finish setup when ready</h2></div><span className="text-[10px] font-medium text-amber-600">{pendingCount} pending</span></div>
+            <div className="mt-3 space-y-2">{pendingSetup.map(({ label, icon: Icon, values }) => <div key={label} className="flex items-start gap-2 text-xs"><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-75" aria-hidden="true" /><span className="min-w-0"><span className="font-medium">{label}</span><span className="ml-1 opacity-75">· {values.slice(0, 2).join(" · ")}{values.length > 2 ? ` · +${values.length - 2} more` : ""}</span></span></div>)}</div>
+          </section>
+        ) : backgroundLearning ? (
+          <section className={cn("rounded-2xl border px-4 py-4", isLight ? "border-[#e9dfd5] bg-[#fcfaf7]" : "border-white/[0.08] bg-white/[0.025]")} aria-labelledby="workspace-learning-heading">
+            <div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", isLight ? "bg-[#f7eee5] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Sparkles className="h-3.5 w-3.5" aria-hidden="true" /></span><h2 id="workspace-learning-heading" className={cn("text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>Background learning is on</h2></div>
+            <p className={cn("mt-3 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>AgentOS may prepare reviewable improvements, but nothing changes automatically.</p>
+          </section>
+        ) : (
+          <section className={cn("rounded-2xl border px-4 py-4", isLight ? "border-emerald-200 bg-emerald-50/60" : "border-emerald-300/20 bg-emerald-300/10")} aria-labelledby="workspace-complete-heading">
+            <div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", isLight ? "bg-white text-emerald-700" : "bg-emerald-200/10 text-emerald-100")}><Check className="h-3.5 w-3.5" aria-hidden="true" /></span><h2 id="workspace-complete-heading" className={cn("text-xs font-semibold", isLight ? "text-emerald-950" : "text-emerald-50")}>Everything required is in place</h2></div>
+            <p className={cn("mt-3 text-xs leading-5", isLight ? "text-emerald-900/75" : "text-emerald-100/75")}>Your workspace is ready for real work.</p>
+          </section>
+        )}
+      </div>
+
+      {provisioningError ? <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">{provisioningError}</p> : null}
     </main>
   );
 }
