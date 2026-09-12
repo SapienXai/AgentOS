@@ -211,6 +211,18 @@ Do not:
 - Create version or release mismatches between GitHub, npm, docs, installers, and workflows.
 - Add Turkish project content or user-facing copy unless explicitly requested.
 
+## UI Decision Records
+
+### Create Agent UX 2.0
+
+- **User outcome:** Create a useful agent quickly by answering who it is and what it owns.
+- **Existing surface:** Mission Control's agent creation dialog.
+- **Existing pattern:** `MissionControlDialogShell` with a bounded desktop dialog and full-screen mobile task surface.
+- **Primary action:** `Create agent`.
+- **Responsive model:** One cohesive form with one body scroll owner and a footer that remains reachable above the safe area.
+- **Advanced behavior:** Advanced settings are closed by default and progressively disclose runtime, autonomy, access, channel, and appearance controls.
+- **New primitive required?:** No. Existing dialog, input, select, disclosure, channel-binding, and theme-picker patterns are sufficient.
+
 
 ---
 

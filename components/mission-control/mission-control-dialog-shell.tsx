@@ -32,7 +32,7 @@ type MissionControlDialogShellProps = {
   headerClassName?: string;
   footerClassName?: string;
   footerInnerClassName?: string;
-  variant?: "default" | "worker-profile";
+  variant?: "default" | "quiet" | "worker-profile";
   disableOutsideDismiss?: boolean;
 };
 
@@ -57,6 +57,7 @@ export function MissionControlDialogShell({
   disableOutsideDismiss = false
 }: MissionControlDialogShellProps) {
   const isLight = surfaceTheme === "light";
+  const isQuiet = variant === "quiet";
   const isWorkerProfile = variant === "worker-profile";
 
   return (
@@ -74,6 +75,7 @@ export function MissionControlDialogShell({
         )}
         className={cn(
           "grid h-dvh max-h-dvh w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-0 border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_24px_80px_rgba(0,0,0,0.68)] sm:h-[min(calc(100dvh-72px),760px)] sm:max-h-[calc(100dvh-72px)] sm:w-[min(90vw,1060px)] sm:rounded-2xl sm:border",
+          isQuiet && "border-[hsl(var(--agentos-border-default)/0.92)] bg-[hsl(var(--agentos-surface-panel))] text-[hsl(var(--agentos-text-default))] shadow-[0_24px_72px_rgba(15,23,42,0.24)]",
           isWorkerProfile && "sm:h-[min(calc(100dvh-56px),780px)] sm:max-h-[calc(100dvh-56px)] sm:w-[min(94vw,1120px)] sm:rounded-[24px] sm:border-violet-300/30 sm:shadow-[0_0_0_1px_rgba(167,139,250,0.16),0_26px_86px_rgba(0,0,0,0.68)]",
           isLight && "agentos-light-modal",
           contentClassName
@@ -83,6 +85,7 @@ export function MissionControlDialogShell({
           className={cn(
             "relative space-y-0 border-b px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-3",
             isWorkerProfile && "overflow-hidden px-5 pb-3.5 sm:px-7 sm:pt-4",
+            isQuiet && "sm:px-7 sm:pb-4 sm:pt-5",
             isLight ? "border-[#e7dfd4]" : "border-white/[0.06]",
             headerClassName
           )}

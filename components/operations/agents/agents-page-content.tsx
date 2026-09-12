@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
+import { Activity, ArrowLeft, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -153,16 +153,6 @@ export function AgentsPageContent({
             subtitle="Manage your AI workforce. Monitor health, configure capabilities, and run agents at scale."
             actions={
               <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 rounded-lg px-3 text-xs"
-                  disabled
-                  title="Agent import requires a backend import contract."
-                >
-                  <Import className="mr-1.5 h-3.5 w-3.5" />
-                  Import Agent
-                </Button>
                 <CreateAgentDialog
                   snapshot={rootSnapshot}
                   defaultWorkspaceId={activeWorkspaceId}

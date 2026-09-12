@@ -11,6 +11,7 @@ import {
   type AgentBootstrapFileDraft
 } from "@/lib/openclaw/agent-bootstrap-files";
 import { getAgentPresetMeta, resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
+import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { AgentPolicy, AgentPreset, MissionControlSnapshot } from "@/lib/agentos/contracts";
 
 export type AgentDraft = {
@@ -232,4 +233,32 @@ export function rebaseAgentBootstrapFilesForDraft(
   draft: Pick<AgentDraft, "name" | "emoji" | "theme" | "avatar" | "policy" | "heartbeat">
 ) {
   return rebaseAgentBootstrapFileDrafts(currentFiles, buildAgentBootstrapFileDraftsForDraft(draft));
+}
+
+export function buildImportedAgentDraft(
+  workspaceId: string,
+  sourceAgent: MissionControlSnapshot["agents"][number],
+  channelIds: string[]
+): AgentDraft {
+  const capabilities = normalizeAgentDraftCapabilities(sourceAgent.skills, sourceAgent.tools);
+
+  return buildAgentDraft(workspaceId, {
+    modelId: sourceAgent.modelId === "unassigned" ? "" : sourceAgent.modelId,
+    name: formatAgentDisplayName(sourceAgent),
+    emoji: sourceAgent.identity.emoji ?? "",
+    theme: sourceAgent.identity.theme ?? "",
+    avatar: sourceAgent.identity.avatar ?? "",
+    role: sourceAgent.workerProfile?.employment.role ?? sourceAgent.policy.preset,
+    mission: sourceAgent.workerProfile?.employment.mission ?? sourceAgent.profile.purpose ?? "",
+    behaviorInstructions: sourceAgent.workerProfile?.employment.behaviorInstructions ?? "",
+    labels: sourceAgent.workerProfile?.operator.labels ?? [],
+    policy: sourceAgent.policy,
+    heartbeat: resolveHeartbeatDraft(sourceAgent.policy.preset, {
+      enabled: sourceAgent.heartbeat.enabled,
+      every: sourceAgent.heartbeat.every ?? undefined
+    }),
+    channelIds,
+    skills: capabilities.skills,
+    tools: capabilities.tools
+  });
 }

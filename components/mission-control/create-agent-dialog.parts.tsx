@@ -1,26 +1,39 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Sparkles } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { defaultHeartbeatForPreset } from "@/lib/openclaw/agent-heartbeat";
+import type { AgentPreset, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { getAgentPresetMeta } from "@/lib/openclaw/agent-presets";
-import type { AgentPreset } from "@/lib/agentos/contracts";
+import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type SurfaceTheme = "dark" | "light";
+
+export const QUICK_ROLE_OPTIONS: Array<{
+  value: Exclude<AgentPreset, "custom">;
+  label: string;
+  helper: string;
+}> = [
+  { value: "worker", label: "General", helper: "Balanced workspace agent" },
+  { value: "setup", label: "Setup", helper: "Prepare and unblock work" },
+  { value: "browser", label: "Browser", helper: "Research and validate online" },
+  { value: "monitoring", label: "Monitoring", helper: "Watch for drift and issues" }
+];
 
 export function FormField({
   label,
   htmlFor,
   children,
+  helper,
   surfaceTheme = "dark"
 }: {
   label: string;
   htmlFor: string;
   children: ReactNode;
+  helper?: string;
   surfaceTheme?: SurfaceTheme;
 }) {
   const isLight = surfaceTheme === "light";
@@ -29,168 +42,181 @@ export function FormField({
     <div className="space-y-1.5">
       <Label
         htmlFor={htmlFor}
-        className={cn(
-          "text-[10px] uppercase tracking-[0.16em]",
-          isLight ? "text-[#8d7766]" : "text-slate-400"
-        )}
+        className={cn("text-xs font-medium", isLight ? "text-[#5d5047]" : "text-slate-200")}
       >
         {label}
       </Label>
+      {helper ? (
+        <p className={cn("text-[11px] leading-4", isLight ? "text-[#8a7769]" : "text-slate-400")}>
+          {helper}
+        </p>
+      ) : null}
       {children}
     </div>
   );
 }
 
-export function AgentPresetCard({
-  preset,
-  active,
-  onClick,
-  surfaceTheme = "dark"
-}: {
-  preset: AgentPreset;
-  active: boolean;
-  onClick: () => void;
-  surfaceTheme?: SurfaceTheme;
-}) {
-  const meta = getAgentPresetMeta(preset);
-  const heartbeat = defaultHeartbeatForPreset(preset);
-  const isLight = surfaceTheme === "light";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex h-full min-h-[156px] min-w-0 flex-col justify-between rounded-[18px] border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 snap-start",
-        isLight
-          ? "border-[#e3d7cc] bg-white/92 shadow-[0_16px_34px_rgba(161,125,101,0.08)] focus-visible:ring-[#c89e73]/30 hover:border-[#d3c0b2] hover:bg-white"
-          : "border-white/10 bg-white/[0.03] shadow-[0_12px_28px_rgba(0,0,0,0.22)] focus-visible:ring-cyan-300/40 hover:border-white/20 hover:bg-white/[0.05]",
-        active &&
-          (isLight
-            ? "border-[#c89e73] bg-[#fff8f0] shadow-[0_18px_44px_rgba(161,125,101,0.14)]"
-            : "border-cyan-300/30 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]")
-      )}
-    >
-      <div className="space-y-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            <span
-              className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-[14px]",
-                isLight ? "border-[#ded0c2] bg-[#faf5ef] text-[#7b604c]" : "border-white/10 bg-white/5 text-white"
-              )}
-            >
-              {meta.defaultEmoji ?? <Sparkles className="h-4 w-4" />}
-            </span>
-            <div className="min-w-0">
-              <p className={cn("line-clamp-2 break-words text-[13px] font-semibold leading-4", isLight ? "text-[#2f2016]" : "text-white")}>
-                {meta.label}
-              </p>
-              <p className={cn("mt-1 line-clamp-2 text-[11px] leading-4", isLight ? "text-[#6d5849]" : "text-slate-400")}>
-                {meta.description}
-              </p>
-            </div>
-          </div>
-          <Badge
-            variant={active ? "default" : "muted"}
-            className={cn(
-              "shrink-0 px-2 py-0.5 text-[9px] normal-case tracking-normal",
-              isLight
-                ? active
-                  ? "border-[#c89e73]/35 bg-[#f4e6d8] text-[#5f432f]"
-                  : "border-[#e1d5c8] bg-white text-[#846a58]"
-                : active
-                  ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-50"
-                  : "border-white/10 bg-white/5 text-slate-300"
-            )}
-          >
-            {active ? "selected" : "preset"}
-          </Badge>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Badge
-            variant="muted"
-            className={cn(
-              "px-2 py-0.5 text-[10px] normal-case tracking-normal",
-              isLight ? "border-[#e1d5c8] bg-[#fbf7f2] text-[#6f5747]" : ""
-            )}
-          >
-            {meta.tools.length} tools
-          </Badge>
-          <Badge
-            variant="muted"
-            className={cn(
-              "px-2 py-0.5 text-[10px] normal-case tracking-normal",
-              isLight ? "border-[#e1d5c8] bg-[#fbf7f2] text-[#6f5747]" : ""
-            )}
-          >
-            {meta.skillIds.length} skills
-          </Badge>
-          <Badge
-            variant={heartbeat.enabled ? "success" : "muted"}
-            className={cn(
-              "px-2 py-0.5 text-[10px] normal-case tracking-normal",
-              isLight
-                ? heartbeat.enabled
-                  ? "border-emerald-300/40 bg-emerald-100 text-emerald-800"
-                  : "border-[#e1d5c8] bg-[#fbf7f2] text-[#6f5747]"
-                : ""
-            )}
-          >
-            Heartbeat {heartbeat.enabled ? heartbeat.every : "off"}
-          </Badge>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-export function AgentPolicySelect<T extends string>({
-  label,
-  htmlFor,
+export function QuickRoleSelector({
   value,
-  options,
   onChange,
   surfaceTheme = "dark"
 }: {
-  label: string;
-  htmlFor: string;
-  value: T;
-  options: Array<{ value: T; label: string; description: string }>;
-  onChange: (value: T) => void;
+  value: AgentPreset | null;
+  onChange: (preset: Exclude<AgentPreset, "custom">) => void;
   surfaceTheme?: SurfaceTheme;
 }) {
   const isLight = surfaceTheme === "light";
 
-  const selectedOption = options.find((option) => option.value === value);
+  return (
+    <div role="radiogroup" aria-label="Role baseline" className="grid gap-2 sm:grid-cols-4">
+      {QUICK_ROLE_OPTIONS.map((option) => {
+        const selected = value === option.value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "min-h-14 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2",
+              isLight
+                ? "border-[#ded5cc] bg-white text-[#3f332b] hover:border-[#bfa994] hover:bg-[#fffaf5] focus-visible:ring-[#7c3aed]/30"
+                : "border-white/10 bg-white/[0.035] text-slate-100 hover:border-white/20 hover:bg-white/[0.06] focus-visible:ring-violet-300/35",
+              selected && (isLight
+                ? "border-violet-400/70 bg-violet-50 text-violet-950 shadow-[0_0_0_1px_rgba(124,58,237,0.12)]"
+                : "border-violet-300/55 bg-violet-400/[0.12] shadow-[0_0_0_1px_rgba(167,139,250,0.12)]")
+            )}
+          >
+            <span className="block text-[12px] font-semibold">{option.label}</span>
+            <span className={cn("mt-0.5 block text-[10px] leading-4", isLight ? "text-[#806f63]" : "text-slate-400")}>
+              {option.helper}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function AgentSetupSummary({
+  workspaceName,
+  modelLabel,
+  heartbeatEnabled,
+  surfaceTheme = "dark"
+}: {
+  workspaceName: string | null;
+  modelLabel: string;
+  heartbeatEnabled: boolean;
+  surfaceTheme?: SurfaceTheme;
+}) {
+  const isLight = surfaceTheme === "light";
+  const items = [workspaceName ?? "No workspace", modelLabel, "Safe access"];
+
+  if (heartbeatEnabled) {
+    items.push("Scheduled monitoring");
+  }
 
   return (
-    <FormField label={label} htmlFor={htmlFor} surfaceTheme={surfaceTheme}>
-      <select
-        id={htmlFor}
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-        style={isLight ? { colorScheme: "light" } : undefined}
-        className={cn(
-          "flex h-10 w-full rounded-2xl border px-3.5 py-2 text-[13px] outline-none transition-colors",
-          isLight
-            ? "border-[#dccfc3] bg-white text-[#3f2f24] placeholder:text-[#9b8573] focus:border-[#c89e73] focus:ring-2 focus:ring-[#c89e73]/15"
-            : "border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-cyan-300/30 focus:ring-2 focus:ring-cyan-300/15"
-        )}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      {selectedOption?.description ? (
-        <p className={cn("mt-1 text-[10px] leading-[1.4]", isLight ? "text-[#9a8070]" : "text-slate-500")}>
-          {selectedOption.description}
+    <div
+      className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4", isLight ? "text-[#7a685c]" : "text-slate-400")}
+      aria-label="Automatic setup summary"
+    >
+      {items.map((item, index) => (
+        <span key={`${item}-${index}`} className="inline-flex items-center gap-2">
+          {index > 0 ? <span aria-hidden="true" className={isLight ? "text-[#c9b8aa]" : "text-slate-600"}>·</span> : null}
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function CloneAgentPicker({
+  candidates,
+  workspaceNames,
+  search,
+  selectedAgentId,
+  onSearchChange,
+  onSelect,
+  surfaceTheme = "dark"
+}: {
+  candidates: MissionControlSnapshot["agents"];
+  workspaceNames: Map<string, string>;
+  search: string;
+  selectedAgentId: string | null;
+  onSearchChange: (value: string) => void;
+  onSelect: (agentId: string) => void;
+  surfaceTheme?: SurfaceTheme;
+}) {
+  const isLight = surfaceTheme === "light";
+  return (
+    <div
+      className={cn("space-y-3 rounded-md border p-3", isLight ? "border-[#e1d7ce] bg-[#faf7f3]" : "border-white/10 bg-white/[0.025]")}
+    >
+      <div>
+        <p className={cn("text-xs font-semibold", isLight ? "text-[#3f332b]" : "text-slate-100")}>Clone existing agent</p>
+        <p className={cn("mt-1 text-[11px] leading-4", isLight ? "text-[#806f63]" : "text-slate-400")}>
+          Prefill this form from an existing agent. Credentials and browser sessions stay separate.
         </p>
-      ) : null}
-    </FormField>
+      </div>
+
+      <div className="relative">
+        <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2", isLight ? "text-[#9b887a]" : "text-slate-500")} aria-hidden="true" />
+        <Input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search agents"
+          aria-label="Search agents to clone"
+          className={cn(
+            "h-9 pl-9 text-xs",
+            isLight
+              ? "border-[#ded5cc] bg-white text-[#3f332b] placeholder:text-[#9b887a]"
+              : "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500"
+          )}
+        />
+      </div>
+
+      <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+        {candidates.length > 0 ? candidates.map((agent) => {
+          const presetMeta = getAgentPresetMeta(agent.policy.preset);
+          const selected = selectedAgentId === agent.id;
+          const role = agent.workerProfile?.employment.role ?? presetMeta.label;
+
+          return (
+            <button
+              key={agent.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onSelect(agent.id)}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2",
+                isLight
+                  ? "border-[#e5ddd5] bg-white hover:border-[#bfa994] focus-visible:ring-violet-400/30"
+                  : "border-white/[0.08] bg-white/[0.025] hover:border-white/20 focus-visible:ring-violet-300/35",
+                selected && (isLight ? "border-violet-400/60 bg-violet-50" : "border-violet-300/45 bg-violet-400/[0.1]")
+              )}
+            >
+              <span className="min-w-0">
+                <span className={cn("block truncate text-xs font-medium", isLight ? "text-[#3f332b]" : "text-slate-100")}>
+                  {formatAgentDisplayName(agent)}
+                </span>
+                <span className={cn("mt-0.5 block truncate text-[10px]", isLight ? "text-[#806f63]" : "text-slate-400")}>
+                  {workspaceNames.get(agent.workspaceId)} · {role}
+                </span>
+              </span>
+              <span className={cn("shrink-0 text-[10px]", isLight ? "text-[#806f63]" : "text-slate-400")}>
+                {presetMeta.label}
+              </span>
+            </button>
+          );
+        }) : (
+          <p className={cn("rounded-md border border-dashed px-3 py-4 text-xs", isLight ? "border-[#e1d7ce] text-[#806f63]" : "border-white/10 text-slate-400")}>
+            No agents match that search.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

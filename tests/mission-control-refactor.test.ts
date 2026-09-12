@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   applyAgentPreset,
   buildAgentDraft,
+  buildImportedAgentDraft,
   buildScopedAgentId,
   buildUniqueAgentId,
   isSnapshotModelUsable,
@@ -226,6 +227,123 @@ test("agent draft helpers keep create flows stable", () => {
   assert.equal(buildScopedAgentId("My Workspace", "Agent Name"), "my-workspace-agent-name");
   assert.equal(buildUniqueAgentId(existingAgents, "My Workspace", "Agent Name"), "my-workspace-agent-name-2");
   assert.equal(applyAgentPreset(draft, "setup").policy.preset, "setup");
+});
+
+test("create agent quick create starts with the General worker baseline", () => {
+  const draft = buildAgentDraft("workspace-1");
+
+  assert.equal(draft.policy.preset, "worker");
+  assert.equal(draft.role, "Worker");
+  assert.equal(draft.policy.fileAccess, "workspace-only");
+  assert.equal(draft.heartbeat.enabled, false);
+  assert.equal(draft.modelId, "");
+});
+
+test("role baseline changes preserve user-entered name and responsibility", () => {
+  const draft = buildAgentDraft("workspace-1", {
+    name: "Protocol Operator",
+    mission: "Own protocol operations and deployment review",
+    behaviorInstructions: "Keep reports short and actionable"
+  });
+
+  const browserDraft = applyAgentPreset(draft, "browser");
+
+  assert.equal(browserDraft.policy.preset, "browser");
+  assert.equal(browserDraft.name, "Protocol Operator");
+  assert.equal(browserDraft.mission, "Own protocol operations and deployment review");
+  assert.equal(browserDraft.behaviorInstructions, "Keep reports short and actionable");
+  assert.deepEqual(browserDraft.skills, ["project-browser", "project-tester", "project-researcher"]);
+});
+
+test("role baselines retain the existing preset policy, heartbeat, skills, and tools", () => {
+  const expected = {
+    worker: { heartbeat: false, fileAccess: "workspace-only" },
+    setup: { heartbeat: false, fileAccess: "workspace-only" },
+    browser: { heartbeat: false, fileAccess: "workspace-only" },
+    monitoring: { heartbeat: true, fileAccess: "workspace-only" }
+  } as const;
+
+  for (const preset of ["worker", "setup", "browser", "monitoring"] as const) {
+    const draft = applyAgentPreset(buildAgentDraft("workspace-1"), preset);
+    assert.equal(draft.policy.preset, preset);
+    assert.equal(draft.heartbeat.enabled, expected[preset].heartbeat);
+    assert.equal(draft.policy.fileAccess, expected[preset].fileAccess);
+    assert.ok(draft.skills.length > 0);
+    assert.ok(draft.tools.length > 0);
+  }
+});
+
+test("cloning seeds supported profile data without credentials or sessions", () => {
+  const sourceAgent = {
+    id: "source-agent",
+    workspaceId: "workspace-source",
+    modelId: "unassigned",
+    name: "Source Agent",
+    identity: {
+      displayName: "Source Agent",
+      emoji: "🔎",
+      theme: "blue",
+      avatar: "https://example.com/avatar.png"
+    },
+    workerProfile: {
+      employment: {
+        role: "Research Analyst",
+        mission: "Own research",
+        behaviorInstructions: "Cite evidence"
+      },
+      operator: {
+        labels: ["research"]
+      }
+    },
+    profile: {
+      purpose: "Fallback purpose"
+    },
+    policy: {
+      preset: "browser",
+      missingToolBehavior: "ask-setup",
+      installScope: "none",
+      fileAccess: "workspace-only",
+      networkAccess: "enabled"
+    },
+    heartbeat: {
+      enabled: false,
+      every: null
+    },
+    skills: ["project-browser", "agent-policy-source"],
+    tools: ["browser", "fs.workspaceOnly"]
+  } as unknown as MissionControlSnapshot["agents"][number];
+
+  const sameWorkspaceDraft = buildImportedAgentDraft("workspace-source", sourceAgent, ["channel-1"]);
+  const crossWorkspaceDraft = buildImportedAgentDraft("workspace-target", sourceAgent, []);
+
+  assert.equal(sameWorkspaceDraft.name, "Source Agent");
+  assert.equal(sameWorkspaceDraft.mission, "Own research");
+  assert.equal(sameWorkspaceDraft.behaviorInstructions, "Cite evidence");
+  assert.deepEqual(sameWorkspaceDraft.channelIds, ["channel-1"]);
+  assert.deepEqual(crossWorkspaceDraft.channelIds, []);
+  assert.deepEqual(sameWorkspaceDraft.skills, ["project-browser"]);
+  assert.deepEqual(sameWorkspaceDraft.tools, ["browser"]);
+  assert.equal("credentials" in sameWorkspaceDraft, false);
+  assert.equal("sessions" in sameWorkspaceDraft, false);
+});
+
+test("Create Agent uses one quick-create form without wizard or import placeholder UI", () => {
+  const createDialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/create-agent-dialog.wizard.tsx"),
+    "utf8"
+  );
+  const agentsPageSource = readFileSync(
+    path.join(rootDir, "components/operations/agents/agents-page-content.tsx"),
+    "utf8"
+  );
+
+  assert.match(createDialogSource, /title="Create agent"/);
+  assert.match(createDialogSource, /What should this agent own\?/);
+  assert.match(createDialogSource, /aria-expanded=\{advancedOpen\}/);
+  assert.match(createDialogSource, /Clone existing agent/);
+  assert.match(createDialogSource, /Create agent/);
+  assert.doesNotMatch(createDialogSource, /WizardStage|MobileDetailsStep|WizardStepper|Profile review|Generated id|Create Worker Profile|digital employee/);
+  assert.doesNotMatch(agentsPageSource, /Import Agent/);
 });
 
 test("workspace Context Engine selects only the preferred agent in that workspace", () => {
