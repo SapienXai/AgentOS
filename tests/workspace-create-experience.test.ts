@@ -200,6 +200,39 @@ test("live creation discovery is derived from bounded events and keeps aggregate
   assert.ok(model.signals.some((signal) => signal.state === "attention"));
 });
 
+test("live creation discovery surfaces normalized snapshot findings when event history has no signal entries", () => {
+  const snapshot = createInitialWorkspaceCreationSnapshot(1);
+  snapshot.extraction = { ...snapshot.extraction, factCount: 15, resourceCount: 79, conflictCount: 1 };
+  snapshot.intelligence = {
+    ...snapshot.intelligence,
+    review: {
+      projectName: "CoinCollect",
+      description: "A fictional collection workspace.",
+      projectType: "software",
+      understanding: [],
+      facts: [{ id: "fact-1", key: "projectName", statement: "The project is named CoinCollect.", verification: "verified", conflicted: false }],
+      resources: [{ id: "resource-1", label: "Developer docs", category: "documentation", locator: "https://coincollect.example/docs", verification: "discovered", conflicted: false, origin: "authoritative-connected-source" }],
+      conflicts: [{ id: "conflict-1", summary: "A stale resource names an older project.", status: "open", subjectCount: 2 }],
+      unknowns: [],
+      sourceCount: 1,
+      evidenceCount: 3
+    }
+  };
+  const run = { runId: "run-snapshot-findings", snapshot, events: [] } as never;
+
+  const model = presentWorkspaceCreationDiscovery(run);
+  assert.deepEqual(model.signals.slice(0, 3).map((signal) => signal.label), [
+    "The project is named CoinCollect.",
+    "Developer docs · documentation",
+    "Conflict · A stale resource names an older project."
+  ]);
+  assert.equal(model.signals[0]?.state, "verified");
+  assert.equal(model.signals[1]?.state, "found");
+  assert.equal(model.signals[2]?.state, "attention");
+  assert.ok(model.signals.some((signal) => /more canonical claims found/.test(signal.label)));
+  assert.ok(model.signals.some((signal) => /more project resources found/.test(signal.label)));
+});
+
 test("review presenter exposes only bounded intelligence and composition projections", () => {
   const result = minimalResult();
   const review = presentWorkspaceBlueprint(result, {
@@ -254,10 +287,14 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /Project context/);
   assert.match(source, /Included from your project/);
   assert.match(source, /workspace-architect-chip-enter/);
+  assert.match(source, /PikoLoader/);
+  assert.match(source, /Minimize workspace creation/);
+  assert.match(source, /Reopen workspace creation/);
+  assert.match(source, /onOutsideInteraction/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
   assert.match(source, /Live provisioning signals/);
   assert.match(source, /Open Workspace/);
-  assert.match(source, /Run in background/);
+  assert.match(source, />Minimize</);
   assert.match(source, /canProvisionBlueprint/);
   assert.match(source, /setProgressPhase\(shouldStageContext \? "reading-context" : "designing-workspace"\)/);
   assert.match(source, /activeStage === "review-preparation"/);

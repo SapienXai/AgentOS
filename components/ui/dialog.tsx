@@ -28,8 +28,9 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     overlayClassName?: string;
     closeClassName?: string;
+    closeLabel?: string;
   }
->(({ className, children, overlayClassName, closeClassName, ...props }, ref) => (
+>(({ className, children, overlayClassName, closeClassName, closeLabel = "Close", ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
@@ -46,9 +47,10 @@ const DialogContent = React.forwardRef<
           "absolute right-4 top-4 rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
           closeClassName
         )}
+        aria-label={closeLabel}
       >
         <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
+        <span className="sr-only">{closeLabel}</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

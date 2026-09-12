@@ -34,6 +34,8 @@ type MissionControlDialogShellProps = {
   footerInnerClassName?: string;
   variant?: "default" | "quiet" | "worker-profile";
   disableOutsideDismiss?: boolean;
+  onOutsideInteraction?: () => void;
+  closeLabel?: string;
 };
 
 export function MissionControlDialogShell({
@@ -54,7 +56,9 @@ export function MissionControlDialogShell({
   footerClassName,
   footerInnerClassName,
   variant = "default",
-  disableOutsideDismiss = false
+  disableOutsideDismiss = false,
+  onOutsideInteraction,
+  closeLabel
 }: MissionControlDialogShellProps) {
   const isLight = surfaceTheme === "light";
   const isQuiet = variant === "quiet";
@@ -64,8 +68,9 @@ export function MissionControlDialogShell({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent
-        onInteractOutside={disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
-        onPointerDownOutside={disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
+        onInteractOutside={onOutsideInteraction ? (event) => event.preventDefault() : disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
+        onPointerDownOutside={onOutsideInteraction ? (event) => { event.preventDefault(); onOutsideInteraction(); } : disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
+        closeLabel={closeLabel}
         overlayClassName={isLight ? "bg-[rgba(26,22,18,0.26)] backdrop-blur-lg" : "bg-black/78 backdrop-blur-lg"}
         closeClassName={cn(
           "right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] h-9 w-9 sm:right-3 sm:top-3 sm:h-7 sm:w-7",

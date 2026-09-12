@@ -112,6 +112,7 @@ export function presentWorkspaceCreationDiscovery(run: WorkspaceCreationRun): Wo
     resources: snapshot.extraction.resourceCount,
     conflicts: snapshot.extraction.conflictCount
   };
+  addSnapshotSignals(entries, snapshot, aggregate);
   const signals = [...entries.values()]
     .sort((left, right) => right.sequence - left.sequence || left.id.localeCompare(right.id))
     .slice(0, MAX_SIGNALS);
@@ -122,6 +123,101 @@ export function presentWorkspaceCreationDiscovery(run: WorkspaceCreationRun): Wo
     currentLocator,
     historyTruncated: (run.oldestRetainedSequence ?? 1) > 1
   };
+}
+
+function addSnapshotSignals(
+  entries: Map<string, WorkspaceCreationDiscoverySignal>,
+  snapshot: WorkspaceCreationRun["snapshot"],
+  aggregate: WorkspaceCreationDiscoveryProjection["aggregate"]
+) {
+  const review = snapshot.intelligence.review;
+  let sequence = Number.MAX_SAFE_INTEGER;
+  const add = (signal: WorkspaceCreationDiscoverySignal) => {
+    if (!entries.has(signal.id)) entries.set(signal.id, signal);
+    sequence -= 1;
+  };
+
+  for (const fact of review?.facts ?? []) {
+    add({
+      id: `snapshot:fact:${fact.id}`,
+      kind: "fact",
+      label: displayText(fact.statement, "Canonical project claim"),
+      state: signalStateForVerification(fact.verification),
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+  for (const resource of review?.resources ?? []) {
+    add({
+      id: `snapshot:resource:${resource.id}`,
+      kind: "resource",
+      label: displayText(`${resource.label} · ${resource.category}`, "Project resource"),
+      state: signalStateForVerification(resource.verification),
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+  for (const conflict of review?.conflicts ?? []) {
+    add({
+      id: `snapshot:conflict:${conflict.id}`,
+      kind: "resource",
+      label: displayText(`Conflict · ${conflict.summary}`, "Project conflict needs review"),
+      state: "attention",
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+
+  const reviewFactCount = review?.facts.length ?? 0;
+  const reviewResourceCount = review?.resources.length ?? 0;
+  const reviewConflictCount = review?.conflicts.length ?? 0;
+  if (aggregate.facts > reviewFactCount) {
+    add({
+      id: "snapshot:aggregate:facts",
+      kind: "fact",
+      label: `${aggregate.facts - reviewFactCount} more canonical claim${aggregate.facts - reviewFactCount === 1 ? "" : "s"} found`,
+      state: "found",
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+  if (aggregate.resources > reviewResourceCount) {
+    add({
+      id: "snapshot:aggregate:resources",
+      kind: "resource",
+      label: `${aggregate.resources - reviewResourceCount} more project resource${aggregate.resources - reviewResourceCount === 1 ? "" : "s"} found`,
+      state: "found",
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+  if (aggregate.conflicts > reviewConflictCount) {
+    add({
+      id: "snapshot:aggregate:conflicts",
+      kind: "resource",
+      label: `${aggregate.conflicts - reviewConflictCount} more project conflict${aggregate.conflicts - reviewConflictCount === 1 ? "" : "s"} need review`,
+      state: "attention",
+      sourceId: null,
+      locator: null,
+      sequence
+    });
+  }
+}
+
+function signalStateForVerification(verification: "declared" | "discovered" | "inferred" | "verified"): WorkspaceCreationDiscoverySignalState {
+  if (verification === "verified") return "verified";
+  if (verification === "inferred") return "inferred";
+  return "found";
+}
+
+function displayText(value: string, fallback: string) {
+  const safe = value.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
+  return (safe || fallback).slice(0, 180);
 }
 
 function signalForActivity(

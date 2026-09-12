@@ -12,6 +12,7 @@ import {
   Link2,
   LoaderCircle,
   MessageCircle,
+  Minimize2,
   Pencil,
   RefreshCw,
   Sparkles,
@@ -27,6 +28,7 @@ import {
 } from "@/components/mission-control/mission-control-dialog-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -137,6 +139,7 @@ export function CreateWorkspaceExperience({
   const [isSavingCustomization, setIsSavingCustomization] = useState(false);
   const [provisioningRun, setProvisioningRun] = useState<ProvisioningRun | null>(null);
   const [provisioningError, setProvisioningError] = useState<string | null>(null);
+  const [isMinimized, setIsMinimized] = useState(false);
   const provisioningKeyRef = useRef<string | null>(null);
   const provisioningPollRef = useRef<AbortController | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -157,6 +160,7 @@ export function CreateWorkspaceExperience({
     [creationRun, result]
   );
   const experience = useMemo(() => presentWorkspaceCreationExperience({ run: creationRun, result, provisioningRun, sources }), [creationRun, provisioningRun, result, sources]);
+  const isActiveRun = stage === "generating" || stage === "provisioning";
 
   useEffect(() => {
     if (!open) {
@@ -186,10 +190,24 @@ export function CreateWorkspaceExperience({
       setIsCustomizing(false);
       setProvisioningRun(null);
       setProvisioningError(null);
+      setIsMinimized(false);
       provisioningKeyRef.current = null;
       provisioningPollRef.current?.abort();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !isActiveRun) setIsMinimized(false);
+  }, [isActiveRun, open]);
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isActiveRun) {
+      setIsMinimized(true);
+      return;
+    }
+    setIsMinimized(false);
+    onOpenChange(nextOpen);
+  };
 
   const markContextChanged = () => {
     setContextDirty(true);
@@ -624,13 +642,52 @@ export function CreateWorkspaceExperience({
   const description = experience.description;
 
   return (
-    <MissionControlDialogShell
-      open={open}
-      onOpenChange={onOpenChange}
+    <>
+      <PikoLoader
+        open={open && isActiveRun}
+        title={stage === "provisioning" ? "Creating your workspace" : "Understanding your project"}
+        description={stage === "provisioning" ? "Setting up the approved workspace." : experience.currentActivity}
+      />
+      {open && isMinimized && isActiveRun ? (
+        <button
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          aria-label="Reopen workspace creation"
+          className={cn(
+            "fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 text-left shadow-[0_16px_40px_rgba(15,23,42,0.2)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70",
+            isLight ? "border-[#e4d7ca] bg-white/95 text-[#4d4036]" : "border-white/15 bg-[#111827]/95 text-slate-100"
+          )}
+        >
+          <span className={cn("flex size-6 items-center justify-center rounded-full", isLight ? "bg-[#f3e7db] text-[#9a6d45]" : "bg-violet-400/15 text-violet-200")}>
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-semibold">Workspace creation</span>
+            <span className={cn("block max-w-[190px] truncate text-[10px]", isLight ? "text-[#8b7b6e]" : "text-slate-400")}>{experience.phaseLabel}</span>
+          </span>
+          <span className={cn("ml-1 text-[10px] font-medium", isLight ? "text-[#9a6d45]" : "text-violet-200")}>View</span>
+        </button>
+      ) : null}
+      <MissionControlDialogShell
+      open={open && !isMinimized}
+      onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
       title={title}
       description={description}
       icon={stage === "review" ? Bot : Sparkles}
+      closeLabel={isActiveRun ? "Minimize workspace creation" : undefined}
+      onOutsideInteraction={isActiveRun ? () => setIsMinimized(true) : undefined}
+      headerActions={isActiveRun ? (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setIsMinimized(true)}
+          aria-label="Minimize workspace creation"
+          className={cn("h-8 w-8 rounded-lg p-0", isLight ? "text-[#756b61] hover:bg-[#f1ebe3] hover:text-[#2d241f]" : "text-slate-300 hover:bg-white/[0.06] hover:text-white")}
+        >
+          <Minimize2 className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      ) : null}
       chips={stage === "review" ? <Badge variant={isProvisioned ? provisioningRun?.state === "partial" ? "warning" : "success" : reviewModel?.fallback ? "warning" : "muted"}>{isProvisioned ? provisioningRun?.state === "partial" ? "Partial" : "Ready" : reviewModel?.fallback ? "Draft" : "Review"}</Badge> : stage === "provisioning" ? <Badge variant="muted">Working</Badge> : null}
       contentClassName="left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen transform-none rounded-none border-x-0 md:left-1/2 md:top-1/2 md:h-[min(calc(100vh-72px),780px)] md:max-h-[calc(100vh-72px)] md:w-[min(92vw,900px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border-x"
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
@@ -648,7 +705,7 @@ export function CreateWorkspaceExperience({
         ) : stage === "provisioning" ? (
           <div className="flex w-full items-center justify-between gap-3">
             <span className={cn("text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} aria-live="polite">{experience.phaseLabel}.</span>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Run in background</Button>
+            <Button type="button" variant="secondary" onClick={() => setIsMinimized(true)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Minimize</Button>
           </div>
         ) : stage === "review" ? (
           <div className="flex w-full items-center justify-between gap-3">
@@ -749,7 +806,8 @@ export function CreateWorkspaceExperience({
           />
         )}
       </div>
-    </MissionControlDialogShell>
+      </MissionControlDialogShell>
+    </>
   );
 }
 
@@ -963,8 +1021,26 @@ function GeneratingView({ isLight, activePhase, contextWasRequested, sources, so
           <section className={cn("min-h-[180px] rounded-xl border p-4", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")} aria-label="Live project signals">
             <div className="flex items-center justify-between gap-3"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Live project signals</p>{discovery.historyTruncated ? <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Recent activity</span> : null}</div>
             {discovery.currentLocator ? <p className={cn("mt-2 truncate text-xs", isLight ? "text-[#766e64]" : "text-slate-400")} title={discovery.currentLocator}>Reading {discovery.currentLocator}</p> : null}
-            <div className="mt-3 space-y-2">
-              {discovery.signals.slice(0, 8).map((signal) => <div key={signal.id} className="flex items-start gap-2 text-xs"><span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", signal.state === "attention" ? "bg-amber-400" : signal.state === "verified" ? "bg-emerald-400" : signal.state === "reading" ? "bg-violet-300 motion-safe:animate-pulse" : isLight ? "bg-[#b8895f]" : "bg-slate-500")} aria-hidden="true" /><span className={cn("min-w-0 truncate", isLight ? "text-[#5d5046]" : "text-slate-300")}>{signal.label}</span></div>)}
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {discovery.signals.slice(0, 12).map((signal, index) => (
+                <span
+                  key={signal.id}
+                  title={signal.label}
+                  className={cn(
+                    "workspace-architect-chip-enter inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]",
+                    signal.state === "attention" && (isLight ? "border-amber-300/70 bg-amber-50 text-amber-900" : "border-amber-300/25 bg-amber-300/10 text-amber-100"),
+                    signal.state === "verified" && (isLight ? "border-emerald-300/60 bg-emerald-50 text-emerald-800" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"),
+                    signal.state === "reading" && (isLight ? "border-[#d8b184] bg-[#f8efe3] text-[#7c5a34]" : "border-violet-300/30 bg-violet-300/10 text-violet-100"),
+                    signal.state === "inferred" && (isLight ? "border-sky-300/60 bg-sky-50 text-sky-800" : "border-sky-300/25 bg-sky-300/10 text-sky-100"),
+                    signal.state === "found" && (isLight ? "border-[#e4ddd3] bg-white/70 text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")
+                  )}
+                  style={{ animationDelay: `${index * 65}ms` }}
+                >
+                  <span className={cn("size-1.5 shrink-0 rounded-full", signal.state === "attention" ? "bg-amber-400" : signal.state === "verified" ? "bg-emerald-400" : signal.state === "reading" ? "bg-violet-300 motion-safe:animate-pulse" : signal.state === "inferred" ? "bg-sky-400" : isLight ? "bg-[#b8895f]" : "bg-slate-500")} aria-hidden="true" />
+                  <span className="max-w-[250px] truncate">{signal.label}</span>
+                  <span className="sr-only">{signal.state}</span>
+                </span>
+              ))}
               {!discovery.signals.length ? <p className={cn("text-xs", isLight ? "text-[#9b8d80]" : "text-slate-500")}>The first useful project signal will appear here.</p> : null}
             </div>
           </section>
