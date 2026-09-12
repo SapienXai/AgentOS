@@ -360,6 +360,11 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
   assert.doesNotMatch(source, /Live provisioning signals/);
   assert.match(source, /Open Workspace/);
+  assert.match(source, /Close workspace ready screen/);
+  assert.match(source, /onClick=\{\(\) => handleDialogOpenChange\(false\)\}/);
+  assert.match(source, /if \(!nextOpen && \(provisioningRun\?\.state === "ready" \|\| provisioningRun\?\.state === "partial"\)\)/);
+  assert.match(source, /const recoverProvisioningRun = async/);
+  assert.match(source, /const recoveredProvisioning = await recoverProvisioningRun\(activeRun\)/);
   assert.match(source, />Minimize</);
   assert.match(source, /canProvisionBlueprint/);
   assert.doesNotMatch(source, /setProgressPhase/);

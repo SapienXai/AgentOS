@@ -36,6 +36,7 @@ import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 import { composeWorkspaceComposition, createDeterministicWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
+import type { StoredWorkspaceProvisioningRun } from "@/lib/agentos/application/workspace-provisioning-store";
 
 const source = createWorkspaceKnowledgeSource({
   id: "project-file",
@@ -537,6 +538,54 @@ test("review draft abandonment is durable, idempotent, and actor-scoped", async 
       result: null
     });
     await assert.rejects(() => abandonWorkspaceCreationRun({ actorId, runId: active.run.runId }, { rootPath }), /handed off for provisioning/);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("completed provisioning handoffs are not returned as resumable creation drafts", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-provisioning-filter-"));
+  const actorId = "provisioning-filter-actor";
+  const completedStates: Record<string, "ready" | "partial"> = {
+    "provisioning-ready": "ready",
+    "provisioning-partial": "partial"
+  };
+  const findProvisioningRunById = async (_provisioningRootPath: string, _actor: string, runId: string) => {
+    const state = completedStates[runId];
+    return state
+      ? { filePath: `${runId}.json`, run: { state } as StoredWorkspaceProvisioningRun }
+      : null;
+  };
+
+  try {
+    const createDraft = (idempotencyKey: string, provisioningRunId: string | null) => createWorkspaceCreationRunAtomically(
+      rootPath,
+      workspaceCreationStorageKey(actorId, idempotencyKey),
+      {
+        actorHash: workspaceCreationActorHash(actorId),
+        idempotencyKeyHash: idempotencyKey,
+        attempt: 1,
+        input: { brief: `Build ${idempotencyKey}.`, mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+        draftContextId: null,
+        snapshot: {
+          ...createInitialWorkspaceCreationSnapshot(0),
+          state: "review-ready",
+          stage: "review-preparation",
+          provisioningHandoffReady: provisioningRunId !== null,
+          provisioningRunId
+        },
+        result: null
+      }
+    );
+
+    const ready = await createDraft("ready", "provisioning-ready");
+    const partial = await createDraft("partial", "provisioning-partial");
+    const retryable = await createDraft("retryable", "provisioning-failed");
+    const resumable = await listResumableWorkspaceCreationRuns(actorId, { rootPath, findProvisioningRunById });
+
+    assert.deepEqual(resumable.map((run) => run.runId), [retryable.run.runId]);
+    assert.notEqual(ready.run.runId, retryable.run.runId);
+    assert.notEqual(partial.run.runId, retryable.run.runId);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

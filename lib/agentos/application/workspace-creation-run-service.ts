@@ -42,7 +42,8 @@ import {
   mutateWorkspaceCreationRun,
   readWorkspaceCreationRun,
   readWorkspaceCreationRunFile,
-  resolveWorkspaceCreationRunRoot
+  resolveWorkspaceCreationRunRoot,
+  type WorkspaceCreationRunLocator
 } from "@/lib/agentos/application/workspace-creation-run-store";
 import { readWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
 import { findRunById, resolveProvisioningRoot } from "@/lib/agentos/application/workspace-provisioning-store";
@@ -646,16 +647,52 @@ export async function listActiveWorkspaceCreationRuns(actorId: string, dependenc
   return (await listWorkspaceCreationRuns(resolved.rootPath, actorId, true)).map(({ run }) => publicRun(run));
 }
 
-/** Review-ready runs are resumable drafts; failed and cancelled runs are not. */
+function isResumableWorkspaceCreationRun(run: WorkspaceCreationRun) {
+  return !run.abandonedAt && ["pending", "running", "review-ready"].includes(run.snapshot.state);
+}
+
+/**
+ * A creation run remains recoverable while its provisioning handoff is in
+ * flight. Once provisioning owns a ready workspace, the workspace itself is
+ * the source of truth and the old review draft must not reopen on the next
+ * create-workspace action.
+ */
+async function filterResumableWorkspaceCreationRunLocators(
+  locators: WorkspaceCreationRunLocator[],
+  actorId: string,
+  dependencies: ResolvedDependencies
+) {
+  const filtered = await Promise.all(locators.map(async (locator) => {
+    const { run } = locator;
+    if (!isResumableWorkspaceCreationRun(run)) return null;
+
+    const provisioningRunId = run.snapshot.provisioningRunId;
+    if (run.snapshot.state !== "review-ready" || !run.snapshot.provisioningHandoffReady || !provisioningRunId) return locator;
+
+    const provisioning = await dependencies.findProvisioningRunById(
+      dependencies.provisioningRootPath,
+      actorId,
+      provisioningRunId
+    ).catch(() => null);
+    return provisioning?.run.state === "ready" || provisioning?.run.state === "partial" ? null : locator;
+  }));
+
+  return filtered.filter((locator): locator is WorkspaceCreationRunLocator => locator !== null);
+}
+
+/** Review-ready runs remain resumable until a linked provisioning run is complete. */
 export async function listResumableWorkspaceCreationRuns(actorId: string, dependencies: WorkspaceCreationRunDependencies = {}) {
   const resolved = resolveDependencies(dependencies);
   const locators = await listWorkspaceCreationRuns(resolved.rootPath, actorId, false);
-  const resumable = locators.filter(({ run }) => !run.abandonedAt && ["pending", "running", "review-ready"].includes(run.snapshot.state));
+  const resumable = await filterResumableWorkspaceCreationRunLocators(locators, actorId, resolved);
   await Promise.all(resumable
     .filter(({ run }) => run.snapshot.state !== "review-ready")
     .map(({ run }) => ensureCreationRunExecution({ actorId, runId: run.runId }, resolved)));
-  return (await listWorkspaceCreationRuns(resolved.rootPath, actorId, false))
-    .filter(({ run }) => !run.abandonedAt && ["pending", "running", "review-ready"].includes(run.snapshot.state))
+  return (await filterResumableWorkspaceCreationRunLocators(
+    await listWorkspaceCreationRuns(resolved.rootPath, actorId, false),
+    actorId,
+    resolved
+  ))
     .map(({ run }) => publicRun(run));
 }
 

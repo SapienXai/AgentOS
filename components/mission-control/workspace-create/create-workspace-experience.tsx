@@ -251,6 +251,9 @@ export function CreateWorkspaceExperience({
     }
     setIsMinimized(false);
     clearWorkspaceCreationMinimizedRun();
+    if (!nextOpen && (provisioningRun?.state === "ready" || provisioningRun?.state === "partial")) {
+      resetCreationState();
+    }
     onOpenChange(nextOpen);
   };
 
@@ -401,6 +404,17 @@ export function CreateWorkspaceExperience({
         setCreationRun(activeRun);
         hasLocalDraftRef.current = true;
         if (activeRun.snapshot.reviewReadiness) setReviewReadiness(activeRun.snapshot.reviewReadiness);
+
+        const recoverProvisioningRun = async (run: WorkspaceCreationRun) => {
+          if (!run.snapshot.provisioningRunId) return null;
+          const provisioningResponse = await fetch(`/api/workspaces/provision?runId=${encodeURIComponent(run.snapshot.provisioningRunId)}`, { signal: controller.signal });
+          const recoveredProvisioning = (await provisioningResponse.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
+          if (!provisioningResponse.ok || !recoveredProvisioning?.runId) return null;
+          setProvisioningRun(recoveredProvisioning);
+          return recoveredProvisioning;
+        };
+
+        const recoveredProvisioning = await recoverProvisioningRun(activeRun);
         if (activeRun.snapshot.state === "review-ready") {
           const recoveredResult = activeRun.result as WorkspaceArchitectResult | null;
           if (!recoveredResult?.blueprint) return;
@@ -414,14 +428,8 @@ export function CreateWorkspaceExperience({
         setStage("generating");
         abortControllerRef.current = controller;
         const recoveredRun = await pollCreationRun(activeRun.runId, controller, activeRun, recoveredSources);
-        if (recoveredRun.snapshot.provisioningRunId) {
-          const provisioningResponse = await fetch(`/api/workspaces/provision?runId=${encodeURIComponent(recoveredRun.snapshot.provisioningRunId)}`, { signal: controller.signal });
-          const recoveredProvisioning = (await provisioningResponse.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
-          if (provisioningResponse.ok && recoveredProvisioning?.runId) {
-            setProvisioningRun(recoveredProvisioning);
-            if (!isProvisioningTerminal(recoveredProvisioning.state)) setStage("provisioning");
-          }
-        }
+        const completedProvisioning = recoveredProvisioning ?? await recoverProvisioningRun(recoveredRun);
+        if (completedProvisioning) setStage(isProvisioningTerminal(completedProvisioning.state) ? "review" : "provisioning");
       } catch {
         // Reload recovery is best-effort; the durable run remains available to a later poll.
       }
@@ -678,7 +686,10 @@ export function CreateWorkspaceExperience({
   }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, provision]);
 
   const openProvisionedWorkspace = () => {
-    if (!provisioningRun?.result) return;
+    if (!provisioningRun?.result) {
+      setProvisioningError("Workspace is ready, but its open target is unavailable. Close this screen and select it from the workspace menu.");
+      return;
+    }
     onWorkspaceCreated?.(provisioningRun.result);
     resetCreationState();
     onOpenChange(false);
@@ -825,6 +836,17 @@ export function CreateWorkspaceExperience({
             <div className="flex flex-col items-end gap-1">
               <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
               <div className="flex items-center gap-2">
+                {isProvisioned ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => handleDialogOpenChange(false)}
+                    aria-label="Close workspace ready screen"
+                    className={missionControlDialogButtonClassName("secondary", surfaceTheme)}
+                  >
+                    Close
+                  </Button>
+                ) : null}
                 <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), isProvisioned && "hidden")}>
                   <Pencil className="mr-1.5 h-3.5 w-3.5" />
                   Customize
@@ -896,6 +918,7 @@ export function CreateWorkspaceExperience({
             <h1 className="text-3xl font-semibold tracking-tight">{result?.blueprint.identity.name}</h1>
             <p className="text-sm opacity-65">{provisioningRun?.state === "partial" ? "Ready to use. Some connections need setup." : "Make it yours as you go."}</p>
             {creationRun && normalizeWorkspaceCreationProfile(creationRun.input.profile) !== "high" && creationRun.input.continueLearningAfterCreation !== false ? <p className="text-xs opacity-55">AgentOS is continuing to learn about this project.</p> : null}
+            {provisioningError ? <p className="max-w-md text-xs text-amber-300" role="status">{provisioningError}</p> : null}
           </main>
         ) : (
           <ReviewView
