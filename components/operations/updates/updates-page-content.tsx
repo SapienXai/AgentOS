@@ -93,6 +93,8 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const [actionState, setActionState] = useState<UpdateActionState>("idle");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
+  const [awaitingNativeVerification, setAwaitingNativeVerification] = useState(false);
+  const [updateStartedAtMs, setUpdateStartedAtMs] = useState<number | null>(null);
 
   const loadNative = useCallback(async (probe = false) => {
     setNativeError(null);
@@ -183,6 +185,8 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     setConfirmUpdate(false);
     setActionState("running");
     setActionMessage("Updating OpenClaw. The runtime may restart and reconnect.");
+    setAwaitingNativeVerification(false);
+    setUpdateStartedAtMs(Date.now());
     const toastId = toast.loading("Updating OpenClaw...", {
       description: "OpenClaw's native update lifecycle is running.",
       duration: Infinity
@@ -216,10 +220,12 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       const skipped = result?.outcome === "skipped";
 
       if (failed) {
+        setAwaitingNativeVerification(false);
         setActionState("error");
         setActionMessage(resultMessage);
         toast.error("OpenClaw update needs attention", { id: toastId, description: resultMessage });
       } else if (verificationUnknown || deferred) {
+        setAwaitingNativeVerification(true);
         setActionState("unknown");
         setActionMessage(
           deferred
@@ -228,10 +234,12 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
         );
         toast.warning("OpenClaw update verification pending", { id: toastId, description: resultMessage });
       } else if (skipped) {
+        setAwaitingNativeVerification(false);
         setActionState("unknown");
         setActionMessage(resultMessage);
         toast.warning("OpenClaw skipped the update", { id: toastId, description: resultMessage });
       } else {
+        setAwaitingNativeVerification(false);
         setActionState("success");
         setActionMessage(result?.verification?.status === "verified" ? "OpenClaw updated and verified." : resultMessage);
         toast.success("OpenClaw update completed", { id: toastId, description: resultMessage });
@@ -239,6 +247,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
 
       await Promise.all([loadNative(true), refresh()]);
     } catch (error) {
+      setAwaitingNativeVerification(false);
       const message = error instanceof Error ? error.message : "OpenClaw update failed.";
       setActionState("error");
       setActionMessage(message);
@@ -282,17 +291,70 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   };
 
   const durableUpdateRunning = native?.update.activeRun?.status === "running";
+  const shouldPollNativeUpdate = awaitingNativeVerification || durableUpdateRunning;
+
+  useEffect(() => {
+    if (!shouldPollNativeUpdate) return;
+
+    const interval = window.setInterval(() => {
+      void loadNative(true);
+      void refresh();
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [loadNative, refresh, shouldPollNativeUpdate]);
+
+  useEffect(() => {
+    if (!awaitingNativeVerification || durableUpdateRunning || !updateStartedAtMs) return;
+
+    const run = native?.update.lastRun;
+    if (!run) return;
+
+    const terminalAtMs = run.finishedAtMs ?? run.updatedAtMs;
+    if (terminalAtMs < updateStartedAtMs) return;
+
+    setAwaitingNativeVerification(false);
+
+    if (run.status === "failed") {
+      setActionState("error");
+      setActionMessage(run.reason ? `OpenClaw update failed: ${run.reason}` : "OpenClaw update failed. The installed runtime was not changed.");
+      return;
+    }
+
+    if (run.status === "rolled-back") {
+      setActionState("error");
+      setActionMessage(run.reason ? `OpenClaw rolled back the update: ${run.reason}` : "OpenClaw rolled back the update. The previous runtime remains installed.");
+      return;
+    }
+
+    if (run.status === "skipped") {
+      setActionState("unknown");
+      setActionMessage(run.reason ? `OpenClaw skipped the update: ${run.reason}` : "OpenClaw skipped the update. No new runtime was installed.");
+      return;
+    }
+
+    if (run.verification?.versionMatch === false) {
+      setActionState("error");
+      setActionMessage("OpenClaw finished the update run, but the installed version did not match the target.");
+      return;
+    }
+
+    setActionState("success");
+    setActionMessage("OpenClaw update completed and the native run reached a terminal state.");
+  }, [awaitingNativeVerification, durableUpdateRunning, native?.update.lastRun, updateStartedAtMs]);
+
+  const showPikoLoader = isRefreshing || actionState === "running" || awaitingNativeVerification || durableUpdateRunning;
 
   return (
     <>
       <PikoLoader
-        open={actionState === "running" || isRefreshing}
-        title={actionState === "running" ? "Updating OpenClaw" : "Checking OpenClaw updates"}
+        open={showPikoLoader}
+        title={actionState === "running" || awaitingNativeVerification || durableUpdateRunning ? "Updating OpenClaw" : "Checking OpenClaw updates"}
         description={
-          actionState === "running"
+          actionState === "running" || awaitingNativeVerification || durableUpdateRunning
             ? durableUpdateRunning
-              ? "OpenClaw is applying its native update run. This state is owned by OpenClaw and survives reconnects."
-              : "OpenClaw may restart. AgentOS will verify the reconnect and final runtime state."
+              ? "OpenClaw is applying its native update run. AgentOS is monitoring the Gateway for the terminal result."
+              : "OpenClaw may restart. AgentOS is waiting for the Gateway to reconnect and report the final runtime state."
             : "Reading the authoritative native update status."
         }
       />

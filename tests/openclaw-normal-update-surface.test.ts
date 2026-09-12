@@ -17,6 +17,10 @@ test("canonical Updates page reads native status and runs native update.run", ()
   assert.doesNotMatch(source, /--tag/);
   assert.match(source, /Community release intelligence is advisory/);
   assert.match(source, /Community confidence never decides whether OpenClaw is up to date or whether an update runs/);
+  assert.match(source, /const shouldPollNativeUpdate = awaitingNativeVerification \|\| durableUpdateRunning/);
+  assert.match(source, /setInterval\(\(\) => \{/);
+  assert.match(source, /open=\{showPikoLoader\}/);
+  assert.match(source, /OpenClaw update failed: \$\{run\.reason\}/);
 });
 
 test("normal native update endpoint enforces the shared server policy and target confirmation", () => {
