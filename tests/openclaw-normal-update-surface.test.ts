@@ -21,6 +21,19 @@ test("canonical Updates page reads native status and runs native update.run", ()
   assert.match(source, /setInterval\(\(\) => \{/);
   assert.match(source, /open=\{showPikoLoader\}/);
   assert.match(source, /OpenClaw update failed: \$\{run\.reason\}/);
+  assert.match(source, /fetch\("\/api\/openclaw\/dashboard"/);
+  assert.match(source, /Open OpenClaw Control UI/);
+  assert.match(source, /needsNativeReview = run\.status === "failed" \|\| run\.status === "rolled-back"/);
+  assert.match(source, /showNativeReviewAction = hasFailedNativeRun && !actionMessage/);
+});
+
+test("advanced update failures link operators to native OpenClaw diagnostics", () => {
+  const source = read("components/mission-control/mission-control-shell.dialogs.tsx");
+
+  assert.match(source, /updateRunState === "error"/);
+  assert.match(source, /fetch\("\/api\/openclaw\/dashboard"/);
+  assert.match(source, /OpenClaw owns the native updater and its failure details/);
+  assert.match(source, /Open OpenClaw Control UI/);
 });
 
 test("normal native update endpoint enforces the shared server policy and target confirmation", () => {

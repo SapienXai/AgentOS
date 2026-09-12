@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Copy, LoaderCircle, SquareTerminal } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, ExternalLink, LoaderCircle, SquareTerminal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -86,6 +86,7 @@ export function MissionControlShellDialogs({
   const updateDialogTitle = resolveUpdateDialogTitle(updateRunState, updateMode);
   const updateDialogDescription = resolveUpdateDialogDescription(updateRunState, updateMode);
   const [isOpeningUpdateTerminal, setIsOpeningUpdateTerminal] = useState(false);
+  const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
   const canOpenUpdateTerminal = isOpenClawTerminalCommand(updateManualCommand);
   const selectedTargetVersion =
     updateTargetVersion ||
@@ -153,6 +154,32 @@ export function MissionControlShellDialogs({
       });
     } finally {
       setIsOpeningUpdateTerminal(false);
+    }
+  };
+
+  const openControlUi = async () => {
+    setIsOpeningControlUi(true);
+
+    try {
+      const response = await fetch("/api/openclaw/dashboard", {
+        method: "POST",
+        cache: "no-store"
+      });
+      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Unable to open the OpenClaw Control UI.");
+      }
+
+      toast.success("OpenClaw Control UI opened.", {
+        description: "Review the native update details there, then return to AgentOS."
+      });
+    } catch (error) {
+      toast.error("Could not open the OpenClaw Control UI.", {
+        description: error instanceof Error ? error.message : "Open the native OpenClaw dashboard manually."
+      });
+    } finally {
+      setIsOpeningControlUi(false);
     }
   };
 
@@ -394,6 +421,32 @@ export function MissionControlShellDialogs({
                 updateMode={updateMode}
                 surfaceTheme={surfaceTheme}
               />
+
+              {updateRunState === "error" ? (
+                <div
+                  className={cn(
+                    "rounded-[20px] border px-4 py-3",
+                    surfaceTheme === "light"
+                      ? "border-[#e3d4c8] bg-[#fffaf6]"
+                      : "border-white/8 bg-white/[0.03]"
+                  )}
+                >
+                  <p className={surfaceTheme === "light" ? "text-sm leading-6 text-[#705b4d]" : "text-sm leading-6 text-slate-300"}>
+                    OpenClaw owns the native updater and its failure details. Open its Control UI to inspect the authoritative recovery state.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void openControlUi()}
+                    disabled={isOpeningControlUi}
+                    className={cn("mt-3", surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : "")}
+                  >
+                    {isOpeningControlUi ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="mr-1.5 h-3.5 w-3.5" />}
+                    {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
+                  </Button>
+                </div>
+              ) : null}
 
               <div
                 className={cn(

@@ -92,6 +92,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [actionState, setActionState] = useState<UpdateActionState>("idle");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [awaitingNativeVerification, setAwaitingNativeVerification] = useState(false);
   const [updateStartedAtMs, setUpdateStartedAtMs] = useState<number | null>(null);
@@ -290,6 +291,32 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     }
   };
 
+  const openControlUi = async () => {
+    setIsOpeningControlUi(true);
+
+    try {
+      const response = await fetch("/api/openclaw/dashboard", {
+        method: "POST",
+        cache: "no-store"
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to open the OpenClaw Control UI.");
+      }
+
+      toast.success("OpenClaw Control UI opened.", {
+        description: "Review the native update details there, then return to AgentOS."
+      });
+    } catch (error) {
+      toast.error("Could not open the OpenClaw Control UI.", {
+        description: error instanceof Error ? error.message : "Open the native OpenClaw dashboard manually."
+      });
+    } finally {
+      setIsOpeningControlUi(false);
+    }
+  };
+
   const durableUpdateRunning = native?.update.activeRun?.status === "running";
   const shouldPollNativeUpdate = awaitingNativeVerification || durableUpdateRunning;
 
@@ -391,6 +418,8 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               canHoldNativeUpdate={canHoldNativeUpdate}
               onRequestUpdate={() => setConfirmUpdate(true)}
               onHoldUpdate={() => void holdNativeUpdate()}
+              onOpenControlUi={() => void openControlUi()}
+              isOpeningControlUi={isOpeningControlUi}
               onRefresh={() => void refreshAll()}
             />
 
@@ -496,6 +525,8 @@ function PrimaryUpdateCard({
   canHoldNativeUpdate,
   onRequestUpdate,
   onHoldUpdate,
+  onOpenControlUi,
+  isOpeningControlUi,
   onRefresh
 }: {
   currentVersion: string | null;
@@ -514,10 +545,14 @@ function PrimaryUpdateCard({
   canHoldNativeUpdate: boolean;
   onRequestUpdate: () => void;
   onHoldUpdate: () => void;
+  onOpenControlUi: () => void;
+  isOpeningControlUi: boolean;
   onRefresh: () => void;
 }) {
   const copy = resolvePrimaryCopy({ state, currentVersion, availableVersion, agentOsDecision, policyReason, nativeError });
   const tone = primaryTone(state, actionState);
+  const hasFailedNativeRun = native?.update.lastRun?.status === "failed" || native?.update.lastRun?.status === "rolled-back";
+  const showNativeReviewAction = hasFailedNativeRun && !actionMessage;
 
   return (
     <SectionCard className="overflow-hidden">
@@ -546,7 +581,13 @@ function PrimaryUpdateCard({
         ) : null}
 
         {native?.update.activeRun ? <ActiveUpdateRun run={native.update.activeRun} /> : null}
-        {!native?.update.activeRun && native?.update.lastRun ? <LastUpdateRun run={native.update.lastRun} /> : null}
+        {!native?.update.activeRun && native?.update.lastRun ? (
+          <LastUpdateRun
+            run={native.update.lastRun}
+            onOpenControlUi={onOpenControlUi}
+            isOpeningControlUi={isOpeningControlUi}
+          />
+        ) : null}
 
         {state === "available-uncertified" ? (
           <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm">
@@ -588,12 +629,39 @@ function PrimaryUpdateCard({
           <div className={cn("mt-4 rounded-lg border p-3 text-sm", actionState === "success" ? "border-[hsl(var(--status-success)/0.25)] bg-[hsl(var(--status-success)/0.08)]" : actionState === "error" ? "border-[hsl(var(--status-danger)/0.25)] bg-[hsl(var(--status-danger)/0.08)]" : "border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)]")} role="status">
             <div className="flex items-start gap-2">
               {actionState === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-success-foreground))]" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-warning-foreground))]" />}
-              <p className="leading-5 text-foreground">{actionMessage}</p>
+              <div className="min-w-0 flex-1">
+                <p className="leading-5 text-foreground">{actionMessage}</p>
+                {actionState === "error" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onOpenControlUi}
+                    disabled={isOpeningControlUi}
+                    className="mt-3"
+                  >
+                    {isOpeningControlUi ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="mr-1.5 h-3.5 w-3.5" />}
+                    {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : null}
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+          {showNativeReviewAction ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onOpenControlUi}
+              disabled={isOpeningControlUi}
+              className="min-h-11 sm:min-h-9"
+            >
+              {isOpeningControlUi ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-1.5 h-4 w-4" />}
+              {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
+            </Button>
+          ) : null}
           {state === "available-certified" ? (
             <Button
               type="button"
@@ -700,8 +768,17 @@ function ActiveUpdateRun({ run }: { run: NonNullable<NativeDoctorSnapshot["updat
   );
 }
 
-function LastUpdateRun({ run }: { run: NonNullable<NativeDoctorSnapshot["update"]["lastRun"]> }) {
+function LastUpdateRun({
+  run,
+  onOpenControlUi,
+  isOpeningControlUi
+}: {
+  run: NonNullable<NativeDoctorSnapshot["update"]["lastRun"]>;
+  onOpenControlUi: () => void;
+  isOpeningControlUi: boolean;
+}) {
   const outcome = run.status === "succeeded" ? "Completed" : run.status === "failed" || run.status === "rolled-back" ? "Needs attention" : "Skipped";
+  const needsNativeReview = run.status === "failed" || run.status === "rolled-back";
   return (
     <details className="group mt-4 rounded-lg border border-border bg-muted/20">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
@@ -718,6 +795,19 @@ function LastUpdateRun({ run }: { run: NonNullable<NativeDoctorSnapshot["update"
           <StatusFact label="Verification" value={run.verification?.versionMatch === true ? "Verified" : run.verification?.versionMatch === false ? "Mismatch" : "Not reported"} />
         </div>
         {run.reason ? <p className="mt-3">{run.reason}</p> : null}
+        {needsNativeReview ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onOpenControlUi}
+            disabled={isOpeningControlUi}
+            className="mt-3"
+          >
+            {isOpeningControlUi ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="mr-1.5 h-3.5 w-3.5" />}
+            {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
+          </Button>
+        ) : null}
       </div>
     </details>
   );
