@@ -18,8 +18,8 @@ import {
   type WorkspaceCreationUpload
 } from "@/lib/agentos/application/workspace-creation-context-service";
 import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, createWorkspaceCompositionBlueprintFingerprint, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
-import { summarizeWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
-import { generateWorkspaceBlueprint, reviseWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
+import { createWorkspaceCompositionInputFingerprint, summarizeWorkspaceCompositionPlan, validateWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
+import { generateWorkspaceBlueprint, reviseWorkspaceBlueprint, validateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import {
   acquireProvisioningLease,
 } from "@/lib/agentos/application/workspace-provisioning-lease";
@@ -62,6 +62,7 @@ import {
 } from "@/lib/agentos/application/project-intelligence-synthesis-service";
 import { ProjectIntelligenceRemoteExecutionError } from "@/lib/openclaw/application/structured-agent-service";
 import { summarizeWorkspaceDrift } from "@/lib/agentos/domains/workspace-freshness";
+import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
 
 export const DEFAULT_WORKSPACE_CREATION_BUDGET = {
   overallAnalysisBudgetMs: 300_000,
@@ -260,12 +261,123 @@ export async function getWorkspaceCreationRun(
   if (isWorkspaceCreationTerminal(locator.run.snapshot.state)) {
     await inFlight.get(locator.filePath)?.catch(() => undefined);
   }
-  const latest = await readWorkspaceCreationRunFile(locator.filePath);
+  let latest = await readWorkspaceCreationRunFile(locator.filePath);
+  if (latest?.snapshot.state === "review-ready") {
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId: input.actorId, runId: input.runId }, resolved);
+    latest = certified?.run ?? latest;
+  }
   const after = Number.isSafeInteger(input.afterSequence) ? input.afterSequence! : 0;
   return publicRun({
     ...(latest ?? locator.run),
     events: (latest ?? locator.run).events.filter((event) => event.sequence > after)
   });
+}
+
+export async function getWorkspaceCreationReviewReadiness(
+  input: { actorId: string; runId: string; acceptDraft?: boolean; repair?: boolean; forceRepair?: boolean },
+  dependencies: WorkspaceCreationRunDependencies = {}
+): Promise<{ run: WorkspaceCreationRun; readiness: WorkspaceCreationReviewReadiness } | null> {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  let run = await readWorkspaceCreationRunFile(locator.filePath) ?? locator.run;
+  let readiness = await evaluateWorkspaceCreationReviewReadiness(run, input.actorId, input.acceptDraft === true, resolved);
+  const repairPreviouslyFailed = !input.forceRepair && run.snapshot.reviewReadiness?.reasonCode === "composition-rebuild-failed";
+  const needsRepair = ["composition-missing", "composition-invalid", "composition-mismatch"].includes(readiness.reasonCode);
+  if (input.repair !== false && needsRepair) {
+    if (!repairPreviouslyFailed) {
+      try {
+        run = await rebuildWorkspaceCreationComposition(locator.filePath, input.actorId, run, resolved);
+      } catch (error) {
+        const checkedAt = resolved.now().toISOString();
+        readiness = {
+          status: "plan-rebuild-required",
+          provisionable: false,
+          reasonCode: "composition-rebuild-failed",
+          requiredAction: "rebuild-plan",
+          message: redactSecretText(error instanceof Error ? error.message : "The workspace plan could not be rebuilt safely.").slice(0, 300),
+          checkedAt,
+          blueprintFingerprint: isWorkspaceArchitectResult(run.result) ? createWorkspaceCompositionBlueprintFingerprint(run.result.blueprint) : null,
+          planId: null,
+          planFingerprint: null
+        };
+      }
+      if (readiness.reasonCode !== "composition-rebuild-failed") readiness = await evaluateWorkspaceCreationReviewReadiness(run, input.actorId, input.acceptDraft === true, resolved);
+    }
+  }
+  const persisted = await mutateWorkspaceCreationRun(locator.filePath, (current) => ({
+    ...current,
+    snapshot: { ...current.snapshot, reviewReadiness: readiness }
+  }));
+  return { run: publicRun(persisted), readiness };
+}
+
+async function evaluateWorkspaceCreationReviewReadiness(run: WorkspaceCreationRun, actorId: string, acceptDraft: boolean, dependencies: ResolvedDependencies): Promise<WorkspaceCreationReviewReadiness> {
+  const checkedAt = dependencies.now().toISOString();
+  const result = isWorkspaceArchitectResult(run.result) ? run.result : null;
+  const blueprintFingerprint = result ? createWorkspaceCompositionBlueprintFingerprint(result.blueprint) : null;
+  const base = {
+    checkedAt,
+    blueprintFingerprint,
+    planId: null,
+    planFingerprint: null
+  } satisfies Pick<WorkspaceCreationReviewReadiness, "checkedAt" | "blueprintFingerprint" | "planId" | "planFingerprint">;
+  if (run.abandonedAt) return { ...base, status: "blocked", provisionable: false, reasonCode: "abandoned", requiredAction: "none", message: "This workspace draft was abandoned." };
+  if (run.snapshot.state !== "review-ready" || !result) return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "blueprint-invalid", requiredAction: "retry-design", message: "The workspace draft is not ready for review yet." };
+  const blueprintValidation = validateWorkspaceBlueprint(result.blueprint);
+  if (!blueprintValidation.valid) return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "blueprint-invalid", requiredAction: "retry-design", message: "The workspace blueprint needs to be regenerated before it can be created." };
+  if (result.blueprint.status === "blocked") return { ...base, status: "blocked", provisionable: false, reasonCode: "blueprint-blocked", requiredAction: "resolve-conflict", message: "The workspace blueprint contains a blocking issue." };
+  if ((result.blueprint.status === "draft" || result.reasoning.status === "fallback") && !acceptDraft) {
+    return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "draft-acceptance-required", requiredAction: "accept-draft", message: "Use the basic draft explicitly before creating this workspace." };
+  }
+  if (result.freshness.status === "stale") return { ...base, status: "refresh-required", provisionable: false, reasonCode: "context-stale", requiredAction: "refresh-context", message: "Project context changed after this design was produced." };
+  if (result.blueprint.knowledge.sourceIds.length > 0 && result.freshness.status === "unknown") return { ...base, status: "refresh-required", provisionable: false, reasonCode: "context-unknown", requiredAction: "refresh-context", message: "The current project context could not be verified." };
+
+  if (!run.draftContextId) return { ...base, status: "plan-rebuild-required", provisionable: false, reasonCode: "composition-missing", requiredAction: "rebuild-plan", message: "The workspace plan is not available yet." };
+  const plan = await dependencies.readCompositionPlan({ actorId, draftContextId: run.draftContextId }).catch(() => null);
+  const pack = await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null);
+  const planBase = { ...base, planId: plan?.planId ?? null, planFingerprint: plan?.inputFingerprint ?? null };
+  if (!plan) return { ...planBase, status: "plan-rebuild-required", provisionable: false, reasonCode: "composition-missing", requiredAction: "rebuild-plan", message: "The workspace plan needs to be rebuilt." };
+  if (!validateWorkspaceCompositionPlan(plan)) return { ...planBase, status: "plan-rebuild-required", provisionable: false, reasonCode: "composition-invalid", requiredAction: "rebuild-plan", message: "The workspace plan is invalid and needs to be rebuilt." };
+  const existingFiles = result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
+    ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
+    : [];
+  const expectedInputFingerprint = createWorkspaceCompositionInputFingerprint({
+    policyVersion: plan.policyVersion,
+    packId: pack?.id ?? null,
+    blueprint: result.blueprint,
+    operatorIntent: { brief: result.blueprint.brief, constraints: result.blueprint.operatorConstraints },
+    materializationMode: result.blueprint.materialization.mode,
+    existingFiles: existingFiles.map((file) => ({ path: file.path, hash: file.currentHash ?? sha256(file.content) }))
+  });
+  const packGenerationId = pack?.provenance.generationId ?? pack?.generation?.id ?? null;
+  const planMatches = plan.workspaceBlueprintId === result.blueprint.id
+    && plan.workspaceBlueprintFingerprint === blueprintFingerprint
+    && plan.materializationMode === result.blueprint.materialization.mode
+    && plan.projectIntelligencePackId === (pack?.id ?? null)
+    && plan.projectIntelligenceGenerationId === packGenerationId
+    && plan.inputFingerprint === expectedInputFingerprint;
+  if (plan.status === "blocked" || plan.conflicts.length > 0) return { ...planBase, status: "blocked", provisionable: false, reasonCode: "composition-blocked", requiredAction: "resolve-conflict", message: "The workspace plan contains a blocking conflict." };
+  if (!planMatches) return { ...planBase, status: "plan-rebuild-required", provisionable: false, reasonCode: "composition-mismatch", requiredAction: "rebuild-plan", message: "The workspace plan no longer matches this reviewed blueprint." };
+  return { ...planBase, status: "ready", provisionable: true, reasonCode: "ready", requiredAction: "none", message: "The workspace draft is ready to create." };
+}
+
+async function rebuildWorkspaceCreationComposition(filePath: string, actorId: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies) {
+  if (!isWorkspaceArchitectResult(run.result) || !run.draftContextId) throw new Error("The current workspace draft cannot be rebuilt safely.");
+  const result = run.result;
+  const intelligencePack = await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null);
+  const existingFiles = result.blueprint.materialization.mode === "existing" && "existingPath" in result.blueprint.materialization
+    ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
+    : [];
+  const rebuilt = createDeterministicWorkspaceComposition({
+    projectIntelligence: intelligencePack,
+    blueprint: result.blueprint,
+    operatorIntent: { brief: result.blueprint.brief, constraints: result.blueprint.operatorConstraints },
+    existingFiles,
+    materializationMode: result.blueprint.materialization.mode
+  }, { runId: `${run.runId}:review-repair`, warning: "The canonical workspace plan was rebuilt from the current reviewed draft." });
+  await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: rebuilt.plan });
+  return updateCompositionSnapshot(filePath, run, dependencies, rebuilt);
 }
 
 /**
@@ -447,12 +559,12 @@ export async function listActiveWorkspaceCreationRuns(actorId: string, dependenc
 export async function listResumableWorkspaceCreationRuns(actorId: string, dependencies: WorkspaceCreationRunDependencies = {}) {
   const resolved = resolveDependencies(dependencies);
   const locators = await listWorkspaceCreationRuns(resolved.rootPath, actorId, false);
-  const resumable = locators.filter(({ run }) => ["pending", "running", "review-ready"].includes(run.snapshot.state));
+  const resumable = locators.filter(({ run }) => !run.abandonedAt && ["pending", "running", "review-ready"].includes(run.snapshot.state));
   await Promise.all(resumable
     .filter(({ run }) => run.snapshot.state !== "review-ready")
     .map(({ run }) => ensureCreationRunExecution({ actorId, runId: run.runId }, resolved)));
   return (await listWorkspaceCreationRuns(resolved.rootPath, actorId, false))
-    .filter(({ run }) => ["pending", "running", "review-ready"].includes(run.snapshot.state))
+    .filter(({ run }) => !run.abandonedAt && ["pending", "running", "review-ready"].includes(run.snapshot.state))
     .map(({ run }) => publicRun(run));
 }
 
@@ -542,6 +654,22 @@ export async function cancelWorkspaceCreationRun(input: { actorId: string; runId
   await inFlight.get(locator.filePath)?.catch(() => undefined);
   const completed = await readWorkspaceCreationRunFile(locator.filePath);
   if (completed) return publicRun(completed);
+  return publicRun(next);
+}
+
+/** Abandon a review draft without reusing active-run cancellation semantics. */
+export async function abandonWorkspaceCreationRun(input: { actorId: string; runId: string }, dependencies: WorkspaceCreationRunDependencies = {}) {
+  const resolved = resolveDependencies(dependencies);
+  const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
+  if (!locator) return null;
+  const next = await mutateWorkspaceCreationRun(locator.filePath, (current) => {
+    if (current.abandonedAt) return current;
+    if (current.snapshot.state !== "review-ready") throw new Error("Only a review-ready workspace draft can be abandoned.");
+    if (current.snapshot.provisioningRunId || current.snapshot.provisioningHandoffReady) {
+      throw new Error("This workspace draft has already been handed off for provisioning.");
+    }
+    return { ...current, abandonedAt: resolved.now().toISOString() };
+  });
   return publicRun(next);
 }
 

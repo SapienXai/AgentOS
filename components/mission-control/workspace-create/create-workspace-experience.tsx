@@ -42,6 +42,7 @@ import type {
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
+import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
 import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
 import {
   formatWorkspaceChannelSetup,
@@ -124,6 +125,7 @@ export function CreateWorkspaceExperience({
   const [contextWasRequested, setContextWasRequested] = useState(false);
   const [result, setResult] = useState<WorkspaceArchitectResult | null>(null);
   const [creationRun, setCreationRun] = useState<WorkspaceCreationRun | null>(null);
+  const [reviewReadiness, setReviewReadiness] = useState<WorkspaceCreationReviewReadiness | null>(null);
   const [freshness, setFreshness] = useState<WorkspaceBlueprintFreshnessResult | null>(null);
   const [contextAction, setContextAction] = useState<ContextAction>(null);
   const [sourceDraft, setSourceDraft] = useState<SourceDraft>({ kind: "website", value: "" });
@@ -140,9 +142,13 @@ export function CreateWorkspaceExperience({
   const [provisioningRun, setProvisioningRun] = useState<ProvisioningRun | null>(null);
   const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [basicDraftApproved, setBasicDraftApproved] = useState(false);
+  const [isRebuildingPlan, setIsRebuildingPlan] = useState(false);
+  const [showStartOverConfirmation, setShowStartOverConfirmation] = useState(false);
   const provisioningKeyRef = useRef<string | null>(null);
   const provisioningPollRef = useRef<AbortController | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hasLocalDraftRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -155,43 +161,64 @@ export function CreateWorkspaceExperience({
       failureCategory: creationRun?.snapshot.architect.failure?.code ?? null,
       extraction: creationRun?.snapshot.extraction ?? null,
       intelligence: creationRun?.snapshot.intelligence ?? null,
-      composition: creationRun?.snapshot.composition ?? null
+      composition: creationRun?.snapshot.composition ?? null,
+      readiness: reviewReadiness ?? creationRun?.snapshot.reviewReadiness ?? null
     }) : null),
-    [creationRun, result]
+    [creationRun, result, reviewReadiness]
   );
   const experience = useMemo(() => presentWorkspaceCreationExperience({ run: creationRun, result, provisioningRun, sources }), [creationRun, provisioningRun, result, sources]);
   const isActiveRun = stage === "generating" || stage === "provisioning";
 
+  const resetCreationState = () => {
+    abortControllerRef.current?.abort();
+    provisioningPollRef.current?.abort();
+    setBrief("");
+    setMode("automatic");
+    setConstraints("");
+    setSources([]);
+    setSourceStates({});
+    setUploadGroups([]);
+    setDraftContextId(null);
+    setContextDirty(false);
+    setMaterialization({ mode: "empty" });
+    setStage("intake");
+    setProgressPhase("designing-workspace");
+    setContextWasRequested(false);
+    setResult(null);
+    setCreationRun(null);
+    setReviewReadiness(null);
+    setFreshness(null);
+    setContextAction(null);
+    setSourceDraft({ kind: "website", value: "" });
+    setSourceError(null);
+    setNotice(null);
+    setRevisionValue("");
+    setRevisionError(null);
+    setIsRefreshingProject(false);
+    setIsCustomizing(false);
+    setProvisioningRun(null);
+    setProvisioningError(null);
+    setBasicDraftApproved(false);
+    setIsRebuildingPlan(false);
+    setShowStartOverConfirmation(false);
+    setIsMinimized(false);
+    provisioningKeyRef.current = null;
+    hasLocalDraftRef.current = false;
+  };
+
+  const certifyReview = useCallback(async (runId: string, acceptDraft: boolean) => {
+    const response = await fetch(`/api/workspaces/creation-runs/${runId}/readiness?acceptDraft=${acceptDraft ? "true" : "false"}`);
+    const payload = (await response.json().catch(() => null)) as { run?: WorkspaceCreationRun; readiness?: WorkspaceCreationReviewReadiness; error?: string } | null;
+    if (!response.ok || !payload?.run || !payload.readiness) throw new Error(payload?.error || "AgentOS could not certify the workspace review.");
+    setCreationRun(payload.run);
+    setReviewReadiness(payload.readiness);
+    return payload;
+  }, []);
+
   useEffect(() => {
     if (!open) {
       abortControllerRef.current?.abort();
-      setBrief("");
-      setMode("automatic");
-      setConstraints("");
-      setSources([]);
-      setSourceStates({});
-      setUploadGroups([]);
-      setDraftContextId(null);
-      setContextDirty(false);
-      setMaterialization({ mode: "empty" });
-      setStage("intake");
-      setProgressPhase("designing-workspace");
-      setContextWasRequested(false);
-      setResult(null);
-      setCreationRun(null);
-      setFreshness(null);
-      setContextAction(null);
-      setSourceDraft({ kind: "website", value: "" });
-      setSourceError(null);
-      setNotice(null);
-      setRevisionValue("");
-      setRevisionError(null);
-      setIsRefreshingProject(false);
-      setIsCustomizing(false);
-      setProvisioningRun(null);
-      setProvisioningError(null);
       setIsMinimized(false);
-      provisioningKeyRef.current = null;
       provisioningPollRef.current?.abort();
     }
   }, [open]);
@@ -256,6 +283,7 @@ export function CreateWorkspaceExperience({
       const response = await fetch("/api/workspaces/creation-runs", { method: "POST", body: formData, signal: controller.signal });
       const initial = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
       if (!response.ok || !initial?.runId) throw new Error(initial?.error || "AgentOS could not start workspace creation.");
+      hasLocalDraftRef.current = true;
       setCreationRun(initial);
       setDraftContextId(initial.draftContextId);
       await pollCreationRun(initial.runId, controller, initial, sources);
@@ -296,6 +324,7 @@ export function CreateWorkspaceExperience({
       const payload = (await response.json().catch(() => null)) as WorkspaceCreationRun & { error?: string } | null;
       if (!response.ok || !payload?.runId) throw new Error(payload?.error || "AgentOS could not read workspace creation progress.");
       setCreationRun(payload);
+      if (payload.snapshot.reviewReadiness) setReviewReadiness(payload.snapshot.reviewReadiness);
       afterSequence = payload.events.at(-1)?.sequence ?? afterSequence;
       const activeStage = payload.snapshot.stage;
       setProgressPhase(activeStage === "context-staging" || activeStage === "source-ingestion" ? "reading-context" : activeStage === "review-preparation" ? "preparing-review" : "designing-workspace");
@@ -334,7 +363,7 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || hasLocalDraftRef.current) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -350,6 +379,8 @@ export function CreateWorkspaceExperience({
         setDraftContextId(activeRun.draftContextId);
         setMaterialization(activeRun.input.materialization as WorkspaceMaterialization);
         setCreationRun(activeRun);
+        hasLocalDraftRef.current = true;
+        if (activeRun.snapshot.reviewReadiness) setReviewReadiness(activeRun.snapshot.reviewReadiness);
         setStage("generating");
         setContextWasRequested(recoveredSources.length > 0);
         abortControllerRef.current = controller;
@@ -433,6 +464,8 @@ export function CreateWorkspaceExperience({
       setCreationRun(payload);
       setResult(revised);
       setFreshness(revised.freshness);
+      setReviewReadiness(null);
+      setBasicDraftApproved(false);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
@@ -475,6 +508,8 @@ export function CreateWorkspaceExperience({
       setCreationRun(payload);
       setResult(revised);
       setFreshness(revised.freshness);
+      setReviewReadiness(null);
+      setBasicDraftApproved(false);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;

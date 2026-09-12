@@ -53,6 +53,7 @@ export async function createWorkspaceCreationRunAtomically(
     events: [],
     oldestRetainedSequence: 1,
     cancelRequestedAt: null,
+    abandonedAt: null,
     remoteExecution: {
       idempotencyKey: `${sha256(storageKey)}:${input.attempt}`,
       runId: null,
@@ -110,6 +111,7 @@ function migrateLegacyCreationRun(value: unknown): unknown {
   if (!isRecord(value)) return value;
   return {
     ...value,
+    abandonedAt: "abandonedAt" in value ? value.abandonedAt : null,
     snapshot: migrateLegacySnapshot(value.snapshot),
     intelligenceExecution: isRecord(value.intelligenceExecution) ? value.intelligenceExecution : {
       idempotencyKey: isRecord(value.remoteExecution) && typeof value.remoteExecution.idempotencyKey === "string"
@@ -264,6 +266,7 @@ function preserveMonotonicRunState(current: WorkspaceCreationRun, next: Workspac
     remoteExecution: remote,
     intelligenceExecution,
     compositionExecution,
+    abandonedAt: current.abandonedAt ?? next.abandonedAt ?? null,
     events: nextSequence >= latestSequence ? next.events : current.events,
     oldestRetainedSequence: nextSequence >= latestSequence ? next.oldestRetainedSequence : current.oldestRetainedSequence,
     updatedAt: nextSequence >= latestSequence ? next.updatedAt : current.updatedAt

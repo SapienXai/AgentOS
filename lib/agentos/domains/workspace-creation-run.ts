@@ -1,3 +1,8 @@
+import {
+  validateWorkspaceCreationReviewReadiness,
+  type WorkspaceCreationReviewReadiness
+} from "@/lib/agentos/domains/workspace-creation-review";
+
 export const WORKSPACE_CREATION_RUN_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_CREATION_EVENT_SCHEMA_VERSION = 1 as const;
 export const WORKSPACE_CREATION_MAX_EVENTS = 256 as const;
@@ -247,6 +252,7 @@ export type WorkspaceCreationSnapshot = {
   revision?: WorkspaceCreationRevisionSnapshot;
   freshness?: WorkspaceCreationFreshnessSnapshot;
   drift?: WorkspaceCreationDriftSummary;
+  reviewReadiness?: WorkspaceCreationReviewReadiness;
 };
 
 export type WorkspaceCreationRevisionSnapshot = {
@@ -314,6 +320,7 @@ export type WorkspaceCreationRun = {
   events: WorkspaceCreationEvent[];
   oldestRetainedSequence: number;
   cancelRequestedAt: string | null;
+  abandonedAt?: string | null;
   remoteExecution: {
     idempotencyKey: string;
     runId: string | null;
@@ -428,7 +435,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
   const intelligenceExecution = candidate.intelligenceExecution;
   const compositionExecution = candidate.compositionExecution;
   return candidate.schemaVersion === WORKSPACE_CREATION_RUN_SCHEMA_VERSION
-    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "remoteExecution", "intelligenceExecution", "compositionExecution", "lineage"])
+    && hasOnlyKeys(candidate, ["schemaVersion", "runId", "actorHash", "idempotencyKeyHash", "createdAt", "updatedAt", "attempt", "input", "inputFingerprint", "draftContextId", "snapshot", "result", "events", "oldestRetainedSequence", "cancelRequestedAt", "abandonedAt", "remoteExecution", "intelligenceExecution", "compositionExecution", "lineage"])
     && typeof candidate.runId === "string"
     && typeof candidate.actorHash === "string"
     && typeof candidate.idempotencyKeyHash === "string"
@@ -451,6 +458,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && (candidate.oldestRetainedSequence as number) > 0
     && (candidate.draftContextId === null || typeof candidate.draftContextId === "string")
     && (candidate.cancelRequestedAt === null || typeof candidate.cancelRequestedAt === "string")
+    && (candidate.abandonedAt === undefined || candidate.abandonedAt === null || typeof candidate.abandonedAt === "string")
     && typeof remote === "object"
     && remote !== null
     && hasOnlyKeys(remote as Record<string, unknown>, ["idempotencyKey", "runId", "sessionKey", "outcome"])
@@ -469,7 +477,7 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
   const context = snapshot.context;
   const architect = snapshot.architect;
   const intelligence = snapshot.intelligence;
-  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId", "revision", "freshness", "drift"])
+  return hasOnlyKeys(snapshot, ["state", "stage", "context", "extraction", "intelligence", "architect", "composition", "elapsedMs", "cancelRequested", "provisioningHandoffReady", "provisioningRunId", "revision", "freshness", "drift", "reviewReadiness"])
     && typeof snapshot.state === "string"
     && workspaceCreationStates.includes(snapshot.state as WorkspaceCreationState)
     && (snapshot.stage === null || workspaceCreationStages.includes(snapshot.stage as WorkspaceCreationStage))
@@ -485,7 +493,8 @@ function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCr
     && (snapshot.composition === undefined || validateWorkspaceCreationCompositionSnapshot(snapshot.composition))
     && (snapshot.revision === undefined || validateWorkspaceCreationRevisionSnapshot(snapshot.revision))
     && (snapshot.freshness === undefined || validateWorkspaceCreationFreshnessSnapshot(snapshot.freshness))
-    && (snapshot.drift === undefined || validateWorkspaceCreationDriftSummary(snapshot.drift));
+    && (snapshot.drift === undefined || validateWorkspaceCreationDriftSummary(snapshot.drift))
+    && (snapshot.reviewReadiness === undefined || validateWorkspaceCreationReviewReadiness(snapshot.reviewReadiness));
 }
 
 function validateWorkspaceCreationRevisionSnapshot(value: unknown): value is WorkspaceCreationRevisionSnapshot {
