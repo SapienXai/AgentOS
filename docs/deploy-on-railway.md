@@ -1,10 +1,18 @@
 # Deploy AgentOS on Railway
 
-The Railway deployment runs AgentOS and OpenClaw `2026.9.3` in the public
+The Railway deployment runs AgentOS and OpenClaw `2026.9.4` in the public
 application service and runs interactive Chromium in a separate private browser
 worker service. OpenClaw remains the runtime and source of truth; AgentOS
 connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS is
 exposed through Railway's HTTPS domain.
+
+The image is pinned to the official OpenClaw `2026.9.4` multi-architecture
+index `sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101`.
+Railway selects the platform-specific manifest at deployment time; the
+verified manifests are `linux/amd64`
+(`sha256:6bc0bf3117e1c5074db8a064084a5f9d41ece1aa2a16369a82f53207b846a5c3`)
+and `linux/arm64`
+(`sha256:3608b6f29352a7948bf0e868a1e3c78d9f9c92e55e5bb50b3b6b11cf1c58c5ad`).
 
 ## What the template creates
 
@@ -212,7 +220,10 @@ process-group crash recovery, profile reuse, and revoke cleanup. It does not
 prove compatibility with a third-party website and does not use real login
 credentials.
 
-OpenClaw is pinned in `Dockerfile.railway`. Upgrade it only together with AgentOS compatibility checks and update the pin, recommended version, and deployment documentation in the same change.
+OpenClaw is pinned in `Dockerfile.railway`. The current pin is the exact
+`2026.9.4` multi-architecture index recorded above. Upgrade it only together
+with AgentOS compatibility checks and update the pin, recommended version, and
+deployment documentation in the same change.
 
 ## Published one-click template
 

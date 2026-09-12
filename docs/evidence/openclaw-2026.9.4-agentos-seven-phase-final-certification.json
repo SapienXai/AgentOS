@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.4-final-certification",
+  "phase": "phase-1-release-contract-alignment",
+  "generatedAt": "2026-09-12T17:40:21Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosCodeHead": "56196feeceae9f31b4949608c4fdadc3a32e9d76",
+    "branch": "codex/auto-dev",
+    "node": "v24.20.0",
+    "openClaw": {
+      "version": "2026.9.4",
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "packageHash": "2863452d8d2c2d302c3462af3f90e41b401708efdcbbbf81d723e73dd8ac67cf",
+      "gatewayProtocol": 4,
+      "stateSchema": 17,
+      "agentSchema": 19,
+      "gatewayClient": "2026.9.4",
+      "gatewayProtocolPackage": "2026.9.4"
+    },
+    "expectedOpenClaw": {
+      "tag": "v2026.9.4",
+      "signedTagObject": "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e",
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "gatewayProtocol": 4,
+      "stateSchema": 17,
+      "agentSchema": 19
+    },
+    "supportedBaseline": "2026.9.1",
+    "agentosContract": {
+      "recommendedVersion": "2026.9.4",
+      "nativeContractVersion": "2026.9.4",
+      "identityContractVersion": "2026.9.4",
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      "gatewayProtocol": 4,
+      "stateSchema": 17,
+      "agentSchema": 19
+    }
+  },
+  "matrix": {
+    "contract-diff": {
+      "path": "docs/evidence/openclaw-2026.9.4-agentos-seven-phase-contract-diff.json",
+      "status": "PASS",
+      "checks": [
+        "exact package identity and npm integrity",
+        "signed tag and peeled commit identity",
+        "Gateway protocol v4",
+        "state schema 16 -> 17",
+        "agent schema 19",
+        "additive method and definition inventory"
+      ]
+    },
+    "migration": {
+      "status": "PASS",
+      "runtimeMode": "isolated disposable packages, state, HOME, config, workspace, and loopback ports",
+      "checks": {
+        "exactSourcePackage": true,
+        "exactTargetPackage": true,
+        "sourceRuntime93": true,
+        "targetRuntime94": true,
+        "stateSchema16To17": true,
+        "agentSchema19": true,
+        "gatewayReconnect": true,
+        "representativeStatePreserved": true,
+        "securityPolicyPreserved": true,
+        "nativeSurfacesReadable": true,
+        "recoveryIdempotent": true,
+        "noProductionMutation": true
+      },
+      "committedEvidence": "Included in this current phase aggregate; historical migration evidence was not overwritten."
+    },
+    "runtime": {
+      "path": "docs/evidence/openclaw-2026.9.4-agentos-seven-phase-runtime-certification.json",
+      "status": "PASS",
+      "passed": 60,
+      "failed": 0,
+      "skipped": 12,
+      "expectedDenials": 13,
+      "unknown": 0,
+      "requiredFailures": 0,
+      "migrationReady": true
+    },
+    "doctor-update-recovery": {
+      "path": "docs/evidence/openclaw-2026.9.4-agentos-seven-phase-doctor-update-recovery.json",
+      "status": "PASS",
+      "nativeTransport": true,
+      "exactScopes": true,
+      "noCliFallback": true,
+      "updateRun": "SKIPPED: native mutation intentionally not executed",
+      "restartRequest": "SKIPPED: disposable Gateway termination intentionally not executed",
+      "realInstallationUpdated": false,
+      "userGatewayTouched": false
+    },
+    "railway-image-architecture": {
+      "status": "PASS",
+      "image": "ghcr.io/openclaw/openclaw:2026.9.4",
+      "indexDigest": "sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101",
+      "linuxAmd64Manifest": "sha256:6bc0bf3117e1c5074db8a064084a5f9d41ece1aa2a16369a82f53207b846a5c3",
+      "linuxArm64Manifest": "sha256:3608b6f29352a7948bf0e868a1e3c78d9f9c92e55e5bb50b3b6b11cf1c58c5ad"
+    }
+  },
+  "classification": {
+    "pass": 5,
+    "fail": 0,
+    "skipped": 12,
+    "environmentLimited": 0,
+    "expectedAuthorizationDenials": 13,
+    "productionGatewayTouched": false,
+    "railwayMutated": false,
+    "realCredentialsAccessed": false
+  },
+  "historicalEvidence": {
+    "preserved": true,
+    "note": "Existing 9.4 evidence retains older AgentOS provenance and was not overwritten."
+  },
+  "promotion": {
+    "recommendedVersion": "2026.9.4",
+    "nativeContractVersion": "2026.9.4",
+    "supportedBaseline": "2026.9.1",
+    "railwayImagePin": "PROMOTE",
+    "decision": "PROMOTE"
+  },
+  "failures": [],
+  "success": true
+}
