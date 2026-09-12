@@ -1,3 +1,4 @@
+import type { WorkspaceCreationDepth } from "@/lib/agentos/domains/workspace-creation-policy";
 import { createHash } from "node:crypto";
 
 import { redactSecretText } from "@/lib/security/redaction";
@@ -17,7 +18,10 @@ export const workspaceCompositionArtifactIds = [
   "workspace-memory",
   "project-profile",
   "project-architecture",
-  "official-resources"
+  "official-resources",
+  "context-project",
+  "context-resources",
+  "context-workflows"
 ] as const;
 export type WorkspaceCompositionArtifactId = (typeof workspaceCompositionArtifactIds)[number];
 
@@ -29,7 +33,10 @@ export const WORKSPACE_COMPOSITION_ARTIFACT_PATHS: Record<WorkspaceCompositionAr
   "workspace-memory": "MEMORY.md",
   "project-profile": "docs/project-profile.md",
   "project-architecture": "docs/workspace-architecture.md",
-  "official-resources": "docs/official-resources.md"
+  "official-resources": "docs/official-resources.md",
+  "context-project": "context/PROJECT.md",
+  "context-resources": "context/RESOURCES.md",
+  "context-workflows": "context/WORKFLOWS.md"
 };
 
 export type WorkspaceCompositionSourceRefs = {
@@ -69,6 +76,7 @@ export type WorkspaceCompositionArtifact = WorkspaceCompositionProposalArtifact 
 };
 
 export type WorkspaceCompositionPlan = {
+  profile?: WorkspaceCreationDepth;
   schemaVersion: typeof WORKSPACE_COMPOSITION_SCHEMA_VERSION;
   policyVersion: typeof WORKSPACE_COMPOSITION_POLICY_VERSION;
   planId: string;
@@ -156,8 +164,9 @@ export function normalizeWorkspaceCompositionProposal(value: unknown): Workspace
 
 export function validateWorkspaceCompositionPlan(value: unknown): value is WorkspaceCompositionPlan {
   if (!isRecord(value) || Object.keys(value).some((key) => ![
-    "schemaVersion", "policyVersion", "planId", "inputFingerprint", "status", "projectIntelligencePackId", "projectIntelligenceGenerationId", "workspaceBlueprintId", "workspaceBlueprintFingerprint", "materializationMode", "existingFileHashes", "artifacts", "warnings", "conflicts", "provenance"
+    "profile", "schemaVersion", "policyVersion", "planId", "inputFingerprint", "status", "projectIntelligencePackId", "projectIntelligenceGenerationId", "workspaceBlueprintId", "workspaceBlueprintFingerprint", "materializationMode", "existingFileHashes", "artifacts", "warnings", "conflicts", "provenance"
   ].includes(key))) return false;
+  if (value.profile !== undefined && !["fast", "medium", "high"].includes(String(value.profile))) return false;
   if (value.schemaVersion !== WORKSPACE_COMPOSITION_SCHEMA_VERSION || value.policyVersion !== WORKSPACE_COMPOSITION_POLICY_VERSION) return false;
   if (typeof value.planId !== "string" || value.planId.length === 0 || value.planId.length > 160 || typeof value.inputFingerprint !== "string" || !/^[a-f0-9]{64}$/i.test(value.inputFingerprint)) return false;
   if ((typeof value.projectIntelligencePackId !== "string" && value.projectIntelligencePackId !== null) || (typeof value.projectIntelligenceGenerationId !== "string" && value.projectIntelligenceGenerationId !== null)) return false;

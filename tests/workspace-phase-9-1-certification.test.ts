@@ -379,7 +379,7 @@ test("production certification covers creation, immutable refresh, live binding 
   const actorId = "coincollect-certification-actor";
   const harness = createCertificationHarness(rootPath);
   try {
-    const initial = await startWorkspaceCreationRun({ actorId, idempotencyKey: "coincollect-create", brief: "Manage CoinCollect and operate the project as autonomously as possible.", sources: [source] }, harness.creationDependencies);
+    const initial = await startWorkspaceCreationRun({ actorId, idempotencyKey: "coincollect-create", profile: "high", brief: "Manage CoinCollect and operate the project as autonomously as possible.", sources: [source] }, harness.creationDependencies);
     const initialReview = await waitForReview(actorId, initial.runId, harness.creationDependencies);
     assert.equal(initialReview.snapshot.state, "review-ready");
     assert.equal(initialReview.snapshot.architect.status, "model");
@@ -395,11 +395,11 @@ test("production certification covers creation, immutable refresh, live binding 
     assert.equal(initialBlueprint.operations.channels.length, 0, "public social resources must not become active channels");
 
     const firstProvision = await waitForWorkspaceProvisioning({ actorId, blueprint: initialBlueprint, draftContextId: initialReview.draftContextId, expectedKnowledgeGenerationId: initialBlueprint.knowledge.generationId, idempotencyKey: "coincollect-provision-1", acceptDraft: true, compositionPlan: initialPlan, compositionPlanId: initialPlan.planId, compositionPlanFingerprint: initialPlan.inputFingerprint }, harness.provisioningDependencies);
-    assert.equal(firstProvision.state, "ready");
+    assert.equal(firstProvision.state, "ready", JSON.stringify({ warnings: firstProvision.warnings, error: firstProvision.error }));
     assert.ok(firstProvision.result?.workspacePath);
     await attachWorkspaceProvisioningRun({ actorId, runId: initialReview.runId, provisioningRunId: firstProvision.runId }, harness.creationDependencies);
     const workspacePath = firstProvision.result!.workspacePath;
-    const profilePath = path.join(workspacePath, "docs", "project-profile.md");
+    const profilePath = path.join(workspacePath, "context", "PROJECT.md");
     const beforeRefresh = await readFile(profilePath, "utf8");
     await writeFile(profilePath, `${beforeRefresh}\nOperator note: preserve this line.\n`);
     const acceptedParent = await getWorkspaceCreationRun({ actorId, runId: initialReview.runId }, harness.creationDependencies);

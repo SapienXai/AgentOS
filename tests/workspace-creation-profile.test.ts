@@ -116,7 +116,7 @@ test("post-create enrichment is one immutable Deep child of a Quick run", async 
     ]);
     assert.ok(first?.runId);
     assert.equal(second?.runId, first?.runId);
-    assert.equal(first?.input.profile, "deep");
+    assert.equal(first?.input.profile, "high");
     assert.equal(first?.input.trigger, "post-create-enrichment");
     assert.equal(first?.lineage?.parentRunId, parent.run.runId);
     assert.equal(first?.lineage?.trigger, "post-create-enrichment");

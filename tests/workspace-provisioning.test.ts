@@ -76,7 +76,8 @@ test("Create Workspace follows the real provisioning run and exposes live signal
 
   assert.match(source, /type CreateStage = "intake" \| "generating" \| "review" \| "provisioning"/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
-  assert.match(source, /Live provisioning signals/);
+  assert.match(source, /CreationProgressView/);
+  assert.doesNotMatch(source, /Live provisioning signals/);
   assert.match(source, /while \(!isProvisioningTerminal\(current\.state\)\)/);
   assert.match(source, /Open Workspace/);
   assert.match(source, /Retry provisioning/);

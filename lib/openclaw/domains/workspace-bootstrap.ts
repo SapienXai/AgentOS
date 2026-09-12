@@ -632,6 +632,7 @@ export async function scaffoldWorkspaceContents(
         modelProfile: options.modelProfile,
         agentTemplate: options.teamPreset === "solo" ? "solo" : "core-team",
         rules: {
+          ...(options.rules.compositionManaged ? { compositionManaged: true } : {}),
           workspaceOnly: options.rules.workspaceOnly,
           generateStarterDocs: options.rules.generateStarterDocs,
           generateMemory: options.rules.generateMemory,

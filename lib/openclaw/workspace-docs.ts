@@ -481,6 +481,8 @@ function buildWorkspaceScaffoldDocumentSpecs(
     },
   ];
 
+  if (rules.compositionManaged) return specs.filter((spec) => ["AGENTS.md", "SOUL.md", "IDENTITY.md"].includes(spec.path));
+
   if (rules.generateMemory) {
     specs.push(
       {

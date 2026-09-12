@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       draftContextId: certified?.run.draftContextId ?? parsed.draftContextId ?? null,
       expectedKnowledgeGenerationId: canonicalResult?.freshness?.currentGenerationId ?? parsed.expectedKnowledgeGenerationId ?? null,
       idempotencyKey: certified?.idempotencyKey ?? parsed.idempotencyKey,
-      acceptDraft: parsed.acceptDraft || certified?.run.input.profile === "quick",
+      acceptDraft: parsed.acceptDraft || Boolean(certified && ["quick", "fast", "medium"].includes(certified.run.input.profile ?? "")),
       compositionPlan: undefined,
       compositionPlanId: certified?.readiness.planId ?? parsed.compositionPlanId ?? null,
       compositionPlanFingerprint: certified?.readiness.planFingerprint ?? parsed.compositionPlanFingerprint ?? null,

@@ -1,6 +1,7 @@
 import type { WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun, WorkspaceCreationStage } from "@/lib/agentos/domains/workspace-creation-run";
 import { presentWorkspaceCreationDiscovery, type WorkspaceCreationDiscoveryProjection } from "@/lib/agentos/domains/workspace-creation-discovery";
+import { normalizeWorkspaceCreationProfile } from "@/lib/agentos/domains/workspace-creation-policy";
 import type { WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 
 export type WorkspaceCreationExperienceStage = "input" | "analyzing" | "review" | "provisioning" | "complete" | "error";
@@ -67,7 +68,7 @@ export function presentWorkspaceCreationExperience(input: {
     };
   });
   const snapshot = run?.snapshot;
-  const quickProfile = run?.input?.profile === "quick";
+  const boundedProfile = normalizeWorkspaceCreationProfile(run?.input?.profile) !== "high";
   const discovery = run ? presentWorkspaceCreationDiscovery(run) : {
     signals: [],
     aggregate: { pages: 0, documents: 0, facts: 0, resources: 0, conflicts: 0 },
@@ -89,9 +90,9 @@ export function presentWorkspaceCreationExperience(input: {
             : "input";
   const attentionItems = [
     snapshot?.context.status === "partial" ? "Architecture generated from partial project context." : null,
-    !quickProfile && snapshot?.intelligence.status === "fallback" ? "AI project intelligence was unavailable; extracted evidence was preserved." : null,
-    !quickProfile && snapshot?.architect.status === "fallback" ? "AI architecture was unavailable; a minimal fallback draft was created." : null,
-    !quickProfile && snapshot?.composition?.status === "fallback" ? "Workspace documents use a deterministic safe fallback." : null,
+    !boundedProfile && snapshot?.intelligence.status === "fallback" ? "AI project intelligence was unavailable; extracted evidence was preserved." : null,
+    !boundedProfile && snapshot?.architect.status === "fallback" ? "AI architecture was unavailable; a minimal fallback draft was created." : null,
+    !boundedProfile && snapshot?.composition?.status === "fallback" ? "Workspace documents use a deterministic safe fallback." : null,
     snapshot?.composition && snapshot.composition.conflictCount > 0 ? `${snapshot.composition.conflictCount} workspace document conflict${snapshot.composition.conflictCount === 1 ? "" : "s"} need attention.` : null,
     provisioningRun?.state === "partial" ? "The workspace is usable, with setup still pending." : null,
     provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" ? provisioningRun.error?.message ?? "The workspace could not be completed." : null

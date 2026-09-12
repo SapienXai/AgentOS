@@ -1,4 +1,5 @@
 import "server-only";
+import { WORKSPACE_CREATION_FILES, type WorkspaceCreationDepth } from "@/lib/agentos/domains/workspace-creation-policy";
 
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -45,6 +46,7 @@ export type WorkspaceCompositionExistingFile = {
 };
 
 export type WorkspaceComposerInput = {
+  profile?: WorkspaceCreationDepth;
   projectIntelligence?: ProjectIntelligencePack | null;
   blueprint: WorkspaceBlueprint;
   operatorIntent: { brief: string; constraints: readonly string[] };
@@ -78,6 +80,7 @@ export async function composeWorkspaceComposition(input: WorkspaceComposerInput,
   const materializationMode = input.materializationMode ?? input.blueprint.materialization.mode;
   const fingerprint = createWorkspaceCompositionInputFingerprint({
     policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
+    ...(input.profile ? { profile: input.profile } : {}),
     packId: input.projectIntelligence?.id ?? null,
     blueprint: input.blueprint,
     operatorIntent: input.operatorIntent,
@@ -159,6 +162,7 @@ export function createDeterministicWorkspaceComposition(input: WorkspaceComposer
   const materializationMode = input.materializationMode ?? input.blueprint.materialization.mode;
   const inputFingerprint = createWorkspaceCompositionInputFingerprint({
     policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
+    ...(input.profile ? { profile: input.profile } : {}),
     packId: input.projectIntelligence?.id ?? null,
     blueprint: input.blueprint,
     operatorIntent: input.operatorIntent,
@@ -195,7 +199,8 @@ function buildWorkspaceCompositionPlan(
     failure: { code: string; message: string } | null;
   }
 ): WorkspaceCompositionPlan {
-  const artifacts = materializePlanArtifacts(options.proposal, existing);
+  const proposal = scopeCompositionProposal(input, options.proposal);
+  const artifacts = materializePlanArtifacts(proposal, existing);
   const conflicts = artifacts
     .filter((artifact) => artifact.operation === "conflict")
     .map((artifact) => `${artifact.artifactId}: ${artifact.warnings[0] ?? "Existing workspace content requires review."}`)
@@ -207,6 +212,7 @@ function buildWorkspaceCompositionPlan(
   return {
     schemaVersion: WORKSPACE_COMPOSITION_SCHEMA_VERSION,
     policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION,
+    ...(input.profile ? { profile: input.profile } : {}),
     planId: `composition-${options.runId}`,
     inputFingerprint: options.inputFingerprint,
     status: conflicts.length > 0 ? "blocked" : options.modelExecutionOccurred && options.failure === null ? "ready" : "fallback",
@@ -310,6 +316,35 @@ function createFallbackProposal(input: WorkspaceComposerInput): WorkspaceComposi
   ];
   if (pack?.officialResources.length) artifacts.push({ artifactId: "official-resources", title: "Official resources", sections: ["Resources"], body: `# Official Resources\n\n${pack.officialResources.slice(0, 16).map((resource) => `- ${resource.label}: ${resource.locator.value}`).join("\n")}\n`, sourceRefs: refs, blueprintRefs: [] });
   return { schemaVersion: WORKSPACE_COMPOSITION_SCHEMA_VERSION, policyVersion: WORKSPACE_COMPOSITION_POLICY_VERSION, artifacts, warnings: [] };
+}
+
+/** Complete missing required content from canonical evidence, then restrict output to the chosen depth. */
+function scopeCompositionProposal(input: WorkspaceComposerInput, proposal: WorkspaceCompositionProposal): WorkspaceCompositionProposal {
+  if (!input.profile) return proposal;
+  const fallback = createFallbackProposal(input);
+  const base = new Map(fallback.artifacts.map((artifact) => [artifact.artifactId, artifact]));
+  for (const artifact of proposal.artifacts) base.set(artifact.artifactId, artifact);
+  const refs = { factIds: [], resourceIds: [], evidenceRefIds: [] };
+  base.set("workspace-user", base.get("workspace-user") ?? {
+    artifactId: "workspace-user", title: "Operator preferences", sections: ["Preferences"],
+    body: "# Operator preferences\n\n" + (input.operatorIntent.constraints.length ? input.operatorIntent.constraints.map((item) => "- " + item).join("\n") : "No operator preferences have been supplied. Ask before assuming personal preferences.") + "\n",
+    sourceRefs: refs, blueprintRefs: []
+  });
+  const project = base.get("project-profile")!;
+  base.set("context-project", base.get("context-project") ?? { ...project, artifactId: "context-project" });
+  const resources = base.get("official-resources");
+  base.set("context-resources", base.get("context-resources") ?? {
+    artifactId: "context-resources", title: "Resources", sections: ["Resources"],
+    body: resources?.body ?? "# Resources\n\nNo official resources have been verified yet.\n",
+    sourceRefs: resources?.sourceRefs ?? refs, blueprintRefs: []
+  });
+  base.set("context-workflows", base.get("context-workflows") ?? {
+    artifactId: "context-workflows", title: "Workflows", sections: ["Responsibilities", "Workflows", "Approvals"],
+    body: "# Workflows\n\n## Responsibilities\n" + input.blueprint.workforce.primaryAgent.name + " coordinates this workspace.\n\n## Workflows\n" + input.blueprint.operations.workflows.map((workflow) => "- " + workflow.name).join("\n") + "\n\n## Approvals\nConfirm external actions and changes to operator-controlled content before applying them.\n",
+    sourceRefs: refs, blueprintRefs: input.blueprint.operations.workflows.map((workflow) => workflow.id)
+  });
+  const paths: readonly string[] = WORKSPACE_CREATION_FILES[input.profile];
+  return { ...proposal, artifacts: [...base.values()].filter((artifact) => paths.includes(WORKSPACE_COMPOSITION_ARTIFACT_PATHS[artifact.artifactId])) };
 }
 
 function materializePlanArtifacts(proposal: WorkspaceCompositionProposal, existing: readonly WorkspaceCompositionExistingFile[]): WorkspaceCompositionArtifact[] {
@@ -452,6 +487,7 @@ async function withDeadline<T>(run: (signal: AbortSignal) => Promise<T>, timeout
 
 function buildComposerPrompt(input: WorkspaceComposerInput, existing: readonly WorkspaceCompositionExistingFile[], repair: boolean) {
   return JSON.stringify({
+    requiredFiles: input.profile ? WORKSPACE_CREATION_FILES[input.profile] : undefined,
     operatorIntent: input.operatorIntent,
     projectIntelligence: input.projectIntelligence ? {
       id: input.projectIntelligence.id,

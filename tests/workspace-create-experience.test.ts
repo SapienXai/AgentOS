@@ -157,6 +157,7 @@ test("channel setup copy distinguishes WhatsApp QR sessions from token channels"
 test("creation experience presenter uses friendly stages and preserves structured attention", () => {
   const run = {
     runId: "run-presenter",
+    input: { profile: "high", sources: [] },
     snapshot: {
       ...createInitialWorkspaceCreationSnapshot(1),
       state: "review-ready" as const,
@@ -344,7 +345,8 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /Project context/);
   assert.match(source, /Included from your project/);
   assert.match(source, /workspace-architect-chip-enter/);
-  assert.match(source, /PikoLoader/);
+  assert.doesNotMatch(source, /PikoLoader/);
+  assert.match(source, /CreationProgressView/);
   assert.match(source, /Minimize workspace creation/);
   assert.match(activitySource, /Reopen workspace creation/);
   assert.match(activitySource, /creation-runs\/\$\{encodeURIComponent\(minimizedRunId\)\}/);
@@ -356,12 +358,12 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /readWorkspaceCreationMinimizedRunId/);
   assert.match(source, /onOutsideInteraction/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
-  assert.match(source, /Live provisioning signals/);
+  assert.doesNotMatch(source, /Live provisioning signals/);
   assert.match(source, /Open Workspace/);
   assert.match(source, />Minimize</);
   assert.match(source, /canProvisionBlueprint/);
-  assert.match(source, /setProgressPhase\(shouldStageContext \? "reading-context" : "designing-workspace"\)/);
-  assert.match(source, /activeStage === "review-preparation"/);
+  assert.doesNotMatch(source, /setProgressPhase/);
+  assert.doesNotMatch(source, /activeStage === "review-preparation"/);
   assert.match(source, /Architecture generated from partial project context/);
   assert.match(source, /Workspace plan needs to be rebuilt/);
   assert.match(source, /Start over/);

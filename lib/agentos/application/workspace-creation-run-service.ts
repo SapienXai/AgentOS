@@ -68,6 +68,7 @@ import {
   normalizeWorkspaceCreationTrigger,
   resolveWorkspaceCreationPolicy,
   type WorkspaceCreationExecutionBudget,
+  type WorkspaceCreationDepth,
   type WorkspaceCreationProfile,
   type WorkspaceCreationTrigger
 } from "@/lib/agentos/domains/workspace-creation-policy";
@@ -414,7 +415,7 @@ async function evaluateWorkspaceCreationReviewReadiness(run: WorkspaceCreationRu
   const blueprintValidation = validateWorkspaceBlueprint(result.blueprint);
   if (!blueprintValidation.valid) return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "blueprint-invalid", requiredAction: "retry-design", message: "The workspace blueprint needs to be regenerated before it can be created." };
   if (result.blueprint.status === "blocked") return { ...base, status: "blocked", provisionable: false, reasonCode: "blueprint-blocked", requiredAction: "resolve-conflict", message: "The workspace blueprint contains a blocking issue." };
-  const quickDraftIsSafe = run.input.profile === "quick";
+  const quickDraftIsSafe = normalizeWorkspaceCreationProfile(run.input.profile) !== "high";
   if ((result.blueprint.status === "draft" || result.reasoning.status === "fallback") && !acceptDraft && !quickDraftIsSafe) {
     return { ...base, status: "design-incomplete", provisionable: false, reasonCode: "draft-acceptance-required", requiredAction: "accept-draft", message: "Use the basic draft explicitly before creating this workspace." };
   }
@@ -432,6 +433,7 @@ async function evaluateWorkspaceCreationReviewReadiness(run: WorkspaceCreationRu
     : [];
   const expectedInputFingerprint = createWorkspaceCompositionInputFingerprint({
     policyVersion: plan.policyVersion,
+    ...(plan.profile ? { profile: plan.profile } : {}),
     packId: pack?.id ?? null,
     blueprint: result.blueprint,
     operatorIntent: { brief: result.blueprint.brief, constraints: result.blueprint.operatorConstraints },
@@ -458,6 +460,7 @@ async function rebuildWorkspaceCreationComposition(filePath: string, actorId: st
     ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
     : [];
   const rebuilt = createDeterministicWorkspaceComposition({
+    profile: managedCompositionProfile(run),
     projectIntelligence: intelligencePack,
     blueprint: result.blueprint,
     operatorIntent: { brief: result.blueprint.brief, constraints: result.blueprint.operatorConstraints },
@@ -712,7 +715,7 @@ export async function refreshWorkspaceCreationRun(
   }, refreshedDependencies);
 }
 
-/** Start one durable child analysis after a Quick workspace is provisioned. */
+/** Start one durable child analysis after a Fast or Medium workspace is provisioned. */
 export async function startWorkspacePostCreateEnrichment(
   input: { actorId: string; parentRunId: string },
   dependencies: WorkspaceCreationRunDependencies = {}
@@ -721,12 +724,12 @@ export async function startWorkspacePostCreateEnrichment(
   const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.parentRunId.trim());
   if (!locator) return null;
   const parent = locator.run;
-  if (parent.snapshot.state !== "review-ready" || parent.input.profile !== "quick" || parent.input.continueLearningAfterCreation === false) return null;
+  if (parent.snapshot.state !== "review-ready" || normalizeWorkspaceCreationProfile(parent.input.profile) === "high" || parent.input.continueLearningAfterCreation === false) return null;
   return refreshWorkspaceCreationRun({
     actorId: input.actorId,
     runId: parent.runId,
     refreshIntent: "post-create-enrichment:v1",
-    profileOverride: "deep",
+    profileOverride: "high",
     trigger: "post-create-enrichment"
   }, dependencies);
 }
@@ -1054,6 +1057,7 @@ async function completeWorkspaceComposition(
     ? await dependencies.inspectCompositionFiles(result.blueprint.materialization.existingPath)
     : [];
   const compositionInput = {
+    profile: managedCompositionProfile(run),
     projectIntelligence: intelligencePack,
     blueprint: result.blueprint,
     operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
@@ -1105,8 +1109,8 @@ async function completeWorkspaceComposition(
   if (!canUseModel) {
     const fallback = createDeterministicWorkspaceComposition(compositionInput, {
       runId: compositionRunId(run, compositionRunSuffix),
-      warning: policy.profile === "quick"
-        ? "Quick profile uses deterministic safe composition as its primary plan."
+      warning: policy.compositionStrategy === "deterministic-safe"
+        ? `${policy.profile === "medium" ? "Medium" : "Fast"} profile uses deterministic safe composition as its primary plan.`
         : "The shared analysis budget left no safe Composer attempt; a deterministic safe draft was used."
     });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: fallback.plan });
@@ -1171,6 +1175,13 @@ async function completeWorkspaceComposition(
   }
   run = await updateCompositionSnapshot(filePath, run, dependencies, composition);
   return markReviewReady(filePath, actorId, run, dependencies);
+}
+
+function managedCompositionProfile(run: WorkspaceCreationRun): WorkspaceCreationDepth | undefined {
+  if (run.expediteRequestedAt) return "fast";
+  return run.input.profile && !["quick", "deep"].includes(run.input.profile)
+    ? normalizeWorkspaceCreationProfile(run.input.profile)
+    : undefined;
 }
 
 function compositionResultFromPlan(plan: WorkspaceCompositionPlan): WorkspaceCompositionResult {
@@ -1808,6 +1819,7 @@ async function recoverUnexpectedCreationFailure(filePath: string, actorId: strin
       ? await dependencies.inspectCompositionFiles(architectResult.blueprint.materialization.existingPath)
       : [];
     const recovered = createDeterministicWorkspaceComposition({
+      profile: managedCompositionProfile(run),
       projectIntelligence: intelligencePack,
       blueprint: architectResult.blueprint,
       operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
@@ -1832,7 +1844,7 @@ function isWorkspaceArchitectResult(value: unknown): value is WorkspaceArchitect
 }
 
 function applyCreationProfileLimits(result: WorkspaceArchitectResult, policy: ReturnType<typeof resolveWorkspaceCreationPolicy>) {
-  if (policy.profile !== "quick" || result.blueprint.workforce.specialists.length <= policy.maxSpecialists) return result;
+  if (policy.profile === "high" || result.blueprint.workforce.specialists.length <= policy.maxSpecialists) return result;
   return {
     ...result,
     blueprint: {
@@ -1841,7 +1853,7 @@ function applyCreationProfileLimits(result: WorkspaceArchitectResult, policy: Re
         ...result.blueprint.workforce,
         specialists: result.blueprint.workforce.specialists.slice(0, policy.maxSpecialists)
       },
-      warnings: [...result.blueprint.warnings, `Quick profile limited persistent specialists to ${policy.maxSpecialists}.`].slice(0, 16)
+      warnings: [...result.blueprint.warnings, `${policy.profile === "fast" ? "Fast" : "Medium"} profile limited persistent specialists to ${policy.maxSpecialists}.`].slice(0, 16)
     }
   };
 }
@@ -1985,7 +1997,7 @@ function createWorkspaceCreationInputFingerprint(input: {
     materialization: input.materialization,
     sources: input.sources.map(sourceFingerprintProjection),
     draftContextId: input.draftContextId,
-    profile: input.profile ?? "quick",
+    profile: input.profile ?? "fast",
     continueLearningAfterCreation: input.continueLearningAfterCreation !== false,
     trigger: input.trigger ?? "initial",
     uploads: input.uploads.map((upload) => ({

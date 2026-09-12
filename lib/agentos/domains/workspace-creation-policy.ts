@@ -1,6 +1,18 @@
 import type { KnowledgeIngestionLimits } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 
-export type WorkspaceCreationProfile = "quick" | "deep";
+export type WorkspaceCreationDepth = "fast" | "medium" | "high";
+/** Legacy values remain readable without rewriting immutable runs. */
+export type WorkspaceCreationProfile = WorkspaceCreationDepth | "quick" | "deep";
+export const WORKSPACE_CREATION_PROFILES = [
+  { id: "fast", label: "Fast", timing: "Fastest", description: "Essential setup", learns: "Project · Identity · Instructions" },
+  { id: "medium", label: "Medium", timing: "A little longer", description: "Project + preferences", learns: "Essentials · Preferences · Memory" },
+  { id: "high", label: "High", timing: "Most thorough", description: "Full project intelligence", learns: "Memory · Resources · Workflows" }
+] as const;
+export const WORKSPACE_CREATION_FILES = {
+  fast: ["AGENTS.md", "SOUL.md", "IDENTITY.md"],
+  medium: ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "MEMORY.md"],
+  high: ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "MEMORY.md", "context/PROJECT.md", "context/RESOURCES.md", "context/WORKFLOWS.md"]
+} as const;
 export type WorkspaceCreationTrigger = "initial" | "manual-refresh" | "post-create-enrichment";
 
 export type WorkspaceCreationExecutionBudget = {
@@ -17,7 +29,7 @@ export type WorkspaceCreationExecutionBudget = {
 };
 
 export type WorkspaceCreationPolicy = {
-  profile: WorkspaceCreationProfile;
+  profile: WorkspaceCreationDepth;
   budget: WorkspaceCreationExecutionBudget;
   contextLimits: Partial<KnowledgeIngestionLimits>;
   maxSpecialists: number;
@@ -64,7 +76,7 @@ const QUICK_CONTEXT_LIMITS: Partial<KnowledgeIngestionLimits> = {
 };
 
 const DEEP_POLICY: WorkspaceCreationPolicy = {
-  profile: "deep",
+  profile: "high",
   budget: DEEP_BUDGET,
   contextLimits: {},
   maxSpecialists: 8,
@@ -73,7 +85,7 @@ const DEEP_POLICY: WorkspaceCreationPolicy = {
 };
 
 const QUICK_POLICY: WorkspaceCreationPolicy = {
-  profile: "quick",
+  profile: "fast",
   budget: QUICK_BUDGET,
   contextLimits: QUICK_CONTEXT_LIMITS,
   maxSpecialists: 2,
@@ -82,14 +94,21 @@ const QUICK_POLICY: WorkspaceCreationPolicy = {
 };
 
 export function resolveWorkspaceCreationPolicy(profile: WorkspaceCreationProfile | null | undefined): WorkspaceCreationPolicy {
-  return profile === "deep" ? DEEP_POLICY : QUICK_POLICY;
+  const depth = normalizeWorkspaceCreationProfile(profile);
+  if (depth === "high") return { ...DEEP_POLICY, profile: "high" };
+  if (depth === "medium") return {
+    ...QUICK_POLICY, profile: "medium", stopWhenSufficient: false,
+    budget: { ...QUICK_BUDGET, overallAnalysisBudgetMs: 90_000, architectReserveMs: 25_000, intelligenceReserveMs: 25_000, maxArchitectAttemptMs: 25_000, maxIntelligenceAttemptMs: 25_000 },
+    contextLimits: { ...QUICK_CONTEXT_LIMITS, maxPagesPerSource: 12, maxDepth: 2, totalRunTimeoutMs: 25_000 }
+  };
+  return { ...QUICK_POLICY, profile: "fast" };
 }
 
-export function normalizeWorkspaceCreationProfile(value: unknown): WorkspaceCreationProfile {
-  if (value !== undefined && value !== null && value !== "quick" && value !== "deep") {
+export function normalizeWorkspaceCreationProfile(value: unknown): WorkspaceCreationDepth {
+  if (value !== undefined && value !== null && !["quick", "deep", "fast", "medium", "high"].includes(String(value))) {
     throw new Error("Workspace creation profile is invalid.");
   }
-  return value === "deep" ? "deep" : "quick";
+  return value === "deep" || value === "high" ? "high" : value === "medium" ? "medium" : "fast";
 }
 
 export function normalizeWorkspaceCreationTrigger(value: unknown): WorkspaceCreationTrigger {

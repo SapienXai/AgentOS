@@ -2093,6 +2093,8 @@ export type WorkspaceModelProfile = "balanced" | "fast" | "quality";
 export type OpenClawThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface WorkspaceCreateRules {
+  /** Application composition supplies optional intelligence documents. */
+  compositionManaged?: boolean;
   workspaceOnly: boolean;
   generateStarterDocs: boolean;
   generateMemory: boolean;

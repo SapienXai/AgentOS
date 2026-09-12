@@ -52,6 +52,7 @@ import {
 } from "@/lib/agentos/application/workspace-provisioning-store";
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
 import { normalizeWorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
+import { WORKSPACE_CREATION_FILES } from "@/lib/agentos/domains/workspace-creation-policy";
 import { filterKnownOpenClawSkillIds, filterKnownOpenClawToolIds } from "@/lib/openclaw/agent-presets";
 import { updateAgent } from "@/lib/openclaw/application/agent-service";
 import { createWorkspaceProject } from "@/lib/openclaw/application/workspace-service";
@@ -494,6 +495,7 @@ async function prepareProvisioning(
     }
     const expectedInputFingerprint = createWorkspaceCompositionInputFingerprint({
       policyVersion: compositionPlan.policyVersion,
+      ...(compositionPlan.profile ? { profile: compositionPlan.profile } : {}),
       packId: compositionPlan.projectIntelligencePackId,
       blueprint,
       operatorIntent: { brief: blueprint.brief, constraints: blueprint.operatorConstraints },
@@ -536,6 +538,7 @@ async function prepareProvisioning(
       teamPreset: "custom",
       modelProfile: "balanced",
       rules: {
+        compositionManaged: Boolean(compositionPlan?.profile),
         workspaceOnly: true,
         generateStarterDocs: true,
         generateMemory: true,
@@ -695,7 +698,10 @@ async function executeWorkspaceProvisioning(
     run = await transition(filePath, run, "recording-declarations", "Recording pending channel, connection, and automation setup.", lease, dependencies);
     const pendingSetup = buildPendingSetup(prepared.blueprint);
     await writeProvisioningManifest(created.workspacePath, run, prepared.blueprint, pendingSetup);
-    await writeCuratedMemory(created.workspacePath, prepared.blueprint.memory.durableFacts);
+    const compositionProfile = prepared.compositionPlan?.profile;
+    if (!compositionProfile || (WORKSPACE_CREATION_FILES[compositionProfile] as readonly string[]).includes("MEMORY.md")) {
+      await writeCuratedMemory(created.workspacePath, prepared.blueprint.memory.durableFacts);
+    }
     run = await updateStoredRun(filePath, run, { pendingSetup, updatedAt: dependencies.now().toISOString() });
     run = await completeStep(filePath, run, "declarations-recorded", { pendingSetup: "recorded" }, lease, dependencies);
 
@@ -703,7 +709,10 @@ async function executeWorkspaceProvisioning(
     run = await transition(filePath, run, "verifying", "Verifying the physical workspace, agents, bootstrap files, and native bindings.", lease, dependencies);
     const verification = await verifyProvisionedWorkspace(created, prepared.blueprint, nativeBinding, dependencies, run);
     const warnings = uniqueStrings([...run.warnings, ...verification.warnings]);
-    const actionableWarnings = warnings.filter((warning) => warning !== "Quick profile uses deterministic safe composition as its primary plan.");
+    const actionableWarnings = warnings.filter((warning) => ![
+      "Fast profile uses deterministic safe composition as its primary plan.",
+      "Medium profile uses deterministic safe composition as its primary plan."
+    ].includes(warning));
     let finalState: WorkspaceProvisioningState = verification.coreErrors.length > 0 ? "failed" : actionableWarnings.length > 0 ? "partial" : "ready";
     let finalWarnings = warnings;
     const verifiedAt = dependencies.now().toISOString();
@@ -831,7 +840,7 @@ async function ensureWorkspaceBootstrap(
   let run = initialRun;
   await lease.assertOwned();
   let created = run.result;
-  let bootstrap = created ? await verifyWorkspaceBootstrap(created, prepared.blueprint) : { coreErrors: ["The workspace creation result is not available."], warnings: [] };
+  let bootstrap = created ? await verifyWorkspaceBootstrap(created, prepared.blueprint, Boolean(prepared.compositionPlan?.profile)) : { coreErrors: ["The workspace creation result is not available."], warnings: [] };
   let agents = created ? await verifyWorkspaceAgents(created, prepared.blueprint, dependencies) : { coreErrors: ["The workspace agent result is not available."], warnings: [] };
 
   if (!created || bootstrap.coreErrors.length > 0 || agents.coreErrors.length > 0) {
@@ -857,7 +866,7 @@ async function ensureWorkspaceBootstrap(
       result: created,
       updatedAt: dependencies.now().toISOString()
     });
-    bootstrap = await verifyWorkspaceBootstrap(created, prepared.blueprint);
+    bootstrap = await verifyWorkspaceBootstrap(created, prepared.blueprint, Boolean(prepared.compositionPlan?.profile));
     agents = await verifyWorkspaceAgents(created, prepared.blueprint, dependencies);
   }
 
@@ -883,7 +892,7 @@ async function ensureWorkspaceBootstrap(
   return { run, created };
 }
 
-async function verifyWorkspaceBootstrap(created: WorkspaceCreateResult, blueprint: WorkspaceBlueprint) {
+async function verifyWorkspaceBootstrap(created: WorkspaceCreateResult, blueprint: WorkspaceBlueprint, compositionManaged = false) {
   const coreErrors: string[] = [];
   await access(created.workspacePath).catch(() => coreErrors.push("The physical workspace folder is missing."));
   const manifest = await readWorkspaceProjectManifest(created.workspacePath);
@@ -894,6 +903,7 @@ async function verifyWorkspaceBootstrap(created: WorkspaceCreateResult, blueprin
     coreErrors.push("Workspace identity conflict: the canonical manifest points to another directory.");
   }
   const rules = {
+    compositionManaged,
     workspaceOnly: true,
     generateStarterDocs: true,
     generateMemory: true,
@@ -1142,11 +1152,13 @@ async function verifyProvisionedWorkspace(
   dependencies: ResolvedWorkspaceProvisioningDependencies,
   run: StoredWorkspaceProvisioningRun
 ) {
+  const compositionManaged = Boolean(run.compositionPlan?.profile);
   const warnings: string[] = [];
   const coreErrors: string[] = [];
   await access(created.workspacePath).catch(() => coreErrors.push("The physical workspace folder is missing."));
 
   const rules = {
+    compositionManaged,
     workspaceOnly: true,
     generateStarterDocs: true,
     generateMemory: true,

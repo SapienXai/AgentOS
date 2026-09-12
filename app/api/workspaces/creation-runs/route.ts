@@ -24,7 +24,7 @@ const jsonSchema = z.object({
   brief: z.string().trim().min(1).max(12_000),
   draftContextId: z.string().uuid().nullable().optional(),
   mode: z.enum(["automatic", "review"]).default("automatic"),
-  profile: z.enum(["quick", "deep"]).default("quick"),
+  profile: z.enum(["fast", "medium", "high", "quick", "deep"]).default("fast"),
   continueLearningAfterCreation: z.boolean().default(true),
   operatorConstraints: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
   materialization: z.unknown().optional(),

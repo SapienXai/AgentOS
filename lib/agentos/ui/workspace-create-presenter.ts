@@ -104,7 +104,7 @@ export type WorkspaceBlueprintReviewModel = {
 };
 
 export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, options: {
-  profile?: "quick" | "deep";
+  profile?: import("@/lib/agentos/domains/workspace-creation-policy").WorkspaceCreationProfile;
   partialContext?: boolean;
   attempts?: number;
   elapsedMs?: number;
@@ -116,7 +116,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
   readiness?: WorkspaceCreationReviewReadiness | null;
 } = {}): WorkspaceBlueprintReviewModel {
   const fallback = result.reasoning.status === "fallback" || result.blueprint.status === "draft";
-  const intentionalQuickFallback = options.profile === "quick";
+  const intentionalQuickFallback = ["fast", "medium", "quick"].includes(options.profile ?? "");
   const partialContext = options.partialContext === true || result.blueprint.warnings.some((warning) => /partial project context/i.test(warning));
   const projectIntelligence = options.intelligence?.review ?? null;
   const facts = rankProjectFacts(projectIntelligence?.facts ?? []);

@@ -476,7 +476,7 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && ((input as Record<string, unknown>).mode === "automatic" || (input as Record<string, unknown>).mode === "review")
     && arrayOfStrings((input as Record<string, unknown>).operatorConstraints)
     && Array.isArray((input as Record<string, unknown>).sources)
-    && ((input as Record<string, unknown>).profile === undefined || ["quick", "deep"].includes((input as Record<string, unknown>).profile as string))
+    && ((input as Record<string, unknown>).profile === undefined || ["fast", "medium", "high", "quick", "deep"].includes((input as Record<string, unknown>).profile as string))
     && ((input as Record<string, unknown>).continueLearningAfterCreation === undefined || typeof (input as Record<string, unknown>).continueLearningAfterCreation === "boolean")
     && ((input as Record<string, unknown>).trigger === undefined || ["initial", "manual-refresh", "post-create-enrichment"].includes((input as Record<string, unknown>).trigger as string))
     && validateWorkspaceCreationSnapshot(snapshot)
