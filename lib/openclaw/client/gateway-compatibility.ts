@@ -44,6 +44,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "taskSuggestions"
   | "taskAssign"
   | "taskCancel"
+  | "taskHistory"
   | "worktrees"
   | "artifacts"
   | "artifactDownload"
@@ -375,6 +376,16 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "experimental"
   },
   { id: "taskCancel", label: "Task cancellation", methods: ["tasks.cancel"], baseline: "optional" },
+  {
+    id: "taskHistory",
+    label: "Task history",
+    methods: ["tasks.history"],
+    fallbackAllowed: false,
+    recovery: "Use bounded legacy session history only when OpenClaw does not expose the native tasks.history contract.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["tasks.history"]
+  },
   {
     id: "worktrees",
     label: "Managed worktrees",
@@ -811,6 +822,9 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
 ] as const;
 
 const OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS = ["users.list"] as const;
+
+/** Additive Gateway methods introduced by the certified OpenClaw 2026.9.4 contract. */
+export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = ["tasks.history"] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "artifacts.put",

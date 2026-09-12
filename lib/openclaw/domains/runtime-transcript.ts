@@ -264,6 +264,14 @@ export function parseRuntimeOutputFromSessionHistory(
   return parseRuntimeOutput(runtime, normalizedTranscript.join("\n"), workspacePath);
 }
 
+export function parseRuntimeOutputFromTaskHistory(
+  runtime: RuntimeRecord,
+  payload: unknown,
+  workspacePath?: string
+): RuntimeOutputRecord {
+  return parseRuntimeOutputFromSessionHistory(runtime, payload, workspacePath);
+}
+
 export async function resolveRuntimeTranscriptPath(
   agentId: string,
   sessionId: string,

@@ -18,7 +18,14 @@ export async function GET(
 ) {
   const { taskId: rawTaskId } = await context.params;
   const taskId = decodeURIComponent(rawTaskId);
-  const dispatchId = new URL(request.url).searchParams.get("dispatchId");
+  const searchParams = new URL(request.url).searchParams;
+  const dispatchId = searchParams.get("dispatchId");
+  const taskHistoryCursor = searchParams.get("cursor") || null;
+  const rawTaskHistoryLimit = searchParams.get("limit");
+  const parsedTaskHistoryLimit = rawTaskHistoryLimit ? Number(rawTaskHistoryLimit) : undefined;
+  const taskHistoryLimit = parsedTaskHistoryLimit !== undefined && Number.isFinite(parsedTaskHistoryLimit)
+    ? parsedTaskHistoryLimit
+    : undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeGatewayEvents: (() => void) | undefined;
@@ -89,7 +96,11 @@ export async function GET(
 
         taskRequest = (async () => {
           try {
-            const detail = await getTaskDetail(taskId, { dispatchId });
+            const detail = await getTaskDetail(taskId, {
+              dispatchId,
+              taskHistoryCursor,
+              taskHistoryLimit
+            });
             indexTaskDetailIds(detail, relatedIds);
             sendEvent("task", { type: "task", detail });
           } catch (error) {
@@ -172,6 +183,7 @@ function indexTaskDetailIds(detail: TaskDetailRecord, ids: Set<string>) {
   }
   addRelatedId(ids, detail.task.metadata.taskId);
   addRelatedId(ids, detail.task.metadata.dispatchId);
+  addRelatedId(ids, detail.taskHistory?.taskId);
 
   for (const run of detail.runs) {
     addRelatedId(ids, run.id);

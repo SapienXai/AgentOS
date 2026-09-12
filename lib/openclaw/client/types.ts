@@ -1150,6 +1150,12 @@ export interface OpenClawTaskCancelInput {
   reason?: string | null;
 }
 
+export interface OpenClawTaskHistoryInput {
+  taskId: string;
+  cursor?: string | null;
+  limit?: number;
+}
+
 export type OpenClawTaskListPayload = Record<string, unknown> & {
   tasks?: unknown[];
   nextCursor?: string | number | null;
@@ -1162,6 +1168,37 @@ export type OpenClawTaskPayload = Record<string, unknown> & {
   taskId?: string;
   status?: string;
 };
+
+export type OpenClawTaskHistoryPayload = Record<string, unknown> & {
+  messages?: unknown[];
+  nextCursor?: string | null;
+};
+
+export const OPENCLAW_TASK_HISTORY_DEFAULT_LIMIT = 200;
+export const OPENCLAW_TASK_HISTORY_MIN_LIMIT = 1;
+export const OPENCLAW_TASK_HISTORY_MAX_LIMIT = 200;
+
+export function normalizeOpenClawTaskHistoryInput(input: OpenClawTaskHistoryInput): OpenClawTaskHistoryInput {
+  const taskId = input.taskId.trim();
+  if (!taskId) {
+    throw new Error("OpenClaw task history requires a task ID.");
+  }
+
+  const requestedLimit = typeof input.limit === "number" && Number.isFinite(input.limit)
+    ? Math.floor(input.limit)
+    : OPENCLAW_TASK_HISTORY_DEFAULT_LIMIT;
+  const limit = Math.min(
+    OPENCLAW_TASK_HISTORY_MAX_LIMIT,
+    Math.max(OPENCLAW_TASK_HISTORY_MIN_LIMIT, requestedLimit)
+  );
+  const cursor = typeof input.cursor === "string" && input.cursor.trim() ? input.cursor.trim() : undefined;
+
+  return {
+    taskId,
+    ...(cursor ? { cursor } : {}),
+    limit
+  };
+}
 
 export interface OpenClawArtifactListInput {
   taskId?: string;
@@ -1981,6 +2018,11 @@ export interface OpenClawGatewayClient {
     input?: OpenClawSessionHistoryInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawSessionHistoryPayload>;
+  /** Native OpenClaw task history; the CLI client intentionally omits this RPC. */
+  getTaskHistory?(
+    input: OpenClawTaskHistoryInput,
+    options?: OpenClawCommandOptions
+  ): Promise<OpenClawTaskHistoryPayload>;
   exportSession(input?: OpenClawSessionExportInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionExportPayload>;
   listTasks(input?: OpenClawTaskListInput, options?: OpenClawCommandOptions): Promise<OpenClawTaskListPayload>;
   getTask(input: OpenClawTaskGetInput, options?: OpenClawCommandOptions): Promise<OpenClawTaskPayload>;

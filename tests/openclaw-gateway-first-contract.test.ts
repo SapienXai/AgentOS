@@ -72,6 +72,7 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
         "agents.create",
         "agents.update",
         "agents.delete",
+        "tasks.history",
         "channels.status",
         "skills.status",
         "exec.approval.list",
@@ -105,6 +106,8 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.operations?.agentCreate.label, "Agent creation");
   assert.equal(matrix.operations?.modelAuthOrder.mode, "gateway-native");
   assert.equal(matrix.operations?.missionStream.mode, "gateway-native");
+  assert.equal(matrix.operations?.taskHistory.mode, "gateway-native");
+  assert.equal(matrix.operations?.taskHistory.preferredMethod, "tasks.history");
   assert.equal(matrix.unsupportedGatewayMethods.includes("models.list"), false);
   assert.equal(matrix.operations?.modelAuthOrder.compatibility, "preferred");
   assert.equal(matrix.compatibility?.protocol.status, "compatible");

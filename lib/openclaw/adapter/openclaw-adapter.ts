@@ -13,6 +13,10 @@ import {
   OpenClawGatewayClientError
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
+  OpenClawTaskHistoryInput,
+  OpenClawTaskHistoryPayload
+} from "@/lib/openclaw/client/types";
+import type {
   GatewayProbePayload,
     GatewayStatusPayload,
     MissionCommandPayload,
@@ -212,6 +216,10 @@ export interface OpenClawAdapter {
     input?: OpenClawSessionHistoryInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawSessionHistoryPayload>;
+  getTaskHistory?(
+    input: OpenClawTaskHistoryInput,
+    options?: OpenClawCommandOptions
+  ): Promise<OpenClawTaskHistoryPayload>;
   exportSession(input?: OpenClawSessionExportInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionExportPayload>;
   listTasks(input?: OpenClawTaskListInput, options?: OpenClawCommandOptions): Promise<OpenClawTaskListPayload>;
   getTask(input: OpenClawTaskGetInput, options?: OpenClawCommandOptions): Promise<OpenClawTaskPayload>;
@@ -610,6 +618,19 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   getSessionHistory(input: OpenClawSessionHistoryInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().getSessionHistory(input, options);
+  }
+
+  getTaskHistory(input: OpenClawTaskHistoryInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.getTaskHistory) {
+      return Promise.reject(
+        new NativeGatewayError(
+          "OpenClaw native tasks.history is unavailable; use bounded legacy session history only for compatibility.",
+          { kind: "unsupported" }
+        )
+      );
+    }
+    return client.getTaskHistory(input, options);
   }
 
   exportSession(input: OpenClawSessionExportInput = {}, options: OpenClawCommandOptions = {}) {

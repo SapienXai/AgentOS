@@ -46,6 +46,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   taskEvents: "tasks",
   taskAssign: "tasks",
   taskCancel: "tasks",
+  taskHistory: "tasks",
   artifacts: "artifacts",
   artifactDownload: "artifacts",
   runtimeSnapshot: "sessions",
@@ -112,7 +113,8 @@ const operationRequiredScopes: Partial<Record<string, string[]>> = {
   talkClient: ["operator.talk"],
   deviceApproval: ["operator.pairing"],
   deviceToken: ["operator.pairing"],
-  nodePairing: ["operator.pairing"]
+  nodePairing: ["operator.pairing"],
+  taskHistory: ["operator.read"]
 };
 
 const methodProbes: Record<string, ContractProbe> = {
@@ -191,6 +193,10 @@ const methodProbes: Record<string, ContractProbe> = {
   "tasks.get": {
     params: { taskId: "__agentos_contract_probe__" },
     validate: isObjectRecord
+  },
+  "tasks.history": {
+    params: { taskId: "__agentos_contract_probe__", limit: 1 },
+    validate: (payload) => Array.isArray(readObject(payload)?.messages)
   },
   "commands.list": {
     params: {},

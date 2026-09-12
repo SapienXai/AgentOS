@@ -10,6 +10,7 @@ import type {
   SuggestedWorkProjection,
   OpenClawAgent,
   RuntimeRecord,
+  TaskHistoryRecord,
   TaskRecord,
   WorkspaceChannelSummary,
   WorkspaceChannelWorkspaceBinding,
@@ -23,6 +24,7 @@ export type AgentInboxRecord = AgentInboxItem;
 export type WorkspaceRecord = WorkspaceProject;
 export type RuntimeActivityRecord = RuntimeRecord;
 export type WorkItemRecord = TaskRecord;
+export type { TaskHistoryRecord };
 export type SurfaceAccountRecord = ChannelAccountRecord;
 export type SurfaceChannelRecord = WorkspaceChannelSummary;
 export type SurfaceBindingRecord = WorkspaceChannelWorkspaceBinding;

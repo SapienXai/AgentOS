@@ -112,6 +112,11 @@ import { isUnsupportedLegacyProviderId } from "@/lib/openclaw/model-provider-reg
 import { normalizeOpenClawChatAdmission } from "@/lib/openclaw/domains/chat-admission";
 import { resolveAuthoritativeRuntimeOwnershipProof } from "@/lib/openclaw/lifecycle/runtime-provenance";
 import type { CommandResult } from "@/lib/openclaw/cli";
+import {
+  normalizeOpenClawTaskHistoryInput,
+  type OpenClawTaskHistoryInput,
+  type OpenClawTaskHistoryPayload
+} from "@/lib/openclaw/client/types";
 import type {
   GatewayStatusPayload,
   MissionCommandPayload,
@@ -973,6 +978,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getSessionHistory(input: OpenClawSessionHistoryInput = {}, options: OpenClawCommandOptions = {}) {
     return this.gatewayFirstSessionHistory(input, options);
+  }
+
+  getTaskHistory(input: OpenClawTaskHistoryInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawTaskHistoryPayload>(
+      "tasks.history",
+      { ...normalizeOpenClawTaskHistoryInput(input) },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawTaskHistoryPayload>("tasks.history", payload)
+    );
   }
 
   exportSession(input: OpenClawSessionExportInput = {}, options: OpenClawCommandOptions = {}) {

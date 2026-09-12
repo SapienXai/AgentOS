@@ -4486,6 +4486,7 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
                   "tasks.list",
                   "tasks.get",
                   "tasks.cancel",
+                  "tasks.history",
                   "artifacts.list",
                   "artifacts.get",
                   "artifacts.download",
@@ -4507,15 +4508,23 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
                     ? { tasks: [{ id: "task-1" }] }
                     : frame.method === "tasks.get"
                       ? { task: { id: "task-1" } }
-                      : frame.method === "artifacts.list"
-                        ? { artifacts: [{ id: "artifact-1" }] }
-                        : frame.method === "tools.catalog"
-                          ? { agentId: "agent-1", profiles: [], groups: [] }
-                          : frame.method === "tools.effective"
-                            ? { agentId: "agent-1", profile: "full", groups: [] }
-                            : frame.method === "tools.invoke"
-                              ? { ok: true, toolName: "shell" }
-                              : { ok: true }
+                      : frame.method === "tasks.history"
+                        ? {
+                            messages: [
+                              { role: "user", content: "Inspect task history." },
+                              { role: "assistant", content: "history" }
+                            ],
+                            nextCursor: "cursor-2"
+                          }
+                        : frame.method === "artifacts.list"
+                          ? { artifacts: [{ id: "artifact-1" }] }
+                          : frame.method === "tools.catalog"
+                            ? { agentId: "agent-1", profiles: [], groups: [] }
+                            : frame.method === "tools.effective"
+                              ? { agentId: "agent-1", profile: "full", groups: [] }
+                              : frame.method === "tools.invoke"
+                                ? { ok: true, toolName: "shell" }
+                                : { ok: true }
       });
     });
   });
@@ -4536,6 +4545,13 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
   });
   assert.deepEqual(await client.listTasks({ agentId: "agent-1" }), { tasks: [{ id: "task-1" }] });
   assert.deepEqual(await client.getTask({ taskId: "task-1" }), { task: { id: "task-1" } });
+  assert.deepEqual(await client.getTaskHistory({ taskId: " task-1 ", cursor: " cursor-1 ", limit: 500 }), {
+    messages: [
+      { role: "user", content: "Inspect task history." },
+      { role: "assistant", content: "history" }
+    ],
+    nextCursor: "cursor-2"
+  });
   assert.deepEqual(await client.cancelTask({ taskId: "task-1", reason: "duplicate" }), { ok: true });
   assert.deepEqual(
     await client.listArtifacts({ taskId: "task-1", agentId: "agent-1", workspace: "/tmp/workspace", limit: 100 }),
@@ -4569,6 +4585,7 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
     "sessions.get",
     "tasks.list",
     "tasks.get",
+    "tasks.history",
     "tasks.cancel",
     "artifacts.list",
     "artifacts.get",
@@ -4581,18 +4598,23 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
   assert.deepEqual(sentFrames[1]?.params, {
     key: "agent:agent-1:main"
   });
-  assert.deepEqual(sentFrames[7]?.params, {
+  assert.deepEqual(sentFrames[8]?.params, {
     taskId: "task-1"
   });
-  assert.deepEqual(sentFrames[13]?.params, {
+  assert.deepEqual(sentFrames[6]?.params, {
+    taskId: "task-1",
+    cursor: "cursor-1",
+    limit: 200
+  });
+  assert.deepEqual(sentFrames[14]?.params, {
     name: "shell",
     args: { command: "pwd" }
   });
-  assert.deepEqual(sentFrames[11]?.params, {
+  assert.deepEqual(sentFrames[12]?.params, {
     agentId: "agent-1",
     includePlugins: true
   });
-  assert.deepEqual(sentFrames[12]?.params, {
+  assert.deepEqual(sentFrames[13]?.params, {
     agentId: "agent-1",
     sessionKey: "agent:agent-1:main"
   });

@@ -56,7 +56,28 @@ export function TaskSessionTruthPanel({
         <TruthRow label="Workspace" value={view.workspaceName ?? view.workspaceId} detail={view.workspaceId} />
         <TruthRow label="Agent" value={view.agentName ?? view.agentId} detail={view.agentId} />
         <TruthRow label="Follow-up" value={view.followUpAvailability.available ? "available" : "disabled"} detail={followUpReason ?? followUpWarning} />
+        <TruthRow
+          label="History"
+          value={view.taskHistory?.label}
+          detail={view.taskHistory ? formatTaskHistoryDetail(view.taskHistory) : null}
+        />
       </div>
+
+      {view.taskHistory?.source === "legacy-session-history" ? (
+        <Notice tone="info" data-testid="inspector-task-history-fallback">
+          <span className="font-semibold">{view.taskHistory.label}</span>
+          {view.taskHistory.reason ? `: ${view.taskHistory.reason}` : null}
+          {view.taskHistory.recovery ? ` ${view.taskHistory.recovery}` : null}
+        </Notice>
+      ) : null}
+
+      {view.taskHistory && view.taskHistory.status !== "available" && view.taskHistory.source === "native" ? (
+        <Notice tone="warning" data-testid="inspector-task-history-state">
+          <span className="font-semibold">{view.taskHistory.label}</span>
+          {view.taskHistory.reason ? `: ${view.taskHistory.reason}` : null}
+          {view.taskHistory.recovery ? ` ${view.taskHistory.recovery}` : null}
+        </Notice>
+      ) : null}
 
       {followUpWarning ? (
         <Notice tone="warning" data-testid="inspector-follow-up-warning">
@@ -149,4 +170,11 @@ function compactTruthValue(value: string) {
   }
 
   return `${value.slice(0, 24)}...${value.slice(-20)}`;
+}
+
+function formatTaskHistoryDetail(history: InspectorTaskSessionView["taskHistory"]) {
+  if (!history) return null;
+
+  const count = `${history.messageCount} message${history.messageCount === 1 ? "" : "s"}`;
+  return `${count} · bounded to ${history.limit}`;
 }

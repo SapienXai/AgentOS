@@ -1485,6 +1485,29 @@ export interface TaskRecord {
   metadata: Record<string, unknown>;
 }
 
+export type TaskHistorySource = "native" | "legacy-session-history";
+export type TaskHistoryStatus =
+  | "available"
+  | "empty"
+  | "missing"
+  | "denied"
+  | "unavailable"
+  | "failed"
+  | "recovered";
+
+export interface TaskHistoryRecord {
+  taskId: string;
+  source: TaskHistorySource;
+  status: TaskHistoryStatus;
+  cursor: string | null;
+  nextCursor: string | null;
+  limit: number;
+  messageCount: number;
+  label: string;
+  reason: string | null;
+  recovery: string | null;
+}
+
 export interface AgentInboxItem {
   id: string;
   agentId: string;
@@ -1554,6 +1577,7 @@ export interface TaskDetailRecord {
   createdFiles: RuntimeCreatedFile[];
   warnings: string[];
   integrity: TaskIntegrityRecord;
+  taskHistory?: TaskHistoryRecord | null;
 }
 
 export type RelationshipKind = "contains" | "uses-model" | "active-run";

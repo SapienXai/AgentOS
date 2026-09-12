@@ -9,6 +9,7 @@ import {
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
 import { buildTaskDetailFromDispatchRecord, buildTaskDetailFromTaskRecord } from "@/lib/openclaw/domains/task-detail";
+import { loadTaskHistoryForTask } from "@/lib/openclaw/domains/task-history";
 import { extractMissionCommandPayloads } from "@/lib/openclaw/domains/mission-dispatch-model";
 import { readMissionDispatchRecordById } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import {
@@ -34,7 +35,8 @@ import type {
   MissionControlSnapshot,
   OpenClawRuntimeSmokeTest,
   RuntimeOutputRecord,
-  TaskDetailRecord
+  TaskDetailRecord,
+  TaskHistoryRecord
 } from "@/lib/openclaw/types";
 
 const runtimeSmokeTestMessage = "AgentOS runtime smoke test. Reply with a brief READY status.";
@@ -222,10 +224,12 @@ export async function getTaskDetail(
   taskId: string,
   options: {
     dispatchId?: string | null;
+    taskHistoryCursor?: string | null;
+    taskHistoryLimit?: number;
   } = {}
 ): Promise<TaskDetailRecord> {
   let snapshot = await getMissionControlSnapshot({ includeHidden: true });
-  let task = snapshot.tasks.find((entry) => entry.id === taskId);
+  let task = findTaskInSnapshot(snapshot, taskId);
 
   if (!task && options.dispatchId) {
     task = snapshot.tasks.find((entry) => entry.dispatchId === options.dispatchId);
@@ -233,7 +237,7 @@ export async function getTaskDetail(
 
   if (!task) {
     snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-    task = snapshot.tasks.find((entry) => entry.id === taskId);
+    task = findTaskInSnapshot(snapshot, taskId);
 
     if (!task && options.dispatchId) {
       task = snapshot.tasks.find((entry) => entry.dispatchId === options.dispatchId);
@@ -255,5 +259,43 @@ export async function getTaskDetail(
   }
 
   const dispatchRecord = task.dispatchId ? await readMissionDispatchRecordById(task.dispatchId) : null;
-  return buildTaskDetailFromTaskRecord(task, snapshot, dispatchRecord);
+  return buildTaskDetailFromTaskRecord(task, snapshot, dispatchRecord, options);
+}
+
+export async function getTaskHistory(
+  taskId: string,
+  options: { cursor?: string | null; limit?: number } = {}
+): Promise<TaskHistoryRecord | null> {
+  let snapshot = await getMissionControlSnapshot({ includeHidden: true });
+  let task = findTaskInSnapshot(snapshot, taskId);
+
+  if (!task) {
+    snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    task = findTaskInSnapshot(snapshot, taskId);
+  }
+
+  if (!task) {
+    throw new Error("Task was not found in the current OpenClaw snapshot.");
+  }
+
+  const runs = snapshot.runtimes.filter((runtime) => task.runtimeIds.includes(runtime.id));
+  const result = await loadTaskHistoryForTask({
+    task,
+    runs,
+    snapshot,
+    cursor: options.cursor,
+    limit: options.limit
+  });
+  return result?.record ?? null;
+}
+
+function findTaskInSnapshot(snapshot: MissionControlSnapshot, taskId: string) {
+  return snapshot.tasks.find((entry) => {
+    if (entry.id === taskId) return true;
+
+    const openClawTaskId = entry.metadata.openClawTaskId;
+    if (typeof openClawTaskId === "string" && openClawTaskId.trim() === taskId) return true;
+
+    return entry.metadata.sourceOfTruth === "openclaw-tasks.list" && entry.metadata.taskId === taskId;
+  });
 }

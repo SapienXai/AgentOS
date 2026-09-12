@@ -26,7 +26,11 @@ import {
   createMissionDispatchRuntime as createMissionDispatchRuntimeFromRuntime
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
-import { getRuntimeOutputForResolvedRuntime as getRuntimeOutputForResolvedRuntimeFromTranscript } from "@/lib/openclaw/domains/runtime-transcript";
+import {
+  getRuntimeOutputForResolvedRuntime as getRuntimeOutputForResolvedRuntimeFromTranscript,
+  parseRuntimeOutputFromTaskHistory
+} from "@/lib/openclaw/domains/runtime-transcript";
+import { loadTaskHistoryForTask, type TaskHistoryLoadResult } from "@/lib/openclaw/domains/task-history";
 import {
   deriveTaskFollowUpsFromRuntimes,
   mergeTaskFollowUps,
@@ -36,7 +40,8 @@ import {
 export async function buildTaskDetailFromTaskRecord(
   task: TaskRecord,
   snapshot: MissionControlSnapshot,
-  dispatchRecord: MissionDispatchRecord | null
+  dispatchRecord: MissionDispatchRecord | null,
+  options: { taskHistoryCursor?: string | null; taskHistoryLimit?: number } = {}
 ): Promise<TaskDetailRecord> {
   const directRuns = task.runtimeIds
     .map((runtimeId) => snapshot.runtimes.find((runtime) => runtime.id === runtimeId))
@@ -45,7 +50,7 @@ export async function buildTaskDetailFromTaskRecord(
   const runs = (dispatchRecord ? scopeRunsToDispatch(collectedRuns, dispatchRecord) : collectedRuns)
     .sort(sortRuntimesByUpdatedAtDesc);
 
-  return buildTaskDetailFromResolvedRuns(task, runs, snapshot, dispatchRecord);
+  return buildTaskDetailFromResolvedRuns(task, runs, snapshot, dispatchRecord, options);
 }
 
 export async function buildTaskDetailFromDispatchRecord(
@@ -97,11 +102,20 @@ async function buildTaskDetailFromResolvedRuns(
   task: TaskRecord,
   runs: RuntimeRecord[],
   snapshot: MissionControlSnapshot,
-  dispatchRecord: MissionDispatchRecord | null
+  dispatchRecord: MissionDispatchRecord | null,
+  options: { taskHistoryCursor?: string | null; taskHistoryLimit?: number } = {}
 ): Promise<TaskDetailRecord> {
-  const outputs = await Promise.all(
+  const taskHistory = await loadTaskHistoryForTask({
+    task,
+    runs,
+    snapshot,
+    cursor: options.taskHistoryCursor,
+    limit: options.taskHistoryLimit
+  });
+  const transcriptOutputs = await Promise.all(
     runs.map((runtime) => getRuntimeOutputForResolvedRuntimeFromTranscript(runtime, snapshot))
   );
+  const outputs = prioritizeTaskHistoryOutput(taskHistory, runs, transcriptOutputs, snapshot);
   const outputByRuntimeId = new Map(outputs.map((output) => [output.runtimeId, output]));
   const createdFiles = dedupeCreatedFiles(
     outputs.flatMap((output) => output.createdFiles).concat(
@@ -140,8 +154,41 @@ async function buildTaskDetailFromResolvedRuns(
     liveFeed: mergeTaskFeedEventsFromDomain(bootstrapFeed, runtimeFeed, operationFeed),
     createdFiles,
     warnings,
-    integrity
+    integrity,
+    taskHistory: taskHistory?.record ?? null
   };
+}
+
+function prioritizeTaskHistoryOutput(
+  taskHistory: TaskHistoryLoadResult | null,
+  runs: RuntimeRecord[],
+  outputs: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>[],
+  snapshot: MissionControlSnapshot
+) {
+  if (!taskHistory?.payload || runs.length === 0) {
+    return outputs;
+  }
+
+  const primaryRuntime = runs.find((runtime) =>
+    runtime.taskId === taskHistory.record.taskId ||
+    runtime.metadata.openClawTaskId === taskHistory.record.taskId ||
+    runtime.metadata.taskId === taskHistory.record.taskId
+  ) ?? runs[0];
+  const agent = primaryRuntime.agentId
+    ? snapshot.agents.find((entry) => entry.id === primaryRuntime.agentId)
+    : null;
+  const taskHistoryOutput = parseRuntimeOutputFromTaskHistory(
+    primaryRuntime,
+    taskHistory.payload,
+    agent?.workspacePath
+  );
+  const outputIndex = outputs.findIndex((output) => output.runtimeId === primaryRuntime.id);
+
+  if (outputIndex === -1) {
+    return [...outputs, taskHistoryOutput];
+  }
+
+  return outputs.map((output, index) => index === outputIndex ? taskHistoryOutput : output);
 }
 
 function reconcileOperationIntegrity(

@@ -7,7 +7,7 @@ import {
   buildInspectorTaskSessionView,
   resolvePollingFallbackNotice
 } from "@/components/mission-control/inspector/inspector-utils";
-import type { MissionControlSnapshot, RuntimeActivityRecord, WorkItemRecord } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot, RuntimeActivityRecord, TaskDetailRecord, WorkItemRecord } from "@/lib/agentos/contracts";
 
 test("inspector task session view resolves OpenClaw task/session/run provenance", () => {
   const task = createTask({
@@ -39,6 +39,40 @@ test("inspector task session view resolves OpenClaw task/session/run provenance"
   assert.equal(view.sessionConfidence, "high");
   assert.equal(view.followUpAvailability.available, true);
   assert.equal(view.followUpAvailability.warning, null);
+});
+
+test("inspector task session view carries the task history projection", () => {
+  const task = createTask({
+    metadata: {
+      provenance: "native-task",
+      openClawTaskId: "openclaw-task-1"
+    }
+  });
+  const snapshot = createSnapshot({ tasks: [task] });
+  const taskDetail = {
+    task,
+    integrity: {
+      dispatchSessionId: null
+    },
+    taskHistory: {
+      taskId: "openclaw-task-1",
+      source: "native",
+      status: "available",
+      cursor: null,
+      nextCursor: "cursor-2",
+      limit: 200,
+      messageCount: 2,
+      label: "Native OpenClaw task history",
+      reason: null,
+      recovery: null
+    }
+  } as unknown as TaskDetailRecord;
+
+  const view = buildInspectorTaskSessionView({ snapshot, task, taskDetail });
+
+  assert.equal(view.taskHistory?.source, "native");
+  assert.equal(view.taskHistory?.messageCount, 2);
+  assert.equal(view.taskHistory?.nextCursor, "cursor-2");
 });
 
 test("inspector task session view warns for runtime-derived continuation context", () => {

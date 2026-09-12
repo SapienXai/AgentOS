@@ -27,6 +27,7 @@ export type InspectorTaskSessionView = {
   sessionConfidence: TaskFollowUpContext["confidence"];
   sessionConfidenceLabel: string;
   followUpAvailability: TaskFollowUpAvailability;
+  taskHistory: TaskDetailRecord["taskHistory"];
 };
 
 export type InspectorAgentRuntimeView = {
@@ -80,6 +81,7 @@ export function buildInspectorTaskSessionView({
   const agent = snapshot.agents.find((entry) => entry.id === agentId);
   const metadataOpenClawTaskId =
     followUpContext.openClawTaskId ||
+    readMetadataString(selectedTask.metadata, "openClawTaskId") ||
     readMetadataString(selectedTask.metadata, "taskId") ||
     readMetadataString(selectedTask.metadata, "openClawId");
   const openClawTaskId = metadataOpenClawTaskId || selectedTask.id || null;
@@ -113,7 +115,8 @@ export function buildInspectorTaskSessionView({
     provenanceLabel: formatTaskProvenanceLabel(followUpContext.provenance),
     sessionConfidence: followUpContext.confidence,
     sessionConfidenceLabel: formatSessionConfidenceLabel(followUpContext.confidence),
-    followUpAvailability
+    followUpAvailability,
+    taskHistory: taskDetail?.taskHistory ?? null
   };
 }
 
