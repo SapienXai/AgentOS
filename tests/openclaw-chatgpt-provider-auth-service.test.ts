@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
 import {
+  buildOpenClawChatGptLoginArgs,
   connectOpenClawChatGptProvider,
   cancelOpenClawChatGptBrowserAuth,
   extractOpenAiAuthorizationUrl,
@@ -36,7 +37,7 @@ test("ChatGPT provider auth extracts only the canonical OpenAI authorization URL
 
 test("ChatGPT provider auth runs OpenClaw login directly when the Codex plugin is ready", async () => {
   const setupCalls: string[][] = [];
-  const loginCalls: Array<{ force: boolean }> = [];
+  const loginCalls: Array<{ agentId: string; force: boolean }> = [];
 
   const result = await connectOpenClawChatGptProvider(
     { force: true },
@@ -47,17 +48,57 @@ test("ChatGPT provider auth runs OpenClaw login directly when the Codex plugin i
         setupCalls.push(args);
       },
       runInteractiveLogin: async (input) => {
-        loginCalls.push({ force: input.force });
+        loginCalls.push({ agentId: input.agentId, force: input.force });
       }
     }
   );
 
   assert.deepEqual(setupCalls, []);
-  assert.deepEqual(loginCalls, [{ force: true }]);
+  assert.deepEqual(loginCalls, [{ agentId: "main", force: true }]);
   assert.deepEqual(result, {
     pluginInstalled: false,
     authMode: "openclaw-cli-interactive"
   });
+});
+
+test("ChatGPT provider auth passes the configured system agent to OpenClaw", async () => {
+  let loginAgentId: string | null = null;
+
+  await connectOpenClawChatGptProvider(
+    { force: true },
+    {
+      platform: "darwin",
+      readPluginReady: async () => true,
+      runSetupCommand: async () => {},
+      resolveAuthAgentId: async () => "workspace-primary-operator",
+      runInteractiveLogin: async (input) => {
+        loginAgentId = input.agentId;
+      }
+    }
+  );
+
+  assert.equal(loginAgentId, "workspace-primary-operator");
+});
+
+test("ChatGPT provider auth builds an explicit, force-capable OpenClaw login command", () => {
+  assert.deepEqual(
+    buildOpenClawChatGptLoginArgs({ agentId: "main", force: true }),
+    [
+      "models",
+      "auth",
+      "login",
+      "--provider",
+      "openai",
+      "--force",
+      "--agent",
+      "main",
+      "--set-default"
+    ]
+  );
+  assert.throws(
+    () => buildOpenClawChatGptLoginArgs({ agentId: " ", force: false }),
+    /explicit agent owner/
+  );
 });
 
 test("ChatGPT provider auth installs the Codex plugin before login without device repair", async () => {

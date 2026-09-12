@@ -10,6 +10,7 @@ import {
   resolveOpenClawSpawnInvocation
 } from "@/lib/openclaw/install";
 import { resolveOpenClawBin, runOpenClaw } from "@/lib/openclaw/cli";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { validateOpenAiAuthorizationUrl } from "@/lib/openclaw/chatgpt-auth-url";
 import type {
@@ -26,7 +27,9 @@ export type ChatGptProviderAuthDependencies = {
   platform: NodeJS.Platform;
   readPluginReady: () => Promise<boolean>;
   runSetupCommand: (args: string[], timeoutMs: number) => Promise<void>;
+  resolveAuthAgentId?: () => Promise<string | null | undefined>;
   runInteractiveLogin: (input: {
+    agentId: string;
     force: boolean;
     signal?: AbortSignal;
     onBrowserUrl?: (url: string) => void;
@@ -69,6 +72,7 @@ const defaultDependencies: ChatGptProviderAuthDependencies = {
   runSetupCommand: async (args, timeoutMs) => {
     await runOpenClaw(args, { timeoutMs });
   },
+  resolveAuthAgentId: resolveOpenClawChatGptAuthAgentId,
   runInteractiveLogin: runOpenClawChatGptInteractiveLogin
 };
 
@@ -190,8 +194,10 @@ async function runBrowserAuthSession(
     session.abortController.signal.throwIfAborted();
     session.state = "waiting-for-browser";
     session.message = "Open the ChatGPT sign-in page in the new browser tab.";
+    const agentId = await resolveChatGptAuthAgentId(dependencies);
 
     await dependencies.runInteractiveLogin({
+      agentId,
       force,
       signal: session.abortController.signal,
       onChild: (child) => {
@@ -270,6 +276,26 @@ export function extractOpenAiAuthorizationUrl(output: string) {
   return null;
 }
 
+export function buildOpenClawChatGptLoginArgs(input: { agentId: string; force: boolean }) {
+  const agentId = input.agentId.trim();
+
+  if (!agentId) {
+    throw new Error("OpenClaw ChatGPT sign-in requires an explicit agent owner.");
+  }
+
+  return [
+    "models",
+    "auth",
+    "login",
+    "--provider",
+    "openai",
+    ...(input.force ? ["--force"] : []),
+    "--agent",
+    agentId,
+    "--set-default"
+  ];
+}
+
 function validateOpenAiRedirectInput(value: string) {
   const redirectUrl = value.trim();
 
@@ -319,8 +345,10 @@ export async function connectOpenClawChatGptProvider(
   }
 
   const pluginInstalled = await prepareChatGptProviderAuth(dependencies);
+  const agentId = await resolveChatGptAuthAgentId(dependencies);
 
   await dependencies.runInteractiveLogin({
+    agentId,
     force: input.force === true,
     signal: input.signal
   });
@@ -331,7 +359,30 @@ export async function connectOpenClawChatGptProvider(
   };
 }
 
+async function resolveChatGptAuthAgentId(dependencies: ChatGptProviderAuthDependencies) {
+  const agentId = await dependencies.resolveAuthAgentId?.();
+  return agentId?.trim() || "main";
+}
+
+async function resolveOpenClawChatGptAuthAgentId() {
+  try {
+    const agentId = await getOpenClawAdapter().getConfig<unknown>(
+      "agents.defaults.systemAgent.agentId",
+      { timeoutMs: 5_000 }
+    );
+
+    if (typeof agentId === "string" && agentId.trim()) {
+      return agentId.trim();
+    }
+  } catch {
+    // The local OpenClaw CLI can still resolve the implicit main agent when the Gateway is unavailable.
+  }
+
+  return "main";
+}
+
 async function runOpenClawChatGptInteractiveLogin(input: {
+  agentId: string;
   force: boolean;
   signal?: AbortSignal;
   onBrowserUrl?: (url: string) => void;
@@ -342,15 +393,7 @@ async function runOpenClawChatGptInteractiveLogin(input: {
   input.signal?.throwIfAborted();
   await assertOAuthCallbackAvailable();
   input.signal?.throwIfAborted();
-  const args = [
-    "models",
-    "auth",
-    "login",
-    "--provider",
-    "openai",
-    ...(input.force ? ["--force"] : []),
-    "--set-default"
-  ];
+  const args = buildOpenClawChatGptLoginArgs(input);
   const invocation = resolveOpenClawSpawnInvocation(openClawBin, args);
 
   await new Promise<void>((resolve, reject) => {
