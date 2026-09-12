@@ -12,6 +12,7 @@ type ProjectReviewModel = {
   projectType: string | null;
   summary: string | null;
   highlights: Array<{
+    id: string;
     label: string;
     statement: string;
     verification: WorkspaceCreationIntelligenceReviewSnapshot["facts"][number]["verification"];
@@ -124,7 +125,7 @@ export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, opti
     description: projectIntelligence?.description ?? null,
     projectType: projectIntelligence?.projectType ?? result.blueprint.identity.projectType,
     summary: projectIntelligence?.description ?? result.blueprint.identity.purpose,
-    highlights: facts.slice(0, 8).map((fact) => ({ label: humanProjectFactLabel(fact.key), statement: fact.statement, verification: fact.verification, conflicted: fact.conflicted })),
+    highlights: facts.slice(0, 8).map((fact) => ({ id: fact.id, label: humanProjectFactLabel(fact.key), statement: fact.statement, verification: fact.verification, conflicted: fact.conflicted })),
     keyFacts: facts,
     officialResources: resources,
     understanding: projectIntelligence?.understanding ?? [projectIntelligence?.description, ...(projectIntelligence?.unknowns ?? []).map((unknown) => `Unknown: ${unknown}`)].filter((value): value is string => Boolean(value)).slice(0, 8),

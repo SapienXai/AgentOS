@@ -1414,7 +1414,7 @@ function ReviewView({
             <p id="project-highlights-heading" className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project highlights</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {model.project.highlights.slice(0, 4).map((highlight) => (
-                <div key={`${highlight.label}:${highlight.statement}`} className={cn("rounded-xl border px-3 py-2.5", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}>
+                <div key={highlight.id} className={cn("rounded-xl border px-3 py-2.5", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}>
                   <div className="flex items-center justify-between gap-2">
                     <p className={cn("text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{highlight.label}</p>
                     <span className={cn("shrink-0 text-[10px]", highlight.conflicted ? "text-amber-500" : highlight.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{highlight.conflicted ? "Conflict" : highlight.verification}</span>

@@ -287,6 +287,34 @@ test("review presenter exposes only bounded intelligence and composition project
   assert.equal(review.technicalDetails.intelligenceStatus, "model");
 });
 
+test("project highlight identity keys remain unique when canonical claims repeat", () => {
+  const review = presentWorkspaceBlueprint(minimalResult(), {
+    intelligence: {
+      ...createInitialWorkspaceCreationSnapshot(1).intelligence,
+      status: "model",
+      review: {
+        projectName: "CoinCollect",
+        description: "A fictional project.",
+        projectType: "software",
+        understanding: [],
+        facts: [
+          { id: "contract-fact-1", key: "contractAddress", statement: "The project publishes a public contract address.", verification: "discovered", conflicted: false },
+          { id: "contract-fact-2", key: "contractAddress", statement: "The project publishes a public contract address.", verification: "discovered", conflicted: false }
+        ],
+        resources: [],
+        conflicts: [],
+        unknowns: [],
+        sourceCount: 1,
+        evidenceCount: 2
+      }
+    }
+  });
+
+  const ids = review.project.highlights.map((highlight) => highlight.id);
+  assert.deepEqual(ids, ["contract-fact-1", "contract-fact-2"]);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
   const [wrapperSource, source, contextRoute] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
@@ -326,6 +354,8 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /Start over/);
   assert.match(source, /View project evidence/);
   assert.match(source, /Use basic draft/);
+  assert.match(source, /key=\{highlight\.id\}/);
+  assert.doesNotMatch(source, /key=\{`\$\{highlight\.label\}:\$\{highlight\.statement\}`\}/);
   assert.doesNotMatch(source, /AI project intelligence unavailable/);
   assert.match(source, /provisioningRun\?\.state === "ready" \|\| provisioningRun\?\.state === "partial"/);
   assert.doesNotMatch(source, /setInterval|2[,_]?400/);
