@@ -912,7 +912,7 @@ async function completeWorkspaceComposition(
       }));
     }
     run = await updateCompositionSnapshot(filePath, run, dependencies, compositionResultFromPlan(storedPlan));
-    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+    return markReviewReady(filePath, actorId, run, dependencies);
   }
 
   if (priorOutcome === "in-flight" || priorOutcome === "ambiguous") {
@@ -923,7 +923,7 @@ async function completeWorkspaceComposition(
     });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: recovered.plan });
     run = await updateCompositionSnapshot(filePath, run, dependencies, recovered);
-    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+    return markReviewReady(filePath, actorId, run, dependencies);
   }
 
   // The deadline already reserves Composer time by the way Architect and
@@ -944,7 +944,7 @@ async function completeWorkspaceComposition(
       ...current,
       compositionExecution: { ...current.compositionExecution, outcome: "completed" }
     }));
-    return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+    return markReviewReady(filePath, actorId, run, dependencies);
   }
 
   run = await mutateWorkspaceCreationRun(filePath, (current) => ({
@@ -999,11 +999,17 @@ async function completeWorkspaceComposition(
     }));
   }
   run = await updateCompositionSnapshot(filePath, run, dependencies, composition);
-  return updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  return markReviewReady(filePath, actorId, run, dependencies);
 }
 
 function compositionResultFromPlan(plan: WorkspaceCompositionPlan): WorkspaceCompositionResult {
   return { plan, summary: summarizeWorkspaceCompositionPlan(plan, 0, plan.status === "fallback" ? { code: "composition-fallback", message: plan.warnings[0] ?? "A deterministic safe draft was used." } : null) };
+}
+
+async function markReviewReady(filePath: string, actorId: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies) {
+  const reviewReady = await updateSnapshot(filePath, run, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+  const certified = await getWorkspaceCreationReviewReadiness({ actorId, runId: reviewReady.runId }, dependencies);
+  return certified?.run ?? reviewReady;
 }
 
 function compositionRunId(run: WorkspaceCreationRun, suffix?: string) {
@@ -1615,7 +1621,7 @@ async function recoverUnexpectedCreationFailure(filePath: string, actorId: strin
     }, { runId: run.runId, warning: "Workspace composition execution was not safely recoverable; a deterministic safe draft was used." });
     if (run.draftContextId) await dependencies.persistCompositionPlan({ actorId, draftContextId: run.draftContextId, plan: recovered.plan });
     const updated = await updateCompositionSnapshot(filePath, run, dependencies, recovered);
-    return updateSnapshot(filePath, updated, dependencies, { state: "review-ready", stage: "review-preparation" }, "state-changed");
+    return markReviewReady(filePath, actorId, updated, dependencies);
   }
   if (run.intelligenceExecution.outcome === "in-flight" || run.intelligenceExecution.outcome === "ambiguous") {
     return failRun(filePath, run, dependencies, failure("unknown", "intelligence-execution-ambiguous", "terminal", "Project Intelligence execution could not be safely recovered."));

@@ -580,6 +580,11 @@ export function CreateWorkspaceExperience({
         return;
       }
       const serverRun = certified.run;
+      const serverResult = serverRun.result as WorkspaceArchitectResult | null;
+      if (!serverResult?.blueprint) {
+        setRevisionError("The reviewed workspace draft is no longer available.");
+        return;
+      }
       setStage("provisioning");
       setProvisioningRun(null);
       setProvisioningError(null);
@@ -588,11 +593,11 @@ export function CreateWorkspaceExperience({
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          blueprint: result.blueprint,
-          draftContextId,
-          expectedKnowledgeGenerationId: (freshness ?? result.freshness).currentGenerationId,
+          blueprint: serverResult.blueprint,
+          draftContextId: serverRun.draftContextId,
+          expectedKnowledgeGenerationId: serverResult.freshness.currentGenerationId,
           idempotencyKey,
-          acceptDraft: result.blueprint.status === "draft" && basicDraftApproved,
+          acceptDraft: basicDraftApproved && (serverResult.blueprint.status === "draft" || serverResult.reasoning.status === "fallback"),
           creationRunId: serverRun.runId,
           compositionPlanId: serverRun.snapshot.composition?.planId ?? null,
           compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null
@@ -894,7 +899,6 @@ export function CreateWorkspaceExperience({
             onApproveBasicDraft={() => void approveBasicDraft()}
             onRebuildPlan={() => void rebuildPlan()}
             isRebuildingPlan={isRebuildingPlan}
-            onStartOver={() => setShowStartOverConfirmation(true)}
             showStartOverConfirmation={showStartOverConfirmation}
             onKeepDraft={() => setShowStartOverConfirmation(false)}
             onConfirmStartOver={() => void startOver()}
@@ -1269,7 +1273,6 @@ function ReviewView({
   onApproveBasicDraft,
   onRebuildPlan,
   isRebuildingPlan,
-  onStartOver,
   showStartOverConfirmation,
   onKeepDraft,
   onConfirmStartOver
@@ -1299,7 +1302,6 @@ function ReviewView({
   onApproveBasicDraft: () => void;
   onRebuildPlan: () => void;
   isRebuildingPlan: boolean;
-  onStartOver: () => void;
   showStartOverConfirmation: boolean;
   onKeepDraft: () => void;
   onConfirmStartOver: () => void;

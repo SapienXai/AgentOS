@@ -175,6 +175,29 @@ test("creation experience presenter uses friendly stages and preserves structure
   assert.equal(friendlyProvisioningPhase("applying-composition"), "Preparing workspace");
 });
 
+test("final review metrics use durable Project Intelligence rather than extraction candidates", () => {
+  const snapshot = createInitialWorkspaceCreationSnapshot(1);
+  snapshot.extraction = { ...snapshot.extraction, factCount: 15, resourceCount: 79 };
+  snapshot.intelligence = {
+    ...snapshot.intelligence,
+    review: {
+      projectName: "CoinCollect",
+      description: "A fictional project.",
+      projectType: "software",
+      understanding: [],
+      facts: Array.from({ length: 15 }, (_, index) => ({ id: `fact-${index}`, key: "projectName", statement: "The project has a name.", verification: "verified" as const, conflicted: false })),
+      resources: Array.from({ length: 8 }, (_, index) => ({ id: `resource-${index}`, label: `Resource ${index}`, category: "documentation", locator: `https://example.test/${index}`, verification: "discovered" as const, conflicted: false, origin: "first-party-documentation" })),
+      conflicts: [],
+      unknowns: [],
+      sourceCount: 1,
+      evidenceCount: 15
+    }
+  };
+  const run = { runId: "run-durable-metrics", snapshot, events: [] } as never;
+  const model = presentWorkspaceCreationExperience({ run, result: minimalResult(), sources: [] });
+  assert.deepEqual(model.metrics, { pagesRead: 0, documentsRead: 0, factsFound: 15, officialResources: 8 });
+});
+
 test("live creation discovery is derived from bounded events and keeps aggregate metrics current", () => {
   const snapshot = createInitialWorkspaceCreationSnapshot(1);
   snapshot.context.sourceProgress = [{ sourceId: "website", sourceKind: "website", state: "ready", discoveredItems: 4, fetchedItems: 3, storedDocuments: 2, warningCount: 0, currentActivity: "Source read", currentLocator: "https://acme.example/docs" }];
@@ -299,6 +322,11 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /setProgressPhase\(shouldStageContext \? "reading-context" : "designing-workspace"\)/);
   assert.match(source, /activeStage === "review-preparation"/);
   assert.match(source, /Architecture generated from partial project context/);
+  assert.match(source, /Workspace plan needs to be rebuilt/);
+  assert.match(source, /Start over/);
+  assert.match(source, /View project evidence/);
+  assert.match(source, /Use basic draft/);
+  assert.doesNotMatch(source, /AI project intelligence unavailable/);
   assert.match(source, /provisioningRun\?\.state === "ready" \|\| provisioningRun\?\.state === "partial"/);
   assert.doesNotMatch(source, /setInterval|2[,_]?400/);
   assert.doesNotMatch(source, /Marketing intent|Management intent|Autonomous operation/);

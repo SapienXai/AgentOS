@@ -13,6 +13,8 @@ import {
   refreshWorkspaceCreationRun,
   reviseWorkspaceCreationRun,
   listResumableWorkspaceCreationRuns,
+  getWorkspaceCreationReviewReadiness,
+  abandonWorkspaceCreationRun,
   type WorkspaceCreationRunDependencies
 } from "@/lib/agentos/application/workspace-creation-run-service";
 import {
@@ -446,6 +448,129 @@ test("server-authoritative revision creates a new composition lineage without ac
 
     const resumable = await listResumableWorkspaceCreationRuns(actorId, { rootPath });
     assert.deepEqual(resumable.map((run) => run.runId), [created.run.runId]);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("review readiness repairs a mismatched canonical composition before provisioning", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-readiness-"));
+  const actorId = "readiness-actor";
+  const draftContextId = "33333333-3333-4333-8333-333333333333";
+  const plans = new Map<string, ReturnType<typeof createDeterministicWorkspaceComposition>["plan"]>();
+  try {
+    const result = await generateWorkspaceBlueprint({
+      brief: "Build a small workspace.",
+      mode: "automatic",
+      materialization: { mode: "empty" },
+      operatorConstraints: []
+    }, {
+      runId: "readiness-architect",
+      nativeSearch: async () => ({ status: "unavailable", results: [] }),
+      modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+    });
+    const mismatched = createDeterministicWorkspaceComposition({
+      blueprint: result.blueprint,
+      operatorIntent: { brief: "A different brief.", constraints: [] },
+      materializationMode: "empty"
+    }, { runId: "old-plan" }).plan;
+    plans.set(draftContextId, mismatched);
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "readiness-key"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "readiness-key",
+      attempt: 1,
+      input: { brief: "Build a small workspace.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result
+    });
+
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId, runId: created.run.runId }, {
+      rootPath,
+      readCompositionPlan: async ({ draftContextId: currentContextId }) => plans.get(currentContextId) ?? null,
+      persistCompositionPlan: async ({ draftContextId: currentContextId, plan }) => {
+        plans.set(currentContextId, plan);
+        return { planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status };
+      }
+    });
+    assert.ok(certified);
+    assert.equal(certified.readiness.status, "ready");
+    assert.equal(certified.readiness.provisionable, true);
+    assert.equal(plans.get(draftContextId)?.workspaceBlueprintFingerprint, certified.readiness.blueprintFingerprint);
+    assert.equal(certified.run.snapshot.reviewReadiness?.reasonCode, "ready");
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("review draft abandonment is durable, idempotent, and actor-scoped", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-abandon-"));
+  const actorId = "abandon-actor";
+  try {
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "abandon-key"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "abandon-key",
+      attempt: 1,
+      input: { brief: "Build a workspace.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId: null,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result: null
+    });
+    await updateWorkspaceCreationRun(created.filePath, created.run, { snapshot: { ...created.run.snapshot, state: "review-ready" } });
+    assert.deepEqual((await listResumableWorkspaceCreationRuns(actorId, { rootPath })).map((run) => run.runId), [created.run.runId]);
+
+    const abandoned = await abandonWorkspaceCreationRun({ actorId, runId: created.run.runId }, { rootPath, now: () => new Date("2026-09-12T00:00:00.000Z") });
+    assert.equal(abandoned?.abandonedAt, "2026-09-12T00:00:00.000Z");
+    const repeated = await abandonWorkspaceCreationRun({ actorId, runId: created.run.runId }, { rootPath, now: () => new Date("2026-09-12T00:01:00.000Z") });
+    assert.equal(repeated?.abandonedAt, abandoned?.abandonedAt);
+    assert.equal(await abandonWorkspaceCreationRun({ actorId: "other-actor", runId: created.run.runId }, { rootPath }), null);
+    assert.deepEqual((await listResumableWorkspaceCreationRuns(actorId, { rootPath })).map((run) => run.runId), []);
+    assert.equal((await readWorkspaceCreationRunFile(created.filePath))?.abandonedAt, abandoned?.abandonedAt);
+
+    const active = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "active-abandon-key"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "active-abandon-key",
+      attempt: 1,
+      input: { brief: "Build another workspace.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId: null,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation", provisioningHandoffReady: true, provisioningRunId: "provisioning-run" },
+      result: null
+    });
+    await assert.rejects(() => abandonWorkspaceCreationRun({ actorId, runId: active.run.runId }, { rootPath }), /handed off for provisioning/);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("review readiness fails closed when canonical composition repair cannot persist", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-readiness-failure-"));
+  const actorId = "readiness-failure-actor";
+  const draftContextId = "44444444-4444-4444-8444-444444444444";
+  try {
+    const result = await generateWorkspaceBlueprint({ brief: "Build a workspace.", mode: "automatic", materialization: { mode: "empty" }, operatorConstraints: [] }, {
+      runId: "readiness-failure-architect",
+      nativeSearch: async () => ({ status: "unavailable", results: [] }),
+      modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+    });
+    const oldPlan = createDeterministicWorkspaceComposition({ blueprint: result.blueprint, operatorIntent: { brief: "Old intent", constraints: [] }, materializationMode: "empty" }, { runId: "old-plan" }).plan;
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "readiness-failure-key"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "readiness-failure-key",
+      attempt: 1,
+      input: { brief: "Build a workspace.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+      draftContextId,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result
+    });
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId, runId: created.run.runId }, {
+      rootPath,
+      readCompositionPlan: async () => oldPlan,
+      persistCompositionPlan: async () => { throw new Error("plan storage unavailable"); }
+    });
+    assert.ok(certified);
+    assert.equal(certified.readiness.reasonCode, "composition-rebuild-failed");
+    assert.equal(certified.readiness.provisionable, false);
+    assert.equal(certified.readiness.requiredAction, "rebuild-plan");
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }
