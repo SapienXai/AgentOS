@@ -1895,10 +1895,16 @@ function applyCreationProfileLimits(result: WorkspaceArchitectResult, policy: Re
   };
 }
 
-function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedDependencies {
+function isResolvedDependencies(input: WorkspaceCreationRunDependencies | ResolvedDependencies): input is ResolvedDependencies {
+  return "budgetOverrides" in input && "nativeComposer" in input;
+}
+
+function resolveDependencies(input: WorkspaceCreationRunDependencies | ResolvedDependencies): ResolvedDependencies {
+  const resolved = isResolvedDependencies(input);
+  const budgetOverrides = resolved ? input.budgetOverrides : input.budget ?? {};
   return {
-    rootPath: resolveWorkspaceCreationRunRoot(input.rootPath),
-    provisioningRootPath: resolveProvisioningRoot(input.provisioningRootPath),
+    rootPath: resolved ? input.rootPath : resolveWorkspaceCreationRunRoot(input.rootPath),
+    provisioningRootPath: resolved ? input.provisioningRootPath : resolveProvisioningRoot(input.provisioningRootPath),
     workspaceIntelligenceBindingRootPath: input.workspaceIntelligenceBindingRootPath,
     now: input.now ?? (() => new Date()),
     persistIntake: input.persistIntake ?? persistWorkspaceCreationIntake,
@@ -1921,9 +1927,9 @@ function resolveDependencies(input: WorkspaceCreationRunDependencies): ResolvedD
     inspectCompositionFiles: input.inspectCompositionFiles ?? inspectWorkspaceCompositionFiles,
     readWorkspaceIntelligenceBinding: input.readWorkspaceIntelligenceBinding ?? readWorkspaceIntelligenceBinding,
     findProvisioningRunById: input.findProvisioningRunById ?? findRunById,
-    budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...(input.budget ?? {}) },
-    budgetOverrides: input.budget ?? {},
-    nativeComposer: !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake
+    budget: { ...DEFAULT_WORKSPACE_CREATION_BUDGET, ...budgetOverrides },
+    budgetOverrides,
+    nativeComposer: resolved ? input.nativeComposer : !input.composeWorkspace && !input.generateArchitect && !input.stageContext && !input.persistIntake
   };
 }
 

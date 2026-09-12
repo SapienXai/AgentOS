@@ -20,6 +20,7 @@ import {
 import { createInitialWorkspaceCreationSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
 import { resolveWorkspaceCreationPolicy } from "@/lib/agentos/domains/workspace-creation-policy";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
+import { createDeterministicWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
 
 test("Quick is the bounded default and Deep keeps the full policy", () => {
   const quick = resolveWorkspaceCreationPolicy("quick");
@@ -40,6 +41,56 @@ test("invalid creation profiles are rejected before a run is persisted", async (
     () => startWorkspaceCreationRun({ actorId: "profile-validation-actor", idempotencyKey: "invalid-profile", brief: "Build a workspace", profile: "unsupported" as never }),
     /Workspace creation profile is invalid/
   );
+});
+
+test("Fast keeps its bounded Architect budget when execution dependencies are resolved twice", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-fast-budget-"));
+  let architectOptions: { maxRetries?: number; timeoutMs?: number } | undefined;
+  try {
+    const actorId = "fast-budget-actor";
+    const dependencies: WorkspaceCreationRunDependencies = {
+      rootPath,
+      persistIntake: async () => ({ draftContextId: "11111111-1111-4111-8111-111111111111", sources: [], fingerprint: "f".repeat(64) }),
+      stageContext: async ({ draftContextId }) => ({
+        draftContextId: draftContextId!,
+        generationId: null,
+        runStatus: "ready",
+        reused: false,
+        sources: [],
+        sourceReports: [],
+        warnings: []
+      }),
+      readContextMetadata: async ({ draftContextId }) => ({
+        draftContextId,
+        generationId: null,
+        runStatus: "ready",
+        reused: false,
+        sources: [],
+        sourceReports: [],
+        warnings: [],
+        knowledge: { generationId: null, sources: [], documents: [], warnings: [] }
+      }),
+      readIntelligencePack: async () => null,
+      readIntelligenceSummary: async () => null,
+      readCompositionPlan: async () => null,
+      persistCompositionPlan: async ({ plan }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status }),
+      generateArchitect: async (input, options) => {
+        architectOptions = { maxRetries: options?.maxRetries, timeoutMs: options?.timeoutMs };
+        return generateWorkspaceBlueprint(input, {
+          ...options,
+          modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+        });
+      },
+      composeWorkspace: async (input, options) => createDeterministicWorkspaceComposition(input, { runId: options?.runId ?? "fast-budget-composition" })
+    };
+    const started = await startWorkspaceCreationRun({ actorId, idempotencyKey: "fast-budget", brief: "Build a workspace", profile: "fast" }, dependencies);
+    const finished = await waitForWorkspaceCreationRunIdle({ actorId, runId: started.runId }, dependencies);
+    assert.equal(finished?.snapshot.state, "review-ready");
+    assert.equal(architectOptions?.maxRetries, 0);
+    assert.ok((architectOptions?.timeoutMs ?? 0) <= 8_000);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
 });
 
 test("Continue now persists an expedite intent without cancelling the current run", async () => {
