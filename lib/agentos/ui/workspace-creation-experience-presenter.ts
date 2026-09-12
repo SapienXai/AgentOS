@@ -115,6 +115,7 @@ export function presentWorkspaceCreationExperience(input: {
   } : null;
   const composition = snapshot?.composition;
   const coverage = presentCoverage(snapshot, discovery);
+  const durableReview = snapshot?.intelligence.review;
   return {
     stage,
     title: stage === "input" ? "Create a workspace" : stage === "analyzing" ? "Understanding your project" : stage === "review" ? "Review your workspace" : stage === "provisioning" ? "Creating workspace" : stage === "complete" ? "Workspace ready" : "Workspace needs attention",
@@ -135,8 +136,8 @@ export function presentWorkspaceCreationExperience(input: {
     metrics: {
       pagesRead: discovery.aggregate.pages,
       documentsRead: discovery.aggregate.documents,
-      factsFound: discovery.aggregate.facts,
-      officialResources: discovery.aggregate.resources
+      factsFound: durableReview?.facts.length ?? 0,
+      officialResources: durableReview?.resources.length ?? 0
     },
     coverage,
     currentActivity: discovery.currentActivity

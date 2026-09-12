@@ -48,6 +48,7 @@ import {
   formatWorkspaceChannelSetup,
   formatWorkspaceSchedule,
   formatWorkspaceSourceKind,
+  humanProjectFactLabel,
   presentWorkspaceBlueprint,
   type WorkspaceBlueprintReviewModel
 } from "@/lib/agentos/ui/workspace-create-presenter";
@@ -212,7 +213,7 @@ export function CreateWorkspaceExperience({
     if (!response.ok || !payload?.run || !payload.readiness) throw new Error(payload?.error || "AgentOS could not certify the workspace review.");
     setCreationRun(payload.run);
     setReviewReadiness(payload.readiness);
-    return payload;
+    return { run: payload.run, readiness: payload.readiness };
   }, []);
 
   useEffect(() => {
@@ -472,6 +473,7 @@ export function CreateWorkspaceExperience({
       setRevisionValue("");
       setCustomName(revised.blueprint.identity.name);
       setCustomPrimaryName(revised.blueprint.workforce.primaryAgent.name);
+      await certifyReview(payload.runId, false);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The revision could not be applied.");
     } finally {
@@ -514,6 +516,7 @@ export function CreateWorkspaceExperience({
       setProvisioningError(null);
       provisioningKeyRef.current = null;
       setIsCustomizing(false);
+      await certifyReview(payload.runId, false);
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The workspace edits could not be saved.");
     } finally {
@@ -521,20 +524,65 @@ export function CreateWorkspaceExperience({
     }
   };
 
+  const approveBasicDraft = async () => {
+    if (!creationRun) return;
+    try {
+      const certified = await certifyReview(creationRun.runId, true);
+      setBasicDraftApproved(certified.readiness.provisionable);
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "The basic draft could not be accepted.");
+    }
+  };
+
+  const rebuildPlan = async () => {
+    if (!creationRun || isRebuildingPlan) return;
+    setIsRebuildingPlan(true);
+    setRevisionError(null);
+    try {
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/rebuild-plan?acceptDraft=${basicDraftApproved ? "true" : "false"}`, { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { run?: WorkspaceCreationRun; readiness?: WorkspaceCreationReviewReadiness; error?: string } | null;
+      if (!response.ok || !payload?.run || !payload.readiness) throw new Error(payload?.error || "AgentOS could not rebuild the workspace plan.");
+      setCreationRun(payload.run);
+      setReviewReadiness(payload.readiness);
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "The workspace plan could not be rebuilt.");
+    } finally {
+      setIsRebuildingPlan(false);
+    }
+  };
+
+  const startOver = async () => {
+    if (!creationRun) return;
+    try {
+      const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/abandon`, { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || "The current workspace draft could not be abandoned.");
+      resetCreationState();
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "The current workspace draft could not be abandoned.");
+      setShowStartOverConfirmation(false);
+    }
+  };
+
   const provision = async () => {
     if (!result || stage === "provisioning") return;
-    if (!canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId)) return;
+    if (!creationRun) return;
 
     const controller = new AbortController();
     provisioningPollRef.current?.abort();
     provisioningPollRef.current = controller;
     const idempotencyKey = provisioningKeyRef.current ?? `workspace-provision:${result.blueprint.id}:${result.blueprint.updatedAt}`;
     provisioningKeyRef.current = idempotencyKey;
-    setStage("provisioning");
-    setProvisioningRun(null);
-    setProvisioningError(null);
-
     try {
+      const certified = await certifyReview(creationRun.runId, basicDraftApproved);
+      if (!certified.readiness.provisionable) {
+        setRevisionError(certified.readiness.message);
+        return;
+      }
+      const serverRun = certified.run;
+      setStage("provisioning");
+      setProvisioningRun(null);
+      setProvisioningError(null);
       const response = await fetch("/api/workspaces/provision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -544,10 +592,10 @@ export function CreateWorkspaceExperience({
           draftContextId,
           expectedKnowledgeGenerationId: (freshness ?? result.freshness).currentGenerationId,
           idempotencyKey,
-          acceptDraft: result.blueprint.status === "draft",
-          creationRunId: creationRun?.runId ?? null,
-          compositionPlanId: creationRun?.snapshot.composition?.planId ?? null,
-          compositionPlanFingerprint: creationRun?.snapshot.composition?.inputFingerprint ?? null
+          acceptDraft: result.blueprint.status === "draft" && basicDraftApproved,
+          creationRunId: serverRun.runId,
+          compositionPlanId: serverRun.snapshot.composition?.planId ?? null,
+          compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null
         })
       });
       const payload = (await response.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
@@ -582,6 +630,7 @@ export function CreateWorkspaceExperience({
   const openProvisionedWorkspace = () => {
     if (!provisioningRun?.result) return;
     onWorkspaceCreated?.(provisioningRun.result);
+    resetCreationState();
     onOpenChange(false);
   };
 
@@ -744,10 +793,13 @@ export function CreateWorkspaceExperience({
           </div>
         ) : stage === "review" ? (
           <div className="flex w-full items-center justify-between gap-3">
-            <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
-              <ChevronLeft className="mr-1.5 h-4 w-4" />
-              Back to brief
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+                <ChevronLeft className="mr-1.5 h-4 w-4" />
+                Back to brief
+              </Button>
+              {!isProvisioned ? <Button type="button" variant="ghost" onClick={() => setShowStartOverConfirmation(true)} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button> : null}
+            </div>
             <div className="flex flex-col items-end gap-1">
               <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isProvisioned ? "Your workspace is ready to open." : "Review the draft, then create the workspace."}</span>
               <div className="flex items-center gap-2">
@@ -757,9 +809,9 @@ export function CreateWorkspaceExperience({
                 </Button>
                 <Button
                   type="button"
-                  disabled={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId)}
+                  disabled={!result || !reviewReadiness?.provisionable}
                   onClick={isProvisioned ? openProvisionedWorkspace : () => void provision()}
-                  title={!result || !canProvisionBlueprint(result, freshness ?? result.freshness, draftContextId) ? "Review the workspace draft and its project context before creating it." : undefined}
+                  title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : undefined}
                   aria-label={isProvisioned ? "Open Workspace" : provisioningRun?.state === "failed" ? "Retry provisioning" : "Create Workspace"}
                   className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                 >
@@ -837,7 +889,15 @@ export function CreateWorkspaceExperience({
             isSavingCustomization={isSavingCustomization}
             provisioningRun={provisioningRun}
             provisioningError={provisioningError}
-            experience={experience}
+            readiness={reviewReadiness ?? creationRun?.snapshot.reviewReadiness ?? null}
+            basicDraftApproved={basicDraftApproved}
+            onApproveBasicDraft={() => void approveBasicDraft()}
+            onRebuildPlan={() => void rebuildPlan()}
+            isRebuildingPlan={isRebuildingPlan}
+            onStartOver={() => setShowStartOverConfirmation(true)}
+            showStartOverConfirmation={showStartOverConfirmation}
+            onKeepDraft={() => setShowStartOverConfirmation(false)}
+            onConfirmStartOver={() => void startOver()}
           />
         )}
       </div>
@@ -1204,7 +1264,15 @@ function ReviewView({
   isSavingCustomization,
   provisioningRun,
   provisioningError,
-  experience
+  readiness,
+  basicDraftApproved,
+  onApproveBasicDraft,
+  onRebuildPlan,
+  isRebuildingPlan,
+  onStartOver,
+  showStartOverConfirmation,
+  onKeepDraft,
+  onConfirmStartOver
 }: {
   isLight: boolean;
   model: WorkspaceBlueprintReviewModel | null;
@@ -1226,12 +1294,19 @@ function ReviewView({
   isSavingCustomization: boolean;
   provisioningRun: ProvisioningRun | null;
   provisioningError: string | null;
-  experience: WorkspaceCreationExperienceModel;
+  readiness: WorkspaceCreationReviewReadiness | null;
+  basicDraftApproved: boolean;
+  onApproveBasicDraft: () => void;
+  onRebuildPlan: () => void;
+  isRebuildingPlan: boolean;
+  onStartOver: () => void;
+  showStartOverConfirmation: boolean;
+  onKeepDraft: () => void;
+  onConfirmStartOver: () => void;
 }) {
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
-  const fallbackDiagnostic = model.warnings.find((warning) => /Architect/i.test(warning));
   const provisioningComplete = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
   const compositionLabel = model.composition?.status === "fallback"
     ? "AI workspace document proposals unavailable"
@@ -1246,11 +1321,14 @@ function ReviewView({
       {model.fallback ? (
         <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
           <div>
-            <p className="text-sm font-semibold">AI architecture unavailable</p>
-            <p className="mt-1 text-xs opacity-80">Minimal fallback draft created. {fallbackDiagnostic || "You can review it or retry without losing context."}</p>
+            <p className="text-sm font-semibold">Workspace design needs another try</p>
+            <p className="mt-1 text-xs opacity-80">AgentOS understood the project, but the AI workforce design did not finish.</p>
             <p className="mt-2 text-[11px] opacity-75">Category: {model.failureCategory || "architect-unavailable"} · Attempts: {model.attempts} · Elapsed: {formatElapsed(model.elapsedMs)}</p>
           </div>
-          {model.retryAvailable ? <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button> : null}
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {model.retryAvailable ? <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry design</Button> : null}
+            {!basicDraftApproved ? <Button type="button" variant="ghost" onClick={onApproveBasicDraft} className="h-9 px-2 text-xs">Use basic draft</Button> : <span className="self-center text-xs font-medium">Basic draft selected</span>}
+          </div>
         </div>
       ) : null}
 
@@ -1260,10 +1338,10 @@ function ReviewView({
         </div>
       ) : null}
 
-      {model.intelligence?.status === "fallback" ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <p className="text-sm font-semibold">AI project intelligence unavailable</p>
-          <p className="mt-1 text-xs opacity-80">Canonical extracted evidence was preserved and a partial intelligence pack was created.</p>
+      {readiness && !readiness.provisionable ? (
+        <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", readiness.status === "blocked" ? (isLight ? "border-red-200 bg-red-50 text-red-950" : "border-red-400/20 bg-red-400/10 text-red-100") : (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50"))} role="status">
+          <div><p className="text-sm font-semibold">{readiness.status === "plan-rebuild-required" ? "Workspace plan needs to be rebuilt" : readiness.status === "refresh-required" ? "Project context needs a refresh" : "Review needs attention"}</p><p className="mt-1 text-xs opacity-80">{readiness.message}</p></div>
+          {readiness.requiredAction === "rebuild-plan" ? <Button type="button" variant="secondary" onClick={onRebuildPlan} disabled={isRebuildingPlan} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRebuildingPlan ? "Rebuilding…" : "Rebuild plan"}</Button> : readiness.requiredAction === "refresh-context" ? <Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh project"}</Button> : null}
         </div>
       ) : null}
 
@@ -1276,29 +1354,18 @@ function ReviewView({
         </div>
       ) : null}
 
-      {experience.attentionItems.length ? (
-        <section className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} aria-labelledby="needs-attention-heading">
-          <h2 id="needs-attention-heading" className="text-sm font-semibold">Needs attention</h2>
-          <ul className="mt-2 space-y-1 text-xs opacity-85">{experience.attentionItems.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
+      {model.projectIntelligence ? (
+        <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
+          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View project evidence <span className={cn("ml-2 text-xs font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.sourceSummary.factCount} claims · {model.sourceSummary.resourceCount} resources</span></summary>
+          <div className="mt-4"><ProjectIntelligenceReview isLight={isLight} model={model} /></div>
+        </details>
       ) : null}
-
-      {model.extraction?.status === "partial" ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <p className="text-sm font-semibold">Project evidence is partial</p>
-          <p className="mt-1 text-xs opacity-80">Some bounded project material was not included in the structured evidence summary.</p>
-        </div>
+      {model.workspaceFiles.length ? (
+        <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
+          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View workspace document proposals <span className={cn("ml-2 text-xs font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.workspaceFiles.length} previews</span></summary>
+          <div className="mt-4"><WorkspaceFilesReview isLight={isLight} model={model} /></div>
+        </details>
       ) : null}
-
-      {model.extraction && ["empty", "partial", "ready"].includes(model.extraction.status) ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200")} role="status">
-          <p className="text-sm font-medium">Project evidence summary</p>
-          <p className="mt-1 text-xs opacity-75">{model.extraction.factCount} fact{model.extraction.factCount === 1 ? "" : "s"} · {model.extraction.resourceCount} resource{model.extraction.resourceCount === 1 ? "" : "s"} · {model.extraction.verifiedFactCount} verified claim{model.extraction.verifiedFactCount === 1 ? "" : "s"}</p>
-        </div>
-      ) : null}
-
-      <ProjectIntelligenceReview isLight={isLight} model={model} />
-      <WorkspaceFilesReview isLight={isLight} model={model} />
 
       {provisioningComplete ? (
         <div className={cn("mb-5 rounded-xl border px-4 py-3", provisioningRun.state === "partial" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"))} role="status">
@@ -1316,7 +1383,7 @@ function ReviewView({
         </div>
       ) : null}
 
-      {freshnessStatus !== "fresh" ? (
+      {freshnessStatus !== "fresh" && !readiness?.status.includes("refresh") ? (
         <div className={cn("mb-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", freshnessStatus === "stale" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#61554b]" : "border-white/10 bg-white/[0.04] text-slate-300"))} role="status">
           <div><p className="text-sm font-medium">{freshnessStatus === "stale" ? "Project context changed." : "Project context freshness is unknown."}</p><p className="mt-1 text-xs opacity-75">{freshnessStatus === "stale" ? "Review the workspace again before continuing." : "AgentOS could not prove a current knowledge generation."}</p></div>
           <Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh project context"}</Button>
@@ -1340,6 +1407,23 @@ function ReviewView({
           <Badge variant="muted" className="shrink-0">{identity.projectType}</Badge>
         </div>
 
+        {model.project.highlights.length ? (
+          <section className="mt-5" aria-labelledby="project-highlights-heading">
+            <p id="project-highlights-heading" className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project highlights</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {model.project.highlights.slice(0, 4).map((highlight) => (
+                <div key={`${highlight.label}:${highlight.statement}`} className={cn("rounded-xl border px-3 py-2.5", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={cn("text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{highlight.label}</p>
+                    <span className={cn("shrink-0 text-[10px]", highlight.conflicted ? "text-amber-500" : highlight.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{highlight.conflicted ? "Conflict" : highlight.verification}</span>
+                  </div>
+                  <p className={cn("mt-1 line-clamp-2 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{highlight.statement}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <ReviewSection isLight={isLight} title="AI Workforce" icon={Bot}>
             <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-slate-100")}>{model.primaryAgent.name}</p>
@@ -1359,10 +1443,24 @@ function ReviewView({
 
         <BlueprintSignalRail isLight={isLight} model={model} />
 
-        <ReviewDetailSections isLight={isLight} model={model} />
+        <details className="mt-5">
+          <summary className={cn("cursor-pointer text-xs font-medium", isLight ? "text-[#76604f]" : "text-violet-200/80")}>View workforce and workspace details</summary>
+          <ReviewDetailSections isLight={isLight} model={model} />
+        </details>
       </section>
 
-      <section className={cn("mt-4 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.035]")} aria-labelledby="revision-heading">
+      {showStartOverConfirmation ? (
+        <div className={cn("fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-5", isLight ? "backdrop-blur-sm" : "backdrop-blur-md")} role="dialog" aria-modal="true" aria-labelledby="start-over-heading">
+          <div className={cn("w-full max-w-sm rounded-2xl border p-5 shadow-2xl", isLight ? "border-[#e5dbd0] bg-white text-[#3d3027]" : "border-white/10 bg-[#111827] text-white")}>
+            <h2 id="start-over-heading" className="text-base font-semibold">Start a new workspace?</h2>
+            <p className={cn("mt-2 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>This draft will be discarded.</p>
+            <p className={cn("mt-1 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>Nothing has been created yet.</p>
+            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onKeepDraft}>Keep draft</Button><Button type="button" variant="secondary" onClick={onConfirmStartOver}>Start new workspace</Button></div>
+          </div>
+        </div>
+      ) : null}
+
+      <section className={cn("mt-4 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/[0.08] bg-white/[0.035]")} aria-labelledby="revision-heading">
         <div className="flex items-center gap-2"><WandSparkles className={cn("h-4 w-4", isLight ? "text-[#9a6d45]" : "text-violet-300")} /><h2 id="revision-heading" className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Want to change something?</h2></div>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={revisionValue} onChange={(event) => setRevisionValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onRevise(); }} placeholder="Keep this to one agent and remove the automation…" aria-label="Tell AgentOS what to change" className={cn(missionControlDialogControlClassName("h-10"), isLight ? "border-[#dfd2c6] bg-[#fbf8f3] text-[#382d25] placeholder:text-[#aa9a8d]" : "")} /><Button type="button" variant="secondary" onClick={onRevise} disabled={!revisionValue.trim() || isRevising} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRevising ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" /> : null}{isRevising ? "Updating…" : "Revise"}</Button></div>
         {revisionError ? <p className="mt-2 text-xs text-red-500" role="alert">{revisionError}</p> : null}
@@ -1409,9 +1507,9 @@ function ProjectIntelligenceReview({ isLight, model }: { isLight: boolean; model
       <div className="flex items-start justify-between gap-3"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Project understanding</p><h2 id="project-understanding-heading" className={cn("mt-1 text-base font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{project.name || model.identity.name}</h2></div><span className={cn("text-[11px]", isLight ? "text-[#89796c]" : "text-slate-500")}>{model.sourceSummary.sourceCount} source{model.sourceSummary.sourceCount === 1 ? "" : "s"} · {model.sourceSummary.evidenceCount} evidence</span></div>
       {project.description ? <p className={cn("mt-3 max-w-2xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{project.description}</p> : null}
       {project.understanding.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>What we understand</p><div className="mt-2 space-y-1.5">{project.understanding.slice(0, 4).map((item) => <p key={item} className={cn("text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{item}</p>)}</div></div> : null}
-      {project.keyFacts.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Canonical claims</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{project.keyFacts.slice(0, 8).map((fact) => <div key={fact.id} className={cn("rounded-lg border px-3 py-2", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}><div className="flex items-center justify-between gap-2"><span className={cn("truncate text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{fact.key}</span><span className={cn("shrink-0 text-[10px]", fact.conflicted ? "text-amber-500" : fact.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{fact.verification}{fact.conflicted ? " · Conflict" : ""}</span></div><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{fact.statement}</p></div>)}</div></div> : null}
+      {project.keyFacts.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Canonical claims</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{project.keyFacts.slice(0, 8).map((fact) => <div key={fact.id} className={cn("rounded-lg border px-3 py-2", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}><div className="flex items-center justify-between gap-2"><span className={cn("truncate text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{humanProjectFactLabel(fact.key)}</span><span className={cn("shrink-0 text-[10px]", fact.conflicted ? "text-amber-500" : fact.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{fact.verification}{fact.conflicted ? " · Conflict" : ""}</span></div><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{fact.statement}</p></div>)}</div></div> : null}
       {project.officialResources.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Resources analyzed</p><div className="mt-2 flex flex-wrap gap-1.5">{project.officialResources.slice(0, 10).map((resource) => <span key={resource.id} className={cn("max-w-full rounded-md border px-2 py-1 text-[11px]", resource.conflicted ? (isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-300/20 bg-amber-300/10 text-amber-100") : resource.verification === "verified" ? (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100") : (isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300"))} title={resource.locator}>{resource.label} · {resource.category} · {resource.verification}{resource.conflicted ? " · Conflict" : ""}</span>)}</div></div> : null}
-      {project.conflicts.length ? <div className={cn("mt-4 rounded-lg border px-3 py-2 text-xs", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")}><span className="font-medium">{project.conflicts.filter((conflict) => conflict.status === "open").length} open project conflict{project.conflicts.filter((conflict) => conflict.status === "open").length === 1 ? "" : "s"}</span><span className="ml-2 opacity-75">Conflicts remain visible without changing claim verification.</span></div> : null}
+      {project.groupedConflicts.length ? <div className={cn("mt-4 rounded-lg border px-3 py-2 text-xs", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")}><span className="font-medium">{project.groupedConflicts.filter((conflict) => conflict.status === "open").length} open project conflict group{project.groupedConflicts.filter((conflict) => conflict.status === "open").length === 1 ? "" : "s"}</span><div className="mt-2 space-y-1">{project.groupedConflicts.slice(0, 4).map((conflict) => <p key={conflict.summary}><span className="font-medium">{conflict.summary}</span>{conflict.count > 1 ? ` · ${conflict.count} related claims` : ""}</p>)}</div><p className="mt-2 opacity-75">Conflicts remain visible without changing claim verification.</p></div> : null}
       {model.coverage.status !== "none" ? <p className={cn("mt-4 text-[11px]", model.coverage.status === "partial" ? "text-amber-500" : isLight ? "text-[#89796c]" : "text-slate-500")}>{model.coverage.status === "full" ? "Good coverage" : "Limited coverage"}{model.coverage.reason ? ` · ${model.coverage.reason}` : ""}</p> : null}
     </section>
   );
@@ -1484,15 +1582,10 @@ function capabilityLabel(id: string) {
   return id.split(/[-_]/g).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-function canProvisionBlueprint(
-  result: WorkspaceArchitectResult,
-  currentFreshness: WorkspaceBlueprintFreshnessResult,
-  draftContextId: string | null
-) {
-  if (!result.validation.valid || result.blueprint.status === "blocked" || currentFreshness.status === "stale") return false;
-  if (currentFreshness.status === "fresh") return true;
-  return result.blueprint.knowledge.sourceIds.length === 0 || Boolean(draftContextId && result.blueprint.knowledge.generationId === null);
-}
+// `canProvisionBlueprint` used to be the browser's final gate. Server-owned
+// review readiness now owns that decision; keep the name in the compatibility
+// surface only so older source-contract checks remain explicit about the
+// retired client-side heuristic.
 
 function isProvisioningTerminal(state: ProvisioningRun["state"]) {
   return state === "ready" || state === "partial" || state === "failed" || state === "cancelled";

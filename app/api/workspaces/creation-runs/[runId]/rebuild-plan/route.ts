@@ -12,7 +12,8 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
   if ("response" in permission) return permission.response;
   try {
     const { runId } = await context.params;
-    const certified = await getWorkspaceCreationReviewReadiness({ actorId: permission.actor.actorId, runId, repair: true, forceRepair: true });
+    const acceptDraft = new URL(request.url).searchParams.get("acceptDraft") === "true";
+    const certified = await getWorkspaceCreationReviewReadiness({ actorId: permission.actor.actorId, runId, acceptDraft, repair: true, forceRepair: true });
     if (!certified) return NextResponse.json({ error: "Workspace creation run was not found." }, { status: 404 });
     return NextResponse.json(redactSecrets(certified));
   } catch (error) {
