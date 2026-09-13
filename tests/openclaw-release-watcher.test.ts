@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,11 @@ import {
   type GitHubIssueClient
 } from "@/lib/openclaw/upstream/github-issue-client";
 import { classifyOpenClawReleaseImpact } from "@/lib/openclaw/upstream/impact-classifier";
-import { runOpenClawReleaseWatch, selectOpenClawReleasesForIntake } from "@/scripts/openclaw-release-watch";
+import {
+  loadOpenClawCertifiedEvidence,
+  runOpenClawReleaseWatch,
+  selectOpenClawReleasesForIntake
+} from "@/scripts/openclaw-release-watch";
 import {
   LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
   resolveOpenClawUpdateDecision
@@ -319,6 +323,14 @@ test("intake JSON and issue output agree when identity is verified but contract 
   assert.equal(intake.impact.classifications.includes("DISCOVERY_INCOMPLETE"), true);
   assert.equal(intake.certification.status, "not-certified");
   assert.equal(intake.certification.normalUpdateAllowed, false);
+  assert.equal(intake.compatibilityExpectation.source, "version-default");
+  assert.equal(intake.compatibilityExpectation.epistemicStatus, "unverified");
+  assert.equal(intake.compatibilityExpectation.nativeCallObserved, false);
+  assert.equal(intake.compatibilityExpectation.capabilityMetadataObserved, false);
+  assert.equal(intake.versionRoles.supportedMinimum.status, "policy");
+  assert.equal(intake.versionRoles.recommended.status, "policy");
+  assert.equal(intake.versionRoles.nativeContract.status, "policy");
+  assert.equal(intake.versionRoles.liveRuntime.status, "not-tested");
   assert.match(issue, /NOT CERTIFIED/);
   assert.match(issue, /Static evidence incomplete.*certification blocked/i);
   assert.equal(intake.certification.requiredChecks.some((check) => check.id === "evidence-completion"), true);
@@ -365,6 +377,63 @@ test("runner returns intake-blocked and writes incomplete evidence for an author
   assert.equal(intake.certification.normalUpdateAllowed, false);
 });
 
+test("release-watch dry-run reconciles certified evidence and repository pin without mutating issue state", async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-reconcile-"));
+  const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-"));
+  await writeFile(join(evidenceDir, "openclaw-2026.9.5-final-certification.json"), `${JSON.stringify({
+    artifactType: "openclaw-2026.9.5-final-certification",
+    provenance: {
+      certifiedCodeHead: "c".repeat(40),
+      evidenceCommit: "d".repeat(40),
+      openClaw: {
+        version: "2026.9.5",
+        sourceCommit: "b".repeat(40),
+        buildId: "build-2026.9.5",
+        packageHash: "package-hash"
+      }
+    }
+  }, null, 2)}\n`, "utf8");
+  let issueCalls = 0;
+  const issueClient: GitHubIssueClient = {
+    listIssues: async () => { issueCalls += 1; throw new Error("dry-run must not inspect GitHub after identity mismatch"); },
+    createIssue: async () => { issueCalls += 1; throw new Error("dry-run must not create GitHub issues"); },
+    updateIssue: async () => { issueCalls += 1; throw new Error("dry-run must not update GitHub issues"); }
+  };
+
+  const result = await runOpenClawReleaseWatch({
+    mode: "manual",
+    targetVersion: "2026.9.5",
+    dryRun: true,
+    forceRefresh: true,
+    outputDir,
+    certifiedEvidenceDir: evidenceDir,
+    productionConfigText: "FROM ghcr.io/openclaw/openclaw:2026.9.4@sha256:" + "e".repeat(64),
+    issueClient,
+    agentosCommit: "f".repeat(40),
+    agentosVersion: "0.8.0",
+    now: () => new Date("2026-09-06T00:00:00.000Z"),
+    fetchImpl: releaseWatchIncompleteContractFetch("2026.9.5")
+  });
+
+  assert.equal(result.status, "intake-blocked");
+  assert.equal(result.productionConfig.status, "found");
+  assert.equal(result.intakes[0]?.certifiedEvidenceStatus, "found");
+  assert.equal(result.intakes[0]?.identityStatus, "mismatch");
+  assert.equal(result.intakes[0]?.productionConfigStatus, "mismatch");
+  assert.equal(result.intakes[0]?.reconciliationStatus, "blocked");
+  assert.equal(result.intakes[0]?.issueAction, "identity-mismatch");
+  assert.equal(result.intakes[0]?.issueMetadataStatus, "identity-mismatch");
+  assert.equal(issueCalls, 0);
+});
+
+test("release-watch treats the pre-existing final artifact as historical until fresh provenance is present", async () => {
+  const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.4" });
+
+  assert.equal(lookup.status, "invalid");
+  assert.equal(lookup.evidence, null);
+  assert.match(lookup.reason, /fresh certifiedCodeHead/i);
+});
+
 test("intake fingerprint excludes volatile generation time and leaves the manifest untouched", () => {
   const manifestBefore = structuredClone(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST);
   const input = intakeInput({ generatedAt: "2026-09-06T00:00:00.000Z" });
@@ -393,7 +462,18 @@ test("issue rendering is deduplicated across open and closed issues and surfaces
 
   const unchanged = await syncOpenClawCompatibilityIssue({ intake, client });
   assert.equal(unchanged.action, "unchanged");
+  assert.equal(unchanged.metadataStatus, "current");
   assert.equal(updateCount, 0);
+
+  const staleIssue = { ...issue, body: body.replace(intake.intakeHash, "stale-intake-hash") };
+  const stale = await syncOpenClawCompatibilityIssue({
+    intake,
+    client: { ...client, listIssues: async () => [staleIssue] },
+    dryRun: true
+  });
+  assert.equal(stale.action, "would-update");
+  assert.equal(stale.metadataStatus, "stale");
+  assert.match(stale.message, /stale/i);
 
   const driftIdentity = { ...intake.identity, sourceCommit: "b".repeat(40), identityHash: "different-identity" };
   const driftIntake = buildOpenClawCompatibilityIntake({

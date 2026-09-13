@@ -1,3 +1,5 @@
+import type { OpenClawVersionRoles } from "@/lib/openclaw/versions";
+
 export type OpenClawReleaseMode = "scheduled" | "manual";
 
 export const OPENCLAW_RELEASE_LIFECYCLE_STAGE_IDS = [
@@ -150,6 +152,14 @@ export type OpenClawCompatibilityIntake = {
     supportedBaselineOpenClaw: string;
     nativeContractOpenClaw: string;
   };
+  versionRoles: OpenClawVersionRoles;
+  compatibilityExpectation: {
+    source: "version-default";
+    epistemicStatus: "unverified";
+    nativeCallObserved: false;
+    capabilityMetadataObserved: false;
+    reason: string;
+  };
   upstream: {
     version: string;
     tag: string;
@@ -181,8 +191,48 @@ export type OpenClawCompatibilityIntake = {
 };
 
 export type OpenClawIssueSyncResult = {
-  action: "created" | "updated" | "unchanged" | "identity-drift" | "would-create" | "would-update";
+  action: "created" | "updated" | "unchanged" | "identity-drift" | "identity-mismatch" | "would-create" | "would-update";
+  metadataStatus: "missing" | "current" | "stale" | "identity-mismatch";
   issueNumber: number | null;
   issueUrl: string | null;
   message: string;
+};
+
+export type OpenClawCertifiedEvidence = {
+  artifactType: string | null;
+  version: string | null;
+  sourceCommit: string | null;
+  buildId: string | null;
+  packageHash: string | null;
+  certifiedCodeHead: string | null;
+  evidenceCommit: string | null;
+  deploymentPin: {
+    version: string | null;
+    image: string | null;
+    digest: string | null;
+  } | null;
+};
+
+export type OpenClawCertifiedEvidenceLookup = {
+  status: "found" | "missing" | "invalid";
+  path: string | null;
+  evidence: OpenClawCertifiedEvidence | null;
+  reason: string;
+};
+
+export type OpenClawProductionConfigPin = {
+  status: "found" | "missing" | "invalid";
+  path: string | null;
+  version: string | null;
+  image: string | null;
+  digest: string | null;
+  reason: string;
+};
+
+export type OpenClawReleaseReconciliation = {
+  status: "reviewable" | "blocked";
+  identityStatus: "match" | "mismatch" | "unavailable";
+  certifiedEvidenceStatus: OpenClawCertifiedEvidenceLookup["status"];
+  productionConfigStatus: "match" | "mismatch" | "unknown";
+  reasons: string[];
 };

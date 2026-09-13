@@ -90,20 +90,38 @@ export async function syncOpenClawCompatibilityIssue(input: {
   const existing = issues.find((issue) => issue.body?.includes(marker)) ?? null;
   if (!existing) {
     if (input.dryRun) {
-      return { action: "would-create", issueNumber: null, issueUrl: null, message: "No existing issue matched; dry-run would create one." };
+      return {
+        action: "would-create",
+        metadataStatus: "missing",
+        issueNumber: null,
+        issueUrl: null,
+        message: "No existing issue matched; dry-run would create one."
+      };
     }
     const created = await input.client.createIssue({
       title: `OpenClaw ${input.intake.upstream.version} — AgentOS Compatibility Intake`,
       body: renderOpenClawCompatibilityIssue(input.intake)
     });
-    return { action: "created", issueNumber: created.number, issueUrl: created.html_url, message: "Created the single compatibility intake issue for this release." };
+    return {
+      action: "created",
+      metadataStatus: "missing",
+      issueNumber: created.number,
+      issueUrl: created.html_url,
+      message: "Created the single compatibility intake issue for this release."
+    };
   }
 
   const existingHash = readMarker(existing.body, "agentos-openclaw-intake-hash");
   const existingIdentityHash = readMarker(existing.body, "agentos-openclaw-identity-hash");
   const identityDrift = Boolean(existingIdentityHash && existingIdentityHash !== input.intake.identity.identityHash);
-  if (!identityDrift && existingHash === input.intake.intakeHash) {
-    return { action: "unchanged", issueNumber: existing.number, issueUrl: existing.html_url, message: "Existing issue already contains the same verified intake evidence." };
+  if (!identityDrift && existingHash === input.intake.intakeHash && existingIdentityHash === input.intake.identity.identityHash) {
+    return {
+      action: "unchanged",
+      metadataStatus: "current",
+      issueNumber: existing.number,
+      issueUrl: existing.html_url,
+      message: "Existing issue already contains the same verified intake evidence."
+    };
   }
 
   const autoSection = renderOpenClawCompatibilityIssueAutoSection(input.intake, {
@@ -114,21 +132,23 @@ export async function syncOpenClawCompatibilityIssue(input: {
   if (input.dryRun) {
     return {
       action: identityDrift ? "identity-drift" : "would-update",
+      metadataStatus: identityDrift ? "identity-mismatch" : "stale",
       issueNumber: existing.number,
       issueUrl: existing.html_url,
       message: identityDrift
         ? "Existing issue has identity drift; dry-run would surface an integrity warning without reopening it."
-        : "Existing issue evidence changed; dry-run would refresh only the generated section."
+        : "Existing issue metadata is stale; dry-run would refresh only the generated section."
     };
   }
   const updated = await input.client.updateIssue(existing.number, { body });
   return {
     action: identityDrift ? "identity-drift" : "updated",
+    metadataStatus: identityDrift ? "identity-mismatch" : "stale",
     issueNumber: updated.number,
     issueUrl: updated.html_url,
     message: identityDrift
       ? "Updated the existing issue with an upstream identity-drift warning; issue state was not changed."
-      : "Refreshed the generated evidence section on the existing issue."
+      : "Refreshed stale generated evidence metadata on the existing issue."
   };
 }
 

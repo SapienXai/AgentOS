@@ -17,7 +17,14 @@ import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract
 import { createGitHubIssueClient, syncOpenClawCompatibilityIssue, type GitHubIssueClient } from "@/lib/openclaw/upstream/github-issue-client";
 import { discoverOfficialOpenClawReleases, assertValidOpenClawReleaseVersion, type ReleaseWatcherFetch } from "@/lib/openclaw/upstream/release-discovery";
 import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
-import type { OpenClawReleaseCandidate } from "@/lib/openclaw/upstream/types";
+import type {
+  OpenClawCertifiedEvidence,
+  OpenClawCertifiedEvidenceLookup,
+  OpenClawCompatibilityIntake,
+  OpenClawProductionConfigPin,
+  OpenClawReleaseCandidate,
+  OpenClawReleaseReconciliation
+} from "@/lib/openclaw/upstream/types";
 import { verifyOfficialOpenClawRelease } from "@/lib/openclaw/upstream/release-identity";
 
 const execFile = promisify(execFileCallback);
@@ -29,6 +36,9 @@ export type OpenClawReleaseWatchOptions = {
   dryRun?: boolean;
   forceRefresh?: boolean;
   outputDir?: string;
+  certifiedEvidenceDir?: string;
+  productionConfigPath?: string | null;
+  productionConfigText?: string | null;
   githubToken?: string | null;
   githubRepository?: string | null;
   issueClient?: GitHubIssueClient;
@@ -54,12 +64,23 @@ export type OpenClawReleaseWatchResult = {
     intakeHash: string;
     lifecycleStage: string;
     lifecycleStatus: string;
+    certifiedEvidenceStatus: OpenClawCertifiedEvidenceLookup["status"];
+    certifiedEvidencePath: string | null;
+    identityStatus: OpenClawReleaseReconciliation["identityStatus"];
+    productionConfigStatus: OpenClawReleaseReconciliation["productionConfigStatus"];
+    reconciliationStatus: OpenClawReleaseReconciliation["status"];
+    issueMetadataStatus: "missing" | "current" | "stale" | "identity-mismatch" | "not-requested";
   }>;
+  productionConfig: OpenClawProductionConfigPin;
   message: string;
 };
 
 export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptions = {}): Promise<OpenClawReleaseWatchResult> {
   const mode = options.mode ?? (options.targetVersion ? "manual" : "scheduled");
+  const productionConfig = await readOpenClawProductionConfigPin({
+    configPath: options.productionConfigPath,
+    configText: options.productionConfigText
+  });
   const recommendedVersion = assertValidOpenClawReleaseVersion(
     options.recommendedVersion ?? OPENCLAW_RECOMMENDED_VERSION,
     "Recommended OpenClaw version"
@@ -83,14 +104,14 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
 
   if (discovery.status === "discovery-failed") {
     await writeWatcherSummary(`## OpenClaw Release Watch\n\n**Status:** DISCOVERY_FAILED\n\n${safeSummary(discovery.error ?? "Official discovery failed.")}`, options);
-    return { status: "discovery-failed", discovery, intakes: [], message: discovery.error ?? "Official discovery failed." };
+    return { status: "discovery-failed", discovery, intakes: [], productionConfig, message: discovery.error ?? "Official discovery failed." };
   }
 
   const releasesForIntake = selectOpenClawReleasesForIntake(discovery.releases, LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST);
   if (releasesForIntake.length === 0) {
     const message = `OpenClaw upstream check\nAgentOS recommended: ${recommendedVersion}\nLatest official stable: ${discovery.latestStableVersion ?? "unknown"}\nStatus: current`;
     await writeWatcherSummary(`## OpenClaw Release Watch\n\n${message.replaceAll("\n", "\n\n")}`, options);
-    return { status: "current", discovery, intakes: [], message };
+    return { status: "current", discovery, intakes: [], productionConfig, message };
   }
 
   const outputDir = options.outputDir ?? path.join(process.cwd(), ".openclaw-release-intake");
@@ -127,13 +148,27 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
       releaseNotes: verification.releaseNotes,
       manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST
     });
+    const certifiedEvidence = await loadOpenClawCertifiedEvidence({
+      version: release.version,
+      evidenceDir: options.certifiedEvidenceDir
+    });
+    const reconciliation = reconcileOpenClawReleaseEvidence({
+      intake,
+      certifiedEvidence,
+      productionConfig
+    });
     const intakePath = await writeArtifact(outputDir, `openclaw-${release.version}-intake.json`, intake);
     const contractDiffPath = await writeArtifact(outputDir, `openclaw-${release.version}-contract-diff.json`, contractDiff);
     const issuePath = await writeTextArtifact(outputDir, `openclaw-${release.version}-issue.md`, renderOpenClawCompatibilityIssue(intake));
     let issueAction = "not-requested";
-    if (issueClient) {
+    let issueMetadataStatus: OpenClawReleaseWatchResult["intakes"][number]["issueMetadataStatus"] = "not-requested";
+    if (reconciliation.status === "blocked") {
+      issueAction = "identity-mismatch";
+      issueMetadataStatus = "identity-mismatch";
+    } else if (issueClient) {
       const issueResult = await syncOpenClawCompatibilityIssue({ intake, client: issueClient, dryRun: options.dryRun });
       issueAction = issueResult.action;
+      issueMetadataStatus = issueResult.metadataStatus;
     }
     intakes.push({
       version: release.version,
@@ -143,9 +178,20 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
       issueAction,
       intakeHash: intake.intakeHash,
       lifecycleStage: intake.lifecycle.currentStage,
-      lifecycleStatus: intake.lifecycle.stages.find((stage) => stage.id === intake.lifecycle.currentStage)?.status ?? "unknown"
+      lifecycleStatus: intake.lifecycle.stages.find((stage) => stage.id === intake.lifecycle.currentStage)?.status ?? "unknown",
+      certifiedEvidenceStatus: certifiedEvidence.status,
+      certifiedEvidencePath: certifiedEvidence.path,
+      identityStatus: reconciliation.identityStatus,
+      productionConfigStatus: reconciliation.productionConfigStatus,
+      reconciliationStatus: reconciliation.status,
+      issueMetadataStatus
     });
-    if (intake.identity.status !== "verified" || intake.contractDiff.status === "unknown" || intake.contractDiff.evidenceGaps.length > 0) {
+    if (
+      reconciliation.status === "blocked" ||
+      intake.identity.status !== "verified" ||
+      intake.contractDiff.status === "unknown" ||
+      intake.contractDiff.evidenceGaps.length > 0
+    ) {
       blockedIntakeCount += 1;
     }
     baseVersion = release.version;
@@ -162,8 +208,8 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     : blockedIntakeCount > 0
       ? `Generated ${intakes.length} intake(s), but ${blockedIntakeCount} require additional authoritative evidence before review can proceed.`
     : `Generated ${intakes.length} OpenClaw compatibility intake(s).`;
-  await writeWatcherSummary(buildWatcherSummary({ discovery, intakes, message }), options);
-  return { status, discovery, intakes, message };
+  await writeWatcherSummary(buildWatcherSummary({ discovery, intakes, message, productionConfig }), options);
+  return { status, discovery, intakes, productionConfig, message };
 }
 
 export function selectOpenClawReleasesForIntake(
@@ -171,6 +217,218 @@ export function selectOpenClawReleasesForIntake(
   manifest: OpenClawCompatibilityManifest
 ) {
   return releases.filter((release) => getOpenClawManifestStatus({ manifest, version: release.version }).status !== "certified");
+}
+
+export async function loadOpenClawCertifiedEvidence(input: {
+  version: string;
+  evidenceDir?: string;
+}): Promise<OpenClawCertifiedEvidenceLookup> {
+  const evidenceRoot = input.evidenceDir ?? path.join(process.cwd(), "docs/evidence");
+  const evidencePaths = [
+    path.resolve(evidenceRoot, `openclaw-${input.version}-phase-1-final-certification.json`),
+    path.resolve(evidenceRoot, `openclaw-${input.version}-final-certification.json`)
+  ];
+  let raw: string | null = null;
+  let evidencePath = evidencePaths[0] ?? null;
+  for (const candidatePath of evidencePaths) {
+    try {
+      raw = await readFile(candidatePath, "utf8");
+      evidencePath = candidatePath;
+      break;
+    } catch {
+      // Try the historical filename before reporting that no evidence exists.
+    }
+  }
+  if (raw === null) {
+    return {
+      status: "missing",
+      path: evidencePath,
+      evidence: null,
+      reason: "No repository-certified final evidence file was found for this release."
+    };
+  }
+
+  try {
+    const record = JSON.parse(raw) as unknown;
+    const evidence = parseCertifiedEvidence(record);
+    if (!evidence.version || !evidence.sourceCommit || !evidence.buildId || !evidence.certifiedCodeHead) {
+      return {
+        status: "invalid",
+        path: evidencePath,
+        evidence: null,
+        reason: "The repository-certified evidence is missing exact identity or fresh certifiedCodeHead provenance fields."
+      };
+    }
+    return {
+      status: "found",
+      path: evidencePath,
+      evidence,
+      reason: "Repository-certified final evidence was found and its exact identity fields were read."
+    };
+  } catch {
+    return {
+      status: "invalid",
+      path: evidencePath,
+      evidence: null,
+      reason: "The repository-certified evidence could not be parsed safely."
+    };
+  }
+}
+
+export async function readOpenClawProductionConfigPin(input: {
+  configPath?: string | null;
+  configText?: string | null;
+} = {}): Promise<OpenClawProductionConfigPin> {
+  const configPath = input.configPath === null
+    ? null
+    : path.resolve(input.configPath ?? path.join(process.cwd(), "Dockerfile.railway"));
+  if (!configPath) {
+    return {
+      status: "missing",
+      path: null,
+      version: null,
+      image: null,
+      digest: null,
+      reason: "No production deployment configuration was supplied for reconciliation."
+    };
+  }
+
+  let configText = input.configText;
+  if (configText === undefined) {
+    try {
+      configText = await readFile(configPath, "utf8");
+    } catch {
+      return {
+        status: "missing",
+        path: configPath,
+        version: null,
+        image: null,
+        digest: null,
+        reason: "The repository production deployment configuration was not found."
+      };
+    }
+  }
+  if (configText === null) {
+    return {
+      status: "missing",
+      path: configPath,
+      version: null,
+      image: null,
+      digest: null,
+      reason: "No production deployment configuration was supplied for reconciliation."
+    };
+  }
+
+  const match = /^\s*FROM\s+(ghcr\.io\/openclaw\/openclaw):([0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)@sha256:([a-f0-9]{64})\s*$/m.exec(configText);
+  if (!match) {
+    return {
+      status: "invalid",
+      path: configPath,
+      version: null,
+      image: null,
+      digest: null,
+      reason: "The repository production deployment configuration has no exact OpenClaw image digest pin."
+    };
+  }
+  return {
+    status: "found",
+    path: configPath,
+    version: match[2],
+    image: `${match[1]}:${match[2]}`,
+    digest: match[3],
+    reason: "The repository production deployment configuration contains an exact OpenClaw image digest pin."
+  };
+}
+
+export function reconcileOpenClawReleaseEvidence(input: {
+  intake: OpenClawCompatibilityIntake;
+  certifiedEvidence: OpenClawCertifiedEvidenceLookup;
+  productionConfig: OpenClawProductionConfigPin;
+}): OpenClawReleaseReconciliation {
+  const reasons: string[] = [];
+  let identityStatus: OpenClawReleaseReconciliation["identityStatus"] = "unavailable";
+  if (input.certifiedEvidence.status !== "found" || !input.certifiedEvidence.evidence) {
+    reasons.push(input.certifiedEvidence.reason);
+  } else {
+    const evidence = input.certifiedEvidence.evidence;
+    const mismatches = [
+      evidence.version !== input.intake.identity.version ? `certified evidence version is ${evidence.version}, expected ${input.intake.identity.version}` : null,
+      evidence.sourceCommit !== input.intake.identity.sourceCommit ? "certified evidence source commit does not match the intake identity" : null,
+      evidence.buildId !== input.intake.identity.buildId ? "certified evidence build ID does not match the intake identity" : null
+    ].filter((value): value is string => Boolean(value));
+    identityStatus = mismatches.length > 0 ? "mismatch" : "match";
+    reasons.push(...mismatches);
+    if (!evidence.certifiedCodeHead) {
+      reasons.push("Certified evidence has no fresh certifiedCodeHead provenance field.");
+    }
+  }
+
+  let productionConfigStatus: OpenClawReleaseReconciliation["productionConfigStatus"] = "unknown";
+  if (input.productionConfig.status !== "found") {
+    reasons.push(input.productionConfig.reason);
+  } else if (input.productionConfig.version !== input.intake.upstream.version) {
+    productionConfigStatus = "mismatch";
+    reasons.push(`Repository production pin is ${input.productionConfig.version}, while this intake targets ${input.intake.upstream.version}.`);
+  } else {
+    productionConfigStatus = "match";
+    const certifiedPin = input.certifiedEvidence.evidence?.deploymentPin;
+    if (certifiedPin?.version && certifiedPin.version !== input.productionConfig.version) {
+      productionConfigStatus = "mismatch";
+      reasons.push("Repository production pin does not match the deployment pin recorded by certified evidence.");
+    }
+    if (certifiedPin?.digest && certifiedPin.digest !== input.productionConfig.digest) {
+      productionConfigStatus = "mismatch";
+      reasons.push("Repository production image digest does not match the deployment pin recorded by certified evidence.");
+    }
+  }
+
+  return {
+    status: identityStatus === "mismatch" ? "blocked" : "reviewable",
+    identityStatus,
+    certifiedEvidenceStatus: input.certifiedEvidence.status,
+    productionConfigStatus,
+    reasons
+  };
+}
+
+function parseCertifiedEvidence(value: unknown): OpenClawCertifiedEvidence {
+  const record = asRecord(value);
+  const provenance = asRecord(record?.provenance);
+  const openClaw = asRecord(provenance?.openClaw) ?? asRecord(record?.openClaw);
+  const expectedOpenClaw = asRecord(provenance?.expectedOpenClaw);
+  const roles = asRecord(record?.versionRoles);
+  const deploymentPin = asRecord(roles?.deploymentPin) ?? readRailwayDeploymentPin(record);
+  const image = readString(deploymentPin?.image);
+  const imageVersion = image ? /:([^:]+)$/.exec(image)?.[1] ?? null : null;
+  return {
+    artifactType: readString(record?.artifactType),
+    version: readString(openClaw?.version) ?? readString(record?.targetVersion) ?? imageVersion,
+    sourceCommit: readString(openClaw?.sourceCommit) ?? readString(expectedOpenClaw?.sourceCommit),
+    buildId: readString(openClaw?.buildId) ?? readString(expectedOpenClaw?.buildId),
+    packageHash: readString(openClaw?.packageHash),
+    certifiedCodeHead: readString(record?.certifiedCodeHead) ?? readString(provenance?.certifiedCodeHead),
+    evidenceCommit: readString(record?.evidenceCommit) ?? readString(provenance?.evidenceCommit),
+    deploymentPin: deploymentPin
+      ? {
+          version: readString(deploymentPin.version) ?? imageVersion,
+          image,
+          digest: readString(deploymentPin.digest) ?? readString(deploymentPin.indexDigest)
+        }
+      : null
+  };
+}
+
+function readRailwayDeploymentPin(record: Record<string, unknown> | null) {
+  const matrix = asRecord(record?.matrix);
+  return asRecord(matrix?.["railway-image-architecture"]);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 async function main() {
@@ -191,6 +449,8 @@ function parseArgs(args: string[]): OpenClawReleaseWatchOptions {
     dryRun: process.env.OPENCLAW_WATCH_DRY_RUN === "true",
     forceRefresh: process.env.OPENCLAW_WATCH_FORCE_REFRESH === "true",
     outputDir: process.env.OPENCLAW_WATCH_OUTPUT_DIR?.trim() || undefined,
+    certifiedEvidenceDir: process.env.OPENCLAW_WATCH_CERTIFIED_EVIDENCE_DIR?.trim() || undefined,
+    productionConfigPath: process.env.OPENCLAW_WATCH_PRODUCTION_CONFIG?.trim() || undefined,
     githubToken: process.env.GITHUB_TOKEN?.trim() || null,
     githubRepository: process.env.GITHUB_REPOSITORY?.trim() || null
   };
@@ -277,6 +537,7 @@ async function writeWatcherSummary(summary: string, options: OpenClawReleaseWatc
 function buildWatcherSummary(input: {
   discovery: Awaited<ReturnType<typeof discoverOfficialOpenClawReleases>>;
   intakes: OpenClawReleaseWatchResult["intakes"];
+  productionConfig: OpenClawProductionConfigPin;
   message: string;
 }) {
   return [
@@ -285,8 +546,10 @@ function buildWatcherSummary(input: {
     `- AgentOS recommended: \`${input.discovery.currentRecommendedVersion}\``,
     `- Latest official stable: \`${input.discovery.latestStableVersion ?? "unknown"}\``,
     `- Discovered releases: ${input.discovery.releases.map((release) => `\`${release.version}\``).join(", ") || "none"}`,
+    `- Repository production pin: **${input.productionConfig.status}**${input.productionConfig.version ? ` — \`${input.productionConfig.version}\`` : ""}`,
+    `- Production reconciliation: ${safeSummary(input.productionConfig.reason)}`,
     `- Result: ${input.message}`,
-    ...input.intakes.map((intake) => `- ${intake.version}: lifecycle **${intake.lifecycleStage}/${intake.lifecycleStatus}**; intake generated; issue action **${intake.issueAction}**; evidence hash \`${intake.intakeHash}\``),
+    ...input.intakes.map((intake) => `- ${intake.version}: lifecycle **${intake.lifecycleStage}/${intake.lifecycleStatus}**; certified evidence **${intake.certifiedEvidenceStatus}/${intake.identityStatus}**; production pin **${intake.productionConfigStatus}**; issue metadata **${intake.issueMetadataStatus}**; issue action **${intake.issueAction}**; evidence hash \`${intake.intakeHash}\``),
     "",
     "The watcher only creates compatibility-review evidence. Certification and version promotion remain human decisions."
   ].join("\n");

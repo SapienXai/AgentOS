@@ -7,8 +7,8 @@ AgentOS 0.7.9 is a compatibility and certification release for OpenClaw
 
 - Promotes OpenClaw 2026.9.4 as the recommended and native certified contract.
 - Pins the official Gateway client and protocol packages to 2026.9.4.
-- Pins the Railway image to the verified OpenClaw 2026.9.4 multi-architecture
-  digest without changing Railway state or deploying infrastructure.
+- Records the repository Railway image pin for the verified OpenClaw 2026.9.4
+  multi-architecture digest without inspecting or changing Railway state.
 - Adds exact-source contract audit and disposable 2026.9.3 → 2026.9.4 migration evidence.
 - Preserves OpenClaw-native lifecycle, updater, recovery, identity, session,
   provider, channel, plugin, memory, automation, Doctor, and Human Control ownership.
@@ -43,8 +43,9 @@ globally.
   gateway.restart.request remain intentionally SKIPPED because they can mutate
   an installation or terminate the disposable Gateway.
 - The pre-existing 9.4 certification artifacts remain immutable historical
-  evidence. Current Phase 1 provenance is recorded in the four
-  `openclaw-2026.9.4-agentos-seven-phase-*.json` artifacts.
+  evidence. A fresh final-certification run now records `certifiedCodeHead`
+  separately from `evidenceCommit`, exact package identity, test counts,
+  explicit skips/expected denials, and `production.status=not-tested`.
 - Optional observations remain explicitly `SKIPPED` where the exact runtime
   did not advertise a surface; expected authorization denials remain denials.
 
@@ -60,8 +61,8 @@ runtime, and Doctor gates in the new phase-specific evidence.
 
 ## Known Limitations
 
-- Railway remains undeployed and unmutated; the repository pin now targets the
-  verified OpenClaw 2026.9.4 multi-architecture index.
+- Railway remains uninspected, undeployed, and unmutated; the repository pin
+  targets the verified OpenClaw 2026.9.4 multi-architecture index.
 - No live third-party provider credentials or channel login was exercised.
 - Live `update.run` and `gateway.restart.request` were not executed; their
   native mutation and reconnect verification remain explicit operator/runtime

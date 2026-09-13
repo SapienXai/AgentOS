@@ -12,9 +12,9 @@ protocol, schema migration, official transport, lifecycle, security, and
 subsystem certification gates passed in disposable local runtimes.
 
 The supported minimum remains OpenClaw 2026.9.1. A newer recommended version
-does not remove older supported installations. The Railway deployment remains
-explicitly pinned to OpenClaw 2026.9.3 because this task was local-only and did
-not authorize production infrastructure mutation.
+does not remove older supported installations. The repository's Railway image
+pin targets OpenClaw 2026.9.4, but the live Railway deployment was not
+inspected, changed, or certified.
 
 For the cross-cutting ownership boundary and deferred gaps, see the [AgentOS / OpenClaw ownership matrix](openclaw-ownership-matrix.md). The matrix indexes
 this audit and current checkout code; it does not replace the dated
@@ -47,6 +47,28 @@ The npm tarball integrity values verified by the contract audit are:
 - `openclaw@2026.9.4`: `sha512-lTQpEEe1Xm3u2PCHaPEr+vP8paGk1vLdHuzdItsNToaLI6hAqRVvgJYg+GxukJhETJp4tPy/S1Gftl4KuB8n7A==`
 - `@openclaw/gateway-client@2026.9.4`: `sha512-MQSj/agWzPMvPbWIyh5azarYYJvxcrc9TVdPn22zdGAfW7SAOpocpa/ImOi8YcIDk6IILXvv0nRDFKXQnjMS6A==`
 - `@openclaw/gateway-protocol@2026.9.4`: `sha512-arnDRQV4d7yP1veI0i3UWJSrRk7ehgM0N8n0kQoVc0yP6/cy40GZmshh10RD/ZASrhGeZGDXbVQBjSHIHgrtDg==`
+
+## Version and provenance roles
+
+These roles are intentionally separate. A policy version, an exact package,
+a repository deployment pin, a migration fixture, a certified identity, and a
+live runtime observation are different claims and must not be collapsed into a
+single OpenClaw version string.
+
+| Role | Value | Epistemic status |
+| --- | --- | --- |
+| Supported minimum | `2026.9.1` | AgentOS policy |
+| Recommended version | `2026.9.4` | AgentOS policy |
+| Native contract | `2026.9.4` | AgentOS contract policy |
+| Exact package versions | OpenClaw / Gateway client / Gateway protocol `2026.9.4` | Exact disposable package evidence |
+| Migration source → target | `2026.9.3` → `2026.9.4` | Isolated disposable runtime evidence |
+| Certified upstream identity | `v2026.9.4`, source commit `3a9d69d…`, exact build ID above | Verified official identity and package evidence |
+| Repository deployment pin | `ghcr.io/openclaw/openclaw:2026.9.4` with the digest in `Dockerfile.railway` | Repository configuration only |
+| Live runtime / Railway production | Not observed in this audit | Not tested |
+
+Version-default compatibility is an unverified expectation. It records the
+supported contract's conservative knowledge only; it is not live Gateway
+capability metadata, a native call, or production proof.
 
 ## Upstream contract audit
 
@@ -167,6 +189,13 @@ The final aggregation contains 92 explicit optional `SKIPPED` observations and
 are not converted into passes; no required gate is environment-limited, and no
 production Gateway or real credential was used.
 
+The pre-existing final-certification JSON linked in the final promotion row
+below remains historical. A
+fresh run of `openclaw:final-certification-9-4` writes
+`docs/evidence/openclaw-2026.9.4-phase-1-final-certification.json` and records
+fresh `certifiedCodeHead` and optional `evidenceCommit` provenance without
+overwriting the historical artifact.
+
 ## New 9.4 capability disposition
 
 | Capability | Disposition |
@@ -203,7 +232,8 @@ redacted evidence, no real credentials, and explicit cleanup checks.
 - Native contract OpenClaw: `2026.9.4`.
 - Supported baseline OpenClaw: `2026.9.1`.
 - Official client/protocol: `2026.9.4` / `2026.9.4`.
-- Production deployment: intentionally unchanged; Railway remains on 9.3.
+- Repository deployment pin: OpenClaw 2026.9.4 in `Dockerfile.railway`.
+- Production deployment: intentionally unverified; live Railway was not inspected.
 - New product UI/features: intentionally not added.
 
 The local 9.4 result certifies the AgentOS code and exact disposable runtime.

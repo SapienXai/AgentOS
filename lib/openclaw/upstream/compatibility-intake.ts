@@ -4,6 +4,10 @@ import {
   classifyOpenClawReleaseImpact,
   getOpenClawManifestStatus
 } from "@/lib/openclaw/upstream/impact-classifier";
+import {
+  buildOpenClawVersionRoles,
+  OPENCLAW_VERSION_DEFAULT_EXPECTATION
+} from "@/lib/openclaw/versions";
 import { sanitizeIssueText } from "@/lib/openclaw/upstream/release-notes";
 import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
 import type {
@@ -49,6 +53,32 @@ export function buildOpenClawCompatibilityIntake(input: {
       supportedBaselineOpenClaw: input.supportedBaselineOpenClaw,
       nativeContractOpenClaw: input.nativeContractOpenClaw
     },
+    versionRoles: buildOpenClawVersionRoles({
+      supportedMinimumVersion: input.supportedBaselineOpenClaw,
+      recommendedVersion: input.recommendedOpenClaw,
+      nativeContractVersion: input.nativeContractOpenClaw,
+      packageVersions: {
+        openClaw: input.identity.packageVersion,
+        gatewayClient: input.identity.gatewayClientPackage.version,
+        gatewayProtocol: input.identity.gatewayProtocolPackage.version
+      },
+      migration: {
+        sourceVersion: input.contractDiff.fromVersion,
+        targetVersion: input.contractDiff.targetVersion,
+        status: "not-tested",
+        evidence: "Release intake records the contract comparison only; migration requires a separate disposable runtime certification."
+      },
+      certifiedIdentity: {
+        version: input.identity.version,
+        tag: input.identity.tag,
+        sourceCommit: input.identity.sourceCommit,
+        buildId: input.identity.buildId,
+        packageHash: null,
+        status: identityRoleStatus(input.identity.status),
+        evidence: "Official release identity evidence; this is not a live Gateway runtime observation."
+      }
+    }),
+    compatibilityExpectation: OPENCLAW_VERSION_DEFAULT_EXPECTATION,
     upstream: {
       version: input.identity.version,
       tag: input.identity.tag,
@@ -180,6 +210,17 @@ export function renderOpenClawCompatibilityIssueAutoSection(
     `- Native contract target: \`${sanitizeIssueText(intake.agentos.nativeContractOpenClaw)}\``,
     `- Exact manifest status for this release: **${intake.manifest.status}**${intake.manifest.reason ? ` — ${sanitizeIssueText(intake.manifest.reason)}` : ""}`,
     "",
+    "## Version and provenance roles",
+    `- Supported minimum: **${intake.versionRoles.supportedMinimum.status}** — \`${sanitizeIssueText(intake.versionRoles.supportedMinimum.version ?? "unavailable")}\``,
+    `- Recommended version: **${intake.versionRoles.recommended.status}** — \`${sanitizeIssueText(intake.versionRoles.recommended.version ?? "unavailable")}\``,
+    `- Native contract: **${intake.versionRoles.nativeContract.status}** — \`${sanitizeIssueText(intake.versionRoles.nativeContract.version ?? "unavailable")}\``,
+    `- Package versions: OpenClaw \`${sanitizeIssueText(intake.versionRoles.packageVersions.openClaw.version ?? "unavailable")}\`, Gateway client \`${sanitizeIssueText(intake.versionRoles.packageVersions.gatewayClient.version ?? "unavailable")}\`, Gateway protocol \`${sanitizeIssueText(intake.versionRoles.packageVersions.gatewayProtocol.version ?? "unavailable")}\``,
+    `- Deployment pin: **${intake.versionRoles.deploymentPin.status}** — ${sanitizeIssueText(intake.versionRoles.deploymentPin.evidence)}`,
+    `- Migration source/target: \`${sanitizeIssueText(intake.versionRoles.migration.sourceVersion ?? "unavailable")}\` → \`${sanitizeIssueText(intake.versionRoles.migration.targetVersion ?? "unavailable")}\`; **${intake.versionRoles.migration.status}**`,
+    `- Certified identity: **${intake.versionRoles.certifiedIdentity.status}** — \`${sanitizeIssueText(intake.versionRoles.certifiedIdentity.version ?? "unavailable")}\` / \`${sanitizeIssueText(intake.versionRoles.certifiedIdentity.sourceCommit ?? "unavailable")}\``,
+    `- Live runtime: **${intake.versionRoles.liveRuntime.status}** — ${sanitizeIssueText(intake.versionRoles.liveRuntime.evidence)}`,
+    `- Version-default expectation: **${intake.compatibilityExpectation.epistemicStatus}**; native call observed: **${intake.compatibilityExpectation.nativeCallObserved ? "yes" : "no"}**; capability metadata observed: **${intake.compatibilityExpectation.capabilityMetadataObserved ? "yes" : "no"}**.`,
+    "",
     "## Upstream identity",
     `- Version: \`${sanitizeIssueText(intake.upstream.version)}\``,
     `- Tag: \`${sanitizeIssueText(intake.upstream.tag)}\``,
@@ -231,6 +272,12 @@ export function renderOpenClawCompatibilityIssueAutoSection(
     drift,
     "<!-- agentos-intake:auto:end -->"
   ].join("\n");
+}
+
+function identityRoleStatus(status: OpenClawReleaseIdentity["status"]): "verified" | "unverified" | "mismatch" {
+  if (status === "verified") return "verified";
+  if (status === "identity-mismatch") return "mismatch";
+  return "unverified";
 }
 
 function formatPackageIdentity(identity: OpenClawReleaseIdentity["gatewayProtocolPackage"]) {

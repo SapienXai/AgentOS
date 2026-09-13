@@ -5,7 +5,9 @@ import path from "node:path";
 import {
   OPENCLAW_NATIVE_CONTRACT_VERSION,
   OPENCLAW_RECOMMENDED_VERSION,
-  OPENCLAW_SUPPORTED_BASELINE_VERSION
+  OPENCLAW_SUPPORTED_BASELINE_VERSION,
+  buildOpenClawVersionRoles,
+  type OpenClawVersionRoles
 } from "@/lib/openclaw/versions";
 import {
   OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
@@ -20,7 +22,8 @@ const TARGET_VERSION = "2026.9.4";
 const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
 const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
 const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE?.trim();
-const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_OUTPUT?.trim() || `docs/evidence/openclaw-${TARGET_VERSION}-final-certification.json`);
+const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
+const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_OUTPUT?.trim() || `docs/evidence/openclaw-${TARGET_VERSION}-phase-1-final-certification.json`);
 
 const REQUIRED_ARTIFACTS = [
   ["contract-diff", `docs/evidence/openclaw-2026.9.3-to-${TARGET_VERSION}-contract-diff.json`],
@@ -47,6 +50,58 @@ const REQUIRED_ARTIFACTS = [
 
 type JsonRecord = Record<string, unknown>;
 
+export type OpenClawExactPackageIdentity = {
+  version: string;
+  sourceCommit: string;
+  buildId: string;
+  packageHash: string;
+  gatewayClientVersion: string | null;
+  gatewayProtocolVersion: string | null;
+  stateSchema: number;
+  agentSchema: number;
+};
+
+export type OpenClawFinalCertificationReport = {
+  schemaVersion: 2;
+  artifactType: "openclaw-2026.9.4-final-certification";
+  generatedAt: string;
+  provenance: {
+    repository: string;
+    certifiedCodeHead: string;
+    evidenceCommit: string | null;
+    branch: string;
+    node: string;
+    openClaw: OpenClawExactPackageIdentity | null;
+    exactArtifact: "disposable-exact-openclaw-package" | "unavailable";
+    expectedOpenClaw: JsonRecord;
+    supportedBaseline: string;
+    agentosContract: JsonRecord;
+  };
+  versionRoles: OpenClawVersionRoles;
+  tests: {
+    status: "PASS" | "FAIL";
+    requiredArtifactCount: number;
+    passedArtifactCount: number;
+    failedArtifactCount: number;
+    unknownOutcomeCount: number;
+    artifactChecks: JsonRecord;
+  };
+  skips: number;
+  expectedAuthorizationDenials: number;
+  production: {
+    status: "not-tested";
+    gatewayTouched: false;
+    configPin: { version: string | null; image: string | null; digest: string | null; status: "found" | "not-found" | "invalid" };
+    reason: string;
+  };
+  matrix: JsonRecord;
+  classification: JsonRecord;
+  historicalEvidence: { preserved: true; note: string };
+  promotion: JsonRecord;
+  failures: string[];
+  success: boolean;
+};
+
 async function main() {
   const failures: string[] = [];
   const artifacts: Record<string, JsonRecord> = {};
@@ -64,8 +119,11 @@ async function main() {
   }
   if (!packageIdentity) {
     // Keep the report deterministic; the failure has already been recorded.
-  } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.stateSchema !== 17 || packageIdentity.agentSchema !== 19) {
-    failures.push("exact 2026.9.4 package identity, build, or schema does not match the verified target");
+  } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.gatewayClientVersion !== TARGET_VERSION || packageIdentity.gatewayProtocolVersion !== TARGET_VERSION || packageIdentity.stateSchema !== 17 || packageIdentity.agentSchema !== 19) {
+    failures.push("exact 2026.9.4 package identity, Gateway package versions, build, or schema does not match the verified target");
+  }
+  if (EVIDENCE_COMMIT_INPUT && !isGitCommit(EVIDENCE_COMMIT_INPUT)) {
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must be a 40-character Git commit SHA");
   }
 
   for (const [name, relativePath] of REQUIRED_ARTIFACTS) {
@@ -86,17 +144,80 @@ async function main() {
   if (contract?.success !== true || !Object.values(asRecord(contract?.checks)).every(Boolean)) failures.push("contract audit checks are incomplete");
   if (migration?.success !== true || !Object.values(asRecord(migration?.checks)).every(Boolean)) failures.push("9.3 to 9.4 migration checks are incomplete");
 
-  const report = {
-    schemaVersion: 1,
-    artifactType: "openclaw-2026.9.4-final-certification",
+  const deploymentPin = await readRepositoryDeploymentPin();
+  const report = buildOpenClawFinalCertificationReport({
     generatedAt: new Date().toISOString(),
+    certifiedCodeHead: await gitOutput(["rev-parse", "HEAD"]),
+    evidenceCommit: EVIDENCE_COMMIT_INPUT && isGitCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
+    branch: await gitOutput(["branch", "--show-current"]),
+    packageIdentity,
+    artifacts,
+    matrix,
+    deploymentPin,
+    failures
+  });
+
+  await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
+  await writeFile(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+  console.log(`OPENCLAW ${TARGET_VERSION} FINAL CERTIFICATION: ${report.success ? "PASS" : "FAIL"}`);
+  console.log(`Evidence: ${OUTPUT_PATH}`);
+  if (!report.success) process.exitCode = 1;
+}
+
+export function buildOpenClawFinalCertificationReport(input: {
+  generatedAt: string;
+  certifiedCodeHead: string;
+  evidenceCommit: string | null;
+  branch: string;
+  packageIdentity: OpenClawExactPackageIdentity | null;
+  artifacts: Record<string, JsonRecord>;
+  matrix: Record<string, Record<string, unknown>>;
+  deploymentPin: RepositoryDeploymentPin;
+  failures: string[];
+}): OpenClawFinalCertificationReport {
+  const statuses = Object.values(input.artifacts).flatMap(collectStatusValues);
+  const passedArtifactCount = Object.values(input.matrix).filter((entry) => entry.status === "PASS").length;
+  const failedArtifactCount = Object.values(input.matrix).filter((entry) => entry.status === "FAIL").length;
+  const unknownOutcomeCount = statuses.filter((value) => value === "UNKNOWN").length;
+  const skippedCount = statuses.filter((value) => value === "SKIPPED").length;
+  const expectedAuthorizationDenialCount = statuses.filter((value) => value === "EXPECTED-DENIAL" || value === "EXPECTED_DENIAL").length;
+  const exactPackageMatchesTarget = Boolean(
+    input.packageIdentity &&
+    input.packageIdentity.version === TARGET_VERSION &&
+    input.packageIdentity.sourceCommit === TARGET_COMMIT &&
+    input.packageIdentity.buildId === TARGET_BUILD &&
+    input.packageIdentity.gatewayClientVersion === TARGET_VERSION &&
+    input.packageIdentity.gatewayProtocolVersion === TARGET_VERSION &&
+    input.packageIdentity.stateSchema === 17 &&
+    input.packageIdentity.agentSchema === 19
+  );
+  const migrationProvenance = readMigrationProvenance(input.artifacts.migration);
+  const runtimeProvenance = readRuntimeProvenance(input.artifacts.runtime);
+
+  return {
+    schemaVersion: 2,
+    artifactType: "openclaw-2026.9.4-final-certification",
+    generatedAt: input.generatedAt,
     provenance: {
       repository: "SapienXai/AgentOS",
-      agentosCodeHead: await gitOutput(["rev-parse", "HEAD"]),
-      branch: await gitOutput(["branch", "--show-current"]),
+      certifiedCodeHead: input.certifiedCodeHead,
+      evidenceCommit: input.evidenceCommit,
+      branch: input.branch,
       node: process.version,
-      openClaw: packageIdentity,
-      expectedOpenClaw: { version: TARGET_VERSION, tag: "v2026.9.4", signedTagObject: "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e", sourceCommit: TARGET_COMMIT, buildId: TARGET_BUILD, gatewayProtocol: 4, stateSchema: 17, agentSchema: 19, gatewayClient: TARGET_VERSION, gatewayProtocolPackage: TARGET_VERSION },
+      openClaw: input.packageIdentity,
+      exactArtifact: input.packageIdentity ? "disposable-exact-openclaw-package" : "unavailable",
+      expectedOpenClaw: {
+        version: TARGET_VERSION,
+        tag: "v2026.9.4",
+        signedTagObject: "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e",
+        sourceCommit: TARGET_COMMIT,
+        buildId: TARGET_BUILD,
+        gatewayProtocol: 4,
+        stateSchema: 17,
+        agentSchema: 19,
+        gatewayClient: TARGET_VERSION,
+        gatewayProtocolPackage: TARGET_VERSION
+      },
       supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
       agentosContract: {
         recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
@@ -109,26 +230,145 @@ async function main() {
         agentSchema: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA
       }
     },
-    matrix,
+    versionRoles: buildOpenClawVersionRoles({
+      supportedMinimumVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+      recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
+      nativeContractVersion: OPENCLAW_NATIVE_CONTRACT_VERSION,
+      packageVersions: {
+        openClaw: input.packageIdentity?.version ?? null,
+        gatewayClient: input.packageIdentity?.gatewayClientVersion ?? null,
+        gatewayProtocol: input.packageIdentity?.gatewayProtocolVersion ?? null
+      },
+      deploymentPin: {
+        version: input.deploymentPin.version,
+        image: input.deploymentPin.image,
+        digest: input.deploymentPin.digest,
+        status: input.deploymentPin.status === "found" ? "verified" : "not-tested",
+        evidence: input.deploymentPin.reason
+      },
+      migration: migrationProvenance,
+      certifiedIdentity: {
+        version: input.packageIdentity?.version ?? null,
+        tag: "v2026.9.4",
+        sourceCommit: input.packageIdentity?.sourceCommit ?? null,
+        buildId: input.packageIdentity?.buildId ?? null,
+        packageHash: input.packageIdentity?.packageHash ?? null,
+        status: exactPackageMatchesTarget ? "verified" : input.packageIdentity ? "mismatch" : "not-tested",
+        evidence: exactPackageMatchesTarget
+          ? "Exact OpenClaw package version, source commit, build, and schema identity matched the certification target."
+          : "Exact OpenClaw package identity did not fully match the certification target."
+      },
+      liveRuntime: runtimeProvenance
+    }),
+    tests: {
+      status: input.failures.length === 0 ? "PASS" : "FAIL",
+      requiredArtifactCount: Object.keys(input.matrix).length,
+      passedArtifactCount,
+      failedArtifactCount,
+      unknownOutcomeCount,
+      artifactChecks: input.matrix
+    },
+    skips: skippedCount,
+    expectedAuthorizationDenials: expectedAuthorizationDenialCount,
+    production: {
+      status: "not-tested",
+      gatewayTouched: false,
+      configPin: {
+        version: input.deploymentPin.version,
+        image: input.deploymentPin.image,
+        digest: input.deploymentPin.digest,
+        status: input.deploymentPin.status
+      },
+      reason: "The repository deployment pin was read for consistency only; Railway production was not inspected, mutated, or deployed."
+    },
+    matrix: input.matrix,
     classification: {
-      pass: Object.values(matrix).filter((entry) => entry.status === "PASS").length,
-      fail: Object.values(matrix).filter((entry) => entry.status === "FAIL").length,
-      skipped: Object.values(matrix).reduce((sum, entry) => sum + Number(entry.skips ?? 0), 0),
-      environmentLimited: Object.values(matrix).reduce((sum, entry) => sum + Number(entry.environmentLimited ?? 0), 0),
-      expectedAuthorizationDenials: Object.values(matrix).reduce((sum, entry) => sum + Number(entry.expectedDenials ?? 0), 0),
+      pass: passedArtifactCount,
+      fail: failedArtifactCount,
+      skipped: skippedCount,
+      environmentLimited: Object.values(input.matrix).reduce((sum, entry) => sum + Number(entry.environmentLimited ?? 0), 0),
+      expectedAuthorizationDenials: expectedAuthorizationDenialCount,
       productionGatewayTouched: false,
+      railwayMutated: false,
       realCredentialsAccessed: false
     },
-    promotion: { recommendedVersion: TARGET_VERSION, nativeContractVersion: TARGET_VERSION, supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION, decision: failures.length === 0 ? "PROMOTE" : "BLOCK" },
-    failures,
-    success: failures.length === 0
+    historicalEvidence: {
+      preserved: true,
+      note: "Existing certification evidence is historical input and was not overwritten by this aggregation."
+    },
+    promotion: {
+      recommendedVersion: TARGET_VERSION,
+      nativeContractVersion: TARGET_VERSION,
+      supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+      railwayImagePin: "NOT-PERFORMED",
+      decision: input.failures.length === 0 ? "PROMOTE" : "BLOCK",
+      decisionKind: "recommendation-only"
+    },
+    failures: input.failures,
+    success: input.failures.length === 0
   };
+}
 
-  await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
-  await writeFile(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-  console.log(`OPENCLAW ${TARGET_VERSION} FINAL CERTIFICATION: ${report.success ? "PASS" : "FAIL"}`);
-  console.log(`Evidence: ${OUTPUT_PATH}`);
-  if (!report.success) process.exitCode = 1;
+type RepositoryDeploymentPin = {
+  status: "found" | "not-found" | "invalid";
+  version: string | null;
+  image: string | null;
+  digest: string | null;
+  reason: string;
+};
+
+async function readRepositoryDeploymentPin(): Promise<RepositoryDeploymentPin> {
+  const configPath = path.resolve("Dockerfile.railway");
+  let source: string;
+  try {
+    source = await readFile(configPath, "utf8");
+  } catch {
+    return { status: "not-found", version: null, image: null, digest: null, reason: "Dockerfile.railway was not found." };
+  }
+  const match = /^\s*FROM\s+(ghcr\.io\/openclaw\/openclaw):([0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)@sha256:([a-f0-9]{64})\s*$/m.exec(source);
+  if (!match) {
+    return { status: "invalid", version: null, image: null, digest: null, reason: "Dockerfile.railway has no exact OpenClaw image digest pin." };
+  }
+  return {
+    status: "found",
+    version: match[2],
+    image: `${match[1]}:${match[2]}`,
+    digest: match[3],
+    reason: "Dockerfile.railway contains an exact OpenClaw image digest pin."
+  };
+}
+
+function readMigrationProvenance(artifact: JsonRecord | undefined) {
+  const provenance = asRecord(artifact?.provenance);
+  const source = asRecord(provenance.source);
+  const target = asRecord(provenance.target);
+  const checks = Object.values(asRecord(artifact?.checks));
+  const success = artifact?.success === true && checks.length > 0 && checks.every(Boolean);
+  return {
+    sourceVersion: readString(source.version),
+    targetVersion: readString(target.version),
+    status: success ? "verified" as const : artifact ? "unverified" as const : "not-tested" as const,
+    evidence: success
+      ? "Migration source and target were exercised by the isolated disposable runtime evidence."
+      : "Migration evidence was not a passing isolated runtime result."
+  };
+}
+
+function readRuntimeProvenance(artifact: JsonRecord | undefined) {
+  const runtime = asRecord(artifact?.runtime);
+  const targetVersion = readString(runtime.targetVersion);
+  const installedVersion = readString(runtime.installedVersion);
+  const protocolValue = typeof runtime.protocolVersion === "number" ? runtime.protocolVersion : null;
+  const summary = asRecord(runtime.summary);
+  const verified = targetVersion === TARGET_VERSION && installedVersion === TARGET_VERSION && protocolValue === 4 && summary.failed === 0 && summary.requiredFailures === 0 && summary.unknown === 0;
+  return {
+    installedVersion,
+    protocolVersion: protocolValue,
+    status: verified ? "verified" as const : artifact ? "unverified" as const : "not-tested" as const,
+    evidence: verified
+      ? "Disposable OpenClaw Gateway runtime reported the exact target version and protocol; this is not production proof."
+      : "No passing exact disposable Gateway runtime result was supplied."
+  };
 }
 
 function assessArtifact(name: string, artifact: JsonRecord) {
@@ -166,8 +406,13 @@ function assessArtifact(name: string, artifact: JsonRecord) {
 function collectStatusValues(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStatusValues); if (!value || typeof value !== "object") return []; const record = value as JsonRecord; const current = Object.entries(record).filter(([key, entry]) => ["status", "result", "outcome"].includes(key) && typeof entry === "string").map(([, entry]) => entry as string); return [...current, ...Object.values(record).flatMap(collectStatusValues)]; }
 function collectStrings(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStrings); if (typeof value === "string") return [value]; if (!value || typeof value !== "object") return []; return Object.values(value as JsonRecord).flatMap(collectStrings); }
 function asRecord(value: unknown): JsonRecord { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {}; }
-async function readPackageIdentity(packageRoot: string) { const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord; const hash = createHash("sha256"); for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(relativePath); hash.update(await readFile(path.join(packageRoot, relativePath))); } return { version: String(packageJson.version ?? ""), sourceCommit: String(buildInfo.commit ?? ""), buildId: String(buildInfo.buildId ?? ""), packageHash: hash.digest("hex"), stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0), agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0) }; }
+function readString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
+function isGitCommit(value: string): boolean { return /^[0-9a-f]{40}$/i.test(value); }
+async function readPackageIdentity(packageRoot: string) { const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord; const hash = createHash("sha256"); for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(relativePath); hash.update(await readFile(path.join(packageRoot, relativePath))); } const dependencies = { ...asRecord(packageJson.dependencies), ...asRecord(packageJson.optionalDependencies) }; return { version: String(packageJson.version ?? ""), sourceCommit: String(buildInfo.commit ?? ""), buildId: String(buildInfo.buildId ?? ""), packageHash: hash.digest("hex"), gatewayClientVersion: readDependencyVersion(dependencies, "@openclaw/gateway-client"), gatewayProtocolVersion: readDependencyVersion(dependencies, "@openclaw/gateway-protocol"), stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0), agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0) }; }
+function readDependencyVersion(dependencies: JsonRecord, packageName: string) { const version = readString(dependencies[packageName]); return version?.replace(/^[~^<>= ]+/, "") || null; }
 async function gitOutput(args: string[]) { const { execFile } = await import("node:child_process"); return await new Promise<string>((resolve) => execFile("git", args, { cwd: process.cwd(), encoding: "utf8" }, (_error, stdout) => resolve(stdout.trim()))); }
 function safeError(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
-void main();
+if (process.argv[1]?.endsWith("openclaw-2026-9-4-final-certification.ts")) {
+  void main();
+}
