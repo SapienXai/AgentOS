@@ -10,12 +10,8 @@ import {
   normalizeOpenClawToolsCatalog,
   type OpenClawCapabilityToolEntry
 } from "@/lib/openclaw/application/catalog-service";
-import {
-  createPluginCatalogContext,
-  type PluginCatalogContext,
-  type PluginCatalogProjection
-} from "@/lib/openclaw/domains/plugin-catalog";
-import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
+import { resolvePluginCatalogContext } from "@/lib/openclaw/application/plugin-catalog-context";
+import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import {
   OPENCLAW_BUILTIN_TOOL_CATALOG,
   OPENCLAW_TOOL_GROUP_CATALOG
@@ -150,26 +146,6 @@ export async function GET(request: Request) {
   });
 }
 
-export function resolvePluginCatalogContext(
-  snapshot: Pick<ControlPlaneSnapshot, "workspaces" | "agents">,
-  workspaceId?: string,
-  agentId?: string
-): PluginCatalogContext | null {
-  const normalizedWorkspaceId = normalizeIdentifier(workspaceId, 512);
-  const normalizedAgentId = normalizeIdentifier(agentId, 512);
-  if (!normalizedWorkspaceId || !normalizedAgentId) {
-    return null;
-  }
-
-  const workspace = snapshot.workspaces.find((entry) => entry.id === normalizedWorkspaceId);
-  const agent = snapshot.agents.find((entry) => entry.id === normalizedAgentId);
-  if (!workspace || !agent || agent.workspaceId !== workspace.id || !workspace.agentIds.includes(agent.id)) {
-    return null;
-  }
-
-  return createPluginCatalogContext(workspace, agent);
-}
-
 async function resolveServerPluginCatalogContext(workspaceId?: string, agentId?: string) {
   if (!workspaceId || !agentId) {
     return null;
@@ -190,11 +166,6 @@ function normalizeDescription(value: string | undefined) {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeIdentifier(value: string | undefined, maxLength: number) {
-  const normalized = typeof value === "string" ? value.trim() : "";
-  return normalized.length > 0 ? normalized.slice(0, maxLength) : null;
 }
 
 function sortCatalogEntries(left: OpenClawCapabilityToolEntry, right: OpenClawCapabilityToolEntry) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolvePluginCatalogContext } from "@/app/api/openclaw/capabilities/route";
+import { resolvePluginCatalogContext } from "@/lib/openclaw/application/plugin-catalog-context";
 import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
 
 const snapshot = {
