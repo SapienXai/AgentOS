@@ -209,7 +209,13 @@ test("creation experience presents native preparation progress and degraded stat
 test("native preparation remains opt-in in the workspace creation surface", async () => {
   const source = await readFile(componentPath, "utf8");
   assert.match(source, /Prepare a native OpenClaw environment/);
-  assert.match(source, /profileId: environmentPreparation\.profileId\.trim\(\)/);
+  assert.match(source, /fetch\("\/api\/openclaw\/execution-topology"/);
+  assert.match(source, /Select an authorized native profile/);
+  assert.match(source, /profileId: environmentPreparation\.profileId/);
+  assert.doesNotMatch(source, /placeholder="Enter a profile ID from OpenClaw"/);
+  assert.match(source, /Preparation stays disabled/);
+  assert.match(source, /Access to the native OpenClaw profile inventory was denied/);
+  assert.match(source, /The selected native profile will be passed to OpenClaw unchanged/);
   assert.match(source, /Retry preparation/);
   assert.match(source, /The preparation key is retained in the durable provisioning record/);
 });

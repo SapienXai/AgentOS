@@ -52,6 +52,7 @@ import type {
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
 import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
 import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
+import type { ExecutionTopologyProjection } from "@/lib/openclaw/domains/execution-topology";
 import {
   formatWorkspaceChannelSetup,
   formatWorkspaceSchedule,
@@ -78,6 +79,7 @@ type ContextSourceState = {
 };
 type UploadGroup = { sourceId: string; files: File[] };
 type EnvironmentPreparationIntent = { requested: boolean; profileId: string };
+type NativeEnvironmentInventoryState = "idle" | "loading" | "available" | "empty" | "unavailable" | "unsupported" | "denied" | "degraded";
 type ProvisioningRun = {
   runId: string;
   state: "pending" | "validating" | "materializing" | "bootstrapping" | "preparing-environment" | "applying-composition" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
@@ -131,6 +133,10 @@ export function CreateWorkspaceExperience({
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
   const [mode, setMode] = useState<"automatic" | "customize">("automatic");
   const [environmentPreparation, setEnvironmentPreparation] = useState<EnvironmentPreparationIntent>({ requested: false, profileId: "" });
+  const [nativeEnvironmentTopology, setNativeEnvironmentTopology] = useState<ExecutionTopologyProjection | null>(null);
+  const [nativeEnvironmentInventoryState, setNativeEnvironmentInventoryState] = useState<NativeEnvironmentInventoryState>("idle");
+  const [nativeEnvironmentInventoryError, setNativeEnvironmentInventoryError] = useState<string | null>(null);
+  const [nativeEnvironmentInventoryRefresh, setNativeEnvironmentInventoryRefresh] = useState(0);
   const [constraints, setConstraints] = useState("");
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
   const [sourceStates, setSourceStates] = useState<Record<string, ContextSourceState>>({});
@@ -168,6 +174,56 @@ export function CreateWorkspaceExperience({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!environmentPreparation.requested) {
+      setNativeEnvironmentInventoryState("idle");
+      setNativeEnvironmentInventoryError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setNativeEnvironmentInventoryState("loading");
+    setNativeEnvironmentInventoryError(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/openclaw/execution-topology", { cache: "no-store", signal: controller.signal });
+        const payload = await response.json().catch(() => null) as { topology?: ExecutionTopologyProjection; error?: string; code?: string } | null;
+        if (!response.ok || !payload?.topology) {
+          if (controller.signal.aborted) return;
+          const state: NativeEnvironmentInventoryState = response.status === 401 || response.status === 403
+            ? "denied"
+            : payload?.code === "openclaw-topology-unavailable"
+              ? "unsupported"
+              : "unavailable";
+          setNativeEnvironmentInventoryState(state);
+          setNativeEnvironmentInventoryError(payload?.error || "OpenClaw native profile inventory could not be loaded.");
+          return;
+        }
+        if (controller.signal.aborted) return;
+        setNativeEnvironmentTopology(payload.topology);
+        setNativeEnvironmentInventoryState(
+          payload.topology.sourceStatus === "unknown"
+            ? "degraded"
+            : payload.topology.sourceStatus === "unavailable"
+              ? "unsupported"
+              : payload.topology.profiles.length ? "available" : "empty"
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNativeEnvironmentInventoryState("unavailable");
+        setNativeEnvironmentInventoryError(error instanceof Error ? error.message : "OpenClaw native profile inventory could not be loaded.");
+      }
+    })();
+    return () => controller.abort();
+  }, [environmentPreparation.requested, nativeEnvironmentInventoryRefresh]);
+
+  useEffect(() => {
+    if (!environmentPreparation.requested || nativeEnvironmentInventoryState !== "available" || !nativeEnvironmentTopology) return;
+    if (environmentPreparation.profileId && !nativeEnvironmentTopology.profiles.some((profile) => profile.id === environmentPreparation.profileId)) {
+      setEnvironmentPreparation({ requested: true, profileId: "" });
+    }
+  }, [environmentPreparation, nativeEnvironmentInventoryState, nativeEnvironmentTopology]);
+
   const reviewProfile = creationRun?.expediteRequestedAt
     ? "fast"
     : creationRun?.input.profile ? normalizeWorkspaceCreationProfile(creationRun.input.profile) : profile;
@@ -187,6 +243,15 @@ export function CreateWorkspaceExperience({
     [creationRun, result, reviewProfile, reviewReadiness]
   );
   const experience = useMemo(() => presentWorkspaceCreationExperience({ run: creationRun, result, provisioningRun, sources }), [creationRun, provisioningRun, result, sources]);
+  const nativeEnvironmentPreparationReady = !environmentPreparation.requested
+    || (nativeEnvironmentInventoryState === "available"
+      && Boolean(environmentPreparation.profileId && getNativeEnvironmentProfiles(nativeEnvironmentTopology).some((profile) => profile.id === environmentPreparation.profileId)));
+  const nativeEnvironmentPreparationMessage = getNativeEnvironmentPreparationMessage(
+    environmentPreparation,
+    nativeEnvironmentInventoryState,
+    nativeEnvironmentTopology,
+    nativeEnvironmentInventoryError
+  );
   const isActiveRun = stage === "generating" || stage === "provisioning";
 
   const resetCreationState = () => {
@@ -197,6 +262,10 @@ export function CreateWorkspaceExperience({
     setContinueLearningAfterCreation(true);
     setMode("automatic");
     setEnvironmentPreparation({ requested: false, profileId: "" });
+    setNativeEnvironmentTopology(null);
+    setNativeEnvironmentInventoryState("idle");
+    setNativeEnvironmentInventoryError(null);
+    setNativeEnvironmentInventoryRefresh(0);
     setConstraints("");
     setSources([]);
     setSourceStates({});
@@ -440,6 +509,9 @@ export function CreateWorkspaceExperience({
           const recoveredProvisioning = (await provisioningResponse.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
           if (!provisioningResponse.ok || !recoveredProvisioning?.runId) return null;
           setProvisioningRun(recoveredProvisioning);
+          setEnvironmentPreparation(recoveredProvisioning.environmentPreparation.requested
+            ? { requested: true, profileId: recoveredProvisioning.environmentPreparation.profileId ?? "" }
+            : { requested: false, profileId: "" });
           return recoveredProvisioning;
         };
 
@@ -642,6 +714,10 @@ export function CreateWorkspaceExperience({
   const provision = useCallback(async (options: { retryEnvironmentPreparation?: boolean } = {}) => {
     if (!result || stage === "provisioning") return;
     if (!creationRun) return;
+    if (!nativeEnvironmentPreparationReady) {
+      setRevisionError(nativeEnvironmentPreparationMessage);
+      return;
+    }
 
     const controller = new AbortController();
     provisioningPollRef.current?.abort();
@@ -675,7 +751,7 @@ export function CreateWorkspaceExperience({
           compositionPlanId: serverRun.snapshot.composition?.planId ?? null,
           compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null,
           environmentPreparation: environmentPreparation.requested
-            ? { requested: true, profileId: environmentPreparation.profileId.trim() }
+            ? { requested: true, profileId: environmentPreparation.profileId }
             : null,
           retryEnvironmentPreparation: options.retryEnvironmentPreparation === true
         })
@@ -707,7 +783,7 @@ export function CreateWorkspaceExperience({
     } finally {
       if (provisioningPollRef.current === controller) provisioningPollRef.current = null;
     }
-  }, [result, stage, creationRun, certifyReview, basicDraftApproved, environmentPreparation, onRefresh]);
+  }, [result, stage, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh]);
 
   useEffect(() => {
     if (!open || stage !== "review" || !creationRun || !result || !reviewReadiness?.provisionable
@@ -878,7 +954,7 @@ export function CreateWorkspaceExperience({
                 </div>
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto">
-                {provisioningRun?.environmentPreparation.retryable ? <Button type="button" variant="secondary" onClick={() => void provision({ retryEnvironmentPreparation: true })} aria-label="Retry native environment preparation" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Retry preparation</Button> : null}
+                {provisioningRun?.environmentPreparation.retryable ? <Button type="button" variant="secondary" onClick={() => void provision({ retryEnvironmentPreparation: true })} disabled={!nativeEnvironmentPreparationReady} title={!nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined} aria-label="Retry native environment preparation" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Retry preparation</Button> : null}
                 <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} aria-label="Close workspace ready screen" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Close</Button>
                 <Button type="button" onClick={openProvisionedWorkspace} aria-label="Open Workspace" className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />Open Workspace</Button>
               </div>
@@ -901,9 +977,9 @@ export function CreateWorkspaceExperience({
                   </Button>
                   <Button
                     type="button"
-                    disabled={!result || !reviewReadiness?.provisionable || (environmentPreparation.requested && !environmentPreparation.profileId.trim())}
+                    disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
                     onClick={() => void provision()}
-                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : environmentPreparation.requested && !environmentPreparation.profileId.trim() ? "Enter an OpenClaw environment profile ID to request preparation." : undefined}
+                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
                     aria-label={provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
                     className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                   >
@@ -938,6 +1014,10 @@ export function CreateWorkspaceExperience({
             setProfile={setProfile}
             environmentPreparation={environmentPreparation}
             setEnvironmentPreparation={setEnvironmentPreparation}
+            nativeEnvironmentTopology={nativeEnvironmentTopology}
+            nativeEnvironmentInventoryState={nativeEnvironmentInventoryState}
+            nativeEnvironmentInventoryError={nativeEnvironmentInventoryError}
+            onRefreshNativeEnvironmentInventory={() => setNativeEnvironmentInventoryRefresh((value) => value + 1)}
             continueLearningAfterCreation={continueLearningAfterCreation}
             setContinueLearningAfterCreation={setContinueLearningAfterCreation}
             constraints={constraints}
@@ -991,6 +1071,10 @@ export function CreateWorkspaceExperience({
             provisioningError={provisioningError}
             environmentPreparation={environmentPreparation}
             setEnvironmentPreparation={setEnvironmentPreparation}
+            nativeEnvironmentTopology={nativeEnvironmentTopology}
+            nativeEnvironmentInventoryState={nativeEnvironmentInventoryState}
+            nativeEnvironmentInventoryError={nativeEnvironmentInventoryError}
+            onRefreshNativeEnvironmentInventory={() => setNativeEnvironmentInventoryRefresh((value) => value + 1)}
             readiness={reviewReadiness ?? creationRun?.snapshot.reviewReadiness ?? null}
             basicDraftApproved={basicDraftApproved}
             onApproveBasicDraft={() => void approveBasicDraft()}
@@ -1013,6 +1097,10 @@ function IntakeView({
   setProfile,
   environmentPreparation,
   setEnvironmentPreparation,
+  nativeEnvironmentTopology,
+  nativeEnvironmentInventoryState,
+  nativeEnvironmentInventoryError,
+  onRefreshNativeEnvironmentInventory,
   continueLearningAfterCreation,
   setContinueLearningAfterCreation,
   brief,
@@ -1041,6 +1129,10 @@ function IntakeView({
   setProfile: (profile: WorkspaceCreationDepth) => void;
   environmentPreparation: EnvironmentPreparationIntent;
   setEnvironmentPreparation: (value: EnvironmentPreparationIntent) => void;
+  nativeEnvironmentTopology: ExecutionTopologyProjection | null;
+  nativeEnvironmentInventoryState: NativeEnvironmentInventoryState;
+  nativeEnvironmentInventoryError: string | null;
+  onRefreshNativeEnvironmentInventory: () => void;
   continueLearningAfterCreation: boolean;
   setContinueLearningAfterCreation: (value: boolean) => void;
   brief: string;
@@ -1159,13 +1251,112 @@ function IntakeView({
               <input type="checkbox" checked={environmentPreparation.requested} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, requested: event.target.checked })} className="mt-0.5 accent-violet-500" />
               <span><span className="font-medium">Prepare a native OpenClaw environment</span><span className="mt-1 block leading-5 opacity-70">Optional and operator-requested. OpenClaw remains responsible for profile validation, placement, lifecycle, cleanup, and provider economics.</span></span>
             </label>
-            {environmentPreparation.requested ? <label className="mt-3 block text-xs"><span className={cn("font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>OpenClaw profile ID</span><input value={environmentPreparation.profileId} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, profileId: event.target.value })} placeholder="Enter a profile ID from OpenClaw" className={cn(missionControlDialogControlClassName("mt-1.5 h-10"), isLight ? "border-[#dfd2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "")} /></label> : null}
+            {environmentPreparation.requested ? <NativeEnvironmentProfileSelector
+              isLight={isLight}
+              environmentPreparation={environmentPreparation}
+              setEnvironmentPreparation={setEnvironmentPreparation}
+              topology={nativeEnvironmentTopology}
+              inventoryState={nativeEnvironmentInventoryState}
+              inventoryError={nativeEnvironmentInventoryError}
+              onRefresh={onRefreshNativeEnvironmentInventory}
+            /> : null}
           </div>
         </div>
       </details>
 
     </main>
   );
+}
+
+function NativeEnvironmentProfileSelector({
+  isLight,
+  environmentPreparation,
+  setEnvironmentPreparation,
+  topology,
+  inventoryState,
+  inventoryError,
+  onRefresh
+}: {
+  isLight: boolean;
+  environmentPreparation: EnvironmentPreparationIntent;
+  setEnvironmentPreparation: (value: EnvironmentPreparationIntent) => void;
+  topology: ExecutionTopologyProjection | null;
+  inventoryState: NativeEnvironmentInventoryState;
+  inventoryError: string | null;
+  onRefresh: () => void;
+}) {
+  const profiles = inventoryState === "available" ? getNativeEnvironmentProfiles(topology) : [];
+  const selectDisabled = inventoryState !== "available" || profiles.length === 0;
+  const status = getNativeEnvironmentInventoryStatus(inventoryState, profiles.length, inventoryError);
+
+  return (
+    <div className="mt-3 text-xs">
+      <label htmlFor="native-environment-profile" className={cn("block", isLight ? "text-[#65594f]" : "text-slate-300")}>
+        <span className="font-medium">OpenClaw environment profile</span>
+        <select
+          id="native-environment-profile"
+          value={environmentPreparation.profileId}
+          onChange={(event) => setEnvironmentPreparation({ requested: true, profileId: event.target.value })}
+          disabled={selectDisabled}
+          aria-describedby="native-environment-help"
+          className={cn(missionControlDialogControlClassName("mt-1.5 h-10"), isLight ? "border-[#dfd2c6] bg-white text-[#382d25]" : "")}
+        >
+          <option value="">Select an authorized native profile</option>
+          {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.id}</option>)}
+        </select>
+      </label>
+      <div className="mt-1.5 flex items-start justify-between gap-3" role="status" aria-live="polite">
+        <span className={cn("leading-5", status.tone === "attention" ? (isLight ? "text-amber-800" : "text-amber-100") : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{status.message}</span>
+        {inventoryState !== "idle" && inventoryState !== "loading" ? <Button type="button" variant="secondary" onClick={onRefresh} aria-label="Refresh native OpenClaw profile inventory" className={cn(missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark"), "h-8 shrink-0 px-2.5 text-[11px]")}><RefreshCw className="mr-1.5 h-3 w-3" />Refresh</Button> : null}
+      </div>
+      <span id="native-environment-help" className={cn("mt-1.5 block leading-5", isLight ? "text-[#9b8d80]" : "text-slate-500")}>Only profiles currently returned by the authorized OpenClaw native inventory can be selected. Credentials and provider secrets are never shown.</span>
+    </div>
+  );
+}
+
+function getNativeEnvironmentProfiles(topology: ExecutionTopologyProjection | null) {
+  return topology?.sourceStatus === "available"
+    ? topology.profiles.filter((profile) => profile.id.trim().length > 0)
+    : [];
+}
+
+function getNativeEnvironmentPreparationMessage(
+  environmentPreparation: EnvironmentPreparationIntent,
+  inventoryState: NativeEnvironmentInventoryState,
+  topology: ExecutionTopologyProjection | null,
+  inventoryError: string | null
+) {
+  if (!environmentPreparation.requested) return "Native environment preparation is optional.";
+  switch (inventoryState) {
+    case "idle": return "Load the authorized native profile inventory before requesting preparation.";
+    case "loading": return "Loading the authorized native OpenClaw profile inventory…";
+    case "denied": return "Access to the native OpenClaw profile inventory was denied. Preparation stays disabled.";
+    case "unsupported": return "Native profile inventory is unavailable or unsupported in this OpenClaw runtime. Preparation stays disabled.";
+    case "degraded": return "The native OpenClaw profile inventory could not be verified. Preparation stays disabled until it is available.";
+    case "unavailable": return inventoryError || "The native OpenClaw profile inventory is unavailable. Preparation stays disabled.";
+    case "empty": return "OpenClaw reported no native environment profiles. Preparation stays disabled.";
+    case "available":
+      return environmentPreparation.profileId && getNativeEnvironmentProfiles(topology).some((profile) => profile.id === environmentPreparation.profileId)
+        ? "The selected native profile will be passed to OpenClaw unchanged when you create the workspace."
+        : "Choose an OpenClaw profile from the authorized native inventory to request preparation.";
+  }
+}
+
+function getNativeEnvironmentInventoryStatus(
+  inventoryState: NativeEnvironmentInventoryState,
+  profileCount: number,
+  inventoryError: string | null
+) {
+  switch (inventoryState) {
+    case "loading": return { message: "Loading native OpenClaw profiles…", tone: "muted" as const };
+    case "available": return { message: profileCount ? "Choose a profile reported by OpenClaw." : "No native OpenClaw profiles are available.", tone: profileCount ? "muted" as const : "attention" as const };
+    case "empty": return { message: "OpenClaw reported an empty native profile inventory. Preparation stays disabled.", tone: "attention" as const };
+    case "denied": return { message: "Access to the native OpenClaw profile inventory was denied. Preparation stays disabled.", tone: "attention" as const };
+    case "unsupported": return { message: "Native profile inventory is unavailable or unsupported in this OpenClaw runtime. Preparation stays disabled.", tone: "attention" as const };
+    case "degraded": return { message: "Native profile inventory could not be verified. Preparation stays disabled.", tone: "attention" as const };
+    case "unavailable": return { message: inventoryError || "Native profile inventory is unavailable. Preparation stays disabled.", tone: "attention" as const };
+    case "idle": return { message: "Native profile inventory has not been requested yet.", tone: "muted" as const };
+  }
 }
 
 function SourceStatusIndicator({ state }: { state?: ContextSourceState }) {
@@ -1479,6 +1670,10 @@ function ReviewView({
   provisioningError,
   environmentPreparation,
   setEnvironmentPreparation,
+  nativeEnvironmentTopology,
+  nativeEnvironmentInventoryState,
+  nativeEnvironmentInventoryError,
+  onRefreshNativeEnvironmentInventory,
   readiness,
   basicDraftApproved,
   onApproveBasicDraft,
@@ -1512,6 +1707,10 @@ function ReviewView({
   provisioningError: string | null;
   environmentPreparation: EnvironmentPreparationIntent;
   setEnvironmentPreparation: (value: EnvironmentPreparationIntent) => void;
+  nativeEnvironmentTopology: ExecutionTopologyProjection | null;
+  nativeEnvironmentInventoryState: NativeEnvironmentInventoryState;
+  nativeEnvironmentInventoryError: string | null;
+  onRefreshNativeEnvironmentInventory: () => void;
   readiness: WorkspaceCreationReviewReadiness | null;
   basicDraftApproved: boolean;
   onApproveBasicDraft: () => void;
@@ -1592,9 +1791,15 @@ function ReviewView({
               />
               <span><span className={cn("font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>Prepare a native worker environment for this workspace</span><span className={cn("mt-1 block leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>This is optional. OpenClaw validates the profile and owns placement, lifecycle, cleanup, and provider economics. Nothing is requested until you create the workspace.</span></span>
             </label>
-            {environmentPreparation.requested ? (
-              <label className="block text-xs"><span className={cn("font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>OpenClaw profile ID</span><input value={environmentPreparation.profileId} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, profileId: event.target.value })} placeholder="Enter a profile ID from OpenClaw" aria-describedby="native-environment-help" className={cn(missionControlDialogControlClassName("mt-1.5 h-10"), isLight ? "border-[#dfd2c6] bg-[#fbf8f3] text-[#382d25] placeholder:text-[#aa9a8d]" : "")} /><span id="native-environment-help" className={cn("mt-1.5 block leading-5", isLight ? "text-[#9b8d80]" : "text-slate-500")}>AgentOS will reject or project an unsupported profile without inventing a local or cloud environment.</span></label>
-            ) : null}
+            {environmentPreparation.requested ? <NativeEnvironmentProfileSelector
+              isLight={isLight}
+              environmentPreparation={environmentPreparation}
+              setEnvironmentPreparation={setEnvironmentPreparation}
+              topology={nativeEnvironmentTopology}
+              inventoryState={nativeEnvironmentInventoryState}
+              inventoryError={nativeEnvironmentInventoryError}
+              onRefresh={onRefreshNativeEnvironmentInventory}
+            /> : null}
           </div>
         </details>
       ) : null}
