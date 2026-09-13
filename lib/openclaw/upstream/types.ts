@@ -199,11 +199,25 @@ export type OpenClawIssueSyncResult = {
 };
 
 export type OpenClawCertifiedEvidence = {
+  schemaVersion: number | null;
   artifactType: string | null;
+  phase: string | null;
+  success: boolean | null;
+  tests: {
+    status: "PASS" | "FAIL" | null;
+    requiredArtifactCount: number | null;
+    passedArtifactCount: number | null;
+    failedArtifactCount: number | null;
+    unknownOutcomeCount: number | null;
+  } | null;
   version: string | null;
   sourceCommit: string | null;
   buildId: string | null;
   packageHash: string | null;
+  gatewayClientVersion: string | null;
+  gatewayProtocolVersion: string | null;
+  stateSchema: number | null;
+  agentSchema: number | null;
   certifiedCodeHead: string | null;
   evidenceCommit: string | null;
   deploymentPin: {

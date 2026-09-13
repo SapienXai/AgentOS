@@ -8,9 +8,12 @@ import {
 } from "@/lib/openclaw/update-compatibility";
 import { getOpenClawManifestStatus } from "@/lib/openclaw/upstream/impact-classifier";
 import {
+  OPENCLAW_FINAL_CERTIFICATION_PHASE,
   OPENCLAW_NATIVE_CONTRACT_VERSION,
   OPENCLAW_RECOMMENDED_VERSION,
-  OPENCLAW_SUPPORTED_BASELINE_VERSION
+  OPENCLAW_SUPPORTED_BASELINE_VERSION,
+  getOpenClawFinalCertificationArtifactType,
+  getOpenClawFinalCertificationFilename
 } from "@/lib/openclaw/versions";
 import { buildOpenClawCompatibilityIntake, renderOpenClawCompatibilityIssue } from "@/lib/openclaw/upstream/compatibility-intake";
 import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
@@ -224,22 +227,20 @@ export async function loadOpenClawCertifiedEvidence(input: {
   evidenceDir?: string;
 }): Promise<OpenClawCertifiedEvidenceLookup> {
   const evidenceRoot = input.evidenceDir ?? path.join(process.cwd(), "docs/evidence");
-  const evidencePaths = [
-    path.resolve(evidenceRoot, `openclaw-${input.version}-phase-1-final-certification.json`),
-    path.resolve(evidenceRoot, `openclaw-${input.version}-final-certification.json`)
-  ];
-  let raw: string | null = null;
-  let evidencePath = evidencePaths[0] ?? null;
-  for (const candidatePath of evidencePaths) {
-    try {
-      raw = await readFile(candidatePath, "utf8");
-      evidencePath = candidatePath;
-      break;
-    } catch {
-      // Try the historical filename before reporting that no evidence exists.
+  const evidencePath = path.resolve(evidenceRoot, getOpenClawFinalCertificationFilename(input.version));
+  let raw: string;
+  try {
+    raw = await readFile(evidencePath, "utf8");
+  } catch {
+    const historicalPath = await findHistoricalCertificationPath(evidenceRoot, input.version);
+    if (historicalPath) {
+      return {
+        status: "invalid",
+        path: historicalPath,
+        evidence: null,
+        reason: "Only historical certification evidence was found; it is not promotable as pre-merge final evidence."
+      };
     }
-  }
-  if (raw === null) {
     return {
       status: "missing",
       path: evidencePath,
@@ -250,20 +251,16 @@ export async function loadOpenClawCertifiedEvidence(input: {
 
   try {
     const record = JSON.parse(raw) as unknown;
-    const evidence = parseCertifiedEvidence(record);
-    if (!evidence.version || !evidence.sourceCommit || !evidence.buildId || !evidence.certifiedCodeHead) {
-      return {
-        status: "invalid",
-        path: evidencePath,
-        evidence: null,
-        reason: "The repository-certified evidence is missing exact identity or fresh certifiedCodeHead provenance fields."
-      };
+    const invalidReason = validateCertifiedEvidenceRecord(record, input.version);
+    if (invalidReason) {
+      return { status: "invalid", path: evidencePath, evidence: null, reason: invalidReason };
     }
+    const evidence = parseCertifiedEvidence(record);
     return {
       status: "found",
       path: evidencePath,
       evidence,
-      reason: "Repository-certified final evidence was found and its exact identity fields were read."
+      reason: "Repository-certified pre-merge final evidence passed its identity, test, and commit-binding checks."
     };
   } catch {
     return {
@@ -383,7 +380,7 @@ export function reconcileOpenClawReleaseEvidence(input: {
   }
 
   return {
-    status: identityStatus === "mismatch" ? "blocked" : "reviewable",
+    status: identityStatus === "mismatch" || input.certifiedEvidence.status === "invalid" ? "blocked" : "reviewable",
     identityStatus,
     certifiedEvidenceStatus: input.certifiedEvidence.status,
     productionConfigStatus,
@@ -394,20 +391,27 @@ export function reconcileOpenClawReleaseEvidence(input: {
 function parseCertifiedEvidence(value: unknown): OpenClawCertifiedEvidence {
   const record = asRecord(value);
   const provenance = asRecord(record?.provenance);
-  const openClaw = asRecord(provenance?.openClaw) ?? asRecord(record?.openClaw);
-  const expectedOpenClaw = asRecord(provenance?.expectedOpenClaw);
+  const openClaw = asRecord(provenance?.openClaw);
   const roles = asRecord(record?.versionRoles);
-  const deploymentPin = asRecord(roles?.deploymentPin) ?? readRailwayDeploymentPin(record);
+  const deploymentPin = asRecord(roles?.deploymentPin);
   const image = readString(deploymentPin?.image);
   const imageVersion = image ? /:([^:]+)$/.exec(image)?.[1] ?? null : null;
   return {
+    schemaVersion: typeof record?.schemaVersion === "number" ? record.schemaVersion : null,
     artifactType: readString(record?.artifactType),
-    version: readString(openClaw?.version) ?? readString(record?.targetVersion) ?? imageVersion,
-    sourceCommit: readString(openClaw?.sourceCommit) ?? readString(expectedOpenClaw?.sourceCommit),
-    buildId: readString(openClaw?.buildId) ?? readString(expectedOpenClaw?.buildId),
+    phase: readString(record?.phase),
+    success: typeof record?.success === "boolean" ? record.success : null,
+    tests: parseTestAssessment(record?.tests),
+    version: readString(openClaw?.version),
+    sourceCommit: readString(openClaw?.sourceCommit),
+    buildId: readString(openClaw?.buildId),
     packageHash: readString(openClaw?.packageHash),
-    certifiedCodeHead: readString(record?.certifiedCodeHead) ?? readString(provenance?.certifiedCodeHead),
-    evidenceCommit: readString(record?.evidenceCommit) ?? readString(provenance?.evidenceCommit),
+    gatewayClientVersion: readString(openClaw?.gatewayClientVersion),
+    gatewayProtocolVersion: readString(openClaw?.gatewayProtocolVersion),
+    stateSchema: readNumber(openClaw?.stateSchema),
+    agentSchema: readNumber(openClaw?.agentSchema),
+    certifiedCodeHead: readString(provenance?.certifiedCodeHead),
+    evidenceCommit: readString(provenance?.evidenceCommit),
     deploymentPin: deploymentPin
       ? {
           version: readString(deploymentPin.version) ?? imageVersion,
@@ -418,9 +422,64 @@ function parseCertifiedEvidence(value: unknown): OpenClawCertifiedEvidence {
   };
 }
 
-function readRailwayDeploymentPin(record: Record<string, unknown> | null) {
-  const matrix = asRecord(record?.matrix);
-  return asRecord(matrix?.["railway-image-architecture"]);
+function validateCertifiedEvidenceRecord(value: unknown, version: string): string | null {
+  const record = asRecord(value);
+  const provenance = asRecord(record?.provenance);
+  const openClaw = asRecord(provenance?.openClaw);
+  const tests = asRecord(record?.tests);
+  if (record?.schemaVersion !== 2) return "Certified evidence schemaVersion must be 2.";
+  if (record?.artifactType !== getOpenClawFinalCertificationArtifactType(version)) return "Certified evidence artifactType does not match the pre-merge final identity.";
+  if (record?.phase !== OPENCLAW_FINAL_CERTIFICATION_PHASE) return "Certified evidence phase does not identify pre-merge final certification.";
+  if (record?.success !== true) return "Certified evidence success must be true.";
+  if (tests?.status !== "PASS") return "Certified evidence tests must have PASS status.";
+  const requiredArtifactCount = readNumber(tests?.requiredArtifactCount);
+  const passedArtifactCount = readNumber(tests?.passedArtifactCount);
+  const failedArtifactCount = readNumber(tests?.failedArtifactCount);
+  const unknownOutcomeCount = readNumber(tests?.unknownOutcomeCount);
+  if (requiredArtifactCount === null || requiredArtifactCount < 1 || passedArtifactCount !== requiredArtifactCount || failedArtifactCount !== 0 || unknownOutcomeCount !== 0) {
+    return "Certified evidence tests are incomplete or contain failed/unknown outcomes.";
+  }
+  const stateSchema = readNumber(openClaw?.stateSchema);
+  const agentSchema = readNumber(openClaw?.agentSchema);
+  if (!openClaw || openClaw.version !== version || !readString(openClaw.sourceCommit) || !isGitCommit(readString(openClaw.sourceCommit) ?? "") || !readString(openClaw.buildId) || !isSha256(readString(openClaw.packageHash) ?? "") || openClaw.gatewayClientVersion !== version || openClaw.gatewayProtocolVersion !== version || stateSchema === null || stateSchema < 1 || agentSchema === null || agentSchema < 1) {
+    return "Certified evidence does not contain the exact OpenClaw package identity.";
+  }
+  const certifiedCodeHead = readString(provenance?.certifiedCodeHead);
+  const evidenceCommit = readString(provenance?.evidenceCommit);
+  if (!isGitCommit(certifiedCodeHead ?? "") || !isGitCommit(evidenceCommit ?? "")) {
+    return "Certified evidence must bind 40-character Git commits for both code and evidence.";
+  }
+  if (certifiedCodeHead === evidenceCommit) return "Certified code and evidence commits must be distinct bindings.";
+  return null;
+}
+
+async function findHistoricalCertificationPath(evidenceRoot: string, version: string) {
+  for (const filename of [
+    `openclaw-${version}-phase-1-final-certification.json`,
+    `openclaw-${version}-final-certification.json`
+  ]) {
+    const candidatePath = path.resolve(evidenceRoot, filename);
+    try {
+      await readFile(candidatePath, "utf8");
+      return candidatePath;
+    } catch {
+      // Historical evidence is only reported when a file is actually present.
+    }
+  }
+  return null;
+}
+
+function parseTestAssessment(value: unknown): OpenClawCertifiedEvidence["tests"] {
+  const tests = asRecord(value);
+  return tests
+    ? {
+        status: tests.status === "PASS" || tests.status === "FAIL" ? tests.status : null,
+        requiredArtifactCount: readNumber(tests.requiredArtifactCount),
+        passedArtifactCount: readNumber(tests.passedArtifactCount),
+        failedArtifactCount: readNumber(tests.failedArtifactCount),
+        unknownOutcomeCount: readNumber(tests.unknownOutcomeCount)
+      }
+    : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -429,6 +488,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isGitCommit(value: string) {
+  return /^[0-9a-f]{40}$/i.test(value);
+}
+
+function isSha256(value: string) {
+  return /^[0-9a-f]{64}$/i.test(value);
 }
 
 async function main() {

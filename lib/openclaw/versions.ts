@@ -5,6 +5,15 @@
 export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.4";
 export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.9.1";
 export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.9.4";
+export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;
+
+export function getOpenClawFinalCertificationArtifactType(version: string) {
+  return `openclaw-${version}-${OPENCLAW_FINAL_CERTIFICATION_PHASE}`;
+}
+
+export function getOpenClawFinalCertificationFilename(version: string) {
+  return `${getOpenClawFinalCertificationArtifactType(version)}.json`;
+}
 
 export type OpenClawVersionRoleEpistemicStatus =
   | "policy"

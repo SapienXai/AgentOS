@@ -28,9 +28,14 @@ import {
 import { classifyOpenClawReleaseImpact } from "@/lib/openclaw/upstream/impact-classifier";
 import {
   loadOpenClawCertifiedEvidence,
+  reconcileOpenClawReleaseEvidence,
   runOpenClawReleaseWatch,
   selectOpenClawReleasesForIntake
 } from "@/scripts/openclaw-release-watch";
+import {
+  getOpenClawFinalCertificationArtifactType,
+  OPENCLAW_FINAL_CERTIFICATION_PHASE
+} from "@/lib/openclaw/versions";
 import {
   LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
   resolveOpenClawUpdateDecision
@@ -380,8 +385,18 @@ test("runner returns intake-blocked and writes incomplete evidence for an author
 test("release-watch dry-run reconciles certified evidence and repository pin without mutating issue state", async () => {
   const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-reconcile-"));
   const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-"));
-  await writeFile(join(evidenceDir, "openclaw-2026.9.5-final-certification.json"), `${JSON.stringify({
-    artifactType: "openclaw-2026.9.5-final-certification",
+  await writeFile(join(evidenceDir, "openclaw-2026.9.5-pre-merge-final-certification.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    artifactType: getOpenClawFinalCertificationArtifactType("2026.9.5"),
+    phase: OPENCLAW_FINAL_CERTIFICATION_PHASE,
+    success: true,
+    tests: {
+      status: "PASS",
+      requiredArtifactCount: 1,
+      passedArtifactCount: 1,
+      failedArtifactCount: 0,
+      unknownOutcomeCount: 0
+    },
     provenance: {
       certifiedCodeHead: "c".repeat(40),
       evidenceCommit: "d".repeat(40),
@@ -389,7 +404,11 @@ test("release-watch dry-run reconciles certified evidence and repository pin wit
         version: "2026.9.5",
         sourceCommit: "b".repeat(40),
         buildId: "build-2026.9.5",
-        packageHash: "package-hash"
+        packageHash: "e".repeat(64),
+        gatewayClientVersion: "2026.9.5",
+        gatewayProtocolVersion: "2026.9.5",
+        stateSchema: 17,
+        agentSchema: 19
       }
     }
   }, null, 2)}\n`, "utf8");
@@ -431,7 +450,101 @@ test("release-watch treats the pre-existing final artifact as historical until f
 
   assert.equal(lookup.status, "invalid");
   assert.equal(lookup.evidence, null);
-  assert.match(lookup.reason, /fresh certifiedCodeHead/i);
+  assert.match(lookup.reason, /historical|not promotable/i);
+});
+
+test("release-watch rejects a mismatched pre-merge final artifact identity", async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-identity-"));
+  await writeCertifiedEvidence(evidenceDir, { artifactType: "openclaw-2026.9.5-final-certification" });
+
+  const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.5", evidenceDir });
+
+  assert.equal(lookup.status, "invalid");
+  assert.match(lookup.reason, /artifactType/i);
+});
+
+test("release-watch rejects missing or unsuccessful certification assessment", async () => {
+  for (const [label, overrides] of [
+    ["success", { success: undefined }],
+    ["unsuccessful", { success: false }],
+    ["tests", { tests: undefined }]
+  ] as const) {
+    const evidenceDir = await mkdtemp(join(tmpdir(), `agentos-openclaw-evidence-${label}-`));
+    await writeCertifiedEvidence(evidenceDir, overrides);
+
+    const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.5", evidenceDir });
+
+    assert.equal(lookup.status, "invalid");
+    assert.match(lookup.reason, /success|tests/i);
+  }
+});
+
+test("release-watch rejects invalid code or evidence commit bindings", async () => {
+  for (const overrides of [
+    { provenance: { certifiedCodeHead: "not-a-commit" } },
+    { provenance: { evidenceCommit: "not-a-commit" } },
+    { provenance: { certifiedCodeHead: "a".repeat(40), evidenceCommit: "a".repeat(40) } }
+  ]) {
+    const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-commit-"));
+    await writeCertifiedEvidence(evidenceDir, overrides);
+
+    const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.5", evidenceDir });
+
+    assert.equal(lookup.status, "invalid");
+    assert.match(lookup.reason, /commit/i);
+  }
+});
+
+test("release-watch accepts a complete pre-merge final evidence record", async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-valid-"));
+  await writeCertifiedEvidence(evidenceDir);
+
+  const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.5", evidenceDir });
+
+  assert.equal(lookup.status, "found");
+  assert.equal(lookup.evidence?.artifactType, getOpenClawFinalCertificationArtifactType("2026.9.5"));
+  assert.equal(lookup.evidence?.phase, OPENCLAW_FINAL_CERTIFICATION_PHASE);
+  assert.equal(lookup.evidence?.tests?.status, "PASS");
+  assert.equal(lookup.evidence?.version, "2026.9.5");
+});
+
+test("release-watch keeps missing evidence reviewable and present invalid evidence blocked", () => {
+  const intake = buildOpenClawCompatibilityIntake(intakeInput());
+  const productionConfig = {
+    status: "missing" as const,
+    path: null,
+    version: null,
+    image: null,
+    digest: null,
+    reason: "No repository deployment configuration was supplied."
+  };
+  const missing = reconcileOpenClawReleaseEvidence({
+    intake,
+    certifiedEvidence: {
+      status: "missing",
+      path: null,
+      evidence: null,
+      reason: "No final evidence has been generated yet."
+    },
+    productionConfig
+  });
+  const invalid = reconcileOpenClawReleaseEvidence({
+    intake,
+    certifiedEvidence: {
+      status: "invalid",
+      path: "/tmp/certification.json",
+      evidence: null,
+      reason: "The final evidence record is partial."
+    },
+    productionConfig
+  });
+
+  assert.equal(missing.status, "reviewable");
+  assert.equal(missing.identityStatus, "unavailable");
+  assert.equal(missing.certifiedEvidenceStatus, "missing");
+  assert.equal(invalid.status, "blocked");
+  assert.equal(invalid.identityStatus, "unavailable");
+  assert.equal(invalid.certifiedEvidenceStatus, "invalid");
 });
 
 test("intake fingerprint excludes volatile generation time and leaves the manifest untouched", () => {
@@ -716,6 +829,42 @@ function releaseWatchIncompleteContractFetch(version: string) {
     }
     return verifiedSource(input);
   };
+}
+
+async function writeCertifiedEvidence(evidenceDir: string, overrides: Record<string, unknown> = {}) {
+  const baseProvenance = {
+    certifiedCodeHead: "c".repeat(40),
+    evidenceCommit: "d".repeat(40),
+    openClaw: {
+      version: "2026.9.5",
+      sourceCommit: "b".repeat(40),
+      buildId: "build-2026.9.5",
+      packageHash: "e".repeat(64),
+      gatewayClientVersion: "2026.9.5",
+      gatewayProtocolVersion: "2026.9.5",
+      stateSchema: 17,
+      agentSchema: 19
+    }
+  };
+  const base = {
+    schemaVersion: 2,
+    artifactType: getOpenClawFinalCertificationArtifactType("2026.9.5"),
+    phase: OPENCLAW_FINAL_CERTIFICATION_PHASE,
+    success: true,
+    tests: {
+      status: "PASS",
+      requiredArtifactCount: 1,
+      passedArtifactCount: 1,
+      failedArtifactCount: 0,
+      unknownOutcomeCount: 0
+    },
+    ...overrides,
+    provenance: {
+      ...baseProvenance,
+      ...(overrides.provenance && typeof overrides.provenance === "object" ? overrides.provenance : {})
+    }
+  };
+  await writeFile(join(evidenceDir, "openclaw-2026.9.5-pre-merge-final-certification.json"), `${JSON.stringify(base, null, 2)}\n`, "utf8");
 }
 
 function jsonResponse(value: unknown) {

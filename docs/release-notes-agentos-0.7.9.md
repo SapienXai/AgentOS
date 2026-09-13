@@ -43,9 +43,11 @@ globally.
   gateway.restart.request remain intentionally SKIPPED because they can mutate
   an installation or terminate the disposable Gateway.
 - The pre-existing 9.4 certification artifacts remain immutable historical
-  evidence. A fresh final-certification run now records `certifiedCodeHead`
-  separately from `evidenceCommit`, exact package identity, test counts,
-  explicit skips/expected denials, and `production.status=not-tested`.
+  evidence. A fresh pre-merge final-certification run writes
+  `openclaw-2026.9.4-pre-merge-final-certification.json` with matching
+  `artifactType`/`phase`, separate `certifiedCodeHead` and `evidenceCommit`,
+  exact package identity, complete test counts, explicit skips/expected
+  denials, and `production.status=not-tested`.
 - Optional observations remain explicitly `SKIPPED` where the exact runtime
   did not advertise a surface; expected authorization denials remain denials.
 

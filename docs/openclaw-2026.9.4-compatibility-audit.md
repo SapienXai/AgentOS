@@ -182,19 +182,20 @@ Evidence: [`openclaw-2026.9.3-to-2026.9.4-migration.json`](evidence/openclaw-202
 | Doctor diagnostics, repair, idempotency | PASS | [Doctor](evidence/openclaw-2026.9.4-doctor-update-recovery.json), [hardening](evidence/openclaw-2026.9.4-doctor-update-recovery-hardening.json) | 9.4 repair/reporting mode distinction verified. |
 | Native updater/recovery representation | PASS | [official runtime](evidence/openclaw-2026.9.4-final-official-runtime-certification.json), [hardening](evidence/openclaw-2026.9.4-doctor-update-recovery-hardening.json) | Rollback/recovery remains OpenClaw-owned; failed-after-rollback is not success. |
 | Native work and project/session ownership | PASS | [native work](evidence/openclaw-2026.9.4-native-work-hardening.json) | OpenClaw owns worktrees, placement, task and collaboration state. |
-| Final promotion gate | PASS | [final certification](evidence/openclaw-2026.9.4-final-certification.json) | 20 artifact gates passed; 0 failed and 0 environment-limited required gates. |
+| Historical final aggregation | HISTORICAL | [preserved evidence](evidence/openclaw-2026.9.4-final-certification.json) | Preserved for audit history; its legacy identity is not promotable as current pre-merge final evidence. |
+| Pre-merge final promotion gate | PENDING | `openclaw-2026.9.4-pre-merge-final-certification.json` | Requires the complete schema-2 pre-merge artifact with passing tests and separate code/evidence commit bindings. |
 
 The final aggregation contains 92 explicit optional `SKIPPED` observations and
 67 expected authorization denials across the certification artifacts. These
 are not converted into passes; no required gate is environment-limited, and no
 production Gateway or real credential was used.
 
-The pre-existing final-certification JSON linked in the final promotion row
-below remains historical. A
-fresh run of `openclaw:final-certification-9-4` writes
-`docs/evidence/openclaw-2026.9.4-phase-1-final-certification.json` and records
-fresh `certifiedCodeHead` and optional `evidenceCommit` provenance without
-overwriting the historical artifact.
+The pre-existing final-certification JSON remains historical and is not
+promotable. A fresh run of `openclaw:final-certification-9-4` writes
+`docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` with the
+matching `artifactType` and `phase`, complete passing test assessment, exact
+OpenClaw identity, and separate `certifiedCodeHead` and `evidenceCommit`
+bindings without overwriting historical artifacts.
 
 ## New 9.4 capability disposition
 

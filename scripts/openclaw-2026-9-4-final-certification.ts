@@ -4,9 +4,12 @@ import path from "node:path";
 
 import {
   OPENCLAW_NATIVE_CONTRACT_VERSION,
+  OPENCLAW_FINAL_CERTIFICATION_PHASE,
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION,
   buildOpenClawVersionRoles,
+  getOpenClawFinalCertificationArtifactType,
+  getOpenClawFinalCertificationFilename,
   type OpenClawVersionRoles
 } from "@/lib/openclaw/versions";
 import {
@@ -23,7 +26,9 @@ const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
 const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
 const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE?.trim();
 const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
-const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_OUTPUT?.trim() || `docs/evidence/openclaw-${TARGET_VERSION}-phase-1-final-certification.json`);
+const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
+const FINAL_CERTIFICATION_FILENAME = getOpenClawFinalCertificationFilename(TARGET_VERSION);
+const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_OUTPUT?.trim() || `docs/evidence/${FINAL_CERTIFICATION_FILENAME}`);
 
 const REQUIRED_ARTIFACTS = [
   ["contract-diff", `docs/evidence/openclaw-2026.9.3-to-${TARGET_VERSION}-contract-diff.json`],
@@ -63,7 +68,8 @@ export type OpenClawExactPackageIdentity = {
 
 export type OpenClawFinalCertificationReport = {
   schemaVersion: 2;
-  artifactType: "openclaw-2026.9.4-final-certification";
+  artifactType: typeof FINAL_CERTIFICATION_ARTIFACT_TYPE;
+  phase: typeof OPENCLAW_FINAL_CERTIFICATION_PHASE;
   generatedAt: string;
   provenance: {
     repository: string;
@@ -117,12 +123,17 @@ async function main() {
   if (OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT !== TARGET_COMMIT || OPENCLAW_IDENTITY_CONTRACT_BUILD !== TARGET_BUILD || OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL !== 4 || OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA !== 17 || OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA !== 19) {
     failures.push("AgentOS identity contract does not match the verified 2026.9.4 identity");
   }
+  if (path.basename(OUTPUT_PATH) !== FINAL_CERTIFICATION_FILENAME) {
+    failures.push(`Final certification output must use ${FINAL_CERTIFICATION_FILENAME}.`);
+  }
   if (!packageIdentity) {
     // Keep the report deterministic; the failure has already been recorded.
   } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.gatewayClientVersion !== TARGET_VERSION || packageIdentity.gatewayProtocolVersion !== TARGET_VERSION || packageIdentity.stateSchema !== 17 || packageIdentity.agentSchema !== 19) {
     failures.push("exact 2026.9.4 package identity, Gateway package versions, build, or schema does not match the verified target");
   }
-  if (EVIDENCE_COMMIT_INPUT && !isGitCommit(EVIDENCE_COMMIT_INPUT)) {
+  if (!EVIDENCE_COMMIT_INPUT) {
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT is required for final evidence provenance");
+  } else if (!isGitCommit(EVIDENCE_COMMIT_INPUT)) {
     failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must be a 40-character Git commit SHA");
   }
 
@@ -145,9 +156,12 @@ async function main() {
   if (migration?.success !== true || !Object.values(asRecord(migration?.checks)).every(Boolean)) failures.push("9.3 to 9.4 migration checks are incomplete");
 
   const deploymentPin = await readRepositoryDeploymentPin();
+  const certifiedCodeHead = await gitOutput(["rev-parse", "HEAD"]);
+  if (!isGitCommit(certifiedCodeHead)) failures.push("The certified code HEAD is not a 40-character Git commit SHA");
+  if (EVIDENCE_COMMIT_INPUT && EVIDENCE_COMMIT_INPUT === certifiedCodeHead) failures.push("Certified code and evidence commits must be distinct bindings");
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: new Date().toISOString(),
-    certifiedCodeHead: await gitOutput(["rev-parse", "HEAD"]),
+    certifiedCodeHead,
     evidenceCommit: EVIDENCE_COMMIT_INPUT && isGitCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
     branch: await gitOutput(["branch", "--show-current"]),
     packageIdentity,
@@ -193,10 +207,13 @@ export function buildOpenClawFinalCertificationReport(input: {
   );
   const migrationProvenance = readMigrationProvenance(input.artifacts.migration);
   const runtimeProvenance = readRuntimeProvenance(input.artifacts.runtime);
+  const completeTestAssessment = input.failures.length === 0 && passedArtifactCount > 0 && passedArtifactCount === Object.keys(input.matrix).length && failedArtifactCount === 0 && unknownOutcomeCount === 0 && !statuses.includes("FAIL") && !statuses.includes("UNKNOWN");
+  const validCommitBinding = isGitCommit(input.certifiedCodeHead) && isGitCommit(input.evidenceCommit ?? "") && input.certifiedCodeHead !== input.evidenceCommit;
 
   return {
     schemaVersion: 2,
-    artifactType: "openclaw-2026.9.4-final-certification",
+    artifactType: FINAL_CERTIFICATION_ARTIFACT_TYPE,
+    phase: OPENCLAW_FINAL_CERTIFICATION_PHASE,
     generatedAt: input.generatedAt,
     provenance: {
       repository: "SapienXai/AgentOS",
@@ -261,7 +278,7 @@ export function buildOpenClawFinalCertificationReport(input: {
       liveRuntime: runtimeProvenance
     }),
     tests: {
-      status: input.failures.length === 0 ? "PASS" : "FAIL",
+      status: completeTestAssessment && validCommitBinding ? "PASS" : "FAIL",
       requiredArtifactCount: Object.keys(input.matrix).length,
       passedArtifactCount,
       failedArtifactCount,
@@ -301,11 +318,11 @@ export function buildOpenClawFinalCertificationReport(input: {
       nativeContractVersion: TARGET_VERSION,
       supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
       railwayImagePin: "NOT-PERFORMED",
-      decision: input.failures.length === 0 ? "PROMOTE" : "BLOCK",
+      decision: completeTestAssessment && validCommitBinding ? "PROMOTE" : "BLOCK",
       decisionKind: "recommendation-only"
     },
     failures: input.failures,
-    success: input.failures.length === 0
+    success: completeTestAssessment && validCommitBinding
   };
 }
 
