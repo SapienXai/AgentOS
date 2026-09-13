@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
 import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
+import { buildGatewayEnvironment } from "../scripts/railway-supervisor-environment.mjs";
 
 const rootDir = process.cwd();
 
@@ -73,7 +74,8 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   const workerEntrypoint = await read("scripts/railway-browser-worker-entrypoint.sh");
   const dockerfile = await read("Dockerfile.railway");
 
-  assert.match(supervisor, /delete gatewayEnv\.AGENTOS_INITIAL_ADMIN_PASSWORD/);
+  assert.match(supervisor, /buildGatewayEnvironment\(process\.env/);
+  assert.match(supervisor, /railway-supervisor-environment\.mjs/);
   assert.match(supervisor, /bootstrapRailwayOpenClawConfig\(gatewayEnv\)/);
   assert.doesNotMatch(supervisor, /PORT:\s*"3000"/);
   assert.match(supervisor, /createGatewaySupervisor/);
@@ -252,6 +254,34 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(docs, /Raw VNC and remote CDP endpoints[\s\S]*have\s+no Railway public port/);
   assert.match(docs, /browser-accounts\.json/);
   assert.match(docs, /Railway volume/);
+});
+
+test("Railway keeps AgentOS-only secrets out of the OpenClaw child environment", () => {
+  const environment = buildGatewayEnvironment({
+    PATH: "/usr/bin",
+    OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+    OPENAI_API_KEY: "provider-key",
+    AGENTOS_API_TOKEN: "agentos-api-token",
+    AGENTOS_INITIAL_ADMIN_PASSWORD: "initial-password",
+    AGENTOS_BROWSER_WORKER_TOKEN: "browser-worker-token",
+    AGENTOS_OPENCLAW_GATEWAY_TOKEN: "legacy-gateway-token",
+    AGENTOS_BROWSER_POLICY_TOKEN: "old-policy-token"
+  }, {
+    AGENTOS_BROWSER_POLICY_TOKEN: "runtime-policy-token",
+    AGENTOS_BROWSER_POLICY_READY_PATH: "/tmp/policy.ready",
+    AGENTOS_BROWSER_POLICY_HEARTBEAT_URL: "http://127.0.0.1:3001/api/internal/browser-policy/heartbeat",
+    AGENTOS_MISSION_CONTROL_ROOT: "/agentos/.mission-control"
+  });
+
+  assert.equal(environment.PATH, "/usr/bin");
+  assert.equal(environment.OPENCLAW_GATEWAY_TOKEN, "gateway-token");
+  assert.equal(environment.OPENAI_API_KEY, "provider-key");
+  assert.equal(environment.AGENTOS_API_TOKEN, undefined);
+  assert.equal(environment.AGENTOS_INITIAL_ADMIN_PASSWORD, undefined);
+  assert.equal(environment.AGENTOS_BROWSER_WORKER_TOKEN, undefined);
+  assert.equal(environment.AGENTOS_OPENCLAW_GATEWAY_TOKEN, undefined);
+  assert.equal(environment.AGENTOS_BROWSER_POLICY_TOKEN, "runtime-policy-token");
+  assert.equal(environment.AGENTOS_BROWSER_POLICY_READY_PATH, "/tmp/policy.ready");
 });
 
 test("Railway blocks every AgentOS Gateway lifecycle command while preserving native Gateway RPC", async () => {

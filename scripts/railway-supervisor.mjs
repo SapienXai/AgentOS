@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
 import { startRailwayPublicProxy } from "./railway-public-proxy.mjs";
 import { createGatewaySupervisor } from "./railway-supervisor-runtime.mjs";
+import { buildGatewayEnvironment } from "./railway-supervisor-environment.mjs";
 
 const gatewayPort = parsePort(process.env.OPENCLAW_GATEWAY_PORT, 18789);
 const publicPort = parsePort(process.env.PORT, 3000);
@@ -56,12 +57,12 @@ async function runDisposableSupervisor() {
 
 async function runRailwaySupervisor() {
   const browserPolicyToken = randomBytes(32).toString("base64url");
-  const gatewayEnv = { ...process.env };
-  delete gatewayEnv.AGENTOS_INITIAL_ADMIN_PASSWORD;
-  gatewayEnv.AGENTOS_BROWSER_POLICY_READY_PATH = browserPolicyReadyPath;
-  gatewayEnv.AGENTOS_MISSION_CONTROL_ROOT = "/agentos/.mission-control";
-  gatewayEnv.AGENTOS_BROWSER_POLICY_TOKEN = browserPolicyToken;
-  gatewayEnv.AGENTOS_BROWSER_POLICY_HEARTBEAT_URL = `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/heartbeat`;
+  const gatewayEnv = buildGatewayEnvironment(process.env, {
+    AGENTOS_BROWSER_POLICY_READY_PATH: browserPolicyReadyPath,
+    AGENTOS_MISSION_CONTROL_ROOT: "/agentos/.mission-control",
+    AGENTOS_BROWSER_POLICY_TOKEN: browserPolicyToken,
+    AGENTOS_BROWSER_POLICY_HEARTBEAT_URL: `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/heartbeat`
+  });
   const browserProxyToken = randomBytes(32).toString("base64url");
   const browserWorkerToken = remoteBrowserWorkerUrl
     ? requireBrowserWorkerToken(process.env.AGENTOS_BROWSER_WORKER_TOKEN)
