@@ -343,7 +343,7 @@ test("forced ChatGPT auth switch cancels the previous agent-owned session determ
     }
   };
 
-  const first = await startOpenClawChatGptBrowserAuth({ agentId: "agent-a" }, dependencies);
+  await startOpenClawChatGptBrowserAuth({ agentId: "agent-a" }, dependencies);
   await delay(0);
   const second = await startOpenClawChatGptBrowserAuth({ force: true, agentId: "agent-b" }, dependencies);
   await delay(0);
