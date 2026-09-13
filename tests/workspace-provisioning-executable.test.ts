@@ -14,6 +14,10 @@ import {
   WorkspaceProvisioningError,
   type WorkspaceProvisioningDependencies
 } from "@/lib/agentos/application/workspace-provisioning-service";
+import { ExecutionTopologyUnavailableError } from "@/lib/openclaw/application/execution-topology-service";
+import { normalizeExecutionEnvironment } from "@/lib/openclaw/domains/execution-topology";
+import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import type { NativeEnvironmentPreparationExecution } from "@/lib/openclaw/application/execution-topology-service";
 import { composeWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
 import {
   acquireProvisioningLease,
@@ -301,6 +305,190 @@ test("fresh provisioning executes through the injected canonical OpenClaw worksp
     assert.equal(harness.counts().createCount, 1);
     assert.ok(finished.completedSteps["workspace-materialized"]);
     assert.ok(finished.completedSteps["final-verification-complete"]);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("explicit native environment preparation preserves identity, projects placement and is idempotent", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-environment-"));
+  try {
+    const harness = createHarness(rootPath);
+    let prepareCalls = 0;
+    let statusReads = 0;
+    const preparation: NativeEnvironmentPreparationExecution = {
+      outcome: "succeeded",
+      reconciled: false,
+      retryable: false,
+      result: { environmentId: "worker:prepared-1", preparationKey: "preparation-key-1", reused: true },
+      classification: null
+    };
+    const dependencies: WorkspaceProvisioningDependencies = {
+      ...harness.dependencies,
+      prepareNativeEnvironment: async (input) => {
+        prepareCalls += 1;
+        assert.deepEqual(input, { profileId: "profile-remote", projectPath: path.join(rootPath, "workspaces", "acme") });
+        return preparation;
+      },
+      readNativeEnvironment: async (environmentId) => {
+        statusReads += 1;
+        assert.equal(environmentId, "worker:prepared-1");
+        return normalizeExecutionEnvironment({
+          id: environmentId,
+          type: "worker",
+          label: "Prepared worker",
+          status: "available",
+          sessionHost: true,
+          worker: {
+            providerId: "provider-remote",
+            state: "ready",
+            ageMs: 1,
+            attachedSessionIds: [],
+            tunnelStatus: "connected"
+          }
+        });
+      }
+    };
+    const input = {
+      actorId: "actor-environment",
+      blueprint: blueprint(),
+      idempotencyKey: "environment-key",
+      acceptDraft: true,
+      environmentPreparation: { requested: true as const, profileId: "profile-remote" }
+    };
+    const finished = await waitForWorkspaceProvisioning(input, dependencies);
+
+    assert.equal(finished.state, "ready");
+    assert.equal(finished.environmentPreparation.status, "reused");
+    assert.equal(finished.environmentPreparation.location, "remote");
+    assert.equal(finished.environmentPreparation.environmentId, "worker:prepared-1");
+    assert.equal(finished.environmentPreparation.preparationKey, "preparation-key-1");
+    assert.equal(finished.environmentPreparation.cost.status, "unknown");
+    assert.equal(prepareCalls, 1);
+    assert.equal(statusReads, 1);
+
+    const repeated = await provisionWorkspaceFromBlueprint(input, dependencies);
+    assert.equal(repeated.runId, finished.runId);
+    assert.equal(prepareCalls, 1);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("unsupported and in-progress native preparation remain honest without breaking baseline workspace creation", async () => {
+  const unsupportedRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-environment-unsupported-"));
+  const inProgressRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-environment-progress-"));
+  try {
+    const unsupported = createHarness(unsupportedRoot);
+    const unsupportedRun = await waitForWorkspaceProvisioning({
+      actorId: "actor-unsupported",
+      blueprint: blueprint(),
+      idempotencyKey: "unsupported-key",
+      acceptDraft: true,
+      environmentPreparation: { requested: true, profileId: "profile-remote" }
+    }, {
+      ...unsupported.dependencies,
+      prepareNativeEnvironment: async () => {
+        throw new ExecutionTopologyUnavailableError("OpenClaw environments.prepare is unavailable.");
+      }
+    });
+    assert.equal(unsupportedRun.state, "partial");
+    assert.equal(unsupportedRun.environmentPreparation.status, "unsupported");
+    assert.equal(unsupportedRun.environmentPreparation.environmentId, null);
+
+    const inProgress = createHarness(inProgressRoot);
+    const inProgressRun = await waitForWorkspaceProvisioning({
+      actorId: "actor-progress",
+      blueprint: blueprint(),
+      idempotencyKey: "progress-key",
+      acceptDraft: true,
+      environmentPreparation: { requested: true, profileId: "profile-remote" }
+    }, {
+      ...inProgress.dependencies,
+      prepareNativeEnvironment: async () => ({
+        outcome: "succeeded",
+        reconciled: false,
+        retryable: false,
+        result: { environmentId: "worker:progress-1", preparationKey: "preparation-key-progress", reused: false },
+        classification: null
+      }),
+      readNativeEnvironment: async () => normalizeExecutionEnvironment({
+        id: "worker:progress-1",
+        type: "worker",
+        label: "Preparing worker",
+        status: "starting",
+        sessionHost: true,
+        worker: {
+          providerId: "provider-remote",
+          state: "provisioning",
+          ageMs: 1,
+          attachedSessionIds: [],
+          tunnelStatus: "connecting"
+        }
+      })
+    });
+    assert.equal(inProgressRun.state, "partial");
+    assert.equal(inProgressRun.environmentPreparation.status, "in-progress");
+    assert.equal(inProgressRun.environmentPreparation.recovery?.includes("Refresh"), true);
+  } finally {
+    await rm(unsupportedRoot, { recursive: true, force: true });
+    await rm(inProgressRoot, { recursive: true, force: true });
+  }
+});
+
+test("definite native preparation failure is retryable only through explicit recovery", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-environment-retry-"));
+  try {
+    const harness = createHarness(rootPath);
+    let prepareCalls = 0;
+    const input = {
+      actorId: "actor-environment-retry",
+      blueprint: blueprint(),
+      idempotencyKey: "environment-retry-key",
+      acceptDraft: true,
+      environmentPreparation: { requested: true as const, profileId: "profile-remote" }
+    };
+    const dependencies: WorkspaceProvisioningDependencies = {
+      ...harness.dependencies,
+      prepareNativeEnvironment: async () => {
+        prepareCalls += 1;
+        if (prepareCalls === 1) throw new NativeGatewayError("Provider rejected native preparation.", { kind: "unknown" });
+        return {
+          outcome: "succeeded",
+          reconciled: false,
+          retryable: false,
+          result: { environmentId: "worker:retry-1", preparationKey: "preparation-key-retry", reused: false },
+          classification: null
+        };
+      },
+      readNativeEnvironment: async () => normalizeExecutionEnvironment({
+        id: "worker:retry-1",
+        type: "worker",
+        label: "Retry worker",
+        status: "available",
+        sessionHost: true,
+        worker: {
+          providerId: "provider-remote",
+          state: "ready",
+          ageMs: 1,
+          attachedSessionIds: [],
+          tunnelStatus: "connected"
+        }
+      })
+    };
+
+    const failed = await waitForWorkspaceProvisioning(input, dependencies);
+    assert.equal(failed.state, "partial");
+    assert.equal(failed.environmentPreparation.status, "failed");
+    assert.equal(failed.environmentPreparation.retryable, true);
+    const unchanged = await provisionWorkspaceFromBlueprint(input, dependencies);
+    assert.equal(unchanged.state, "partial");
+    assert.equal(prepareCalls, 1);
+
+    const retried = await waitForWorkspaceProvisioning({ ...input, retryEnvironmentPreparation: true }, dependencies);
+    assert.equal(retried.state, "ready");
+    assert.equal(retried.environmentPreparation.status, "prepared");
+    assert.equal(prepareCalls, 2);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

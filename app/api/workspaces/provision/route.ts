@@ -25,7 +25,12 @@ const provisionRequestSchema = z.object({
   compositionPlan: z.unknown().optional(),
   compositionPlanId: z.string().trim().min(1).max(160).nullable().optional(),
   compositionPlanFingerprint: z.string().regex(/^[a-f0-9]{64}$/i).nullable().optional(),
-  creationRunId: z.string().uuid().nullable().optional()
+  creationRunId: z.string().uuid().nullable().optional(),
+  environmentPreparation: z.object({
+    requested: z.literal(true),
+    profileId: z.string().trim().min(1).max(200)
+  }).strict().nullable().optional(),
+  retryEnvironmentPreparation: z.boolean().optional()
 }).strict();
 
 export async function POST(request: Request) {
@@ -54,7 +59,9 @@ export async function POST(request: Request) {
       compositionPlan: undefined,
       compositionPlanId: certified?.readiness.planId ?? parsed.compositionPlanId ?? null,
       compositionPlanFingerprint: certified?.readiness.planFingerprint ?? parsed.compositionPlanFingerprint ?? null,
-      creationRunId: parsed.creationRunId ?? null
+      creationRunId: parsed.creationRunId ?? null,
+      environmentPreparation: parsed.environmentPreparation ?? null,
+      retryEnvironmentPreparation: parsed.retryEnvironmentPreparation === true
     });
     if (parsed.creationRunId) {
       await attachWorkspaceProvisioningRun({

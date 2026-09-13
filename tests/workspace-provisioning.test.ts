@@ -20,7 +20,7 @@ test("Phase 6 provisioning uses the canonical OpenClaw workspace boundary", asyn
 test("provisioning records durable states, completed steps, and actor-scoped idempotency", async () => {
   const source = await readFile(servicePath, "utf8");
 
-  for (const state of ["pending", "validating", "materializing", "bootstrapping", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying", "ready", "partial", "failed"]) {
+  for (const state of ["pending", "validating", "materializing", "bootstrapping", "preparing-environment", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying", "ready", "partial", "failed"]) {
     assert.match(source, new RegExp(`['\"]${state}['\"]`));
   }
   assert.match(source, /idempotencyKeyHash/);
@@ -34,6 +34,8 @@ test("provisioning records durable states, completed steps, and actor-scoped ide
   assert.match(source, /signal\?: AbortSignal/);
   assert.match(source, /state: cancelled \? "cancelled" : "failed"/);
   assert.match(source, /workspace may be incomplete and can be resumed/);
+  assert.match(source, /environmentPreparation/);
+  assert.match(source, /retryEnvironmentPreparation/);
 });
 
 test("provisioning keeps knowledge freshness and materialization validation server-side", async () => {
@@ -69,6 +71,8 @@ test("provisioning API authenticates the actor and never accepts a client actor 
   assert.match(source, /idempotencyKey/);
   assert.doesNotMatch(source, /actorId: z\.|workspacePath: z\.|existingPath: z\./);
   assert.match(source, /getWorkspaceProvisioningRun/);
+  assert.match(source, /environmentPreparation: z\.object/);
+  assert.doesNotMatch(source, /projectPath: z\./);
 });
 
 test("Create Workspace follows the real provisioning run and exposes live signals", async () => {

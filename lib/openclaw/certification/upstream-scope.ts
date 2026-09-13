@@ -42,6 +42,10 @@ export const PHASE_8_STATIC_NATIVE_METHODS = [
   "sessions.reclaim"
 ] as const;
 
+/** Static scope evidence for the additive OpenClaw 2026.9.4 method. */
+export const PHASE_9_4_STATIC_NATIVE_METHODS = ["environments.prepare"] as const;
+export type Phase9_4StaticNativeMethod = (typeof PHASE_9_4_STATIC_NATIVE_METHODS)[number];
+
 export type Phase8StaticNativeMethod = typeof PHASE_8_STATIC_NATIVE_METHODS[number];
 
 /**

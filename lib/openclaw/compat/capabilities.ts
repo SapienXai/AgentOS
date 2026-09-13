@@ -253,7 +253,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "environments",
     label: "Environments",
-    methods: ["environments.list", "environments.status"]
+    methods: ["environments.list", "environments.status", "environments.prepare"]
   },
   {
     id: "skills",

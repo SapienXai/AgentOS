@@ -14,7 +14,9 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   OpenClawTaskHistoryInput,
-  OpenClawTaskHistoryPayload
+  OpenClawTaskHistoryPayload,
+  OpenClawEnvironmentPreparationInput,
+  OpenClawEnvironmentPreparationPayload
 } from "@/lib/openclaw/client/types";
 import type {
   GatewayProbePayload,
@@ -272,6 +274,7 @@ export interface OpenClawAdapter {
     listNativeExecutionEnvironments?(options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentListPayload>;
     getNativeExecutionEnvironmentStatus?(input: { environmentId: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentSummary>;
     createNativeExecutionEnvironment?(input: { profileId: string; idempotencyKey: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+    prepareNativeExecutionEnvironment?(input: OpenClawEnvironmentPreparationInput, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentPreparationPayload>;
     destroyNativeExecutionEnvironment?(input: { environmentId: string; force?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
     listNativeNodes?(options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     describeNativeNode?(input: { nodeId: string }, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
@@ -857,6 +860,12 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     const client = this.getClient();
     if (!client.createNativeExecutionEnvironment) return Promise.reject(nativeMethodUnavailable("environments.create"));
     return client.createNativeExecutionEnvironment(input, options);
+  }
+
+  prepareNativeExecutionEnvironment(input: OpenClawEnvironmentPreparationInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.prepareNativeExecutionEnvironment) return Promise.reject(nativeMethodUnavailable("environments.prepare"));
+    return client.prepareNativeExecutionEnvironment(input, options);
   }
 
   destroyNativeExecutionEnvironment(input: { environmentId: string; force?: boolean }, options: OpenClawCommandOptions = {}) {

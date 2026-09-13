@@ -77,9 +77,10 @@ type ContextSourceState = {
   currentLocator?: string | null;
 };
 type UploadGroup = { sourceId: string; files: File[] };
+type EnvironmentPreparationIntent = { requested: boolean; profileId: string };
 type ProvisioningRun = {
   runId: string;
-  state: "pending" | "validating" | "materializing" | "bootstrapping" | "applying-composition" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
+  state: "pending" | "validating" | "materializing" | "bootstrapping" | "preparing-environment" | "applying-composition" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
   result: WorkspaceCreateResult | null;
   warnings: string[];
   error: { code: string; message: string } | null;
@@ -88,6 +89,21 @@ type ProvisioningRun = {
   signals: string[];
   knowledge: { promotedGenerationId: string | null; sourceIds: string[]; documentCount: number } | null;
   pendingSetup: { channels: string[]; connections: string[]; automations: string[] };
+  environmentPreparation: {
+    requested: boolean;
+    profileId: string | null;
+    projectPath: string | null;
+    status: "not-requested" | "pending" | "in-progress" | "prepared" | "reused" | "unsupported" | "blocked" | "partial" | "failed" | "unknown";
+    location: "local" | "remote" | "unknown";
+    environmentId: string | null;
+    preparationKey: string | null;
+    reused: boolean | null;
+    cost: { status: "not-requested" | "not-applicable" | "unknown" | "approval-required"; detail: string };
+    retryable: boolean;
+    recovery: string | null;
+    error: { code: string; message: string } | null;
+    updatedAt: string | null;
+  };
 };
 
 type CreateWorkspaceExperienceProps = {
@@ -114,6 +130,7 @@ export function CreateWorkspaceExperience({
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
   const [mode, setMode] = useState<"automatic" | "customize">("automatic");
+  const [environmentPreparation, setEnvironmentPreparation] = useState<EnvironmentPreparationIntent>({ requested: false, profileId: "" });
   const [constraints, setConstraints] = useState("");
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
   const [sourceStates, setSourceStates] = useState<Record<string, ContextSourceState>>({});
@@ -179,6 +196,7 @@ export function CreateWorkspaceExperience({
     setProfile("fast");
     setContinueLearningAfterCreation(true);
     setMode("automatic");
+    setEnvironmentPreparation({ requested: false, profileId: "" });
     setConstraints("");
     setSources([]);
     setSourceStates({});
@@ -621,7 +639,7 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const provision = useCallback(async () => {
+  const provision = useCallback(async (options: { retryEnvironmentPreparation?: boolean } = {}) => {
     if (!result || stage === "provisioning") return;
     if (!creationRun) return;
 
@@ -655,7 +673,11 @@ export function CreateWorkspaceExperience({
           acceptDraft: basicDraftApproved || normalizeWorkspaceCreationProfile(serverRun.input.profile) !== "high",
           creationRunId: serverRun.runId,
           compositionPlanId: serverRun.snapshot.composition?.planId ?? null,
-          compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null
+          compositionPlanFingerprint: serverRun.snapshot.composition?.inputFingerprint ?? null,
+          environmentPreparation: environmentPreparation.requested
+            ? { requested: true, profileId: environmentPreparation.profileId.trim() }
+            : null,
+          retryEnvironmentPreparation: options.retryEnvironmentPreparation === true
         })
       });
       const payload = (await response.json().catch(() => null)) as ProvisioningRun & { error?: string } | null;
@@ -685,16 +707,17 @@ export function CreateWorkspaceExperience({
     } finally {
       if (provisioningPollRef.current === controller) provisioningPollRef.current = null;
     }
-  }, [result, stage, creationRun, certifyReview, basicDraftApproved, onRefresh]);
+  }, [result, stage, creationRun, certifyReview, basicDraftApproved, environmentPreparation, onRefresh]);
 
   useEffect(() => {
     if (!open || stage !== "review" || !creationRun || !result || !reviewReadiness?.provisionable
       || reviewRunId || provisioningRun || provisioningError || creationRun.input.mode !== "automatic"
+      || environmentPreparation.requested
       || creationRun.input.trigger === "post-create-enrichment" || creationRun.input.trigger === "manual-refresh"
       || automaticProvisionRef.current === creationRun.runId) return;
     automaticProvisionRef.current = creationRun.runId;
     void provision();
-  }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, provision]);
+  }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, environmentPreparation.requested, provision]);
 
   const openProvisionedWorkspace = () => {
     if (!provisioningRun?.result) {
@@ -855,6 +878,7 @@ export function CreateWorkspaceExperience({
                 </div>
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto">
+                {provisioningRun?.environmentPreparation.retryable ? <Button type="button" variant="secondary" onClick={() => void provision({ retryEnvironmentPreparation: true })} aria-label="Retry native environment preparation" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Retry preparation</Button> : null}
                 <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} aria-label="Close workspace ready screen" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Close</Button>
                 <Button type="button" onClick={openProvisionedWorkspace} aria-label="Open Workspace" className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />Open Workspace</Button>
               </div>
@@ -877,9 +901,9 @@ export function CreateWorkspaceExperience({
                   </Button>
                   <Button
                     type="button"
-                    disabled={!result || !reviewReadiness?.provisionable}
+                    disabled={!result || !reviewReadiness?.provisionable || (environmentPreparation.requested && !environmentPreparation.profileId.trim())}
                     onClick={() => void provision()}
-                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : undefined}
+                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : environmentPreparation.requested && !environmentPreparation.profileId.trim() ? "Enter an OpenClaw environment profile ID to request preparation." : undefined}
                     aria-label={provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
                     className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                   >
@@ -912,6 +936,8 @@ export function CreateWorkspaceExperience({
             setBrief={setBrief}
             profile={profile}
             setProfile={setProfile}
+            environmentPreparation={environmentPreparation}
+            setEnvironmentPreparation={setEnvironmentPreparation}
             continueLearningAfterCreation={continueLearningAfterCreation}
             setContinueLearningAfterCreation={setContinueLearningAfterCreation}
             constraints={constraints}
@@ -963,6 +989,8 @@ export function CreateWorkspaceExperience({
             isSavingCustomization={isSavingCustomization}
             provisioningRun={provisioningRun}
             provisioningError={provisioningError}
+            environmentPreparation={environmentPreparation}
+            setEnvironmentPreparation={setEnvironmentPreparation}
             readiness={reviewReadiness ?? creationRun?.snapshot.reviewReadiness ?? null}
             basicDraftApproved={basicDraftApproved}
             onApproveBasicDraft={() => void approveBasicDraft()}
@@ -983,6 +1011,8 @@ function IntakeView({
   isLight,
   profile,
   setProfile,
+  environmentPreparation,
+  setEnvironmentPreparation,
   continueLearningAfterCreation,
   setContinueLearningAfterCreation,
   brief,
@@ -1009,6 +1039,8 @@ function IntakeView({
   isLight: boolean;
   profile: WorkspaceCreationDepth;
   setProfile: (profile: WorkspaceCreationDepth) => void;
+  environmentPreparation: EnvironmentPreparationIntent;
+  setEnvironmentPreparation: (value: EnvironmentPreparationIntent) => void;
   continueLearningAfterCreation: boolean;
   setContinueLearningAfterCreation: (value: boolean) => void;
   brief: string;
@@ -1121,6 +1153,13 @@ function IntakeView({
           <div className="w-full max-w-[600px]">
             <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
             <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
+          </div>
+          <div className={cn("w-full max-w-[600px] rounded-xl border px-3 py-3", isLight ? "border-[#e5dbd0] bg-[#fcfaf7]" : "border-white/10 bg-white/[0.035]") }>
+            <label className={cn("flex items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300")}>
+              <input type="checkbox" checked={environmentPreparation.requested} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, requested: event.target.checked })} className="mt-0.5 accent-violet-500" />
+              <span><span className="font-medium">Prepare a native OpenClaw environment</span><span className="mt-1 block leading-5 opacity-70">Optional and operator-requested. OpenClaw remains responsible for profile validation, placement, lifecycle, cleanup, and provider economics.</span></span>
+            </label>
+            {environmentPreparation.requested ? <label className="mt-3 block text-xs"><span className={cn("font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>OpenClaw profile ID</span><input value={environmentPreparation.profileId} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, profileId: event.target.value })} placeholder="Enter a profile ID from OpenClaw" className={cn(missionControlDialogControlClassName("mt-1.5 h-10"), isLight ? "border-[#dfd2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "")} /></label> : null}
           </div>
         </div>
       </details>
@@ -1261,6 +1300,8 @@ function WorkspaceReadyView({
   ].filter((item) => item.values.length > 0);
   const pendingCount = pendingSetup.reduce((count, item) => count + item.values.length, 0);
   const signals = provisioningRun?.signals.slice(0, 6) ?? [];
+  const environment = provisioningRun?.environmentPreparation;
+  const environmentComplete = environment?.status === "prepared" || environment?.status === "reused";
   const metrics = [
     { icon: Bot, value: agentCount === null ? "—" : String(agentCount), label: agentCount === 1 ? "AI agent" : "AI workforce" },
     { icon: Globe, value: String(sourceCount), label: sourceCount === 1 ? "Project source" : "Project sources" },
@@ -1334,6 +1375,20 @@ function WorkspaceReadyView({
         {metrics.map(({ icon: Icon, value, label }) => <div key={label} className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3", isLight ? "border-[#e9dfd5] bg-white text-[#55483e]" : "border-white/[0.08] bg-white/[0.035] text-slate-200")}><span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-xl", isLight ? "bg-[#f7eee5] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><Icon className="h-4 w-4" aria-hidden="true" /></span><span className="min-w-0"><span className="block text-base font-semibold tabular-nums">{value}</span><span className={cn("block truncate text-[10px] uppercase tracking-[0.12em]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{label}</span></span></div>)}
       </section>
 
+      {environment?.requested ? (
+        <section className={cn("mt-4 rounded-2xl border px-4 py-4", environmentComplete ? (isLight ? "border-emerald-200 bg-emerald-50/60" : "border-emerald-300/20 bg-emerald-300/10") : (isLight ? "border-amber-200 bg-amber-50/70" : "border-amber-300/20 bg-amber-300/10"))} aria-labelledby="native-environment-heading">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", environmentComplete ? (isLight ? "bg-white text-emerald-700" : "bg-emerald-200/10 text-emerald-100") : (isLight ? "bg-white text-amber-700" : "bg-amber-200/10 text-amber-100"))}>{environmentComplete ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />}</span>
+              <div className="min-w-0"><h2 id="native-environment-heading" className={cn("text-xs font-semibold", environmentComplete ? (isLight ? "text-emerald-950" : "text-emerald-50") : (isLight ? "text-amber-950" : "text-amber-50"))}>Native OpenClaw environment</h2><p className={cn("mt-1 text-xs leading-5", environmentComplete ? (isLight ? "text-emerald-900/75" : "text-emerald-100/75") : (isLight ? "text-amber-900/80" : "text-amber-100/80"))}>{environmentStatusLabel(environment.status, environment.reused)}{environment.location !== "unknown" ? ` · ${environment.location}` : ""}</p></div>
+            </div>
+            <span className={cn("shrink-0 text-[10px] font-medium", environmentComplete ? "text-emerald-600" : "text-amber-600")}>{environment.status === "in-progress" ? "In progress" : environmentComplete ? "Ready" : "Needs attention"}</span>
+          </div>
+          <p className={cn("mt-3 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{environment.error?.message || environment.cost.detail}</p>
+          {environment.environmentId ? <details className="mt-3 text-[11px]"><summary className={cn("cursor-pointer font-medium", isLight ? "text-[#76604f]" : "text-violet-200/80")}>View native recovery identity</summary><p className={cn("mt-2 leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>Environment ID: <span className="font-mono">{environment.environmentId}</span>. The preparation key is retained in the durable provisioning record for recovery.</p></details> : null}
+        </section>
+      ) : null}
+
       <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
         <section className={cn("rounded-2xl border px-4 py-4", isLight ? "border-[#e9dfd5] bg-white" : "border-white/[0.08] bg-white/[0.035]")} aria-labelledby="workspace-next-step-heading">
           <div className="flex items-center gap-2"><span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", isLight ? "bg-[#f7eee5] text-[#9a6d45]" : "bg-violet-400/10 text-violet-200")}><FolderOpen className="h-3.5 w-3.5" aria-hidden="true" /></span><h2 id="workspace-next-step-heading" className={cn("text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>Your workspace is yours now</h2></div>
@@ -1361,6 +1416,18 @@ function WorkspaceReadyView({
       {provisioningError ? <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">{provisioningError}</p> : null}
     </main>
   );
+}
+
+function environmentStatusLabel(status: ProvisioningRun["environmentPreparation"]["status"], reused: boolean | null) {
+  if (status === "prepared") return "Prepared by OpenClaw";
+  if (status === "reused" || reused) return "Reused by OpenClaw";
+  if (status === "pending") return "Waiting for OpenClaw";
+  if (status === "in-progress") return "OpenClaw is still preparing it";
+  if (status === "unsupported") return "Native preparation is unavailable";
+  if (status === "blocked") return "Native preparation is blocked";
+  if (status === "unknown") return "Preparation status is unknown";
+  if (status === "failed") return "OpenClaw preparation failed";
+  return "Preparation is partial";
 }
 
 function workspaceCreationProgress(run: WorkspaceCreationRun | null, provisioning?: ProvisioningRun | null) {
@@ -1410,6 +1477,8 @@ function ReviewView({
   isSavingCustomization,
   provisioningRun,
   provisioningError,
+  environmentPreparation,
+  setEnvironmentPreparation,
   readiness,
   basicDraftApproved,
   onApproveBasicDraft,
@@ -1441,6 +1510,8 @@ function ReviewView({
   isSavingCustomization: boolean;
   provisioningRun: ProvisioningRun | null;
   provisioningError: string | null;
+  environmentPreparation: EnvironmentPreparationIntent;
+  setEnvironmentPreparation: (value: EnvironmentPreparationIntent) => void;
   readiness: WorkspaceCreationReviewReadiness | null;
   basicDraftApproved: boolean;
   onApproveBasicDraft: () => void;
@@ -1506,6 +1577,26 @@ function ReviewView({
           <p className="mt-1 text-xs opacity-75">{model.composition.artifactCount} bounded project and workspace document proposals · {model.composition.conflictCount} conflict{model.composition.conflictCount === 1 ? "" : "s"}.</p>
           {model.composition.status === "fallback" && showTechnicalFallback ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
         </div>
+      ) : null}
+
+      {!isEnrichmentReview ? (
+        <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
+          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>Advanced: native OpenClaw environment</summary>
+          <div className="mt-3 space-y-3">
+            <label className="flex items-start gap-2.5 text-xs">
+              <input
+                type="checkbox"
+                checked={environmentPreparation.requested}
+                onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, requested: event.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-violet-500"
+              />
+              <span><span className={cn("font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>Prepare a native worker environment for this workspace</span><span className={cn("mt-1 block leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>This is optional. OpenClaw validates the profile and owns placement, lifecycle, cleanup, and provider economics. Nothing is requested until you create the workspace.</span></span>
+            </label>
+            {environmentPreparation.requested ? (
+              <label className="block text-xs"><span className={cn("font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>OpenClaw profile ID</span><input value={environmentPreparation.profileId} onChange={(event) => setEnvironmentPreparation({ ...environmentPreparation, profileId: event.target.value })} placeholder="Enter a profile ID from OpenClaw" aria-describedby="native-environment-help" className={cn(missionControlDialogControlClassName("mt-1.5 h-10"), isLight ? "border-[#dfd2c6] bg-[#fbf8f3] text-[#382d25] placeholder:text-[#aa9a8d]" : "")} /><span id="native-environment-help" className={cn("mt-1.5 block leading-5", isLight ? "text-[#9b8d80]" : "text-slate-500")}>AgentOS will reject or project an unsupported profile without inventing a local or cloud environment.</span></label>
+            ) : null}
+          </div>
+        </details>
       ) : null}
 
       {model.projectIntelligence ? (

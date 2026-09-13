@@ -8,6 +8,7 @@ export type WorkspaceCreationDisplayEvent = { label: string; kind: "discovered" 
 export function presentWorkspaceCreationDisplay(run: WorkspaceCreationRun | null, provisioning?: {
   state: string;
   steps?: readonly { id: string; status: string }[];
+  environmentPreparation?: { requested: boolean; status: string; reused?: boolean | null } | null;
 } | null) {
   const events = new Map<string, WorkspaceCreationDisplayEvent>();
   const add = (label: string, kind: WorkspaceCreationDisplayEvent["kind"] = "discovered") => events.set(label, { label, kind });
@@ -30,8 +31,11 @@ export function presentWorkspaceCreationDisplay(run: WorkspaceCreationRun | null
     if (profile !== "fast") add("Memory", "created");
   }
   if (provisioning?.state === "ready") add("Workspace", "ready");
+  if (provisioning?.environmentPreparation?.requested && ["prepared", "reused"].includes(provisioning.environmentPreparation.status)) {
+    add(provisioning.environmentPreparation.reused ? "Native environment reused" : "Native environment prepared", "ready");
+  }
   const activity = provisioning
-    ? provisioning.state === "ready" ? "Workspace ready" : provisioning.state === "failed" ? "Your workspace needs attention." : provisioning.state === "applying-composition" ? "Writing workspace instructions…" : "Setting up your workspace…"
+    ? provisioning.state === "ready" ? "Workspace ready" : provisioning.state === "failed" ? "Your workspace needs attention." : provisioning.state === "preparing-environment" ? "Preparing native environment…" : provisioning.state === "applying-composition" ? "Writing workspace instructions…" : "Setting up your workspace…"
     : run?.expediteRequestedAt ? "Finishing with the current context…"
     : run?.snapshot.stage === "workspace-composition" ? "Writing workspace instructions…"
     : run?.snapshot.stage === "review-preparation" ? "Finishing your workspace…"

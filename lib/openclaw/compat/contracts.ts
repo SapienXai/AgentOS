@@ -84,6 +84,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   talkClient: "talk",
   tts: "tts",
   environments: "environments",
+  environmentPreparation: "environments",
   skills: "skills",
   updates: "updates",
   configSchemaLookup: "config",
@@ -114,7 +115,8 @@ const operationRequiredScopes: Partial<Record<string, string[]>> = {
   deviceApproval: ["operator.pairing"],
   deviceToken: ["operator.pairing"],
   nodePairing: ["operator.pairing"],
-  taskHistory: ["operator.read"]
+  taskHistory: ["operator.read"],
+  environmentPreparation: ["operator.admin"]
 };
 
 const methodProbes: Record<string, ContractProbe> = {

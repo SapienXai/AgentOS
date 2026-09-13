@@ -399,6 +399,7 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "environments.list": ["operator.read"],
   "environments.status": ["operator.read"],
   "environments.create": ["operator.admin"],
+  "environments.prepare": ["operator.admin"],
   "environments.destroy": ["operator.admin"],
   "sessions.reclaim": ["operator.write"],
   "users.list": ["operator.read"],

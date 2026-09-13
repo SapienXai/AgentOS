@@ -179,6 +179,41 @@ test("creation experience presenter uses friendly stages and preserves structure
   assert.equal(friendlyProvisioningPhase("applying-composition"), "Preparing workspace");
 });
 
+test("creation experience presents native preparation progress and degraded state honestly", () => {
+  const run = { runId: "run-native-preparation", input: { profile: "fast", sources: [] }, snapshot: createInitialWorkspaceCreationSnapshot(1) } as never;
+  const inProgress = presentWorkspaceCreationExperience({
+    run,
+    result: minimalResult(),
+    provisioningRun: {
+      state: "preparing-environment",
+      environmentPreparation: { requested: true, status: "in-progress", error: null, cost: { detail: "OpenClaw owns provider economics." } }
+    }
+  });
+  assert.equal(inProgress.stage, "provisioning");
+  assert.equal(inProgress.phaseLabel, "Preparing native environment");
+  assert.equal(inProgress.activities.find((activity) => activity.id === "environment")?.status, "active");
+  assert.match(inProgress.attentionItems.join("\n"), /still in progress/);
+
+  const unsupported = presentWorkspaceCreationExperience({
+    run,
+    result: minimalResult(),
+    provisioningRun: {
+      state: "partial",
+      environmentPreparation: { requested: true, status: "unsupported", error: { message: "Native preparation unavailable." } }
+    }
+  });
+  assert.equal(unsupported.activities.find((activity) => activity.id === "environment")?.status, "attention");
+  assert.match(unsupported.attentionItems.join("\n"), /Native preparation unavailable/);
+});
+
+test("native preparation remains opt-in in the workspace creation surface", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /Prepare a native OpenClaw environment/);
+  assert.match(source, /profileId: environmentPreparation\.profileId\.trim\(\)/);
+  assert.match(source, /Retry preparation/);
+  assert.match(source, /The preparation key is retained in the durable provisioning record/);
+});
+
 test("final review metrics use durable Project Intelligence rather than extraction candidates", () => {
   const snapshot = createInitialWorkspaceCreationSnapshot(1);
   snapshot.extraction = { ...snapshot.extraction, factCount: 15, resourceCount: 79 };

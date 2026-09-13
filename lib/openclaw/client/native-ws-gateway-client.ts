@@ -246,6 +246,8 @@ import type {
   OpenClawWorktreesListPayload,
   OpenClawEnvironmentListPayload,
   OpenClawEnvironmentMutationPayload,
+  OpenClawEnvironmentPreparationInput,
+  OpenClawEnvironmentPreparationPayload,
   OpenClawEnvironmentSummary,
   OpenClawSessionsDispatchInput,
   OpenClawSessionsDispatchPayload,
@@ -1482,6 +1484,19 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       { profileId: input.profileId, idempotencyKey: input.idempotencyKey },
       options,
       (payload) => parseNativeEnvironmentSummary("environments.create", payload)
+    );
+  }
+
+  prepareNativeExecutionEnvironment(
+    input: OpenClawEnvironmentPreparationInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawEnvironmentPreparationPayload>(
+      "environments.prepare",
+      { profileId: input.profileId, projectPath: input.projectPath },
+      options,
+      parseNativeEnvironmentPreparationPayload,
+      { safety: "mutation" }
     );
   }
 
@@ -2840,7 +2855,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     method: string,
     params: Record<string, unknown>,
     options: OpenClawCommandOptions,
-    normalize: (payload: unknown) => TPayload
+    normalize: (payload: unknown) => TPayload,
+    policyOverrides: Partial<OpenClawGatewayRequestPolicy> = {}
   ) {
     if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
       throw new OpenClawGatewayClientError(
@@ -2853,11 +2869,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       method,
       params,
       options,
-      { ...resolveGatewayRequestPolicy(method, options), allowCliFallback: false }
+      { ...resolveGatewayRequestPolicy(method, options), ...policyOverrides, allowCliFallback: false }
     ));
     clearGatewayFallbackDiagnostic(method);
     this.clearNativeFailure(method);
-    if (resolveGatewayRequestPolicy(method, options).safety === "mutation") {
+    if ((policyOverrides.safety ?? resolveGatewayRequestPolicy(method, options).safety) === "mutation") {
       this.requestPolicy.invalidateReadCache();
     }
     return payload;
@@ -3712,6 +3728,19 @@ function parseNativeEnvironmentListPayload(payload: unknown): OpenClawEnvironmen
     environments,
     ...(profiles ? { profiles } : {})
   };
+}
+
+function parseNativeEnvironmentPreparationPayload(payload: unknown): OpenClawEnvironmentPreparationPayload {
+  const record = parseObjectGatewayPayload<Record<string, unknown>>("environments.prepare", payload);
+  const environmentId = readNonEmptyString(record.environmentId);
+  const preparationKey = readNonEmptyString(record.preparationKey);
+  if (!environmentId || !preparationKey || typeof record.reused !== "boolean") {
+    throw new OpenClawGatewayClientError(
+      "OpenClaw returned an invalid environments.prepare payload.",
+      "malformed-response"
+    );
+  }
+  return { environmentId, preparationKey, reused: record.reused };
 }
 
 function parseNativeEnvironmentSummary(method: string, payload: unknown): OpenClawEnvironmentSummary {

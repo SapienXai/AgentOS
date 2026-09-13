@@ -10,6 +10,7 @@ import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-erro
 import type {
   OpenClawCommandOptions,
   OpenClawEnvironmentMutationPayload,
+  OpenClawEnvironmentPreparationPayload,
   OpenClawSessionsDispatchPayload,
   OpenClawSessionsMovePayload,
   OpenClawSessionsReclaimPayload
@@ -29,6 +30,8 @@ import {
 } from "@/lib/openclaw/domains/execution-topology";
 
 export const EXECUTION_TOPOLOGY_TIMEOUT_MS = 5_000;
+
+export type NativeEnvironmentPreparationExecution = NativeMutationExecution<OpenClawEnvironmentPreparationPayload>;
 
 export class ExecutionTopologyUnavailableError extends Error {
   constructor(message = "OpenClaw execution topology is unavailable.") {
@@ -252,6 +255,36 @@ export async function createExecutionEnvironment(
         result: null
       };
     }
+  });
+}
+
+export async function prepareExecutionEnvironment(
+  input: { profileId: string; projectPath: string },
+  options: ExecutionTopologyServiceOptions = {}
+): Promise<NativeMutationExecution<OpenClawEnvironmentPreparationPayload>> {
+  const adapter = options.adapter ?? getOpenClawAdapter();
+  if (!adapter.prepareNativeExecutionEnvironment) {
+    throw new ExecutionTopologyUnavailableError("OpenClaw environments.prepare is unavailable.");
+  }
+  const profileId = input.profileId.trim();
+  const projectPath = input.projectPath.trim();
+  if (!profileId || !projectPath) {
+    throw new NativeGatewayError("OpenClaw environment preparation requires a profile and project path.", { kind: "conflict" });
+  }
+  const commandOptions = withTimeout(options.commandOptions, options.timeoutMs);
+  const topology = await readExecutionTopology({ adapter, commandOptions, timeoutMs: options.timeoutMs });
+  if (topology.sourceStatus === "unknown") {
+    throw new ExecutionTopologyUnavailableError("OpenClaw did not provide a current environment profile inventory.");
+  }
+  if (topology.sourceStatus !== "available") {
+    throw new ExecutionTopologyUnavailableError("OpenClaw environment profiles are unavailable.");
+  }
+  if (!topology.profiles.some((profile) => profile.id === profileId)) {
+    throw new NativeGatewayError("The requested OpenClaw environment profile is not available.", { kind: "conflict" });
+  }
+  return executeNativeMutation({
+    operation: "environments.prepare",
+    mutate: () => adapter.prepareNativeExecutionEnvironment!({ profileId, projectPath }, commandOptions)
   });
 }
 

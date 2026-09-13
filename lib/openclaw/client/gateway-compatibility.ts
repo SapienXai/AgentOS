@@ -82,6 +82,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "talkClient"
   | "tts"
   | "environments"
+  | "environmentPreparation"
   | "executionPlacement"
   | "skills"
   | "skillsLibrary"
@@ -569,6 +570,16 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "environments", label: "Environments", methods: ["environments.list", "environments.status"], baseline: "optional" },
   {
+    id: "environmentPreparation",
+    label: "Environment preparation",
+    methods: ["environments.prepare"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns environment preparation, placement, workers, lifecycle, and provider economics. AgentOS only requests native preparation when the runtime advertises this method and preserves the returned identity for recovery.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["environments.prepare"]
+  },
+  {
     id: "executionPlacement",
     label: "Execution topology and placement",
     methods: [
@@ -824,7 +835,7 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
 const OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS = ["users.list"] as const;
 
 /** Additive Gateway methods introduced by the certified OpenClaw 2026.9.4 contract. */
-export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = ["tasks.history"] as const;
+export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = ["tasks.history", "environments.prepare"] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "artifacts.put",

@@ -1043,6 +1043,18 @@ export type OpenClawEnvironmentListPayload = {
 
 export type OpenClawEnvironmentMutationPayload = OpenClawEnvironmentSummary;
 
+/** Exact OpenClaw 2026.9.4 environments.prepare contract. */
+export type OpenClawEnvironmentPreparationInput = {
+  profileId: string;
+  projectPath: string;
+};
+
+export type OpenClawEnvironmentPreparationPayload = {
+  environmentId: string;
+  preparationKey: string;
+  reused: boolean;
+};
+
 export type OpenClawSessionPlacement = Record<string, unknown> & {
   state?: string;
   generation?: number;
@@ -2073,6 +2085,7 @@ export interface OpenClawGatewayClient {
   listNativeExecutionEnvironments?(options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentListPayload>;
   getNativeExecutionEnvironmentStatus?(input: { environmentId: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentSummary>;
   createNativeExecutionEnvironment?(input: { profileId: string; idempotencyKey: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+  prepareNativeExecutionEnvironment?(input: OpenClawEnvironmentPreparationInput, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentPreparationPayload>;
   destroyNativeExecutionEnvironment?(input: { environmentId: string; force?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
   listNativeNodes?(options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   describeNativeNode?(input: { nodeId: string }, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;

@@ -19,6 +19,7 @@ export const workspaceProvisioningStates = [
   "validating",
   "materializing",
   "bootstrapping",
+  "preparing-environment",
   "applying-composition",
   "promoting-knowledge",
   "provisioning-agents",
@@ -38,6 +39,7 @@ export const provisioningCompletedStepIds = [
   "validated",
   "workspace-materialized",
   "bootstrap-verified",
+  "environment-prepared",
   "composition-applied",
   "knowledge-promoted",
   "agents-verified",
@@ -48,6 +50,84 @@ export const provisioningCompletedStepIds = [
 ] as const;
 
 export type ProvisioningCompletedStepId = (typeof provisioningCompletedStepIds)[number];
+
+export const workspaceEnvironmentPreparationStates = [
+  "not-requested",
+  "pending",
+  "in-progress",
+  "prepared",
+  "reused",
+  "unsupported",
+  "blocked",
+  "partial",
+  "failed",
+  "unknown"
+] as const;
+
+export type WorkspaceEnvironmentPreparationState = (typeof workspaceEnvironmentPreparationStates)[number];
+export type WorkspaceEnvironmentPreparationIntent = { requested: true; profileId: string };
+export type WorkspaceEnvironmentPreparationLocation = "local" | "remote" | "unknown";
+export type WorkspaceEnvironmentPreparationCostStatus = "not-requested" | "not-applicable" | "unknown" | "approval-required";
+
+export type WorkspaceEnvironmentPreparationProjection = {
+  requested: boolean;
+  profileId: string | null;
+  projectPath: string | null;
+  status: WorkspaceEnvironmentPreparationState;
+  location: WorkspaceEnvironmentPreparationLocation;
+  environmentId: string | null;
+  preparationKey: string | null;
+  reused: boolean | null;
+  cost: {
+    status: WorkspaceEnvironmentPreparationCostStatus;
+    detail: string;
+  };
+  retryable: boolean;
+  recovery: string | null;
+  error: { code: string; message: string } | null;
+  updatedAt: string | null;
+};
+
+export function createWorkspaceEnvironmentPreparationProjection(
+  intent?: WorkspaceEnvironmentPreparationIntent | null,
+  now = new Date().toISOString()
+): WorkspaceEnvironmentPreparationProjection {
+  if (!intent) {
+    return {
+      requested: false,
+      profileId: null,
+      projectPath: null,
+      status: "not-requested",
+      location: "unknown",
+      environmentId: null,
+      preparationKey: null,
+      reused: null,
+      cost: { status: "not-requested", detail: "No native environment preparation was requested." },
+      retryable: false,
+      recovery: null,
+      error: null,
+      updatedAt: now
+    };
+  }
+  return {
+    requested: true,
+    profileId: intent.profileId,
+    projectPath: null,
+    status: "pending",
+    location: "unknown",
+    environmentId: null,
+    preparationKey: null,
+    reused: null,
+    cost: {
+      status: "unknown",
+      detail: "OpenClaw determines placement and provider economics; AgentOS does not allocate capacity directly."
+    },
+    retryable: false,
+    recovery: "OpenClaw owns environment lifecycle and cleanup. AgentOS will retain the native identity returned by preparation.",
+    error: null,
+    updatedAt: now
+  };
+}
 
 export type ProvisioningCheckpoint = {
   completedAt: string;
@@ -75,6 +155,8 @@ export type StoredWorkspaceProvisioningRun = {
   workspacePath: string | null;
   /** Binding predecessor captured before this run mutates the workspace. */
   expectedCurrentProvisioningRunId?: string | null;
+  /** AgentOS projection of one explicit native OpenClaw preparation request. */
+  environmentPreparation: WorkspaceEnvironmentPreparationProjection;
   result: WorkspaceCreateResult | null;
   completedSteps: Partial<Record<ProvisioningCompletedStepId, ProvisioningCheckpoint>>;
   warnings: string[];
@@ -147,6 +229,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
   expectedKnowledgeGenerationId: string | null;
   compositionPlan?: WorkspaceCompositionPlan | null;
   creationRunId?: string | null;
+  environmentPreparation?: WorkspaceEnvironmentPreparationIntent | null;
 }): Promise<CreateProvisioningRunResult> {
   const root = resolveProvisioningRoot(rootPath);
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -163,6 +246,7 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     draftContextId: input.draftContextId,
     expectedKnowledgeGenerationId: input.expectedKnowledgeGenerationId,
     compositionPlan: input.compositionPlan ?? null,
+    environmentPreparation: createWorkspaceEnvironmentPreparationProjection(input.environmentPreparation),
     state: "pending",
     createdAt: now,
     updatedAt: now,
@@ -214,7 +298,8 @@ export async function readStoredRunFile(filePath: string): Promise<StoredWorkspa
     return {
       ...parsed,
       compositionPlan: parsed.compositionPlan ?? null,
-      composition: parsed.composition ?? null
+      composition: parsed.composition ?? null,
+      environmentPreparation: parsed.environmentPreparation ?? createWorkspaceEnvironmentPreparationProjection()
     };
   } catch {
     return null;

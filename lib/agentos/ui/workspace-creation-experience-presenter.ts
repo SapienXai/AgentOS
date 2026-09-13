@@ -43,6 +43,15 @@ type ProvisioningLike = {
   progress?: { label: string; detail: string } | null;
   result?: unknown;
   error?: { message: string } | null;
+  environmentPreparation?: {
+    requested: boolean;
+    status: string;
+    location?: string;
+    reused?: boolean | null;
+    retryable?: boolean;
+    error?: { message: string } | null;
+    cost?: { detail: string };
+  } | null;
 };
 
 export function presentWorkspaceCreationExperience(input: {
@@ -94,6 +103,10 @@ export function presentWorkspaceCreationExperience(input: {
     !boundedProfile && snapshot?.architect.status === "fallback" ? "AI architecture was unavailable; a minimal fallback draft was created." : null,
     !boundedProfile && snapshot?.composition?.status === "fallback" ? "Workspace documents use a deterministic safe fallback." : null,
     snapshot?.composition && snapshot.composition.conflictCount > 0 ? `${snapshot.composition.conflictCount} workspace document conflict${snapshot.composition.conflictCount === 1 ? "" : "s"} need attention.` : null,
+    provisioningRun?.environmentPreparation?.requested && ["unsupported", "blocked", "failed", "unknown", "partial"].includes(provisioningRun.environmentPreparation.status)
+      ? provisioningRun.environmentPreparation.error?.message || provisioningRun.environmentPreparation.cost?.detail || "Native OpenClaw environment preparation needs attention."
+      : null,
+    provisioningRun?.environmentPreparation?.requested && provisioningRun.environmentPreparation.status === "in-progress" ? "Native OpenClaw environment preparation is still in progress." : null,
     provisioningRun?.state === "partial" ? "The workspace is usable, with setup still pending." : null,
     provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" ? provisioningRun.error?.message ?? "The workspace could not be completed." : null
   ].filter((item): item is string => Boolean(item));
@@ -178,6 +191,7 @@ export function friendlyCreationPhase(stage: WorkspaceCreationStage | null | und
 
 export function friendlyProvisioningPhase(state: string | null | undefined) {
   switch (state) {
+    case "preparing-environment": return "Preparing native environment";
     case "applying-composition": return "Preparing workspace";
     case "promoting-knowledge":
     case "binding-knowledge": return "Adding project knowledge";
@@ -192,9 +206,18 @@ export function friendlyProvisioningPhase(state: string | null | undefined) {
 function buildActivities(snapshot: WorkspaceCreationRun["snapshot"] | undefined, provisioningRun: ProvisioningLike | null, stage: WorkspaceCreationExperienceStage) {
   if (stage === "provisioning" || stage === "complete") {
     const state = provisioningRun?.state;
+    const environment = provisioningRun?.environmentPreparation;
+    const environmentStatus = ["prepared", "reused"].includes(environment?.status ?? "")
+      ? "complete" as const
+      : ["unsupported", "blocked", "failed", "unknown", "partial"].includes(environment?.status ?? "")
+        ? "attention" as const
+        : state === "preparing-environment" || environment?.status === "in-progress"
+          ? "active" as const
+          : "pending" as const;
     const current = state && !["pending", "ready", "partial", "failed", "cancelled"].includes(state) ? friendlyProvisioningPhase(state) : null;
     return [
       { id: "workspace", label: "Creating workspace", status: state === "materializing" ? "active" : state ? "complete" : "pending" },
+      ...(environment?.requested ? [{ id: "environment", label: "Preparing native environment", status: environmentStatus }] : []),
       { id: "workforce", label: "Creating AI workforce", status: state === "provisioning-agents" ? "active" : state && ["binding-knowledge", "applying-capabilities", "recording-declarations", "verifying", "ready", "partial"].includes(state) ? "complete" : "pending" },
       { id: "knowledge", label: "Adding project knowledge", status: state === "promoting-knowledge" || state === "binding-knowledge" ? "active" : state && ["applying-capabilities", "recording-declarations", "verifying", "ready", "partial"].includes(state) ? "complete" : "pending" },
       { id: "finish", label: current ?? "Finishing setup", status: state === "verifying" ? "active" : state === "ready" || state === "partial" ? "complete" : "pending" }
