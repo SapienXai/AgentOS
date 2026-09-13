@@ -645,6 +645,34 @@ export function MissionControlShell({
   const selectedRuntimeTask = selectedRuntime?.taskId
     ? uiSnapshot.tasks.find((task) => task.id === selectedRuntime.taskId) ?? null
     : null;
+  const uiAgents = uiSnapshot.agents;
+  const uiWorkspaces = uiSnapshot.workspaces;
+  const resolveChatGptAuthAgentId = useCallback((preferredAgentId?: string | null) => {
+    const preferred = preferredAgentId?.trim() || "";
+
+    if (preferred && uiAgents.some((agent) => agent.id === preferred)) {
+      return preferred;
+    }
+
+    const workspaceId = activeWorkspaceForDialogs?.id ?? null;
+    const workspace = workspaceId
+      ? uiWorkspaces.find((entry) => entry.id === workspaceId) ?? null
+      : null;
+    const workspaceAgentIds = workspace?.agentIds
+      .map((agentId) => uiAgents.find((agent) => agent.id === agentId))
+      .filter((agent): agent is (typeof uiAgents)[number] => Boolean(agent)) ?? [];
+    const workspaceAgents = uiAgents.filter((agent) => agent.workspaceId === workspaceId);
+
+    return (
+      workspaceAgentIds.find((agent) => agent.isDefault)?.id ||
+      workspaceAgentIds[0]?.id ||
+      workspaceAgents.find((agent) => agent.isDefault)?.id ||
+      workspaceAgents[0]?.id ||
+      uiAgents.find((agent) => agent.isDefault)?.id ||
+      uiAgents[0]?.id ||
+      null
+    );
+  }, [activeWorkspaceForDialogs, uiAgents, uiWorkspaces]);
   const {
     focusedAgentId,
     setFocusedAgentId,
@@ -2275,6 +2303,7 @@ export function MissionControlShell({
       timeoutMs?: number;
       refreshAuth?: boolean;
       discover?: boolean;
+      agentId?: string | null;
     } = {}
   ) => {
     const abortController = options.timeoutMs ? new AbortController() : null;
@@ -2293,7 +2322,8 @@ export function MissionControlShell({
           provider,
           includeSnapshot: options.includeSnapshot,
           refreshAuth: options.refreshAuth,
-          discover: options.discover
+          discover: options.discover,
+          agentId: options.agentId?.trim() || undefined
         }),
         signal: abortController?.signal
       });
@@ -2313,7 +2343,7 @@ export function MissionControlShell({
     }
   };
 
-  const waitForChatGptProviderStatus = async () => {
+  const waitForChatGptProviderStatus = async (agentId?: string | null) => {
     let lastResult: Awaited<ReturnType<typeof readModelProviderStatus>> | null = null;
     let lastError: unknown = null;
 
@@ -2326,7 +2356,8 @@ export function MissionControlShell({
         const result = await readModelProviderStatus("openai", {
           includeSnapshot: true,
           refreshAuth: true,
-          discover: true
+          discover: true,
+          agentId
         });
         lastResult = result;
 
@@ -2834,7 +2865,7 @@ export function MissionControlShell({
     });
   };
 
-  const runChatGptOnboarding = async (force = false) => {
+  const runChatGptOnboarding = async (force = false, agentId?: string | null) => {
     if (chatGptOnboardingRunRef.current) {
       return chatGptOnboardingRunRef.current;
     }
@@ -2855,7 +2886,7 @@ export function MissionControlShell({
 
       let authFlow: ChatGptBrowserAuthSnapshot | null = null;
       try {
-        authFlow = await startChatGptBrowserAuth(force);
+        authFlow = await startChatGptBrowserAuth(force, agentId);
         setChatGptBrowserAuth(authFlow);
 
         for (let attempt = 0; attempt < 360; attempt += 1) {
@@ -2885,7 +2916,7 @@ export function MissionControlShell({
           : current);
         setModelOnboardingPhase("refreshing");
         setModelOnboardingStatusMessage("Refreshing ChatGPT authentication before discovering models...");
-        const result = await waitForChatGptProviderStatus();
+        const result = await waitForChatGptProviderStatus(agentId);
 
         if (!result.connection.connected) {
           throw new Error("ChatGPT sign-in completed, but OpenClaw is still refreshing the account and model catalog. Try again in a moment.");
@@ -3398,10 +3429,19 @@ export function MissionControlShell({
   };
 
   const handleChatGptAccountSwitch = () => {
+    const agentId = resolveChatGptAuthAgentId(returnToAgentModelId ?? selectedAgent?.id);
     setIsAddModelsDialogOpen(false);
     setReturnToAgentModelId(null);
     setInitialAddModelsProvider(null);
-    void runChatGptOnboarding(true);
+    void runChatGptOnboarding(true, agentId);
+  };
+
+  const handleChatGptConnection = (force = false) => {
+    const agentId = resolveChatGptAuthAgentId(returnToAgentModelId ?? selectedAgent?.id);
+    setIsAddModelsDialogOpen(false);
+    setReturnToAgentModelId(null);
+    setInitialAddModelsProvider(null);
+    void runChatGptOnboarding(force, agentId);
   };
 
   const handleAddModelsProviderSnapshotReady = (nextSnapshot: MissionControlSnapshot) => {
@@ -4112,7 +4152,7 @@ export function MissionControlShell({
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
           onConnectChatGPT={(force = false) => {
-            void runChatGptOnboarding(force);
+            void runChatGptOnboarding(force, resolveChatGptAuthAgentId(selectedAgent?.id));
           }}
           chatGptBrowserAuth={chatGptBrowserAuth}
           onSubmitChatGptRedirect={submitChatGptBrowserRedirect}
@@ -4155,6 +4195,7 @@ export function MissionControlShell({
         onOpenChange={handleAddModelsDialogOpenChange}
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
+        onConnectChatGPT={handleChatGptConnection}
         onSwitchChatGptAccount={handleChatGptAccountSwitch}
         onSnapshotChange={setSnapshot}
         onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
@@ -5276,7 +5317,7 @@ export function MissionControlShell({
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
             onConnectChatGPT={(force = false) => {
-              void runChatGptOnboarding(force);
+              void runChatGptOnboarding(force, resolveChatGptAuthAgentId(selectedAgent?.id));
             }}
             chatGptBrowserAuth={chatGptBrowserAuth}
             onSubmitChatGptRedirect={submitChatGptBrowserRedirect}
@@ -5319,6 +5360,7 @@ export function MissionControlShell({
           onOpenChange={handleAddModelsDialogOpenChange}
           snapshot={snapshot}
           initialProvider={initialAddModelsProvider}
+          onConnectChatGPT={handleChatGptConnection}
           onSwitchChatGptAccount={handleChatGptAccountSwitch}
           onSnapshotChange={setSnapshot}
           onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}

@@ -40,7 +40,7 @@ test("ChatGPT provider auth runs OpenClaw login directly when the Codex plugin i
   const loginCalls: Array<{ agentId: string; force: boolean }> = [];
 
   const result = await connectOpenClawChatGptProvider(
-    { force: true },
+    { force: true, agentId: "main" },
     {
       platform: "darwin",
       readPluginReady: async () => true,
@@ -80,6 +80,45 @@ test("ChatGPT provider auth passes the configured system agent to OpenClaw", asy
   assert.equal(loginAgentId, "workspace-primary-operator");
 });
 
+test("ChatGPT provider auth fails closed when no agent owner is available", async () => {
+  await assert.rejects(
+    () => connectOpenClawChatGptProvider(
+      { force: true },
+      {
+        platform: "darwin",
+        readPluginReady: async () => true,
+        runSetupCommand: async () => {},
+        runInteractiveLogin: async () => {}
+      }
+    ),
+    /explicit agent owner/
+  );
+});
+
+test("ChatGPT provider auth passes the selected native agent to OpenClaw", async () => {
+  let resolvedRequestedAgentId: string | undefined;
+  let loginAgentId: string | null = null;
+
+  await connectOpenClawChatGptProvider(
+    { force: true, agentId: "workspace-primary-operator" },
+    {
+      platform: "darwin",
+      readPluginReady: async () => true,
+      runSetupCommand: async () => {},
+      resolveAuthAgentId: async (requestedAgentId) => {
+        resolvedRequestedAgentId = requestedAgentId;
+        return requestedAgentId;
+      },
+      runInteractiveLogin: async (input) => {
+        loginAgentId = input.agentId;
+      }
+    }
+  );
+
+  assert.equal(resolvedRequestedAgentId, "workspace-primary-operator");
+  assert.equal(loginAgentId, "workspace-primary-operator");
+});
+
 test("ChatGPT provider auth builds an explicit, force-capable OpenClaw login command", () => {
   assert.deepEqual(
     buildOpenClawChatGptLoginArgs({ agentId: "main", force: true }),
@@ -105,7 +144,7 @@ test("ChatGPT provider auth installs the Codex plugin before login without devic
   const calls: string[] = [];
 
   const result = await connectOpenClawChatGptProvider(
-    {},
+    { agentId: "test-agent" },
     {
       platform: "darwin",
       readPluginReady: async () => false,
@@ -147,7 +186,7 @@ test("ChatGPT OAuth preparation reaches the interactive login boundary with shar
 test("failed plugin status read never triggers a reinstall or Gateway restart", async () => {
   let mutations = 0;
   let logins = 0;
-  await connectOpenClawChatGptProvider({}, {
+  await connectOpenClawChatGptProvider({ agentId: "test-agent" }, {
     platform: "darwin",
     readPluginReady: async () => { throw new Error("Gateway unavailable"); },
     runSetupCommand: async () => { mutations += 1; },
@@ -162,7 +201,7 @@ test("ChatGPT browser auth progresses from preparation to redirect wait and comp
   const authorizationUrl = "https://auth.openai.com/oauth/authorize?client_id=test&state=state-123";
 
   const started = await startOpenClawChatGptBrowserAuth(
-    { force: true },
+    { force: true, agentId: "test-agent" },
     {
       platform: "darwin",
       readPluginReady: async () => true,
@@ -195,7 +234,7 @@ test("OpenClaw browser URL output is observed without a second AgentOS browser o
   const observedUrls: string[] = [];
   const authorizationUrl = "https://auth.openai.com/oauth/authorize?client_id=fixture&state=state-123";
   const started = await startOpenClawChatGptBrowserAuth(
-    {},
+    { agentId: "test-agent" },
     {
       platform: "darwin",
       readPluginReady: async () => true,
@@ -236,9 +275,9 @@ test("explicit ChatGPT retry aborts the previous session before starting another
     }
   };
 
-  const first = await startOpenClawChatGptBrowserAuth({}, dependencies);
+  const first = await startOpenClawChatGptBrowserAuth({ agentId: "test-agent" }, dependencies);
   await delay(0);
-  const second = await startOpenClawChatGptBrowserAuth({ force: true }, dependencies);
+  const second = await startOpenClawChatGptBrowserAuth({ force: true, agentId: "test-agent" }, dependencies);
   await delay(0);
 
   assert.equal(firstLogin.aborted, true);
@@ -260,13 +299,13 @@ test("concurrent starts share one child and cancellation waits for child complet
     }
   };
   const [first, duplicate] = await Promise.all([
-    startOpenClawChatGptBrowserAuth({}, dependencies),
-    startOpenClawChatGptBrowserAuth({}, dependencies)
+    startOpenClawChatGptBrowserAuth({ agentId: "test-agent" }, dependencies),
+    startOpenClawChatGptBrowserAuth({ agentId: "test-agent" }, dependencies)
   ]);
   assert.equal(first.sessionId, duplicate.sessionId);
   assert.equal(loginCount, 1);
   cancelOpenClawChatGptBrowserAuth(first.sessionId);
-  const next = startOpenClawChatGptBrowserAuth({}, dependencies);
+  const next = startOpenClawChatGptBrowserAuth({ agentId: "test-agent" }, dependencies);
   await delay(0);
   assert.equal(loginCount, 1);
   release?.();
@@ -277,7 +316,7 @@ test("concurrent starts share one child and cancellation waits for child complet
 
 test("ChatGPT browser auth preserves a recoverable preparation failure", async () => {
   const started = await startOpenClawChatGptBrowserAuth(
-    { force: true },
+    { force: true, agentId: "test-agent" },
     {
       platform: "darwin",
       readPluginReady: async () => false,

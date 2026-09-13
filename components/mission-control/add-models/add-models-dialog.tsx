@@ -124,6 +124,7 @@ export function AddModelsDialog({
   snapshot,
   initialProvider = null,
   onBack,
+  onConnectChatGPT,
   onSwitchChatGptAccount,
   onSnapshotChange,
   onProviderSnapshotReady,
@@ -134,6 +135,7 @@ export function AddModelsDialog({
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
   onBack?: () => void;
+  onConnectChatGPT?: (force?: boolean) => void;
   onSwitchChatGptAccount?: () => void;
   onSnapshotChange: (snapshot: MissionControlSnapshot) => void;
   onProviderSnapshotReady?: (snapshot: MissionControlSnapshot) => void;
@@ -2000,6 +2002,11 @@ export function AddModelsDialog({
                                       return;
                                     }
 
+                                    if (onConnectChatGPT) {
+                                      onConnectChatGPT(false);
+                                      return;
+                                    }
+
                                     void connectProvider(activeProviderId, { authMethod: "chatgpt-oauth" });
                                   }}
                                 >
@@ -2021,6 +2028,11 @@ export function AddModelsDialog({
                                     onClick={() => {
                                       if (activeChatGptConnected) {
                                         onSwitchChatGptAccount?.();
+                                        return;
+                                      }
+
+                                      if (onConnectChatGPT) {
+                                        onConnectChatGPT(true);
                                         return;
                                       }
 

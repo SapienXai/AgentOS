@@ -6,6 +6,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { normalizeModelStatusPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
+  buildModelStatusConnectionStatus,
   mergeModelStatusWithGatewayCredentials,
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
@@ -158,6 +160,8 @@ function readConfiguredModelIdsFromDefaults(defaults: OpenClawAgentDefaultsConfi
 export type OpenClawProviderModelStatusOptions = {
   /** Reload OpenClaw's in-memory auth state after an external CLI mutation. */
   refreshAuth?: boolean;
+  /** Scope the native model/auth read to the operator-selected OpenClaw agent. */
+  agentId?: string | null;
 };
 
 export class OpenClawModelAuthRefreshError extends Error {
@@ -175,17 +179,26 @@ export async function readOpenClawProviderModelStatus(
 ): Promise<ModelsStatusPayload | null> {
   try {
     const adapter = getOpenClawAdapter();
+    const agentId = options.agentId?.trim() || undefined;
     const status = options.refreshAuth
       ? normalizeModelStatusPayload(
-          await (adapter.refreshModelAuthStatus?.({ timeoutMs: 8_000 }) ??
-            adapter.call<OpenClawModelAuthStatusPayload>(
-              "models.authStatus",
-              { refresh: true },
-              { timeoutMs: 8_000 }
-            )),
+          await (agentId
+            ? adapter.call<OpenClawModelAuthStatusPayload>(
+                "models.authStatus",
+                { refresh: true, agentId },
+                { timeoutMs: 8_000 }
+              )
+            : adapter.refreshModelAuthStatus?.({ timeoutMs: 8_000 }) ??
+              adapter.call<OpenClawModelAuthStatusPayload>(
+                "models.authStatus",
+                { refresh: true },
+                { timeoutMs: 8_000 }
+              )),
           { models: [] }
         )
-      : await adapter.getModelStatus({ timeoutMs: 8_000 });
+      : agentId
+        ? await adapter.getAgentModelStatus({ agentId }, { timeoutMs: 8_000 })
+        : await adapter.getModelStatus({ timeoutMs: 8_000 });
     const credentialProviders = await readOpenClawConfiguredProviderCredentialIds();
 
     // A forced auth refresh invalidates the upstream runtime state, but it
@@ -205,6 +218,42 @@ export async function readOpenClawProviderModelStatus(
     }
 
     return null;
+  }
+}
+
+/**
+ * Verify a model against the same native agent that will receive the chat turn.
+ * The global Mission Control snapshot cannot safely answer this in a multi-agent
+ * Gateway because OpenClaw requires an explicit owner for model reads.
+ */
+export async function isOpenClawAgentModelReady(input: {
+  agentId: string;
+  modelId: string;
+}) {
+  const agentId = input.agentId.trim();
+  const modelId = normalizeOpenAiModelId(input.modelId);
+  const provider = modelId.split("/", 1)[0] ?? "";
+
+  if (!agentId || !modelId || !isAddModelsProviderId(provider)) {
+    return false;
+  }
+
+  try {
+    const [status, catalog] = await Promise.all([
+      readOpenClawProviderModelStatus({ agentId }),
+      listOpenClawModels({ all: true, agentId }, { timeoutMs: 8_000 })
+    ]);
+    const model = catalog.models.find((entry) => normalizeOpenAiModelId(entry.key) === modelId);
+    const connection = buildModelStatusConnectionStatus(provider, status, [modelId]);
+
+    return Boolean(
+      connection?.connected &&
+      model &&
+      model.missing !== true &&
+      model.available !== false
+    );
+  } catch {
+    return false;
   }
 }
 

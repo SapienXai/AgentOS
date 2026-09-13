@@ -12,6 +12,7 @@ import {
   addOpenClawModelsToConfig,
   ensureOpenClawModelRuntimeConfig,
   ensureOpenClawOllamaLocalCredential,
+  isOpenClawAgentModelReady,
   persistOpenClawProviderToken,
   readOpenClawProviderConfigSummary,
   readOpenClawProviderModelStatus,
@@ -281,6 +282,103 @@ test("fresh ChatGPT OAuth is verified after an explicit Gateway auth refresh wit
   assert.equal(connection?.connected, true);
   assert.equal(connection?.authMethod, "chatgpt-oauth");
   assert.equal(connection?.verification, "credential-stored");
+});
+
+test("agent-scoped ChatGPT OAuth refresh uses the selected OpenClaw agent", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown>; options: OpenClawCommandOptions }> = [];
+
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return null;
+    },
+    async call<TPayload>(method: string, params: Record<string, unknown>, options: OpenClawCommandOptions) {
+      calls.push({ method, params, options });
+      return {
+        providers: [{
+          provider: "openai",
+          status: "ok",
+          profiles: [{
+            profileId: "openai:user@example.com",
+            type: "oauth",
+            status: "ok"
+          }]
+        }]
+      } as TPayload;
+    },
+    async getAgentModelStatus() {
+      throw new Error("The refresh path must use the agent-scoped native auth call.");
+    }
+  } as unknown as OpenClawAdapter);
+
+  const status = await readOpenClawProviderModelStatus({
+    refreshAuth: true,
+    agentId: "workspace-primary-operator"
+  });
+
+  assert.deepEqual(calls, [{
+    method: "models.authStatus",
+    params: {
+      refresh: true,
+      agentId: "workspace-primary-operator"
+    },
+    options: { timeoutMs: 8_000 }
+  }]);
+  assert.equal(buildModelStatusConnectionStatus("openai", status, [])?.connected, true);
+});
+
+test("agent-scoped model readiness ignores a stale global snapshot", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return null;
+    },
+    async getAgentModelStatus(input: { agentId: string }) {
+      calls.push({ method: "models.status", params: input });
+      return {
+        defaultModel: "openai/gpt-5.6-luna",
+        resolvedDefault: "openai/gpt-5.6-luna",
+        auth: {
+          providers: [{
+            provider: "openai",
+            effective: { kind: "profiles" },
+            profiles: { count: 1, oauth: 1 }
+          }],
+          oauth: {
+            providers: [{
+              provider: "openai",
+              status: "ok",
+              profiles: [{ profileId: "openai:default", status: "ok" }]
+            }]
+          }
+        }
+      };
+    },
+    async listModels(input: { agentId?: string }) {
+      calls.push({ method: "models.list", params: input });
+      return {
+        models: [{
+          key: "openai/gpt-5.6-luna",
+          name: "GPT-5.6 Luna",
+          input: "text",
+          contextWindow: null,
+          local: false,
+          available: true,
+          missing: false,
+          tags: []
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await isOpenClawAgentModelReady({
+    agentId: "workspace-primary-operator",
+    modelId: "openai/gpt-5.6-luna"
+  }), true);
+  assert.deepEqual(calls, [
+    { method: "models.status", params: { agentId: "workspace-primary-operator" } },
+    { method: "models.list", params: { all: true, agentId: "workspace-primary-operator" } }
+  ]);
 });
 
 test("valid ChatGPT OAuth remains connected when model discovery fails", async () => {

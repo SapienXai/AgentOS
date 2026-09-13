@@ -110,7 +110,8 @@ const requestSchema = z.discriminatedUnion("action", [
     provider: explicitProviderIdSchema,
     includeSnapshot: z.boolean().optional(),
     refreshAuth: z.boolean().optional(),
-    discover: z.boolean().optional()
+    discover: z.boolean().optional(),
+    agentId: optionalInputString
   }),
   z.object({
     action: z.literal("connect"),
@@ -488,7 +489,8 @@ async function handleProviderAction(
     let authRefreshError: unknown = null;
     try {
       statusContext = await readProviderConnectionContext(input.provider, {
-        refreshAuth: input.refreshAuth === true
+        refreshAuth: input.refreshAuth === true,
+        agentId: input.agentId
       });
     } catch (error) {
       authRefreshError = error;
@@ -521,7 +523,10 @@ async function handleProviderAction(
 
     if (!authRefreshError && input.discover === true && connection.connected) {
       try {
-        models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, { refresh: true });
+        models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, {
+          refresh: true,
+          agentId: input.agentId
+        });
         discovery = {
           status: models.length > 0 ? "ready" : "empty",
           retryable: true,
@@ -1270,7 +1275,7 @@ async function discoverProviderModels(
 async function readProviderCatalog(
   provider: AddModelsProviderId,
   configuredModelIds: Set<string>,
-  options: { preferScan?: boolean; refresh?: boolean } = {}
+  options: { preferScan?: boolean; refresh?: boolean; agentId?: string | null } = {}
 ): Promise<AddModelsCatalogModel[]> {
   if (options.preferScan) {
     const scanPayload = await scanProviderModels(provider);
@@ -1284,6 +1289,7 @@ async function readProviderCatalog(
   const providerPayload = await readProviderModelPayload(provider, {
     all: true,
     provider,
+    ...(options.agentId?.trim() ? { agentId: options.agentId.trim() } : {}),
     ...(options.refresh ? { refresh: true } : {})
   });
   const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds);
@@ -1296,6 +1302,7 @@ async function readProviderCatalog(
 
   const globalPayload = await readProviderModelPayload(provider, {
     all: true,
+    ...(options.agentId?.trim() ? { agentId: options.agentId.trim() } : {}),
     ...(options.refresh ? { refresh: true } : {})
   });
   const globalModels = normalizeCatalogModels(provider, globalPayload.models, configuredModelIds);
@@ -1778,11 +1785,14 @@ function clearModelProviderCaches() {
 
 async function readProviderConnectionContext(
   provider: AddModelsProviderId,
-  options: { refreshAuth?: boolean } = {}
+  options: { refreshAuth?: boolean; agentId?: string | null } = {}
 ) {
   const [configuredModelIds, modelStatus] = await Promise.all([
     readOpenClawConfiguredModelIds(),
-    readOpenClawProviderModelStatus({ refreshAuth: options.refreshAuth === true })
+    readOpenClawProviderModelStatus({
+      refreshAuth: options.refreshAuth === true,
+      agentId: options.agentId
+    })
   ]);
 
   if (provider === "ollama") {

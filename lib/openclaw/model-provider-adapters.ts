@@ -44,7 +44,9 @@ const MODEL_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
 const CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS = 13 * 60_000;
 
 async function runChatGptBrowserAuthRequest(
-  request: { action: "start"; force?: boolean } | { action: "submit"; sessionId: string; redirectUrl: string }
+  request:
+    | { action: "start"; force?: boolean; agentId?: string }
+    | { action: "submit"; sessionId: string; redirectUrl: string }
 ): Promise<ChatGptBrowserAuthSnapshot> {
   const response = await fetch("/api/models/chatgpt-auth", {
     method: "POST",
@@ -73,10 +75,11 @@ async function runChatGptBrowserAuthRequest(
   return result;
 }
 
-export function startChatGptBrowserAuth(force = false) {
+export function startChatGptBrowserAuth(force = false, agentId?: string | null) {
   return runChatGptBrowserAuthRequest({
     action: "start",
-    force: force || undefined
+    force: force || undefined,
+    agentId: agentId?.trim() || undefined
   });
 }
 

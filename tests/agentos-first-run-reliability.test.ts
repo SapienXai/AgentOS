@@ -143,8 +143,28 @@ test("Model Library ChatGPT account switching returns to live model selection", 
   assert.doesNotMatch(addModelsSource, /switchAccountProviderId/);
   assert.doesNotMatch(addModelsSource, /Preparing terminal command/);
   assert.match(shellSource, /const handleChatGptAccountSwitch = \(\) => \{/);
-  assert.match(shellSource, /void runChatGptOnboarding\(true\);/);
+  assert.match(shellSource, /void runChatGptOnboarding\(true, agentId\);/);
   assert.match(shellSource, /onSwitchChatGptAccount=\{handleChatGptAccountSwitch\}/);
+});
+
+test("Model Library ChatGPT connection reuses the visible browser onboarding flow", () => {
+  const addModelsSource = readFileSync(path.join(process.cwd(), "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(addModelsSource, /onConnectChatGPT\?: \(force\?: boolean\) => void/);
+  assert.match(addModelsSource, /onConnectChatGPT\(false\);/);
+  assert.match(addModelsSource, /onConnectChatGPT\(true\);/);
+  assert.match(shellSource, /const handleChatGptConnection = \(force = false\) => \{/);
+  assert.match(shellSource, /onConnectChatGPT=\{handleChatGptConnection\}/);
+  assert.match(shellSource, /setIsAddModelsDialogOpen\(false\);[\s\S]*void runChatGptOnboarding\(force, agentId\);/);
+  assert.match(shellSource, /startChatGptBrowserAuth\(force, agentId\)/);
+  assert.match(shellSource, /waitForChatGptProviderStatus\(agentId\)/);
+  assert.match(shellSource, /agentId: options\.agentId\?\.trim\(\) \|\| undefined/);
+  assert.match(shellSource, /resolveChatGptAuthAgentId/);
+
+  const chatRouteSource = readFileSync(path.join(process.cwd(), "app/api/agents/[agentId]/chat/route.ts"), "utf8");
+  assert.match(chatRouteSource, /isOpenClawAgentModelReady/);
+  assert.match(chatRouteSource, /if \(modelReadinessError && !agentModelReady\)/);
 });
 
 test("browser ChatGPT auth keeps onboarding focused and callback recovery compact", () => {

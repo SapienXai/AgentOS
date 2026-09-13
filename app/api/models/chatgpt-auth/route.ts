@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("start"),
-    force: z.boolean().optional()
+    force: z.boolean().optional(),
+    agentId: z.string().trim().min(1).max(200).optional()
   }),
   z.object({
     action: z.literal("submit"),
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
 
   try {
     const result = input.action === "start"
-      ? await startOpenClawChatGptBrowserAuth({ force: input.force === true })
+      ? await startOpenClawChatGptBrowserAuth({ force: input.force === true, agentId: input.agentId })
       : submitOpenClawChatGptBrowserAuth(input);
 
     return NextResponse.json(redactSecrets(result), { status: 200, headers: noStoreHeaders });

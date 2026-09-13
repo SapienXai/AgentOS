@@ -70,10 +70,6 @@ export async function ensureOpenAiAuthOrderForAgent({
   }
 
   try {
-    if (agentId !== "main") {
-      await setOpenAiAuthOrderWithRetry("main", repair.profileIds).catch(() => undefined);
-    }
-
     await setOpenAiAuthOrderWithRetry(agentId, repair.profileIds);
     repairedAuthOrderCache.set(cacheKey, {
       expiresAt: Date.now() + repairCacheTtlMs,

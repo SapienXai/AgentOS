@@ -939,6 +939,9 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       args.push("--all");
     }
     args.push("--json");
+    if (input.agentId) {
+      args.push("--agent", input.agentId);
+    }
     if (input.provider) {
       args.push("--provider", input.provider);
     }

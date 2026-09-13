@@ -32,7 +32,10 @@ import {
 } from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { ensureOpenAiAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
+import {
+  ensureOpenAiAuthOrderForAgent
+} from "@/lib/openclaw/application/model-auth-service";
+import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   forgetAgentChatSession,
@@ -456,7 +459,13 @@ export async function POST(
           snapshot,
           agent.modelId === "unassigned" ? null : agent.modelId
         );
-        if (modelReadinessError) {
+        const agentModelReady = modelReadinessError && agent.modelId !== "unassigned"
+          ? await isOpenClawAgentModelReady({
+              agentId,
+              modelId: agent.modelId
+            })
+          : false;
+        if (modelReadinessError && !agentModelReady) {
           await send({
             type: "done",
             ok: false,

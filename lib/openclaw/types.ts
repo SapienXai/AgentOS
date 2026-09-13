@@ -1979,6 +1979,7 @@ export type AddModelsProviderActionRequest =
       includeSnapshot?: boolean;
       refreshAuth?: boolean;
       discover?: boolean;
+      agentId?: string;
     }
   | {
       action: "connect";
