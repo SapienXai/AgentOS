@@ -193,7 +193,7 @@ Evidence: [`openclaw-2026.9.3-to-2026.9.4-migration.json`](evidence/openclaw-202
 | Native updater/recovery representation | PASS | [official runtime](evidence/openclaw-2026.9.4-final-official-runtime-certification.json), [hardening](evidence/openclaw-2026.9.4-doctor-update-recovery-hardening.json) | Rollback/recovery remains OpenClaw-owned; failed-after-rollback is not success. |
 | Native work and project/session ownership | PASS | [native work](evidence/openclaw-2026.9.4-native-work-hardening.json) | OpenClaw owns worktrees, placement, task and collaboration state. |
 | Historical final aggregation | HISTORICAL | [main-era evidence](evidence/openclaw-2026.9.4-final-certification.json), [phase-1 evidence](evidence/openclaw-2026.9.4-phase-1-release-contract-alignment-historical.json) | Preserved for audit history; neither legacy artifact is promotable as current pre-merge final evidence. |
-| Pre-merge final promotion gate | PENDING | `openclaw-2026.9.4-pre-merge-final-certification.json` | Requires the complete schema-2 pre-merge artifact with passing tests and separate code/evidence commit bindings. |
+| Pre-merge final promotion gate | PASS | [pre-merge final certification](evidence/openclaw-2026.9.4-pre-merge-final-certification.json) | Schema-2 evidence passed all 20 required artifact assessments with separate code/evidence commit bindings; production remains not-tested. |
 
 The final aggregation contains 92 explicit optional `SKIPPED` observations and
 67 expected authorization denials across the certification artifacts. These
@@ -201,14 +201,16 @@ are not converted into passes; no required gate is environment-limited, and no
 production Gateway or real credential was used.
 
 The pre-existing final-certification JSON artifacts remain historical and are
-not promotable. A fresh run of `openclaw:final-certification-9-4` writes
-`docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` with the
-matching `artifactType` and `phase`, complete passing test assessment, exact
+not promotable. The fresh
+`docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` now has the
+matching `artifactType` and `phase`, a complete passing test assessment, exact
 OpenClaw identity, and separate `certifiedCodeHead` and `evidenceCommit`
-bindings that resolve to commits in the checked-out AgentOS repository, without
-overwriting historical artifacts. The exact upstream source identity remains
-bound to the verified 2026.9.4 release commit rather than being treated as an
-AgentOS repository commit.
+bindings that resolve to commits in the checked-out AgentOS repository. It
+certifies code head `3c172a99fb54433a97814e1bb2747dc0644c4ab3` using evidence
+commit `b54d26c8504abe3b26c9bbb763abab673bf30417`; the artifact was committed
+separately, without overwriting historical artifacts. The exact upstream source
+identity remains bound to the verified 2026.9.4 release commit rather than being
+treated as an AgentOS repository commit.
 
 ## New 9.4 capability disposition
 
