@@ -13,6 +13,16 @@ export type NativeMutationReconciliation<T> = {
   result?: T | null;
 };
 
+/**
+ * The application-level mutation boundary. OpenClaw owns the mutation; this
+ * helper owns delivery ambiguity and the single optional reconciliation step.
+ */
+export type NativeMutationRequest<T> = {
+  operation: string;
+  mutate: () => Promise<T>;
+  reconcile?: () => Promise<NativeMutationReconciliation<T>>;
+};
+
 export type NativeMutationExecution<T> =
   | {
       outcome: "succeeded";
@@ -34,11 +44,7 @@ export type NativeMutationExecution<T> =
  * ambiguous. Target-specific reconciliation must prove causality before it
  * returns verified=true. This helper never retries a mutation.
  */
-export async function executeNativeMutation<T>(input: {
-  operation: string;
-  mutate: () => Promise<T>;
-  reconcile?: () => Promise<NativeMutationReconciliation<T>>;
-}): Promise<NativeMutationExecution<T>> {
+export async function executeNativeMutation<T>(input: NativeMutationRequest<T>): Promise<NativeMutationExecution<T>> {
   try {
     return {
       outcome: "succeeded",

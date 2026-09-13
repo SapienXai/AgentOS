@@ -123,3 +123,27 @@ test("current entrypoints use the factory and keep CLI fallback separate", async
     assert.doesNotMatch(entryPoint, /WebSocketFactory|webSocketFactory/);
   }
 });
+
+test("application services consume narrow adapter ports and keep native probes above the client", async () => {
+  const [adapter, topology, mutation, workDetail, surface] = await Promise.all([
+    source("lib/openclaw/adapter/openclaw-adapter.ts"),
+    source("lib/openclaw/application/execution-topology-service.ts"),
+    source("lib/openclaw/application/native-mutation-service.ts"),
+    source("lib/openclaw/application/mission-control/native-work-detail.ts"),
+    source("lib/openclaw/application/gateway-surface-service.ts")
+  ]);
+
+  assert.match(adapter, /export type OpenClawExecutionTopologyPort = Pick<OpenClawAdapter/);
+  assert.match(adapter, /export type OpenClawSessionOwnershipPort = Pick<OpenClawAdapter/);
+  assert.match(adapter, /export interface OpenClawGatewaySurfacePort/);
+  assert.match(adapter, /class GatewayBackedOpenClawAdapter implements OpenClawAdapter, OpenClawGatewaySurfacePort/);
+  assert.match(adapter, /getGatewaySurfacePort\(\): OpenClawGatewaySurfacePort/);
+  assert.match(adapter, /allowCliFallback: false/);
+
+  assert.match(topology, /OpenClawExecutionTopologyPort/);
+  assert.match(workDetail, /OpenClawSessionOwnershipPort/);
+  assert.match(mutation, /export type NativeMutationRequest/);
+  assert.match(mutation, /executeNativeMutation<T>\(input: NativeMutationRequest<T>/);
+  assert.match(surface, /getOpenClawAdapter\(\)\.getGatewaySurfacePort/);
+  assert.doesNotMatch(surface, /getOpenClawGatewayClient|isCliGatewayClientForcedByEnv|callNative/);
+});

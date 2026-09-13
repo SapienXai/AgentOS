@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import type { OpenClawExecutionTopologyPort } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   executeNativeMutation,
   type NativeMutationExecution
@@ -41,7 +41,7 @@ export class ExecutionTopologyUnavailableError extends Error {
 }
 
 export type ExecutionTopologyServiceOptions = {
-  adapter?: OpenClawAdapter;
+  adapter?: OpenClawExecutionTopologyPort;
   commandOptions?: OpenClawCommandOptions;
   timeoutMs?: number;
 };

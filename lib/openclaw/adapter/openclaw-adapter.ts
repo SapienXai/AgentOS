@@ -12,6 +12,7 @@ import {
   NativeGatewayError,
   OpenClawGatewayClientError
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import { isCliGatewayClientForcedByEnv } from "@/lib/openclaw/client/native-ws-gateway-policy";
 import type {
   OpenClawTaskHistoryInput,
   OpenClawTaskHistoryPayload,
@@ -171,6 +172,8 @@ import type {
 export interface OpenClawAdapter {
   /** Capture a stable Gateway-backed adapter for long-lived setup sessions. */
   capture?(): OpenClawAdapter;
+  /** Expose a read-only native probe port without exposing the Gateway client. */
+  getGatewaySurfacePort?(): OpenClawGatewaySurfacePort;
   /** Identity used to prevent answers crossing a Gateway reconnect. */
   getConnectionIdentity?(): { client: OpenClawGatewayClient; connectionId: string | null };
   /** Read the official transport generation without creating a new connection. */
@@ -389,7 +392,58 @@ export interface OpenClawAdapter {
   listCronRuns?(input?: OpenClawCronRunsInput, options?: OpenClawCommandOptions): Promise<OpenClawCronRunsPayload>;
 }
 
-export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
+/**
+ * Narrow application ports keep domain services from depending on the full
+ * adapter contract. These are structural views over one adapter, not new
+ * clients, transports, or lifecycle owners.
+ */
+export type OpenClawExecutionTopologyPort = Pick<OpenClawAdapter,
+  | "listNativeExecutionEnvironments"
+  | "getNativeExecutionEnvironmentStatus"
+  | "createNativeExecutionEnvironment"
+  | "prepareNativeExecutionEnvironment"
+  | "destroyNativeExecutionEnvironment"
+  | "listNativeNodes"
+  | "describeNativeNode"
+  | "getNativeSession"
+  | "dispatchNativeSession"
+  | "moveNativeSession"
+  | "reclaimNativeSession"
+>;
+
+export type OpenClawSessionOwnershipPort = Pick<OpenClawAdapter,
+  | "listSessionMembers"
+  | "listSessionMembersEvidence"
+>;
+
+/**
+ * Read-only Gateway product-surface probes. The implementation deliberately
+ * fixes probe policy to native/read-only so this port cannot create a hidden
+ * CLI fallback or a second mutation path.
+ */
+export interface OpenClawGatewaySurfacePort {
+  canProbeNativeGateway(): boolean;
+  probeNativeGateway<TPayload>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: OpenClawCommandOptions
+  ): Promise<TPayload>;
+}
+
+type NativeCallableOpenClawGatewayClient = OpenClawGatewayClient & {
+  callNative?: <TPayload>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: OpenClawCommandOptions,
+    policy?: {
+      safety: "read";
+      timeoutMs?: number;
+      allowCliFallback?: boolean;
+    }
+  ) => Promise<TPayload>;
+};
+
+export class GatewayBackedOpenClawAdapter implements OpenClawAdapter, OpenClawGatewaySurfacePort {
   private readonly cliMemoryFallback: CliOpenClawGatewayClient;
 
   constructor(
@@ -411,6 +465,32 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
   capture() {
     const client = this.getClient();
     return new GatewayBackedOpenClawAdapter(() => client);
+  }
+
+  getGatewaySurfacePort(): OpenClawGatewaySurfacePort {
+    return this;
+  }
+
+  canProbeNativeGateway() {
+    const client = this.getClient() as NativeCallableOpenClawGatewayClient;
+    return Boolean(client.callNative) && !isCliGatewayClientForcedByEnv();
+  }
+
+  probeNativeGateway<TPayload>(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    const client = this.getClient() as NativeCallableOpenClawGatewayClient;
+    if (!this.canProbeNativeGateway() || !client.callNative) {
+      return Promise.reject(nativeMethodUnavailable(method));
+    }
+
+    return client.callNative<TPayload>(method, params, options, {
+      safety: "read",
+      timeoutMs: options.timeoutMs,
+      allowCliFallback: false
+    });
   }
 
   getConnectionIdentity() {

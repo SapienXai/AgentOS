@@ -4,12 +4,7 @@ import {
   getOpenClawGatewayOperationLabel,
   type OpenClawGatewayCompatibilityOperationId
 } from "@/lib/openclaw/client/gateway-compatibility";
-import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
-import { isCliGatewayClientForcedByEnv } from "@/lib/openclaw/client/native-ws-gateway-client";
-import type {
-  OpenClawCommandOptions,
-  OpenClawGatewayClient
-} from "@/lib/openclaw/client/types";
+import { getOpenClawAdapter, type OpenClawGatewaySurfacePort } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCompatibilityReport } from "@/lib/openclaw/compat";
 import type {
   OpenClawCompatibilityContractCheck,
@@ -36,19 +31,6 @@ export type {
   OpenClawGatewayProductSurfaceSnapshot,
   OpenClawGatewayProductSurfaceStatus
 } from "@/lib/openclaw/application/gateway-surface-types";
-
-type NativeCallableGatewayClient = OpenClawGatewayClient & {
-  callNative?: <TPayload>(
-    method: string,
-    params?: Record<string, unknown>,
-    options?: OpenClawCommandOptions,
-    policy?: {
-      safety: "read" | "mutation";
-      timeoutMs?: number;
-      allowCliFallback?: boolean;
-    }
-  ) => Promise<TPayload>;
-};
 
 type SurfaceDefinition = {
   id: string;
@@ -516,12 +498,13 @@ export async function getOpenClawGatewayProductSurfaceSnapshot(options: {
   timeoutMs?: number;
   compatibilityReport?: OpenClawCompatibilityReport;
   now?: () => Date;
+  gatewaySurface?: OpenClawGatewaySurfacePort;
 } = {}): Promise<OpenClawGatewayProductSurfaceSnapshot> {
   const report = options.compatibilityReport ?? await getOpenClawCompatibilityReport({
     includeLiveShapeChecks: false
   });
-  const client = getOpenClawGatewayClient() as NativeCallableGatewayClient;
-  const nativeProbeAvailable = Boolean(client.callNative) && !isCliGatewayClientForcedByEnv();
+  const gatewaySurface = options.gatewaySurface ?? getOpenClawAdapter().getGatewaySurfacePort?.();
+  const nativeProbeAvailable = gatewaySurface?.canProbeNativeGateway() ?? false;
   const contractsByOperation = new Map(report.contracts.map((contract) => [contract.operation, contract]));
   const generatedAt = (options.now?.() ?? new Date()).toISOString();
 
@@ -534,7 +517,7 @@ export async function getOpenClawGatewayProductSurfaceSnapshot(options: {
         ? []
         : await runSurfaceProbes({
           definition,
-          client,
+          gatewaySurface,
           nativeProbeAvailable,
           timeoutMs: options.timeoutMs ?? 2_500
         });
@@ -1128,7 +1111,7 @@ function resolveSurfaceRecovery(
 
 async function runSurfaceProbes(input: {
   definition: SurfaceDefinition;
-  client: NativeCallableGatewayClient;
+  gatewaySurface?: OpenClawGatewaySurfacePort;
   nativeProbeAvailable: boolean;
   timeoutMs: number;
 }): Promise<OpenClawGatewayProductSurfaceProbe[]> {
@@ -1146,15 +1129,10 @@ async function runSurfaceProbes(input: {
   }
 
   const settled = await Promise.allSettled(probes.map(async (probe) => {
-    const payload = await input.client.callNative?.<unknown>(
+    const payload = await input.gatewaySurface?.probeNativeGateway<unknown>(
       probe.method,
       probe.params ?? {},
-      { timeoutMs: input.timeoutMs },
-      {
-        safety: "read",
-        timeoutMs: input.timeoutMs,
-        allowCliFallback: false
-      }
+      { timeoutMs: input.timeoutMs }
     );
 
     return summarizeProbePayload(probe.method, payload);

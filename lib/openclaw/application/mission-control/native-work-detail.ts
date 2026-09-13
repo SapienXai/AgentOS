@@ -1,4 +1,4 @@
-import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import type { OpenClawSessionOwnershipPort } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { normalizeSessionOwnership } from "@/lib/openclaw/domains/native-work-model";
 import type {
   NativeWorkExecutionProjection,
@@ -17,7 +17,7 @@ export type NativeSessionOwnershipDetail = {
  */
 export async function loadNativeSessionOwnershipDetail(input: {
   execution: NativeWorkExecutionProjection;
-  adapter: OpenClawAdapter;
+  adapter: OpenClawSessionOwnershipPort;
   timeoutMs: number;
   signal?: AbortSignal;
 }): Promise<NativeSessionOwnershipDetail> {
