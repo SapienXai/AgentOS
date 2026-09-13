@@ -76,6 +76,7 @@ const initialDraftState = (): ProviderDraft => ({
 
 export function OpenClawOnboardingProviderFlow({
   snapshot,
+  agentId = null,
   surfaceTheme = "dark",
   selectedModelId,
   selectedThinking = ONBOARDING_DEFAULT_THINKING,
@@ -88,6 +89,7 @@ export function OpenClawOnboardingProviderFlow({
   onContinue
 }: {
   snapshot: MissionControlSnapshot;
+  agentId?: string | null;
   surfaceTheme?: "dark" | "light";
   selectedModelId: string;
   selectedThinking?: OpenClawThinkingLevel;
@@ -387,7 +389,7 @@ export function OpenClawOnboardingProviderFlow({
     });
 
     try {
-      const result = await adapter.getConnectionStatus();
+      const result = await adapter.getConnectionStatus({ agentId });
       const shouldDiscover =
         result.connection.connected &&
         autoDiscover &&
@@ -441,7 +443,8 @@ export function OpenClawOnboardingProviderFlow({
       const result = await adapter.connect({
         apiKey: draft.apiKey,
         authMethod: options?.authMethod,
-        force: options?.force
+        force: options?.force,
+        agentId
       });
       const shouldDiscover =
         result.connection.connected &&
@@ -487,7 +490,7 @@ export function OpenClawOnboardingProviderFlow({
     });
 
     try {
-      const result = await adapter.discoverModels();
+      const result = await adapter.discoverModels({ agentId });
       applyActionResult(
         providerId,
         result,

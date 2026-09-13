@@ -1335,12 +1335,31 @@ test("ChatGPT provider connection stays in-app and clears legacy terminal handof
     path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"),
     "utf8"
   );
+  const stageSource = readFileSync(
+    path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"),
+    "utf8"
+  );
+  const onboardingSource = readFileSync(
+    path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"),
+    "utf8"
+  );
+  const shellSource = readFileSync(
+    path.join(rootDir, "components/mission-control/mission-control-shell.tsx"),
+    "utf8"
+  );
   const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
 
   assert.match(dialogSource, /manualCommand: null,[\s\S]*Opening ChatGPT authorization/);
   assert.match(dialogSource, /Complete the OpenClaw authorization page in your browser/);
   assert.match(setupSource, /<PikoLoader/);
   assert.match(setupSource, /manualCommand: null,[\s\S]*Opening ChatGPT authorization/);
+  assert.match(setupSource, /agentId\?: string \| null/);
+  assert.match(setupSource, /getConnectionStatus\(\{ agentId \}\)/);
+  assert.match(setupSource, /force: options\?\.force,\s*agentId/);
+  assert.match(setupSource, /discoverModels\(\{ agentId \}\)/);
+  assert.match(stageSource, /agentId=\{selectedAgentId\}/);
+  assert.match(onboardingSource, /selectedAgentId\?: string \| null/);
+  assert.match(shellSource, /selectedAgentId=\{resolveChatGptAuthAgentId\(returnToAgentModelId \?\? selectedAgent\?\.id\)\}/);
   assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /manualCommand: null/);
   assert.doesNotMatch(routeSource, /manualCommand:\s*authHandoff\.command/);

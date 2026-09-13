@@ -4140,6 +4140,7 @@ export function MissionControlShell({
             docsUrl: modelOnboardingDocsUrl
           }}
           modelSwitchFeedback={modelSwitchFeedback}
+          selectedAgentId={resolveChatGptAuthAgentId(returnToAgentModelId ?? selectedAgent?.id)}
           selectedModelId={selectedOnboardingModelId}
           selectedThinking={selectedOnboardingThinking}
           discoveredModels={discoveredModels}
@@ -5306,6 +5307,7 @@ export function MissionControlShell({
               docsUrl: modelOnboardingDocsUrl
             }}
             modelSwitchFeedback={modelSwitchFeedback}
+            selectedAgentId={resolveChatGptAuthAgentId(returnToAgentModelId ?? selectedAgent?.id)}
             selectedModelId={selectedOnboardingModelId}
             selectedThinking={selectedOnboardingThinking}
             discoveredModels={discoveredModels}

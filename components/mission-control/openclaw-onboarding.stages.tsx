@@ -273,6 +273,7 @@ export function ModelStage({
   phaseLabel,
   run,
   modelPhase,
+  selectedAgentId,
   selectedModelId,
   selectedThinking,
   modelSwitchFeedback,
@@ -297,6 +298,7 @@ export function ModelStage({
   phaseLabel: string;
   run: StageRunDetails;
   modelPhase: OpenClawModelOnboardingPhase | null;
+  selectedAgentId?: string | null;
   selectedModelId: string;
   selectedThinking: OpenClawThinkingLevel;
   modelSwitchFeedback: ModelSwitchFeedback;
@@ -420,6 +422,7 @@ export function ModelStage({
           onContinueFromAi={onContinueFromAi}
           onRunModelSetDefault={onRunModelSetDefault}
           snapshot={effectiveSnapshot}
+          selectedAgentId={selectedAgentId}
           selectedModelId={selectedModelId}
           selectedThinking={selectedThinking}
           onSelectedModelIdChange={onSelectedModelIdChange}
@@ -489,6 +492,7 @@ export function ModelStage({
 
               <OpenClawOnboardingProviderFlow
                 snapshot={effectiveSnapshot}
+                agentId={selectedAgentId}
                 surfaceTheme={surfaceTheme}
                 selectedModelId={selectedModelId}
                 onSelectedModelIdChange={onSelectedModelIdChange}
@@ -527,6 +531,7 @@ function ConnectAiStage({
   onContinueFromAi,
   onRunModelSetDefault,
   snapshot,
+  selectedAgentId,
   selectedModelId,
   selectedThinking,
   onSelectedModelIdChange,
@@ -548,6 +553,7 @@ function ConnectAiStage({
   onContinueFromAi: (thinking?: OpenClawThinkingLevel) => void;
   onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
   snapshot: MissionControlSnapshot;
+  selectedAgentId?: string | null;
   selectedModelId: string;
   selectedThinking: OpenClawThinkingLevel;
   onSelectedModelIdChange: (value: string) => void;
@@ -709,6 +715,7 @@ function ConnectAiStage({
         <div className="mt-5 w-full max-w-[420px] text-left">
           <OpenClawOnboardingProviderFlow
             snapshot={snapshot}
+            agentId={selectedAgentId}
             surfaceTheme={surfaceTheme}
             selectedModelId={selectedModelId}
             selectedThinking={selectedThinking}

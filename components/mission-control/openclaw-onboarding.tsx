@@ -74,6 +74,7 @@ export function OpenClawOnboarding({
   systemRun,
   modelRun,
   modelSwitchFeedback,
+  selectedAgentId,
   selectedModelId,
   selectedThinking,
   discoveredModels,
@@ -120,6 +121,7 @@ export function OpenClawOnboarding({
   systemRun: StageRunDetails;
   modelRun: StageRunDetails;
   modelSwitchFeedback: ModelSwitchFeedback;
+  selectedAgentId?: string | null;
   selectedModelId: string;
   selectedThinking: OpenClawThinkingLevel;
   discoveredModels: DiscoveredModelCandidate[];
@@ -399,6 +401,7 @@ export function OpenClawOnboarding({
                 phaseLabel={phaseLabel}
                 run={stageRun}
                 modelPhase={modelPhase}
+                selectedAgentId={selectedAgentId}
                 selectedModelId={selectedModelId}
                 selectedThinking={selectedThinking}
                 modelSwitchFeedback={modelSwitchFeedback}
