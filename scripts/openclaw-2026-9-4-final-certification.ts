@@ -10,6 +10,8 @@ import {
   buildOpenClawVersionRoles,
   getOpenClawFinalCertificationArtifactType,
   getOpenClawFinalCertificationFilename,
+  isOpenClawGitCommit,
+  resolveOpenClawRepositoryCommit,
   type OpenClawVersionRoles
 } from "@/lib/openclaw/versions";
 import {
@@ -133,8 +135,8 @@ async function main() {
   }
   if (!EVIDENCE_COMMIT_INPUT) {
     failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT is required for final evidence provenance");
-  } else if (!isGitCommit(EVIDENCE_COMMIT_INPUT)) {
-    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must be a 40-character Git commit SHA");
+  } else if (!resolveOpenClawRepositoryCommit(EVIDENCE_COMMIT_INPUT)) {
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must resolve to a Git commit in the repository");
   }
 
   for (const [name, relativePath] of REQUIRED_ARTIFACTS) {
@@ -157,18 +159,19 @@ async function main() {
 
   const deploymentPin = await readRepositoryDeploymentPin();
   const certifiedCodeHead = await gitOutput(["rev-parse", "HEAD"]);
-  if (!isGitCommit(certifiedCodeHead)) failures.push("The certified code HEAD is not a 40-character Git commit SHA");
-  if (EVIDENCE_COMMIT_INPUT && EVIDENCE_COMMIT_INPUT === certifiedCodeHead) failures.push("Certified code and evidence commits must be distinct bindings");
+  if (!resolveOpenClawRepositoryCommit(certifiedCodeHead)) failures.push("The certified code HEAD does not resolve to a Git commit in the repository");
+  if (EVIDENCE_COMMIT_INPUT && EVIDENCE_COMMIT_INPUT.toLowerCase() === certifiedCodeHead.toLowerCase()) failures.push("Certified code and evidence commits must be distinct bindings");
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: new Date().toISOString(),
     certifiedCodeHead,
-    evidenceCommit: EVIDENCE_COMMIT_INPUT && isGitCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
+    evidenceCommit: EVIDENCE_COMMIT_INPUT && resolveOpenClawRepositoryCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
     branch: await gitOutput(["branch", "--show-current"]),
     packageIdentity,
     artifacts,
     matrix,
     deploymentPin,
-    failures
+    failures,
+    repositoryPath: process.cwd()
   });
 
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
@@ -188,6 +191,7 @@ export function buildOpenClawFinalCertificationReport(input: {
   matrix: Record<string, Record<string, unknown>>;
   deploymentPin: RepositoryDeploymentPin;
   failures: string[];
+  repositoryPath?: string;
 }): OpenClawFinalCertificationReport {
   const statuses = Object.values(input.artifacts).flatMap(collectStatusValues);
   const passedArtifactCount = Object.values(input.matrix).filter((entry) => entry.status === "PASS").length;
@@ -195,20 +199,45 @@ export function buildOpenClawFinalCertificationReport(input: {
   const unknownOutcomeCount = statuses.filter((value) => value === "UNKNOWN").length;
   const skippedCount = statuses.filter((value) => value === "SKIPPED").length;
   const expectedAuthorizationDenialCount = statuses.filter((value) => value === "EXPECTED-DENIAL" || value === "EXPECTED_DENIAL").length;
+  const exactSourceIdentity = Boolean(
+    input.packageIdentity &&
+    isOpenClawGitCommit(input.packageIdentity.sourceCommit) &&
+    input.packageIdentity.sourceCommit === TARGET_COMMIT
+  );
   const exactPackageMatchesTarget = Boolean(
     input.packageIdentity &&
     input.packageIdentity.version === TARGET_VERSION &&
-    input.packageIdentity.sourceCommit === TARGET_COMMIT &&
+    exactSourceIdentity &&
     input.packageIdentity.buildId === TARGET_BUILD &&
     input.packageIdentity.gatewayClientVersion === TARGET_VERSION &&
     input.packageIdentity.gatewayProtocolVersion === TARGET_VERSION &&
+    isSha256(input.packageIdentity.packageHash) &&
     input.packageIdentity.stateSchema === 17 &&
     input.packageIdentity.agentSchema === 19
   );
   const migrationProvenance = readMigrationProvenance(input.artifacts.migration);
   const runtimeProvenance = readRuntimeProvenance(input.artifacts.runtime);
-  const completeTestAssessment = input.failures.length === 0 && passedArtifactCount > 0 && passedArtifactCount === Object.keys(input.matrix).length && failedArtifactCount === 0 && unknownOutcomeCount === 0 && !statuses.includes("FAIL") && !statuses.includes("UNKNOWN");
-  const validCommitBinding = isGitCommit(input.certifiedCodeHead) && isGitCommit(input.evidenceCommit ?? "") && input.certifiedCodeHead !== input.evidenceCommit;
+  const resolvedCertifiedCodeHead = resolveOpenClawRepositoryCommit(input.certifiedCodeHead, input.repositoryPath);
+  const resolvedEvidenceCommit = resolveOpenClawRepositoryCommit(input.evidenceCommit, input.repositoryPath);
+  const validCommitBinding = Boolean(
+    resolvedCertifiedCodeHead &&
+    resolvedEvidenceCommit &&
+    resolvedCertifiedCodeHead !== resolvedEvidenceCommit
+  );
+  const reportFailures = [...input.failures];
+  if (!resolvedCertifiedCodeHead && !reportFailures.some((failure) => /certified code HEAD|certifiedCodeHead/i.test(failure))) {
+    reportFailures.push("The certifiedCodeHead does not resolve to a Git commit in the repository.");
+  }
+  if (!resolvedEvidenceCommit && !reportFailures.some((failure) => /evidence commit|evidenceCommit/i.test(failure))) {
+    reportFailures.push("The evidenceCommit does not resolve to a Git commit in the repository.");
+  }
+  if (resolvedCertifiedCodeHead && resolvedEvidenceCommit && resolvedCertifiedCodeHead === resolvedEvidenceCommit && !reportFailures.some((failure) => /distinct bindings/i.test(failure))) {
+    reportFailures.push("Certified code and evidence commits must be distinct bindings.");
+  }
+  if (input.packageIdentity && !exactSourceIdentity && !reportFailures.some((failure) => /source identity|package identity/i.test(failure))) {
+    reportFailures.push("The exact OpenClaw source identity is malformed or does not match the verified release commit.");
+  }
+  const completeTestAssessment = reportFailures.length === 0 && exactPackageMatchesTarget && passedArtifactCount > 0 && passedArtifactCount === Object.keys(input.matrix).length && failedArtifactCount === 0 && unknownOutcomeCount === 0 && !statuses.includes("FAIL") && !statuses.includes("UNKNOWN");
 
   return {
     schemaVersion: 2,
@@ -217,12 +246,12 @@ export function buildOpenClawFinalCertificationReport(input: {
     generatedAt: input.generatedAt,
     provenance: {
       repository: "SapienXai/AgentOS",
-      certifiedCodeHead: input.certifiedCodeHead,
-      evidenceCommit: input.evidenceCommit,
+      certifiedCodeHead: resolvedCertifiedCodeHead ?? input.certifiedCodeHead,
+      evidenceCommit: resolvedEvidenceCommit ?? input.evidenceCommit,
       branch: input.branch,
       node: process.version,
       openClaw: input.packageIdentity,
-      exactArtifact: input.packageIdentity ? "disposable-exact-openclaw-package" : "unavailable",
+      exactArtifact: exactPackageMatchesTarget ? "disposable-exact-openclaw-package" : "unavailable",
       expectedOpenClaw: {
         version: TARGET_VERSION,
         tag: "v2026.9.4",
@@ -321,7 +350,7 @@ export function buildOpenClawFinalCertificationReport(input: {
       decision: completeTestAssessment && validCommitBinding ? "PROMOTE" : "BLOCK",
       decisionKind: "recommendation-only"
     },
-    failures: input.failures,
+    failures: reportFailures,
     success: completeTestAssessment && validCommitBinding
   };
 }
@@ -424,7 +453,7 @@ function collectStatusValues(value: unknown): string[] { if (Array.isArray(value
 function collectStrings(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStrings); if (typeof value === "string") return [value]; if (!value || typeof value !== "object") return []; return Object.values(value as JsonRecord).flatMap(collectStrings); }
 function asRecord(value: unknown): JsonRecord { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {}; }
 function readString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
-function isGitCommit(value: string): boolean { return /^[0-9a-f]{40}$/i.test(value); }
+function isSha256(value: string): boolean { return /^[0-9a-f]{64}$/i.test(value); }
 async function readPackageIdentity(packageRoot: string) { const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord; const hash = createHash("sha256"); for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(relativePath); hash.update(await readFile(path.join(packageRoot, relativePath))); } const dependencies = { ...asRecord(packageJson.dependencies), ...asRecord(packageJson.optionalDependencies) }; return { version: String(packageJson.version ?? ""), sourceCommit: String(buildInfo.commit ?? ""), buildId: String(buildInfo.buildId ?? ""), packageHash: hash.digest("hex"), gatewayClientVersion: readDependencyVersion(dependencies, "@openclaw/gateway-client"), gatewayProtocolVersion: readDependencyVersion(dependencies, "@openclaw/gateway-protocol"), stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0), agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0) }; }
 function readDependencyVersion(dependencies: JsonRecord, packageName: string) { const version = readString(dependencies[packageName]); return version?.replace(/^[~^<>= ]+/, "") || null; }
 async function gitOutput(args: string[]) { const { execFile } = await import("node:child_process"); return await new Promise<string>((resolve) => execFile("git", args, { cwd: process.cwd(), encoding: "utf8" }, (_error, stdout) => resolve(stdout.trim()))); }

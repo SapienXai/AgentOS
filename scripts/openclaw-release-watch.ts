@@ -13,7 +13,9 @@ import {
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION,
   getOpenClawFinalCertificationArtifactType,
-  getOpenClawFinalCertificationFilename
+  getOpenClawFinalCertificationFilename,
+  isOpenClawGitCommit,
+  resolveOpenClawRepositoryCommit
 } from "@/lib/openclaw/versions";
 import { buildOpenClawCompatibilityIntake, renderOpenClawCompatibilityIssue } from "@/lib/openclaw/upstream/compatibility-intake";
 import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
@@ -225,6 +227,7 @@ export function selectOpenClawReleasesForIntake(
 export async function loadOpenClawCertifiedEvidence(input: {
   version: string;
   evidenceDir?: string;
+  repositoryPath?: string;
 }): Promise<OpenClawCertifiedEvidenceLookup> {
   const evidenceRoot = input.evidenceDir ?? path.join(process.cwd(), "docs/evidence");
   const evidencePath = path.resolve(evidenceRoot, getOpenClawFinalCertificationFilename(input.version));
@@ -251,7 +254,7 @@ export async function loadOpenClawCertifiedEvidence(input: {
 
   try {
     const record = JSON.parse(raw) as unknown;
-    const invalidReason = validateCertifiedEvidenceRecord(record, input.version);
+    const invalidReason = validateCertifiedEvidenceRecord(record, input.version, input.repositoryPath);
     if (invalidReason) {
       return { status: "invalid", path: evidencePath, evidence: null, reason: invalidReason };
     }
@@ -422,7 +425,7 @@ function parseCertifiedEvidence(value: unknown): OpenClawCertifiedEvidence {
   };
 }
 
-function validateCertifiedEvidenceRecord(value: unknown, version: string): string | null {
+function validateCertifiedEvidenceRecord(value: unknown, version: string, repositoryPath = process.cwd()): string | null {
   const record = asRecord(value);
   const provenance = asRecord(record?.provenance);
   const openClaw = asRecord(provenance?.openClaw);
@@ -441,15 +444,19 @@ function validateCertifiedEvidenceRecord(value: unknown, version: string): strin
   }
   const stateSchema = readNumber(openClaw?.stateSchema);
   const agentSchema = readNumber(openClaw?.agentSchema);
-  if (!openClaw || openClaw.version !== version || !readString(openClaw.sourceCommit) || !isGitCommit(readString(openClaw.sourceCommit) ?? "") || !readString(openClaw.buildId) || !isSha256(readString(openClaw.packageHash) ?? "") || openClaw.gatewayClientVersion !== version || openClaw.gatewayProtocolVersion !== version || stateSchema === null || stateSchema < 1 || agentSchema === null || agentSchema < 1) {
+  const sourceCommit = readString(openClaw?.sourceCommit);
+  if (!openClaw || openClaw.version !== version || !sourceCommit || !isOpenClawGitCommit(sourceCommit) || !readString(openClaw.buildId) || !isSha256(readString(openClaw.packageHash) ?? "") || openClaw.gatewayClientVersion !== version || openClaw.gatewayProtocolVersion !== version || stateSchema === null || stateSchema < 1 || agentSchema === null || agentSchema < 1) {
     return "Certified evidence does not contain the exact OpenClaw package identity.";
   }
   const certifiedCodeHead = readString(provenance?.certifiedCodeHead);
   const evidenceCommit = readString(provenance?.evidenceCommit);
-  if (!isGitCommit(certifiedCodeHead ?? "") || !isGitCommit(evidenceCommit ?? "")) {
-    return "Certified evidence must bind 40-character Git commits for both code and evidence.";
+  if (!resolveOpenClawRepositoryCommit(certifiedCodeHead, repositoryPath)) {
+    return "Certified evidence certifiedCodeHead must resolve to a Git commit in the repository.";
   }
-  if (certifiedCodeHead === evidenceCommit) return "Certified code and evidence commits must be distinct bindings.";
+  if (!resolveOpenClawRepositoryCommit(evidenceCommit, repositoryPath)) {
+    return "Certified evidence evidenceCommit must resolve to a Git commit in the repository.";
+  }
+  if (certifiedCodeHead?.toLowerCase() === evidenceCommit?.toLowerCase()) return "Certified code and evidence commits must be distinct bindings.";
   return null;
 }
 
@@ -492,10 +499,6 @@ function readString(value: unknown): string | null {
 
 function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function isGitCommit(value: string) {
-  return /^[0-9a-f]{40}$/i.test(value);
 }
 
 function isSha256(value: string) {

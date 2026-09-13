@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 // 2026.9.4 passed the AgentOS runtime, security, migration, and native contract
 // gates. OpenClaw still owns update/recovery mutations; certification keeps
 // those operations explicitly skipped. Keep 9.1 as the supported minimum for
@@ -13,6 +15,28 @@ export function getOpenClawFinalCertificationArtifactType(version: string) {
 
 export function getOpenClawFinalCertificationFilename(version: string) {
   return `${getOpenClawFinalCertificationArtifactType(version)}.json`;
+}
+
+export function isOpenClawGitCommit(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim());
+}
+
+export function resolveOpenClawRepositoryCommit(
+  value: string | null | undefined,
+  repositoryPath = process.cwd()
+): string | null {
+  if (!isOpenClawGitCommit(value)) return null;
+  const candidate = value.trim().toLowerCase();
+  try {
+    const resolved = execFileSync(
+      "git",
+      ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    ).trim().toLowerCase();
+    return isOpenClawGitCommit(resolved) && resolved === candidate ? resolved : null;
+  } catch {
+    return null;
+  }
 }
 
 export type OpenClawVersionRoleEpistemicStatus =

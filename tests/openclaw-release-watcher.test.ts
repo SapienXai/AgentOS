@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,6 +47,8 @@ import type { OpenClawCoreMethodSpec } from "@/lib/openclaw/application/update-c
 const releaseEndpoint = "https://api.github.com/repos/openclaw/openclaw/releases?per_page=50&page=1";
 const npmDistTagsEndpoint = "https://registry.npmjs.org/-/package/openclaw/dist-tags";
 const npmPackumentEndpoint = "https://registry.npmjs.org/openclaw";
+const repositoryHead = gitCommit("HEAD");
+const repositoryParent = gitCommit("HEAD^");
 
 test("OpenClaw release versions use strict validation and numeric ordering", () => {
   assert.equal(compareOpenClawReleaseVersions("2026.9.10", "2026.9.2") > 0, true);
@@ -133,7 +136,7 @@ test("official identity verification fails closed when npm and GitHub disagree",
   const verifiedFetch = identityFetch({ packageVersion: "2026.9.3" });
   const verified = await verifyOfficialOpenClawRelease({ version: "2026.9.3", fetchImpl: verifiedFetch });
   assert.equal(verified.identity.status, "verified");
-  assert.equal(verified.identity.sourceCommit, "a".repeat(40));
+  assert.equal(verified.identity.sourceCommit, repositoryHead);
   assert.equal(verified.releaseNotes.signals.includes("security"), true);
 
   const mismatch = await verifyOfficialOpenClawRelease({
@@ -366,7 +369,7 @@ test("runner returns intake-blocked and writes incomplete evidence for an author
     dryRun: true,
     forceRefresh: true,
     outputDir,
-    agentosCommit: "c".repeat(40),
+    agentosCommit: repositoryHead,
     agentosVersion: "0.8.0",
     now: () => new Date("2026-09-06T00:00:00.000Z"),
     fetchImpl: releaseWatchIncompleteContractFetch("2026.9.5")
@@ -398,11 +401,11 @@ test("release-watch dry-run reconciles certified evidence and repository pin wit
       unknownOutcomeCount: 0
     },
     provenance: {
-      certifiedCodeHead: "c".repeat(40),
-      evidenceCommit: "d".repeat(40),
+      certifiedCodeHead: repositoryHead,
+      evidenceCommit: repositoryParent,
       openClaw: {
         version: "2026.9.5",
-        sourceCommit: "b".repeat(40),
+        sourceCommit: repositoryParent,
         buildId: "build-2026.9.5",
         packageHash: "e".repeat(64),
         gatewayClientVersion: "2026.9.5",
@@ -428,7 +431,7 @@ test("release-watch dry-run reconciles certified evidence and repository pin wit
     certifiedEvidenceDir: evidenceDir,
     productionConfigText: "FROM ghcr.io/openclaw/openclaw:2026.9.4@sha256:" + "e".repeat(64),
     issueClient,
-    agentosCommit: "f".repeat(40),
+    agentosCommit: repositoryHead,
     agentosVersion: "0.8.0",
     now: () => new Date("2026-09-06T00:00:00.000Z"),
     fetchImpl: releaseWatchIncompleteContractFetch("2026.9.5")
@@ -482,8 +485,9 @@ test("release-watch rejects missing or unsuccessful certification assessment", a
 test("release-watch rejects invalid code or evidence commit bindings", async () => {
   for (const overrides of [
     { provenance: { certifiedCodeHead: "not-a-commit" } },
-    { provenance: { evidenceCommit: "not-a-commit" } },
-    { provenance: { certifiedCodeHead: "a".repeat(40), evidenceCommit: "a".repeat(40) } }
+    { provenance: { certifiedCodeHead: "a".repeat(40) } },
+    { provenance: { evidenceCommit: "b".repeat(40) } },
+    { provenance: { certifiedCodeHead: repositoryHead, evidenceCommit: repositoryHead } }
   ]) {
     const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-commit-"));
     await writeCertifiedEvidence(evidenceDir, overrides);
@@ -588,7 +592,7 @@ test("issue rendering is deduplicated across open and closed issues and surfaces
   assert.equal(stale.metadataStatus, "stale");
   assert.match(stale.message, /stale/i);
 
-  const driftIdentity = { ...intake.identity, sourceCommit: "b".repeat(40), identityHash: "different-identity" };
+  const driftIdentity = { ...intake.identity, sourceCommit: repositoryParent, identityHash: "different-identity" };
   const driftIntake = buildOpenClawCompatibilityIntake({
     ...intakeInput(),
     identity: driftIdentity
@@ -684,7 +688,7 @@ function intakeInput(overrides: { generatedAt?: string } = {}) {
   return {
     generatedAt: overrides.generatedAt ?? "2026-09-06T00:00:00.000Z",
     intakeMode: "manual" as const,
-    agentosCommit: "c".repeat(40),
+    agentosCommit: repositoryHead,
     agentosVersion: "0.8.0",
     recommendedOpenClaw: "2026.9.2",
     supportedBaselineOpenClaw: "2026.9.1",
@@ -732,7 +736,7 @@ function identityFor(version: string): OpenClawReleaseIdentity {
     status: "verified",
     version,
     tag: `v${version}`,
-    sourceCommit: "a".repeat(40),
+    sourceCommit: repositoryHead,
     buildId: `build-${version}`,
     packageVersion: version,
     packageIntegrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -781,7 +785,7 @@ function jsonFetch(records: Record<string, unknown>) {
 
 function identityFetch(input: { packageVersion: string; requestVersion?: string }) {
   const version = input.requestVersion ?? input.packageVersion;
-  const sourceCommit = "a".repeat(40);
+  const sourceCommit = repositoryHead;
   const integrity = "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
   return jsonFetch({
     [`https://registry.npmjs.org/openclaw/${version}`]: {
@@ -833,11 +837,11 @@ function releaseWatchIncompleteContractFetch(version: string) {
 
 async function writeCertifiedEvidence(evidenceDir: string, overrides: Record<string, unknown> = {}) {
   const baseProvenance = {
-    certifiedCodeHead: "c".repeat(40),
-    evidenceCommit: "d".repeat(40),
+    certifiedCodeHead: repositoryHead,
+    evidenceCommit: repositoryParent,
     openClaw: {
       version: "2026.9.5",
-      sourceCommit: "b".repeat(40),
+      sourceCommit: repositoryParent,
       buildId: "build-2026.9.5",
       packageHash: "e".repeat(64),
       gatewayClientVersion: "2026.9.5",
@@ -872,4 +876,8 @@ function jsonResponse(value: unknown) {
     status: 200,
     headers: { "content-type": "application/json" }
   });
+}
+
+function gitCommit(ref: string) {
+  return execFileSync("git", ["rev-parse", ref], { encoding: "utf8" }).trim();
 }

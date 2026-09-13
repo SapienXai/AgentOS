@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 
 import {
@@ -6,12 +7,15 @@ import {
   type OpenClawExactPackageIdentity
 } from "@/scripts/openclaw-2026-9-4-final-certification";
 
+const repositoryHead = gitCommit("HEAD");
+const repositoryParent = gitCommit("HEAD^");
+
 test("final certification keeps code, evidence, package, runtime, and production provenance distinct", () => {
   const packageIdentity: OpenClawExactPackageIdentity = {
     version: "2026.9.4",
     sourceCommit: "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
     buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
-    packageHash: "package-hash",
+    packageHash: "d".repeat(64),
     gatewayClientVersion: "2026.9.4",
     gatewayProtocolVersion: "2026.9.4",
     stateSchema: 17,
@@ -19,8 +23,8 @@ test("final certification keeps code, evidence, package, runtime, and production
   };
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: "2026-09-13T10:00:00.000Z",
-    certifiedCodeHead: "b".repeat(40),
-    evidenceCommit: "c".repeat(40),
+    certifiedCodeHead: repositoryHead,
+    evidenceCommit: repositoryParent,
     branch: "codex/auto-dev",
     packageIdentity,
     artifacts: {
@@ -59,8 +63,8 @@ test("final certification keeps code, evidence, package, runtime, and production
   assert.equal(report.schemaVersion, 2);
   assert.equal(report.artifactType, "openclaw-2026.9.4-pre-merge-final-certification");
   assert.equal(report.phase, "pre-merge-final-certification");
-  assert.equal(report.provenance.certifiedCodeHead, "b".repeat(40));
-  assert.equal(report.provenance.evidenceCommit, "c".repeat(40));
+  assert.equal(report.provenance.certifiedCodeHead, repositoryHead);
+  assert.equal(report.provenance.evidenceCommit, repositoryParent);
   assert.notEqual(report.provenance.certifiedCodeHead, report.provenance.evidenceCommit);
   assert.equal(report.provenance.exactArtifact, "disposable-exact-openclaw-package");
   assert.equal(report.versionRoles.supportedMinimum.version, "2026.9.1");
@@ -85,7 +89,7 @@ test("final certification keeps code, evidence, package, runtime, and production
 test("final certification does not claim an exact package or live runtime when identity evidence is absent", () => {
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: "2026-09-13T10:00:00.000Z",
-    certifiedCodeHead: "a".repeat(40),
+    certifiedCodeHead: repositoryHead,
     evidenceCommit: null,
     branch: "codex/auto-dev",
     packageIdentity: null,
@@ -108,3 +112,35 @@ test("final certification does not claim an exact package or live runtime when i
   assert.equal(report.production.status, "not-tested");
   assert.equal(report.success, false);
 });
+
+test("final certification rejects an unresolved exact OpenClaw source identity", () => {
+  const report = buildOpenClawFinalCertificationReport({
+    generatedAt: "2026-09-13T10:00:00.000Z",
+    certifiedCodeHead: repositoryHead,
+    evidenceCommit: repositoryParent,
+    branch: "codex/auto-dev",
+    packageIdentity: {
+      version: "2026.9.4",
+      sourceCommit: "f".repeat(40),
+      buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      packageHash: "d".repeat(64),
+      gatewayClientVersion: "2026.9.4",
+      gatewayProtocolVersion: "2026.9.4",
+      stateSchema: 17,
+      agentSchema: 19
+    },
+    artifacts: { runtime: {} },
+    matrix: { runtime: { status: "PASS" } },
+    deploymentPin: { status: "not-found", version: null, image: null, digest: null, reason: "No deployment pin." },
+    failures: []
+  });
+
+  assert.equal(report.versionRoles.certifiedIdentity.status, "mismatch");
+  assert.equal(report.provenance.exactArtifact, "unavailable");
+  assert.equal(report.success, false);
+  assert.match(report.failures.join("\n"), /source identity/i);
+});
+
+function gitCommit(ref: string) {
+  return execFileSync("git", ["rev-parse", ref], { encoding: "utf8" }).trim();
+}

@@ -47,7 +47,9 @@ globally.
   `openclaw-2026.9.4-pre-merge-final-certification.json` with matching
   `artifactType`/`phase`, separate `certifiedCodeHead` and `evidenceCommit`,
   exact package identity, complete test counts, explicit skips/expected
-  denials, and `production.status=not-tested`.
+  denials, and `production.status=not-tested`. Code/evidence bindings must
+  resolve to commits in the checked-out repository; the upstream source
+  identity must match the verified release commit.
 - Optional observations remain explicitly `SKIPPED` where the exact runtime
   did not advertise a surface; expected authorization denials remain denials.
 

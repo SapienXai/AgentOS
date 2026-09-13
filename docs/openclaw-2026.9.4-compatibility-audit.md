@@ -195,7 +195,10 @@ promotable. A fresh run of `openclaw:final-certification-9-4` writes
 `docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` with the
 matching `artifactType` and `phase`, complete passing test assessment, exact
 OpenClaw identity, and separate `certifiedCodeHead` and `evidenceCommit`
-bindings without overwriting historical artifacts.
+bindings that resolve to commits in the checked-out AgentOS repository, without
+overwriting historical artifacts. The exact upstream source identity remains
+bound to the verified 2026.9.4 release commit rather than being treated as an
+AgentOS repository commit.
 
 ## New 9.4 capability disposition
 
