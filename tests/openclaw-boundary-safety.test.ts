@@ -1310,7 +1310,7 @@ test("model library separates provider editing, credential disconnect, and custo
   const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
 
   assert.match(dialogSource, /Connection settings/);
-  assert.match(dialogSource, /const result = await adapter\.getConnectionStatus\(\)/);
+  assert.match(dialogSource, /const result = await adapter\.getConnectionStatus\(\{ agentId \}\)/);
   assert.match(dialogSource, /Leave blank to keep the current credential/);
   assert.match(dialogSource, /Disconnect credential/);
   assert.match(dialogSource, /Keep configured models and remove API access/);
