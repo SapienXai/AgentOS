@@ -322,6 +322,23 @@ test("intake JSON and issue output agree when identity is verified but contract 
   assert.match(issue, /NOT CERTIFIED/);
   assert.match(issue, /Static evidence incomplete.*certification blocked/i);
   assert.equal(intake.certification.requiredChecks.some((check) => check.id === "evidence-completion"), true);
+  assert.equal(intake.lifecycle.currentStage, "certification");
+  assert.equal(intake.lifecycle.nonMutating, true);
+  assert.deepEqual(
+    intake.lifecycle.stages.map((stage) => stage.id),
+    [
+      "discovered",
+      "intake",
+      "audit",
+      "certification",
+      "promotion",
+      "intake-certified-closed",
+      "version-policy-updated",
+      "production-pin-consistency"
+    ]
+  );
+  assert.equal(intake.lifecycle.stages.find((stage) => stage.id === "certification")?.status, "blocked");
+  assert.match(issue, /Release-watch lifecycle/);
 });
 
 test("runner returns intake-blocked and writes incomplete evidence for an authoritative contract failure", async () => {

@@ -1,5 +1,31 @@
 export type OpenClawReleaseMode = "scheduled" | "manual";
 
+export const OPENCLAW_RELEASE_LIFECYCLE_STAGE_IDS = [
+  "discovered",
+  "intake",
+  "audit",
+  "certification",
+  "promotion",
+  "intake-certified-closed",
+  "version-policy-updated",
+  "production-pin-consistency"
+] as const;
+
+export type OpenClawReleaseLifecycleStageId = typeof OPENCLAW_RELEASE_LIFECYCLE_STAGE_IDS[number];
+
+export type OpenClawReleaseLifecycleStage = {
+  id: OpenClawReleaseLifecycleStageId;
+  label: string;
+  status: "complete" | "pending" | "blocked";
+  evidence: string[];
+};
+
+export type OpenClawReleaseLifecycle = {
+  currentStage: OpenClawReleaseLifecycleStageId;
+  nonMutating: true;
+  stages: OpenClawReleaseLifecycleStage[];
+};
+
 export type OpenClawReleaseIdentityStatus = "verified" | "incomplete" | "identity-mismatch";
 
 export type OpenClawReleaseManifestStatus = "certified" | "candidate" | "blocked" | "unknown";
@@ -143,6 +169,7 @@ export type OpenClawCompatibilityIntake = {
     exactEntry: boolean;
     reason: string | null;
   };
+  lifecycle: OpenClawReleaseLifecycle;
   impact: OpenClawReleaseImpact;
   certification: {
     status: "not-certified";

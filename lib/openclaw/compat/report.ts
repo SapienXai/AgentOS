@@ -566,8 +566,7 @@ function resolveOverallStatus(input: {
   }
 
   const degradedIssue = input.contracts.find((check) =>
-    check.productIntegration !== "discovery-only" &&
-    check.baseline !== "experimental" &&
+    check.required &&
     check.status !== "ok"
   );
 

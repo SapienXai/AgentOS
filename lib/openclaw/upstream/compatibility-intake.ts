@@ -10,6 +10,7 @@ import type {
   OpenClawCompatibilityIntake,
   OpenClawReleaseContractDiff,
   OpenClawReleaseIdentity,
+  OpenClawReleaseLifecycle,
   OpenClawReleaseMode,
   OpenClawReleaseNotesEvidence
 } from "@/lib/openclaw/upstream/types";
@@ -63,6 +64,10 @@ export function buildOpenClawCompatibilityIntake(input: {
     contractDiff: input.contractDiff,
     releaseNotes: input.releaseNotes,
     manifest: manifestStatus,
+    lifecycle: buildReleaseLifecycle({
+      identity: input.identity,
+      contractDiff: input.contractDiff
+    }),
     impact,
     certification: {
       status: "not-certified" as const,
@@ -83,6 +88,37 @@ export function buildOpenClawCompatibilityIntake(input: {
     .update(stableStringify(fingerprintBase))
     .digest("hex");
   return { ...base, intakeHash };
+}
+
+function buildReleaseLifecycle(input: {
+  identity: OpenClawReleaseIdentity;
+  contractDiff: OpenClawReleaseContractDiff;
+}): OpenClawReleaseLifecycle {
+  const certificationBlocked = input.identity.status !== "verified" ||
+    input.contractDiff.status === "unknown" ||
+    input.contractDiff.evidenceGaps.length > 0;
+
+  return {
+    currentStage: "certification",
+    nonMutating: true,
+    stages: [
+      { id: "discovered", label: "Discovered", status: "complete", evidence: ["Selected from official upstream release discovery."] },
+      { id: "intake", label: "Intake", status: "complete", evidence: ["Structured compatibility intake generated."] },
+      { id: "audit", label: "Audit", status: "complete", evidence: ["Release identity and contract diff evidence captured."] },
+      {
+        id: "certification",
+        label: "Certification",
+        status: certificationBlocked ? "blocked" : "pending",
+        evidence: certificationBlocked
+          ? ["Certification is blocked until identity and contract evidence is complete."]
+          : ["Certification remains an explicit human-reviewed Compatibility Lab decision."]
+      },
+      { id: "promotion", label: "Promotion", status: "pending", evidence: ["No manifest promotion was performed by intake."] },
+      { id: "intake-certified-closed", label: "Intake certified/closed", status: "pending", evidence: ["The intake remains open until certification and promotion are complete."] },
+      { id: "version-policy-updated", label: "Version policy updated", status: "pending", evidence: ["No AgentOS version policy was changed."] },
+      { id: "production-pin-consistency", label: "Production pin consistency", status: "pending", evidence: ["No production or deployment pin was changed or verified by intake."] }
+    ]
+  };
 }
 
 export function renderOpenClawCompatibilityIssue(
@@ -175,6 +211,11 @@ export function renderOpenClawCompatibilityIssueAutoSection(
     `- Affected modules: ${formatValues(intake.impact.affectedAgentOsModules)}`,
     `- Changed domains: ${formatValues(intake.impact.changedDomains)}`,
     ...intake.impact.rationale.map((value) => `- ${sanitizeIssueText(value)}`),
+    "",
+    "## Release-watch lifecycle",
+    `- Current stage: **${intake.lifecycle.currentStage}**`,
+    `- Non-mutating intake: **${intake.lifecycle.nonMutating ? "yes" : "no"}**`,
+    ...intake.lifecycle.stages.map((stage) => `- ${stage.label}: **${stage.status}** — ${stage.evidence.map((value) => sanitizeIssueText(value)).join(" ")}`),
     "",
     "## Release-note signals",
     `- Signals: ${formatValues(intake.releaseNotes.signals)}`,

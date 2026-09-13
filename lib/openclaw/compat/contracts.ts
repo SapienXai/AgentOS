@@ -481,7 +481,7 @@ function resolveContractStatus(input: {
   }
 
   if (input.versionDefaultExpectation) {
-    return "degraded";
+    return "ok";
   }
 
   return input.cliFallbackAvailable ? "degraded" : "unsupported";

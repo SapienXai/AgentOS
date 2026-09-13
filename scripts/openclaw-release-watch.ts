@@ -52,6 +52,8 @@ export type OpenClawReleaseWatchResult = {
     issuePath: string | null;
     issueAction: string;
     intakeHash: string;
+    lifecycleStage: string;
+    lifecycleStatus: string;
   }>;
   message: string;
 };
@@ -139,7 +141,9 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
       contractDiffPath,
       issuePath,
       issueAction,
-      intakeHash: intake.intakeHash
+      intakeHash: intake.intakeHash,
+      lifecycleStage: intake.lifecycle.currentStage,
+      lifecycleStatus: intake.lifecycle.stages.find((stage) => stage.id === intake.lifecycle.currentStage)?.status ?? "unknown"
     });
     if (intake.identity.status !== "verified" || intake.contractDiff.status === "unknown" || intake.contractDiff.evidenceGaps.length > 0) {
       blockedIntakeCount += 1;
@@ -282,7 +286,7 @@ function buildWatcherSummary(input: {
     `- Latest official stable: \`${input.discovery.latestStableVersion ?? "unknown"}\``,
     `- Discovered releases: ${input.discovery.releases.map((release) => `\`${release.version}\``).join(", ") || "none"}`,
     `- Result: ${input.message}`,
-    ...input.intakes.map((intake) => `- ${intake.version}: intake generated; issue action **${intake.issueAction}**; evidence hash \`${intake.intakeHash}\``),
+    ...input.intakes.map((intake) => `- ${intake.version}: lifecycle **${intake.lifecycleStage}/${intake.lifecycleStatus}**; intake generated; issue action **${intake.issueAction}**; evidence hash \`${intake.intakeHash}\``),
     "",
     "The watcher only creates compatibility-review evidence. Certification and version promotion remain human decisions."
   ].join("\n");

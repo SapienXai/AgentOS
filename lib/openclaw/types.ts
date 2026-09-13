@@ -1,4 +1,5 @@
 import type { OpenClawCompatibilityReport } from "@/lib/openclaw/compat/types";
+import type { OpenClawFallbackRegistrySummary } from "@/lib/openclaw/fallback-registry";
 import type { ConfigUpdatePacingSnapshot } from "@/lib/openclaw/config-pacing-types";
 import type { RuntimeIssue } from "@/lib/openclaw/runtime-issues";
 import type {
@@ -401,6 +402,7 @@ export interface OpenClawCapabilityMatrix {
   eventBridge: OpenClawCapabilitySupport;
   operations?: Record<string, OpenClawCapabilityOperation>;
   compatibility?: OpenClawGatewayCompatibilityProfile;
+  fallbackRegistry?: OpenClawFallbackRegistrySummary;
   degradedFeatures?: string[];
   fallbackDiagnostics?: OpenClawGatewayFallbackDiagnosticRecord[];
   fallbackReasons?: string[];

@@ -8,6 +8,7 @@ import {
   isCliGatewayClientForcedByEnv
 } from "@/lib/openclaw/client/gateway-client";
 import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { getOpenClawFallbackRegistrySummary } from "@/lib/openclaw/fallback-registry";
 import {
   OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS,
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
@@ -282,6 +283,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
   const fallbackReasons = fallbackDiagnostics.map(
     (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
   );
+  const fallbackRegistry = getOpenClawFallbackRegistrySummary();
   const degradedFeatures = Object.entries(operations)
     .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled")
     .map(([name, value]) => `${name}: ${value.reason}${value.recovery ? ` Recovery: ${value.recovery}` : ""}`);
@@ -358,6 +360,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled")
         .map(([name]) => name)
     },
+    fallbackRegistry,
     degradedFeatures,
     fallbackDiagnostics,
     fallbackReasons,
