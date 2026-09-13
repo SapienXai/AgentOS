@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.9.4-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-09-13T12:57:15.001Z",
+  "generatedAt": "2026-09-13T13:10:02.187Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "85d7425421040294796484a25678a1d623696d74",
+    "certifiedCodeHead": "eae2e1ba2d71cb379b2a3ea74b7e9f2bc56fcd54",
     "evidenceCommit": "b54d26c8504abe3b26c9bbb763abab673bf30417",
-    "branch": "",
+    "branch": "codex/auto-dev",
     "node": "v24.20.0",
     "openClaw": {
       "version": "2026.9.4",
