@@ -77,7 +77,7 @@ Important semantic changes found in the exact 9.4 source include:
 | Verified backups and native updater recovery/rollback semantics | Migration/lifecycle/security-relevant | Preserve native `update.status`/`update.run`/supervisor authority and project failed-after-rollback honestly. |
 | Service handoff and restart behavior for 9.2/9.3-origin updates | Behavioral/lifecycle-relevant | Validate through disposable native lifecycle evidence; keep AgentOS process control bounded to its existing supervisor boundary. |
 | Provider/model identity, fallback, context, thinking, tool, and vision fixes | Behavioral/AgentOS-relevant | Consume native responses and capabilities; do not create a model or fallback engine. |
-| Conversation history, reconnect, and task history reliability | Behavioral/AgentOS-relevant | Re-certify existing session/task projections; defer a new task-history UI. |
+| Conversation history, reconnect, and task history reliability | Behavioral/AgentOS-relevant | Preserve existing session/task projections; the current checkout integrates native `tasks.history` through the typed client/adapter/application path and task-detail projection, with bounded legacy recovery. |
 | Plugin convergence/catalog and plugin SDK changes | Additive/future-facing | Keep native plugin inventory and install/update semantics; do not build a parallel Plugins workspace. |
 | `OPENCLAW_CONFIG_READONLY=1` | Security/ownership-relevant | Document as an option for externally managed environments; do not enable it globally because AgentOS must preserve native ownership semantics per deployment. |
 | Memory and Gateway responsiveness changes | Behavioral/AgentOS-relevant | Re-certify native availability/error states; do not fabricate readiness or add a polling runtime. |
@@ -175,7 +175,8 @@ production Gateway or real credential was used.
 | Doctor repair mode and exact 9.4 identity | AgentOS adapter/certification alignment required and implemented. |
 | Plugin catalog and unified plugin management | Useful future AgentOS UI exposure; deliberately deferred. Existing native inventory and browser-policy compatibility remain covered. |
 | Prepared cloud sessions/workers and placement details | Useful future workspace/session UX; deliberately deferred. OpenClaw remains authoritative. |
-| `tasks.history`, terminal question URLs, delegated Talk completion | Future adapter/UI opportunities; not productized in a compatibility release. |
+| `tasks.history` | Native additive contract; integrated in the current checkout through the [typed contract](../lib/openclaw/client/types.ts), [adapter](../lib/openclaw/adapter/openclaw-adapter.ts), [application](../lib/openclaw/application/runtime-service.ts), [history projection](../lib/openclaw/domains/task-history.ts), [task detail](../lib/openclaw/domains/task-detail.ts), and [contract tests](../tests/openclaw-task-history.test.ts). Bounded legacy session-history recovery remains explicit for older or degraded runtimes. |
+| Terminal question URLs, delegated Talk completion | Future adapter/UI opportunities; not productized in a compatibility release. |
 | `OPENCLAW_CONFIG_READONLY=1` | Documented for externally managed environments; not enabled globally until deployment ownership semantics are proven. |
 | New upstream product workspace surfaces | Deliberately deferred and irrelevant to this compatibility scope. |
 

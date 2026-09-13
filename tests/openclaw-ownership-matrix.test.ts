@@ -43,6 +43,31 @@ test("ownership matrix keeps the certified target and architecture guard explici
   assert.match(matrix, /No GitHub issue status was changed/);
   assert.match(audit, /openclaw-ownership-matrix\.md/);
 
+  const taskAssignment = readMatrixRow(matrix, "Task assignment");
+  const taskHistory = readMatrixRow(matrix, "Task history");
+  assert.doesNotMatch(matrix, /\| Task assignment and richer task history \|/);
+  assert.equal(taskAssignment[1], "D");
+  assert.match(taskAssignment[2] ?? "", /tasks\.assign/);
+  assert.equal(taskAssignment[4], "unsupported");
+  assert.equal(taskHistory[1], "B");
+  assert.match(taskHistory[2] ?? "", /tasks\.history/);
+  assert.match(taskHistory[3] ?? "", /openclaw-2026\.9\.3-to-2026\.9\.4-contract-diff\.json/);
+  for (const currentPath of [
+    "../lib/openclaw/client/types.ts",
+    "../lib/openclaw/client/native-ws-gateway-client.ts",
+    "../lib/openclaw/adapter/openclaw-adapter.ts",
+    "../lib/openclaw/application/runtime-service.ts",
+    "../lib/openclaw/domains/task-history.ts",
+    "../lib/openclaw/domains/task-detail.ts",
+    "../tests/openclaw-task-history.test.ts"
+  ]) {
+    assert.match(taskHistory[3] ?? "", new RegExp(escapeRegExp(currentPath)));
+  }
+  assert.equal(taskHistory[4], "native + fallback + degraded");
+  assert.match(taskHistory[5] ?? "", /native history authoritative/i);
+  assert.match(audit, /\| `tasks\.history` \| Native additive contract; integrated in the current checkout/);
+  assert.doesNotMatch(audit, /\| `tasks\.history`, terminal question URLs, delegated Talk completion \|/);
+
   for (const row of rows) {
     const cells = row.split("|").slice(1, -1).map((cell) => cell.trim());
     owners.add(cells[1] ?? "");
@@ -63,6 +88,12 @@ test("ownership matrix local links resolve without requiring a live Gateway", as
     await access(resolved);
   }
 });
+
+function readMatrixRow(matrix: string, concern: string) {
+  const row = matrix.split("\n").find((line) => line.startsWith(`| ${concern} |`));
+  assert.ok(row, `${concern} must have a dedicated matrix row`);
+  return row.split("|").slice(1, -1).map((cell) => cell.trim());
+}
 
 async function readText(filePath: string) {
   return readFile(filePath, "utf8");
