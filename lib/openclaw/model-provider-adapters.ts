@@ -15,12 +15,12 @@ import type { ChatGptBrowserAuthSnapshot } from "@/lib/agentos/contracts";
 export type ModelProviderAdapter = {
   id: AddModelsProviderId;
   descriptor: ModelProviderDescriptor;
-  getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
-  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean; authMethod?: ModelProviderAuthMethod }) => Promise<AddModelsProviderActionResult>;
+  getConnectionStatus: (input?: { agentId?: string | null }) => Promise<AddModelsProviderActionResult>;
+  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean; authMethod?: ModelProviderAuthMethod; agentId?: string | null }) => Promise<AddModelsProviderActionResult>;
   updateProvider: (input: { endpoint?: string | null; api?: string }) => Promise<AddModelsProviderActionResult>;
   replaceCredential: (apiKey: string) => Promise<AddModelsProviderActionResult>;
   switchAccount: () => Promise<AddModelsProviderActionResult>;
-  discoverModels: () => Promise<AddModelsProviderActionResult>;
+  discoverModels: (input?: { agentId?: string | null }) => Promise<AddModelsProviderActionResult>;
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
   getDisconnectImpact: () => Promise<AddModelsProviderActionResult>;
   disconnect: () => Promise<AddModelsProviderActionResult>;
@@ -165,10 +165,11 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
   return {
     id: providerId,
     descriptor: getModelProviderDescriptor(providerId),
-    getConnectionStatus: () =>
+    getConnectionStatus: (input) =>
       runProviderAction({
         action: "status",
-        provider: providerId
+        provider: providerId,
+        agentId: input?.agentId?.trim() || undefined
       }),
     connect: (input) =>
       runProviderAction({
@@ -179,7 +180,8 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         apiKey: input?.apiKey?.trim() ? input.apiKey.trim() : undefined,
         endpoint: input?.endpoint?.trim() ? input.endpoint.trim() : undefined,
         modelId: input?.modelId?.trim() ? input.modelId.trim() : undefined,
-        force: input?.force === true ? true : undefined
+        force: input?.force === true ? true : undefined,
+        agentId: input?.agentId?.trim() ? input.agentId.trim() : undefined
       }),
     updateProvider: (input) =>
       runProviderAction({
@@ -199,10 +201,11 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         action: "switch-account",
         provider: providerId
       }),
-    discoverModels: () =>
+    discoverModels: (input) =>
       runProviderAction({
         action: "discover",
-        provider: providerId
+        provider: providerId,
+        agentId: input?.agentId?.trim() || undefined
       }),
     addModels: (modelIds) =>
       runProviderAction({

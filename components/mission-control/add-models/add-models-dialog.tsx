@@ -123,6 +123,7 @@ export function AddModelsDialog({
   onOpenChange,
   snapshot,
   initialProvider = null,
+  agentId = null,
   onBack,
   onConnectChatGPT,
   onSwitchChatGptAccount,
@@ -134,6 +135,7 @@ export function AddModelsDialog({
   onOpenChange: (open: boolean) => void;
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
+  agentId?: string | null;
   onBack?: () => void;
   onConnectChatGPT?: (force?: boolean) => void;
   onSwitchChatGptAccount?: () => void;
@@ -708,7 +710,7 @@ export function AddModelsDialog({
     });
 
     try {
-      const result = await adapter.getConnectionStatus();
+      const result = await adapter.getConnectionStatus({ agentId });
       applyActionResult(providerId, result, result.emptyState ? "discovery-empty" : "idle");
 
       if (result.snapshot) {
@@ -761,7 +763,8 @@ export function AddModelsDialog({
         providerName: options?.providerName,
         modelId: options?.modelId,
         authMethod: options?.authMethod,
-        force: options?.force
+        force: options?.force,
+        agentId
       });
 
       applyActionResult(
@@ -871,7 +874,7 @@ export function AddModelsDialog({
     });
 
     try {
-      const result = await adapter.discoverModels();
+      const result = await adapter.discoverModels({ agentId });
       applyActionResult(
         providerId,
         result,
@@ -904,7 +907,7 @@ export function AddModelsDialog({
     const adapter = getModelProviderAdapter(providerId);
 
     try {
-      const result = await adapter.getConnectionStatus();
+      const result = await adapter.getConnectionStatus({ agentId });
       const providerConfig = result.providerConfig ??
         resolveDraft(providerDrafts[providerId]).providerConfig;
 

@@ -4195,6 +4195,7 @@ export function MissionControlShell({
         onOpenChange={handleAddModelsDialogOpenChange}
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
+        agentId={returnToAgentModelId ?? selectedAgent?.id ?? null}
         onConnectChatGPT={handleChatGptConnection}
         onSwitchChatGptAccount={handleChatGptAccountSwitch}
         onSnapshotChange={setSnapshot}
@@ -5355,12 +5356,13 @@ export function MissionControlShell({
           }}
         />
 
-        <AddModelsDialog
-          open={isAddModelsDialogOpen}
-          onOpenChange={handleAddModelsDialogOpenChange}
-          snapshot={snapshot}
-          initialProvider={initialAddModelsProvider}
-          onConnectChatGPT={handleChatGptConnection}
+      <AddModelsDialog
+        open={isAddModelsDialogOpen}
+        onOpenChange={handleAddModelsDialogOpenChange}
+        snapshot={snapshot}
+        initialProvider={initialAddModelsProvider}
+        agentId={returnToAgentModelId ?? selectedAgent?.id ?? null}
+        onConnectChatGPT={handleChatGptConnection}
           onSwitchChatGptAccount={handleChatGptAccountSwitch}
           onSnapshotChange={setSnapshot}
           onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}

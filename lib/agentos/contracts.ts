@@ -65,6 +65,7 @@ export type ChatGptBrowserAuthState =
 
 export type ChatGptBrowserAuthSnapshot = {
   sessionId: string;
+  agentId: string;
   state: ChatGptBrowserAuthState;
   browserUrl: string | null;
   message: string;

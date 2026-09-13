@@ -121,7 +121,8 @@ const requestSchema = z.discriminatedUnion("action", [
     endpoint: optionalInputString,
     modelId: optionalInputString,
     authMethod: z.enum(["api-key", "chatgpt-oauth"]).optional(),
-    force: z.boolean().optional()
+    force: z.boolean().optional(),
+    agentId: optionalInputString
   }),
   z.object({
     action: z.literal("update-provider"),
@@ -141,11 +142,13 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("switch-account"),
-    provider: explicitProviderIdSchema
+    provider: explicitProviderIdSchema,
+    agentId: optionalInputString
   }),
   z.object({
     action: z.literal("discover"),
-    provider: explicitProviderIdSchema
+    provider: explicitProviderIdSchema,
+    agentId: optionalInputString
   }),
   z.object({
     action: z.literal("add-models"),
@@ -593,7 +596,7 @@ async function handleProviderAction(
     }
 
     if (input.provider === "openai" && input.authMethod === "chatgpt-oauth") {
-      const statusContext = await readProviderConnectionContext(input.provider);
+      const statusContext = await readProviderConnectionContext(input.provider, { agentId: input.agentId });
 
       if (
         statusContext.connection.connected &&
@@ -614,10 +617,11 @@ async function handleProviderAction(
       try {
         const authResult = await connectOpenClawChatGptProvider({
           force: input.force === true,
+          agentId: input.agentId,
           signal
         });
         clearModelProviderCaches();
-        const refreshedStatus = await readProviderConnectionContext(input.provider, { refreshAuth: true });
+        const refreshedStatus = await readProviderConnectionContext(input.provider, { refreshAuth: true, agentId: input.agentId });
         let models: AddModelsCatalogModel[] = [];
         let discovery: AddModelsProviderActionResult["discovery"] = {
           status: "not-requested",
@@ -629,7 +633,7 @@ async function handleProviderAction(
           models = await readProviderCatalog(
             input.provider,
             refreshedStatus.configuredModelIds,
-            { refresh: true }
+            { refresh: true, agentId: input.agentId }
           );
           discovery = {
             status: models.length > 0 ? "ready" : "empty",
@@ -736,7 +740,7 @@ async function handleProviderAction(
 
     clearModelProviderCaches();
     const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
-    const statusContext = await readProviderConnectionContext(input.provider);
+    const statusContext = await readProviderConnectionContext(input.provider, { agentId: input.agentId });
     const connectedLabel =
       input.provider === "openai" && input.endpoint
         ? "custom OpenAI-compatible endpoint"
@@ -745,7 +749,8 @@ async function handleProviderAction(
     let models: AddModelsCatalogModel[] = [];
     try {
       models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, {
-        preferScan: input.provider === "openai" && Boolean(input.endpoint)
+        preferScan: input.provider === "openai" && Boolean(input.endpoint),
+        agentId: input.agentId
       });
     } catch (error) {
       return buildActionResult({
@@ -784,7 +789,7 @@ async function handleProviderAction(
   }
 
   if (input.action === "switch-account") {
-    const statusContext = await readProviderConnectionContext(input.provider);
+    const statusContext = await readProviderConnectionContext(input.provider, { agentId: input.agentId });
 
     if (input.provider !== "openai") {
       return buildActionResult({
@@ -812,12 +817,13 @@ async function handleProviderAction(
     }
 
     try {
-      await connectOpenClawChatGptProvider({ force: true, signal });
+      await connectOpenClawChatGptProvider({ force: true, agentId: input.agentId, signal });
       clearModelProviderCaches();
-      const refreshedStatus = await readProviderConnectionContext(input.provider);
+      const refreshedStatus = await readProviderConnectionContext(input.provider, { refreshAuth: true, agentId: input.agentId });
       const models = await readProviderCatalog(
         input.provider,
-        refreshedStatus.configuredModelIds
+        refreshedStatus.configuredModelIds,
+        { agentId: input.agentId, refresh: true }
       ).catch(() => []);
       const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
 
@@ -857,10 +863,10 @@ async function handleProviderAction(
 
   if (input.action === "discover") {
     if (!isBuiltInAddModelsProviderId(input.provider)) {
-      return discoverExplicitProviderModels(input.provider);
+      return discoverExplicitProviderModels(input.provider, input.agentId);
     }
 
-    return discoverProviderModels(input.provider);
+    return discoverProviderModels(input.provider, input.agentId);
   }
 
   if (input.action === "set-default") {
@@ -1015,9 +1021,10 @@ async function connectExplicitProvider(
 }
 
 async function discoverExplicitProviderModels(
-  provider: AddModelsProviderId
+  provider: AddModelsProviderId,
+  agentId?: string | null
 ): Promise<AddModelsProviderActionResult> {
-  const statusContext = await readProviderConnectionContext(provider);
+  const statusContext = await readProviderConnectionContext(provider, { agentId });
   const models = await readExplicitProviderCatalog(provider, statusContext.configuredModelIds);
 
   return buildActionResult({
@@ -1208,18 +1215,20 @@ async function removeProviderModel(
 }
 
 async function discoverProviderModels(
-  provider: AddModelsProviderId
+  provider: AddModelsProviderId,
+  agentId?: string | null
 ): Promise<AddModelsProviderActionResult> {
   if (provider === "ollama") {
     await ensureOpenClawOllamaLocalCredential();
   }
 
-  const { connection, ollamaState, configuredModelIds } = await readProviderConnectionContext(provider);
+  const { connection, ollamaState, configuredModelIds } = await readProviderConnectionContext(provider, { agentId });
   const isCustomOpenAiEndpoint = provider === "openai" && isCustomOpenAiEndpointConnection(connection);
   let models: AddModelsCatalogModel[];
   try {
     models = await readProviderCatalog(provider, configuredModelIds, {
-      preferScan: isCustomOpenAiEndpoint
+      preferScan: isCustomOpenAiEndpoint,
+      agentId
     });
     if (isCustomOpenAiEndpoint) {
       models = models.filter((model) => !model.alreadyAdded);

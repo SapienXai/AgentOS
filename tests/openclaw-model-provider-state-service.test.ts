@@ -326,6 +326,79 @@ test("agent-scoped ChatGPT OAuth refresh uses the selected OpenClaw agent", asyn
   assert.equal(buildModelStatusConnectionStatus("openai", status, [])?.connected, true);
 });
 
+test("provider status carries the selected agent through auth refresh and model discovery", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return null;
+    },
+    async call<TPayload>(method: string, params: Record<string, unknown>) {
+      calls.push({ method, params });
+      return {
+        providers: [{
+          provider: "openai",
+          status: "ok",
+          profiles: [{
+            profileId: "openai:workspace-user@example.com",
+            type: "oauth",
+            status: "ok"
+          }]
+        }]
+      } as TPayload;
+    },
+    async listModels(input: { agentId?: string; all?: boolean; provider?: string; refresh?: boolean }) {
+      calls.push({ method: "models.list", params: input });
+      return {
+        models: [{
+          key: "openai/gpt-5.6-luna",
+          name: "GPT-5.6 Luna",
+          input: "text",
+          contextWindow: null,
+          local: false,
+          available: true,
+          missing: false,
+          tags: []
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const response = await modelsProviderPost(
+    new Request("http://agentos.test/api/models/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "status",
+        provider: "openai",
+        refreshAuth: true,
+        discover: true,
+        agentId: "workspace-primary-operator"
+      })
+    })
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.connection.connected, true);
+  assert.equal(payload.discovery.status, "ready");
+  assert.deepEqual(calls.slice(0, 2), [
+    {
+      method: "models.authStatus",
+      params: { refresh: true, agentId: "workspace-primary-operator" }
+    },
+    {
+      method: "models.list",
+      params: {
+        all: true,
+        provider: "openai",
+        agentId: "workspace-primary-operator",
+        refresh: true
+      }
+    }
+  ]);
+  assert.equal(payload.models[0].id, "openai/gpt-5.6-luna");
+});
+
 test("agent-scoped model readiness ignores a stale global snapshot", async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
 

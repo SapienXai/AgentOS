@@ -54,6 +54,7 @@ export class ChatGptBrowserAuthError extends Error {
     message: string,
     readonly code:
       | "chatgpt-auth-unsupported"
+      | "chatgpt-auth-session-conflict"
       | "chatgpt-auth-session-not-found"
       | "chatgpt-auth-session-complete"
       | "chatgpt-auth-redirect-invalid"
@@ -100,8 +101,17 @@ async function startBrowserAuthSession(
     !["completed", "error"].includes(session.state)
   );
 
+  const agentId = await resolveChatGptAuthAgentId(dependencies, input.agentId);
+
   if (activeSession && input.force !== true && !activeSession.abortController.signal.aborted) {
-    return toChatGptBrowserAuthSnapshot(activeSession);
+    if (activeSession.agentId === agentId) {
+      return toChatGptBrowserAuthSnapshot(activeSession);
+    }
+
+    throw new ChatGptBrowserAuthError(
+      `ChatGPT sign-in is already active for OpenClaw agent "${activeSession.agentId}". Finish or cancel that flow, or retry with force to switch ownership to "${agentId}".`,
+      "chatgpt-auth-session-conflict"
+    );
   }
 
   if (activeSession) {
@@ -114,6 +124,7 @@ async function startBrowserAuthSession(
 
   const session: ChatGptBrowserAuthSession = {
     sessionId: randomUUID(),
+    agentId,
     state: "preparing",
     browserUrl: null,
     message: "Preparing secure ChatGPT sign-in...",
@@ -124,7 +135,7 @@ async function startBrowserAuthSession(
   };
 
   chatGptAuthSessions.set(session.sessionId, session);
-  session.completion = runBrowserAuthSession(session, input.force === true, input.agentId, dependencies);
+  session.completion = runBrowserAuthSession(session, input.force === true, dependencies);
   void session.completion;
   scheduleChatGptAuthSessionCleanup(session.sessionId);
 
@@ -173,7 +184,7 @@ export function submitOpenClawChatGptBrowserAuth(input: {
   return toChatGptBrowserAuthSnapshot(session);
 }
 
-export function cancelOpenClawChatGptBrowserAuth(sessionId: string) {
+export async function cancelOpenClawChatGptBrowserAuth(sessionId: string) {
   const session = chatGptAuthSessions.get(sessionId);
 
   if (!session) {
@@ -181,13 +192,15 @@ export function cancelOpenClawChatGptBrowserAuth(sessionId: string) {
   }
 
   session.abortController.abort();
-  void session.completion.finally(() => chatGptAuthSessions.delete(sessionId));
+  await session.completion.catch(() => {});
+  if (chatGptAuthSessions.get(sessionId) === session) {
+    chatGptAuthSessions.delete(sessionId);
+  }
 }
 
 async function runBrowserAuthSession(
   session: ChatGptBrowserAuthSession,
   force: boolean,
-  requestedAgentId: string | undefined,
   dependencies: ChatGptProviderAuthDependencies
 ) {
   try {
@@ -195,10 +208,9 @@ async function runBrowserAuthSession(
     session.abortController.signal.throwIfAborted();
     session.state = "waiting-for-browser";
     session.message = "Open the ChatGPT sign-in page in the new browser tab.";
-    const agentId = await resolveChatGptAuthAgentId(dependencies, requestedAgentId);
 
     await dependencies.runInteractiveLogin({
-      agentId,
+      agentId: session.agentId,
       force,
       signal: session.abortController.signal,
       onChild: (child) => {
@@ -248,6 +260,7 @@ export async function prepareChatGptProviderAuth(dependencies: ChatGptProviderAu
 function toChatGptBrowserAuthSnapshot(session: ChatGptBrowserAuthSession): ChatGptBrowserAuthSnapshot {
   return {
     sessionId: session.sessionId,
+    agentId: session.agentId,
     state: session.state,
     browserUrl: session.browserUrl,
     message: session.message,
@@ -366,8 +379,10 @@ async function resolveChatGptAuthAgentId(
   requestedAgentId?: string
 ) {
   const requested = requestedAgentId?.trim() || undefined;
-  const resolved = await dependencies.resolveAuthAgentId?.(requested);
-  const agentId = resolved?.trim() || requested;
+  const resolved = dependencies.resolveAuthAgentId
+    ? await dependencies.resolveAuthAgentId(requested)
+    : requested;
+  const agentId = resolved?.trim();
 
   if (!agentId) {
     throw new Error("OpenClaw ChatGPT sign-in requires an explicit agent owner.");
@@ -405,12 +420,17 @@ async function resolveOpenClawChatGptAuthAgentId(requestedAgentId?: string) {
     // Continue with the native agent inventory when the authored default is unavailable.
   }
 
-  if (configuredAgentId) {
-    return configuredAgentId;
-  }
-
   const agents = await getOpenClawAdapter().listAgents({ timeoutMs: 5_000 });
   const eligibleAgents = agents.agents.filter((agent) => agent.kind !== "system");
+
+  if (configuredAgentId) {
+    if (eligibleAgents.some((agent) => agent.id === configuredAgentId)) {
+      return configuredAgentId;
+    }
+
+    throw new Error(`OpenClaw configured ChatGPT auth agent "${configuredAgentId}" is not available.`);
+  }
+
   const advertisedDefaultId = [agents.defaultId, agents.mainKey]
     .map((value) => value?.trim())
     .find((value) => value && eligibleAgents.some((agent) => agent.id === value));

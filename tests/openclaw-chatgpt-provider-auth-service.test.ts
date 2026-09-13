@@ -9,6 +9,7 @@ import {
   extractOpenAiAuthorizationUrl,
   getOpenClawChatGptBrowserAuth,
   prepareChatGptProviderAuth,
+  submitOpenClawChatGptBrowserAuth,
   startOpenClawChatGptBrowserAuth
 } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
 
@@ -218,6 +219,7 @@ test("ChatGPT browser auth progresses from preparation to redirect wait and comp
   assert.equal(started.state, "preparing");
   await delay(0);
   const waiting = getOpenClawChatGptBrowserAuth(started.sessionId);
+  assert.equal(waiting.agentId, "test-agent");
   assert.equal(waiting.state, "waiting-for-redirect");
   assert.equal(waiting.browserUrl, authorizationUrl);
 
@@ -284,6 +286,153 @@ test("explicit ChatGPT retry aborts the previous session before starting another
   assert.notEqual(first.sessionId, second.sessionId);
   assert.equal(loginCount, 2);
   firstLogin.release?.();
+  await cancelOpenClawChatGptBrowserAuth(second.sessionId);
+});
+
+test("different-agent ChatGPT auth starts fail with an explicit ownership conflict", async () => {
+  let release: (() => void) | undefined;
+  const dependencies = {
+    platform: "darwin" as const,
+    readPluginReady: async () => true,
+    runSetupCommand: async () => {},
+    resolveAuthAgentId: async (requestedAgentId?: string) => requestedAgentId,
+    runInteractiveLogin: async ({ signal }: { signal?: AbortSignal }) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+    }
+  };
+
+  const first = await startOpenClawChatGptBrowserAuth({ agentId: "agent-a" }, dependencies);
+  await delay(0);
+
+  await assert.rejects(
+    () => startOpenClawChatGptBrowserAuth({ agentId: "agent-b" }, dependencies),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "chatgpt-auth-session-conflict");
+      assert.match(String(error), /agent-a/);
+      assert.match(String(error), /agent-b/);
+      return true;
+    }
+  );
+  assert.equal(getOpenClawChatGptBrowserAuth(first.sessionId).agentId, "agent-a");
+
+  release?.();
+  await cancelOpenClawChatGptBrowserAuth(first.sessionId);
+});
+
+test("forced ChatGPT auth switch cancels the previous agent-owned session deterministically", async () => {
+  const firstLogin = { aborted: false };
+  let loginCount = 0;
+  const dependencies = {
+    platform: "darwin" as const,
+    readPluginReady: async () => true,
+    runSetupCommand: async () => {},
+    resolveAuthAgentId: async (requestedAgentId?: string) => requestedAgentId,
+    runInteractiveLogin: async ({ signal }: { signal?: AbortSignal }) => {
+      loginCount += 1;
+      if (loginCount === 1) {
+        await new Promise<void>((resolve) => {
+          signal?.addEventListener("abort", () => {
+            firstLogin.aborted = true;
+            resolve();
+          }, { once: true });
+        });
+      }
+    }
+  };
+
+  const first = await startOpenClawChatGptBrowserAuth({ agentId: "agent-a" }, dependencies);
+  await delay(0);
+  const second = await startOpenClawChatGptBrowserAuth({ force: true, agentId: "agent-b" }, dependencies);
+  await delay(0);
+
+  assert.equal(firstLogin.aborted, true);
+  assert.equal(loginCount, 2);
+  assert.equal(getOpenClawChatGptBrowserAuth(second.sessionId).agentId, "agent-b");
+  await cancelOpenClawChatGptBrowserAuth(second.sessionId);
+});
+
+test("ChatGPT cancellation waits for the interactive child boundary to finish", async () => {
+  let releaseChild: (() => void) | undefined;
+  let abortObserved = false;
+  const dependencies = {
+    platform: "darwin" as const,
+    readPluginReady: async () => true,
+    runSetupCommand: async () => {},
+    resolveAuthAgentId: async (requestedAgentId?: string) => requestedAgentId,
+    runInteractiveLogin: async ({ signal }: { signal?: AbortSignal }) => {
+      await new Promise<void>((resolve) => {
+        releaseChild = resolve;
+        signal?.addEventListener("abort", () => {
+          abortObserved = true;
+          setTimeout(resolve, 20);
+        }, { once: true });
+      });
+    }
+  };
+
+  const started = await startOpenClawChatGptBrowserAuth({ agentId: "agent-a" }, dependencies);
+  await delay(0);
+  let cancelled = false;
+  const cancellation = cancelOpenClawChatGptBrowserAuth(started.sessionId).then(() => {
+    cancelled = true;
+  });
+
+  await delay(0);
+  assert.equal(abortObserved, true);
+  assert.equal(cancelled, false);
+  releaseChild?.();
+  await cancellation;
+  assert.equal(cancelled, true);
+  assert.throws(
+    () => getOpenClawChatGptBrowserAuth(started.sessionId),
+    (error: unknown) => (error as { code?: string }).code === "chatgpt-auth-session-not-found"
+  );
+});
+
+test("completed ChatGPT auth sessions reject stale redirect input", async () => {
+  const authorizationUrl = "https://auth.openai.com/oauth/authorize?client_id=complete&state=state-123";
+  const started = await startOpenClawChatGptBrowserAuth(
+    { agentId: "agent-a" },
+    {
+      platform: "darwin",
+      readPluginReady: async () => true,
+      runSetupCommand: async () => {},
+      runInteractiveLogin: async ({ onBrowserUrl }) => {
+        onBrowserUrl?.(authorizationUrl);
+      }
+    }
+  );
+
+  await delay(0);
+  assert.throws(
+    () => submitOpenClawChatGptBrowserAuth({
+      sessionId: started.sessionId,
+      redirectUrl: "http://127.0.0.1:1455/auth/callback?code=stale&state=stale"
+    }),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "chatgpt-auth-session-complete");
+      return true;
+    }
+  );
+});
+
+test("invalid ChatGPT agent ownership fails closed before a session is created", async () => {
+  await assert.rejects(
+    () => startOpenClawChatGptBrowserAuth(
+      { agentId: "missing-agent" },
+      {
+        platform: "darwin",
+        readPluginReady: async () => true,
+        runSetupCommand: async () => {},
+        resolveAuthAgentId: async () => null,
+        runInteractiveLogin: async () => {}
+      }
+    ),
+    /explicit agent owner/
+  );
 });
 
 test("concurrent starts share one child and cancellation waits for child completion", async () => {

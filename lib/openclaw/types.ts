@@ -1990,6 +1990,7 @@ export type AddModelsProviderActionRequest =
       endpoint?: string;
       modelId?: string;
       force?: boolean;
+      agentId?: string;
     }
   | {
       action: "update-provider";
@@ -2005,10 +2006,12 @@ export type AddModelsProviderActionRequest =
   | {
       action: "switch-account";
       provider: AddModelsProviderId;
+      agentId?: string;
     }
   | {
       action: "discover";
       provider: AddModelsProviderId;
+      agentId?: string;
     }
   | {
       action: "add-models";
