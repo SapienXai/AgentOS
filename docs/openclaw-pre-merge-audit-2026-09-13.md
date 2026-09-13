@@ -233,3 +233,11 @@ It must contain:
 The artifact is generated after implementation and validation, then committed
 separately so it cannot honestly certify its own not-yet-existing commit.
 
+The reproducible final-certification invocation supplies three exact package
+roots: `OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE` for the npm OpenClaw package,
+`OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE` for
+`@openclaw/gateway-client`, and
+`OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE` for
+`@openclaw/gateway-protocol`. The separately published packages are not
+inferred from OpenClaw's dependency list because the npm OpenClaw package does
+not declare them as runtime dependencies.

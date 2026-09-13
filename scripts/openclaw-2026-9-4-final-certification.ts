@@ -26,6 +26,8 @@ const TARGET_VERSION = "2026.9.4";
 const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
 const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
 const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE?.trim();
+const GATEWAY_CLIENT_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE?.trim();
+const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE?.trim();
 const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
 const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
 const FINAL_CERTIFICATION_FILENAME = getOpenClawFinalCertificationFilename(TARGET_VERSION);
@@ -113,11 +115,17 @@ async function main() {
   const failures: string[] = [];
   const artifacts: Record<string, JsonRecord> = {};
   const matrix: Record<string, Record<string, unknown>> = {};
-  const packageIdentity = PACKAGE_INPUT ? await readPackageIdentity(path.resolve(PACKAGE_INPUT)).catch((error) => {
+  const packageIdentity = PACKAGE_INPUT && GATEWAY_CLIENT_PACKAGE_INPUT && GATEWAY_PROTOCOL_PACKAGE_INPUT ? await readPackageIdentity(
+    path.resolve(PACKAGE_INPUT),
+    path.resolve(GATEWAY_CLIENT_PACKAGE_INPUT),
+    path.resolve(GATEWAY_PROTOCOL_PACKAGE_INPUT)
+  ).catch((error) => {
     failures.push(`cannot inspect exact OpenClaw package: ${safeError(error)}`);
     return null;
   }) : null;
   if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE is not set");
+  if (!GATEWAY_CLIENT_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE is not set");
+  if (!GATEWAY_PROTOCOL_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE is not set");
   if (OPENCLAW_RECOMMENDED_VERSION !== TARGET_VERSION || OPENCLAW_NATIVE_CONTRACT_VERSION !== TARGET_VERSION || OPENCLAW_IDENTITY_CONTRACT_VERSION !== TARGET_VERSION) {
     failures.push("AgentOS recommended, native, and identity contracts are not promoted to 2026.9.4");
   }
@@ -455,8 +463,33 @@ function readString(value: unknown): string | null { return typeof value === "st
 function isGitCommit(value: string | null | undefined): value is string { return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim()); }
 function resolveRepositoryCommit(value: string | null | undefined, repositoryPath = process.cwd()): string | null { if (!isGitCommit(value)) return null; const candidate = value.trim().toLowerCase(); try { const resolved = execFileSync("git", ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().toLowerCase(); return isGitCommit(resolved) && resolved === candidate ? resolved : null; } catch { return null; } }
 function isSha256(value: string): boolean { return /^[0-9a-f]{64}$/i.test(value); }
-async function readPackageIdentity(packageRoot: string) { const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord; const hash = createHash("sha256"); for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(relativePath); hash.update(await readFile(path.join(packageRoot, relativePath))); } const dependencies = { ...asRecord(packageJson.dependencies), ...asRecord(packageJson.optionalDependencies) }; return { version: String(packageJson.version ?? ""), sourceCommit: String(buildInfo.commit ?? ""), buildId: String(buildInfo.buildId ?? ""), packageHash: hash.digest("hex"), gatewayClientVersion: readDependencyVersion(dependencies, "@openclaw/gateway-client"), gatewayProtocolVersion: readDependencyVersion(dependencies, "@openclaw/gateway-protocol"), stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0), agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0) }; }
-function readDependencyVersion(dependencies: JsonRecord, packageName: string) { const version = readString(dependencies[packageName]); return version?.replace(/^[~^<>= ]+/, "") || null; }
+export async function readPackageIdentity(packageRoot: string, gatewayClientPackageRoot: string, gatewayProtocolPackageRoot: string) {
+  const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord;
+  const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord;
+  const hash = createHash("sha256");
+  for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) {
+    hash.update(relativePath);
+    hash.update(await readFile(path.join(packageRoot, relativePath)));
+  }
+  return {
+    version: String(packageJson.version ?? ""),
+    sourceCommit: String(buildInfo.commit ?? ""),
+    buildId: String(buildInfo.buildId ?? ""),
+    packageHash: hash.digest("hex"),
+    gatewayClientVersion: await readExactPackageVersion(gatewayClientPackageRoot, "@openclaw/gateway-client"),
+    gatewayProtocolVersion: await readExactPackageVersion(gatewayProtocolPackageRoot, "@openclaw/gateway-protocol"),
+    stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0),
+    agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0)
+  };
+}
+async function readExactPackageVersion(packageRoot: string, expectedName: string) {
+  const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord;
+  const actualName = readString(packageJson.name);
+  if (actualName !== expectedName) throw new Error(`${expectedName} package root contains ${actualName ?? "an unnamed package"}.`);
+  const version = readString(packageJson.version);
+  if (!version) throw new Error(`${expectedName} package root has no version.`);
+  return version;
+}
 async function gitOutput(args: string[]) { const { execFile } = await import("node:child_process"); return await new Promise<string>((resolve) => execFile("git", args, { cwd: process.cwd(), encoding: "utf8" }, (_error, stdout) => resolve(stdout.trim()))); }
 function safeError(error: unknown) { return error instanceof Error ? error.message : String(error); }
 

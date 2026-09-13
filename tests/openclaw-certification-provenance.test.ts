@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
+import os from "node:os";
+import path from "node:path";
 
 import {
   buildOpenClawFinalCertificationReport,
+  readPackageIdentity,
   type OpenClawExactPackageIdentity
 } from "@/scripts/openclaw-2026-9-4-final-certification";
 
@@ -140,6 +144,69 @@ test("final certification rejects an unresolved exact OpenClaw source identity",
   assert.equal(report.success, false);
   assert.match(report.failures.join("\n"), /source identity/i);
 });
+
+test("final certification reads separately published Gateway package identities", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-"));
+  try {
+    const openClawRoot = path.join(fixtureRoot, "openclaw");
+    const clientRoot = path.join(fixtureRoot, "gateway-client");
+    const protocolRoot = path.join(fixtureRoot, "gateway-protocol");
+    await writeOpenClawFixture(openClawRoot);
+    await writePackageFixture(clientRoot, "@openclaw/gateway-client");
+    await writePackageFixture(protocolRoot, "@openclaw/gateway-protocol");
+
+    const identity = await readPackageIdentity(openClawRoot, clientRoot, protocolRoot);
+    assert.equal(identity.version, "2026.9.4");
+    assert.equal(identity.gatewayClientVersion, "2026.9.4");
+    assert.equal(identity.gatewayProtocolVersion, "2026.9.4");
+    assert.equal(identity.stateSchema, 17);
+    assert.equal(identity.agentSchema, 19);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("final certification rejects missing or mismatched separate Gateway packages", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-"));
+  try {
+    const openClawRoot = path.join(fixtureRoot, "openclaw");
+    const clientRoot = path.join(fixtureRoot, "gateway-client");
+    const protocolRoot = path.join(fixtureRoot, "gateway-protocol");
+    await writeOpenClawFixture(openClawRoot);
+    await writePackageFixture(clientRoot, "@openclaw/gateway-client");
+    await writePackageFixture(protocolRoot, "@openclaw/wrong-package");
+
+    await assert.rejects(
+      readPackageIdentity(openClawRoot, clientRoot, protocolRoot),
+      /@openclaw\/gateway-protocol package root contains @openclaw\/wrong-package/
+    );
+    await assert.rejects(
+      readPackageIdentity(openClawRoot, clientRoot, path.join(fixtureRoot, "missing")),
+      /ENOENT/
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+async function writeOpenClawFixture(root: string) {
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), JSON.stringify({
+    name: "openclaw",
+    version: "2026.9.4",
+    openclaw: { schemaVersions: { state: 17, agent: 19 } }
+  }));
+  await writeFile(path.join(root, "openclaw.mjs"), "export {};\n");
+  await writeFile(path.join(root, "dist", "build-info.json"), JSON.stringify({
+    commit: "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z"
+  }));
+}
+
+async function writePackageFixture(root: string, name: string) {
+  await mkdir(root, { recursive: true });
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name, version: "2026.9.4" }));
+}
 
 function gitCommit(ref: string) {
   return execFileSync("git", ["rev-parse", ref], { encoding: "utf8" }).trim();
