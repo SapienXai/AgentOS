@@ -16,6 +16,10 @@ does not remove older supported installations. The Railway deployment remains
 explicitly pinned to OpenClaw 2026.9.3 because this task was local-only and did
 not authorize production infrastructure mutation.
 
+For the cross-cutting ownership boundary and deferred gaps, see the [AgentOS / OpenClaw ownership matrix](openclaw-ownership-matrix.md). The matrix indexes
+this audit and current checkout code; it does not replace the dated
+certification evidence below.
+
 ## Exact upstream identity
 
 The audit compares the exact annotated release tags `v2026.9.3` and
@@ -205,4 +209,3 @@ The local 9.4 result certifies the AgentOS code and exact disposable runtime.
 It does not certify a live third-party provider, channel login, hosted
 deployment, or production rollout. Those require separate authorization and
 environment-specific validation.
-
