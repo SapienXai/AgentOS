@@ -205,12 +205,11 @@ not promotable. The fresh
 `docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` now has the
 matching `artifactType` and `phase`, a complete passing test assessment, exact
 OpenClaw identity, and separate `certifiedCodeHead` and `evidenceCommit`
-bindings that resolve to commits in the checked-out AgentOS repository. It
-certifies code head `3c172a99fb54433a97814e1bb2747dc0644c4ab3` using evidence
-commit `b54d26c8504abe3b26c9bbb763abab673bf30417`; the artifact was committed
-separately, without overwriting historical artifacts. The exact upstream source
-identity remains bound to the verified 2026.9.4 release commit rather than being
-treated as an AgentOS repository commit.
+bindings that resolve to commits in the checked-out AgentOS repository. The
+machine-readable artifact records the exact certified code head and evidence
+commit; it was committed separately, without overwriting historical artifacts.
+The exact upstream source identity remains bound to the verified 2026.9.4
+release commit rather than being treated as an AgentOS repository commit.
 
 ## New 9.4 capability disposition
 
