@@ -1,5 +1,6 @@
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import type { OpenClawToolCatalogEntry } from "@/lib/openclaw/tool-catalog";
+import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 
 export type CapabilityCatalogSkillEntry = {
   name: string;
@@ -18,7 +19,8 @@ export type CapabilityCatalogResponse = {
   generatedAt: string;
   skills: CapabilityCatalogSkillEntry[];
   tools: CapabilityCatalogToolEntry[];
-  toolSource?: "openclaw-gateway" | "static-fallback";
+  toolSource: "openclaw-gateway" | "static-fallback";
+  pluginCatalog: PluginCatalogProjection;
 };
 
 export type CapabilityKind = "skills" | "tools";

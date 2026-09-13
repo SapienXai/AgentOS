@@ -16,7 +16,7 @@ import {
 } from "@/lib/openclaw/domains/plugin-catalog";
 
 const entry = {
-  id: "official.calendar",
+  id: "official_calendar",
   catalog: {
     name: "Calendar automation",
     packageName: "@openclaw/calendar",
@@ -97,6 +97,8 @@ test("catalog service uses only the native Gateway surface and projects relevanc
   const result = await getOpenClawPluginCatalog({
     query: "calendar",
     pageSize: 999,
+    pluginId: "official_calendar",
+    version: "1.2.0",
     context: { workspaceName: "Calendar workspace" }
   }, {}, {
     canProbeNativeGateway: () => true,
@@ -126,8 +128,16 @@ test("catalog service uses only the native Gateway surface and projects relevanc
   assert.equal(result.items[0]?.local.state, "enabled");
   assert.equal(result.items[0]?.relevance.state, "relevant");
   assert.equal(result.nextCursor, "cursor");
-  assert.deepEqual(calls.map((call) => call.method).sort(), ["plugins.catalog.browse", "plugins.catalog.categories"]);
-  assert.equal(calls.find((call) => call.method === "plugins.catalog.browse")?.params.pageSize, 100);
+  assert.deepEqual(calls.map((call) => call.method).sort(), ["plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"]);
+  assert.deepEqual(calls.find((call) => call.method === "plugins.catalog.browse")?.params, {
+    query: "calendar",
+    pageSize: 100
+  });
+  assert.deepEqual(calls.find((call) => call.method === "plugins.catalog.get")?.params, {
+    id: "official_calendar",
+    version: "1.2.0"
+  });
+  assert.equal(calls.some((call) => "context" in call.params), false);
 });
 
 test("catalog service exposes unsupported and authorization-denied states without fallback", async () => {
@@ -145,6 +155,23 @@ test("catalog service exposes unsupported and authorization-denied states withou
   });
   assert.equal(denied.state, "denied");
   assert.ok(denied.failures.every((failure) => failure.state === "denied"));
+});
+
+test("malformed native catalog payloads fail honestly and redact native errors", async () => {
+  assert.throws(
+    () => normalizePluginCatalogBrowsePayload({ items: [{ id: "not-enough-data" }] }),
+    /plugins\.catalog\.browse: OpenClaw Gateway returned a malformed response/
+  );
+
+  const failed = await getOpenClawPluginCatalog({}, {}, {
+    canProbeNativeGateway: () => true,
+    probeNativeGateway: async <TPayload>(): Promise<TPayload> => {
+      throw new OpenClawGatewayClientError("Gateway token=secret-value malformed payload", "malformed-response");
+    }
+  });
+  assert.equal(failed.state, "failed");
+  assert.match(failed.failures[0]?.message ?? "", /token=\[redacted\]/);
+  assert.doesNotMatch(failed.failures[0]?.message ?? "", /secret-value/);
 });
 
 test("plugin catalog compatibility is optional, native-only, and operator.read scoped", async () => {

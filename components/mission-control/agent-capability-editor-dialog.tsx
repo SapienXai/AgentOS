@@ -6,7 +6,7 @@ import { LoaderCircle, Puzzle, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import { AgentCapabilityEditorColumn } from "@/components/mission-control/agent-capability-editor-column";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import {
@@ -32,6 +32,7 @@ import {
 } from "@/lib/openclaw/capability-editor";
 import { OPENCLAW_BUILTIN_TOOL_CATALOG, OPENCLAW_TOOL_GROUP_CATALOG } from "@/lib/openclaw/tool-catalog";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import { cn } from "@/lib/utils";
 
 type CapabilityThemeStyle = CSSProperties & Record<`--cap-${string}`, string>;
@@ -95,6 +96,7 @@ export function AgentCapabilityEditorDialog({
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalogResponse | null>(null);
   const [capabilityCatalogError, setCapabilityCatalogError] = useState<string | null>(null);
   const [capabilityCatalogLoading, setCapabilityCatalogLoading] = useState(false);
+  const [pluginDetailLoading, setPluginDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skillInput, setSkillInput] = useState("");
@@ -159,14 +161,19 @@ export function AgentCapabilityEditorDialog({
   }, [agentId, open]);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !agent) {
       return;
     }
 
     const controller = new AbortController();
     setCapabilityCatalogLoading(true);
+    setCapabilityCatalogError(null);
+    const query = new URLSearchParams({ agentId: agent.id });
+    if (workspace?.id) {
+      query.set("workspaceId", workspace.id);
+    }
 
-    fetch("/api/openclaw/capabilities", { signal: controller.signal })
+    fetch(`/api/openclaw/capabilities?${query.toString()}`, { signal: controller.signal })
       .then(async (response) => {
         const payload = (await response.json()) as CapabilityCatalogResponse & { error?: string };
 
@@ -192,7 +199,7 @@ export function AgentCapabilityEditorDialog({
       });
 
     return () => controller.abort();
-  }, [open]);
+  }, [agent, open, workspace?.id]);
 
   const skillOptions = useMemo(
     () =>
@@ -312,6 +319,29 @@ export function AgentCapabilityEditorDialog({
   if (!agent) {
     return null;
   }
+
+  const inspectPlugin = async (pluginId: string) => {
+    setPluginDetailLoading(true);
+    try {
+      const query = new URLSearchParams({ agentId: agent.id, pluginId });
+      if (workspace?.id) {
+        query.set("workspaceId", workspace.id);
+      }
+
+      const response = await fetch(`/api/openclaw/capabilities?${query.toString()}`);
+      const payload = (await response.json()) as CapabilityCatalogResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to inspect the OpenClaw plugin.");
+      }
+
+      setCapabilityCatalog(payload);
+      setCapabilityCatalogError(null);
+    } catch (err) {
+      setCapabilityCatalogError(err instanceof Error ? err.message : "Unable to inspect the OpenClaw plugin.");
+    } finally {
+      setPluginDetailLoading(false);
+    }
+  };
 
   const baselineSkills = isSkillsEditor ? effectiveSkills : declaredSkills;
   const baselineTools = isToolsEditor ? effectiveTools : declaredTools;
@@ -471,6 +501,14 @@ export function AgentCapabilityEditorDialog({
                     : "Click × on a current tool to remove it."
                 }
               />
+
+              <PluginCatalogPanel
+                catalog={capabilityCatalog?.pluginCatalog ?? null}
+                loading={capabilityCatalogLoading}
+                detailLoading={pluginDetailLoading}
+                error={capabilityCatalogError}
+                onInspect={inspectPlugin}
+              />
             </div>
 
             {error ? (
@@ -507,4 +545,225 @@ export function AgentCapabilityEditorDialog({
       </Dialog>
     </>
   );
+}
+
+function PluginCatalogPanel({
+  catalog,
+  loading,
+  detailLoading,
+  error,
+  onInspect
+}: {
+  catalog: PluginCatalogProjection | null;
+  loading: boolean;
+  detailLoading: boolean;
+  error: string | null;
+  onInspect: (pluginId: string) => void;
+}) {
+  if (!catalog && !loading && !error) {
+    return null;
+  }
+
+  const visibleItems = catalog?.items.slice(0, 8) ?? [];
+
+  return (
+    <section
+      aria-labelledby="native-plugin-catalog-heading"
+      className="mt-5 space-y-3 rounded-[14px] border border-[var(--cap-border)] bg-[var(--cap-panel)] p-3"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 id="native-plugin-catalog-heading" className="font-display text-[13px] font-semibold text-[var(--cap-text-strong)]">
+            Native OpenClaw plugin catalog
+          </h2>
+          <p className="mt-1 text-[11px] leading-5 text-[var(--cap-text-muted)]">
+            Read-only discovery from OpenClaw. Plugin installation and lifecycle changes stay with OpenClaw.
+          </p>
+        </div>
+        {catalog ? (
+          <Badge variant={getPluginCatalogStateVariant(catalog.state)} className="shrink-0">
+            {getPluginCatalogStateLabel(catalog.state)}
+          </Badge>
+        ) : null}
+      </div>
+
+      {loading && !catalog ? (
+        <p className="rounded-[10px] border border-[var(--cap-border-subtle)] bg-[var(--cap-panel-strong)] px-3 py-2 text-[11px] text-[var(--cap-text-muted)]" role="status" aria-live="polite">
+          Loading the native OpenClaw plugin catalog…
+        </p>
+      ) : null}
+
+      {error && !catalog ? (
+        <div className="rounded-[10px] border border-rose-300/25 bg-rose-400/[0.06] px-3 py-2 text-[11px] leading-5 text-[var(--cap-text-muted)]" role="alert">
+          <p className="font-medium text-[var(--cap-text-strong)]">Plugin catalog unavailable.</p>
+          <p className="mt-1">{error}</p>
+          <p className="mt-1">Retry the dialog to request the native OpenClaw catalog again.</p>
+        </div>
+      ) : null}
+
+      {catalog ? (
+        <div className="space-y-3" aria-live="polite">
+          <p className="text-[11px] leading-5 text-[var(--cap-text-muted)]">
+            {catalog.context
+              ? "Relevance is evaluated against the selected workspace and agent context."
+              : "Relevance is unknown because no valid workspace-agent context was available."}
+          </p>
+
+          {catalog.failures.length > 0 || catalog.remoteError ? (
+            <div className="rounded-[10px] border border-amber-300/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] leading-5 text-[var(--cap-text-muted)]" role="status">
+              <p className="font-medium text-[var(--cap-text-strong)]">Some native catalog data needs attention.</p>
+              {catalog.remoteError ? <p className="mt-1">OpenClaw remote catalog: {catalog.remoteError}</p> : null}
+              {catalog.failures.slice(0, 3).map((failure) => (
+                <p key={`${failure.operation}:${failure.state}`} className="mt-1">
+                  {failure.operation}: {failure.message} {failure.recovery}
+                </p>
+              ))}
+            </div>
+          ) : null}
+
+          {visibleItems.length > 0 ? (
+            <div className="space-y-2">
+              {visibleItems.map((entry) => (
+                <PluginCatalogItem
+                  key={entry.id}
+                  entry={entry}
+                  detailLoading={detailLoading}
+                  onInspect={onInspect}
+                />
+              ))}
+              {catalog.items.length > visibleItems.length || catalog.nextCursor ? (
+                <p className="text-[10px] leading-4 text-[var(--cap-text-subtle)]">
+                  Showing {visibleItems.length} of {catalog.items.length} native entries. More results remain behind OpenClaw&apos;s opaque pagination cursor.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-[10px] border border-[var(--cap-border-subtle)] bg-[var(--cap-panel-strong)] px-3 py-2 text-[11px] text-[var(--cap-text-muted)]">
+              {catalog.state === "ready" ? "OpenClaw returned no plugins for this catalog query." : "OpenClaw did not return plugin entries."}
+            </p>
+          )}
+
+          {catalog.detail ? (
+            <div className="rounded-[10px] border border-[var(--cap-border-subtle)] bg-[var(--cap-panel-strong)] px-3 py-2 text-[11px] leading-5 text-[var(--cap-text-muted)]">
+              <p className="font-medium text-[var(--cap-text-strong)]">Inspected plugin: {catalog.detail.plugin.catalog.name}</p>
+              <p className="mt-1 break-words">OpenClaw ID: {catalog.detail.plugin.id} · Origin: {catalog.detail.detail.origin}</p>
+              {catalog.detail.detail.packageName ? <p className="break-words">Package: {catalog.detail.detail.packageName}</p> : null}
+              {catalog.detail.detail.topics.length > 0 ? <p>Topics: {catalog.detail.detail.topics.slice(0, 6).join(" · ")}</p> : null}
+              <p className="mt-1">Configuration values are not displayed here; OpenClaw remains the configuration authority.</p>
+            </div>
+          ) : null}
+
+          {catalog.detailError ? (
+            <p className="text-[11px] leading-5 text-[var(--cap-text-muted)]" role="status">
+              Plugin detail unavailable: {catalog.detailError.message} {catalog.detailError.recovery}
+            </p>
+          ) : null}
+
+          {detailLoading ? <p className="text-[11px] text-[var(--cap-text-muted)]" role="status">Inspecting the native plugin detail…</p> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PluginCatalogItem({
+  entry,
+  detailLoading,
+  onInspect
+}: {
+  entry: PluginCatalogProjection["items"][number];
+  detailLoading: boolean;
+  onInspect: (pluginId: string) => void;
+}) {
+  const relevanceLabel = entry.relevance.state === "relevant"
+    ? "Relevant to current context"
+    : "Relevance unknown";
+  const localStateLabel = entry.local.action === "unavailable"
+    ? "Unavailable"
+    : formatPluginLocalState(entry.local.state);
+
+  return (
+    <article className="rounded-[11px] border border-[var(--cap-border-subtle)] bg-[var(--cap-panel-strong)] p-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-words text-[12px] font-medium text-[var(--cap-text-strong)]">{entry.catalog.name}</p>
+          <p className="mt-1 break-all text-[10px] text-[var(--cap-text-subtle)]">OpenClaw ID: {entry.id}</p>
+          {entry.catalog.packageName ? <p className="break-all text-[10px] text-[var(--cap-text-subtle)]">Package: {entry.catalog.packageName}</p> : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <Badge
+            variant={entry.local.action === "unavailable" ? "muted" : formatPluginLocalStateVariant(entry.local.state)}
+          >
+            {localStateLabel}
+          </Badge>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[10px] text-[var(--cap-accent)] hover:bg-[var(--cap-accent-soft)] hover:text-[var(--cap-text-strong)]"
+            onClick={() => onInspect(entry.id)}
+            disabled={detailLoading}
+            aria-label={`Inspect ${entry.catalog.name} in OpenClaw`}
+          >
+            Inspect
+          </Button>
+        </div>
+      </div>
+
+      {entry.catalog.summary ? <p className="mt-2 text-[11px] leading-5 text-[var(--cap-text-muted)]">{entry.catalog.summary}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {entry.catalog.categories.slice(0, 3).map((category) => <Badge key={category} variant="muted">{category}</Badge>)}
+        {entry.catalog.official ? <Badge variant="default">OpenClaw official</Badge> : null}
+      </div>
+      <div className="mt-2 text-[11px] leading-5 text-[var(--cap-text-muted)]">
+        <p><span className="text-[var(--cap-text-subtle)]">Relevance:</span> {relevanceLabel}</p>
+        {entry.relevance.evidence.length > 0 ? (
+          <details className="mt-1">
+            <summary className="cursor-pointer font-medium text-[var(--cap-accent)]">Why this plugin</summary>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {entry.relevance.evidence.slice(0, 3).map((evidence) => <li key={evidence}>{evidence}</li>)}
+            </ul>
+          </details>
+        ) : null}
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-[var(--cap-text-subtle)]">
+        {entry.local.action === "manage"
+          ? "OpenClaw reports this plugin locally; manage its lifecycle through OpenClaw."
+          : entry.local.action === "install"
+            ? "OpenClaw reports this plugin as installable; AgentOS does not start installation here."
+            : "OpenClaw has not exposed a lifecycle action for this plugin."}
+      </p>
+    </article>
+  );
+}
+
+function getPluginCatalogStateLabel(state: PluginCatalogProjection["state"]) {
+  if (state === "ready") return "Native ready";
+  if (state === "degraded") return "Degraded";
+  if (state === "denied") return "Access denied";
+  if (state === "unsupported") return "Unsupported";
+  if (state === "failed") return "Failed";
+  return "Unknown";
+}
+
+function getPluginCatalogStateVariant(state: PluginCatalogProjection["state"]): BadgeProps["variant"] {
+  if (state === "ready") return "success";
+  if (state === "degraded") return "warning";
+  if (state === "denied" || state === "failed") return "danger";
+  return "muted";
+}
+
+function formatPluginLocalState(state: PluginCatalogProjection["items"][number]["local"]["state"]) {
+  if (state === "enabled") return "Installed · enabled";
+  if (state === "disabled") return "Installed · disabled";
+  if (state === "needs-setup") return "Needs setup";
+  if (state === "error") return "Unavailable";
+  return "Not installed";
+}
+
+function formatPluginLocalStateVariant(state: PluginCatalogProjection["items"][number]["local"]["state"]): BadgeProps["variant"] {
+  if (state === "enabled") return "success";
+  if (state === "needs-setup") return "warning";
+  if (state === "error") return "danger";
+  return "muted";
 }

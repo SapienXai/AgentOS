@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   getOpenClawPluginCatalog,
   listOpenClawPlugins,
@@ -9,7 +10,12 @@ import {
   normalizeOpenClawToolsCatalog,
   type OpenClawCapabilityToolEntry
 } from "@/lib/openclaw/application/catalog-service";
-import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
+import {
+  createPluginCatalogContext,
+  type PluginCatalogContext,
+  type PluginCatalogProjection
+} from "@/lib/openclaw/domains/plugin-catalog";
+import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
 import {
   OPENCLAW_BUILTIN_TOOL_CATALOG,
   OPENCLAW_TOOL_GROUP_CATALOG
@@ -19,11 +25,13 @@ import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-
 
 const pluginCatalogQuerySchema = z.object({
   query: z.string().trim().max(200).optional(),
-  category: z.string().trim().min(1).max(64).optional(),
+  category: z.string().trim().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/).optional(),
   intent: z.enum(["all", "bundled", "trending", "official", "featured"]).optional(),
   cursor: z.string().trim().max(4096).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
-  pluginId: z.string().trim().min(1).max(512).optional(),
+  pluginId: z.string().trim().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  workspaceId: z.string().trim().min(1).max(512).optional(),
+  agentId: z.string().trim().min(1).max(512).optional(),
   version: z.string().trim().min(1).max(128).optional()
 });
 
@@ -53,11 +61,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid native plugin catalog query." }, { status: 400 });
   }
 
+  const { workspaceId, agentId, ...catalogQuery } = parsedQuery.data;
+  const context = await resolveServerPluginCatalogContext(workspaceId, agentId);
   const [skillResult, pluginResult, toolCatalogResult, pluginCatalogResult] = await Promise.allSettled([
     listOpenClawSkills({ eligible: true, timeoutMs: 15_000 }),
     listOpenClawPlugins({ timeoutMs: 15_000 }),
     listOpenClawTools({ includePlugins: true }, { timeoutMs: 15_000 }),
-    getOpenClawPluginCatalog(parsedQuery.data, { timeoutMs: 15_000 })
+    getOpenClawPluginCatalog({ ...catalogQuery, context }, { timeoutMs: 15_000 })
   ]);
 
   const skills =
@@ -140,6 +150,39 @@ export async function GET(request: Request) {
   });
 }
 
+export function resolvePluginCatalogContext(
+  snapshot: Pick<ControlPlaneSnapshot, "workspaces" | "agents">,
+  workspaceId?: string,
+  agentId?: string
+): PluginCatalogContext | null {
+  const normalizedWorkspaceId = normalizeIdentifier(workspaceId, 512);
+  const normalizedAgentId = normalizeIdentifier(agentId, 512);
+  if (!normalizedWorkspaceId || !normalizedAgentId) {
+    return null;
+  }
+
+  const workspace = snapshot.workspaces.find((entry) => entry.id === normalizedWorkspaceId);
+  const agent = snapshot.agents.find((entry) => entry.id === normalizedAgentId);
+  if (!workspace || !agent || agent.workspaceId !== workspace.id || !workspace.agentIds.includes(agent.id)) {
+    return null;
+  }
+
+  return createPluginCatalogContext(workspace, agent);
+}
+
+async function resolveServerPluginCatalogContext(workspaceId?: string, agentId?: string) {
+  if (!workspaceId || !agentId) {
+    return null;
+  }
+
+  try {
+    const snapshot = await getMissionControlSnapshot();
+    return resolvePluginCatalogContext(snapshot, workspaceId, agentId);
+  } catch {
+    return null;
+  }
+}
+
 function normalizeDescription(value: string | undefined) {
   if (typeof value !== "string") {
     return null;
@@ -147,6 +190,11 @@ function normalizeDescription(value: string | undefined) {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeIdentifier(value: string | undefined, maxLength: number) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized.length > 0 ? normalized.slice(0, maxLength) : null;
 }
 
 function sortCatalogEntries(left: OpenClawCapabilityToolEntry, right: OpenClawCapabilityToolEntry) {

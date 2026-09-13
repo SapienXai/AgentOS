@@ -5,6 +5,8 @@ import { normalizeOpenClawToolsCatalog } from "@/lib/openclaw/application/catalo
 import { normalizeDeclaredAgentSkills } from "@/lib/openclaw/domains/agent-config";
 import { updateSnapshotAgentCapabilities } from "@/lib/openclaw/capability-editor";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 test("declared agent skills preserve dynamic workspace skill ids", () => {
   assert.deepEqual(
@@ -99,4 +101,19 @@ test("capability optimistic update preserves policy locked workspace file tool",
   assert.deepEqual(worker?.tools, ["read", "edit", "fs.workspaceOnly"]);
   assert.deepEqual(workspace?.capabilities.tools, ["read", "edit", "fs.workspaceOnly", "message"]);
   assert.equal(workspace?.capabilities.workspaceOnlyAgentCount, 1);
+});
+
+test("Add Capability requests server context and keeps native plugin lifecycle read-only", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "components/mission-control/agent-capability-editor-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(source, /new URLSearchParams\(\{ agentId: agent\.id \}\)/);
+  assert.match(source, /query\.set\("workspaceId", workspace\.id\)/);
+  assert.match(source, /Native OpenClaw plugin catalog/);
+  assert.match(source, /OpenClaw ID:/);
+  assert.match(source, /Relevant to current context/);
+  assert.match(source, /Why this plugin/);
+  assert.match(source, /AgentOS does not start installation here/);
 });
