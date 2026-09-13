@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -10,8 +11,6 @@ import {
   buildOpenClawVersionRoles,
   getOpenClawFinalCertificationArtifactType,
   getOpenClawFinalCertificationFilename,
-  isOpenClawGitCommit,
-  resolveOpenClawRepositoryCommit,
   type OpenClawVersionRoles
 } from "@/lib/openclaw/versions";
 import {
@@ -135,7 +134,7 @@ async function main() {
   }
   if (!EVIDENCE_COMMIT_INPUT) {
     failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT is required for final evidence provenance");
-  } else if (!resolveOpenClawRepositoryCommit(EVIDENCE_COMMIT_INPUT)) {
+  } else if (!resolveRepositoryCommit(EVIDENCE_COMMIT_INPUT)) {
     failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must resolve to a Git commit in the repository");
   }
 
@@ -159,12 +158,12 @@ async function main() {
 
   const deploymentPin = await readRepositoryDeploymentPin();
   const certifiedCodeHead = await gitOutput(["rev-parse", "HEAD"]);
-  if (!resolveOpenClawRepositoryCommit(certifiedCodeHead)) failures.push("The certified code HEAD does not resolve to a Git commit in the repository");
+  if (!resolveRepositoryCommit(certifiedCodeHead)) failures.push("The certified code HEAD does not resolve to a Git commit in the repository");
   if (EVIDENCE_COMMIT_INPUT && EVIDENCE_COMMIT_INPUT.toLowerCase() === certifiedCodeHead.toLowerCase()) failures.push("Certified code and evidence commits must be distinct bindings");
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: new Date().toISOString(),
     certifiedCodeHead,
-    evidenceCommit: EVIDENCE_COMMIT_INPUT && resolveOpenClawRepositoryCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
+    evidenceCommit: EVIDENCE_COMMIT_INPUT && resolveRepositoryCommit(EVIDENCE_COMMIT_INPUT) ? EVIDENCE_COMMIT_INPUT : null,
     branch: await gitOutput(["branch", "--show-current"]),
     packageIdentity,
     artifacts,
@@ -201,7 +200,7 @@ export function buildOpenClawFinalCertificationReport(input: {
   const expectedAuthorizationDenialCount = statuses.filter((value) => value === "EXPECTED-DENIAL" || value === "EXPECTED_DENIAL").length;
   const exactSourceIdentity = Boolean(
     input.packageIdentity &&
-    isOpenClawGitCommit(input.packageIdentity.sourceCommit) &&
+    isGitCommit(input.packageIdentity.sourceCommit) &&
     input.packageIdentity.sourceCommit === TARGET_COMMIT
   );
   const exactPackageMatchesTarget = Boolean(
@@ -217,8 +216,8 @@ export function buildOpenClawFinalCertificationReport(input: {
   );
   const migrationProvenance = readMigrationProvenance(input.artifacts.migration);
   const runtimeProvenance = readRuntimeProvenance(input.artifacts.runtime);
-  const resolvedCertifiedCodeHead = resolveOpenClawRepositoryCommit(input.certifiedCodeHead, input.repositoryPath);
-  const resolvedEvidenceCommit = resolveOpenClawRepositoryCommit(input.evidenceCommit, input.repositoryPath);
+  const resolvedCertifiedCodeHead = resolveRepositoryCommit(input.certifiedCodeHead, input.repositoryPath);
+  const resolvedEvidenceCommit = resolveRepositoryCommit(input.evidenceCommit, input.repositoryPath);
   const validCommitBinding = Boolean(
     resolvedCertifiedCodeHead &&
     resolvedEvidenceCommit &&
@@ -453,6 +452,8 @@ function collectStatusValues(value: unknown): string[] { if (Array.isArray(value
 function collectStrings(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStrings); if (typeof value === "string") return [value]; if (!value || typeof value !== "object") return []; return Object.values(value as JsonRecord).flatMap(collectStrings); }
 function asRecord(value: unknown): JsonRecord { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {}; }
 function readString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
+function isGitCommit(value: string | null | undefined): value is string { return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim()); }
+function resolveRepositoryCommit(value: string | null | undefined, repositoryPath = process.cwd()): string | null { if (!isGitCommit(value)) return null; const candidate = value.trim().toLowerCase(); try { const resolved = execFileSync("git", ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().toLowerCase(); return isGitCommit(resolved) && resolved === candidate ? resolved : null; } catch { return null; } }
 function isSha256(value: string): boolean { return /^[0-9a-f]{64}$/i.test(value); }
 async function readPackageIdentity(packageRoot: string) { const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord; const hash = createHash("sha256"); for (const relativePath of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(relativePath); hash.update(await readFile(path.join(packageRoot, relativePath))); } const dependencies = { ...asRecord(packageJson.dependencies), ...asRecord(packageJson.optionalDependencies) }; return { version: String(packageJson.version ?? ""), sourceCommit: String(buildInfo.commit ?? ""), buildId: String(buildInfo.buildId ?? ""), packageHash: hash.digest("hex"), gatewayClientVersion: readDependencyVersion(dependencies, "@openclaw/gateway-client"), gatewayProtocolVersion: readDependencyVersion(dependencies, "@openclaw/gateway-protocol"), stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0), agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0) }; }
 function readDependencyVersion(dependencies: JsonRecord, packageName: string) { const version = readString(dependencies[packageName]); return version?.replace(/^[~^<>= ]+/, "") || null; }

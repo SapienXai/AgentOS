@@ -1,4 +1,4 @@
-import { execFile as execFileCallback } from "node:child_process";
+import { execFile as execFileCallback, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -13,9 +13,7 @@ import {
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION,
   getOpenClawFinalCertificationArtifactType,
-  getOpenClawFinalCertificationFilename,
-  isOpenClawGitCommit,
-  resolveOpenClawRepositoryCommit
+  getOpenClawFinalCertificationFilename
 } from "@/lib/openclaw/versions";
 import { buildOpenClawCompatibilityIntake, renderOpenClawCompatibilityIssue } from "@/lib/openclaw/upstream/compatibility-intake";
 import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
@@ -445,15 +443,15 @@ function validateCertifiedEvidenceRecord(value: unknown, version: string, reposi
   const stateSchema = readNumber(openClaw?.stateSchema);
   const agentSchema = readNumber(openClaw?.agentSchema);
   const sourceCommit = readString(openClaw?.sourceCommit);
-  if (!openClaw || openClaw.version !== version || !sourceCommit || !isOpenClawGitCommit(sourceCommit) || !readString(openClaw.buildId) || !isSha256(readString(openClaw.packageHash) ?? "") || openClaw.gatewayClientVersion !== version || openClaw.gatewayProtocolVersion !== version || stateSchema === null || stateSchema < 1 || agentSchema === null || agentSchema < 1) {
+  if (!openClaw || openClaw.version !== version || !sourceCommit || !isGitCommit(sourceCommit) || !readString(openClaw.buildId) || !isSha256(readString(openClaw.packageHash) ?? "") || openClaw.gatewayClientVersion !== version || openClaw.gatewayProtocolVersion !== version || stateSchema === null || stateSchema < 1 || agentSchema === null || agentSchema < 1) {
     return "Certified evidence does not contain the exact OpenClaw package identity.";
   }
   const certifiedCodeHead = readString(provenance?.certifiedCodeHead);
   const evidenceCommit = readString(provenance?.evidenceCommit);
-  if (!resolveOpenClawRepositoryCommit(certifiedCodeHead, repositoryPath)) {
+  if (!resolveRepositoryCommit(certifiedCodeHead, repositoryPath)) {
     return "Certified evidence certifiedCodeHead must resolve to a Git commit in the repository.";
   }
-  if (!resolveOpenClawRepositoryCommit(evidenceCommit, repositoryPath)) {
+  if (!resolveRepositoryCommit(evidenceCommit, repositoryPath)) {
     return "Certified evidence evidenceCommit must resolve to a Git commit in the repository.";
   }
   if (certifiedCodeHead?.toLowerCase() === evidenceCommit?.toLowerCase()) return "Certified code and evidence commits must be distinct bindings.";
@@ -499,6 +497,25 @@ function readString(value: unknown): string | null {
 
 function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isGitCommit(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim());
+}
+
+function resolveRepositoryCommit(value: string | null | undefined, repositoryPath = process.cwd()): string | null {
+  if (!isGitCommit(value)) return null;
+  const candidate = value.trim().toLowerCase();
+  try {
+    const resolved = execFileSync(
+      "git",
+      ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    ).trim().toLowerCase();
+    return isGitCommit(resolved) && resolved === candidate ? resolved : null;
+  } catch {
+    return null;
+  }
 }
 
 function isSha256(value: string) {
