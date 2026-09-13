@@ -460,6 +460,8 @@ function validateCertifiedEvidenceRecord(value: unknown, version: string, reposi
 
 async function findHistoricalCertificationPath(evidenceRoot: string, version: string) {
   for (const filename of [
+    `openclaw-${version}-phase-1-release-contract-alignment-historical.json`,
+    `openclaw-${version}-agentos-seven-phase-final-certification.json`,
     `openclaw-${version}-phase-1-final-certification.json`,
     `openclaw-${version}-final-certification.json`
   ]) {

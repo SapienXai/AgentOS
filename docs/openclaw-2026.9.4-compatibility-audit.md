@@ -1,8 +1,8 @@
 # AgentOS OpenClaw 2026.9.4 Compatibility Audit
 
-Certification date: 2026-09-12  
-Status: locally certified compatibility target; no publish, deploy, tag, or
-production infrastructure change was performed.
+Certification date: 2026-09-13
+Status: repository re-audit and local exact-runtime evidence; no publish, deploy,
+tag, or production infrastructure change was performed.
 
 ## Executive result
 
@@ -37,8 +37,8 @@ The audit compares the exact annotated release tags `v2026.9.3` and
 | Node engine | `>=24.16.0 <25 \|\| >=26.1.0` | `>=24.16.0 <25 \|\| >=26.1.0` |
 
 The exact target package identity was read from `dist/build-info.json` and
-the package metadata. The target OpenClaw package hash used by the runtime
-evidence is:
+the package metadata. The target OpenClaw package hash recorded by the
+historical disposable runtime evidence is:
 
 `2863452d8d2c2d302c3462af3f90e41b401708efdcbbbf81d723e73dd8ac67cf`
 
@@ -121,6 +121,16 @@ Gateway-first architecture:
   read-only and cannot be combined with `--fix`.
 - Added exact-source contract audit, disposable 9.3 → 9.4 migration,
   final-certification aggregation, and semantic regression tests.
+- Added an operator-selected native environment profile flow: AgentOS reads the
+  bounded OpenClaw environment inventory, keeps preparation opt-in, and
+  projects `environments.prepare` results without creating a profile registry.
+- Added a workspace-aware, read-only `Add Capability` projection over the native
+  `plugins.catalog.browse/categories/get` methods. It passes only bounded
+  workspace/agent context, explains relevance, and leaves installation/setup to
+  OpenClaw.
+- Added explicit compatibility epistemic states and fallback activation
+  diagnostics so version expectations, advertised methods, live observations,
+  denials, and CLI recovery are not collapsed into one status.
 - Updated active compatibility documentation and prepared the canonical
   published package at version 0.7.9. The private root package remains 0.1.0
   as required by the existing release architecture.
@@ -182,7 +192,7 @@ Evidence: [`openclaw-2026.9.3-to-2026.9.4-migration.json`](evidence/openclaw-202
 | Doctor diagnostics, repair, idempotency | PASS | [Doctor](evidence/openclaw-2026.9.4-doctor-update-recovery.json), [hardening](evidence/openclaw-2026.9.4-doctor-update-recovery-hardening.json) | 9.4 repair/reporting mode distinction verified. |
 | Native updater/recovery representation | PASS | [official runtime](evidence/openclaw-2026.9.4-final-official-runtime-certification.json), [hardening](evidence/openclaw-2026.9.4-doctor-update-recovery-hardening.json) | Rollback/recovery remains OpenClaw-owned; failed-after-rollback is not success. |
 | Native work and project/session ownership | PASS | [native work](evidence/openclaw-2026.9.4-native-work-hardening.json) | OpenClaw owns worktrees, placement, task and collaboration state. |
-| Historical final aggregation | HISTORICAL | [preserved evidence](evidence/openclaw-2026.9.4-final-certification.json) | Preserved for audit history; its legacy identity is not promotable as current pre-merge final evidence. |
+| Historical final aggregation | HISTORICAL | [main-era evidence](evidence/openclaw-2026.9.4-final-certification.json), [phase-1 evidence](evidence/openclaw-2026.9.4-phase-1-release-contract-alignment-historical.json) | Preserved for audit history; neither legacy artifact is promotable as current pre-merge final evidence. |
 | Pre-merge final promotion gate | PENDING | `openclaw-2026.9.4-pre-merge-final-certification.json` | Requires the complete schema-2 pre-merge artifact with passing tests and separate code/evidence commit bindings. |
 
 The final aggregation contains 92 explicit optional `SKIPPED` observations and
@@ -190,8 +200,8 @@ The final aggregation contains 92 explicit optional `SKIPPED` observations and
 are not converted into passes; no required gate is environment-limited, and no
 production Gateway or real credential was used.
 
-The pre-existing final-certification JSON remains historical and is not
-promotable. A fresh run of `openclaw:final-certification-9-4` writes
+The pre-existing final-certification JSON artifacts remain historical and are
+not promotable. A fresh run of `openclaw:final-certification-9-4` writes
 `docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` with the
 matching `artifactType` and `phase`, complete passing test assessment, exact
 OpenClaw identity, and separate `certifiedCodeHead` and `evidenceCommit`
@@ -206,8 +216,8 @@ AgentOS repository commit.
 | --- | --- |
 | Protocol/client additive changes, reconnect/history/provider fixes, native updater/recovery | Automatically inherited where existing AgentOS projections consume native facts; independently recertified. |
 | Doctor repair mode and exact 9.4 identity | AgentOS adapter/certification alignment required and implemented. |
-| Plugin catalog and unified plugin management | Useful future AgentOS UI exposure; deliberately deferred. Existing native inventory and browser-policy compatibility remain covered. |
-| Prepared cloud sessions/workers and placement details | Useful future workspace/session UX; deliberately deferred. OpenClaw remains authoritative. |
+| Plugin catalog and unified plugin management | The read-only AgentOS `Add Capability` projection is implemented over native browse/categories/detail methods with bounded workspace/agent relevance context. Installation, mutation, and provider economics remain OpenClaw-owned and are not invented here. |
+| Prepared cloud sessions/workers and placement details | Native environment inventory, bounded profile selection, and opt-in preparation are exposed in workspace creation. OpenClaw remains authoritative for profile identity, provisioning, placement, and lifecycle. |
 | `tasks.history` | Native additive contract; integrated in the current checkout through the [typed contract](../lib/openclaw/client/types.ts), [adapter](../lib/openclaw/adapter/openclaw-adapter.ts), [application](../lib/openclaw/application/runtime-service.ts), [history projection](../lib/openclaw/domains/task-history.ts), [task detail](../lib/openclaw/domains/task-detail.ts), and [contract tests](../tests/openclaw-task-history.test.ts). Bounded legacy session-history recovery remains explicit for older or degraded runtimes. |
 | Terminal question URLs, delegated Talk completion | Future adapter/UI opportunities; not productized in a compatibility release. |
 | `OPENCLAW_CONFIG_READONLY=1` | Documented for externally managed environments; not enabled globally until deployment ownership semantics are proven. |
@@ -238,7 +248,7 @@ redacted evidence, no real credentials, and explicit cleanup checks.
 - Official client/protocol: `2026.9.4` / `2026.9.4`.
 - Repository deployment pin: OpenClaw 2026.9.4 in `Dockerfile.railway`.
 - Production deployment: intentionally unverified; live Railway was not inspected.
-- New product UI/features: intentionally not added.
+- Product exposure: native environment preparation and workspace-aware Add Capability are implemented; no parallel runtime, plugin installation backend, or production deployment claim was added.
 
 The local 9.4 result certifies the AgentOS code and exact disposable runtime.
 It does not certify a live third-party provider, channel login, hosted

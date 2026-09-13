@@ -743,7 +743,7 @@ test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fal
         : frame.method === "plugins.catalog.browse"
           ? {
               items: [{
-                id: "official.calendar",
+                id: "official_calendar",
                 catalog: { name: "Calendar", official: true, categories: [] },
                 local: {
                   present: true,
@@ -759,7 +759,7 @@ test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fal
             ? { categories: [{ slug: "productivity", label: "Productivity", description: "Tools", icon: "calendar", order: 1 }] }
             : {
                 plugin: {
-                  id: "official.calendar",
+                  id: "official_calendar",
                   catalog: { name: "Calendar", official: true, categories: [] },
                   local: {
                     present: true,
@@ -790,7 +790,7 @@ test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fal
 
   const browse = await client.browsePluginCatalog({ query: "calendar", category: "productivity", pageSize: 1 });
   const categories = await client.listPluginCatalogCategories();
-  const detail = await client.getPluginCatalog({ id: "official.calendar", version: "1.2.0" });
+  const detail = await client.getPluginCatalog({ id: "official_calendar", version: "1.2.0" });
 
   assert.equal(browse.items[0]?.local.state, "enabled");
   assert.equal(browse.nextCursor, "next");
@@ -803,7 +803,7 @@ test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fal
     "plugins.catalog.get"
   ]);
   assert.deepEqual(sentFrames[1]?.params, { query: "calendar", category: "productivity", pageSize: 1 });
-  assert.deepEqual(sentFrames[3]?.params, { id: "official.calendar", version: "1.2.0" });
+  assert.deepEqual(sentFrames[3]?.params, { id: "official_calendar", version: "1.2.0" });
   assert.equal(fallback.calls.length, 0);
 });
 

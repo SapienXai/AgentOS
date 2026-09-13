@@ -34,7 +34,7 @@ const entry = {
     installed: true,
     enabled: true,
     state: "enabled" as const,
-    pluginId: "official.calendar",
+    pluginId: "official_calendar",
     action: "manage" as const,
     futureLocalField: "preserve-me"
   }
