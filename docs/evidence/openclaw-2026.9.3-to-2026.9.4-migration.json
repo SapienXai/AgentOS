@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-2026.9.3-to-2026.9.4-migration-certification",
-  "generatedAt": "2026-09-13T12:41:40.993Z",
+  "generatedAt": "2026-09-13T12:48:45.808Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosStartingHead": "d4a92149b98de5ac82765685a8c6a79106823d34",
+    "agentosStartingHead": "3c172a99fb54433a97814e1bb2747dc0644c4ab3",
     "source": {
       "version": "2026.9.3",
       "commit": "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7",
@@ -146,7 +146,7 @@
         "claw_cron_refs": 0
       },
       "configPresent": true,
-      "configHash": "97acb43288f46764a205a03341d3642d56cc7865e9fefb59ec8930d294ee54fe",
+      "configHash": "6ae53ea2f845bd5ebbf0ee8863c21025035c9665a039dcdae01ff80eb2f0ae0e",
       "skillPresent": true,
       "memoryPresent": true,
       "projectPresent": true,
@@ -155,8 +155,8 @@
         "agents/main/agent/openclaw-agent.sqlite",
         "agents/migration-worker/agent/openclaw-agent.sqlite",
         "state/openclaw.sqlite",
-        "tmp/openclaw-501/device-identity.2134dc34.lock.sqlite",
-        "tmp/openclaw-501/gateway.c4712670.lock.sqlite",
+        "tmp/openclaw-501/device-identity.e9b7e4d3.lock.sqlite",
+        "tmp/openclaw-501/gateway.15d73ee1.lock.sqlite",
         "tmp/openclaw-501/gateway.state.lock.sqlite"
       ]
     }
@@ -168,7 +168,7 @@
       "completed": true,
       "outputPresent": true,
       "outputContainsSecret": true,
-      "sanitizedOutputExcerpt": "                                       │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\nUpdated config: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-EGGFb3/config/openclaw.json\n  Backup: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-EGGFb3/config/openclaw.json.bak\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-EGGFb3/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
+      "sanitizedOutputExcerpt": "                                       │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\nUpdated config: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-uWsOIZ/config/openclaw.json\n  Backup: /var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-uWsOIZ/config/openclaw.json.bak\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-uWsOIZ/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
     },
     "stateBefore": {
       "stateSchema": 16,
@@ -214,7 +214,7 @@
         "claw_cron_refs": 0
       },
       "configPresent": true,
-      "configHash": "97acb43288f46764a205a03341d3642d56cc7865e9fefb59ec8930d294ee54fe",
+      "configHash": "6ae53ea2f845bd5ebbf0ee8863c21025035c9665a039dcdae01ff80eb2f0ae0e",
       "skillPresent": true,
       "memoryPresent": true,
       "projectPresent": true,
@@ -223,8 +223,8 @@
         "agents/main/agent/openclaw-agent.sqlite",
         "agents/migration-worker/agent/openclaw-agent.sqlite",
         "state/openclaw.sqlite",
-        "tmp/openclaw-501/device-identity.2134dc34.lock.sqlite",
-        "tmp/openclaw-501/gateway.c4712670.lock.sqlite",
+        "tmp/openclaw-501/device-identity.e9b7e4d3.lock.sqlite",
+        "tmp/openclaw-501/gateway.15d73ee1.lock.sqlite",
         "tmp/openclaw-501/gateway.state.lock.sqlite"
       ]
     },
@@ -272,7 +272,7 @@
         "claw_cron_refs": 0
       },
       "configPresent": true,
-      "configHash": "464abb6ebf672eca52e6b3dd7920d33c0527eb2d8e2b09e8ae4c035a6b77625f",
+      "configHash": "3862b7ef978177c73e7c6cef985a37f3d7a765de7d9bf0cafa8c59ed20fb5fad",
       "skillPresent": true,
       "memoryPresent": true,
       "projectPresent": true,
@@ -281,8 +281,8 @@
         "agents/main/agent/openclaw-agent.sqlite",
         "agents/migration-worker/agent/openclaw-agent.sqlite",
         "state/openclaw.sqlite",
-        "tmp/openclaw-501/device-identity.2134dc34.lock.sqlite",
-        "tmp/openclaw-501/gateway.c4712670.lock.sqlite",
+        "tmp/openclaw-501/device-identity.e9b7e4d3.lock.sqlite",
+        "tmp/openclaw-501/gateway.15d73ee1.lock.sqlite",
         "tmp/openclaw-501/gateway.state.lock.sqlite"
       ]
     },
@@ -386,7 +386,7 @@
         "claw_cron_refs": 0
       },
       "configPresent": true,
-      "configHash": "464abb6ebf672eca52e6b3dd7920d33c0527eb2d8e2b09e8ae4c035a6b77625f",
+      "configHash": "3862b7ef978177c73e7c6cef985a37f3d7a765de7d9bf0cafa8c59ed20fb5fad",
       "skillPresent": true,
       "memoryPresent": true,
       "projectPresent": true,
@@ -395,8 +395,8 @@
         "agents/main/agent/openclaw-agent.sqlite",
         "agents/migration-worker/agent/openclaw-agent.sqlite",
         "state/openclaw.sqlite",
-        "tmp/openclaw-501/device-identity.2134dc34.lock.sqlite",
-        "tmp/openclaw-501/gateway.c4712670.lock.sqlite",
+        "tmp/openclaw-501/device-identity.e9b7e4d3.lock.sqlite",
+        "tmp/openclaw-501/gateway.15d73ee1.lock.sqlite",
         "tmp/openclaw-501/gateway.state.lock.sqlite"
       ]
     }
@@ -407,7 +407,7 @@
       "completed": true,
       "outputPresent": true,
       "outputContainsSecret": true,
-      "sanitizedOutputExcerpt": "────────────────────────────────────────────────╮\n│                                                                          │\n│  Agent \"main\": Memory search provider is set to \"openai\" but no API key  │\n│  was found.                                                              │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-EGGFb3/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
+      "sanitizedOutputExcerpt": "────────────────────────────────────────────────╮\n│                                                                          │\n│  Agent \"main\": Memory search provider is set to \"openai\" but no API key  │\n│  was found.                                                              │\n│  Semantic recall will not work without a valid API key.                  │\n│                                                                          │\n│                                                                          │\n│  Fix (pick one):                                                         │\n│  - Set OPENAI_$1=[redacted] in your environment                                │\n│  - Configure credentials: openclaw configure --section model             │\n│  - To disable: openclaw config set memory.search.enabled false           │\n│                                                                          │\n│  Verify: openclaw memory status --deep                                   │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Memory search ───────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"migration-worker\": Memory search provider is set to \"openai\"  │\n│  but no API key was found.                                            │\n│  Semantic recall will not work without a valid API key.               │\n│                                                                       │\n│                                                                       │\n│  Fix (pick one):                                                      │\n│  - Set OPENAI_$1=[redacted] in your environment                             │\n│  - Configure credentials: openclaw configure --section model          │\n│  - To disable: openclaw config set memory.search.enabled false        │\n│                                                                       │\n│  Verify: openclaw memory status --deep                                │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n◇  Workspace ───────────────────────────────────────────────────────────╮\n│                                                                       │\n│  Agent \"main\": - Tip: back up the agent workspace in a private git    │\n│  repo; keep ~/.openclaw out of git (credentials, sessions). Details:  │\n│  /concepts/agent-workspace#git-backup-recommended-private             │\n│                                                                       │\n├───────────────────────────────────────────────────────────────────────╯\n│\n└  Doctor complete.\n\n\n[skills] Skipping invalid skill: file=/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-openclaw-9-3-to-9-4-uWsOIZ/workspace/skills/agentos-migration-fixture/SKILL.md error=description is required\n"
     },
     "idempotent": true,
     "stateAfterRecovery": {
@@ -454,7 +454,7 @@
         "claw_cron_refs": 0
       },
       "configPresent": true,
-      "configHash": "464abb6ebf672eca52e6b3dd7920d33c0527eb2d8e2b09e8ae4c035a6b77625f",
+      "configHash": "3862b7ef978177c73e7c6cef985a37f3d7a765de7d9bf0cafa8c59ed20fb5fad",
       "skillPresent": true,
       "memoryPresent": true,
       "projectPresent": true,
@@ -463,8 +463,8 @@
         "agents/main/agent/openclaw-agent.sqlite",
         "agents/migration-worker/agent/openclaw-agent.sqlite",
         "state/openclaw.sqlite",
-        "tmp/openclaw-501/device-identity.2134dc34.lock.sqlite",
-        "tmp/openclaw-501/gateway.c4712670.lock.sqlite",
+        "tmp/openclaw-501/device-identity.e9b7e4d3.lock.sqlite",
+        "tmp/openclaw-501/gateway.15d73ee1.lock.sqlite",
         "tmp/openclaw-501/gateway.state.lock.sqlite"
       ]
     },
