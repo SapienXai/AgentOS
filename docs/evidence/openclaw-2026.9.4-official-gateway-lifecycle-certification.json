@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T20:49:44.063Z",
+  "generatedAt": "2026-09-13T12:43:46.953Z",
   "target": {
     "version": "2026.9.4",
     "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -42,7 +42,7 @@
       "operator.talk",
       "operator.talk.secrets"
     ],
-    "deviceId": "a14ac284156ac7ead5573c619677ce53b97792776d78353d76cc29f0f4f3d625",
+    "deviceId": "d53d3cbc2cea8edbae9d38dd89f21d57c1f2dd4fad2dd4d90a3c117a3f98067c",
     "transportDeviceIdPresent": true,
     "canonicalIdentityPresent": true,
     "canonicalIdentityIdMatches": true,

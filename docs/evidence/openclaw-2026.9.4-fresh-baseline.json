@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T21:09:44.248Z",
+  "generatedAt": "2026-09-13T12:42:43.852Z",
   "provenance": {
-    "agentosCommit": "fa3047800851af36629bf3d9732887cf4ed7b446",
+    "agentosCommit": "d4a92149b98de5ac82765685a8c6a79106823d34",
     "targetVersion": "2026.9.4",
     "targetCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
     "targetBuildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
@@ -38,7 +38,7 @@
     "agentToAgentAllow": []
   },
   "gateway": {
-    "url": "ws://127.0.0.1:61275/",
+    "url": "ws://127.0.0.1:60595/",
     "protocol": 4,
     "installedVersion": "2026.9.4",
     "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z"
@@ -46,9 +46,9 @@
   "runtimeCertification": {
     "runtime": {
       "schemaVersion": 2,
-      "generatedAt": "2026-09-11T21:09:36.225Z",
+      "generatedAt": "2026-09-13T12:42:33.740Z",
       "targetVersion": "2026.9.4",
-      "gatewayUrl": "ws://127.0.0.1:61275/",
+      "gatewayUrl": "ws://127.0.0.1:60595/",
       "installedVersion": "2026.9.4",
       "buildId": "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
       "protocolVersion": 4,
@@ -6124,7 +6124,9 @@
           "authorizationEvidence": "static",
           "currentScope": null,
           "targetScope": "operator.admin",
-          "affectedOperations": [],
+          "affectedOperations": [
+            "Environment preparation"
+          ],
           "message": "environments.prepare is added with operator.admin scope."
         },
         {
@@ -6174,7 +6176,9 @@
           "authorizationEvidence": "static",
           "currentScope": null,
           "targetScope": "operator.read",
-          "affectedOperations": [],
+          "affectedOperations": [
+            "Native plugin discovery catalog"
+          ],
           "message": "plugins.catalog.browse is added with operator.read scope."
         },
         {
@@ -6184,7 +6188,9 @@
           "authorizationEvidence": "static",
           "currentScope": null,
           "targetScope": "operator.read",
-          "affectedOperations": [],
+          "affectedOperations": [
+            "Native plugin discovery catalog"
+          ],
           "message": "plugins.catalog.categories is added with operator.read scope."
         },
         {
@@ -6194,7 +6200,9 @@
           "authorizationEvidence": "static",
           "currentScope": null,
           "targetScope": "operator.read",
-          "affectedOperations": [],
+          "affectedOperations": [
+            "Native plugin discovery catalog"
+          ],
           "message": "plugins.catalog.get is added with operator.read scope."
         },
         {
@@ -6264,7 +6272,9 @@
           "authorizationEvidence": "static",
           "currentScope": null,
           "targetScope": "operator.read",
-          "affectedOperations": [],
+          "affectedOperations": [
+            "Task history"
+          ],
           "message": "tasks.history is added with operator.read scope."
         },
         {
