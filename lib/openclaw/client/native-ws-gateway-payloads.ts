@@ -10,6 +10,10 @@ import {
 import type {
   ModelsPayload,
   ModelsStatusPayload,
+  OpenClawPluginCatalogBrowsePayload,
+  OpenClawPluginCatalogCategoriesPayload,
+  OpenClawPluginCatalogEntry,
+  OpenClawPluginCatalogGetPayload,
   OpenClawPluginListPayload,
   OpenClawSessionExportInput,
   OpenClawSessionExportPayload,
@@ -347,6 +351,116 @@ export const pluginsPayloadSchema = z
     descriptors: z.array(z.object({}).passthrough()).optional()
   })
   .passthrough();
+
+const pluginCatalogFactsSchema = z.object({
+  name: z.string(),
+  packageName: z.string().optional(),
+  summary: z.string().optional(),
+  family: z.enum(["code-plugin", "bundle-plugin"]).optional(),
+  author: z.string().optional(),
+  official: z.boolean(),
+  categories: z.array(z.string()),
+  icon: z.string().optional(),
+  imageUrl: z.string().optional(),
+  latestVersion: z.string().optional(),
+  downloads: z.number().optional(),
+  installs: z.number().optional(),
+  verificationTier: z.string().optional(),
+  publishedToClawHub: z.boolean().optional()
+}).passthrough();
+
+const pluginCatalogLocalFactsSchema = z.object({
+  present: z.boolean(),
+  installed: z.boolean(),
+  enabled: z.boolean(),
+  state: z.enum(["enabled", "disabled", "needs-setup", "not-installed", "error"]),
+  pluginId: z.string().optional(),
+  install: z.union([
+    z.object({ source: z.literal("clawhub"), packageName: z.string() }).passthrough(),
+    z.object({ source: z.literal("official"), pluginId: z.string() }).passthrough()
+  ]).optional(),
+  action: z.enum(["install", "manage", "unavailable"])
+}).passthrough();
+
+const pluginCatalogEntrySchema = z.object({
+  id: z.string(),
+  catalog: pluginCatalogFactsSchema,
+  local: pluginCatalogLocalFactsSchema
+}).passthrough();
+
+export const pluginCatalogBrowsePayloadSchema = z.object({
+  items: z.array(pluginCatalogEntrySchema),
+  nextCursor: z.string().optional(),
+  remoteError: z.string().optional()
+}).passthrough();
+
+export const pluginCatalogCategoriesPayloadSchema = z.object({
+  categories: z.array(z.object({
+    slug: z.string(),
+    label: z.string(),
+    description: z.string(),
+    icon: z.string(),
+    order: z.number().int()
+  }).passthrough())
+}).passthrough();
+
+const pluginCatalogDetailSchema = z.object({
+  origin: z.enum(["clawhub", "local"]),
+  packageName: z.string().optional(),
+  author: z.object({
+    handle: z.string().optional(),
+    displayName: z.string().optional(),
+    imageUrl: z.string().optional()
+  }).passthrough().optional(),
+  topics: z.array(z.string()),
+  createdAt: z.number().int().optional(),
+  updatedAt: z.number().int().optional(),
+  readme: z.string().optional(),
+  compatibility: z.object({
+    pluginApiRange: z.string().optional(),
+    builtWithOpenClawVersion: z.string().optional(),
+    pluginSdkVersion: z.string().optional(),
+    minGatewayVersion: z.string().optional()
+  }).passthrough().optional(),
+  configuration: z.array(z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    required: z.boolean(),
+    sensitive: z.boolean()
+  }).passthrough()),
+  mcpServers: z.array(z.string()),
+  skills: z.array(z.object({
+    name: z.string(),
+    description: z.string().optional()
+  }).passthrough()),
+  versions: z.array(z.object({
+    version: z.string(),
+    createdAt: z.number().int(),
+    changelog: z.string(),
+    tags: z.array(z.string())
+  }).passthrough()),
+  verification: z.object({
+    tier: z.string(),
+    summary: z.string().optional(),
+    sourceRepo: z.string().optional(),
+    sourceCommit: z.string().optional(),
+    sourcePath: z.string().optional(),
+    scanStatus: z.string().optional()
+  }).passthrough().optional(),
+  security: z.object({
+    status: z.string(),
+    auditUrl: z.string().optional(),
+    verdict: z.string().optional(),
+    summary: z.string().optional(),
+    guidance: z.string().optional(),
+    checkedAt: z.number().int().optional()
+  }).passthrough().optional()
+}).passthrough();
+
+export const pluginCatalogGetPayloadSchema = z.object({
+  plugin: pluginCatalogEntrySchema,
+  detail: pluginCatalogDetailSchema
+}).passthrough();
 
 export const configSnapshotPayloadSchema = z
   .object({
@@ -876,6 +990,61 @@ export function normalizePluginsPayload(payload: unknown): OpenClawPluginListPay
           }
         : undefined
     }))
+  };
+}
+
+export function normalizePluginCatalogBrowsePayload(payload: unknown): OpenClawPluginCatalogBrowsePayload {
+  const parsed = parseGatewayPayload<OpenClawPluginCatalogBrowsePayload>(
+    "plugins.catalog.browse",
+    pluginCatalogBrowsePayloadSchema,
+    payload
+  );
+
+  return {
+    ...parsed,
+    items: parsed.items.map(normalizePluginCatalogEntry)
+  };
+}
+
+export function normalizePluginCatalogCategoriesPayload(payload: unknown): OpenClawPluginCatalogCategoriesPayload {
+  const parsed = parseGatewayPayload<OpenClawPluginCatalogCategoriesPayload>(
+    "plugins.catalog.categories",
+    pluginCatalogCategoriesPayloadSchema,
+    payload
+  );
+
+  return {
+    ...parsed,
+    categories: [...parsed.categories].sort((left, right) => left.order - right.order || left.label.localeCompare(right.label))
+  };
+}
+
+export function normalizePluginCatalogGetPayload(payload: unknown): OpenClawPluginCatalogGetPayload {
+  const parsed = parseGatewayPayload<OpenClawPluginCatalogGetPayload>(
+    "plugins.catalog.get",
+    pluginCatalogGetPayloadSchema,
+    payload
+  );
+
+  return {
+    ...parsed,
+    plugin: normalizePluginCatalogEntry(parsed.plugin)
+  };
+}
+
+function normalizePluginCatalogEntry(entry: OpenClawPluginCatalogEntry): OpenClawPluginCatalogEntry {
+  return {
+    ...entry,
+    id: entry.id.trim(),
+    catalog: {
+      ...entry.catalog,
+      name: entry.catalog.name.trim(),
+      categories: entry.catalog.categories.map((category) => category.trim()).filter(Boolean)
+    },
+    local: {
+      ...entry.local,
+      pluginId: entry.local.pluginId?.trim() || undefined
+    }
   };
 }
 

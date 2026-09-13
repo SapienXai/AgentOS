@@ -864,6 +864,133 @@ export type OpenClawPluginListPayload = {
   }>;
 };
 
+export type OpenClawPluginCatalogIntent = "all" | "bundled" | "trending" | "official" | "featured";
+
+export type OpenClawPluginCatalogBrowseInput = {
+  query?: string;
+  intent?: OpenClawPluginCatalogIntent;
+  category?: string;
+  cursor?: string;
+  pageSize?: number;
+};
+
+export type OpenClawPluginCatalogCategory = {
+  slug: string;
+  label: string;
+  description: string;
+  icon: string;
+  order: number;
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogFacts = {
+  name: string;
+  packageName?: string;
+  summary?: string;
+  family?: "code-plugin" | "bundle-plugin";
+  author?: string;
+  official: boolean;
+  categories: string[];
+  icon?: string;
+  imageUrl?: string;
+  latestVersion?: string;
+  downloads?: number;
+  installs?: number;
+  verificationTier?: string;
+  publishedToClawHub?: boolean;
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogInstall = ({
+  source: "clawhub";
+  packageName: string;
+} | {
+  source: "official";
+  pluginId: string;
+}) & Record<string, unknown>;
+
+export type OpenClawPluginCatalogLocalFacts = {
+  present: boolean;
+  installed: boolean;
+  enabled: boolean;
+  state: "enabled" | "disabled" | "needs-setup" | "not-installed" | "error";
+  pluginId?: string;
+  install?: OpenClawPluginCatalogInstall;
+  action: "install" | "manage" | "unavailable";
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogEntry = {
+  id: string;
+  catalog: OpenClawPluginCatalogFacts;
+  local: OpenClawPluginCatalogLocalFacts;
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogBrowsePayload = {
+  items: OpenClawPluginCatalogEntry[];
+  nextCursor?: string;
+  remoteError?: string;
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogCategoriesPayload = {
+  categories: OpenClawPluginCatalogCategory[];
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogDetail = {
+  origin: "clawhub" | "local";
+  packageName?: string;
+  author?: {
+    handle?: string;
+    displayName?: string;
+    imageUrl?: string;
+  } & Record<string, unknown>;
+  topics: string[];
+  createdAt?: number;
+  updatedAt?: number;
+  readme?: string;
+  compatibility?: {
+    pluginApiRange?: string;
+    builtWithOpenClawVersion?: string;
+    pluginSdkVersion?: string;
+    minGatewayVersion?: string;
+  } & Record<string, unknown>;
+  configuration: Array<{
+    name: string;
+    description?: string;
+    required: boolean;
+    sensitive: boolean;
+  } & Record<string, unknown>>;
+  mcpServers: string[];
+  skills: Array<{
+    name: string;
+    description?: string;
+  } & Record<string, unknown>>;
+  versions: Array<{
+    version: string;
+    createdAt: number;
+    changelog: string;
+    tags: string[];
+  } & Record<string, unknown>>;
+  verification?: {
+    tier: string;
+    summary?: string;
+    sourceRepo?: string;
+    sourceCommit?: string;
+    sourcePath?: string;
+    scanStatus?: string;
+  } & Record<string, unknown>;
+  security?: {
+    status: string;
+    auditUrl?: string;
+    verdict?: string;
+    summary?: string;
+    guidance?: string;
+    checkedAt?: number;
+  } & Record<string, unknown>;
+} & Record<string, unknown>;
+
+export type OpenClawPluginCatalogGetPayload = {
+  plugin: OpenClawPluginCatalogEntry;
+  detail: OpenClawPluginCatalogDetail;
+} & Record<string, unknown>;
+
 export type OpenClawModelScanPayload = Array<{
   id: string;
   name: string;
@@ -2053,6 +2180,9 @@ export interface OpenClawGatewayClient {
     options?: OpenClawCommandOptions
   ): Promise<OpenClawRuntimeSnapshotPayload>;
   getToolsCatalog(input?: OpenClawToolsCatalogInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsCatalogPayload>;
+  browsePluginCatalog?(input?: OpenClawPluginCatalogBrowseInput, options?: OpenClawCommandOptions): Promise<OpenClawPluginCatalogBrowsePayload>;
+  listPluginCatalogCategories?(options?: OpenClawCommandOptions): Promise<OpenClawPluginCatalogCategoriesPayload>;
+  getPluginCatalog?(input: { id: string; version?: string }, options?: OpenClawCommandOptions): Promise<OpenClawPluginCatalogGetPayload>;
   getEffectiveTools(input: OpenClawToolsEffectiveInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsEffectivePayload>;
   invokeTool(input: OpenClawToolInvokeInput, options?: OpenClawCommandOptions): Promise<OpenClawToolInvokePayload>;
   listCommands?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;

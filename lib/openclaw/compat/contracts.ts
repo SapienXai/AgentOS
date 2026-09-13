@@ -54,6 +54,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   commands: "commands",
   tools: "tools",
   plugins: "plugins",
+  pluginCatalog: "plugins",
   execApprovals: "approvals",
   pluginApprovals: "approvals",
   questions: "questions",
@@ -116,6 +117,7 @@ const operationRequiredScopes: Partial<Record<string, string[]>> = {
   deviceToken: ["operator.pairing"],
   nodePairing: ["operator.pairing"],
   taskHistory: ["operator.read"],
+  pluginCatalog: ["operator.read"],
   environmentPreparation: ["operator.admin"]
 };
 
@@ -222,6 +224,18 @@ const methodProbes: Record<string, ContractProbe> = {
   "plugins.uiDescriptors": {
     params: {},
     validate: isObjectRecord
+  },
+  "plugins.catalog.browse": {
+    params: { pageSize: 1 },
+    validate: (payload) => Array.isArray(readObject(payload)?.items)
+  },
+  "plugins.catalog.categories": {
+    params: {},
+    validate: (payload) => Array.isArray(readObject(payload)?.categories)
+  },
+  "plugins.catalog.get": {
+    params: { id: "__agentos_contract_probe__" },
+    validate: (payload) => isObjectRecord(readObject(payload)?.plugin) && isObjectRecord(readObject(payload)?.detail)
   },
   "device.pair.list": {
     params: {},

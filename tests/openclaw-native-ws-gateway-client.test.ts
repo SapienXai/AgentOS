@@ -734,6 +734,79 @@ test("native WS gateway client handshakes and correlates request responses", asy
   assert.equal(fallback.calls.length, 0);
 });
 
+test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload = frame.method === "connect"
+        ? { protocol: 4 }
+        : frame.method === "plugins.catalog.browse"
+          ? {
+              items: [{
+                id: "official.calendar",
+                catalog: { name: "Calendar", official: true, categories: [] },
+                local: {
+                  present: true,
+                  installed: true,
+                  enabled: true,
+                  state: "enabled",
+                  action: "manage"
+                }
+              }],
+              nextCursor: "next"
+            }
+          : frame.method === "plugins.catalog.categories"
+            ? { categories: [{ slug: "productivity", label: "Productivity", description: "Tools", icon: "calendar", order: 1 }] }
+            : {
+                plugin: {
+                  id: "official.calendar",
+                  catalog: { name: "Calendar", official: true, categories: [] },
+                  local: {
+                    present: true,
+                    installed: true,
+                    enabled: true,
+                    state: "enabled",
+                    action: "manage"
+                  }
+                },
+                detail: {
+                  origin: "local",
+                  topics: [],
+                  configuration: [],
+                  mcpServers: [],
+                  skills: [],
+                  versions: []
+                }
+              };
+      socket.emitMessage({ type: "res", id: frame.id, ok: true, payload });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    transport,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const browse = await client.browsePluginCatalog({ query: "calendar", category: "productivity", pageSize: 1 });
+  const categories = await client.listPluginCatalogCategories();
+  const detail = await client.getPluginCatalog({ id: "official.calendar", version: "1.2.0" });
+
+  assert.equal(browse.items[0]?.local.state, "enabled");
+  assert.equal(browse.nextCursor, "next");
+  assert.equal(categories.categories[0]?.slug, "productivity");
+  assert.equal(detail.detail.origin, "local");
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "plugins.catalog.browse",
+    "plugins.catalog.categories",
+    "plugins.catalog.get"
+  ]);
+  assert.deepEqual(sentFrames[1]?.params, { query: "calendar", category: "productivity", pageSize: 1 });
+  assert.deepEqual(sentFrames[3]?.params, { id: "official.calendar", version: "1.2.0" });
+  assert.equal(fallback.calls.length, 0);
+});
+
 test("native channel lifecycle uses channels.start and channels.stop without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {

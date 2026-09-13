@@ -63,6 +63,9 @@ import {
   mergeStatusPayload,
   normalizeModelStatusPayload,
   normalizeModelsPayload,
+  normalizePluginCatalogBrowsePayload,
+  normalizePluginCatalogCategoriesPayload,
+  normalizePluginCatalogGetPayload,
   normalizePluginsPayload,
   memoryDreamActionPayloadSchema,
   memoryDreamDiaryPayloadSchema,
@@ -180,6 +183,10 @@ import type {
   OpenClawGatewaySurfacePayload,
   OpenClawGmailSetupInput,
   OpenClawHealthPayload,
+  OpenClawPluginCatalogBrowseInput,
+  OpenClawPluginCatalogBrowsePayload,
+  OpenClawPluginCatalogCategoriesPayload,
+  OpenClawPluginCatalogGetPayload,
   OpenClawDiagnosticsStabilityPayload,
   OpenClawConfigSnapshotPayload,
   OpenClawUpdateStatusNativePayload,
@@ -1858,6 +1865,39 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       options,
       normalizePluginsPayload,
       () => this.fallback.listPlugins(options)
+    );
+  }
+
+  browsePluginCatalog(
+    input: OpenClawPluginCatalogBrowseInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawPluginCatalogBrowsePayload>(
+      "plugins.catalog.browse",
+      { ...input },
+      options,
+      normalizePluginCatalogBrowsePayload
+    );
+  }
+
+  listPluginCatalogCategories(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawPluginCatalogCategoriesPayload>(
+      "plugins.catalog.categories",
+      {},
+      options,
+      normalizePluginCatalogCategoriesPayload
+    );
+  }
+
+  getPluginCatalog(
+    input: { id: string; version?: string },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawPluginCatalogGetPayload>(
+      "plugins.catalog.get",
+      { ...input },
+      options,
+      normalizePluginCatalogGetPayload
     );
   }
 

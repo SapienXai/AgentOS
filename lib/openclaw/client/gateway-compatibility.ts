@@ -52,6 +52,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "commands"
   | "tools"
   | "plugins"
+  | "pluginCatalog"
   | "execApprovals"
   | "pluginApprovals"
   | "questions"
@@ -423,7 +424,18 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     productIntegration: "discovery-only",
     productIntegratedMethods: ["tools.catalog", "tools.effective"]
   },
-  { id: "plugins", label: "Plugin catalog", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
+  { id: "plugins", label: "Plugin inventory", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
+  {
+    id: "pluginCatalog",
+    label: "Native plugin discovery catalog",
+    methods: ["plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns the plugin discovery catalog. Update the Gateway/runtime to a certified version that exposes the native catalog methods.",
+    // Additive in certified 2026.9.4; not part of the older stable baseline.
+    baseline: "experimental",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"]
+  },
   {
     id: "execApprovals",
     label: "Execution approvals",
@@ -835,7 +847,13 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
 const OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS = ["users.list"] as const;
 
 /** Additive Gateway methods introduced by the certified OpenClaw 2026.9.4 contract. */
-export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = ["tasks.history", "environments.prepare"] as const;
+export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = [
+  "tasks.history",
+  "environments.prepare",
+  "plugins.catalog.browse",
+  "plugins.catalog.categories",
+  "plugins.catalog.get"
+] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "artifacts.put",

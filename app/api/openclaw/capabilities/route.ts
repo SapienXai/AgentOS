@@ -1,16 +1,31 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
+  getOpenClawPluginCatalog,
   listOpenClawPlugins,
   listOpenClawSkills,
   listOpenClawTools,
   normalizeOpenClawToolsCatalog,
   type OpenClawCapabilityToolEntry
 } from "@/lib/openclaw/application/catalog-service";
+import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import {
   OPENCLAW_BUILTIN_TOOL_CATALOG,
   OPENCLAW_TOOL_GROUP_CATALOG
 } from "@/lib/openclaw/tool-catalog";
+import { redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+
+const pluginCatalogQuerySchema = z.object({
+  query: z.string().trim().max(200).optional(),
+  category: z.string().trim().min(1).max(64).optional(),
+  intent: z.enum(["all", "bundled", "trending", "official", "featured"]).optional(),
+  cursor: z.string().trim().max(4096).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  pluginId: z.string().trim().min(1).max(512).optional(),
+  version: z.string().trim().min(1).max(128).optional()
+});
 
 type CapabilitySkillEntry = {
   name: string;
@@ -25,13 +40,24 @@ type CapabilityCatalogResponse = {
   skills: CapabilitySkillEntry[];
   tools: OpenClawCapabilityToolEntry[];
   toolSource: "openclaw-gateway" | "static-fallback";
+  pluginCatalog: PluginCatalogProjection;
 };
 
-export async function GET() {
-  const [skillResult, pluginResult, toolCatalogResult] = await Promise.allSettled([
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "agents.read");
+  if ("response" in permission) return permission.response;
+
+  const searchParams = Object.fromEntries(new URL(request.url).searchParams.entries());
+  const parsedQuery = pluginCatalogQuerySchema.safeParse(searchParams);
+  if (!parsedQuery.success) {
+    return NextResponse.json({ error: "Invalid native plugin catalog query." }, { status: 400 });
+  }
+
+  const [skillResult, pluginResult, toolCatalogResult, pluginCatalogResult] = await Promise.allSettled([
     listOpenClawSkills({ eligible: true, timeoutMs: 15_000 }),
     listOpenClawPlugins({ timeoutMs: 15_000 }),
-    listOpenClawTools({ includePlugins: true }, { timeoutMs: 15_000 })
+    listOpenClawTools({ includePlugins: true }, { timeoutMs: 15_000 }),
+    getOpenClawPluginCatalog(parsedQuery.data, { timeoutMs: 15_000 })
   ]);
 
   const skills =
@@ -87,10 +113,27 @@ export async function GET() {
     generatedAt: new Date().toISOString(),
     skills,
     toolSource,
-    tools: Array.from(toolMap.values()).sort(sortCatalogEntries)
+    tools: Array.from(toolMap.values()).sort(sortCatalogEntries),
+    pluginCatalog: pluginCatalogResult.status === "fulfilled"
+      ? pluginCatalogResult.value
+      : {
+          source: "openclaw-gateway",
+          generatedAt: new Date().toISOString(),
+          state: "unknown",
+          liveProof: false,
+          items: [],
+          categories: [],
+          nextCursor: null,
+          remoteError: null,
+          detail: null,
+          detailError: null,
+          failures: [],
+          context: null,
+          recovery: "Retry the native OpenClaw catalog request and inspect Gateway diagnostics if it continues."
+        }
   };
 
-  return NextResponse.json(response, {
+  return NextResponse.json(redactSecrets(response), {
     headers: {
       "Cache-Control": "no-store"
     }

@@ -263,7 +263,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "plugins",
     label: "Plugins",
-    methods: ["plugins.uiDescriptors", "plugins.list"]
+    methods: ["plugins.uiDescriptors", "plugins.list", "plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"]
   },
   {
     id: "updates",
