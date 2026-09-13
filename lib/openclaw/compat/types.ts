@@ -63,6 +63,26 @@ export type OpenClawCompatibilityContractStatus = "ok" | "degraded" | "unsupport
 
 export type OpenClawCompatibilityResponseShapeStatus = "valid" | "invalid" | "not-checked";
 
+/**
+ * The strongest evidence currently available for a compatibility row. Policy
+ * expectations and Gateway metadata are intentionally not native execution
+ * proof.
+ */
+export type OpenClawCompatibilityEpistemicStatus =
+  | "certified-version-expectation"
+  | "advertised-method"
+  | "observed-native-success"
+  | "auth-denied"
+  | "unsupported"
+  | "malformed-response"
+  | "failed"
+  | "unreachable"
+  | "protocol-mismatch"
+  | "optional-absence"
+  | "unknown";
+
+export type OpenClawCompatibilityFallbackStatus = "not-allowed" | "available" | "used" | "unavailable";
+
 export type OpenClawCompatibilityMethodSource =
   | "gateway-advertised"
   | "gateway-discovery"
@@ -91,6 +111,8 @@ export interface OpenClawCompatibilityCapability {
   supportedMethods: string[];
   supportedEvents: string[];
   reason: string;
+  /** Evidence status is separate from the broad support status above. */
+  epistemicStatus?: OpenClawCompatibilityEpistemicStatus;
 }
 
 export interface OpenClawCompatibilityContractCheck {
@@ -106,6 +128,7 @@ export interface OpenClawCompatibilityContractCheck {
   supportedEvent: string | null;
   requiredScopes: string[];
   missingScopes: string[];
+  /** True only for live Gateway-advertised or live-observed native support. */
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
@@ -113,6 +136,11 @@ export interface OpenClawCompatibilityContractCheck {
   status: OpenClawCompatibilityContractStatus;
   reason: string;
   suggestedRecovery: string;
+  epistemicStatus?: OpenClawCompatibilityEpistemicStatus;
+  fallbackStatus?: OpenClawCompatibilityFallbackStatus;
+  fallbackUsed?: boolean;
+  expectedMethod?: string | null;
+  expectedEvent?: string | null;
 }
 
 export interface OpenClawCompatibilityReleaseSummary {
@@ -209,11 +237,17 @@ export interface OpenClawCompatibilityDetectionInput {
 export interface OpenClawCompatibilityContractInput {
   effectiveMethods: string[];
   effectiveEvents: string[];
+  /** Live Gateway metadata, excluding version-derived expectations. */
+  advertisedMethods?: string[];
+  advertisedEvents?: string[];
   authScopes: string[];
   capabilitySource: OpenClawCompatibilityMethodSource;
   cliFallbackAvailable: boolean;
   cliForced: boolean;
   includeLiveShapeChecks: boolean;
+  gatewayHealth?: OpenClawGatewayHealthStatus;
+  protocolStatus?: OpenClawGatewayProtocolCompatibilityStatus;
+  fallbackCounts?: Readonly<Record<string, number>>;
   callNative?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 

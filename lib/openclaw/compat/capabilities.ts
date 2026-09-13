@@ -10,6 +10,7 @@ import type {
   OpenClawCompatibilityCapabilityId,
   OpenClawCompatibilityCapabilitySource,
   OpenClawCompatibilityDetectionInput,
+  OpenClawCompatibilityEpistemicStatus,
   OpenClawCompatibilityMethodSource,
   OpenClawCompatibilitySupportStatus
 } from "@/lib/openclaw/compat/types";
@@ -360,8 +361,10 @@ export function buildOpenClawCompatibilityCapabilities(
     effectiveEvents: string[];
   }
 ): OpenClawCompatibilityCapability[] {
-  const methodSet = new Set(input.effectiveMethods);
-  const eventSet = new Set(input.effectiveEvents);
+  const advertisedMethodSet = new Set(input.advertisedMethods);
+  const advertisedEventSet = new Set(input.advertisedEvents);
+  const expectedMethodSet = new Set(input.effectiveMethods);
+  const expectedEventSet = new Set(input.effectiveEvents);
   const source = toCapabilitySource(input.source);
 
   return capabilityDefinitions.map((definition) => {
@@ -377,18 +380,23 @@ export function buildOpenClawCompatibilityCapabilities(
         supportedEvents: [],
         reason: input.cliFallbackAvailable
           ? "OpenClaw CLI is available for explicit recovery fallback operations."
-          : "OpenClaw CLI was not available, so recovery fallback operations cannot run."
+          : "OpenClaw CLI was not available, so recovery fallback operations cannot run.",
+        epistemicStatus: input.cliFallbackAvailable ? "advertised-method" : "unknown"
       } satisfies OpenClawCompatibilityCapability;
     }
 
     const methods = uniqueSorted(definition.methods);
     const events = uniqueSorted(definition.events ?? []);
-    const supportedMethods = methods.filter((method) => methodSet.has(method));
-    const supportedEvents = events.filter((event) => eventSet.has(event));
+    const supportedMethods = methods.filter((method) => advertisedMethodSet.has(method));
+    const supportedEvents = events.filter((event) => advertisedEventSet.has(event));
+    const expectedMethods = methods.filter((method) => expectedMethodSet.has(method));
+    const expectedEvents = events.filter((event) => expectedEventSet.has(event));
     const status = resolveCapabilityStatus({
       supportedMethods,
       supportedEvents,
-      hasEffectiveCapabilities: methodSet.size > 0 || eventSet.size > 0
+      hasEffectiveCapabilities: expectedMethodSet.size > 0 || expectedEventSet.size > 0,
+      hasVersionDefaultExpectation: source === "version-default" &&
+        (expectedMethods.length > 0 || expectedEvents.length > 0)
     });
 
     return {
@@ -400,7 +408,15 @@ export function buildOpenClawCompatibilityCapabilities(
       events,
       supportedMethods,
       supportedEvents,
-      reason: resolveCapabilityReason(definition.label, status, source, supportedMethods, supportedEvents)
+      reason: resolveCapabilityReason(definition.label, status, source, supportedMethods, supportedEvents),
+      epistemicStatus: resolveCapabilityEpistemicStatus({
+        source,
+        status,
+        supportedMethods,
+        supportedEvents,
+        expectedMethods,
+        expectedEvents
+      })
     } satisfies OpenClawCompatibilityCapability;
   });
 }
@@ -415,12 +431,48 @@ function resolveCapabilityStatus(input: {
   supportedMethods: string[];
   supportedEvents: string[];
   hasEffectiveCapabilities: boolean;
+  hasVersionDefaultExpectation: boolean;
 }): OpenClawCompatibilitySupportStatus {
   if (input.supportedMethods.length > 0 || input.supportedEvents.length > 0) {
     return "supported";
   }
 
+  if (input.hasVersionDefaultExpectation) {
+    // Keep the certified policy expectation visible, but never treat it as a
+    // live native observation. The epistemic status carries that distinction.
+    return "supported";
+  }
+
   return input.hasEffectiveCapabilities ? "unsupported" : "unknown";
+}
+
+function resolveCapabilityEpistemicStatus(input: {
+  source: OpenClawCompatibilityCapabilitySource;
+  status: OpenClawCompatibilitySupportStatus;
+  supportedMethods: string[];
+  supportedEvents: string[];
+  expectedMethods: string[];
+  expectedEvents: string[];
+}): OpenClawCompatibilityEpistemicStatus {
+  if (input.source === "version-default" &&
+    (input.expectedMethods.length > 0 || input.expectedEvents.length > 0)) {
+    return "certified-version-expectation";
+  }
+
+  if (input.supportedMethods.length > 0 || input.supportedEvents.length > 0) {
+    return "advertised-method";
+  }
+
+  if (input.status === "unsupported" &&
+    (input.expectedMethods.length > 0 || input.expectedEvents.length > 0)) {
+    return "optional-absence";
+  }
+
+  if (input.status === "unsupported") {
+    return "unsupported";
+  }
+
+  return "unknown";
 }
 
 function resolveCapabilityReason(

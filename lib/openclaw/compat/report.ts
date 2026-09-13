@@ -187,11 +187,16 @@ export async function generateOpenClawCompatibilityReport(
   const contracts = await checkOpenClawCompatibilityContracts({
     effectiveMethods: resolvedCapabilities.effectiveMethods,
     effectiveEvents: resolvedCapabilities.effectiveEvents,
+    advertisedMethods: resolvedCapabilities.advertisedMethods,
+    advertisedEvents: resolvedCapabilities.advertisedEvents,
     authScopes: nativeDetection.authScopes,
     capabilitySource: resolvedCapabilities.source,
     cliFallbackAvailable: cliAvailable,
     cliForced: isCliGatewayClientForcedByEnv(),
     includeLiveShapeChecks: options.includeLiveShapeChecks === true,
+    gatewayHealth: gatewayHealth.status,
+    protocolStatus,
+    fallbackCounts: transport?.fallbackCounts,
     callNative: nativeDetection.client
       ? (method, params) => nativeDetection.client!.callNative(method, params, {
         timeoutMs: options.nativeTimeoutMs ?? defaultNativeTimeoutMs
@@ -537,8 +542,19 @@ function resolveOverallStatus(input: {
   reason: string;
   recovery: string;
 } {
-  const requiredIssue = input.contracts.find((check) =>
+  const requiredHardIssue = input.contracts.find((check) =>
     check.required && (check.status === "failed" || check.status === "unsupported")
+  );
+  const requiredVerificationIssue = input.contracts.find((check) =>
+    check.required && (
+      check.status !== "ok" ||
+      check.nativeGatewaySupported === false ||
+      check.epistemicStatus === "certified-version-expectation" ||
+      check.epistemicStatus === "unknown" ||
+      check.epistemicStatus === "auth-denied" ||
+      check.epistemicStatus === "unreachable" ||
+      check.epistemicStatus === "protocol-mismatch"
+    )
   );
 
   if (input.protocolStatus === "unsupported") {
@@ -557,17 +573,16 @@ function resolveOverallStatus(input: {
     };
   }
 
-  if (requiredIssue) {
+  if (requiredHardIssue) {
     return {
       status: "incompatible",
-      reason: `${requiredIssue.label} is required but ${requiredIssue.status}.`,
-      recovery: requiredIssue.suggestedRecovery
+      reason: `${requiredHardIssue.label} is required but ${requiredHardIssue.status}.`,
+      recovery: requiredHardIssue.suggestedRecovery
     };
   }
 
-  const degradedIssue = input.contracts.find((check) =>
-    check.required &&
-    check.status !== "ok"
+  const degradedIssue = requiredVerificationIssue ?? input.contracts.find((check) =>
+    !check.required && check.status === "failed"
   );
 
   if (

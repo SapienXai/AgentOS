@@ -7,6 +7,7 @@ import {
   getOpenClawFallbackRegistrySummary,
   OPENCLAW_FALLBACK_REGISTRY
 } from "@/lib/openclaw/fallback-registry";
+import { OPENCLAW_NATIVE_CONTRACT_VERSION } from "@/lib/openclaw/versions";
 
 const rootDir = process.cwd();
 
@@ -47,6 +48,7 @@ test("fallback registry covers audited production fallback sources with inspecta
     assert.ok(entry.removalCondition);
     assert.ok(entry.sourceAnchors.length > 0);
     assert.ok(entry.diagnostics.observable);
+    assert.equal(entry.nativeContractVersion, OPENCLAW_NATIVE_CONTRACT_VERSION);
     const source = readFileSync(path.join(rootDir, entry.sourcePath), "utf8");
     for (const anchor of entry.sourceAnchors) {
       assert.equal(source.includes(anchor), true, `${entry.id} anchor is stale: ${anchor}`);
@@ -65,4 +67,24 @@ test("fallback registry preserves native-only plugin catalog and reports governe
   assert.equal(summary.fallbackAllowed, true);
   assert.equal(summary.disallowedOperationIds.includes("plugin-catalog.native-only"), true);
   assert.equal(summary.totalEntries, summary.allowedEntryCount + summary.disallowedEntryCount);
+  assert.equal(summary.classifications["native-nonexistent"], 3);
+  assert.equal(summary.classifications["native-unintegrated"], 4);
+});
+
+test("fallback registry native candidates exist in the exact installed OpenClaw contract", () => {
+  const schema = JSON.parse(readFileSync(
+    path.join(rootDir, "node_modules/@openclaw/gateway-protocol/protocol.schema.json"),
+    "utf8"
+  )) as { methods?: Record<string, unknown> };
+  const nativeMethods = new Set(Object.keys(schema.methods ?? {}));
+
+  for (const entry of OPENCLAW_FALLBACK_REGISTRY) {
+    const candidates = entry.nativeMethodCandidate
+      ? entry.nativeMethodCandidate.split(/\s*\/\s*/).map((method) => method.trim())
+      : [];
+
+    for (const candidate of candidates) {
+      assert.equal(nativeMethods.has(candidate), true, `${entry.id} has an unverified 2026.9.4 candidate: ${candidate}`);
+    }
+  }
 });

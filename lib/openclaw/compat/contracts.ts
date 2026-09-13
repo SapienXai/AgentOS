@@ -7,6 +7,7 @@ import type {
   OpenClawCompatibilityContractCheck,
   OpenClawCompatibilityContractInput,
   OpenClawCompatibilityContractStatus,
+  OpenClawCompatibilityEpistemicStatus,
   OpenClawCompatibilityResponseShapeStatus
 } from "@/lib/openclaw/compat/types";
 
@@ -347,29 +348,39 @@ async function checkOperationContract(
   eventSet: Set<string>,
   input: OpenClawCompatibilityContractInput
 ): Promise<OpenClawCompatibilityContractCheck> {
-  const supportedMethod = operation.methods.find((method) => methodSet.has(method)) ?? null;
-  const supportedEvent = operation.events?.find((event) => eventSet.has(event)) ?? null;
+  const advertisedMethodSet = new Set(
+    input.advertisedMethods ?? (input.capabilitySource === "version-default" ? [] : input.effectiveMethods)
+  );
+  const advertisedEventSet = new Set(
+    input.advertisedEvents ?? (input.capabilitySource === "version-default" ? [] : input.effectiveEvents)
+  );
+  const expectedMethod = operation.methods.find((method) => methodSet.has(method)) ?? null;
+  const expectedEvent = operation.events?.find((event) => eventSet.has(event)) ?? null;
+  const supportedMethod = operation.methods.find((method) => advertisedMethodSet.has(method)) ?? null;
+  const supportedEvent = operation.events?.find((event) => advertisedEventSet.has(event)) ?? null;
   const advertisedNativeSupport = Boolean(supportedMethod || supportedEvent);
-  const liveCapabilityMetadata = input.capabilitySource !== "version-default";
-  const versionDefaultExpectation = advertisedNativeSupport && !liveCapabilityMetadata;
-  const requiredScopes = resolveRequiredScopes(operation.id, supportedMethod);
+  const versionDefaultExpectation = input.capabilitySource === "version-default" &&
+    Boolean(expectedMethod || expectedEvent);
+  const requiredScopes = resolveRequiredScopes(operation.id, supportedMethod ?? expectedMethod);
   const missingScopes = input.authScopes.length > 0 && advertisedNativeSupport
     ? requiredScopes.filter((scope) => !input.authScopes.some((grantedScope) => authorizesScope(grantedScope, scope)))
     : [];
-  // Discovery metadata is advisory. A method omitted from a conservative
-  // list remains a native candidate when the exact supported contract is
-  // known; only the RPC response can prove it unsupported.
-  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0;
   const fallbackAllowed = operation.fallbackAllowed !== false;
   const cliFallbackAvailable = fallbackAllowed && input.cliFallbackAvailable;
   const baseline = operation.baseline ?? "optional";
   const required = baseline === "required";
+  const gatewayUnreachable = input.gatewayHealth === "unreachable";
+  const protocolMismatch = input.protocolStatus === "unsupported";
   let responseShapeStatus: OpenClawCompatibilityResponseShapeStatus = "not-checked";
   let responseShapeValid: boolean | null = null;
   let liveFailure: string | null = null;
+  let liveFailureStatus: OpenClawCompatibilityEpistemicStatus | null = null;
 
   if (
-    nativeGatewaySupported &&
+    advertisedNativeSupport &&
+    missingScopes.length === 0 &&
+    !gatewayUnreachable &&
+    !protocolMismatch &&
     input.includeLiveShapeChecks &&
     input.callNative &&
     supportedMethod
@@ -381,24 +392,54 @@ async function checkOperationContract(
         const payload = await input.callNative(supportedMethod, probe.params);
         responseShapeValid = probe.validate(payload);
         responseShapeStatus = responseShapeValid ? "valid" : "invalid";
+        liveFailureStatus = responseShapeValid ? null : "malformed-response";
       } catch (error) {
         liveFailure = readErrorMessage(error);
-        responseShapeValid = false;
-        responseShapeStatus = "invalid";
+        liveFailureStatus = classifyLiveFailure(error, liveFailure);
+        if (liveFailureStatus === "malformed-response" || liveFailureStatus === "failed") {
+          responseShapeValid = false;
+          responseShapeStatus = "invalid";
+        }
       }
     }
   }
 
+  const nativeGatewaySupported = advertisedNativeSupport &&
+    missingScopes.length === 0 &&
+    !gatewayUnreachable &&
+    !protocolMismatch &&
+    responseShapeStatus !== "invalid" &&
+    !liveFailureStatus;
+  const epistemicStatus = resolveEpistemicStatus({
+    expectedMethod,
+    expectedEvent,
+    supportedMethod,
+    supportedEvent,
+    versionDefaultExpectation,
+    missingScopes,
+    gatewayUnreachable,
+    protocolMismatch,
+    responseShapeStatus,
+    liveFailureStatus
+  });
+  const fallbackUsed = resolveFallbackUsed(operation, supportedMethod, input.fallbackCounts);
+  const fallbackStatus = !fallbackAllowed
+    ? "not-allowed" as const
+    : fallbackUsed
+      ? "used" as const
+      : cliFallbackAvailable
+        ? "available" as const
+        : "unavailable" as const;
   const status = resolveContractStatus({
     nativeGatewaySupported,
     cliFallbackAvailable,
     missingScopes,
-    versionDefaultExpectation,
-    responseShapeStatus,
-    liveFailure
+    epistemicStatus
   });
   const reason = resolveContractReason({
     operation,
+    expectedMethod,
+    expectedEvent,
     supportedMethod,
     supportedEvent,
     missingScopes,
@@ -406,7 +447,8 @@ async function checkOperationContract(
     cliFallbackAvailable,
     responseShapeStatus,
     liveFailure,
-    capabilitySource: input.capabilitySource
+    capabilitySource: input.capabilitySource,
+    epistemicStatus
   });
 
   return {
@@ -428,8 +470,85 @@ async function checkOperationContract(
     responseShapeValid,
     status,
     reason,
-    suggestedRecovery: resolveContractRecovery(status, operation.label, required, cliFallbackAvailable, missingScopes)
+    suggestedRecovery: resolveContractRecovery(
+      status,
+      operation.label,
+      required,
+      cliFallbackAvailable,
+      missingScopes,
+      epistemicStatus
+    ),
+    epistemicStatus,
+    fallbackStatus,
+    fallbackUsed,
+    expectedMethod,
+    expectedEvent
   };
+}
+
+function resolveEpistemicStatus(input: {
+  expectedMethod: string | null;
+  expectedEvent: string | null;
+  supportedMethod: string | null;
+  supportedEvent: string | null;
+  versionDefaultExpectation: boolean;
+  missingScopes: string[];
+  gatewayUnreachable: boolean;
+  protocolMismatch: boolean;
+  responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
+  liveFailureStatus: OpenClawCompatibilityEpistemicStatus | null;
+}): OpenClawCompatibilityEpistemicStatus {
+  if (input.protocolMismatch) {
+    return "protocol-mismatch";
+  }
+
+  if (input.gatewayUnreachable) {
+    return "unreachable";
+  }
+
+  if (input.missingScopes.length > 0) {
+    return "auth-denied";
+  }
+
+  if (input.liveFailureStatus) {
+    return input.liveFailureStatus;
+  }
+
+  if (input.responseShapeStatus === "invalid") {
+    return "malformed-response";
+  }
+
+  if (input.versionDefaultExpectation) {
+    return "certified-version-expectation";
+  }
+
+  if (input.supportedMethod || input.supportedEvent) {
+    return input.responseShapeStatus === "valid" ? "observed-native-success" : "advertised-method";
+  }
+
+  if (input.expectedMethod || input.expectedEvent) {
+    return input.expectedMethod || input.expectedEvent ? "optional-absence" : "unknown";
+  }
+
+  return "unsupported";
+}
+
+function resolveFallbackUsed(
+  operation: OpenClawGatewayCompatibilityOperationDefinition,
+  supportedMethod: string | null,
+  fallbackCounts: Readonly<Record<string, number>> | undefined
+) {
+  if (!fallbackCounts) {
+    return false;
+  }
+
+  return Object.entries(fallbackCounts).some(([operationOrMethod, count]) =>
+    count > 0 && (
+      operationOrMethod === operation.id ||
+      operationOrMethod === supportedMethod ||
+      operation.methods.includes(operationOrMethod)
+    )
+  );
 }
 
 function resolveRequiredScopes(operationId: string, supportedMethod: string | null) {
@@ -468,27 +587,31 @@ function resolveContractStatus(input: {
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
   missingScopes: string[];
-  versionDefaultExpectation: boolean;
-  responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
-  liveFailure: string | null;
+  epistemicStatus: OpenClawCompatibilityEpistemicStatus;
 }): OpenClawCompatibilityContractStatus {
-  if (input.nativeGatewaySupported) {
-    return input.responseShapeStatus === "invalid" || input.liveFailure ? "failed" : "ok";
+  if (input.epistemicStatus === "malformed-response" || input.epistemicStatus === "failed") {
+    return "failed";
   }
 
   if (input.missingScopes.length > 0) {
     return "degraded";
   }
 
-  if (input.versionDefaultExpectation) {
+  if (input.nativeGatewaySupported) {
     return "ok";
   }
 
-  return input.cliFallbackAvailable ? "degraded" : "unsupported";
+  if (input.epistemicStatus === "unsupported") {
+    return input.cliFallbackAvailable ? "degraded" : "unsupported";
+  }
+
+  return "degraded";
 }
 
 function resolveContractReason(input: {
   operation: OpenClawGatewayCompatibilityOperationDefinition;
+  expectedMethod: string | null;
+  expectedEvent: string | null;
   supportedMethod: string | null;
   supportedEvent: string | null;
   missingScopes: string[];
@@ -497,7 +620,43 @@ function resolveContractReason(input: {
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
   liveFailure: string | null;
   capabilitySource: OpenClawCompatibilityContractInput["capabilitySource"];
+  epistemicStatus: OpenClawCompatibilityEpistemicStatus;
 }) {
+  if (input.epistemicStatus === "certified-version-expectation") {
+    const evidence = input.expectedMethod ?? input.expectedEvent ?? "the certified contract";
+    return `${input.operation.label} matches the certified-version expectation through ${evidence}, but no live Gateway capability metadata or native response was observed.`;
+  }
+
+  if (input.epistemicStatus === "optional-absence") {
+    const evidence = input.expectedMethod ?? input.expectedEvent ?? "the certified contract";
+    return `${input.operation.label} is expected by ${evidence}, but it was absent from the live Gateway capability metadata; native support remains unknown.`;
+  }
+
+  if (input.epistemicStatus === "auth-denied") {
+    const evidence = input.supportedMethod ?? input.supportedEvent ?? "capability metadata";
+    return `${input.operation.label} is advertised through ${evidence}, but the authenticated operator is missing ${formatScopeList(input.missingScopes)}.`;
+  }
+
+  if (input.epistemicStatus === "unreachable") {
+    return `${input.operation.label} could not be observed because the OpenClaw Gateway is unreachable.`;
+  }
+
+  if (input.epistemicStatus === "protocol-mismatch") {
+    return `${input.operation.label} could not be verified because the Gateway protocol is outside AgentOS' supported range.`;
+  }
+
+  if (input.epistemicStatus === "unsupported") {
+    return `${input.operation.label} is not exposed by the detected OpenClaw Gateway contract.`;
+  }
+
+  if (input.epistemicStatus === "malformed-response") {
+    return `${input.operation.label} was advertised, but the native Gateway response shape did not match AgentOS' contract.`;
+  }
+
+  if (input.epistemicStatus === "failed") {
+    return `${input.operation.label} was advertised, but the live native Gateway check failed.`;
+  }
+
   if (input.liveFailure) {
     return `${input.operation.label} advertised native support, but the live response check failed: ${input.liveFailure}`;
   }
@@ -520,11 +679,6 @@ function resolveContractReason(input: {
     return `${input.operation.label} is native through ${evidence}; response shape was not checked in this report.`;
   }
 
-  if (input.capabilitySource === "version-default" && (input.supportedMethod || input.supportedEvent)) {
-    const evidence = input.supportedMethod ?? input.supportedEvent;
-    return `${input.operation.label} matches the version-default expectation through ${evidence}, but live Gateway capability metadata was not advertised.`;
-  }
-
   if (input.cliFallbackAvailable) {
     return `${input.operation.label} is not native in the ${input.capabilitySource} capability set; AgentOS can use explicit CLI fallback for recovery.`;
   }
@@ -537,10 +691,17 @@ function resolveContractRecovery(
   label: string,
   required: boolean,
   cliFallbackAvailable: boolean,
-  missingScopes: string[] = []
+  missingScopes: string[] = [],
+  epistemicStatus?: OpenClawCompatibilityEpistemicStatus
 ) {
   if (missingScopes.length > 0) {
     return `Repair local OpenClaw device access so AgentOS has ${formatScopeList(missingScopes)}, then rerun compatibility checks.`;
+  }
+
+  if (epistemicStatus === "certified-version-expectation" || epistemicStatus === "optional-absence" || epistemicStatus === "unknown") {
+    return cliFallbackAvailable
+      ? `Refresh compatibility against a live Gateway; CLI fallback remains an explicit recovery path for ${label}.`
+      : `Refresh compatibility against a live Gateway to verify ${label}.`;
   }
 
   switch (status) {
@@ -573,4 +734,32 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "Gateway request failed.");
+}
+
+function classifyLiveFailure(error: unknown, message: string): OpenClawCompatibilityEpistemicStatus {
+  const kind = error && typeof error === "object" && "kind" in error
+    ? (error as { kind?: unknown }).kind
+    : null;
+
+  if (kind === "auth" || kind === "scope-limited" || /auth|token|password|unauthorized|forbidden|scope|permission/i.test(message)) {
+    return "auth-denied";
+  }
+
+  if (kind === "unsupported" || /unknown method|method not found|unsupported method/i.test(message)) {
+    return "unsupported";
+  }
+
+  if (kind === "unreachable" || kind === "timeout" || /timed out|timeout|unreachable|connection|websocket|closed/i.test(message)) {
+    return "unreachable";
+  }
+
+  if (kind === "protocol-mismatch" || /protocol|version|hello|handshake/i.test(message)) {
+    return "protocol-mismatch";
+  }
+
+  if (kind === "malformed-response" || /malformed|schema|payload|invalid/i.test(message)) {
+    return "malformed-response";
+  }
+
+  return "failed";
 }

@@ -1,4 +1,7 @@
-import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
 
 export type OpenClawFallbackClassification =
   | "native-nonexistent"
@@ -26,6 +29,8 @@ export type OpenClawFallbackRegistryEntry = {
   };
   owner: string;
   removalCondition: string;
+  /** Exact contract version used when the native candidate was audited. */
+  nativeContractVersion?: string;
 };
 
 const baseline = OPENCLAW_SUPPORTED_BASELINE_VERSION;
@@ -36,7 +41,7 @@ const cliJsonAnchor = (suffix: string) => `${["runOpenClaw", "Json"].join("")}${
  * fallback; the existing Gateway client and command diagnostics remain the
  * runtime authority.
  */
-export const OPENCLAW_FALLBACK_REGISTRY = [
+const fallbackRegistryEntries = [
   {
     id: "cli-runner.command",
     operation: "cli.command",
@@ -60,7 +65,7 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "gateway.request",
     sourcePath: "lib/openclaw/client/native-ws-gateway-client.ts",
     sourceAnchors: ["this.fallback = options.fallback ?? new CliOpenClawGatewayClient();", "recordGatewayFallback(operation, error)"],
-    nativeMethodCandidate: "Gateway RPC method selected by the caller",
+    nativeMethodCandidate: null,
     classification: "legacy-baseline",
     reason: "Native Gateway requests remain preferred; the existing client falls back only when its typed policy permits recovery.",
     minimumSupportedOpenClaw: baseline,
@@ -78,7 +83,7 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "gateway.transport",
     sourcePath: "lib/openclaw/client/gateway-client-factory.ts",
     sourceAnchors: ["new CliOpenClawGatewayClient", "isCliGatewayClientForcedByEnv()"],
-    nativeMethodCandidate: "Gateway connection",
+    nativeMethodCandidate: null,
     classification: "setup-recovery",
     reason: "Explicit CLI-forced mode is a recovery and diagnostics mode, not the normal native transport path.",
     minimumSupportedOpenClaw: baseline,
@@ -96,7 +101,7 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "gateway.client-compatibility",
     sourcePath: "lib/openclaw/client/gateway-client.ts",
     sourceAnchors: ["export { CliOpenClawGatewayClient }"],
-    nativeMethodCandidate: "Gateway client",
+    nativeMethodCandidate: null,
     classification: "legacy-baseline",
     reason: "The compatibility export preserves the existing typed client boundary for older integrations and tests.",
     minimumSupportedOpenClaw: baseline,
@@ -156,9 +161,9 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "models.scan",
     sourcePath: "lib/openclaw/client/cli-gateway-client.ts",
     sourceAnchors: [cliJsonAnchor("<OpenClawModelScanPayload>(args, options);")],
-    nativeMethodCandidate: "models.scan",
-    classification: "native-unintegrated",
-    reason: "Model scanning remains a bounded CLI compatibility operation until a stable native scan contract is integrated.",
+    nativeMethodCandidate: null,
+    classification: "native-nonexistent",
+    reason: "The exact OpenClaw 2026.9.4 Gateway contract does not expose models.scan; retain this bounded CLI compatibility operation until a native scan contract exists.",
     minimumSupportedOpenClaw: baseline,
     fallbackAllowed: true,
     diagnostics: { channel: "gateway-fallback", counterKey: "models.scan", observable: "model scan diagnostic" },
@@ -170,7 +175,7 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "gateway.call",
     sourcePath: "lib/openclaw/client/cli-gateway-client.ts",
     sourceAnchors: ["[\"gateway\", \"call\", method, \"--params\", JSON.stringify(params), \"--json\"]"],
-    nativeMethodCandidate: "Gateway RPC method selected by method",
+    nativeMethodCandidate: null,
     classification: "legacy-baseline",
     reason: "Generic CLI Gateway calls preserve older method families while native typed methods are introduced incrementally.",
     minimumSupportedOpenClaw: baseline,
@@ -212,9 +217,9 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "channels.logs",
     sourcePath: "lib/openclaw/client/cli-gateway-client.ts",
     sourceAnchors: [cliJsonAnchor("<OpenClawChannelLogsPayload>(args, options);")],
-    nativeMethodCandidate: "channels.logs",
-    classification: "native-unintegrated",
-    reason: "Channel logs have a native candidate, but CLI log retrieval remains the documented recovery path.",
+    nativeMethodCandidate: null,
+    classification: "native-nonexistent",
+    reason: "The exact OpenClaw 2026.9.4 Gateway contract does not expose channels.logs; CLI log retrieval remains the documented recovery path.",
     minimumSupportedOpenClaw: baseline,
     fallbackAllowed: true,
     diagnostics: { channel: "gateway-fallback", counterKey: "channels.logs", observable: "channel fallback diagnostic" },
@@ -226,9 +231,9 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "channels.provision",
     sourcePath: "lib/openclaw/client/cli-gateway-client.ts",
     sourceAnchors: ["return runOpenClaw(args, options);", "return runOpenClaw(buildGmailSetupArgs(input), options);"],
-    nativeMethodCandidate: "channels.add / webhooks.gmail.setup",
+    nativeMethodCandidate: null,
     classification: "setup-recovery",
-    reason: "Channel and Gmail setup retain OpenClaw-owned CLI provisioning where no stable native equivalent is integrated.",
+    reason: "The exact OpenClaw 2026.9.4 Gateway contract does not expose channel or Gmail provisioning methods; retain OpenClaw-owned CLI setup.",
     minimumSupportedOpenClaw: baseline,
     fallbackAllowed: true,
     diagnostics: { channel: "cli-command", counterKey: "channels.provision", observable: "command diagnostics and setup result" },
@@ -240,9 +245,9 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "channels.remove",
     sourcePath: "lib/openclaw/client/cli-gateway-client.ts",
     sourceAnchors: ["      \"channels\",\n      \"remove\","],
-    nativeMethodCandidate: "channels.remove",
+    nativeMethodCandidate: null,
     classification: "setup-recovery",
-    reason: "Channel removal is an existing explicit CLI recovery path and remains subject to the caller's authorization boundary.",
+    reason: "The exact OpenClaw 2026.9.4 Gateway contract does not expose channel removal; retain the explicit CLI recovery path subject to the caller's authorization boundary.",
     minimumSupportedOpenClaw: baseline,
     fallbackAllowed: true,
     diagnostics: { channel: "cli-command", counterKey: "channels.remove", observable: "command diagnostics" },
@@ -492,7 +497,7 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
     operation: "compatibility.smoke-route",
     sourcePath: "app/api/openclaw/compatibility-smoke/route.ts",
     sourceAnchors: ["runOpenClawCompatibilitySmokeTest"],
-    nativeMethodCandidate: "Gateway compatibility probes",
+    nativeMethodCandidate: null,
     classification: "setup-recovery",
     reason: "The compatibility route projects bounded smoke evidence; it does not create a second fallback engine.",
     minimumSupportedOpenClaw: baseline,
@@ -517,9 +522,21 @@ export const OPENCLAW_FALLBACK_REGISTRY = [
   }
 ] as const satisfies readonly OpenClawFallbackRegistryEntry[];
 
+/**
+ * The registry is governance metadata, not a runtime selector. Attach the
+ * exact contract identity and the current source site to every entry so
+ * diagnostics cannot accidentally present a stale candidate as 9.4 native
+ * coverage.
+ */
+export const OPENCLAW_FALLBACK_REGISTRY = fallbackRegistryEntries.map((entry) => ({
+  ...entry,
+  nativeContractVersion: OPENCLAW_NATIVE_CONTRACT_VERSION
+})) satisfies readonly OpenClawFallbackRegistryEntry[];
+
 export type OpenClawFallbackRegistrySummary = {
   registryVersion: 1;
   fallbackMode: "native-first-governed-cli-recovery";
+  nativeContractVersion: string;
   fallbackAllowed: boolean;
   totalEntries: number;
   allowedEntryCount: number;
@@ -542,6 +559,7 @@ export function getOpenClawFallbackRegistrySummary(): OpenClawFallbackRegistrySu
   return {
     registryVersion: 1,
     fallbackMode: "native-first-governed-cli-recovery",
+    nativeContractVersion: OPENCLAW_NATIVE_CONTRACT_VERSION,
     fallbackAllowed: allowedEntries.length > 0,
     totalEntries: OPENCLAW_FALLBACK_REGISTRY.length,
     allowedEntryCount: allowedEntries.length,

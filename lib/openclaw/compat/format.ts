@@ -103,8 +103,10 @@ function formatContractLine(check: OpenClawCompatibilityContractCheck) {
   const native = check.nativeGatewaySupported
     ? check.supportedMethod ?? check.supportedEvent ?? "yes"
     : "no";
+  const evidence = check.epistemicStatus ?? "unknown";
+  const fallbackState = check.fallbackStatus ?? (check.cliFallbackAvailable ? "available" : "unavailable");
 
-  return `  ${check.label}: ${check.status} / native=${native} / fallback=${fallback} / shape=${shape}`;
+  return `  ${check.label}: ${check.status} / native=${native} / evidence=${evidence} / fallback=${fallback} (${fallbackState}) / shape=${shape}`;
 }
 
 function formatStatus(status: OpenClawCompatibilityStatus) {

@@ -7,6 +7,10 @@ import type {
   AgentOsOpenClawContractProbeOperationResult,
   AgentOsOpenClawContractProbeResult
 } from "@/lib/openclaw/contracts/types";
+import type {
+  OpenClawCompatibilityContractStatus,
+  OpenClawCompatibilityEpistemicStatus
+} from "@/lib/openclaw/compat/types";
 
 export function probeAgentOsOpenClawContract(input: {
   contract: AgentOsOpenClawContract;
@@ -41,7 +45,7 @@ export function probeAgentOsOpenClawContract(input: {
       input.targetVersion ??
       input.diagnostics?.version ??
       input.diagnostics?.capabilityMatrix?.openClawVersion ??
-      input.diagnostics?.compatibilityReport?.openClaw.installedVersion ??
+      input.diagnostics?.compatibilityReport?.openClaw?.installedVersion ??
       null,
     evidenceLabel: input.evidenceLabel ?? "Installed evidence",
     status: resolveProbeStatus(summary),
@@ -68,19 +72,10 @@ function probeOperation(input: {
     diffRow?.supportedMethod ??
     null;
   const supportedEvent = contractCheck?.supportedEvent ?? null;
-  const mode =
-    diffRow?.targetMode ??
-    capabilityOperation?.mode ??
-    (contractCheck
-      ? contractCheck.nativeGatewaySupported
-        ? "gateway-native"
-        : contractCheck.cliFallbackAvailable
-          ? "cli-fallback"
-          : contractCheck.status
-      : "unknown");
+  const mode = resolveOperationMode({ diffRow, capabilityMode: capabilityOperation?.mode, contractCheck });
   const payloadShapeStatus = contractCheck?.responseShapeStatus ?? null;
   const cliFallbackUsed =
-    mode === "cli-fallback" ||
+    Boolean(contractCheck?.fallbackUsed) ||
     Boolean(diffRow && diffRow.certifiedMode !== "cli-fallback" && diffRow.targetMode === "cli-fallback");
   const hasPayloadShapeChange =
     payloadShapeStatus === "invalid" ||
@@ -93,7 +88,10 @@ function probeOperation(input: {
     payloadShapeStatus,
     diffSeverity: diffRow?.severity ?? null,
     labAreaStatus: labArea?.status ?? null,
-    diagnosticsAvailable: Boolean(input.diagnostics?.capabilityMatrix || input.diagnostics?.compatibilityReport)
+    diagnosticsAvailable: Boolean(input.diagnostics?.capabilityMatrix || input.diagnostics?.compatibilityReport),
+    contractStatus: contractCheck?.status ?? null,
+    epistemicStatus: contractCheck?.epistemicStatus ?? null,
+    nativeGatewaySupported: contractCheck?.nativeGatewaySupported ?? null
   });
   const blocksCertification = input.operation.blocksCertification && status === "failed";
 
@@ -130,6 +128,32 @@ function probeOperation(input: {
   };
 }
 
+function resolveOperationMode(input: {
+  diffRow: { targetMode: string } | undefined;
+  capabilityMode: string | undefined;
+  contractCheck: {
+    nativeGatewaySupported: boolean;
+    status: OpenClawCompatibilityContractStatus;
+    fallbackUsed?: boolean;
+    cliFallbackAvailable: boolean;
+    epistemicStatus?: OpenClawCompatibilityEpistemicStatus;
+  } | undefined;
+}) {
+  if (input.contractCheck && (
+    input.contractCheck.epistemicStatus === "certified-version-expectation" ||
+    !input.contractCheck.nativeGatewaySupported ||
+    input.contractCheck.status !== "ok"
+  )) {
+    return input.contractCheck.fallbackUsed
+      ? "cli-fallback"
+      : input.contractCheck.status;
+  }
+
+  return input.diffRow?.targetMode ?? input.capabilityMode ?? (
+    input.contractCheck?.nativeGatewaySupported ? "gateway-native" : "unknown"
+  );
+}
+
 function resolveOperationStatus(input: {
   operation: AgentOsOpenClawContractOperation;
   mode: string;
@@ -139,6 +163,9 @@ function resolveOperationStatus(input: {
   diffSeverity: string | null;
   labAreaStatus: AgentOsOpenClawContractOperationStatus | null;
   diagnosticsAvailable: boolean;
+  contractStatus: OpenClawCompatibilityContractStatus | null;
+  epistemicStatus: OpenClawCompatibilityEpistemicStatus | null;
+  nativeGatewaySupported: boolean | null;
 }): AgentOsOpenClawContractOperationStatus {
   if (!input.diagnosticsAvailable) {
     return "unknown";
@@ -150,6 +177,27 @@ function resolveOperationStatus(input: {
 
   if (input.labAreaStatus === "failed") {
     return input.operation.blocksCertification ? "failed" : "warning";
+  }
+
+  if (input.contractStatus === "failed" || input.epistemicStatus === "malformed-response" || input.epistemicStatus === "failed") {
+    return input.operation.requirement === "required" || input.operation.blocksCertification ? "failed" : "warning";
+  }
+
+  if (input.contractStatus === "unsupported" || input.epistemicStatus === "unsupported") {
+    return input.operation.requirement === "required" || input.operation.blocksCertification ? "failed" : "warning";
+  }
+
+  if (
+    input.contractStatus === "degraded" ||
+    input.nativeGatewaySupported === false ||
+    input.epistemicStatus === "certified-version-expectation" ||
+    input.epistemicStatus === "auth-denied" ||
+    input.epistemicStatus === "unreachable" ||
+    input.epistemicStatus === "protocol-mismatch" ||
+    input.epistemicStatus === "optional-absence" ||
+    input.epistemicStatus === "unknown"
+  ) {
+    return input.operation.requirement === "required" && !input.operation.cliFallbackAllowed ? "failed" : "warning";
   }
 
   if (input.mode === "gateway-native" || input.mode === "ok") {
