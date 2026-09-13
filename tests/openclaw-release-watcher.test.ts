@@ -448,12 +448,23 @@ test("release-watch dry-run reconciles certified evidence and repository pin wit
   assert.equal(issueCalls, 0);
 });
 
-test("release-watch treats the pre-existing final artifact as historical until fresh provenance is present", async () => {
-  const lookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.4" });
+test("release-watch promotes fresh final evidence and keeps historical evidence non-promotable", async () => {
+  const freshLookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.4" });
 
-  assert.equal(lookup.status, "invalid");
-  assert.equal(lookup.evidence, null);
-  assert.match(lookup.reason, /historical|not promotable/i);
+  assert.equal(freshLookup.status, "found");
+  assert.equal(freshLookup.evidence?.artifactType, "openclaw-2026.9.4-pre-merge-final-certification");
+
+  const historicalEvidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-historical-evidence-"));
+  await writeFile(
+    join(historicalEvidenceDir, "openclaw-2026.9.4-phase-1-release-contract-alignment-historical.json"),
+    readFileSync("docs/evidence/openclaw-2026.9.4-phase-1-release-contract-alignment-historical.json", "utf8"),
+    "utf8"
+  );
+  const historicalLookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.4", evidenceDir: historicalEvidenceDir });
+
+  assert.equal(historicalLookup.status, "invalid");
+  assert.equal(historicalLookup.evidence, null);
+  assert.match(historicalLookup.reason, /historical|not promotable/i);
 });
 
 test("release-watch rejects a mismatched pre-merge final artifact identity", async () => {
