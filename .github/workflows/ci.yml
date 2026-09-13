@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check OpenClaw certification freshness
+        run: pnpm check:certification-freshness
+
       - name: Run lint
         run: pnpm lint
 
