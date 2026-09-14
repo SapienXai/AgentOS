@@ -429,6 +429,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const creationWarning = typeof data.creationWarning === "string" ? data.creationWarning.trim() : "";
   const isAttentionActive = selected || data.composerFocused || data.taskFocused;
   const isCreationPulse = Boolean(data.creationPulse);
+  const showCreationWarning = Boolean(creationWarning && !isPendingCreation && !isCreationPulse);
   const dotTone = resolveAgentStatusDotTone(data.agent.status);
   const statusBadgeVariant = resolveAgentStatusBadgeVariant(data.agent.status);
   const presetMeta = getAgentPresetMeta(data.agent.policy.preset);
@@ -1243,7 +1244,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   Agent online
                 </Badge>
               ) : null}
-              {creationWarning ? (
+              {showCreationWarning ? (
                 <Badge variant="warning" data-agent-status="warning" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   Sync note
                 </Badge>
@@ -1273,7 +1274,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
 
           <div className="mt-2.5">
-            {creationWarning ? <AgentCreationWarningNotice message={creationWarning} /> : null}
+            {showCreationWarning ? <AgentCreationWarningNotice message={creationWarning} /> : null}
             <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
           </div>
 

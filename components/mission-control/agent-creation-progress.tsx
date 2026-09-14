@@ -389,6 +389,26 @@ export function AgentCreationCardOverlay({
             </span>
             <span className="mt-2 text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
             <span className="mt-0.5 max-w-[190px] truncate text-[12px] font-semibold text-white">{agentName} joined the workspace</span>
+            <div className="mt-2.5 w-full max-w-[190px] text-left">
+              <div className="flex items-center justify-between text-[8px] uppercase tracking-[0.14em] text-emerald-100/65">
+                <span>Birth sequence</span>
+                <span>Complete</span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <motion.span
+                  aria-hidden="true"
+                  initial={{ width: 0 }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: reduceMotion ? 0 : 2.35, delay: reduceMotion ? 0 : 0.12, ease: [0.22, 1, 0.36, 1] }}
+                  className="block h-full rounded-full bg-[linear-gradient(90deg,#67e8f9,#34d399)]"
+                />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between text-[8px] text-emerald-100/55">
+                <span>Profile</span>
+                <span>Runtime</span>
+                <span>Canvas</span>
+              </div>
+            </div>
           </div>
         </motion.div>
       )}

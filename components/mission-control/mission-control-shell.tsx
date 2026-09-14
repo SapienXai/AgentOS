@@ -1046,7 +1046,7 @@ export function MissionControlShell({
     recentCreatedAgentTimeoutRef.current = setTimeout(() => {
       recentCreatedAgentTimeoutRef.current = null;
       setRecentCreatedAgentId(null);
-    }, 2400);
+    }, 3600);
   }, []);
 
   const handleAgentCreationPending = useCallback((agent: PendingAgentProjection) => {
