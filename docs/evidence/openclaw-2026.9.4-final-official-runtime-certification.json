@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T21:10:07.363Z",
+  "generatedAt": "2026-09-14T21:05:26.559Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosHead": "9c5e0abc61cd9248f856dbeef1b79090a1288e35",
-    "certifiedCodeHead": "9c5e0abc61cd9248f856dbeef1b79090a1288e35",
-    "branch": "main",
+    "agentosHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
+    "certifiedCodeHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
+    "branch": "",
     "workingTreeClean": true,
     "repositoryDirtyFilesCount": 0,
-    "gitDescribe": "agentos-v0.7.8-34-g9c5e0ab",
+    "gitDescribe": "agentos-v0.7.8-124-g7e170355",
     "openClaw": {
       "version": "2026.9.4",
       "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -85,7 +85,7 @@
       "openclaw-setup-model-ref",
       "taskSuggestions.acceptModes"
     ],
-    "connectionId": "0f9dc737-6d29-4773-b622-8aa218550fbb",
+    "connectionId": "b7ebd233-1ea4-42d3-9c71-9c9e9700245c",
     "deviceId": null
   },
   "auth": {
@@ -631,8 +631,8 @@
     }
   ],
   "observations": {
-    "firstConnectionId": "0f9dc737-6d29-4773-b622-8aa218550fbb",
-    "reconnectConnectionId": "b9885aa6-296a-4966-a0b7-cdf88b79a46f",
+    "firstConnectionId": "b7ebd233-1ea4-42d3-9c71-9c9e9700245c",
+    "reconnectConnectionId": "f39085da-8558-4599-8c0f-e8b76c5d04bd",
     "deviceIdStableAcrossRestart": false,
     "eventBridgeStarted": true,
     "eventBridgeReconnected": true,

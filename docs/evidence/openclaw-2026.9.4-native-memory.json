@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-memory-certification",
-  "generatedAt": "2026-09-11T20:49:00.281Z",
+  "generatedAt": "2026-09-14T20:55:18.356Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "certifiedCodeHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
     "branch": "main",
     "openClaw": {
       "release": "2026.9.4",

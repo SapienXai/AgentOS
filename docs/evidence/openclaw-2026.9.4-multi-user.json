@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T20:47:27.862Z",
+  "generatedAt": "2026-09-14T20:52:34.892Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "codeCommitUnderTest": "7e170355af06c46b1b79b4bb2e37348d8d514871",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.9.4",
     "openClawSourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -160,7 +160,7 @@
     {
       "label": "Owner A",
       "actorIdClassification": "stable-uuid",
-      "actorId": "f2cced15-0b04-45df-939e-82dc8a787f99",
+      "actorId": "46b00ef6-e3a7-49f5-bbac-7206a558e6a2",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "owner"
@@ -168,7 +168,7 @@
     {
       "label": "Member B",
       "actorIdClassification": "stable-uuid",
-      "actorId": "6de385a5-b626-4b1a-9a23-75c36811fbc4",
+      "actorId": "7a69952b-197f-4767-b8cf-5af3e92d96cc",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "member"
@@ -209,7 +209,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "38baa3ac-3a02-4ff1-ba04-59f034a0ce81",
+        "connectionId": "c863e512-be3f-464e-8387-6516e01b8ee3",
         "authenticated": true,
         "source": "native-handshake"
       },

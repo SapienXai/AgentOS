@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-11T20:47:25.062Z",
+  "generatedAt": "2026-09-14T20:54:21.163Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "codeCommitUnderTest": "7e170355af06c46b1b79b4bb2e37348d8d514871",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.9.4",
     "openClawSourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -94,18 +94,18 @@
   "automationIdentity": {
     "automationId": "agentos:automation:e2e",
     "declarationKey": "agentos:automation:e2e",
-    "cronJobId": "79b92b39-fd23-4909-95e8-d22019f7c01a",
+    "cronJobId": "5b9c23a1-93b2-4c84-9bbc-a69d33c1184a",
     "cronRunIds": [
-      "manual:79b92b39-fd23-4909-95e8-d22019f7c01a:1789159647934:1",
-      "manual:79b92b39-fd23-4909-95e8-d22019f7c01a:1789159648969:2"
+      "manual:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:1789419263300:1",
+      "manual:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:1789419264325:2"
     ],
     "sessionKeys": [
-      "agent:main:cron:79b92b39-fd23-4909-95e8-d22019f7c01a:run:b37e813a-e9c0-41e2-97ae-9abad06d2dc2",
-      "agent:main:cron:79b92b39-fd23-4909-95e8-d22019f7c01a:run:ae4b9296-4e39-4029-9a04-7d5e662e18c9"
+      "agent:main:cron:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:run:47e3a0ed-b803-4e43-ad91-142fb01e006a",
+      "agent:main:cron:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:run:9b43029e-7149-42b2-af9b-2233824b5a10"
     ],
     "sessionIds": [
-      "b37e813a-e9c0-41e2-97ae-9abad06d2dc2",
-      "ae4b9296-4e39-4029-9a04-7d5e662e18c9"
+      "47e3a0ed-b803-4e43-ad91-142fb01e006a",
+      "9b43029e-7149-42b2-af9b-2233824b5a10"
     ],
     "provenance": "authoritative job + run identities; AgentOS key is correlated"
   },
@@ -122,8 +122,8 @@
   },
   "taskIntegration": {
     "taskIds": [
-      "cc2bed97-4d23-4135-9d21-a1835e84f242",
-      "8270eb8e-7fbd-4e81-8d30-d7caf0129eb9"
+      "9881baee-cfd7-4eef-936b-ed508e6819dd",
+      "8dbb4d06-4fb5-48b7-8b84-bff398a6d0a0"
     ],
     "taskGetChecks": [
       {
@@ -149,7 +149,7 @@
   },
   "runChecks": [
     {
-      "runId": "manual:79b92b39-fd23-4909-95e8-d22019f7c01a:1789159647934:1",
+      "runId": "manual:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:1789419263300:1",
       "status": "ok",
       "completionStatus": "succeeded",
       "sessionKeyPresent": true,
@@ -157,7 +157,7 @@
       "exactRunFilter": true
     },
     {
-      "runId": "manual:79b92b39-fd23-4909-95e8-d22019f7c01a:1789159648969:2",
+      "runId": "manual:5b9c23a1-93b2-4c84-9bbc-a69d33c1184a:1789419264325:2",
       "status": "ok",
       "completionStatus": "succeeded",
       "sessionKeyPresent": true,

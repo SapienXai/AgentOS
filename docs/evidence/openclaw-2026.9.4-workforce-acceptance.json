@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-workforce-acceptance",
-  "generatedAt": "2026-09-11T20:48:28.717Z",
+  "generatedAt": "2026-09-14T20:54:46.402Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosCommit": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+    "agentosCommit": "7e170355af06c46b1b79b4bb2e37348d8d514871",
     "openClaw": {
       "version": "2026.9.4",
       "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -38,12 +38,12 @@
     "persistedSidecar": true,
     "missionListFromPersistedSidecar": true,
     "missionDetailFromPersistedSidecar": true,
-    "requestId": "workforce-product-path-1789159711230",
-    "dispatchId": "dispatch-1dee8b6c-29e0-4bea-9527-34f3c1ebe812",
+    "requestId": "workforce-product-path-1789419288356",
+    "dispatchId": "dispatch-9ea777f7-396c-4dfe-93d5-6fc13e54378a",
     "agentId": "main",
     "workspaceId": "workspace",
     "sessionKey": "agent:main:main",
-    "runId": "dispatch-1dee8b6c-29e0-4bea-9527-34f3c1ebe812"
+    "runId": "dispatch-9ea777f7-396c-4dfe-93d5-6fc13e54378a"
   },
   "checks": {
     "runtime-identity": {

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-doctor-update-recovery-certification",
-  "generatedAt": "2026-09-11T20:49:44.081Z",
-  "certifiedCodeHead": "60a8113eac77d8fe94396c993393d5ae6525bb51",
+  "generatedAt": "2026-09-14T20:55:58.692Z",
+  "certifiedCodeHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
   "openClaw": {
     "release": "2026.9.4",
     "source": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
@@ -177,7 +177,7 @@
     "upstreamScopeSource": {
       "kind": "pinned-openclaw-source-descriptor",
       "path": "src/gateway/methods/core-descriptors.ts",
-      "sourceCommit": null,
+      "sourceCommit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
       "descriptorSha256": "aa9af57bde840a18a093138e0451ec960f38d1e737a65f5034d246d1641deb35"
     },
     "upstreamScopes": {
