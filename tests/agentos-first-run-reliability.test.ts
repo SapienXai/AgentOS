@@ -12,7 +12,8 @@ import {
   isOpenClawSystemReady,
   resolveAgentCreationReadinessError,
   resolveMissionDispatchReadinessError,
-  resolveWorkspaceCreationReadinessError
+  resolveWorkspaceCreationReadinessError,
+  resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence
 } from "@/lib/openclaw/readiness";
 import type { RuntimeRecord } from "@/lib/openclaw/types";
 
@@ -358,6 +359,101 @@ test("workspace-backed agent models keep first-run actions usable when the globa
   assert.equal(resolveWorkspaceCreationReadinessError(snapshot, "openai/gpt-5.4-mini"), null);
   assert.equal(resolveAgentCreationReadinessError(snapshot, "openai/gpt-5.4-mini"), null);
   assert.match(resolveAgentCreationReadinessError(snapshot, "openai/missing") ?? "", /not ready/);
+});
+
+test("workspace creation reconciles a stale global model snapshot with native agent-scoped proof", async () => {
+  const snapshot = createErrorSnapshot("The selected default model is not ready yet.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+  snapshot.diagnostics.modelReadiness = {
+    ...snapshot.diagnostics.modelReadiness,
+    defaultModel: "openai/gpt-5.6-luna",
+    resolvedDefaultModel: "openai/gpt-5.6-luna",
+    defaultModelReady: false,
+    ready: false,
+    totalModelCount: 1,
+    availableModelCount: 0,
+    issues: ["The selected default model is not ready yet."]
+  };
+  snapshot.models = [{
+    id: "openai/gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
+    provider: "openai",
+    input: "remote",
+    contextWindow: null,
+    local: false,
+    available: false,
+    missing: false,
+    tags: [],
+    usageCount: 0
+  }];
+  snapshot.agents = [{ id: "existing-owner", modelId: "openai/gpt-5.6-luna" }] as unknown as typeof snapshot.agents;
+  const probes: Array<{ agentId: string; modelId: string }> = [];
+
+  const readinessError = await resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: "openai/gpt-5.6-luna",
+    candidateAgentIds: ["existing-owner"],
+    verifyAgentModel: async (input) => {
+      probes.push(input);
+      return true;
+    }
+  });
+
+  assert.equal(readinessError, null);
+  assert.deepEqual(probes, [{ agentId: "existing-owner", modelId: "openai/gpt-5.6-luna" }]);
+});
+
+test("workspace creation stays blocked when native agent-scoped model proof is unavailable", async () => {
+  const snapshot = createErrorSnapshot("The selected default model is not ready yet.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+  snapshot.diagnostics.modelReadiness = {
+    ...snapshot.diagnostics.modelReadiness,
+    defaultModel: "openai/gpt-5.6-luna",
+    resolvedDefaultModel: "openai/gpt-5.6-luna",
+    defaultModelReady: false,
+    ready: false,
+    totalModelCount: 1,
+    availableModelCount: 0,
+    issues: ["The selected default model is not ready yet."]
+  };
+
+  const readinessError = await resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: "openai/gpt-5.6-luna",
+    candidateAgentIds: ["existing-owner"],
+    verifyAgentModel: async () => false
+  });
+
+  assert.match(readinessError ?? "", /Requested model openai\/gpt-5\.6-luna is not ready/);
+});
+
+test("workspace creation never bypasses a system readiness failure with model evidence", async () => {
+  const snapshot = createErrorSnapshot("OpenClaw Gateway is not running.", {
+    installed: true,
+    loaded: false,
+    rpcOk: false
+  });
+  const probes: string[] = [];
+
+  const readinessError = await resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: "openai/gpt-5.6-luna",
+    candidateAgentIds: ["existing-owner"],
+    verifyAgentModel: async ({ agentId }) => {
+      probes.push(agentId);
+      return true;
+    }
+  });
+
+  assert.match(readinessError ?? "", /Gateway is not running/);
+  assert.deepEqual(probes, []);
 });
 
 test("runtime output surfaces an explicit diagnostic when dispatch output is empty", async () => {

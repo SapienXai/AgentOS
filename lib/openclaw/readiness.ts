@@ -68,6 +68,53 @@ export function resolveWorkspaceCreationReadinessError(
   return null;
 }
 
+/**
+ * Reconcile a stale global model snapshot with bounded, agent-scoped native
+ * evidence. OpenClaw model status is owner-scoped in a multi-agent Gateway,
+ * so a global "not ready" result must not override a successful check for the
+ * agent that owns the connected provider/model. System readiness failures are
+ * never bypassed by this helper.
+ */
+export async function resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(
+  snapshot: MissionControlSnapshot,
+  input: {
+    requestedModelId?: string | null;
+    candidateAgentIds?: readonly string[];
+    verifyAgentModel: (input: { agentId: string; modelId: string }) => Promise<boolean>;
+  }
+) {
+  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, input.requestedModelId);
+
+  if (!readinessError || resolveOpenClawSystemReadinessIssue(snapshot)) {
+    return readinessError;
+  }
+
+  const modelId = normalizeModelId(input.requestedModelId);
+
+  if (!modelId) {
+    return readinessError;
+  }
+
+  const candidateAgentIds = Array.from(new Set(
+    (input.candidateAgentIds ?? [])
+      .map((agentId) => agentId.trim())
+      .filter(Boolean)
+  )).slice(0, 3);
+
+  for (const agentId of candidateAgentIds) {
+    try {
+      if (await input.verifyAgentModel({ agentId, modelId })) {
+        return null;
+      }
+    } catch {
+      // Native evidence is best-effort reconciliation. A failed probe must
+      // remain a readiness failure rather than becoming implicit approval.
+    }
+  }
+
+  return readinessError;
+}
+
 export function resolveAgentCreationReadinessError(
   snapshot: MissionControlSnapshot,
   requestedModelId?: string | null

@@ -29,6 +29,7 @@ import { disconnectWorkspaceChannel } from "@/lib/openclaw/application/channel-s
 import {
   clearRuntimeHistoryCache
 } from "@/lib/openclaw/application/runtime-service";
+import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import {
   buildWorkspaceCreateProgressTemplate,
   createOperationProgressTracker
@@ -93,7 +94,9 @@ import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-nor
 import {
   getConfiguredWorkspaceRoot
 } from "@/lib/openclaw/domains/control-plane-settings";
-import { resolveWorkspaceCreationReadinessError } from "@/lib/openclaw/readiness";
+import {
+  resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence
+} from "@/lib/openclaw/readiness";
 import {
   resolveWorkspaceIdForPath,
   workspacePathMatchesId
@@ -193,16 +196,28 @@ async function createWorkspaceProjectInternal(
   await progress.addActivity("validate", `Reserved target directory ${targetDir}.`, "done");
 
   const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-  const workspaceModelId =
+  const configuredWorkspaceModelId =
     normalized.modelId ??
     resolveWorkspaceBlueprintModelId(snapshot, enabledAgents) ??
     resolveSnapshotDefaultAgentModelId(snapshot) ??
     resolveRecommendedWorkspaceModelId(snapshot);
-  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, workspaceModelId);
+  const workspaceReadinessModelId =
+    configuredWorkspaceModelId ??
+    resolveWorkspaceModelCandidateId(snapshot, enabledAgents);
+  const readinessError = await resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: workspaceReadinessModelId,
+    candidateAgentIds: resolveWorkspaceNativeReadinessAgentIds(snapshot, workspaceReadinessModelId),
+    verifyAgentModel: isOpenClawAgentModelReady
+  });
 
   if (readinessError) {
     throw new Error(readinessError);
   }
+
+  // A native agent-scoped check can prove a model that the global snapshot
+  // marked unavailable. Preserve that verified model when provisioning the
+  // new OpenClaw-owned agents instead of writing an unassigned model.
+  const workspaceModelId = configuredWorkspaceModelId ?? workspaceReadinessModelId;
 
   await progress.updateStep("validate", {
     percent: 72,
@@ -1073,6 +1088,50 @@ function resolveWorkspaceBlueprintModelId(
   return agents
     .map((agent) => normalizeOptionalValue(agent.modelId))
     .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function resolveWorkspaceModelCandidateId(
+  snapshot: MissionControlSnapshot,
+  agents: WorkspaceAgentBlueprintInput[]
+) {
+  return [
+    ...agents.map((agent) => normalizeWorkspaceModelReference(agent.modelId)),
+    normalizeWorkspaceModelReference(snapshot.diagnostics.modelReadiness.resolvedDefaultModel),
+    normalizeWorkspaceModelReference(snapshot.diagnostics.modelReadiness.defaultModel),
+    ...snapshot.agents
+      .filter((agent) => agent.kind !== "system")
+      .map((agent) => normalizeWorkspaceModelReference(agent.modelId)),
+    normalizeWorkspaceModelReference(snapshot.diagnostics.modelReadiness.recommendedModelId),
+    ...snapshot.models.map((model) => normalizeWorkspaceModelReference(model.id))
+  ].find((modelId): modelId is string => Boolean(modelId));
+}
+
+function resolveWorkspaceNativeReadinessAgentIds(
+  snapshot: MissionControlSnapshot,
+  modelId: string | undefined
+) {
+  const normalizedModelId = normalizeWorkspaceModelReference(modelId)?.toLowerCase();
+
+  if (!normalizedModelId) {
+    return [];
+  }
+
+  const eligibleAgents = snapshot.agents.filter((agent) => agent.kind !== "system");
+  const matchingAgents = eligibleAgents.filter(
+    (agent) => normalizeWorkspaceModelReference(agent.modelId)?.toLowerCase() === normalizedModelId
+  );
+  const defaultAgents = eligibleAgents.filter((agent) => agent.isDefault);
+
+  return uniqueStrings([
+    ...matchingAgents.map((agent) => agent.id),
+    ...defaultAgents.map((agent) => agent.id),
+    ...eligibleAgents.map((agent) => agent.id)
+  ]).slice(0, 3);
+}
+
+function normalizeWorkspaceModelReference(value: string | null | undefined) {
+  const normalized = normalizeOptionalValue(value);
+  return normalized && normalized !== "unassigned" ? normalized : undefined;
 }
 
 function resolveRecommendedWorkspaceModelId(snapshot: MissionControlSnapshot) {
