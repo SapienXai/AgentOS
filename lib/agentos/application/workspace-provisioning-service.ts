@@ -60,7 +60,10 @@ import { updateAgent } from "@/lib/openclaw/application/agent-service";
 import { createWorkspaceProject } from "@/lib/openclaw/application/workspace-service";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import { getConfiguredWorkspaceRoot } from "@/lib/openclaw/domains/control-plane-settings";
-import { createWorkspaceAgentId } from "@/lib/openclaw/domains/agent-provisioning";
+import {
+  canonicalizeWorkspaceAgentId,
+  createWorkspaceAgentId
+} from "@/lib/openclaw/domains/agent-provisioning";
 import { readWorkspaceProjectManifest } from "@/lib/openclaw/domains/workspace-manifest";
 import { buildWorkspaceScaffoldDocumentPaths } from "@/lib/openclaw/workspace-docs";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
@@ -1222,16 +1225,28 @@ async function verifyWorkspaceAgents(
   blueprint: WorkspaceBlueprint,
   dependencies: ResolvedWorkspaceProvisioningDependencies
 ) {
+  const workspaceSlug = slugify(blueprint.identity.name);
   const requiredIds = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists]
     .filter((agent) => agent.enabled)
-    .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
+    .map((agent) => createWorkspaceAgentId(workspaceSlug, agent.id));
   const manifest = await readWorkspaceProjectManifest(created.workspacePath);
-  const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
+  const manifestIds = new Set(
+    manifest.agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => canonicalizeWorkspaceAgentId(workspaceSlug, agent.id))
+  );
   const { liveIds } = await readWorkspaceVerificationSnapshot(created, requiredIds, dependencies);
   const coreErrors = requiredIds
-    .filter((agentId) => !created.agentIds.includes(agentId) || !manifestIds.has(agentId) || !liveIds.has(agentId))
+    // OpenClaw's live registry is authoritative. The durable create result can
+    // contain a pre-canonical id after a process restart, and the AgentOS
+    // project manifest is recoverable sidecar metadata rather than runtime
+    // proof that the native agent exists.
+    .filter((agentId) => !liveIds.has(agentId))
     .map((agentId) => `Required workspace agent ${agentId} was not verified.`);
-  return { coreErrors, warnings: [] as string[] };
+  const warnings = requiredIds
+    .filter((agentId) => liveIds.has(agentId) && !manifestIds.has(agentId))
+    .map((agentId) => `AgentOS workspace metadata is missing for native OpenClaw agent ${agentId}; it will be rebuilt during capability sync.`);
+  return { coreErrors, warnings };
 }
 
 async function updateCanonicalOpenClawProgress(
@@ -1404,14 +1419,21 @@ async function applyAgentCapabilities(
   await lease.assertOwned();
   const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
   const warnings: string[] = [];
+  const workspaceSlug = slugify(blueprint.identity.name);
+  const manifest = await readWorkspaceProjectManifest(created.workspacePath);
+  const manifestIds = new Set(
+    manifest.agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => canonicalizeWorkspaceAgentId(workspaceSlug, agent.id))
+  );
   const desiredAgents = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists];
   for (const desired of desiredAgents) {
-    const agentId = createWorkspaceAgentId(slugify(blueprint.identity.name), desired.id);
-    if (!created.agentIds.includes(agentId)) {
-      warnings.push(`Selected agent ${desired.id} was not found after workspace bootstrap.`);
-      continue;
-    }
-    const current = snapshot.agents.find((agent) => agent.id === agentId);
+    const agentId = createWorkspaceAgentId(workspaceSlug, desired.id);
+    const current = snapshot.agents.find(
+      (agent) =>
+        agent.id === agentId &&
+        (agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath))
+    );
     if (!current) {
       warnings.push(`Selected agent ${desired.id} was not visible in the current OpenClaw snapshot.`);
       continue;
@@ -1423,6 +1445,7 @@ async function applyAgentCapabilities(
       && sameStringArray(current.tools, tools)
       && current.name === desired.name
       && stableStringify(current.policy) === stableStringify(desired.policy)
+      && manifestIds.has(agentId)
     ) {
       continue;
     }
@@ -1437,6 +1460,7 @@ async function applyAgentCapabilities(
         policy: desired.policy,
         name: desired.name
       });
+      manifestIds.add(agentId);
     } catch (error) {
       warnings.push(`${desired.name}: ${redactErrorMessage(error, "Selected capabilities could not be applied.")}`);
     }
@@ -1469,14 +1493,23 @@ async function verifyProvisionedWorkspace(
 
   const manifest = await readWorkspaceProjectManifest(created.workspacePath);
   await access(path.join(created.workspacePath, WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH)).catch(() => coreErrors.push("The AgentOS provisioning manifest is missing."));
+  const workspaceSlug = slugify(blueprint.identity.name);
   const requiredIds = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists]
     .filter((agent) => agent.enabled)
-    .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
-  const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
+    .map((agent) => createWorkspaceAgentId(workspaceSlug, agent.id));
+  const manifestIds = new Set(
+    manifest.agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => canonicalizeWorkspaceAgentId(workspaceSlug, agent.id))
+  );
   const { workspaceVisible, liveIds } = await readWorkspaceVerificationSnapshot(created, requiredIds, dependencies, true);
   if (!workspaceVisible) coreErrors.push("The workspace was not present in the authoritative OpenClaw snapshot.");
   for (const agentId of requiredIds) {
-    if (!manifestIds.has(agentId) || !liveIds.has(agentId)) coreErrors.push(`Required workspace agent ${agentId} was not verified.`);
+    if (!liveIds.has(agentId)) {
+      coreErrors.push(`Required workspace agent ${agentId} was not verified.`);
+    } else if (!manifestIds.has(agentId)) {
+      warnings.push(`AgentOS workspace metadata is still missing for native OpenClaw agent ${agentId}.`);
+    }
   }
 
   if (blueprint.knowledge.sourceIds.length > 0 && !nativeBinding) {

@@ -274,6 +274,30 @@ function createHarness(rootPath: string, options: {
     },
     updateAgent: async (input) => {
       updateCount += 1;
+      const workspacePath = input.workspacePath;
+      if (workspacePath) {
+        const manifestPath = path.join(workspacePath, ".openclaw", "project.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+        const agents = Array.isArray(manifest.agents)
+          ? manifest.agents.filter((entry) => entry && typeof entry === "object" && (entry as Record<string, unknown>).id !== input.id)
+          : [];
+        agents.push({
+          id: input.id,
+          name: input.name ?? input.id,
+          role: "Agent",
+          isPrimary: true,
+          enabled: true,
+          skillId: input.skills?.[0] ?? null,
+          skillIds: input.skills ?? [],
+          toolIds: input.tools ?? [],
+          modelId: null,
+          policy: input.policy ?? null,
+          emoji: null,
+          theme: null,
+          channelIds: []
+        });
+        await writeFile(manifestPath, JSON.stringify({ ...manifest, agents }));
+      }
       return { agentId: input.id, workspaceId: input.workspaceId ?? "test-workspace" };
     }
   };
@@ -873,7 +897,7 @@ test("a persisted non-terminal run resumes after the in-memory executor is absen
   }
 });
 
-test("partial workspace state is repaired through the canonical OpenClaw create boundary", async () => {
+test("partial workspace state is repaired from the authoritative native agent", async () => {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-"));
   try {
     const harness = createHarness(rootPath);
@@ -890,7 +914,8 @@ test("partial workspace state is repaired through the canonical OpenClaw create 
     const repaired = await waitForWorkspaceProvisioning(input, harness.dependencies);
     assert.equal(repaired.state, "ready");
     assert.equal(repaired.attempt, 2);
-    assert.equal(harness.counts().createCount, 2);
+    assert.equal(harness.counts().createCount, 1);
+    assert.equal(harness.counts().updateCount, 1);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

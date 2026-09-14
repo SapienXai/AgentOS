@@ -129,7 +129,22 @@ function describeAgentWorkspace(
 }
 
 export function createWorkspaceAgentId(workspaceSlug: string, agentKey: string) {
-  return `${workspaceSlug}-${slugify(agentKey) || "agent"}`;
+  // OpenClaw canonicalizes native agent identities to 64 characters. Keep the
+  // requested workspace identity aligned with that native value so later
+  // reads, updates, and resumptions do not compare against an impossible id.
+  return `${workspaceSlug}-${slugify(agentKey) || "agent"}`.slice(0, 64);
+}
+
+/**
+ * Map a workspace manifest or durable run identity back to OpenClaw's native
+ * workspace-agent identity. Older manifests may still contain the pre-native
+ * truncation value, while already-canonical ids remain stable through this
+ * operation.
+ */
+export function canonicalizeWorkspaceAgentId(workspaceSlug: string, agentId: string) {
+  const prefix = `${workspaceSlug}-`;
+  const agentKey = agentId.startsWith(prefix) ? agentId.slice(prefix.length) : agentId;
+  return createWorkspaceAgentId(workspaceSlug, agentKey || agentId);
 }
 
 export function assertWorkspaceBootstrapAgentIdsAvailable(

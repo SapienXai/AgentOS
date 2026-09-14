@@ -64,6 +64,7 @@ import {
 } from "@/lib/openclaw/domains/workspace-edit";
 import {
   assertWorkspaceBootstrapAgentIdsAvailable as assertWorkspaceBootstrapAgentIdsAvailableFromProvisioning,
+  canonicalizeWorkspaceAgentId,
   createBootstrappedWorkspaceAgent as createBootstrappedWorkspaceAgentFromProvisioning,
   createWorkspaceAgentId as createWorkspaceAgentIdFromProvisioning,
   ensureAgentPolicySkill as ensureAgentPolicySkillFromProvisioning
@@ -704,16 +705,12 @@ function findMatchingWorkspaceAgent(
   const workspacePrefix = `${workspaceSlug}-`;
 
   return (
-    agents.find((agent) => agent.id === createWorkspaceAgentId(workspaceSlug, agentKey)) ??
+    agents.find((agent) => agent.id === createWorkspaceAgentIdFromProvisioning(workspaceSlug, agentKey)) ??
     agents.find((agent) => agent.id === `${workspacePrefix}${normalizedKey}`) ??
     agents.find((agent) => normalizedKey.length > 0 && agent.id.endsWith(`-${normalizedKey}`)) ??
     agents.find((agent) => agent.id === normalizedKey) ??
     null
   );
-}
-
-function createWorkspaceAgentId(workspaceSlug: string, agentKey: string) {
-  return `${workspaceSlug}-${slugify(agentKey) || "agent"}`;
 }
 
 function uniqueStrings(values: string[]) {
@@ -1344,9 +1341,7 @@ function resolveManifestWorkspaceAgentProvisioningRef(
   const normalizedAgentKey = agentKey || manifestAgent.id;
 
   return {
-    agentId: manifestAgent.id.startsWith(slugPrefix)
-      ? manifestAgent.id
-      : createWorkspaceAgentIdFromProvisioning(workspaceSlug, manifestAgent.id),
+    agentId: canonicalizeWorkspaceAgentId(workspaceSlug, normalizedAgentKey),
     agent: {
       id: normalizedAgentKey,
       name: manifestAgent.name ?? normalizedAgentKey,

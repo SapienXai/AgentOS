@@ -27,6 +27,10 @@ import {
 } from "@/lib/agentos/domains/workspace-materialization";
 import { redactSecretText } from "@/lib/security/redaction";
 import {
+  buildCompactPrimaryAgentName,
+  buildCompactWorkspaceName
+} from "@/lib/workspace-naming";
+import {
   selectProjectIntelligenceContextExcerpts
 } from "@/lib/agentos/application/project-intelligence-context";
 import {
@@ -1538,7 +1542,7 @@ function normalizeArchitectProposal(input: {
 }): ArchitectNormalizationResult {
   const fallbackIdentity = inferIdentity(input.brief, input.knowledge.sources, input.projectIntelligence?.pack);
   const identity = {
-    name: boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80),
+    name: buildCompactWorkspaceName(boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80)),
     purpose: boundedText(input.proposal.identity?.purpose, fallbackIdentity.purpose, 240),
     projectType: boundedText(input.proposal.identity?.projectType, fallbackIdentity.projectType, 80)
   };
@@ -1613,7 +1617,7 @@ function createPrimaryAgent(
   return {
     id: "primary-operator",
     role: boundedText(proposal?.role, "Primary Operator", 100),
-    name: boundedText(proposal?.name, `${name} Operator`, 100),
+    name: buildCompactPrimaryAgentName(name),
     enabled: true,
     persistence: "primary",
     isPrimary: true,

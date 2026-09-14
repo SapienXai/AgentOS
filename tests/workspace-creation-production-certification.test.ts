@@ -7,6 +7,7 @@ import { goldenProjectFixtures } from "@/tests/fixtures/project-intelligence";
 import { validateProjectIntelligencePack } from "@/lib/agentos/domains/project-intelligence";
 import { validateWorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
+import { buildCompactWorkspaceName } from "@/lib/workspace-naming";
 
 test("deterministic production certification covers Web3, SaaS, and documentation-heavy projects", async () => {
   for (const fixture of goldenProjectFixtures) {
@@ -63,7 +64,7 @@ test("deterministic production certification covers Web3, SaaS, and documentatio
     });
     assert.equal(result.validation.valid, true, fixture.name);
     assert.equal(validateWorkspaceBlueprint(result.blueprint).valid, true, fixture.name);
-    assert.equal(result.blueprint.identity.name, fixture.expectation.name);
+    assert.equal(result.blueprint.identity.name, buildCompactWorkspaceName(fixture.expectation.name));
     assert.equal(result.blueprint.projectContextRefs?.packId, fixture.pack.id);
 
     const composition = createDeterministicWorkspaceComposition({

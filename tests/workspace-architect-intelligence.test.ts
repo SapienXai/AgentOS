@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import type { WorkspaceArchitectCorpusDocument } from "@/lib/agentos/domains/workspace-blueprint";
+import { buildCompactPrimaryAgentName, buildCompactWorkspaceName } from "@/lib/workspace-naming";
 import { goldenProjectFixtures } from "@/tests/fixtures/project-intelligence";
 
 function source(id: string) {
@@ -61,7 +62,8 @@ test("Architect consumes validated Project Intelligence and records bounded clai
     });
     assert.equal(result.reasoning.status, "model");
     assert.equal(result.validation.valid, true, JSON.stringify(result.validation.issues));
-    assert.equal(result.blueprint.identity.name, fixture.expectation.name);
+    assert.equal(result.blueprint.identity.name, buildCompactWorkspaceName(fixture.expectation.name));
+    assert.equal(result.blueprint.workforce.primaryAgent.name, buildCompactPrimaryAgentName(fixture.expectation.name));
     assert.equal(result.blueprint.projectContextRefs?.packId, fixture.pack.id);
     assert.equal(result.blueprint.projectContextRefs?.conflictIds.length, fixture.pack.conflicts.length);
   }
@@ -80,7 +82,7 @@ test("Architect keeps partial intelligence and open conflicts visible while pres
     runId: "architect-partial-intelligence",
     modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
   });
-  assert.equal(result.blueprint.identity.name, "CoinCollect");
+  assert.equal(result.blueprint.identity.name, buildCompactWorkspaceName("CoinCollect"));
   assert.equal(result.blueprint.workforce.specialists.length, 0);
   assert.match(result.blueprint.warnings.join(" "), /partial project context/i);
   assert.match(result.blueprint.warnings.join(" "), /open Project Intelligence conflicts/i);

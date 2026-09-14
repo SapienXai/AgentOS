@@ -54,7 +54,9 @@ import {
   workspacePathMatchesId
 } from "@/lib/openclaw/domains/workspace-id";
 import {
-  assertWorkspaceBootstrapAgentIdsAvailable
+  assertWorkspaceBootstrapAgentIdsAvailable,
+  canonicalizeWorkspaceAgentId,
+  createWorkspaceAgentId
 } from "@/lib/openclaw/domains/agent-provisioning";
 import {
   buildDefaultWorkspaceAgents,
@@ -156,8 +158,8 @@ test("default workspace agents keep user-facing role names separate from scoped 
   const coreAgents = buildDefaultWorkspaceAgents("software", "core", "Tortellini");
 
   assert.equal(soloAgents[0]?.id, "builder");
-  assert.equal(soloAgents[0]?.name, "Builder");
-  assert.equal(coreAgents[0]?.name, "Builder");
+  assert.equal(soloAgents[0]?.name, "Tortellini Guide");
+  assert.equal(coreAgents[0]?.name, "Tortellini Guide");
   assert.equal(buildWorkspaceAgentName("Tortellini", "Builder", "Builder"), "Builder");
 });
 
@@ -176,6 +178,16 @@ test("workspace bootstrap allows existing agent ids inside the target workspace"
       workspacePath
     })
   );
+});
+
+test("workspace agent identity follows OpenClaw's native 64-character limit", () => {
+  const workspaceSlug = "avatarsai-unleash-your-digital-identity-in-the-blockchain-universe";
+  const requestedId = createWorkspaceAgentId(workspaceSlug, "primary-operator");
+  const legacyId = `${workspaceSlug}-primary-operator`;
+
+  assert.equal(requestedId.length, 64);
+  assert.equal(canonicalizeWorkspaceAgentId(workspaceSlug, legacyId), requestedId);
+  assert.equal(canonicalizeWorkspaceAgentId(workspaceSlug, requestedId), requestedId);
 });
 
 test("workspace bootstrap still rejects existing agent ids from another workspace", () => {

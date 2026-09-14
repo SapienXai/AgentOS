@@ -1,5 +1,6 @@
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 import { buildWorkspaceScaffoldDocumentPaths } from "@/lib/openclaw/workspace-docs";
+import { buildCompactPrimaryAgentName } from "@/lib/workspace-naming";
 import type {
   WorkspaceAgentBlueprintInput,
   WorkspaceCreateRules,
@@ -349,8 +350,6 @@ export function buildDefaultWorkspaceAgents(
   teamPreset: WorkspaceTeamPreset,
   workspaceName?: string
 ): WorkspaceAgentBlueprintInput[] {
-  void workspaceName;
-
   const seeds = TEMPLATE_AGENT_SEEDS[template];
 
   if (teamPreset === "solo") {
@@ -358,7 +357,7 @@ export function buildDefaultWorkspaceAgents(
     return [
       {
         ...primary,
-        name: primary.name,
+        name: workspaceName?.trim() ? buildCompactPrimaryAgentName(workspaceName) : primary.name,
         policy: resolveAgentPolicy(primary.id === "browser" ? "browser" : "worker"),
         enabled: true
       }
@@ -368,7 +367,7 @@ export function buildDefaultWorkspaceAgents(
   return seeds.map((entry) => ({
     id: entry.id,
     role: entry.role,
-    name: entry.name,
+    name: entry.isPrimary && workspaceName?.trim() ? buildCompactPrimaryAgentName(workspaceName) : entry.name,
       emoji: entry.emoji,
       theme: entry.theme,
       skillId: entry.skillId,
