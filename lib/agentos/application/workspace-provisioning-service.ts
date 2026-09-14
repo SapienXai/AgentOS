@@ -81,6 +81,8 @@ import type {
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
 const POLL_INTERVAL_MS = 100;
+const WORKSPACE_AGENT_VERIFICATION_ATTEMPTS = 3;
+const WORKSPACE_AGENT_VERIFICATION_DELAY_MS = 250;
 const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "Documents", "Shared", "projects");
 const PROVISIONING_STEP_ORDER: WorkspaceProvisioningState[] = ["validating", "materializing", "bootstrapping", "preparing-environment", "applying-composition", "promoting-knowledge", "provisioning-agents", "binding-knowledge", "applying-capabilities", "recording-declarations", "verifying"];
 
@@ -1190,6 +1192,31 @@ async function verifyWorkspaceBootstrap(created: WorkspaceCreateResult, blueprin
   return { coreErrors, warnings: [] as string[] };
 }
 
+async function readWorkspaceVerificationSnapshot(
+  created: WorkspaceCreateResult,
+  requiredIds: string[],
+  dependencies: ResolvedWorkspaceProvisioningDependencies,
+  requireWorkspace = false
+) {
+  let latestSnapshot: Awaited<ReturnType<ResolvedWorkspaceProvisioningDependencies["getMissionControlSnapshot"]>> | null = null;
+  let workspaceVisible = false;
+  let liveIds = new Set<string>();
+
+  // OpenClaw owns the registry. These bounded retries only re-read its state;
+  // they never repeat a create/update mutation or hide an authorization error.
+  for (let attempt = 0; attempt < WORKSPACE_AGENT_VERIFICATION_ATTEMPTS; attempt += 1) {
+    latestSnapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
+    workspaceVisible = latestSnapshot.workspaces.some((entry) => entry.id === created.workspaceId || path.resolve(entry.path) === path.resolve(created.workspacePath));
+    liveIds = new Set(latestSnapshot.agents
+      .filter((agent) => agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath))
+      .map((agent) => agent.id));
+    if ((!requireWorkspace || workspaceVisible) && requiredIds.every((agentId) => liveIds.has(agentId))) break;
+    if (attempt < WORKSPACE_AGENT_VERIFICATION_ATTEMPTS - 1) await delay(WORKSPACE_AGENT_VERIFICATION_DELAY_MS);
+  }
+
+  return { workspaceVisible, liveIds };
+}
+
 async function verifyWorkspaceAgents(
   created: WorkspaceCreateResult,
   blueprint: WorkspaceBlueprint,
@@ -1200,10 +1227,7 @@ async function verifyWorkspaceAgents(
     .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
   const manifest = await readWorkspaceProjectManifest(created.workspacePath);
   const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
-  const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
-  const liveIds = new Set(snapshot.agents
-    .filter((agent) => agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath))
-    .map((agent) => agent.id));
+  const { liveIds } = await readWorkspaceVerificationSnapshot(created, requiredIds, dependencies);
   const coreErrors = requiredIds
     .filter((agentId) => !created.agentIds.includes(agentId) || !manifestIds.has(agentId) || !liveIds.has(agentId))
     .map((agentId) => `Required workspace agent ${agentId} was not verified.`);
@@ -1449,10 +1473,8 @@ async function verifyProvisionedWorkspace(
     .filter((agent) => agent.enabled)
     .map((agent) => createWorkspaceAgentId(slugify(blueprint.identity.name), agent.id));
   const manifestIds = new Set(manifest.agents.filter((agent) => agent.enabled).map((agent) => agent.id));
-  const snapshot = await dependencies.getMissionControlSnapshot({ force: true, includeHidden: true });
-  const workspace = snapshot.workspaces.find((entry) => entry.id === created.workspaceId || path.resolve(entry.path) === path.resolve(created.workspacePath));
-  if (!workspace) coreErrors.push("The workspace was not present in the authoritative OpenClaw snapshot.");
-  const liveIds = new Set(snapshot.agents.filter((agent) => agent.workspaceId === created.workspaceId || path.resolve(agent.workspacePath) === path.resolve(created.workspacePath)).map((agent) => agent.id));
+  const { workspaceVisible, liveIds } = await readWorkspaceVerificationSnapshot(created, requiredIds, dependencies, true);
+  if (!workspaceVisible) coreErrors.push("The workspace was not present in the authoritative OpenClaw snapshot.");
   for (const agentId of requiredIds) {
     if (!manifestIds.has(agentId) || !liveIds.has(agentId)) coreErrors.push(`Required workspace agent ${agentId} was not verified.`);
   }

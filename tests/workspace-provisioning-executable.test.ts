@@ -173,6 +173,7 @@ function createHarness(rootPath: string, options: {
   failAfterCreate?: boolean;
   failCapabilityOnce?: boolean;
   hideAgents?: boolean;
+  agentsVisibleAfterSnapshot?: number;
   hideWorkspaces?: boolean;
 } = {}) {
   const workspaceRoot = path.join(rootPath, "workspaces");
@@ -239,7 +240,7 @@ function createHarness(rootPath: string, options: {
       name: result.workspaceName ?? result.workspaceId,
       path: result.workspacePath
     } as never));
-    snapshot.agents = options.hideAgents ? [] : [...workspaces.values()].flatMap(({ result, agents }) => agents.map((agent) => ({
+    snapshot.agents = options.hideAgents || snapshotCount <= (options.agentsVisibleAfterSnapshot ?? 0) ? [] : [...workspaces.values()].flatMap(({ result, agents }) => agents.map((agent) => ({
       ...agent,
       workspaceId: result.workspaceId,
       workspacePath: result.workspacePath,
@@ -305,6 +306,20 @@ test("fresh provisioning executes through the injected canonical OpenClaw worksp
     assert.equal(harness.counts().createCount, 1);
     assert.ok(finished.completedSteps["workspace-materialized"]);
     assert.ok(finished.completedSteps["final-verification-complete"]);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("verification tolerates a bounded OpenClaw snapshot lag without repeating mutations", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-provisioning-lag-"));
+  try {
+    const harness = createHarness(rootPath, { agentsVisibleAfterSnapshot: 1 });
+    const input = { actorId: "actor-snapshot-lag", blueprint: blueprint(), idempotencyKey: "snapshot-lag-key", acceptDraft: true };
+    const finished = await waitForWorkspaceProvisioning(input, harness.dependencies);
+
+    assert.equal(finished.state, "ready");
+    assert.equal(harness.counts().createCount, 1);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

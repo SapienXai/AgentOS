@@ -68,6 +68,7 @@ type WorkspaceWizardDialogProps = {
   surfaceTheme: SurfaceTheme;
   snapshot: MissionControlSnapshot;
   onRefresh: () => Promise<void>;
+  onOpenModelSetup?: () => void;
   onWorkspaceCreated: (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => void;
   onWorkspaceCreationStarted?: (workspace: { id: string; name: string; createdAt: number }) => void;
   onWorkspaceCreationFinished?: () => void;
@@ -85,6 +86,7 @@ export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
         surfaceTheme={props.surfaceTheme}
         onWorkspaceCreated={(result) => props.onWorkspaceCreated(result)}
         onRefresh={props.onRefresh}
+        onOpenModelSetup={props.onOpenModelSetup}
         reviewRunId={props.creationReviewRunId}
         reopenRequest={props.creationReopenRequest}
       />

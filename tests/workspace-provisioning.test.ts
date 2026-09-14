@@ -84,6 +84,7 @@ test("Create Workspace follows the real provisioning run and exposes live signal
   assert.doesNotMatch(source, /Live provisioning signals/);
   assert.match(source, /while \(!isProvisioningTerminal\(current\.state\)\)/);
   assert.match(source, /Open Workspace/);
-  assert.match(source, /Retry provisioning/);
+  assert.match(source, /onRetryProvisioning/);
+  assert.match(source, /ReviewStatusCard/);
   assert.doesNotMatch(source, /Final creation is a Phase 6 action/);
 });

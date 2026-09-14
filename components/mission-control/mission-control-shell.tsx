@@ -4179,6 +4179,10 @@ export function MissionControlShell({
         initialMode={workspaceWizardInitialMode}
         workspaceEditId={workspaceWizardEditId}
         surfaceTheme={surfaceTheme}
+        onOpenModelSetup={() => {
+          handleWorkspaceWizardOpenChangeWithReview(false);
+          openSetupWizard("models");
+        }}
         creationReviewRunId={workspaceCreationReviewRunId}
         creationReopenRequest={workspaceCreationReopenRequest}
         snapshot={snapshot}
@@ -5346,6 +5350,10 @@ export function MissionControlShell({
           initialMode={workspaceWizardInitialMode}
           workspaceEditId={workspaceWizardEditId}
           surfaceTheme={surfaceTheme}
+          onOpenModelSetup={() => {
+            handleWorkspaceWizardOpenChangeWithReview(false);
+            openSetupWizard("models");
+          }}
           creationReviewRunId={workspaceCreationReviewRunId}
           creationReopenRequest={workspaceCreationReopenRequest}
           snapshot={snapshot}

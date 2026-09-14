@@ -59,6 +59,7 @@ import {
   formatWorkspaceSourceKind,
   humanProjectFactLabel,
   presentWorkspaceBlueprint,
+  presentWorkspaceReviewRecovery,
   type WorkspaceBlueprintReviewModel
 } from "@/lib/agentos/ui/workspace-create-presenter";
 import { presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-creation-experience-presenter";
@@ -114,6 +115,7 @@ type CreateWorkspaceExperienceProps = {
   surfaceTheme: SurfaceTheme;
   onWorkspaceCreated?: (result: WorkspaceCreateResult) => void;
   onRefresh?: () => Promise<void>;
+  onOpenModelSetup?: () => void;
   reviewRunId?: string | null;
   reopenRequest?: { runId: string; nonce: number } | null;
 };
@@ -124,6 +126,7 @@ export function CreateWorkspaceExperience({
   surfaceTheme,
   onWorkspaceCreated,
   onRefresh,
+  onOpenModelSetup,
   reviewRunId = null,
   reopenRequest = null
 }: CreateWorkspaceExperienceProps) {
@@ -796,6 +799,20 @@ export function CreateWorkspaceExperience({
     }
   }, [result, stage, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh]);
 
+  const retryProvisioning = useCallback(async () => {
+    setProvisioningError(null);
+    await onRefresh?.().catch(() => undefined);
+    await provision();
+  }, [onRefresh, provision]);
+
+  const openModelSetup = useCallback(() => {
+    if (onOpenModelSetup) {
+      onOpenModelSetup();
+      return;
+    }
+    if (typeof window !== "undefined") window.location.assign("/settings#models");
+  }, [onOpenModelSetup]);
+
   useEffect(() => {
     if (!open || stage !== "review" || !creationRun || !result || !reviewReadiness?.provisionable
       || reviewRunId || provisioningRun || provisioningError || creationRun.input.mode !== "automatic"
@@ -986,16 +1003,18 @@ export function CreateWorkspaceExperience({
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
                     Customize
                   </Button>
-                  <Button
-                    type="button"
-                    disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
-                    onClick={() => void provision()}
-                    title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
-                    aria-label={provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
-                    className={missionControlDialogButtonClassName("primary", surfaceTheme)}
-                  >
-                    {provisioningRun?.state === "failed" ? "Retry provisioning" : isEnrichmentReview ? "Apply updates" : "Create Workspace"}
-                  </Button>
+                  {!(provisioningRun?.state === "failed" || provisioningError) ? (
+                    <Button
+                      type="button"
+                      disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
+                      onClick={() => void provision()}
+                      title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
+                      aria-label={isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
+                      className={missionControlDialogButtonClassName("primary", surfaceTheme)}
+                    >
+                      {isEnrichmentReview ? "Apply updates" : "Create Workspace"}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1068,6 +1087,8 @@ export function CreateWorkspaceExperience({
             isRevising={isRevising}
             revisionError={revisionError}
             onRetry={() => { setStage("intake"); void generate(); }}
+            onRetryProvisioning={() => void retryProvisioning()}
+            onOpenModelSetup={openModelSetup}
             onRefreshProject={() => void refreshProject()}
             isRefreshingProject={isRefreshingProject}
             isCustomizing={isCustomizing}
@@ -1669,6 +1690,8 @@ function ReviewView({
   isRevising,
   revisionError,
   onRetry,
+  onRetryProvisioning,
+  onOpenModelSetup,
   onRefreshProject,
   isRefreshingProject,
   isCustomizing,
@@ -1708,6 +1731,8 @@ function ReviewView({
   isRevising: boolean;
   revisionError: string | null;
   onRetry: () => void;
+  onRetryProvisioning: () => void;
+  onOpenModelSetup: () => void;
   onRefreshProject: () => void;
   isRefreshingProject: boolean;
   isCustomizing: boolean;
@@ -1740,61 +1765,54 @@ function ReviewView({
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
-  const provisioningComplete = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
-  const compositionLabel = profile === "fast"
-    ? "Basic workspace documents planned"
-    : model.composition?.status === "fallback"
-    ? "AI workspace document proposals unavailable"
-    : model.composition?.status === "partial"
-      ? "Workspace documents partially planned"
-      : model.composition?.status === "blocked" || model.composition?.status === "conflict"
-        ? "Workspace documents need conflict review"
-        : "Workspace documents planned";
   const showTechnicalFallback = profile === "high";
   const hasFailedProvisioningAttempt = provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" || Boolean(provisioningError);
+  const recovery = presentWorkspaceReviewRecovery({
+    readiness,
+    provisioningRun,
+    provisioningError,
+    partialContext: model.partialContext,
+    fallback: model.fallback && showTechnicalFallback,
+    retryAvailable: model.retryAvailable,
+    freshnessStatus
+  });
+  const runRecoveryAction = () => {
+    switch (recovery.action) {
+      case "retry-design":
+        onRetry();
+        break;
+      case "accept-draft":
+        onApproveBasicDraft();
+        break;
+      case "rebuild-plan":
+        onRebuildPlan();
+        break;
+      case "refresh-context":
+        onRefreshProject();
+        break;
+      case "retry-provisioning":
+        onRetryProvisioning();
+        break;
+      case "open-model-setup":
+        onOpenModelSetup();
+        break;
+    }
+  };
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
-      {model.fallback && showTechnicalFallback ? (
-        <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <div>
-            <p className="text-sm font-semibold">Workspace design needs another try</p>
-            <p className="mt-1 text-xs opacity-80">AgentOS understood the project, but the AI workforce design did not finish.</p>
-            <p className="mt-2 text-[11px] opacity-75">Category: {model.failureCategory || "architect-unavailable"} · Attempts: {model.attempts} · Elapsed: {formatElapsed(model.elapsedMs)}</p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {model.retryAvailable ? <Button type="button" variant="secondary" onClick={onRetry} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry design</Button> : null}
-            {!basicDraftApproved ? <Button type="button" variant="ghost" onClick={onApproveBasicDraft} className="h-9 px-2 text-xs">Use basic draft</Button> : <span className="self-center text-xs font-medium">Basic draft selected</span>}
-          </div>
-        </div>
-      ) : null}
-
-      {model.partialContext ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")} role="status">
-          <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">Architecture generated from partial project context</p><p className="mt-1 text-xs opacity-80">Some available project evidence could not be fully staged within the analysis budget.</p></div><Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh context"}</Button></div>
-        </div>
-      ) : null}
-
-      <div className={cn("mb-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200")} role="status">
-        <div><p className="text-sm font-semibold">{isEnrichmentReview ? "Workspace update available" : `${profile.charAt(0).toUpperCase()}${profile.slice(1)} workspace`}</p><p className="mt-1 text-xs opacity-75">{isEnrichmentReview ? "A deeper candidate is ready for review. The live workspace remains unchanged until you apply it." : profile === "fast" ? "Essential setup is ready now. AgentOS can keep learning without changing it automatically." : profile === "medium" ? "Project preferences and memory are preserved in this review." : "Full project intelligence is preserved in this review."}</p></div>
-        <Badge variant={isEnrichmentReview || profile === "fast" ? "success" : "muted"}>{isEnrichmentReview ? "Review updates" : profile === "fast" ? "Essential setup" : profile === "medium" ? "Project context" : "Full analysis"}</Badge>
-      </div>
-
-      {readiness && !readiness.provisionable ? (
-        <div className={cn("mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between", readiness.status === "blocked" ? (isLight ? "border-red-200 bg-red-50 text-red-950" : "border-red-400/20 bg-red-400/10 text-red-100") : (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50"))} role="status">
-          <div><p className="text-sm font-semibold">{readiness.status === "plan-rebuild-required" ? "Workspace plan needs to be rebuilt" : readiness.status === "refresh-required" ? "Project context needs a refresh" : "Review needs attention"}</p><p className="mt-1 text-xs opacity-80">{readiness.message}</p></div>
-          {readiness.requiredAction === "rebuild-plan" ? <Button type="button" variant="secondary" onClick={onRebuildPlan} disabled={isRebuildingPlan} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRebuildingPlan ? "Rebuilding…" : "Rebuild plan"}</Button> : readiness.requiredAction === "refresh-context" ? <Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh project"}</Button> : null}
-        </div>
-      ) : null}
-
-      {model.composition ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", model.composition.status === "blocked" || model.composition.status === "conflict" || (model.composition.status === "fallback" && showTechnicalFallback) ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">Workspace</p>
-          <p className="mt-2 text-sm font-medium">{compositionLabel}</p>
-          <p className="mt-1 text-xs opacity-75">{model.composition.artifactCount} bounded project and workspace document proposals · {model.composition.conflictCount} conflict{model.composition.conflictCount === 1 ? "" : "s"}.</p>
-          {model.composition.status === "fallback" && showTechnicalFallback ? <p className="mt-1 text-xs opacity-75">A deterministic safe draft was created from the approved blueprint and project context.</p> : null}
-        </div>
-      ) : null}
+      <ReviewStatusCard
+        isLight={isLight}
+        model={model}
+        profile={profile}
+        isEnrichmentReview={isEnrichmentReview}
+        recovery={recovery}
+        basicDraftApproved={basicDraftApproved}
+        isRefreshingProject={isRefreshingProject}
+        isRebuildingPlan={isRebuildingPlan}
+        onApproveBasicDraft={onApproveBasicDraft}
+        onRecoveryAction={runRecoveryAction}
+      />
 
       {!isEnrichmentReview ? (
         <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
@@ -1822,40 +1840,11 @@ function ReviewView({
         </details>
       ) : null}
 
-      {model.projectIntelligence ? (
-        <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
-          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View project evidence <span className={cn("ml-2 text-xs font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.sourceSummary.factCount} claims · {model.sourceSummary.resourceCount} resources</span></summary>
-          <div className="mt-4"><ProjectIntelligenceReview isLight={isLight} model={model} /></div>
-        </details>
-      ) : null}
       {model.workspaceFiles.length ? (
         <details className={cn("mb-5 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")}>
-          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View workspace document proposals <span className={cn("ml-2 text-xs font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.workspaceFiles.length} previews</span></summary>
+          <summary className={cn("cursor-pointer list-none text-sm font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View workspace plan <span className={cn("ml-2 text-xs font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.workspaceFiles.length} document{model.workspaceFiles.length === 1 ? "" : "s"}</span></summary>
           <div className="mt-4"><WorkspaceFilesReview isLight={isLight} model={model} /></div>
         </details>
-      ) : null}
-
-      {provisioningComplete ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", provisioningRun.state === "partial" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-50"))} role="status">
-          <p className="text-sm font-semibold">{provisioningRun.state === "partial" ? "Workspace created with setup pending." : "Workspace created successfully."}</p>
-          <p className="mt-1 text-xs opacity-80">{provisioningRun.state === "partial" ? "The workspace is usable now. Finish the listed channels, connections, or automations when you are ready." : "Open the workspace to continue with your team."}</p>
-          {provisioningRun.signals.length ? <div className="mt-3 flex flex-wrap gap-1.5">{provisioningRun.signals.slice(0, 8).map((signal, index) => <span key={signal} className={cn("workspace-architect-chip-enter inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] leading-4 motion-reduce:[animation:none]", isLight ? "border-emerald-200 bg-white/70 text-emerald-800" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100")} style={{ animationDelay: `${index * 55}ms` }}>{signal}</span>)}</div> : null}
-          {provisioningRun.pendingSetup.channels.length || provisioningRun.pendingSetup.connections.length || provisioningRun.pendingSetup.automations.length ? <p className="mt-3 text-xs font-medium">Some setup remains in the workspace review.</p> : null}
-        </div>
-      ) : null}
-
-      {provisioningRun?.state === "failed" || provisioningError ? (
-        <div className={cn("mb-5 rounded-xl border px-4 py-3", isLight ? "border-red-200 bg-red-50 text-red-950" : "border-red-400/20 bg-red-400/10 text-red-100")} role="alert">
-          <p className="text-sm font-semibold">Workspace provisioning needs attention.</p>
-          <p className="mt-1 text-xs opacity-80">{provisioningError || provisioningRun?.error?.message || "The workspace could not be completed."}</p>
-        </div>
-      ) : null}
-
-      {freshnessStatus !== "fresh" && !readiness?.status.includes("refresh") ? (
-        <div className={cn("mb-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3", freshnessStatus === "stale" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50") : (isLight ? "border-[#e5dbd0] bg-white text-[#61554b]" : "border-white/10 bg-white/[0.04] text-slate-300"))} role="status">
-          <div><p className="text-sm font-medium">{freshnessStatus === "stale" ? "Project context changed." : "Project context freshness is unknown."}</p><p className="mt-1 text-xs opacity-75">{freshnessStatus === "stale" ? "Review the workspace again before continuing." : "AgentOS could not prove a current knowledge generation."}</p></div>
-          <Button type="button" variant="secondary" onClick={onRefreshProject} disabled={isRefreshingProject} className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}>{isRefreshingProject ? "Refreshing…" : "Refresh project context"}</Button>
-        </div>
       ) : null}
 
       {isCustomizing ? (
@@ -1875,21 +1864,19 @@ function ReviewView({
           <Badge variant="muted" className="shrink-0">{identity.projectType}</Badge>
         </div>
 
-        {model.project.highlights.length ? (
-          <section className="mt-5" aria-labelledby="project-highlights-heading">
-            <p id="project-highlights-heading" className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-200/70")}>Project highlights</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {model.project.highlights.slice(0, 4).map((highlight) => (
-                <div key={highlight.id} className={cn("rounded-xl border px-3 py-2.5", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className={cn("text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{highlight.label}</p>
-                    <span className={cn("shrink-0 text-[10px]", highlight.conflicted ? "text-amber-500" : highlight.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{highlight.conflicted ? "Conflict" : highlight.verification}</span>
-                  </div>
-                  <p className={cn("mt-1 line-clamp-2 text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{highlight.statement}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+        <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Project summary">
+          <span className={cn("rounded-full border px-2.5 py-1 text-[10px]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")}>{model.sourceSummary.sourceCount} source{model.sourceSummary.sourceCount === 1 ? "" : "s"}</span>
+          <span className={cn("rounded-full border px-2.5 py-1 text-[10px]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")}>{model.sourceSummary.factCount} claim{model.sourceSummary.factCount === 1 ? "" : "s"}</span>
+          <span className={cn("rounded-full border px-2.5 py-1 text-[10px]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")}>{model.sourceSummary.resourceCount} resource{model.sourceSummary.resourceCount === 1 ? "" : "s"}</span>
+          {model.workspaceFiles.length ? <span className={cn("rounded-full border px-2.5 py-1 text-[10px]", isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300")}>{model.workspaceFiles.length} planned doc{model.workspaceFiles.length === 1 ? "" : "s"}</span> : null}
+          {model.sourceSummary.conflictCount ? <span className={cn("rounded-full border px-2.5 py-1 text-[10px]", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/10 text-amber-100")}>{model.sourceSummary.conflictCount} conflict{model.sourceSummary.conflictCount === 1 ? "" : "s"}</span> : null}
+        </div>
+
+        {model.projectIntelligence ? (
+          <details className={cn("mt-4 rounded-xl border px-3.5 py-3", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}>
+            <summary className={cn("cursor-pointer list-none text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-200")}>View project evidence <span className={cn("ml-2 font-normal", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{model.sourceSummary.evidenceCount} evidence item{model.sourceSummary.evidenceCount === 1 ? "" : "s"}</span></summary>
+            <div className="mt-4"><ProjectIntelligenceReview isLight={isLight} model={model} /></div>
+          </details>
         ) : null}
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -1904,7 +1891,6 @@ function ReviewView({
           </ReviewSection>
 
           <ReviewSection isLight={isLight} title="Knowledge" icon={FileText}>
-            <p className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-slate-100")}>{model.knowledge.coverage.sourceCount} source{model.knowledge.coverage.sourceCount === 1 ? "" : "s"}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">{model.knowledge.sources.map((source) => <span key={source.id} className={cn("rounded-md px-2 py-1 text-[11px]", isLight ? "bg-[#f6f0e9] text-[#6c5b4e]" : "bg-white/[0.06] text-slate-300")}>{formatWorkspaceSourceKind(source.kind)} · {source.label}</span>)}</div>
           </ReviewSection>
         </div>
@@ -1968,29 +1954,112 @@ function BlueprintSignalRail({ isLight, model }: { isLight: boolean; model: Work
   );
 }
 
+function ReviewStatusCard({
+  isLight,
+  model,
+  profile,
+  isEnrichmentReview,
+  recovery,
+  basicDraftApproved,
+  isRefreshingProject,
+  isRebuildingPlan,
+  onApproveBasicDraft,
+  onRecoveryAction
+}: {
+  isLight: boolean;
+  model: WorkspaceBlueprintReviewModel;
+  profile: WorkspaceCreationDepth;
+  isEnrichmentReview: boolean;
+  recovery: ReturnType<typeof presentWorkspaceReviewRecovery>;
+  basicDraftApproved: boolean;
+  isRefreshingProject: boolean;
+  isRebuildingPlan: boolean;
+  onApproveBasicDraft: () => void;
+  onRecoveryAction: () => void;
+}) {
+  const toneClasses = recovery.tone === "danger"
+    ? (isLight ? "border-rose-200 bg-rose-50/80 text-rose-950" : "border-rose-300/20 bg-rose-300/10 text-rose-50")
+    : recovery.tone === "warning"
+      ? (isLight ? "border-amber-200 bg-amber-50/80 text-amber-950" : "border-amber-300/20 bg-amber-300/10 text-amber-50")
+      : recovery.tone === "success"
+        ? (isLight ? "border-emerald-200 bg-emerald-50/70 text-emerald-950" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-50")
+        : (isLight ? "border-[#e5dbd0] bg-white text-[#55483e]" : "border-white/10 bg-white/[0.04] text-slate-200");
+  const profileLabel = isEnrichmentReview
+    ? "Review updates"
+    : profile === "high"
+      ? "Full plan"
+      : profile === "medium"
+        ? "Standard plan"
+        : "Essential setup";
+  const actionBusy = (recovery.action === "refresh-context" && isRefreshingProject)
+    || (recovery.action === "rebuild-plan" && isRebuildingPlan)
+    || (recovery.action === "accept-draft" && basicDraftApproved);
+  const actionLabel = recovery.action === "refresh-context" && isRefreshingProject
+    ? "Refreshing…"
+    : recovery.action === "rebuild-plan" && isRebuildingPlan
+      ? "Rebuilding…"
+      : recovery.action === "accept-draft" && basicDraftApproved
+        ? "Draft accepted"
+        : recovery.actionLabel;
+
+  return (
+    <section className={cn("mb-5 rounded-2xl border px-4 py-4 md:px-5", toneClasses)} role={recovery.tone === "danger" ? "alert" : "status"}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-65">Workspace review</p>
+          <h2 className="mt-1 text-base font-semibold tracking-tight">{recovery.title}</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-5 opacity-80">{recovery.description}</p>
+        </div>
+        <Badge variant={recovery.tone === "danger" ? "danger" : recovery.tone === "warning" ? "warning" : recovery.tone === "success" ? "success" : "muted"} className="shrink-0">{recovery.badge}</Badge>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Workspace review summary">
+        <span className="rounded-full border border-current/15 px-2.5 py-1 text-[10px] opacity-80">{profileLabel}</span>
+        <span className="rounded-full border border-current/15 px-2.5 py-1 text-[10px] opacity-80">{model.workforce.agentCount} agent{model.workforce.agentCount === 1 ? "" : "s"}</span>
+      </div>
+
+      {recovery.technicalDetail ? (
+        <details className="mt-3 text-xs opacity-75">
+          <summary className="cursor-pointer font-medium">Technical detail</summary>
+          <p className="mt-1 break-words leading-5">{recovery.technicalDetail}</p>
+        </details>
+      ) : null}
+
+      {recovery.action && actionLabel ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-current/10 pt-3">
+          <p className="text-xs font-medium opacity-75">Next step</p>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={recovery.action === "accept-draft" ? onApproveBasicDraft : onRecoveryAction}
+            disabled={actionBusy || (recovery.action === "retry-design" && !model.retryAvailable)}
+            className={missionControlDialogButtonClassName("secondary", isLight ? "light" : "dark")}
+          >
+            {actionLabel}
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ProjectIntelligenceReview({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
   if (!model.projectIntelligence) return null;
   const project = model.project;
   return (
-    <section className={cn("mb-5 rounded-2xl border p-5", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-labelledby="project-understanding-heading">
-      <div className="flex items-start justify-between gap-3"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Project understanding</p><h2 id="project-understanding-heading" className={cn("mt-1 text-base font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>{project.name || model.identity.name}</h2></div><span className={cn("text-[11px]", isLight ? "text-[#89796c]" : "text-slate-500")}>{model.sourceSummary.sourceCount} source{model.sourceSummary.sourceCount === 1 ? "" : "s"} · {model.sourceSummary.evidenceCount} evidence</span></div>
-      {project.description ? <p className={cn("mt-3 max-w-2xl text-sm leading-6", isLight ? "text-[#766e64]" : "text-slate-300")}>{project.description}</p> : null}
-      {project.understanding.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>What we understand</p><div className="mt-2 space-y-1.5">{project.understanding.slice(0, 4).map((item) => <p key={item} className={cn("text-xs leading-5", isLight ? "text-[#807369]" : "text-slate-400")}>{item}</p>)}</div></div> : null}
+    <div className="space-y-4" aria-label="Project evidence">
       {project.keyFacts.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Canonical claims</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{project.keyFacts.slice(0, 8).map((fact) => <div key={fact.id} className={cn("rounded-lg border px-3 py-2", isLight ? "border-[#ece3d9] bg-[#fcfaf7]" : "border-white/[0.08] bg-black/10")}><div className="flex items-center justify-between gap-2"><span className={cn("truncate text-xs font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{humanProjectFactLabel(fact.key)}</span><span className={cn("shrink-0 text-[10px]", fact.conflicted ? "text-amber-500" : fact.verification === "verified" ? "text-emerald-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{fact.verification}{fact.conflicted ? " · Conflict" : ""}</span></div><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#807369]" : "text-slate-400")}>{fact.statement}</p></div>)}</div></div> : null}
       {project.officialResources.length ? <div className="mt-4"><p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-[#9a7a62]" : "text-violet-200/65")}>Resources analyzed</p><div className="mt-2 flex flex-wrap gap-1.5">{project.officialResources.slice(0, 10).map((resource) => <span key={resource.id} className={cn("max-w-full rounded-md border px-2 py-1 text-[11px]", resource.conflicted ? (isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-300/20 bg-amber-300/10 text-amber-100") : resource.verification === "verified" ? (isLight ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100") : (isLight ? "border-[#e4ddd3] bg-[#fcfaf7] text-[#6d645b]" : "border-white/10 bg-white/[0.045] text-slate-300"))} title={resource.locator}>{resource.label} · {resource.category} · {resource.verification}{resource.conflicted ? " · Conflict" : ""}</span>)}</div></div> : null}
       {project.groupedConflicts.length ? <div className={cn("mt-4 rounded-lg border px-3 py-2 text-xs", isLight ? "border-amber-200 bg-amber-50 text-amber-950" : "border-amber-400/20 bg-amber-400/10 text-amber-50")}><span className="font-medium">{project.groupedConflicts.filter((conflict) => conflict.status === "open").length} open project conflict group{project.groupedConflicts.filter((conflict) => conflict.status === "open").length === 1 ? "" : "s"}</span><div className="mt-2 space-y-1">{project.groupedConflicts.slice(0, 4).map((conflict) => <p key={conflict.summary}><span className="font-medium">{conflict.summary}</span>{conflict.count > 1 ? ` · ${conflict.count} related claims` : ""}</p>)}</div><p className="mt-2 opacity-75">Conflicts remain visible without changing claim verification.</p></div> : null}
       {model.coverage.status !== "none" ? <p className={cn("mt-4 text-[11px]", model.coverage.status === "partial" ? "text-amber-500" : isLight ? "text-[#89796c]" : "text-slate-500")}>{model.coverage.status === "full" ? "Good coverage" : "Limited coverage"}{model.coverage.reason ? ` · ${model.coverage.reason}` : ""}</p> : null}
-    </section>
+    </div>
   );
 }
 
 function WorkspaceFilesReview({ isLight, model }: { isLight: boolean; model: WorkspaceBlueprintReviewModel }) {
   if (!model.workspaceFiles.length) return null;
   return (
-    <section className={cn("mb-5 rounded-2xl border p-5", isLight ? "border-[#e5dbd0] bg-white" : "border-white/10 bg-white/[0.04]")} aria-labelledby="workspace-files-heading">
-      <div className="flex items-baseline justify-between gap-3"><div><p className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]", isLight ? "text-[#9a7a62]" : "text-violet-300/75")}>Workspace files</p><h2 id="workspace-files-heading" className={cn("mt-1 text-base font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Planned workspace documents</h2></div><span className={cn("text-[11px]", isLight ? "text-[#89796c]" : "text-slate-500")}>{model.workspaceFiles.length} bounded previews</span></div>
-      <div className="mt-3 divide-y" style={{ borderColor: isLight ? "#ece3d9" : "rgba(255,255,255,0.08)" }}>{model.workspaceFiles.map((artifact) => <div key={artifact.artifactId} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><FileText className={cn("mt-0.5 h-4 w-4 shrink-0", artifact.operation === "conflict" ? "text-amber-400" : isLight ? "text-[#9a6d45]" : "text-violet-300")} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{artifact.title}</p><span className={cn("text-[10px] uppercase tracking-[0.12em]", artifact.operation === "conflict" ? "text-amber-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.operation.replace("merge-managed-section", "update")}</span></div><p className={cn("mt-1 truncate text-xs", isLight ? "text-[#807369]" : "text-slate-400")} title={artifact.path}>{artifact.path}</p><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.preview}</p></div></div>)}</div>
-    </section>
+    <div className="divide-y" style={{ borderColor: isLight ? "#ece3d9" : "rgba(255,255,255,0.08)" }}>{model.workspaceFiles.map((artifact) => <div key={artifact.artifactId} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><FileText className={cn("mt-0.5 h-4 w-4 shrink-0", artifact.operation === "conflict" ? "text-amber-400" : isLight ? "text-[#9a6d45]" : "text-violet-300")} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className={cn("text-sm font-medium", isLight ? "text-[#55483e]" : "text-slate-200")}>{artifact.title}</p><span className={cn("text-[10px] uppercase tracking-[0.12em]", artifact.operation === "conflict" ? "text-amber-500" : isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.operation.replace("merge-managed-section", "update")}</span></div><p className={cn("mt-1 truncate text-xs", isLight ? "text-[#807369]" : "text-slate-400")} title={artifact.path}>{artifact.path}</p><p className={cn("mt-1 line-clamp-2 text-xs", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{artifact.preview}</p></div></div>)}</div>
   );
 }
 

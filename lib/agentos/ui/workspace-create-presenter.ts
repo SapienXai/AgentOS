@@ -103,6 +103,198 @@ export type WorkspaceBlueprintReviewModel = {
   };
 };
 
+export type WorkspaceReviewRecoveryAction =
+  | "retry-design"
+  | "accept-draft"
+  | "rebuild-plan"
+  | "refresh-context"
+  | "retry-provisioning"
+  | "open-model-setup"
+  | null;
+
+export type WorkspaceReviewRecovery = {
+  tone: "danger" | "warning" | "success" | "muted";
+  badge: string;
+  title: string;
+  description: string;
+  action: WorkspaceReviewRecoveryAction;
+  actionLabel: string | null;
+  technicalDetail: string | null;
+};
+
+type WorkspaceReviewRecoveryInput = {
+  readiness: WorkspaceCreationReviewReadiness | null;
+  provisioningRun?: {
+    state?: string | null;
+    error?: { code?: string | null; message?: string | null } | null;
+  } | null;
+  provisioningError?: string | null;
+  partialContext?: boolean;
+  fallback?: boolean;
+  retryAvailable?: boolean;
+  freshnessStatus?: string | null;
+};
+
+/**
+ * Keep review recovery honest and singular: one observed problem gets one
+ * operator-facing explanation and one meaningful next action.
+ */
+export function presentWorkspaceReviewRecovery(input: WorkspaceReviewRecoveryInput): WorkspaceReviewRecovery {
+  const provisioningMessage = input.provisioningError?.trim() || input.provisioningRun?.error?.message?.trim() || null;
+  const provisioningCode = input.provisioningRun?.error?.code?.trim().toLowerCase() || "";
+  const provisioningFailed = Boolean(provisioningMessage)
+    || input.provisioningRun?.state === "failed"
+    || input.provisioningRun?.state === "cancelled";
+
+  if (provisioningFailed) {
+    const detail = provisioningMessage;
+    const modelBlocked = /model setup|model .*not ready|provider|default model|usable model|choose a model/i.test(detail ?? "")
+      || /model|provider/.test(provisioningCode);
+    if (modelBlocked) {
+      return {
+        tone: "danger",
+        badge: "Model setup required",
+        title: "OpenClaw has not verified a ready model",
+        description: "This workspace needs a model that OpenClaw reports as ready for its new agent. An existing chat may still work with a different agent or model assignment; connect the provider or choose a ready model, then return here.",
+        action: "open-model-setup",
+        actionLabel: "Open model setup",
+        technicalDetail: detail
+      };
+    }
+
+    const agentSyncBlocked = provisioningCode === "agent-provisioning"
+      || /agent.*(?:not verified|not visible)|(?:not verified|not visible).*agent/i.test(detail ?? "");
+    if (agentSyncBlocked) {
+      return {
+        tone: "warning",
+        badge: "OpenClaw sync pending",
+        title: "OpenClaw has not confirmed the workspace agent yet",
+        description: "The workspace may already exist, but its new agent was not visible in the live OpenClaw registry when verification ran. Refresh live OpenClaw state and retry verification; the existing provisioning run will be reused.",
+        action: "retry-provisioning",
+        actionLabel: "Refresh OpenClaw and retry",
+        technicalDetail: detail
+      };
+    }
+
+    const contextBlocked = /knowledge|project context|blueprint.*stale|staged.*context/i.test(detail ?? "")
+      || /knowledge|context|stale/.test(provisioningCode);
+    if (contextBlocked) {
+      return {
+        tone: "warning",
+        badge: "Project context changed",
+        title: "This review no longer matches the project context",
+        description: "Refresh the project context so AgentOS can rebuild this review against the current evidence. Existing OpenClaw state is not replaced by this action.",
+        action: "refresh-context",
+        actionLabel: "Refresh project context",
+        technicalDetail: detail
+      };
+    }
+
+    const gatewayBlocked = /gateway|rpc|openclaw.*(?:unreachable|not running|not ready)/i.test(detail ?? "")
+      || /gateway|rpc/.test(provisioningCode);
+    return {
+      tone: "danger",
+      badge: gatewayBlocked ? "OpenClaw unavailable" : "Creation stopped",
+      title: gatewayBlocked ? "OpenClaw Gateway is not ready" : "Workspace creation did not finish",
+      description: gatewayBlocked
+        ? "AgentOS cannot verify or continue this workspace while the OpenClaw Gateway is unavailable. Refresh the live state and retry after the Gateway is ready."
+        : "AgentOS stopped before it could verify a complete workspace. The action below reuses the existing provisioning run instead of creating a second workspace.",
+      action: "retry-provisioning",
+      actionLabel: gatewayBlocked ? "Refresh Gateway and retry" : "Refresh OpenClaw and retry",
+      technicalDetail: detail
+    };
+  }
+
+  if (input.readiness && !input.readiness.provisionable) {
+    switch (input.readiness.requiredAction) {
+      case "retry-design":
+        return {
+          tone: "danger",
+          badge: "Design incomplete",
+          title: "The workspace design is not complete",
+          description: input.readiness.message,
+          action: "retry-design",
+          actionLabel: "Retry design",
+          technicalDetail: null
+        };
+      case "accept-draft":
+        return {
+          tone: "warning",
+          badge: "Decision required",
+          title: "A safe basic draft needs your approval",
+          description: input.readiness.message,
+          action: "accept-draft",
+          actionLabel: "Use basic draft",
+          technicalDetail: null
+        };
+      case "rebuild-plan":
+        return {
+          tone: "warning",
+          badge: "Plan out of date",
+          title: "The workspace plan no longer matches this review",
+          description: input.readiness.message,
+          action: "rebuild-plan",
+          actionLabel: "Rebuild workspace plan",
+          technicalDetail: null
+        };
+      case "refresh-context":
+        return {
+          tone: "warning",
+          badge: "Context needs refresh",
+          title: "The project context must be refreshed",
+          description: input.readiness.message,
+          action: "refresh-context",
+          actionLabel: "Refresh project context",
+          technicalDetail: null
+        };
+      default:
+        return {
+          tone: "danger",
+          badge: "Review blocked",
+          title: "This workspace review needs attention",
+          description: input.readiness.message,
+          action: null,
+          actionLabel: null,
+          technicalDetail: null
+        };
+    }
+  }
+
+  if (input.fallback) {
+    return {
+      tone: "warning",
+      badge: "Safe draft",
+      title: "AI design was unavailable, so a safe draft is shown",
+      description: "The basic workspace can still be created, or you can retry the design before continuing.",
+      action: input.retryAvailable === false ? null : "retry-design",
+      actionLabel: input.retryAvailable === false ? null : "Retry design",
+      technicalDetail: null
+    };
+  }
+
+  if (input.partialContext || input.freshnessStatus === "stale" || input.freshnessStatus === "unknown") {
+    return {
+      tone: "warning",
+      badge: "Limited context",
+      title: "This review uses limited or unverified project context",
+      description: "The current draft is visible, but refreshing project context can improve the plan before creation.",
+      action: "refresh-context",
+      actionLabel: "Refresh project context",
+      technicalDetail: null
+    };
+  }
+
+  return {
+    tone: "success",
+    badge: "Ready to create",
+    title: "Workspace draft is ready",
+    description: "Review the compact summary below, then create the workspace when you are ready.",
+    action: null,
+    actionLabel: null,
+    technicalDetail: null
+  };
+}
+
 export function presentWorkspaceBlueprint(result: WorkspaceArchitectResult, options: {
   profile?: import("@/lib/agentos/domains/workspace-creation-policy").WorkspaceCreationProfile;
   partialContext?: boolean;

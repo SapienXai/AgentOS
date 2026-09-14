@@ -4,7 +4,8 @@ import { test } from "node:test";
 
 import {
   formatWorkspaceChannelSetup,
-  presentWorkspaceBlueprint
+  presentWorkspaceBlueprint,
+  presentWorkspaceReviewRecovery
 } from "@/lib/agentos/ui/workspace-create-presenter";
 import { friendlyCreationPhase, friendlyProvisioningPhase, presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-creation-experience-presenter";
 import { createInitialWorkspaceCreationSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
@@ -360,6 +361,23 @@ test("project highlight identity keys remain unique when canonical claims repeat
   assert.equal(new Set(ids).size, ids.length);
 });
 
+test("workspace review recovery maps observed failures to one meaningful action", () => {
+  const modelSetup = presentWorkspaceReviewRecovery({
+    readiness: { status: "ready", provisionable: true, reasonCode: "ready", requiredAction: "none", message: "Ready.", checkedAt: "2026-09-14T00:00:00.000Z", blueprintFingerprint: null, planId: null, planFingerprint: null },
+    provisioningRun: { state: "failed", error: { code: "model-not-ready", message: "OpenClaw model setup is incomplete." } }
+  });
+  assert.equal(modelSetup.action, "open-model-setup");
+  assert.equal(modelSetup.actionLabel, "Open model setup");
+
+  const agentSync = presentWorkspaceReviewRecovery({
+    readiness: { status: "ready", provisionable: true, reasonCode: "ready", requiredAction: "none", message: "Ready.", checkedAt: "2026-09-14T00:00:00.000Z", blueprintFingerprint: null, planId: null, planFingerprint: null },
+    provisioningRun: { state: "failed", error: { code: "agent-provisioning", message: "Required workspace agent was not verified." } }
+  });
+  assert.equal(agentSync.action, "retry-provisioning");
+  assert.equal(agentSync.actionLabel, "Refresh OpenClaw and retry");
+  assert.match(agentSync.description, /existing provisioning run/);
+});
+
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
   const [wrapperSource, source, contextRoute, activitySource, layoutSource, shellSource] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
@@ -424,16 +442,18 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.doesNotMatch(source, /setProgressPhase/);
   assert.doesNotMatch(source, /activeStage === "review-preparation"/);
   assert.match(source, /Architecture generated from partial project context/);
-  assert.match(source, /Workspace plan needs to be rebuilt/);
   assert.match(source, /Start over/);
   assert.match(source, /const \[isStartingOver, setIsStartingOver\]/);
   assert.match(source, /if \(!creationRun\) \{\s*resetCreationState\(\);\s*return;/);
   assert.match(source, /creation-runs\/\$\{creationRun\.runId\}\/abandon/);
   assert.match(source, /startOverError/);
   assert.match(source, /View project evidence/);
-  assert.match(source, /Use basic draft/);
-  assert.match(source, /key=\{highlight\.id\}/);
-  assert.doesNotMatch(source, /key=\{`\$\{highlight\.label\}:\$\{highlight\.statement\}`\}/);
+  assert.match(source, /View workspace plan/);
+  assert.match(source, /ReviewStatusCard/);
+  assert.match(source, /onOpenModelSetup/);
+  assert.doesNotMatch(source, /Project highlights/);
+  assert.doesNotMatch(source, /Workspace provisioning needs attention/);
+  assert.doesNotMatch(source, /View workspace document proposals/);
   assert.doesNotMatch(source, /AI project intelligence unavailable/);
   assert.match(source, /provisioningRun\?\.state === "ready" \|\| provisioningRun\?\.state === "partial"/);
   assert.match(source, /window\.setInterval\(updateClock, 1_000\)/);
