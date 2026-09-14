@@ -7,19 +7,29 @@
     <style>
       :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #05070b; color: #f8fafc; }
       body { min-height: 100vh; margin: 0; overflow: hidden; background: #05070b; }
-      main { display: grid; place-items: center; width: 100%; min-height: 100vh; }
-      .crt-screen { position: relative; width: 100vw; max-width: 752px; aspect-ratio: 752 / 416; overflow: hidden; isolation: isolate; background: #080b10; box-shadow: 0 22px 80px rgba(0, 0, 0, .55); }
-      .crt-screen::before { position: absolute; z-index: 2; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, .42) 0 .55px, transparent .75px), repeating-linear-gradient(0deg, rgba(255, 255, 255, .11) 0 1px, transparent 1px 4px); background-position: 0 0, 0 0; background-size: 4px 4px, 100% 4px; content: ""; mix-blend-mode: screen; opacity: .3; pointer-events: none; }
-      .crt-screen::after { position: absolute; z-index: 3; inset: -3%; background: radial-gradient(ellipse at center, transparent 46%, rgba(0, 0, 0, .14) 68%, rgba(0, 0, 0, .74) 100%), linear-gradient(90deg, rgba(255, 54, 93, .09), transparent 17%, transparent 83%, rgba(49, 210, 255, .1)); content: ""; mix-blend-mode: multiply; pointer-events: none; }
-      .splash-video, .splash-poster { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      .splash-video { filter: saturate(1.12) contrast(1.08) brightness(.94); transform: scale(1.015); }
-      .splash-poster { object-position: center; }
+      main { width: 100%; height: 100vh; min-height: 100vh; overflow: hidden; }
+      .crt-screen { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: #080b10; }
+      .crt-screen::before { position: absolute; z-index: 2; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, .38) 0 .55px, transparent .75px), repeating-linear-gradient(0deg, rgba(255, 255, 255, .1) 0 1px, transparent 1px 4px); background-position: 0 0, 0 0; background-size: 4px 4px, 100% 4px; content: ""; mix-blend-mode: screen; opacity: .25; pointer-events: none; }
+      .crt-screen::after { position: absolute; z-index: 3; inset: -3%; background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, .1) 72%, rgba(0, 0, 0, .56) 100%), linear-gradient(90deg, rgba(255, 54, 93, .08), transparent 17%, transparent 83%, rgba(49, 210, 255, .09)); content: ""; mix-blend-mode: multiply; pointer-events: none; }
+      .splash-video, .splash-poster { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+      .splash-video { filter: saturate(1.1) contrast(1.07) brightness(.94); transform: scale(1.01); }
       .crt-bloom { position: absolute; z-index: 0; inset: 10%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 106, 64, .32), rgba(115, 73, 152, .16) 42%, transparent 72%); filter: blur(34px); opacity: .65; pointer-events: none; }
-      .crt-noise { position: absolute; z-index: 4; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, .025) 3px 4px); mix-blend-mode: overlay; opacity: .42; animation: crt-flicker 7s steps(8, end) infinite; pointer-events: none; }
-      [data-error] { position: relative; z-index: 5; width: min(28rem, calc(100vw - 3rem)); padding: 2rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: 1rem; background: rgba(15, 18, 30, .92); box-shadow: 0 24px 80px rgba(0, 0, 0, .35); color: #fda4af; line-height: 1.5; }
+      .glyph-field { position: absolute; z-index: 4; inset: -12%; overflow: hidden; opacity: 0; animation: glyph-field-life 5.2s cubic-bezier(.22, .7, .2, 1) forwards; pointer-events: none; }
+      .glyph-track { position: absolute; top: var(--top); left: var(--left); display: flex; align-items: center; gap: var(--gap); width: max-content; color: rgba(255, 255, 255, var(--opacity)); direction: ltr; font-family: "SF Mono", "JetBrains Mono", "IBM Plex Mono", monospace; font-size: var(--size); font-weight: 500; letter-spacing: .16em; line-height: 1; text-shadow: 0 0 8px rgba(255, 255, 255, .55), 0 0 24px rgba(196, 218, 255, .24); filter: blur(var(--blur)); transform: rotate(var(--rotate)); animation: glyph-flow var(--duration) linear var(--delay) infinite; }
+      .glyph-track span { display: inline-block; min-width: 2.2em; }
+      .brand-lockup { position: absolute; z-index: 5; top: 50%; left: 50%; display: inline-flex; align-items: center; gap: clamp(10px, 2vw, 16px); opacity: 0; transform: translate(-50%, -50%) scale(.82); filter: blur(10px); animation: brand-reveal 5.2s cubic-bezier(.2, .72, .16, 1) forwards; pointer-events: none; }
+      .brand-lockup::before { position: absolute; z-index: -1; inset: -30px -48px; border-radius: 999px; background: radial-gradient(ellipse, rgba(255, 255, 255, .22), rgba(196, 218, 255, .08) 42%, transparent 72%); filter: blur(18px); content: ""; }
+      .brand-icon { width: clamp(34px, 8vw, 52px); height: clamp(34px, 8vw, 52px); object-fit: contain; filter: drop-shadow(0 0 7px rgba(255, 255, 255, .62)) drop-shadow(0 0 20px rgba(255, 55, 95, .3)); }
+      .brand-wordmark { display: inline-flex; color: #fff; font-size: clamp(25px, 6vw, 40px); font-weight: 650; letter-spacing: -.055em; line-height: 1; text-shadow: 0 0 7px rgba(255, 255, 255, .92), 0 0 24px rgba(255, 255, 255, .42); }
+      .brand-wordmark .accent { color: #ff5275; text-shadow: 0 0 7px rgba(255, 255, 255, .78), 0 0 22px rgba(255, 70, 105, .72); }
+      .crt-noise { position: absolute; z-index: 6; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, .023) 3px 4px); mix-blend-mode: overlay; opacity: .4; animation: crt-flicker 7s steps(8, end) infinite; pointer-events: none; }
+      [data-error] { position: relative; z-index: 7; width: min(28rem, calc(100vw - 3rem)); padding: 2rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: 1rem; background: rgba(15, 18, 30, .92); box-shadow: 0 24px 80px rgba(0, 0, 0, .35); color: #fda4af; line-height: 1.5; }
       .hidden { display: none !important; }
-      @keyframes crt-flicker { 0%, 100% { opacity: .42; } 48% { opacity: .32; } 52% { opacity: .46; } }
-      @media (prefers-reduced-motion: reduce) { .crt-noise { animation: none; } }
+      @keyframes crt-flicker { 0%, 100% { opacity: .4; } 48% { opacity: .3; } 52% { opacity: .44; } }
+      @keyframes glyph-field-life { 0%, 3% { opacity: 0; } 10% { opacity: .88; } 25% { opacity: .68; } 54% { opacity: .62; } 68% { opacity: .28; } 79%, 100% { opacity: 0; } }
+      @keyframes glyph-flow { from { transform: translate3d(-4%, 0, 0) rotate(var(--rotate)); } to { transform: translate3d(5%, 0, 0) rotate(var(--rotate)); } }
+      @keyframes brand-reveal { 0%, 58% { opacity: 0; transform: translate(-50%, -50%) scale(.82); filter: blur(10px); } 70% { opacity: .18; transform: translate(-50%, -50%) scale(.94); filter: blur(3px); } 82% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); } }
+      @media (prefers-reduced-motion: reduce) { .glyph-field { opacity: .16; animation: none; } .glyph-track { animation: none; } .brand-lockup { opacity: 1; transform: translate(-50%, -50%); filter: none; animation: none; } .crt-noise { animation: none; } }
     </style>
   </head>
   <body>
@@ -30,12 +40,60 @@
         <video id="splash-video" class="splash-video" autoplay loop muted playsinline preload="auto" poster="/assets/agentos-splash-poster.jpg" aria-hidden="true">
           <source src="/assets/agentos-splash.mp4" type="video/mp4" />
         </video>
+        <div id="glyph-field" class="glyph-field" aria-hidden="true"></div>
+        <div class="brand-lockup" aria-label="AgentOS">
+          <img class="brand-icon" src="/assets/logo.webp" alt="" />
+          <span class="brand-wordmark"><span>Agent</span><span class="accent">OS</span></span>
+        </div>
         <div class="crt-noise" aria-hidden="true"></div>
       </div>
     </main>
     <script>
       const video = document.getElementById("splash-video");
       const poster = document.getElementById("splash-poster");
+      const glyphField = document.getElementById("glyph-field");
+      const glyphVocabulary = [
+        "AGENTOS", "OPENCLAW", "CONTROL", "PLANE", "GATEWAY", "RUNTIME", "WORKSPACE", "MEMORY",
+        "ΣΥΝΔΕΣΗ", "ΚΟΜΒΟΣ", "ΡΟΗ", "ΑΡΧΗ", "接続", "制御", "記憶", "空間",
+        "СЕТЬ", "ПРОТОКОЛ", "КОНТУР", "ПАМЯТЬ", "نظام", "شبكة", "ذاكرة", "ممر",
+        "NŒUD", "LIAISON", "ÉTAT", "VEILLE", "ÆTHER", "SIGNAL", "⟟⧫⟐", "∆-07", "1010", "//", "::", "⟁"
+      ];
+      const glyphTrackPlans = [
+        ["5%", "-12%", "clamp(9px, 1.15vw, 13px)", ".72", "1.45rem", "16s", "-8s", "-4deg", "0px"],
+        ["14%", "-20%", "clamp(10px, 1.4vw, 15px)", ".46", "2rem", "21s", "-14s", "3deg", ".2px"],
+        ["23%", "-8%", "clamp(8px, 1vw, 12px)", ".64", "1.2rem", "14s", "-4s", "-2deg", "0px"],
+        ["32%", "-24%", "clamp(11px, 1.65vw, 17px)", ".34", "2.4rem", "25s", "-20s", "4deg", ".3px"],
+        ["41%", "-10%", "clamp(9px, 1.2vw, 14px)", ".56", "1.7rem", "18s", "-11s", "-3deg", "0px"],
+        ["50%", "-18%", "clamp(10px, 1.4vw, 15px)", ".4", "2.8rem", "23s", "-3s", "2deg", ".25px"],
+        ["59%", "-5%", "clamp(8px, 1vw, 12px)", ".66", "1.25rem", "15s", "-10s", "-4deg", "0px"],
+        ["68%", "-22%", "clamp(10px, 1.3vw, 14px)", ".48", "2.1rem", "20s", "-17s", "3deg", ".2px"],
+        ["77%", "-12%", "clamp(9px, 1.15vw, 13px)", ".7", "1.5rem", "17s", "-6s", "-2deg", "0px"],
+        ["87%", "-26%", "clamp(8px, 1vw, 12px)", ".5", "2.4rem", "24s", "-13s", "4deg", ".25px"]
+      ];
+      const glyphNodes = [];
+      glyphTrackPlans.forEach((plan, row) => {
+        const track = document.createElement("div");
+        track.className = "glyph-track";
+        ["--top", "--left", "--size", "--opacity", "--gap", "--duration", "--delay", "--rotate", "--blur"].forEach((property, index) => {
+          track.style.setProperty(property, plan[index]);
+        });
+        for (let index = 0; index < 18; index += 1) {
+          const token = document.createElement("span");
+          const offset = (row * 13 + index * 7) % glyphVocabulary.length;
+          token.textContent = glyphVocabulary[offset];
+          glyphNodes.push({ node: token, offset });
+          track.append(token);
+        }
+        glyphField.append(track);
+      });
+      const morphGlyphs = () => {
+        const tick = Math.floor(performance.now() / 460);
+        glyphNodes.forEach(({ node, offset }) => {
+          node.textContent = glyphVocabulary[(tick + offset) % glyphVocabulary.length];
+        });
+      };
+      morphGlyphs();
+      window.setInterval(morphGlyphs, 460);
       const showFallback = () => {
         video.classList.add("hidden");
         poster.classList.remove("hidden");

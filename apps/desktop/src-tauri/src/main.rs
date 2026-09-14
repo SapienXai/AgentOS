@@ -44,6 +44,8 @@ const STARTUP_ATTEMPTS: usize = 4;
 const STARTUP_RETRY_DELAY: Duration = Duration::from_millis(150);
 #[cfg(not(debug_assertions))]
 const MAIN_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(20);
+#[cfg(not(debug_assertions))]
+const MIN_SPLASH_DURATION: Duration = Duration::from_millis(5200);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 struct DesktopState {
@@ -51,6 +53,10 @@ struct DesktopState {
     allowed_port: Mutex<Option<u16>>,
     #[cfg(not(debug_assertions))]
     output: Arc<Mutex<VecDeque<String>>>,
+    #[cfg(not(debug_assertions))]
+    splash_started_at: Instant,
+    #[cfg(not(debug_assertions))]
+    splash_reveal_scheduled: AtomicBool,
     quitting: AtomicBool,
     restarting: AtomicBool,
     main_ready: AtomicBool,
@@ -63,6 +69,10 @@ impl DesktopState {
             allowed_port: Mutex::new(None),
             #[cfg(not(debug_assertions))]
             output: Arc::new(Mutex::new(VecDeque::with_capacity(12))),
+            #[cfg(not(debug_assertions))]
+            splash_started_at: Instant::now(),
+            #[cfg(not(debug_assertions))]
+            splash_reveal_scheduled: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
             restarting: AtomicBool::new(false),
             main_ready: AtomicBool::new(false),
@@ -276,6 +286,42 @@ fn is_ready_main_navigation(url: &tauri::Url, allowed_port: Option<u16>) -> bool
 }
 
 fn reveal_main_window(window: &WebviewWindow) {
+    #[cfg(not(debug_assertions))]
+    {
+        let state = window.app_handle().state::<DesktopState>();
+        if state.main_ready.load(Ordering::SeqCst)
+            || state.splash_reveal_scheduled.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+
+        let elapsed = state.splash_started_at.elapsed();
+        if let Some(remaining) = MIN_SPLASH_DURATION.checked_sub(elapsed) {
+            let delayed_window = window.clone();
+            let app_handle = window.app_handle().clone();
+            thread::spawn(move || {
+                thread::sleep(remaining);
+                if app_handle
+                    .state::<DesktopState>()
+                    .quitting
+                    .load(Ordering::SeqCst)
+                {
+                    return;
+                }
+
+                let callback_window = delayed_window.clone();
+                let _ = delayed_window.run_on_main_thread(move || {
+                    finish_reveal_main_window(&callback_window);
+                });
+            });
+            return;
+        }
+    }
+
+    finish_reveal_main_window(window);
+}
+
+fn finish_reveal_main_window(window: &WebviewWindow) {
     let state = window.app_handle().state::<DesktopState>();
     if state.main_ready.swap(true, Ordering::SeqCst) {
         return;

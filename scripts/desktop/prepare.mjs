@@ -198,6 +198,10 @@ async function prepareBootstrapAssets() {
     path.join(repoRoot, "public", "assets", "agentos-splash-poster.jpg"),
     path.join(bootstrapAssetRoot, "agentos-splash-poster.jpg")
   );
+  await cp(
+    path.join(repoRoot, "public", "assets", "logo.webp"),
+    path.join(bootstrapAssetRoot, "logo.webp")
+  );
 }
 
 function assertFile(filePath, label) {

@@ -3,12 +3,14 @@
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
+  BadgeCheck,
   Bot,
   Check,
   CircleDot,
   Cpu,
   FolderOpen,
   LoaderCircle,
+  Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
@@ -354,6 +356,7 @@ export function AgentCreationCardOverlay({
               </div>
             </div>
           </div>
+          <BirthInfoGrid reduceMotion={reduceMotion} />
             <BirthStatusRail reduceMotion={reduceMotion} />
           </motion.div>
         ) : (
@@ -408,6 +411,67 @@ export function AgentCreationCardOverlay({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function BirthInfoGrid({ reduceMotion }: { reduceMotion: boolean }) {
+  const steps = [
+    { label: "Identity", detail: "Profile drafted", state: "ready", Icon: BadgeCheck },
+    { label: "OpenClaw", detail: "Runtime forming", state: "active", Icon: Cpu },
+    { label: "Workspace", detail: "Joining workspace", state: "queued", Icon: FolderOpen },
+    { label: "Canvas", detail: "Reveal queued", state: "queued", Icon: Sparkles }
+  ] as const;
+
+  return (
+    <div className="agent-node__birth-sequence absolute inset-x-3.5 top-[55%] rounded-[12px] border px-2.5 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="agent-node__birth-sequence-label text-[8px] font-semibold uppercase tracking-[0.2em]">Provisioning steps</span>
+        <span className="agent-node__birth-sequence-count rounded-full border px-1.5 py-0.5 text-[8px] font-semibold tabular-nums">2 / 4</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {steps.map((step, index) => {
+          const stateClassName = `agent-node__birth-info-card--${step.state}`;
+          const progressWidth = step.state === "ready" ? "100%" : step.state === "active" ? "58%" : "0%";
+          const statusLabel = step.state === "ready" ? "Ready" : step.state === "active" ? "In progress" : "Queued";
+
+          return (
+            <motion.div
+              key={step.label}
+              initial={reduceMotion ? false : { opacity: 0, y: 5, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: reduceMotion ? 0 : 0.24, delay: reduceMotion ? 0 : index * 0.06, ease: [0.22, 1, 0.36, 1] }}
+              className={cn("agent-node__birth-info-card min-w-0 rounded-[9px] border px-2 py-1.5", stateClassName)}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="agent-node__birth-info-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border">
+                  <step.Icon className="h-2.5 w-2.5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="agent-node__birth-info-title block truncate text-[8px] font-semibold">{step.label}</span>
+                  <span className="agent-node__birth-info-detail block truncate text-[7px]">{step.detail}</span>
+                </span>
+                <motion.span
+                  aria-hidden="true"
+                  animate={reduceMotion || step.state !== "active" ? { opacity: step.state === "ready" ? 1 : 0.55 } : { opacity: [0.35, 1, 0.35], scale: [0.86, 1.18, 0.86] }}
+                  transition={reduceMotion || step.state !== "active" ? { duration: 0 } : { duration: 1.35, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                  className="agent-node__birth-info-dot h-1.5 w-1.5 shrink-0 rounded-full"
+                />
+              </div>
+              <div className="agent-node__birth-info-track mt-1 h-0.5 overflow-hidden rounded-full">
+                <motion.span
+                  aria-hidden="true"
+                  initial={{ width: 0 }}
+                  animate={{ width: progressWidth }}
+                  transition={{ duration: reduceMotion ? 0 : 0.45, delay: reduceMotion ? 0 : index * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                  className="agent-node__birth-info-fill block h-full rounded-full"
+                />
+              </div>
+              <span className="agent-node__birth-info-state mt-1 block text-[7px] font-semibold uppercase tracking-[0.12em]">{statusLabel}</span>
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 }

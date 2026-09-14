@@ -31,6 +31,7 @@ const requiredPaths = [
   path.join(desktopRoot, "bootstrap", "index.html"),
   path.join(desktopRoot, "bootstrap", "assets", "agentos-splash.mp4"),
   path.join(desktopRoot, "bootstrap", "assets", "agentos-splash-poster.jpg"),
+  path.join(desktopRoot, "bootstrap", "assets", "logo.webp"),
   path.join(desktopRoot, "src-tauri", "Cargo.toml"),
   path.join(desktopRoot, "src-tauri", "src", "main.rs"),
   path.join(runtimeRoot, "agentos", "server.js"),
