@@ -188,18 +188,16 @@ async function removeRuntimeEnvironmentFiles(root) {
 
 async function prepareBootstrapAssets() {
   await mkdir(bootstrapAssetRoot, { recursive: true });
+  await rm(path.join(bootstrapAssetRoot, "pikoLoader.webm"), { force: true });
+  await rm(path.join(bootstrapAssetRoot, "pikoLoader.hevc.mov"), { force: true });
   await cp(
-    path.join(repoRoot, "public", "assets", "pikoLoader.webm"),
-    path.join(bootstrapAssetRoot, "pikoLoader.webm")
+    path.join(repoRoot, "public", "assets", "agentos-splash.mp4"),
+    path.join(bootstrapAssetRoot, "agentos-splash.mp4")
   );
-
-  const macAlphaSource = path.join(repoRoot, "public", "assets", "pikoLoader.hevc.mov");
-  const macAlphaTarget = path.join(bootstrapAssetRoot, "pikoLoader.hevc.mov");
-  if (targetPlatform === "darwin" && await pathExists(macAlphaSource)) {
-    await cp(macAlphaSource, macAlphaTarget);
-  } else {
-    await rm(macAlphaTarget, { force: true });
-  }
+  await cp(
+    path.join(repoRoot, "public", "assets", "agentos-splash-poster.jpg"),
+    path.join(bootstrapAssetRoot, "agentos-splash-poster.jpg")
+  );
 }
 
 function assertFile(filePath, label) {

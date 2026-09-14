@@ -7,6 +7,7 @@ import {
   applyAgentPreset,
   buildAgentDraft,
   buildImportedAgentDraft,
+  buildUniqueAgentName,
   buildScopedAgentId,
   buildUniqueAgentId,
   isSnapshotModelUsable,
@@ -269,6 +270,34 @@ test("create agent quick create starts with the General worker baseline", () => 
   assert.equal(draft.policy.fileAccess, "workspace-only");
   assert.equal(draft.heartbeat.enabled, false);
   assert.equal(draft.modelId, "");
+});
+
+test("fresh agent names are role-aware and unique within the selected workspace", () => {
+  const existingAgents = [
+    {
+      id: "workspace-1-worker",
+      workspaceId: "workspace-1",
+      name: "Worker",
+      identityName: "Worker"
+    },
+    {
+      id: "workspace-1-builder",
+      workspaceId: "workspace-1",
+      name: "Builder",
+      identityName: "Builder"
+    },
+    {
+      id: "workspace-2-builder",
+      workspaceId: "workspace-2",
+      name: "Builder",
+      identityName: "Builder"
+    }
+  ] as unknown as MissionControlSnapshot["agents"];
+
+  assert.equal(buildUniqueAgentName(existingAgents, "workspace-1", "worker"), "Operator");
+  assert.equal(buildUniqueAgentName(existingAgents, "workspace-1", "browser"), "Research Scout");
+  assert.equal(buildUniqueAgentName(existingAgents, "workspace-2", "worker"), "Operator");
+  assert.equal(buildUniqueAgentName(existingAgents, "workspace-1", "worker", ["Operator"]), "Coordinator");
 });
 
 test("role baseline changes preserve user-entered name and responsibility", () => {

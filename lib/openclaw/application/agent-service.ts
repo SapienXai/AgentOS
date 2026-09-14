@@ -55,6 +55,7 @@ import {
   isOpenAiBackedModel,
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
+import { buildUniqueAgentName } from "@/lib/openclaw/agent-naming";
 import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
@@ -141,7 +142,7 @@ export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenC
       : normalizeDeclaredAgentTools(input.tools);
   const displayName =
     normalizeOptionalValue(input.name) ??
-    presetMeta.defaultName;
+    buildUniqueAgentName(snapshot.agents, resolvedWorkspaceId ?? undefined, policy.preset);
   const emoji =
     normalizeOptionalValue(input.emoji) ??
     presetMeta.defaultEmoji;

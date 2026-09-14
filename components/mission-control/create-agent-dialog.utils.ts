@@ -14,6 +14,8 @@ import { getAgentPresetMeta, resolveAgentPolicy } from "@/lib/openclaw/agent-pre
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { AgentPolicy, AgentPreset, MissionControlSnapshot } from "@/lib/agentos/contracts";
 
+export { buildUniqueAgentName } from "@/lib/openclaw/agent-naming";
+
 export type AgentDraft = {
   workspaceId: string;
   modelId: string;

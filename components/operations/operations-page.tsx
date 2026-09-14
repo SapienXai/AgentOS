@@ -47,6 +47,7 @@ export function OperationsPage({
               rootSnapshot={context.rootSnapshot}
               activeWorkspaceId={context.activeWorkspaceId}
               surfaceTheme={context.surfaceTheme}
+              pendingAgentNames={context.pendingAgentNames}
               refresh={context.refresh}
               setSnapshot={context.setSnapshot}
             />

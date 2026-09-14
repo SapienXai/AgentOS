@@ -1,6 +1,31 @@
 export type AgentCreationProgressState = "creating" | "syncing" | "complete";
 export type AgentCreationCardPhase = "pending" | "online";
 
+/**
+ * How long the live card stays in its completion reveal before returning to
+ * the normal agent surface. The shell and the card overlay share this so the
+ * final morph never cuts off early.
+ */
+export const AGENT_CREATION_BIRTH_DURATION_MS = 5200;
+
+/**
+ * A fresh native agent can take a few Gateway snapshots to become visible.
+ * Keep the retry window bounded so a genuine OpenClaw failure remains visible
+ * as a pending state instead of being silently promoted to a live agent.
+ */
+export const AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS = [
+  0,
+  700,
+  1400,
+  2500,
+  4000,
+  6500,
+  10000,
+  15000
+] as const;
+
+export const AGENT_CREATION_SNAPSHOT_RECONCILIATION_TIMEOUT_MS = 45_000;
+
 type AgentCreationStepStatus = "pending" | "active" | "done";
 
 export type AgentCreationProgressStep = {

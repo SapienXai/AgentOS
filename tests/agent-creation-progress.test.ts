@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS,
+  AGENT_CREATION_SNAPSHOT_RECONCILIATION_TIMEOUT_MS,
   resolveAgentCreationProgressPercent,
   resolveAgentCreationProgressSteps
 } from "@/components/mission-control/agent-creation-progress.utils";
@@ -44,4 +46,13 @@ test("agent creation progress percentages are lifecycle milestones", () => {
   assert.equal(resolveAgentCreationProgressPercent("creating"), 42);
   assert.equal(resolveAgentCreationProgressPercent("syncing"), 78);
   assert.equal(resolveAgentCreationProgressPercent("complete"), 100);
+});
+
+test("agent creation reconciliation remains bounded and retries the live snapshot", () => {
+  assert.equal(AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS[0], 0);
+  assert.ok(AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS.length >= 5);
+  assert.ok(
+    AGENT_CREATION_SNAPSHOT_RECONCILIATION_TIMEOUT_MS >
+      AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS.reduce((total, delay) => total + delay, 0 as number)
+  );
 });

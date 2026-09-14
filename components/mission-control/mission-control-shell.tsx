@@ -60,6 +60,10 @@ import {
   type PendingAgentProjection,
   type PendingWorkspaceMenuEntry
 } from "@/components/mission-control/pending-agent-projection";
+import {
+  AGENT_CREATION_BIRTH_DURATION_MS,
+  AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS
+} from "@/components/mission-control/agent-creation-progress.utils";
 import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
@@ -1037,6 +1041,22 @@ export function MissionControlShell({
 
   const handleCreatedAgentVisible = useCallback((agentId: string) => {
     setPendingCreatedAgents((current) => current.filter((agent) => agent.id !== agentId));
+    setAgentCreationWarnings((current) => {
+      if (!(agentId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[agentId];
+      return next;
+    });
+
+    const warningTimeout = agentCreationWarningTimeoutsRef.current.get(agentId);
+    if (warningTimeout) {
+      clearTimeout(warningTimeout);
+      agentCreationWarningTimeoutsRef.current.delete(agentId);
+    }
+
     setRecentCreatedAgentId(agentId);
 
     if (recentCreatedAgentTimeoutRef.current) {
@@ -1046,7 +1066,7 @@ export function MissionControlShell({
     recentCreatedAgentTimeoutRef.current = setTimeout(() => {
       recentCreatedAgentTimeoutRef.current = null;
       setRecentCreatedAgentId(null);
-    }, 3600);
+    }, AGENT_CREATION_BIRTH_DURATION_MS);
   }, []);
 
   const handleAgentCreationPending = useCallback((agent: PendingAgentProjection) => {
@@ -1131,8 +1151,46 @@ export function MissionControlShell({
       return;
     }
 
-      setPendingCreatedAgents((current) => current.filter((agent) => !liveAgentIds.has(agent.id)));
+    setPendingCreatedAgents((current) => current.filter((agent) => !liveAgentIds.has(agent.id)));
   }, [pendingCreatedAgents, uiSnapshot.agents]);
+
+  useEffect(() => {
+    if (pendingCreatedAgents.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const pendingAgentIds = new Set(pendingCreatedAgents.map((agent) => agent.id));
+
+    const reconcile = async () => {
+      for (const delayMs of AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS) {
+        if (delayMs > 0) {
+          await wait(delayMs);
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
+
+        if (cancelled || !refreshedSnapshot) {
+          continue;
+        }
+
+        if (refreshedSnapshot.agents.some((agent) => pendingAgentIds.has(agent.id))) {
+          setPendingCreatedAgents((current) => current.filter((agent) => !pendingAgentIds.has(agent.id)));
+          return;
+        }
+      }
+    };
+
+    void reconcile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingCreatedAgents, refreshSnapshot]);
 
   useEffect(() => {
     const warningTimeouts = agentCreationWarningTimeoutsRef.current;
@@ -4214,6 +4272,7 @@ export function MissionControlShell({
         onOpenChange={setIsSidebarCreateAgentDialogOpen}
         snapshot={uiSnapshot}
         defaultWorkspaceId={activeWorkspaceId}
+        pendingAgentNames={pendingCreatedAgents}
         onRefresh={refresh}
         onSnapshotChange={setSnapshot}
         onAgentCreationPending={handleAgentCreationPending}
@@ -4837,6 +4896,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingCreatedAgents={pendingCreatedAgents}
             pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
@@ -4913,6 +4973,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingCreatedAgents={pendingCreatedAgents}
             pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
@@ -5387,6 +5448,7 @@ export function MissionControlShell({
           onOpenChange={setIsSidebarCreateAgentDialogOpen}
           snapshot={uiSnapshot}
           defaultWorkspaceId={activeWorkspaceId}
+          pendingAgentNames={pendingCreatedAgents}
           onRefresh={refresh}
           onSnapshotChange={setSnapshot}
           onAgentCreationPending={handleAgentCreationPending}

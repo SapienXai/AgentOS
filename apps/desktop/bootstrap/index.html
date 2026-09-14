@@ -5,62 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AgentOS</title>
     <style>
-      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #090b12; color: #f8fafc; }
-      body { min-height: 100vh; margin: 0; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 25%, #242044 0, #090b12 58%); }
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #05070b; color: #f8fafc; }
+      body { min-height: 100vh; margin: 0; overflow: hidden; background: #05070b; }
       main { display: grid; place-items: center; width: 100%; min-height: 100vh; }
-      .piko { position: relative; display: grid; width: 112px; height: 112px; place-items: center; }
-      .piko::before { position: absolute; inset: 16px; border-radius: 999px; background: rgba(167, 139, 250, .2); filter: blur(24px); content: ""; }
-      .piko video { position: relative; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
-      .piko-fallback { position: relative; display: grid; width: 72px; height: 72px; place-items: center; border: 1px solid rgba(165, 243, 252, .35); border-radius: 999px; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.28), rgba(34,211,238,.15) 42%, rgba(124,58,237,.12) 72%, transparent); box-shadow: 0 12px 30px rgba(34,211,238,.18); }
-      .piko-fallback::before { position: absolute; inset: 8px; border: 1px solid rgba(207, 250, 254, .25); border-radius: 999px; content: ""; }
-      .piko-fallback::after { width: 22px; height: 22px; border: 2px solid rgba(165,243,252,.3); border-right-color: rgba(165,243,252,.95); border-radius: 999px; content: ""; animation: spin 1s linear infinite; }
+      .crt-screen { position: relative; width: 100vw; max-width: 752px; aspect-ratio: 752 / 416; overflow: hidden; isolation: isolate; background: #080b10; box-shadow: 0 22px 80px rgba(0, 0, 0, .55); }
+      .crt-screen::before { position: absolute; z-index: 2; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, .42) 0 .55px, transparent .75px), repeating-linear-gradient(0deg, rgba(255, 255, 255, .11) 0 1px, transparent 1px 4px); background-position: 0 0, 0 0; background-size: 4px 4px, 100% 4px; content: ""; mix-blend-mode: screen; opacity: .3; pointer-events: none; }
+      .crt-screen::after { position: absolute; z-index: 3; inset: -3%; background: radial-gradient(ellipse at center, transparent 46%, rgba(0, 0, 0, .14) 68%, rgba(0, 0, 0, .74) 100%), linear-gradient(90deg, rgba(255, 54, 93, .09), transparent 17%, transparent 83%, rgba(49, 210, 255, .1)); content: ""; mix-blend-mode: multiply; pointer-events: none; }
+      .splash-video, .splash-poster { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .splash-video { filter: saturate(1.12) contrast(1.08) brightness(.94); transform: scale(1.015); }
+      .splash-poster { object-position: center; }
+      .crt-bloom { position: absolute; z-index: 0; inset: 10%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 106, 64, .32), rgba(115, 73, 152, .16) 42%, transparent 72%); filter: blur(34px); opacity: .65; pointer-events: none; }
+      .crt-noise { position: absolute; z-index: 4; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, .025) 3px 4px); mix-blend-mode: overlay; opacity: .42; animation: crt-flicker 7s steps(8, end) infinite; pointer-events: none; }
+      [data-error] { position: relative; z-index: 5; width: min(28rem, calc(100vw - 3rem)); padding: 2rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: 1rem; background: rgba(15, 18, 30, .92); box-shadow: 0 24px 80px rgba(0, 0, 0, .35); color: #fda4af; line-height: 1.5; }
       .hidden { display: none !important; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .piko-fallback::after { animation-duration: 2.5s; } }
-      [data-error] { width: min(28rem, calc(100vw - 3rem)); padding: 2rem; border: 1px solid rgba(255,255,255,.12); border-radius: 1rem; background: rgba(15, 18, 30, .84); box-shadow: 0 24px 80px rgba(0,0,0,.35); color: #fda4af; line-height: 1.5; }
+      @keyframes crt-flicker { 0%, 100% { opacity: .42; } 48% { opacity: .32; } 52% { opacity: .46; } }
+      @media (prefers-reduced-motion: reduce) { .crt-noise { animation: none; } }
     </style>
   </head>
   <body>
     <main aria-live="polite" aria-label="Starting AgentOS">
-      <div class="piko" aria-hidden="true">
-        <video id="piko-video" autoplay loop muted playsinline preload="auto"></video>
-        <span id="piko-fallback" class="piko-fallback hidden"></span>
+      <div class="crt-screen">
+        <div class="crt-bloom" aria-hidden="true"></div>
+        <img id="splash-poster" class="splash-poster" src="/assets/agentos-splash-poster.jpg" alt="" />
+        <video id="splash-video" class="splash-video" autoplay loop muted playsinline preload="auto" poster="/assets/agentos-splash-poster.jpg" aria-hidden="true">
+          <source src="/assets/agentos-splash.mp4" type="video/mp4" />
+        </video>
+        <div class="crt-noise" aria-hidden="true"></div>
       </div>
     </main>
     <script>
-      const video = document.getElementById("piko-video");
-      const fallback = document.getElementById("piko-fallback");
-      const piko = document.querySelector(".piko");
-      const platform = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
-      const source = platform.includes("mac")
-        ? { src: "/assets/pikoLoader.hevc.mov", type: 'video/quicktime; codecs="hvc1"' }
-        : { src: "/assets/pikoLoader.webm", type: 'video/webm; codecs="vp09.00.10.08"' };
+      const video = document.getElementById("splash-video");
+      const poster = document.getElementById("splash-poster");
       const showFallback = () => {
         video.classList.add("hidden");
-        fallback.classList.remove("hidden");
+        poster.classList.remove("hidden");
       };
-      video.src = source.src;
-      video.setAttribute("type", source.type);
       video.addEventListener("error", showFallback, { once: true });
-      video.play().catch(showFallback);
-
-      let frame = 0;
-      let targetX = 0;
-      let targetY = 0;
-      let currentX = 0;
-      let currentY = 0;
-      window.addEventListener("pointermove", (event) => {
-        targetX = Math.max(-20, Math.min(20, (event.clientX - window.innerWidth / 2) / 18));
-        targetY = Math.max(-16, Math.min(16, (event.clientY - window.innerHeight / 2) / 22));
-        if (!frame) frame = requestAnimationFrame(movePiko);
-      }, { passive: true });
-      function movePiko() {
-        currentX += (targetX - currentX) * 0.12;
-        currentY += (targetY - currentY) * 0.12;
-        if (piko) piko.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
-        frame = Math.abs(targetX - currentX) < 0.1 && Math.abs(targetY - currentY) < 0.1
-          ? 0
-          : requestAnimationFrame(movePiko);
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        video.pause();
+      } else {
+        video.play().catch(showFallback);
       }
 
       const error = new URLSearchParams(location.search).get("error");

@@ -96,6 +96,15 @@ test("agent creation reconciles stale global model readiness through native agen
   assert.match(source, /candidateAgentIds: resolveAgentNativeReadinessAgentIds/);
 });
 
+test("agent creation uses a workspace-aware display-name fallback when the API caller omits a name", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "lib/openclaw/application/agent-service.ts"),
+    "utf8"
+  );
+
+  assert.match(source, /buildUniqueAgentName\(snapshot\.agents, resolvedWorkspaceId/);
+});
+
 test("agent creation falls back when the requested model is not ready", () => {
   const snapshot = {
     diagnostics: {

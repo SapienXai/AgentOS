@@ -13,6 +13,7 @@ import { resolveAgentStatusDotTone } from "@/components/mission-control/node-vis
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +41,7 @@ export function AgentsPageContent({
   rootSnapshot,
   activeWorkspaceId,
   surfaceTheme,
+  pendingAgentNames,
   refresh,
   setSnapshot
 }: {
@@ -47,6 +49,7 @@ export function AgentsPageContent({
   rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
+  pendingAgentNames: readonly Pick<PendingAgentProjection, "workspaceId" | "name">[];
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
@@ -156,6 +159,7 @@ export function AgentsPageContent({
                 <CreateAgentDialog
                   snapshot={rootSnapshot}
                   defaultWorkspaceId={activeWorkspaceId}
+                  pendingAgentNames={pendingAgentNames}
                   onRefresh={refresh}
                   onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
                   onAgentCreated={setSelectedId}

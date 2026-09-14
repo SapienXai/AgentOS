@@ -604,6 +604,7 @@ export function MissionSidebar({
           snapshot={snapshot}
           updateNotice={hasUpdateNotice}
           activeWorkspaceId={activeWorkspace?.id ?? null}
+          pendingCreatedAgents={pendingCreatedAgents}
           onRefresh={onRefresh}
           onSnapshotChange={onSnapshotChange}
           onAgentCreationPending={onAgentCreationPending}
@@ -654,6 +655,7 @@ export function MissionSidebar({
               <SidebarCreateAgentAction
                 snapshot={snapshot}
                 activeWorkspaceId={activeWorkspace?.id ?? null}
+                pendingCreatedAgents={pendingCreatedAgents}
                 surfaceTheme={surfaceTheme}
                 onRefresh={onRefresh}
                 onSnapshotChange={onSnapshotChange}
@@ -1252,6 +1254,7 @@ function SidebarPanelToggleIcon({ filled }: { filled: boolean }) {
 function SidebarCreateAgentAction({
   snapshot,
   activeWorkspaceId,
+  pendingCreatedAgents,
   surfaceTheme,
   collapsed = false,
   onRefresh,
@@ -1262,6 +1265,7 @@ function SidebarCreateAgentAction({
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  pendingCreatedAgents?: PendingAgentProjection[];
   surfaceTheme: "dark" | "light";
   collapsed?: boolean;
   onRefresh: () => Promise<void>;
@@ -1336,6 +1340,7 @@ function SidebarCreateAgentAction({
     <CreateAgentDialog
       snapshot={snapshot}
       defaultWorkspaceId={activeWorkspaceId ?? undefined}
+      pendingAgentNames={pendingCreatedAgents}
       onRefresh={onRefresh}
       onSnapshotChange={onSnapshotChange}
       onAgentCreationPending={onAgentCreationPending}
@@ -2686,6 +2691,7 @@ function CollapsedSidebar({
   snapshot,
   updateNotice,
   activeWorkspaceId,
+  pendingCreatedAgents,
   onRefresh,
   onSnapshotChange,
   onAgentCreationPending,
@@ -2703,6 +2709,7 @@ function CollapsedSidebar({
   snapshot: MissionControlSnapshot;
   updateNotice: boolean;
   activeWorkspaceId: string | null;
+  pendingCreatedAgents?: PendingAgentProjection[];
   onRefresh: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
@@ -2751,6 +2758,7 @@ function CollapsedSidebar({
         <SidebarCreateAgentAction
           snapshot={snapshot}
           activeWorkspaceId={activeWorkspaceId}
+          pendingCreatedAgents={pendingCreatedAgents}
           surfaceTheme={surfaceTheme}
           collapsed
           onRefresh={onRefresh}

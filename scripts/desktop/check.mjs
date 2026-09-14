@@ -25,10 +25,8 @@ const cargoManifest = await readFile(cargoPath, "utf8");
 const runtimeMetadata = JSON.parse(await readFile(path.join(runtimeRoot, "metadata.json"), "utf8"));
 const requiredPaths = [
   path.join(desktopRoot, "bootstrap", "index.html"),
-  path.join(desktopRoot, "bootstrap", "assets", "pikoLoader.webm"),
-  ...(targetPlatform === "darwin"
-    ? [path.join(desktopRoot, "bootstrap", "assets", "pikoLoader.hevc.mov")]
-    : []),
+  path.join(desktopRoot, "bootstrap", "assets", "agentos-splash.mp4"),
+  path.join(desktopRoot, "bootstrap", "assets", "agentos-splash-poster.jpg"),
   path.join(desktopRoot, "src-tauri", "Cargo.toml"),
   path.join(desktopRoot, "src-tauri", "src", "main.rs"),
   path.join(runtimeRoot, "agentos", "server.js"),

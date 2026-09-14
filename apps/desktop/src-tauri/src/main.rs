@@ -192,7 +192,7 @@ fn build_main_window(app: &mut tauri::App) -> Result<WebviewWindow, Box<dyn std:
 fn build_splash_window(app: &mut tauri::App) -> Result<WebviewWindow, Box<dyn std::error::Error>> {
     WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("index.html".into()))
         .title("AgentOS")
-        .inner_size(360.0, 220.0)
+        .inner_size(520.0, 288.0)
         .resizable(false)
         .maximizable(false)
         .minimizable(false)

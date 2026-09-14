@@ -7,7 +7,7 @@ import { BrainCircuit, ChevronDown, Cpu, KeyRound, Layers3, LocateFixed, Message
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
-import { AgentCreationCardOverlay, AgentCreationWarningNotice } from "@/components/mission-control/agent-creation-progress";
+import { AgentCreationCardOverlay } from "@/components/mission-control/agent-creation-progress";
 import { resolveAgentProfileVisual, resolveAgentVisualTheme } from "@/components/mission-control/agent-profile-visuals";
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
 import {
@@ -426,10 +426,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const hasUnreadChat = chatUnreadCount > 0 && !data.chatOpen;
   const activeTaskCount = Math.max(0, Number(data.activeTaskCount ?? 0));
   const isPendingCreation = Boolean(data.pendingCreation);
-  const creationWarning = typeof data.creationWarning === "string" ? data.creationWarning.trim() : "";
   const isAttentionActive = selected || data.composerFocused || data.taskFocused;
   const isCreationPulse = Boolean(data.creationPulse);
-  const showCreationWarning = Boolean(creationWarning && !isPendingCreation && !isCreationPulse);
+  const isBirthActive = isPendingCreation || isCreationPulse;
   const dotTone = resolveAgentStatusDotTone(data.agent.status);
   const statusBadgeVariant = resolveAgentStatusBadgeVariant(data.agent.status);
   const presetMeta = getAgentPresetMeta(data.agent.policy.preset);
@@ -861,7 +860,19 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         </>
       ) : null}
 
-      <div className="relative z-10">
+      <motion.div
+        initial={false}
+        animate={
+          isBirthActive
+            ? { opacity: 0, scale: 0.975, filter: "blur(7px)" }
+            : { opacity: 1, scale: 1, filter: "blur(0px)" }
+        }
+        transition={{
+          duration: isBirthActive ? 0.24 : 0.72,
+          ease: [0.22, 1, 0.36, 1]
+        }}
+        className={cn("relative z-10", isBirthActive && "pointer-events-none")}
+      >
         <Handle
           type="source"
           id="source-right"
@@ -1244,11 +1255,6 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   Agent online
                 </Badge>
               ) : null}
-              {showCreationWarning ? (
-                <Badge variant="warning" data-agent-status="warning" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
-                  Sync note
-                </Badge>
-              ) : null}
               <button
                 type="button"
                 aria-label={`Change model for ${agentLabel}`}
@@ -1274,7 +1280,6 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
 
           <div className="mt-2.5">
-            {showCreationWarning ? <AgentCreationWarningNotice message={creationWarning} /> : null}
             <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
           </div>
 
@@ -1569,7 +1574,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             ) : null}
           </AnimatePresence>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

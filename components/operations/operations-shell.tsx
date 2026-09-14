@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNod
 import { Menu } from "lucide-react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import {
+  AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS
+} from "@/components/mission-control/agent-creation-progress.utils";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
@@ -37,6 +40,7 @@ export type OperationsShellContext = {
   connectionState: "connecting" | "live" | "retrying";
   attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
+  pendingAgentNames: readonly Pick<PendingAgentProjection, "workspaceId" | "name">[];
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 };
@@ -101,7 +105,7 @@ export function OperationsShell({
   initialSnapshot: MissionControlSnapshot;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
-  const { snapshot, connectionState, attentionRefreshGeneration, refresh, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     initialSnapshot.workspaces[0]?.id ?? null
@@ -238,6 +242,44 @@ export function OperationsShell({
     visiblePendingCreatedAgents,
     snapshot
   ]);
+
+  useEffect(() => {
+    if (visiblePendingCreatedAgents.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const pendingAgentIds = new Set(visiblePendingCreatedAgents.map((agent) => agent.id));
+
+    const reconcile = async () => {
+      for (const delayMs of AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS) {
+        if (delayMs > 0) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
+
+        if (cancelled || !refreshedSnapshot) {
+          continue;
+        }
+
+        if (refreshedSnapshot.agents.some((agent) => pendingAgentIds.has(agent.id))) {
+          setPendingCreatedAgents((current) => current.filter((agent) => !pendingAgentIds.has(agent.id)));
+          return;
+        }
+      }
+    };
+
+    void reconcile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshSnapshot, setPendingCreatedAgents, visiblePendingCreatedAgents]);
 
   useEffect(() => {
     const workspaceRoot = snapshot.diagnostics.workspaceRoot;
@@ -523,6 +565,7 @@ export function OperationsShell({
             connectionState,
             attentionRefreshGeneration,
             surfaceTheme,
+            pendingAgentNames: visiblePendingCreatedAgents,
             refresh,
             setSnapshot
           })}
@@ -548,6 +591,7 @@ export function OperationsShell({
         onOpenChange={setIsCreateAgentDialogOpen}
         snapshot={uiSnapshot}
         defaultWorkspaceId={activeWorkspaceId}
+        pendingAgentNames={visiblePendingCreatedAgents}
         onRefresh={refresh}
         onSnapshotChange={setSnapshot}
         onAgentCreationPending={handleAgentCreationPending}

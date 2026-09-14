@@ -10,10 +10,11 @@ import {
   FolderOpen,
   LoaderCircle,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 import {
+  AGENT_CREATION_BIRTH_DURATION_MS,
   resolveAgentCreationProgressPercent,
   resolveAgentCreationProgressSteps,
   type AgentCreationCardPhase,
@@ -153,7 +154,7 @@ export function AgentCreationProgress({
           {warning ? (
             <div className={cn("relative mt-3 flex min-w-0 items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-[10px]", isLight ? "border-amber-300/55 bg-amber-50/80 text-amber-900" : "border-amber-300/20 bg-amber-300/[0.08] text-amber-100")}>
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">OpenClaw returned a sync note; review it on the live agent card.</span>
+              <span className="truncate">Native sync is finishing in the background; the agent will settle into its normal state.</span>
             </div>
           ) : null}
         </div>
@@ -298,6 +299,7 @@ export function AgentCreationCardOverlay({
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   const isOnline = phase === "online";
+  const onlineDuration = AGENT_CREATION_BIRTH_DURATION_MS / 1000;
 
   return (
     <div
@@ -307,8 +309,16 @@ export function AgentCreationCardOverlay({
         isOnline ? "agent-node__birth-layer--online" : "agent-node__birth-layer--pending"
       )}
     >
-      {!isOnline ? (
-        <>
+      <AnimatePresence mode="wait" initial={false}>
+        {!isOnline ? (
+          <motion.div
+            key="pending"
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, filter: "blur(6px)" }}
+            transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0"
+          >
           <motion.div
             animate={reduceMotion ? { opacity: 0.36 } : { opacity: [0.18, 0.68, 0.18], x: ["-130%", "330%"] }}
             transition={reduceMotion ? { duration: 0 } : { duration: 2.2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
@@ -329,29 +339,31 @@ export function AgentCreationCardOverlay({
           <div className="absolute inset-x-4 top-1/2 -translate-y-1/2">
             <div className="agent-node__birth-hud mx-auto max-w-[218px] rounded-[16px] border px-3 py-2.5 shadow-[0_18px_34px_rgba(2,6,23,0.32)] backdrop-blur-xl">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-cyan-200/25 bg-cyan-300/12 text-cyan-100">
+                <span className="agent-node__birth-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-cyan-200/25 bg-cyan-300/12 text-cyan-100">
                   <Bot className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 text-left">
-                  <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-cyan-100/75">Agent birth</span>
-                  <span className="mt-0.5 block truncate text-[11px] font-semibold text-white">{agentName} is taking shape</span>
+                  <span className="agent-node__birth-kicker block text-[9px] font-semibold uppercase tracking-[0.2em] text-cyan-100/75">Agent birth</span>
+                  <span className="agent-node__birth-title mt-0.5 block truncate text-[11px] font-semibold text-white">{agentName} is taking shape</span>
                 </span>
-                <LoaderCircle className="ml-auto h-4 w-4 shrink-0 animate-spin text-cyan-200 motion-reduce:animate-none" />
+                <LoaderCircle className="agent-node__birth-loader ml-auto h-4 w-4 shrink-0 animate-spin text-cyan-200 motion-reduce:animate-none" />
               </div>
-              <div className="mt-2 flex items-center gap-1.5 overflow-hidden text-[9px] uppercase tracking-[0.12em] text-slate-300/75">
-                <span className="rounded-full border border-cyan-200/18 bg-cyan-300/10 px-1.5 py-0.5 text-cyan-100/85">OpenClaw</span>
-                <span className="truncate">{modelLabel}</span>
+              <div className="agent-node__birth-meta mt-2 flex items-center gap-1.5 overflow-hidden text-[9px] uppercase tracking-[0.12em] text-slate-300/75">
+                <span className="agent-node__birth-provider rounded-full border border-cyan-200/18 bg-cyan-300/10 px-1.5 py-0.5 text-cyan-100/85">OpenClaw</span>
+                <span className="agent-node__birth-model truncate">{modelLabel}</span>
               </div>
             </div>
           </div>
-        </>
-      ) : (
-        <motion.div
-          initial={reduceMotion ? { opacity: 0.92 } : { opacity: 0, scale: 0.84 }}
-          animate={reduceMotion ? { opacity: 0 } : { opacity: [0, 1, 0.92, 0], scale: [0.84, 1.02, 1.03, 1.08] }}
-          transition={{ duration: reduceMotion ? 0.2 : 2.25, times: [0, 0.18, 0.62, 1], ease: [0.22, 1, 0.36, 1] }}
-          className="absolute inset-0 flex items-center justify-center"
-        >
+            <BirthStatusRail reduceMotion={reduceMotion} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="online"
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.84 }}
+            animate={reduceMotion ? { opacity: 1, scale: 1 } : { opacity: [0, 1, 0.96, 0.74, 0], scale: [0.84, 1.02, 1.03, 1.05, 1.08] }}
+            transition={{ duration: reduceMotion ? 0 : onlineDuration, times: [0, 0.12, 0.56, 0.86, 1], ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 flex items-center justify-center"
+          >
           <motion.div
             aria-hidden="true"
             initial={{ scale: 0.52, opacity: 0.1 }}
@@ -370,10 +382,10 @@ export function AgentCreationCardOverlay({
             <span className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200/55 bg-emerald-300/18 text-emerald-100 shadow-[0_0_22px_rgba(52,211,153,0.3)]">
               <Check className="h-5 w-5" strokeWidth={2.5} />
             </span>
-            <span className="mt-2 text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
-            <span className="mt-0.5 max-w-[190px] truncate text-[12px] font-semibold text-white">{agentName} joined the workspace</span>
+            <span className="agent-node__birth-online-kicker mt-2 text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
+            <span className="agent-node__birth-online-title mt-0.5 max-w-[190px] truncate text-[12px] font-semibold text-white">{agentName} joined the workspace</span>
             <div className="mt-2.5 w-full max-w-[190px] text-left">
-              <div className="flex items-center justify-between text-[8px] uppercase tracking-[0.14em] text-emerald-100/65">
+              <div className="agent-node__birth-online-meta flex items-center justify-between text-[8px] uppercase tracking-[0.14em] text-emerald-100/65">
                 <span>Birth sequence</span>
                 <span>Complete</span>
               </div>
@@ -382,43 +394,61 @@ export function AgentCreationCardOverlay({
                   aria-hidden="true"
                   initial={{ width: 0 }}
                   animate={{ width: "100%" }}
-                  transition={{ duration: reduceMotion ? 0 : 2.35, delay: reduceMotion ? 0 : 0.12, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: reduceMotion ? 0 : onlineDuration * 0.72, delay: reduceMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
                   className="block h-full rounded-full bg-[linear-gradient(90deg,#67e8f9,#34d399)]"
                 />
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-[8px] text-emerald-100/55">
+              <div className="agent-node__birth-online-steps mt-1.5 flex items-center justify-between text-[8px] text-emerald-100/55">
                 <span>Profile</span>
                 <span>Runtime</span>
                 <span>Canvas</span>
               </div>
             </div>
           </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-export function AgentCreationWarningNotice({ message }: { message: string }) {
+function BirthStatusRail({ reduceMotion }: { reduceMotion: boolean }) {
+  const steps = [
+    { label: "Identity", state: "ready" },
+    { label: "Runtime", state: "active" },
+    { label: "Canvas", state: "queued" }
+  ] as const;
+
   return (
-    <div
-      className="agent-node__creation-notice mb-2 rounded-[14px] border px-3 py-2.5 text-left"
-      title={message}
-      role="status"
-    >
-      <div className="flex items-start gap-2.5">
-        <span className="agent-node__creation-notice-icon mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border">
-          <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="agent-node__creation-notice-title text-[11px] font-semibold">OpenClaw sync note</p>
-            <span className="agent-node__creation-notice-label shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em]">Review</span>
-          </div>
-          <p className="agent-node__creation-notice-summary mt-0.5 text-[10px] leading-4">The agent is live; configuration sync may need a refresh.</p>
-        </div>
+    <div className="agent-node__birth-rail absolute inset-x-3.5 bottom-4 rounded-[12px] border px-2.5 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="agent-node__birth-rail-label text-[8px] font-semibold uppercase tracking-[0.2em]">Lifecycle</span>
+        <motion.span
+          aria-hidden="true"
+          animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.35, 1, 0.35] }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 1.5, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+          className="h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_10px_rgba(103,232,249,0.85)]"
+        />
       </div>
-      <p className="agent-node__creation-notice-detail mt-2 line-clamp-2 border-t pt-2 text-[10px] leading-4">{message}</p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {steps.map((step, index) => (
+          <div key={step.label} className="min-w-0">
+            <div className="flex items-center gap-1">
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", step.state === "ready" ? "bg-emerald-300" : step.state === "active" ? "bg-cyan-200 shadow-[0_0_8px_rgba(103,232,249,0.75)]" : "bg-slate-500")} />
+              <span className="agent-node__birth-rail-step truncate text-[8px]">{step.label}</span>
+            </div>
+            <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/10">
+              <motion.span
+                aria-hidden="true"
+                initial={{ width: 0 }}
+                animate={{ width: step.state === "ready" ? "100%" : step.state === "active" ? "58%" : "0%" }}
+                transition={{ duration: reduceMotion ? 0 : 0.45, delay: reduceMotion ? 0 : index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                className={cn("block h-full rounded-full", step.state === "ready" ? "bg-emerald-300" : step.state === "active" ? "bg-cyan-200" : "bg-slate-600")}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
