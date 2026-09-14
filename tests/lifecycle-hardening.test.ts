@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,6 +19,10 @@ import {
 import {
   executeNativeMutationWithVerification
 } from "@/lib/openclaw/application/native-mutation-service";
+import {
+  isNativeAgentNotFoundMessage
+} from "@/lib/openclaw/application/native-mutation-service";
+import { decideLifecycleDeleteRecovery } from "@/lib/openclaw/application/lifecycle-delete-recovery";
 import { runLifecycleSidecarSteps } from "@/lib/openclaw/application/lifecycle-sidecar-service";
 import {
   reconcileLifecycleState
@@ -135,6 +139,65 @@ test("ambiguous native lifecycle delivery never repeats the mutation", async () 
   assert.equal(verificationCalls, 1);
 });
 
+test("delete recovery confirms absence and requires one newer generation for replay", () => {
+  let mutationCalls = 0;
+  let currentRecoveryGeneration = 0;
+  const submit = (targetPresent: boolean | null, requestedRecoveryGeneration?: number) => {
+    const decision = decideLifecycleDeleteRecovery({
+      targetPresent,
+      mutationPreviouslyAccepted: true,
+      requestedRecoveryGeneration,
+      currentRecoveryGeneration
+    });
+    if (decision.action === "mutate") {
+      mutationCalls += 1;
+      if (decision.recoveryGeneration !== null) currentRecoveryGeneration = decision.recoveryGeneration;
+    }
+    return decision;
+  };
+
+  assert.deepEqual(submit(false), { action: "confirm-absent" });
+  assert.deepEqual(submit(true), { action: "wait", reason: "recovery-generation-required" });
+  assert.deepEqual(submit(true, 1), { action: "mutate", recoveryGeneration: 1 });
+  assert.deepEqual(submit(true, 1), { action: "wait", reason: "recovery-generation-required" });
+  assert.equal(mutationCalls, 1);
+  assert.equal(isNativeAgentNotFoundMessage('agent "agent-a" not found'), true);
+  assert.equal(isNativeAgentNotFoundMessage("OpenClaw Gateway timed out"), false);
+});
+
+test("workspace delete recovery preserves confirmed agents while recovering one ambiguous agent", () => {
+  const items: Record<string, "confirmed" | "unknown" | "pending"> = {
+    "agent-a": "confirmed",
+    "agent-b": "unknown"
+  };
+
+  const confirmedAgent = decideLifecycleDeleteRecovery({
+    targetPresent: false,
+    mutationPreviouslyAccepted: true,
+    currentRecoveryGeneration: 0
+  });
+  assert.deepEqual(confirmedAgent, { action: "confirm-absent" });
+  assert.equal(items["agent-a"], "confirmed");
+
+  const repeatedRequest = decideLifecycleDeleteRecovery({
+    targetPresent: true,
+    mutationPreviouslyAccepted: true,
+    currentRecoveryGeneration: 0
+  });
+  assert.deepEqual(repeatedRequest, { action: "wait", reason: "recovery-generation-required" });
+
+  const explicitRecovery = decideLifecycleDeleteRecovery({
+    targetPresent: true,
+    mutationPreviouslyAccepted: true,
+    requestedRecoveryGeneration: 1,
+    currentRecoveryGeneration: 0
+  });
+  assert.deepEqual(explicitRecovery, { action: "mutate", recoveryGeneration: 1 });
+  assert.equal(items["agent-a"], "confirmed");
+  items["agent-b"] = "pending";
+  assert.equal(items["agent-b"], "pending");
+});
+
 test("native deletion failure or failed verification cannot enter filesystem cleanup", async () => {
   const rejected = await executeNativeMutationWithVerification({
     operation: "workspace.delete.agent",
@@ -228,6 +291,57 @@ test("sidecar recovery skips confirmed steps and reruns failed steps", async () 
   assert.deepEqual(calls, ["retry"]);
   assert.equal(result.sidecarSynchronized, true);
   assert.deepEqual(result.warnings, []);
+});
+
+test("partial sidecar cleanup can transition to ready without rerunning confirmed steps", async () => {
+  const calls: string[] = [];
+  const completed: Record<string, "confirmed" | "failed"> = { confirmed: "confirmed" };
+  const first = await runLifecycleSidecarSteps([
+    {
+      id: "confirmed",
+      label: "confirmed step",
+      run: async () => calls.push("confirmed")
+    },
+    {
+      id: "retry",
+      label: "retry step",
+      run: async () => {
+        throw new Error("retry once");
+      }
+    }
+  ], {
+    completed,
+    onSuccess: async (stepId) => {
+      completed[stepId] = "confirmed";
+    },
+    onFailure: async (stepId) => {
+      completed[stepId] = "failed";
+    }
+  });
+
+  assert.equal(first.sidecarSynchronized, false);
+  assert.deepEqual(completed, { confirmed: "confirmed", retry: "failed" });
+
+  const second = await runLifecycleSidecarSteps([
+    {
+      id: "confirmed",
+      label: "confirmed step",
+      run: async () => calls.push("confirmed")
+    },
+    {
+      id: "retry",
+      label: "retry step",
+      run: async () => calls.push("retry")
+    }
+  ], {
+    completed,
+    onSuccess: async (stepId) => {
+      completed[stepId] = "confirmed";
+    }
+  });
+
+  assert.equal(second.sidecarSynchronized, true);
+  assert.deepEqual(calls, ["retry"]);
 });
 
 test("lifecycle operation records are durable and idempotent", async () => {
@@ -357,6 +471,47 @@ test("lifecycle operation retention removes old terminal records but preserves u
   }
 });
 
+test("bounded lifecycle cleanup rotates across the full operation directory", async () => {
+  const root = await temporaryDirectory();
+  const now = new Date("2026-09-14T12:00:00.000Z");
+
+  try {
+    for (let index = 0; index < 7; index += 1) {
+      const created = await createOrReadLifecycleOperation({
+        kind: "agent.delete",
+        targetId: `old-page-${index}`,
+        rootPath: root
+      });
+      await updateLifecycleOperation(created.operation, {
+        state: "ready",
+        stage: "complete"
+      }, root);
+    }
+
+    const entries = (await (await import("node:fs/promises")).readdir(root))
+      .filter((entry) => entry.endsWith(".json"));
+    for (const entry of entries) {
+      const filePath = path.join(root, entry);
+      const parsed = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+      parsed.updatedAt = "2020-01-01T00:00:00.000Z";
+      await writeFile(filePath, `${JSON.stringify(parsed)}\n`, "utf8");
+    }
+
+    const passes = [];
+    for (let pass = 0; pass < 4; pass += 1) {
+      passes.push(await cleanupLifecycleOperations({ rootPath: root, now, force: true, maxEntries: 2 }));
+    }
+
+    assert.ok(passes.every((pass) => pass.inspected <= 2));
+    assert.equal(passes.reduce((total, pass) => total + pass.removed, 0), 7);
+    for (let index = 0; index < 7; index += 1) {
+      await assert.rejects(() => readLifecycleOperation("agent.delete", `old-page-${index}`, root));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("filesystem lifecycle leases block live owners and reclaim stale owners", async () => {
   const root = await temporaryDirectory();
   const overrides = {
@@ -390,6 +545,68 @@ test("filesystem lifecycle leases block live owners and reclaim stale owners", a
     });
     assert.ok(reclaimed);
     await reclaimed.release();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("lifecycle leases never reclaim foreign or frozen live owners without fencing", async () => {
+  const root = await temporaryDirectory();
+  const now = new Date("2026-09-14T12:00:00.000Z");
+
+  try {
+    await mkdir(path.join(root, "leases"), { recursive: true });
+    for (const [resourceKey, heartbeatAt] of [
+      ["workspace:foreign-fresh", now.toISOString()],
+      ["workspace:foreign-stale", "2020-01-01T00:00:00.000Z"]
+    ] as const) {
+      await writeFile(lifecycleOperationLeasePath(resourceKey, root), JSON.stringify({
+        schemaVersion: 1,
+        leaseId: resourceKey,
+        resourceKey,
+        pid: 9191,
+        hostname: "other-host",
+        startedAt: "2020-01-01T00:00:00.000Z",
+        heartbeatAt,
+        ownerStartIdentity: "foreign-start"
+      }), "utf8");
+      const blocked = await acquireLifecycleOperationLease({
+        resourceKey,
+        rootPath: root,
+        waitMs: 0,
+        overrides: {
+          hostname: "local-host",
+          pid: 9292,
+          isProcessAlive: () => true,
+          processStartIdentity: async () => "local-start"
+        }
+      });
+      assert.equal(blocked, null);
+    }
+
+    const frozenResourceKey = "workspace:frozen-live";
+    await writeFile(lifecycleOperationLeasePath(frozenResourceKey, root), JSON.stringify({
+      schemaVersion: 1,
+      leaseId: "frozen-live",
+      resourceKey: frozenResourceKey,
+      pid: 9393,
+      hostname: "local-host",
+      startedAt: "2020-01-01T00:00:00.000Z",
+      heartbeatAt: "2020-01-01T00:00:00.000Z",
+      ownerStartIdentity: "same-start"
+    }), "utf8");
+    const frozenBlocked = await acquireLifecycleOperationLease({
+      resourceKey: frozenResourceKey,
+      rootPath: root,
+      waitMs: 0,
+      overrides: {
+        hostname: "local-host",
+        pid: 9393,
+        isProcessAlive: () => true,
+        processStartIdentity: async () => "same-start"
+      }
+    });
+    assert.equal(frozenBlocked, null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

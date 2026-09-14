@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, opendir, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -15,6 +15,7 @@ export const LIFECYCLE_OPERATION_SCHEMA_VERSION = 2 as const;
 export const LIFECYCLE_OPERATION_ROOT = LIFECYCLE_OPERATION_STORAGE_ROOT;
 export const LIFECYCLE_OPERATION_CLEANUP_INTERVAL_MS = 60_000;
 export const LIFECYCLE_OPERATION_MAX_CLEANUP_ENTRIES = 64;
+export const LIFECYCLE_OPERATION_CLEANUP_CURSOR_FILENAME = ".cleanup-cursor";
 export const LIFECYCLE_OPERATION_RETENTION_MS = {
   ready: 7 * 24 * 60 * 60 * 1_000,
   failed: 14 * 24 * 60 * 60 * 1_000,
@@ -305,17 +306,28 @@ export async function cleanupLifecycleOperations(input: {
   cleanupLastRunByRoot.set(rootPath, nowMs);
 
   await mkdir(rootPath, { recursive: true, mode: 0o700 });
-  let inspected = 0;
-  let removed = 0;
   const maxEntries = Math.max(1, Math.floor(input.maxEntries ?? LIFECYCLE_OPERATION_MAX_CLEANUP_ENTRIES));
-  const directory = await opendir(rootPath);
+  const cursorPath = path.join(rootPath, LIFECYCLE_OPERATION_CLEANUP_CURSOR_FILENAME);
 
-  try {
-    for await (const entry of directory) {
-      if (inspected >= maxEntries) break;
+  return withOperationFileMutationLock(cursorPath, async () => {
+    const entries = (await readdir(rootPath, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && (entry.name.endsWith(".json") || entry.name.endsWith(".tmp")))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const cursor = await readLifecycleCleanupCursor(cursorPath);
+    const lastEntryName = cursor?.lastEntryName ?? null;
+    const startIndex = lastEntryName
+      ? entries.findIndex((entry) => entry.name > lastEntryName)
+      : 0;
+    const normalizedStartIndex = startIndex < 0 ? 0 : startIndex;
+    const selectedEntries = entries.slice(normalizedStartIndex, normalizedStartIndex + maxEntries);
+    if (selectedEntries.length < maxEntries && normalizedStartIndex > 0) {
+      selectedEntries.push(...entries.slice(0, maxEntries - selectedEntries.length));
+    }
+
+    let inspected = 0;
+    let removed = 0;
+    for (const entry of selectedEntries) {
       inspected += 1;
-      if (!entry.isFile()) continue;
-
       const entryPath = path.join(rootPath, entry.name);
       const entryStat = await stat(entryPath).catch(() => null);
       if (!entryStat) continue;
@@ -327,7 +339,6 @@ export async function cleanupLifecycleOperations(input: {
         }
         continue;
       }
-      if (!entry.name.endsWith(".json")) continue;
 
       let operation: StoredLifecycleOperation;
       try {
@@ -343,11 +354,16 @@ export async function cleanupLifecycleOperations(input: {
       await rm(entryPath, { force: true }).catch(() => undefined);
       removed += 1;
     }
-  } finally {
-    await directory.close().catch(() => undefined);
-  }
 
-  return { inspected, removed };
+    if (entries.length > 0) {
+      await writeAtomicJson(cursorPath, {
+        schemaVersion: 1,
+        lastEntryName: selectedEntries.at(-1)?.name ?? cursor?.lastEntryName ?? null
+      });
+    }
+
+    return { inspected, removed };
+  });
 }
 
 async function acquireInProcessLocks(rootPath: string, lockKeys: string[]) {
@@ -422,10 +438,14 @@ async function writeNewLifecycleOperation(operation: StoredLifecycleOperation, f
 }
 
 async function writeLifecycleOperation(operation: StoredLifecycleOperation, filePath: string) {
+  await writeAtomicJson(filePath, operation);
+}
+
+async function writeAtomicJson(filePath: string, value: unknown) {
   const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   const handle = await open(temporaryPath, "w", 0o600);
   try {
-    await handle.writeFile(`${JSON.stringify(operation, null, 2)}\n`, "utf8");
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
     await handle.sync();
   } finally {
     await handle.close();
@@ -436,6 +456,24 @@ async function writeLifecycleOperation(operation: StoredLifecycleOperation, file
   } catch (error) {
     await rm(temporaryPath, { force: true }).catch(() => undefined);
     throw error;
+  }
+}
+
+async function readLifecycleCleanupCursor(filePath: string) {
+  const raw = await readFile(filePath, "utf8").catch((error) => {
+    if (isFileNotFound(error)) return null;
+    throw error;
+  });
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; lastEntryName?: unknown };
+    if (parsed.schemaVersion !== 1 || (parsed.lastEntryName !== null && typeof parsed.lastEntryName !== "string")) {
+      return null;
+    }
+    return { lastEntryName: parsed.lastEntryName ?? null };
+  } catch {
+    return null;
   }
 }
 

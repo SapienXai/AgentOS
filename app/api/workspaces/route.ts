@@ -178,7 +178,7 @@ export async function POST(request: Request) {
         result: auditResultForLifecycleOutcome(created.outcome)
       }).catch(() => {});
 
-      return NextResponse.json(redactSecrets(created), { status: lifecycleHttpStatus(created.outcome) });
+      return NextResponse.json(redactSecrets(created), { status: lifecycleHttpStatus(created.outcome, created.error) });
     }
 
     const responseStream = new TransformStream();
@@ -369,7 +369,7 @@ export async function DELETE(request: Request) {
       result: auditResultForLifecycleOutcome(deleted.outcome)
     }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(deleted), { status: lifecycleHttpStatus(deleted.outcome) });
+    return NextResponse.json(redactSecrets(deleted), { status: lifecycleHttpStatus(deleted.outcome, deleted.error) });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
@@ -391,11 +391,21 @@ function auditResultForLifecycleOutcome(outcome: "ready" | "partial" | "failed" 
   return outcome === "partial" ? "partial" : outcome === "unknown" ? "unknown" : outcome === "failed" ? "failed" : "succeeded";
 }
 
-function lifecycleHttpStatus(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
-  return outcome === "unknown" ? 409 : outcome === "failed" ? 400 : 200;
+function lifecycleHttpStatus(
+  outcome: "ready" | "partial" | "failed" | "unknown" | undefined,
+  error?: { code: string; message: string }
+) {
+  if (outcome === "unknown") return 409;
+  if (outcome !== "failed") return 200;
+  return lifecycleErrorHttpStatus(error);
 }
 
 function lifecycleErrorHttpStatus(error: unknown) {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
-  return code === "lifecycle-operation-busy" || code === "lifecycle-operation-revision-conflict" ? 409 : 400;
+  if (code === "lifecycle-operation-busy" || code === "lifecycle-operation-revision-conflict" || code.endsWith("-conflict")) {
+    return 409;
+  }
+  if (code.endsWith("-auth") || code.endsWith("-scope-limited")) return 403;
+  if (code.endsWith("-rate-limited")) return 429;
+  return 400;
 }

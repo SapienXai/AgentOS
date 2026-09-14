@@ -63,8 +63,12 @@ import {
   bindWorkspaceChannelAgent,
   unbindWorkspaceChannelAgent
 } from "@/lib/openclaw/application/channel-service";
-import { executeNativeMutationWithVerification } from "@/lib/openclaw/application/native-mutation-service";
+import {
+  executeNativeMutationWithVerification,
+  isNativeAgentNotFoundMessage
+} from "@/lib/openclaw/application/native-mutation-service";
 import { reconcileLifecycleState } from "@/lib/openclaw/application/lifecycle-reconciliation";
+import { decideLifecycleDeleteRecovery } from "@/lib/openclaw/application/lifecycle-delete-recovery";
 import { runLifecycleSidecarSteps } from "@/lib/openclaw/application/lifecycle-sidecar-service";
 import {
   createOrReadLifecycleOperation,
@@ -1052,44 +1056,73 @@ async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: Open
     const priorNativeOutcome = lifecycleOperation.nativeAccepted ||
       lifecycleOperation.items[agentId] === "unknown" ||
       lifecycleOperation.items[agentId] === "confirmed";
-    if (priorNativeOutcome) {
-      const reconciliation = await reconcileLifecycleState({
-        read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
-        isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
-      });
-      if (reconciliation.outcome !== "confirmed") {
-        const message = reconciliation.error ?? `OpenClaw still reports agent ${agentId}.`;
-        const result = {
-          agentId,
-          workspaceId,
-          workspacePath,
-          deletedRuntimeCount: runtimeCount,
-          outcome: "unknown",
-          operationId: lifecycleOperation.operationId,
-          recoveryGeneration: lifecycleOperation.recoveryGeneration,
-          nativeAccepted,
-          nativeConfirmed: false,
-          sidecarSynchronized: false,
-          warnings: uniqueStrings([...warnings, message])
-        } satisfies AgentDeleteResult;
-        await updateLifecycleOperation(lifecycleOperation, {
-          state: "unknown",
-          stage: "reconciling-native-state",
-          nativeConfirmed: false,
-          lastReconciledAt: new Date().toISOString(),
-          error: { code: "native-agent-removal-uncertain", message: result.warnings[0] ?? message },
-          result
-        });
-        return result;
-      }
+    const reconciliation = await reconcileLifecycleState({
+      read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+      isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
+    });
+    const recoveryDecision = decideLifecycleDeleteRecovery({
+      targetPresent: reconciliation.outcome === "confirmed"
+        ? false
+        : reconciliation.outcome === "not-confirmed"
+          ? true
+          : null,
+      mutationPreviouslyAccepted: priorNativeOutcome,
+      requestedRecoveryGeneration: input.recoveryGeneration,
+      currentRecoveryGeneration: lifecycleOperation.recoveryGeneration
+    });
+
+    if (recoveryDecision.action === "confirm-absent") {
       nativeConfirmed = true;
       lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
         items: { [agentId]: "confirmed" },
-        nativeConfirmed: true
+        nativeConfirmed: true,
+        lastReconciledAt: new Date().toISOString(),
+        lastConfirmedNativeStateAt: new Date().toISOString()
       });
+    } else if (recoveryDecision.action === "wait") {
+      const message = recoveryDecision.reason === "authoritative-state-unknown"
+        ? reconciliation.error ?? "OpenClaw state could not be read; deletion remains unconfirmed."
+        : `OpenClaw still reports agent ${agentId}. An explicit recovery attempt is required before another delete request.`;
+      const result = {
+        agentId,
+        workspaceId,
+        workspacePath,
+        deletedRuntimeCount: runtimeCount,
+        outcome: "unknown",
+        operationId: lifecycleOperation.operationId,
+        recoveryGeneration: lifecycleOperation.recoveryGeneration,
+        nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: uniqueStrings([...warnings, message]),
+        error: { code: "native-agent-removal-uncertain", message }
+      } satisfies AgentDeleteResult;
+      await updateLifecycleOperation(lifecycleOperation, {
+        state: "unknown",
+        stage: "reconciling-native-state",
+        nativeConfirmed: false,
+        lastReconciledAt: new Date().toISOString(),
+        error: { code: "native-agent-removal-uncertain", message },
+        result
+      });
+      return result;
     } else {
+      if (recoveryDecision.recoveryGeneration !== null) {
+        lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+          state: "running",
+          stage: "recovering",
+          recoveryGeneration: recoveryDecision.recoveryGeneration,
+          lastReconciledAt: new Date().toISOString(),
+          warnings: [],
+          error: null,
+          result: null,
+          items: { [agentId]: "pending" }
+        });
+      }
+
       lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
-        stage: "native-mutation"
+        stage: "native-mutation",
+        lastReconciledAt: new Date().toISOString()
       });
       lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
         mutationAttemptCount: lifecycleOperation.mutationAttemptCount + 1,
@@ -1107,9 +1140,30 @@ async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: Open
         }
       });
       nativeAccepted = nativeExecution.outcome !== "failed" || nativeExecution.classification.requestSent === true;
-      if (nativeExecution.outcome !== "succeeded") {
-        const message = nativeExecution.classification.message || `OpenClaw could not delete agent ${agentId}.`;
-        const outcome = nativeExecution.outcome;
+      const nativeFailureKind = nativeExecution.outcome === "succeeded"
+        ? "unknown"
+        : nativeExecution.classification.kind;
+      let outcome = nativeExecution.outcome;
+      let message = nativeExecution.outcome === "succeeded"
+        ? ""
+        : nativeExecution.classification.message || `OpenClaw could not delete agent ${agentId}.`;
+      if (nativeExecution.outcome === "failed" && isNativeAgentNotFoundMessage(message)) {
+        const absence = await reconcileLifecycleState({
+          read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+          isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
+        });
+        if (absence.outcome === "confirmed") {
+          outcome = "succeeded";
+          nativeAccepted = nativeAccepted || nativeExecution.classification.requestSent === true;
+        } else if (absence.outcome === "unknown") {
+          outcome = "unknown";
+          message = absence.error ?? "OpenClaw reported the agent as absent, but AgentOS could not verify the final state.";
+        }
+      }
+      if (outcome !== "succeeded") {
+        const errorCode = outcome === "unknown"
+          ? "native-agent-removal-uncertain"
+          : `native-agent-removal-${nativeFailureKind}`;
         const result = {
           agentId,
           workspaceId,
@@ -1121,7 +1175,8 @@ async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: Open
           nativeAccepted,
           nativeConfirmed: false,
           sidecarSynchronized: false,
-          warnings: uniqueStrings([...warnings, message])
+          warnings: uniqueStrings([...warnings, message]),
+          error: { code: errorCode, message }
         } satisfies AgentDeleteResult;
         await updateLifecycleOperation(lifecycleOperation, {
           state: outcome,
@@ -1130,7 +1185,7 @@ async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: Open
           nativeConfirmed: false,
           lastReconciledAt: new Date().toISOString(),
           items: { [agentId]: outcome === "unknown" ? "unknown" : "failed" },
-          error: { code: outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message },
+          error: { code: errorCode, message },
           result
         });
         return result;

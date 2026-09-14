@@ -192,10 +192,12 @@ export async function isLifecycleOperationLeaseLive(
   record: LifecycleOperationLeaseRecord,
   overrides: LifecycleOperationLeaseTestOverrides = {}
 ) {
-  const staleAfterMs = overrides.staleAfterMs ?? LIFECYCLE_OPERATION_LEASE_STALE_AFTER_MS;
   if (record.hostname !== (overrides.hostname ?? os.hostname())) {
-    const heartbeat = Date.parse(record.heartbeatAt);
-    return Number.isFinite(heartbeat) && Date.now() - heartbeat <= staleAfterMs;
+    // Without a distributed fencing token, a heartbeat cannot prove that a
+    // foreign process has stopped before it resumes and mutates. Preserve the
+    // lease conservatively; availability can be recovered by terminating the
+    // owner or removing the lease through an operator-controlled reset.
+    return true;
   }
 
   const alive = (overrides.isProcessAlive ?? isProcessAlive)(record.pid);

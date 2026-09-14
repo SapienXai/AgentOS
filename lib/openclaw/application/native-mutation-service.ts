@@ -8,6 +8,10 @@ import {
 export const NATIVE_MUTATION_UNKNOWN_MESSAGE =
   "OpenClaw may have applied this change, but AgentOS could not verify the final native state. Refresh the session before making another change.";
 
+export function isNativeAgentNotFoundMessage(message: string) {
+  return /\bagent(?:\s+[^\r\n]{1,160})?\s+not found\b/i.test(message) || /\bagent was not found\b/i.test(message);
+}
+
 export type NativeMutationReconciliation<T> = {
   verified: boolean;
   result?: T | null;

@@ -100,7 +100,11 @@ import {
   type StoredLifecycleOperation
 } from "@/lib/openclaw/application/lifecycle-operation-store";
 import { reconcileLifecycleState } from "@/lib/openclaw/application/lifecycle-reconciliation";
-import { executeNativeMutationWithVerification } from "@/lib/openclaw/application/native-mutation-service";
+import {
+  executeNativeMutationWithVerification,
+  isNativeAgentNotFoundMessage
+} from "@/lib/openclaw/application/native-mutation-service";
+import { decideLifecycleDeleteRecovery } from "@/lib/openclaw/application/lifecycle-delete-recovery";
 import {
   decideWorkspaceFilesystemCleanup,
   resolveWorkspaceFilesystemOwnership
@@ -1326,49 +1330,78 @@ async function deleteWorkspaceProjectInternal(
       });
     }
 
-    if (operation.items[agentId] !== "unknown") {
-      const currentSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-      if (!currentSnapshot.agents.some((agent) => agent.id === agentId)) {
-        operation = await updateLifecycleOperation(operation, {
-          items: { [agentId]: "confirmed" },
-          nativeConfirmed: true,
-          lastReconciledAt: new Date().toISOString(),
-          lastConfirmedNativeStateAt: new Date().toISOString()
-        });
-        continue;
-      }
-    }
-
+    let targetPresent: boolean | null;
     if (operation.items[agentId] === "unknown") {
       const reread = await reconcileLifecycleState({
         read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
         isConfirmed: (current) => !current.agents.some((agent) => agent.id === agentId)
       });
-      if (reread.outcome !== "confirmed") {
-        return finalizeWorkspaceDeleteOperation(operation, {
-          workspaceId: resolvedWorkspaceId,
-          workspacePath: workspacePath!,
-          deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
-          deletedRuntimeCount: runtimeCount,
-          filesystem: { ownership: "unknown", action: "preserved" },
-          outcome: "unknown",
-          nativeAccepted: operation.nativeAccepted,
-          nativeConfirmed: false,
-          sidecarSynchronized: false,
-          warnings: [...warnings, `OpenClaw has not confirmed removal of agent ${agentId}.`],
-          error: { code: "native-agent-removal-uncertain", message: "OpenClaw still reports an agent for this workspace." }
-        });
-      }
+      targetPresent = reread.outcome === "confirmed"
+        ? false
+        : reread.outcome === "not-confirmed"
+          ? true
+          : null;
+    } else {
+      const currentSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+      targetPresent = currentSnapshot.agents.some((agent) => agent.id === agentId);
+    }
+
+    const recoveryDecision = decideLifecycleDeleteRecovery({
+      targetPresent,
+      mutationPreviouslyAccepted: operation.items[agentId] === "unknown",
+      requestedRecoveryGeneration: input.recoveryGeneration,
+      currentRecoveryGeneration: operation.recoveryGeneration
+    });
+    if (recoveryDecision.action === "confirm-absent") {
       operation = await updateLifecycleOperation(operation, {
         items: { [agentId]: "confirmed" },
+        nativeConfirmed: true,
         lastReconciledAt: new Date().toISOString(),
         lastConfirmedNativeStateAt: new Date().toISOString()
       });
       continue;
     }
+    if (recoveryDecision.action === "wait") {
+      const message = recoveryDecision.reason === "authoritative-state-unknown"
+        ? `OpenClaw state could not be read while checking agent ${agentId}.`
+        : `OpenClaw still reports agent ${agentId}. An explicit recovery attempt is required before another delete request.`;
+      operation = await updateLifecycleOperation(operation, {
+        state: "unknown",
+        stage: "reconciling-native-state",
+        nativeConfirmed: false,
+        lastReconciledAt: new Date().toISOString(),
+        error: { code: "native-agent-removal-uncertain", message }
+      });
+      return finalizeWorkspaceDeleteOperation(operation, {
+        workspaceId: resolvedWorkspaceId,
+        workspacePath: workspacePath!,
+        deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+        deletedRuntimeCount: runtimeCount,
+        filesystem: { ownership: "unknown", action: "preserved" },
+        outcome: "unknown",
+        nativeAccepted: operation.nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: [...warnings, message],
+        error: { code: "native-agent-removal-uncertain", message }
+      });
+    }
 
+    if (recoveryDecision.recoveryGeneration !== null) {
+      operation = await updateLifecycleOperation(operation, {
+        state: "running",
+        stage: "recovering",
+        recoveryGeneration: recoveryDecision.recoveryGeneration,
+        lastReconciledAt: new Date().toISOString(),
+        warnings: [],
+        error: null,
+        result: null,
+        items: { [agentId]: "pending" }
+      });
+    }
     operation = await updateLifecycleOperation(operation, {
       stage: "native-mutation",
+      lastReconciledAt: new Date().toISOString(),
       mutationAttemptCount: operation.mutationAttemptCount + 1,
       lastMutationAt: new Date().toISOString()
     });
@@ -1385,7 +1418,24 @@ async function deleteWorkspaceProjectInternal(
     });
 
     const mutationAccepted = execution.outcome !== "failed" || execution.classification.requestSent === true;
-    if (execution.outcome === "succeeded") {
+    let outcome = execution.outcome;
+    let message = execution.outcome === "succeeded"
+      ? ""
+      : execution.classification.message || `OpenClaw could not confirm removal of agent ${agentId}.`;
+    if (execution.outcome === "failed" && isNativeAgentNotFoundMessage(message)) {
+      const absence = await reconcileLifecycleState({
+        read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+        isConfirmed: (current) => !current.agents.some((agent) => agent.id === agentId)
+      });
+      if (absence.outcome === "confirmed") {
+        outcome = "succeeded";
+      } else if (absence.outcome === "unknown") {
+        outcome = "unknown";
+        message = `OpenClaw reported agent ${agentId} as absent, but AgentOS could not verify the final state.`;
+      }
+    }
+
+    if (outcome === "succeeded") {
       operation = await updateLifecycleOperation(operation, {
         items: { [agentId]: "confirmed" },
         nativeAccepted: mutationAccepted || operation.nativeAccepted,
@@ -1396,15 +1446,17 @@ async function deleteWorkspaceProjectInternal(
       continue;
     }
 
-    const message = execution.classification.message || `OpenClaw could not confirm removal of agent ${agentId}.`;
+    const errorCode = outcome === "unknown"
+      ? "native-agent-removal-uncertain"
+      : `native-agent-removal-${execution.outcome === "succeeded" ? "unknown" : execution.classification.kind}`;
     operation = await updateLifecycleOperation(operation, {
-      state: execution.outcome === "unknown" ? "unknown" : "failed",
+      state: outcome === "unknown" ? "unknown" : "failed",
       stage: "reconciling-native-state",
       nativeAccepted: mutationAccepted || operation.nativeAccepted,
       nativeConfirmed: false,
       lastReconciledAt: new Date().toISOString(),
-      items: { [agentId]: execution.outcome === "unknown" ? "unknown" : "failed" },
-      error: { code: execution.outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message }
+      items: { [agentId]: outcome === "unknown" ? "unknown" : "failed" },
+      error: { code: errorCode, message }
     });
     return finalizeWorkspaceDeleteOperation(operation, {
       workspaceId: resolvedWorkspaceId,
@@ -1412,12 +1464,12 @@ async function deleteWorkspaceProjectInternal(
       deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
       deletedRuntimeCount: runtimeCount,
       filesystem: { ownership: "unknown", action: "preserved" },
-      outcome: execution.outcome,
+      outcome,
       nativeAccepted: mutationAccepted || operation.nativeAccepted,
       nativeConfirmed: false,
       sidecarSynchronized: false,
       warnings: [...warnings, message],
-      error: { code: execution.outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message }
+      error: { code: errorCode, message }
     });
   }
 

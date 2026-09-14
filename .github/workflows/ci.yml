@@ -30,9 +30,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check OpenClaw certification freshness
-        run: pnpm check:certification-freshness
-
       - name: Run lint
         run: pnpm lint
 
@@ -56,6 +53,12 @@ jobs:
 
       - name: Run release consistency check
         run: pnpm check:release
+
+      # Keep ordinary quality signal visible even when historical certification
+      # evidence is stale. Freshness remains a required failure before merge.
+      - name: Check OpenClaw certification freshness
+        if: always()
+        run: pnpm check:certification-freshness
 
   openclaw-compatibility:
     runs-on: ubuntu-latest
