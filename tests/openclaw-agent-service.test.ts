@@ -85,6 +85,17 @@ test("agent creation does not downgrade validation failures to sync warnings", (
   );
 });
 
+test("agent creation reconciles stale global model readiness through native agent evidence", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "lib/openclaw/application/agent-service.ts"),
+    "utf8"
+  );
+
+  assert.match(source, /isOpenClawAgentModelReady/);
+  assert.match(source, /resolveAgentCreationReadinessErrorWithNativeAgentEvidence/);
+  assert.match(source, /candidateAgentIds: resolveAgentNativeReadinessAgentIds/);
+});
+
 test("agent creation falls back when the requested model is not ready", () => {
   const snapshot = {
     diagnostics: {

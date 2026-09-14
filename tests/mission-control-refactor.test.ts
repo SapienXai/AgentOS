@@ -569,6 +569,36 @@ test("agent draft model helper skips unavailable workspace models", () => {
   assert.equal(isSnapshotModelUsable(snapshot, "openai/gpt-5.4-mini"), false);
 });
 
+test("agent draft model helper keeps a stale assigned model for native verification when no catalog fallback exists", () => {
+  const snapshot = {
+    agents: [
+      {
+        id: "main",
+        workspaceId: "workspace",
+        modelId: "openai/gpt-5.6-luna"
+      }
+    ],
+    diagnostics: {
+      modelReadiness: {
+        defaultModelReady: false,
+        defaultModel: "openai/gpt-5.6-luna",
+        resolvedDefaultModel: "openai/gpt-5.6-luna",
+        recommendedModelId: null
+      }
+    },
+    models: [
+      {
+        id: "openai/gpt-5.6-luna",
+        available: false,
+        missing: false
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveSuggestedAgentModelId(snapshot, "workspace"), "openai/gpt-5.6-luna");
+  assert.equal(isSnapshotModelUsable(snapshot, "openai/gpt-5.6-luna"), false);
+});
+
 test("control plane helpers normalize snapshot and onboarding fallback", () => {
   const gatewaySnapshot = {
     diagnostics: { configuredGatewayUrl: "ws://127.0.0.1:18789/" }

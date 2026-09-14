@@ -25,7 +25,7 @@ import {
   type AgentChatRunSnapshot
 } from "@/components/mission-control/agent-chat-runner";
 import {
-  resolveAgentChatAuthAction,
+  resolveAgentChatMessageAuthAction,
   resolveAgentChatGatewayRepairAction,
   type AgentChatGatewayRepairAction
 } from "@/lib/openclaw/chat-auth-actions";
@@ -649,14 +649,10 @@ export function AgentChatDrawer({
             const isPendingUser = entry.role === "user" && entry.id === runSnapshot.userMessageId && runSnapshot.isRunning;
             const showInlineStatus = entry.status === "sending" && isPendingUser;
             const errorMessage = entry.errorMessage?.trim();
-            const assistantDiagnosticText =
-              isAssistant && !isPendingAssistant && !isActiveAssistant ? visibleAssistantText.trim() : "";
-            const authActionMessage = errorMessage || assistantDiagnosticText;
             const gatewayRepairAction = errorMessage ? resolveAgentChatGatewayRepairAction(errorMessage) : null;
-            const authAction =
-              authActionMessage && !gatewayRepairAction ? resolveAgentChatAuthAction(authActionMessage, agent.modelId) : null;
-            const showAssistantRecoveryAction =
-              !isPendingAssistant && entry.status !== "error" && isAssistant && Boolean(authAction && onConnectModelProvider);
+            const authAction = !gatewayRepairAction
+              ? resolveAgentChatMessageAuthAction(entry.status, errorMessage, agent.modelId)
+              : null;
             const showDateSeparator = shouldShowChatDateSeparator(messages[index - 1]?.createdAt, entry.createdAt);
 
             return (
@@ -795,24 +791,6 @@ export function AgentChatDrawer({
                           {gatewayRepairAction.cta}
                         </Button>
                       ) : null}
-                    </div>
-                  ) : showAssistantRecoveryAction && authAction && onConnectModelProvider ? (
-                    <div className="mt-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => onConnectModelProvider(authAction.provider)}
-                        className={cn(
-                          "h-8 rounded-full px-3 text-[11px]",
-                          surfaceTheme === "light"
-                            ? "border-rose-200 bg-white text-rose-800 hover:bg-rose-50"
-                            : "border-rose-300/20 bg-rose-300/10 text-rose-100 hover:bg-rose-300/16"
-                        )}
-                      >
-                        <KeyRound className="mr-1.5 h-3.5 w-3.5" />
-                        {authAction.cta}
-                      </Button>
                     </div>
                   ) : null}
                   </div>

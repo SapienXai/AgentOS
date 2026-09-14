@@ -126,6 +126,9 @@ export function CreateAgentDialog({
   const automaticModelReadinessMessage = !draft.modelId.trim() && !effectiveModelId
     ? resolveOpenClawModelReadinessIssue(snapshot) ?? "No usable model is available. Configure a model in OpenClaw before creating an agent."
     : null;
+  const automaticModelVerificationMessage = !draft.modelId.trim() && effectiveModelId && !isSnapshotModelUsable(snapshot, effectiveModelId)
+    ? "The global model snapshot is stale. AgentOS will verify this assigned model with OpenClaw before creating the agent."
+    : null;
   const creationBlockedReason = !selectedWorkspace
     ? snapshot.workspaces.length > 0
       ? "Select a workspace under Advanced settings before creating the agent."
@@ -443,6 +446,12 @@ export function CreateAgentDialog({
             <div className={cn("rounded-md border px-3 py-2 text-xs leading-4", isLight ? "border-red-200 bg-red-50 text-red-800" : "border-red-300/25 bg-red-400/[0.08] text-red-100")} role="alert">
               {inlineError}
             </div>
+          ) : null}
+
+          {automaticModelVerificationMessage && !isSaving ? (
+            <p className={cn("text-xs leading-4", isLight ? "text-[#8b5c35]" : "text-amber-200/90")} role="status">
+              {automaticModelVerificationMessage}
+            </p>
           ) : null}
 
           {creationBlockedReason && !isSaving ? (

@@ -55,10 +55,14 @@ import {
   isOpenAiBackedModel,
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
+import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { workspaceIdFromPath, workspacePathMatchesId } from "@/lib/openclaw/domains/workspace-id";
-import { resolveAgentCreationReadinessError } from "@/lib/openclaw/readiness";
+import {
+  resolveAgentCreationReadinessError,
+  resolveAgentCreationReadinessErrorWithNativeAgentEvidence
+} from "@/lib/openclaw/readiness";
 import type {
   AgentCreateInput,
   AgentDeleteInput,
@@ -107,11 +111,17 @@ export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenC
   const fallbackModelId =
     resolveSnapshotDefaultAgentModelId(snapshot) ??
     resolveWorkspaceAgentModelId(snapshot, resolvedWorkspaceId) ??
-    resolveRecommendedAgentModelId(snapshot);
+    resolveRecommendedAgentModelId(snapshot) ??
+    resolveWorkspaceAgentModelCandidateId(snapshot, resolvedWorkspaceId) ??
+    resolveConfiguredAgentModelCandidateId(snapshot);
   const modelSelection = resolveAgentCreateModelSelection(snapshot, requestedModelId, fallbackModelId);
   const agentModelId = modelSelection.modelId;
 
-  const readinessError = resolveAgentCreationReadinessError(snapshot, agentModelId);
+  const readinessError = await resolveAgentCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: agentModelId,
+    candidateAgentIds: resolveAgentNativeReadinessAgentIds(snapshot, resolvedWorkspaceId, agentModelId),
+    verifyAgentModel: isOpenClawAgentModelReady
+  });
 
   if (readinessError) {
     throw new Error(readinessError);
@@ -403,7 +413,15 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
         : agent.modelId ?? null;
 
   if (input.modelId !== undefined && nextModelId !== null) {
-    assertAgentModelReadyForAssignment(snapshot, nextModelId);
+    const readinessError = await resolveAgentCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+      requestedModelId: nextModelId,
+      candidateAgentIds: [agentId],
+      verifyAgentModel: isOpenClawAgentModelReady
+    });
+
+    if (readinessError) {
+      throw new Error(readinessError);
+    }
   }
 
   const onlyModelChanged =
@@ -670,7 +688,7 @@ function resolveSnapshotDefaultAgentModelId(snapshot: MissionControlSnapshot) {
 
 function resolveWorkspaceAgentModelId(snapshot: MissionControlSnapshot, workspaceId: string) {
   return snapshot.agents
-    .filter((agent) => agent.workspaceId === workspaceId)
+    .filter((agent) => agent.workspaceId === workspaceId && agent.kind !== "system")
     .map((agent) => normalizeOptionalValue(agent.modelId))
     .find((modelId) => modelId && modelId !== "unassigned" && isSnapshotModelUsable(snapshot, modelId));
 }
@@ -685,6 +703,51 @@ function resolveRecommendedAgentModelId(snapshot: MissionControlSnapshot) {
   return snapshot.models
     .map((model) => normalizeOptionalValue(model.id))
     .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function resolveWorkspaceAgentModelCandidateId(snapshot: MissionControlSnapshot, workspaceId: string) {
+  return snapshot.agents
+    .filter((agent) => agent.workspaceId === workspaceId && agent.kind !== "system")
+    .map((agent) => normalizeOptionalValue(agent.modelId))
+    .find((modelId) => modelId && modelId !== "unassigned");
+}
+
+function resolveConfiguredAgentModelCandidateId(snapshot: MissionControlSnapshot) {
+  return [
+    normalizeOptionalValue(snapshot.diagnostics.modelReadiness.resolvedDefaultModel),
+    normalizeOptionalValue(snapshot.diagnostics.modelReadiness.defaultModel),
+    ...snapshot.agents
+      .filter((agent) => agent.kind !== "system")
+      .map((agent) => normalizeOptionalValue(agent.modelId)),
+    ...snapshot.models.map((model) => normalizeOptionalValue(model.id))
+  ].find((modelId) => modelId && modelId !== "unassigned");
+}
+
+function resolveAgentNativeReadinessAgentIds(
+  snapshot: MissionControlSnapshot,
+  workspaceId: string,
+  modelId: string | undefined
+) {
+  const normalizedModelId = normalizeOptionalValue(modelId)?.toLowerCase();
+
+  if (!normalizedModelId) {
+    return [];
+  }
+
+  const eligibleAgents = snapshot.agents.filter((agent) => agent.kind !== "system");
+  const workspaceAgents = eligibleAgents.filter((agent) => agent.workspaceId === workspaceId);
+  const matchingAgents = eligibleAgents.filter(
+    (agent) => normalizeOptionalValue(agent.modelId)?.toLowerCase() === normalizedModelId
+  );
+  const defaultAgents = eligibleAgents.filter((agent) => agent.isDefault);
+
+  return uniqueStrings([
+    ...workspaceAgents.filter((agent) => normalizeOptionalValue(agent.modelId)?.toLowerCase() === normalizedModelId).map((agent) => agent.id),
+    ...matchingAgents.map((agent) => agent.id),
+    ...workspaceAgents.map((agent) => agent.id),
+    ...defaultAgents.map((agent) => agent.id),
+    ...eligibleAgents.map((agent) => agent.id)
+  ]).slice(0, 3);
 }
 
 export function resolveAgentCreateModelSelection(

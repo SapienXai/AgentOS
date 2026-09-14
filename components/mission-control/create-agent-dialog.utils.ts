@@ -98,9 +98,33 @@ export function resolveSuggestedAgentModelId(
     return recommendedModel;
   }
 
-  return snapshot.models
+  const availableCatalogModel = snapshot.models
     .map((model) => normalizeModelId(model.id))
-    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId)) ?? "";
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+
+  if (availableCatalogModel) {
+    return availableCatalogModel;
+  }
+
+  // A global model snapshot can lag behind the agent-scoped OpenClaw route.
+  // Keep an assigned model as a candidate so the server can verify it through
+  // the native owner-scoped read instead of blocking the dialog locally.
+  const assignedModel = snapshot.agents
+    .filter((agent) => !workspaceId || agent.workspaceId === workspaceId)
+    .map((agent) => normalizeModelId(agent.modelId))
+    .find((modelId): modelId is string => Boolean(modelId));
+
+  if (assignedModel) {
+    return assignedModel;
+  }
+
+  return [
+    normalizeModelId(snapshot.diagnostics.modelReadiness.resolvedDefaultModel),
+    normalizeModelId(snapshot.diagnostics.modelReadiness.defaultModel),
+    normalizeModelId(snapshot.diagnostics.modelReadiness.recommendedModelId),
+    ...snapshot.agents.map((agent) => normalizeModelId(agent.modelId)),
+    ...snapshot.models.map((model) => normalizeModelId(model.id))
+  ].find((modelId): modelId is string => Boolean(modelId)) ?? "";
 }
 
 function normalizeModelId(value: string | null | undefined) {

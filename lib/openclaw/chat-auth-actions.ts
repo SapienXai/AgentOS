@@ -18,6 +18,18 @@ export type AgentChatAuthAction = {
 
 export type AgentChatGatewayRepairAction = GatewayAuthRepairAction;
 
+export function resolveAgentChatMessageAuthAction(
+  status: "sending" | "sent" | "error" | undefined,
+  errorMessage: string | null | undefined,
+  modelId?: string | null
+) {
+  if (status !== "error") {
+    return null;
+  }
+
+  return resolveAgentChatAuthAction(errorMessage, modelId);
+}
+
 export function resolveAgentChatAuthAction(
   message: string | null | undefined,
   modelId?: string | null

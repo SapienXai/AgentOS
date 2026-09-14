@@ -68,6 +68,12 @@ export function resolveWorkspaceCreationReadinessError(
   return null;
 }
 
+type NativeAgentModelEvidenceInput = {
+  requestedModelId?: string | null;
+  candidateAgentIds?: readonly string[];
+  verifyAgentModel: (input: { agentId: string; modelId: string }) => Promise<boolean>;
+};
+
 /**
  * Reconcile a stale global model snapshot with bounded, agent-scoped native
  * evidence. OpenClaw model status is owner-scoped in a multi-agent Gateway,
@@ -77,13 +83,39 @@ export function resolveWorkspaceCreationReadinessError(
  */
 export async function resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence(
   snapshot: MissionControlSnapshot,
-  input: {
-    requestedModelId?: string | null;
-    candidateAgentIds?: readonly string[];
-    verifyAgentModel: (input: { agentId: string; modelId: string }) => Promise<boolean>;
-  }
+  input: NativeAgentModelEvidenceInput
 ) {
-  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, input.requestedModelId);
+  return resolveReadinessErrorWithNativeAgentEvidence(
+    snapshot,
+    input,
+    resolveWorkspaceCreationReadinessError
+  );
+}
+
+/**
+ * Agent creation and model assignment use the same bounded native proof as
+ * workspace creation, but retain the agent-specific recovery message.
+ */
+export async function resolveAgentCreationReadinessErrorWithNativeAgentEvidence(
+  snapshot: MissionControlSnapshot,
+  input: NativeAgentModelEvidenceInput
+) {
+  return resolveReadinessErrorWithNativeAgentEvidence(
+    snapshot,
+    input,
+    resolveAgentCreationReadinessError
+  );
+}
+
+async function resolveReadinessErrorWithNativeAgentEvidence(
+  snapshot: MissionControlSnapshot,
+  input: NativeAgentModelEvidenceInput,
+  resolveReadinessError: (
+    snapshot: MissionControlSnapshot,
+    requestedModelId?: string | null
+  ) => string | null
+) {
+  const readinessError = resolveReadinessError(snapshot, input.requestedModelId);
 
   if (!readinessError || resolveOpenClawSystemReadinessIssue(snapshot)) {
     return readinessError;

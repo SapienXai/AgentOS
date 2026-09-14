@@ -11,6 +11,7 @@ import {
   isOpenClawOnboardingModelReady,
   isOpenClawSystemReady,
   resolveAgentCreationReadinessError,
+  resolveAgentCreationReadinessErrorWithNativeAgentEvidence,
   resolveMissionDispatchReadinessError,
   resolveWorkspaceCreationReadinessError,
   resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence
@@ -405,6 +406,46 @@ test("workspace creation reconciles a stale global model snapshot with native ag
 
   assert.equal(readinessError, null);
   assert.deepEqual(probes, [{ agentId: "existing-owner", modelId: "openai/gpt-5.6-luna" }]);
+});
+
+test("agent creation reconciles a stale global model snapshot with native agent-scoped proof", async () => {
+  const snapshot = createErrorSnapshot("The selected default model is not ready yet.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+  snapshot.diagnostics.modelReadiness = {
+    ...snapshot.diagnostics.modelReadiness,
+    defaultModel: "openai/gpt-5.6-luna",
+    resolvedDefaultModel: "openai/gpt-5.6-luna",
+    defaultModelReady: false,
+    ready: false,
+    totalModelCount: 1,
+    availableModelCount: 0,
+    issues: ["The selected default model is not ready yet."]
+  };
+  snapshot.models = [{
+    id: "openai/gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
+    provider: "openai",
+    input: "remote",
+    contextWindow: null,
+    local: false,
+    available: false,
+    missing: false,
+    tags: [],
+    usageCount: 0
+  }];
+
+  const readinessError = await resolveAgentCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    requestedModelId: "openai/gpt-5.6-luna",
+    candidateAgentIds: ["existing-owner"],
+    verifyAgentModel: async () => true
+  });
+
+  assert.equal(readinessError, null);
 });
 
 test("workspace creation stays blocked when native agent-scoped model proof is unavailable", async () => {

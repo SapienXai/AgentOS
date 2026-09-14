@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   resolveAgentChatAuthAction,
+  resolveAgentChatMessageAuthAction,
   resolveAgentChatGatewayRepairAction
 } from "@/lib/openclaw/chat-auth-actions";
 
@@ -85,6 +86,28 @@ test("agent chat auth action maps Gemini model provider to Google", () => {
 
 test("agent chat auth action ignores non-auth chat errors", () => {
   assert.equal(resolveAgentChatAuthAction("OpenClaw completed without returning a response.", "openai/gpt-5.4-mini"), null);
+});
+
+test("successful assistant text never renders a provider connection action", () => {
+  assert.equal(
+    resolveAgentChatMessageAuthAction(
+      "sent",
+      "The workspace uses an OpenAI model and the provider token is handled by the connected runtime.",
+      "openai/gpt-5.6-luna"
+    ),
+    null
+  );
+});
+
+test("failed chat messages retain the provider connection action", () => {
+  const action = resolveAgentChatMessageAuthAction(
+    "error",
+    "Authentication required. Reconnect ChatGPT, then retry this message.",
+    "openai/gpt-5.6-luna"
+  );
+
+  assert.equal(action?.provider, "openai");
+  assert.equal(action?.cta, "Connect OpenAI");
 });
 
 test("agent chat gateway repair action detects OpenClaw scope upgrade failures", () => {
