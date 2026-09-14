@@ -20,6 +20,7 @@ import {
 } from "@/components/mission-control/pending-agent-projection";
 import {
   parsePendingWorkspaceDeletions,
+  pendingWorkspaceDeletionTimeoutMs,
   serializePendingWorkspaceDeletions
 } from "@/components/mission-control/workspace-deletion-projection";
 import {
@@ -61,7 +62,7 @@ test("workspace deletion projections survive refresh until OpenClaw confirms rem
     serializePendingWorkspaceDeletions([
       { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - 1_000 },
       { id: "workspace-1", name: "Workspace One (new request)", requestedAt: referenceTime - 100 },
-      { id: "workspace-expired", name: "Expired", requestedAt: referenceTime - 30 * 60 * 1000 - 1 },
+      { id: "workspace-expired", name: "Expired", requestedAt: referenceTime - pendingWorkspaceDeletionTimeoutMs - 1 },
       { id: "workspace-invalid", name: "", requestedAt: referenceTime - 100 }
     ]),
     referenceTime
@@ -72,12 +73,28 @@ test("workspace deletion projections survive refresh until OpenClaw confirms rem
   ]);
 });
 
-test("workspace deletion keeps a stable recoverable progress row", () => {
+test("workspace deletion projection expires unconfirmed requests quickly", () => {
+  const referenceTime = 1_000_000;
+
+  assert.deepEqual(
+    parsePendingWorkspaceDeletions(
+      serializePendingWorkspaceDeletions([
+        { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - pendingWorkspaceDeletionTimeoutMs }
+      ]),
+      referenceTime
+    ),
+    []
+  );
+});
+
+test("workspace deletion exposes a bounded recovery state", () => {
   const sidebarSource = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
 
   assert.match(sidebarSource, /pendingWorkspaceDeletionStorageKey/);
   assert.match(sidebarSource, /onForceRefresh/);
-  assert.match(sidebarSource, /Workspace deletion is syncing/);
+  assert.match(sidebarSource, /Workspace deletion needs attention/);
+  assert.match(sidebarSource, /pendingWorkspaceDeletionTimeoutMs/);
+  assert.doesNotMatch(sidebarSource, /Workspace deletion is syncing/);
   assert.match(sidebarSource, /animate=\{\{ opacity: 1, y: 0 \}\}/);
   assert.doesNotMatch(sidebarSource, /opacity: \[1, 0\.58, 1\]/);
 });

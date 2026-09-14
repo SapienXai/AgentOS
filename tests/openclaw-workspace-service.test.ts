@@ -53,6 +53,7 @@ import {
   workspaceIdFromPath,
   workspacePathMatchesId
 } from "@/lib/openclaw/domains/workspace-id";
+import { filterAgentConfigEntriesForWorkspace } from "@/lib/openclaw/domains/agent-config";
 import {
   assertWorkspaceBootstrapAgentIdsAvailable,
   canonicalizeWorkspaceAgentId,
@@ -132,6 +133,21 @@ test("workspace application service preserves delete validation shape", async ()
   assert.equal(
     await readErrorMessage(() => deleteApplicationWorkspaceProject(input)),
     await readErrorMessage(() => deleteCompatibilityWorkspaceProject(input))
+  );
+});
+
+test("workspace config cleanup matches normalized workspace paths and scoped agent ids", () => {
+  const workspacePath = "/tmp/AgentOS Workspace";
+  const configList = [
+    { id: "workspace-agent", workspace: workspacePath },
+    { id: "path-alias-agent", workspace: "/tmp/./AgentOS Workspace" },
+    { id: "other-agent", workspace: "/tmp/Other Workspace" },
+    { id: "scoped-agent", workspace: "/tmp/Other Workspace" }
+  ];
+
+  assert.deepEqual(
+    filterAgentConfigEntriesForWorkspace(configList, workspacePath, new Set(["scoped-agent"])).map((entry) => entry.id),
+    ["other-agent"]
   );
 });
 

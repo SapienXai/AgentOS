@@ -57,6 +57,7 @@ import {
 } from "@/components/mission-control/pending-agent-projection";
 import {
   loadPendingWorkspaceDeletions,
+  pendingWorkspaceDeletionTimeoutMs,
   pendingWorkspaceDeletionStorageKey,
   serializePendingWorkspaceDeletions,
   type PendingWorkspaceDeletion
@@ -1405,9 +1406,50 @@ function WorkspaceSwitcher({
   const [pendingWorkspaceDeletions, setPendingWorkspaceDeletions] = useState<PendingWorkspaceDeletion[]>(
     loadPendingWorkspaceDeletions
   );
+  const [deletionClockMs, setDeletionClockMs] = useState(() => Date.now());
+  const [workspaceDeletionNeedsAttentionIds, setWorkspaceDeletionNeedsAttentionIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const deleteImpact = deleteTarget ? getWorkspaceDeleteImpact(snapshot, deleteTarget) : null;
   const menuRef = useRef<HTMLDivElement | null>(null);
   const deletionRefreshInFlightRef = useRef(false);
+
+  const timedOutWorkspaceDeletions = useMemo(
+    () => pendingWorkspaceDeletions.filter((entry) => deletionClockMs - entry.requestedAt >= pendingWorkspaceDeletionTimeoutMs),
+    [deletionClockMs, pendingWorkspaceDeletions]
+  );
+  const timedOutWorkspaceDeletionIds = timedOutWorkspaceDeletions.map((entry) => entry.id).sort().join("|");
+  const timedOutWorkspaceDeletionNames = timedOutWorkspaceDeletions.map((entry) => entry.name).join(", ");
+
+  useEffect(() => {
+    if (pendingWorkspaceDeletions.length === 0) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => setDeletionClockMs(Date.now()), 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [pendingWorkspaceDeletions.length]);
+
+  useEffect(() => {
+    if (!timedOutWorkspaceDeletionIds) {
+      return;
+    }
+
+    const timedOutIds = new Set(timedOutWorkspaceDeletionIds.split("|"));
+    setPendingWorkspaceDeletions((current) => current.filter((entry) => !timedOutIds.has(entry.id)));
+    setDeletingWorkspaceId((current) => (current && timedOutIds.has(current) ? null : current));
+    setWorkspaceDeletionNeedsAttentionIds((current) => {
+      const next = new Set(current);
+      for (const id of timedOutIds) {
+        next.add(id);
+      }
+      return next;
+    });
+    toast.error("Workspace deletion needs attention.", {
+      description: `${timedOutWorkspaceDeletionNames || "The workspace"} was not confirmed by OpenClaw within 45 seconds. You can retry the deletion.`
+    });
+  }, [timedOutWorkspaceDeletionIds, timedOutWorkspaceDeletionNames]);
 
   const pendingWorkspaceDeletionIds = useMemo(
     () => new Set(pendingWorkspaceDeletions.map((entry) => entry.id)),
@@ -1449,6 +1491,13 @@ function WorkspaceSwitcher({
         if (confirmedIds.size > 0) {
           setPendingWorkspaceDeletions((current) => current.filter((entry) => !confirmedIds.has(entry.id)));
           setDeletingWorkspaceId((current) => (current && confirmedIds.has(current) ? null : current));
+          setWorkspaceDeletionNeedsAttentionIds((current) => {
+            const next = new Set(current);
+            for (const id of confirmedIds) {
+              next.delete(id);
+            }
+            return next;
+          });
           onSnapshotChange?.((currentSnapshot) => ({
             ...currentSnapshot,
             workspaces: currentSnapshot.workspaces.filter((entry) => !confirmedIds.has(entry.id))
@@ -1553,6 +1602,15 @@ function WorkspaceSwitcher({
       name: workspaceToDelete.name,
       requestedAt: Date.now()
     } satisfies PendingWorkspaceDeletion;
+    setWorkspaceDeletionNeedsAttentionIds((current) => {
+      if (!current.has(pendingDeletion.id)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.delete(pendingDeletion.id);
+      return next;
+    });
     setPendingWorkspaceDeletions((current) => [
       pendingDeletion,
       ...current.filter((entry) => entry.id !== pendingDeletion.id)
@@ -1580,7 +1638,21 @@ function WorkspaceSwitcher({
 
       deletionRequestSucceeded = true;
 
-      const remainingWorkspaces = snapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id);
+      const refreshedSnapshot = onForceRefresh
+        ? await reconcilePendingWorkspaceDeletions([pendingDeletion])
+        : (await onRefresh(), null);
+      const deletionConfirmed = Boolean(
+        refreshedSnapshot && !refreshedSnapshot.workspaces.some((entry) => entry.id === workspaceToDelete.id)
+      );
+
+      if (!deletionConfirmed) {
+        if (refreshedSnapshot) {
+          onSnapshotChange?.(() => refreshedSnapshot);
+        }
+        throw new Error("OpenClaw did not confirm removal from the live workspace registry.");
+      }
+
+      const remainingWorkspaces = refreshedSnapshot?.workspaces ?? snapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id);
       const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === workspaceToDelete.id);
       const nextWorkspace =
         remainingWorkspaces[
@@ -1591,32 +1663,20 @@ function WorkspaceSwitcher({
         onSelectWorkspace(nextWorkspace?.id ?? null);
       }
 
-      onSnapshotChange?.((currentSnapshot) => ({
-        ...currentSnapshot,
-        workspaces: currentSnapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id)
-      }));
-
-      const refreshedSnapshot = onForceRefresh
-        ? await reconcilePendingWorkspaceDeletions([pendingDeletion])
-        : (await onRefresh(), null);
-      const deletionConfirmed = Boolean(
-        refreshedSnapshot && !refreshedSnapshot.workspaces.some((entry) => entry.id === workspaceToDelete.id)
-      );
-
-      toast.success(deletionConfirmed ? "Workspace deleted." : "Workspace deletion is syncing.", {
-        description: deletionConfirmed
-          ? workspaceToDelete.name
-          : "OpenClaw is confirming removal from the live workspace registry."
+      toast.success("Workspace deleted.", {
+        description: workspaceToDelete.name
       });
-
-      if (!deletionConfirmed) {
-        setDeletingWorkspaceId(null);
-      }
     } catch (error) {
       if (deletionRequestSucceeded) {
         setDeletingWorkspaceId(null);
-        toast.success("Workspace deletion is syncing.", {
-          description: "The deletion request completed; OpenClaw live-state confirmation is still pending."
+        setPendingWorkspaceDeletions((current) => current.filter((entry) => entry.id !== workspaceToDelete.id));
+        setWorkspaceDeletionNeedsAttentionIds((current) => {
+          const next = new Set(current);
+          next.add(workspaceToDelete.id);
+          return next;
+        });
+        toast.error("Workspace deletion needs attention.", {
+          description: error instanceof Error ? error.message : "OpenClaw did not confirm the workspace removal."
         });
       } else {
         setDeletingWorkspaceId(null);
@@ -1698,6 +1758,7 @@ function WorkspaceSwitcher({
               <AnimatePresence initial={false}>
               {workspaceMenuEntries.map((entry, index) => {
                 const isDeletingEntry = deletingWorkspaceId === entry.id || pendingWorkspaceDeletionIds.has(entry.id);
+                const deletionNeedsAttention = workspaceDeletionNeedsAttentionIds.has(entry.id);
 
                 return (
                   <motion.div
@@ -1709,7 +1770,13 @@ function WorkspaceSwitcher({
                   >
                     <WorkspaceMenuRow
                       label={entry.name}
-                      detail={isDeletingEntry ? "Deleting workspace" : entry.detail}
+                      detail={
+                        deletionNeedsAttention
+                          ? "Deletion needs attention"
+                          : isDeletingEntry
+                            ? "Deleting workspace"
+                            : entry.detail
+                      }
                       selected={entry.id === activeWorkspaceId}
                       pending={entry.pending}
                       deleting={isDeletingEntry}

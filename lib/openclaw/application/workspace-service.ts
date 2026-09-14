@@ -71,6 +71,7 @@ import {
 } from "@/lib/openclaw/domains/agent-provisioning";
 import {
   filterAgentPolicySkills,
+  removeWorkspaceAgentConfigEntries,
   readAgentConfigList,
   writeAgentConfigList,
   upsertAgentConfigEntry
@@ -526,9 +527,10 @@ export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
   const workspaceChannelIds = snapshot.channelRegistry.channels
     .filter((channel) => channel.workspaces.some((binding) => binding.workspaceId === workspace.id))
     .map((channel) => channel.id);
+  const adapter = getOpenClawAdapter();
 
   for (const agent of workspaceAgents) {
-    await getOpenClawAdapter().deleteAgent(agent.id);
+    await adapter.deleteAgent(agent.id);
   }
 
   for (const channelId of workspaceChannelIds) {
@@ -538,17 +540,19 @@ export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
     });
   }
 
-  try {
-    const configList = await readAgentConfigList(snapshot);
-    const nextConfigList = configList.filter(
-      (entry) => entry.workspace !== workspace.path && !workspaceAgents.some((agent) => agent.id === entry.id)
-    );
+  await removeWorkspaceAgentConfigEntries(
+    workspace.path,
+    new Set(workspaceAgents.map((agent) => agent.id))
+  );
 
-    if (nextConfigList.length !== configList.length) {
-      await writeAgentConfigList(nextConfigList);
-    }
-  } catch {
-    // Ignore config cleanup failures if the agent delete command already pruned state.
+  clearMissionControlCaches();
+  const verifiedSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const workspaceStillRegistered = verifiedSnapshot.workspaces.some(
+    (entry) => entry.id === workspace.id || path.resolve(entry.path) === path.resolve(workspace.path)
+  );
+
+  if (workspaceStillRegistered) {
+    throw new Error("OpenClaw still reports this workspace in the live workspace registry.");
   }
 
   await rm(workspace.path, { recursive: true, force: true });

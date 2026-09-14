@@ -198,6 +198,66 @@ export async function writeAgentConfigList(
   }
 }
 
+export function filterAgentConfigEntriesForWorkspace(
+  configList: MutableAgentConfigEntry[],
+  workspacePath: string,
+  agentIds: ReadonlySet<string>
+) {
+  return configList.filter((entry) => !isAgentConfigEntryForWorkspace(entry, workspacePath, agentIds));
+}
+
+export function isAgentConfigEntryForWorkspace(
+  entry: MutableAgentConfigEntry,
+  workspacePath: string,
+  agentIds: ReadonlySet<string>
+) {
+  const normalizedWorkspacePath = path.resolve(workspacePath);
+  const entryWorkspace = typeof entry.workspace === "string" && entry.workspace.trim().length > 0
+    ? path.resolve(entry.workspace)
+    : null;
+
+  return entryWorkspace === normalizedWorkspacePath || agentIds.has(entry.id);
+}
+
+export async function removeWorkspaceAgentConfigEntries(
+  workspacePath: string,
+  agentIds: ReadonlySet<string>,
+  options: OpenClawCommandOptions = {}
+) {
+  const adapter = getOpenClawAdapter();
+  adapter.invalidateReadCache?.();
+
+  const configList = await readAgentConfigList(undefined, options);
+  const nextConfigList = filterAgentConfigEntriesForWorkspace(configList, workspacePath, agentIds);
+
+  if (nextConfigList.length !== configList.length) {
+    await writeAgentConfigList(nextConfigList, options);
+  }
+
+  adapter.invalidateReadCache?.();
+  const verifiedConfigList = await readAgentConfigList(undefined, options);
+  const remainingConfigList = verifiedConfigList.filter((entry) =>
+    isAgentConfigEntryForWorkspace(entry, workspacePath, agentIds)
+  );
+
+  if (remainingConfigList.length > 0) {
+    const remainingAgentIds = remainingConfigList
+      .map((entry) => entry.id)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(", ");
+    const suffix = remainingConfigList.length > 3 ? "…" : "";
+
+    throw new Error(
+      `OpenClaw still reports ${remainingConfigList.length} agent configuration entr${remainingConfigList.length === 1 ? "y" : "ies"} for this workspace${remainingAgentIds ? ` (${remainingAgentIds}${suffix})` : ""}.`
+    );
+  }
+
+  return {
+    removedCount: configList.length - nextConfigList.length
+  };
+}
+
 export async function upsertAgentConfigEntry(
   agentId: string,
   workspacePath: string,

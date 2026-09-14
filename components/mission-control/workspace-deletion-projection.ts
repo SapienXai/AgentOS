@@ -1,6 +1,6 @@
 export const pendingWorkspaceDeletionStorageKey = "agentos:pending-deleted-workspaces";
 
-const pendingWorkspaceDeletionTtlMs = 30 * 60 * 1000;
+export const pendingWorkspaceDeletionTimeoutMs = 45 * 1000;
 
 export type PendingWorkspaceDeletion = {
   id: string;
@@ -81,7 +81,7 @@ function normalizePendingWorkspaceDeletion(
     return null;
   }
 
-  if (referenceTimeMs - requestedAt > pendingWorkspaceDeletionTtlMs) {
+  if (referenceTimeMs - requestedAt >= pendingWorkspaceDeletionTimeoutMs) {
     return null;
   }
 
