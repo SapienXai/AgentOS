@@ -166,6 +166,8 @@ export function CreateWorkspaceExperience({
   const [basicDraftApproved, setBasicDraftApproved] = useState(false);
   const [isRebuildingPlan, setIsRebuildingPlan] = useState(false);
   const [showStartOverConfirmation, setShowStartOverConfirmation] = useState(false);
+  const [isStartingOver, setIsStartingOver] = useState(false);
+  const [startOverError, setStartOverError] = useState<string | null>(null);
   const provisioningKeyRef = useRef<string | null>(null);
   const automaticProvisionRef = useRef<string | null>(null);
   const provisioningPollRef = useRef<AbortController | null>(null);
@@ -290,6 +292,8 @@ export function CreateWorkspaceExperience({
     setBasicDraftApproved(false);
     setIsRebuildingPlan(false);
     setShowStartOverConfirmation(false);
+    setIsStartingOver(false);
+    setStartOverError(null);
     setIsMinimized(false);
     clearWorkspaceCreationMinimizedRun();
     provisioningKeyRef.current = null;
@@ -699,15 +703,22 @@ export function CreateWorkspaceExperience({
   };
 
   const startOver = async () => {
-    if (!creationRun) return;
+    if (isStartingOver) return;
+    setIsStartingOver(true);
+    setStartOverError(null);
+    if (!creationRun) {
+      resetCreationState();
+      return;
+    }
     try {
       const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/abandon`, { method: "POST" });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "The current workspace draft could not be abandoned.");
       resetCreationState();
     } catch (error) {
-      setRevisionError(error instanceof Error ? error.message : "The current workspace draft could not be abandoned.");
-      setShowStartOverConfirmation(false);
+      setStartOverError(error instanceof Error ? error.message : "The current workspace draft could not be abandoned.");
+    } finally {
+      setIsStartingOver(false);
     }
   };
 
@@ -966,7 +977,7 @@ export function CreateWorkspaceExperience({
                   <ChevronLeft className="mr-1.5 h-4 w-4" />
                   Back to brief
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setShowStartOverConfirmation(true)} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
+                <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
               </div>
               <div className="flex flex-col items-end gap-1">
                 <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
@@ -1081,6 +1092,8 @@ export function CreateWorkspaceExperience({
             onRebuildPlan={() => void rebuildPlan()}
             isRebuildingPlan={isRebuildingPlan}
             showStartOverConfirmation={showStartOverConfirmation}
+            isStartingOver={isStartingOver}
+            startOverError={startOverError}
             onKeepDraft={() => setShowStartOverConfirmation(false)}
             onConfirmStartOver={() => void startOver()}
           />
@@ -1680,6 +1693,8 @@ function ReviewView({
   onRebuildPlan,
   isRebuildingPlan,
   showStartOverConfirmation,
+  isStartingOver,
+  startOverError,
   onKeepDraft,
   onConfirmStartOver
 }: {
@@ -1717,6 +1732,8 @@ function ReviewView({
   onRebuildPlan: () => void;
   isRebuildingPlan: boolean;
   showStartOverConfirmation: boolean;
+  isStartingOver: boolean;
+  startOverError: string | null;
   onKeepDraft: () => void;
   onConfirmStartOver: () => void;
 }) {
@@ -1734,6 +1751,7 @@ function ReviewView({
         ? "Workspace documents need conflict review"
         : "Workspace documents planned";
   const showTechnicalFallback = profile === "high";
+  const hasFailedProvisioningAttempt = provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" || Boolean(provisioningError);
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-6 md:px-10 md:py-8">
@@ -1904,8 +1922,9 @@ function ReviewView({
           <div className={cn("w-full max-w-sm rounded-2xl border p-5 shadow-2xl", isLight ? "border-[#e5dbd0] bg-white text-[#3d3027]" : "border-white/10 bg-[#111827] text-white")}>
             <h2 id="start-over-heading" className="text-base font-semibold">Start a new workspace?</h2>
             <p className={cn("mt-2 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>This draft will be discarded.</p>
-            <p className={cn("mt-1 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>Nothing has been created yet.</p>
-            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onKeepDraft}>Keep draft</Button><Button type="button" variant="secondary" onClick={onConfirmStartOver}>Start new workspace</Button></div>
+            <p className={cn("mt-1 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>{hasFailedProvisioningAttempt ? "Any partial provisioning remains available for recovery; AgentOS will not delete existing OpenClaw state." : "Nothing has been created yet."}</p>
+            {startOverError ? <p className={cn("mt-3 rounded-lg border px-3 py-2 text-xs", isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-400/20 bg-red-400/10 text-red-100")} role="alert">{startOverError}</p> : null}
+            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onKeepDraft} disabled={isStartingOver}>Keep draft</Button><Button type="button" variant="secondary" onClick={onConfirmStartOver} disabled={isStartingOver}>{isStartingOver ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" /> : null}{isStartingOver ? "Starting…" : "Start new workspace"}</Button></div>
           </div>
         </div>
       ) : null}

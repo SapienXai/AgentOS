@@ -75,21 +75,12 @@ export async function createWorkspaceCreationRunAtomically(
     ...(input.lineage ? { lineage: input.lineage } : {})
   };
   const filePath = workspaceCreationRunPath(root, storageKey);
-  try {
-    const handle = await open(filePath, "wx", 0o600);
-    try {
-      await handle.writeFile(`${JSON.stringify(run, null, 2)}\n`, "utf8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    return { run, created: true, filePath };
-  } catch (error) {
-    if (!isFileExistsError(error)) throw error;
+  return withRunMutationLock(filePath, async () => {
     const existing = await readWorkspaceCreationRunFile(filePath);
-    if (!existing) throw new Error("Workspace creation run is unavailable or malformed.");
-    return { run: existing, created: false, filePath };
-  }
+    if (existing) return { run: existing, created: false, filePath };
+    await writeAtomicJson(filePath, run);
+    return { run, created: true, filePath };
+  });
 }
 
 export async function readWorkspaceCreationRun(rootPath: string, storageKey: string) {

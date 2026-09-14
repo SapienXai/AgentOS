@@ -814,11 +814,16 @@ export async function abandonWorkspaceCreationRun(input: { actorId: string; runI
   const resolved = resolveDependencies(dependencies);
   const locator = await findWorkspaceCreationRunById(resolved.rootPath, input.actorId, input.runId.trim());
   if (!locator) return null;
-  const next = await mutateWorkspaceCreationRun(locator.filePath, (current) => {
+  const next = await mutateWorkspaceCreationRun(locator.filePath, async (current) => {
     if (current.abandonedAt) return current;
     if (current.snapshot.state !== "review-ready") throw new Error("Only a review-ready workspace draft can be abandoned.");
-    if (current.snapshot.provisioningRunId || current.snapshot.provisioningHandoffReady) {
-      throw new Error("This workspace draft has already been handed off for provisioning.");
+    const provisioningRunId = current.snapshot.provisioningRunId;
+    if (provisioningRunId || current.snapshot.provisioningHandoffReady) {
+      if (!provisioningRunId) throw new Error("This workspace draft has already been handed off for provisioning.");
+      const provisioning = await resolved.findProvisioningRunById(resolved.provisioningRootPath, input.actorId, provisioningRunId);
+      if (!provisioning || !["failed", "cancelled"].includes(provisioning.run.state)) {
+        throw new Error("This workspace draft has already been handed off for provisioning.");
+      }
     }
     return { ...current, abandonedAt: resolved.now().toISOString() };
   });

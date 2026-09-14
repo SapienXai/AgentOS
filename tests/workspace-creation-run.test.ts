@@ -528,16 +528,43 @@ test("review draft abandonment is durable, idempotent, and actor-scoped", async 
     assert.deepEqual((await listResumableWorkspaceCreationRuns(actorId, { rootPath })).map((run) => run.runId), []);
     assert.equal((await readWorkspaceCreationRunFile(created.filePath))?.abandonedAt, abandoned?.abandonedAt);
 
+    const provisioningStates: Record<string, StoredWorkspaceProvisioningRun["state"]> = {
+      "active-provisioning-run": "validating",
+      "failed-provisioning-run": "failed",
+      "cancelled-provisioning-run": "cancelled"
+    };
+    const findProvisioningRunById = async (_provisioningRootPath: string, _actor: string, runId: string) => {
+      const state = provisioningStates[runId];
+      return state ? { filePath: `${runId}.json`, run: { state } as StoredWorkspaceProvisioningRun } : null;
+    };
     const active = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "active-abandon-key"), {
       actorHash: workspaceCreationActorHash(actorId),
       idempotencyKeyHash: "active-abandon-key",
       attempt: 1,
       input: { brief: "Build another workspace.", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
       draftContextId: null,
-      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation", provisioningHandoffReady: true, provisioningRunId: "provisioning-run" },
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation", provisioningHandoffReady: true, provisioningRunId: "active-provisioning-run" },
       result: null
     });
-    await assert.rejects(() => abandonWorkspaceCreationRun({ actorId, runId: active.run.runId }, { rootPath }), /handed off for provisioning/);
+    await assert.rejects(() => abandonWorkspaceCreationRun({ actorId, runId: active.run.runId }, { rootPath, findProvisioningRunById }), /handed off for provisioning/);
+
+    for (const [idempotencyKey, provisioningRunId] of [["failed-abandon-key", "failed-provisioning-run"], ["cancelled-abandon-key", "cancelled-provisioning-run"]] as const) {
+      const failedHandoff = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, idempotencyKey), {
+        actorHash: workspaceCreationActorHash(actorId),
+        idempotencyKeyHash: idempotencyKey,
+        attempt: 1,
+        input: { brief: `Build ${idempotencyKey}.`, mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [] },
+        draftContextId: null,
+        snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation", provisioningHandoffReady: true, provisioningRunId },
+        result: null
+      });
+      const abandonedHandoff = await abandonWorkspaceCreationRun({ actorId, runId: failedHandoff.run.runId }, {
+        rootPath,
+        findProvisioningRunById,
+        now: () => new Date("2026-09-12T00:02:00.000Z")
+      });
+      assert.equal(abandonedHandoff?.abandonedAt, "2026-09-12T00:02:00.000Z");
+    }
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

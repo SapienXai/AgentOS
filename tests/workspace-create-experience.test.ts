@@ -426,6 +426,10 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /Architecture generated from partial project context/);
   assert.match(source, /Workspace plan needs to be rebuilt/);
   assert.match(source, /Start over/);
+  assert.match(source, /const \[isStartingOver, setIsStartingOver\]/);
+  assert.match(source, /if \(!creationRun\) \{\s*resetCreationState\(\);\s*return;/);
+  assert.match(source, /creation-runs\/\$\{creationRun\.runId\}\/abandon/);
+  assert.match(source, /startOverError/);
   assert.match(source, /View project evidence/);
   assert.match(source, /Use basic draft/);
   assert.match(source, /key=\{highlight\.id\}/);
