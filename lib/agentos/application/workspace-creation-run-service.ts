@@ -762,6 +762,7 @@ export async function startWorkspacePostCreateEnrichment(
   if (!locator) return null;
   const parent = locator.run;
   if (parent.snapshot.state !== "review-ready" || normalizeWorkspaceCreationProfile(parent.input.profile) === "high" || parent.input.continueLearningAfterCreation === false) return null;
+  if (!hasPostCreateEnrichmentMaterial(parent)) return null;
   return refreshWorkspaceCreationRun({
     actorId: input.actorId,
     runId: parent.runId,
@@ -769,6 +770,14 @@ export async function startWorkspacePostCreateEnrichment(
     profileOverride: "high",
     trigger: "post-create-enrichment"
   }, dependencies);
+}
+
+function hasPostCreateEnrichmentMaterial(run: WorkspaceCreationRun) {
+  return run.input.sources.length > 0
+    && (run.snapshot.context.usableEvidence
+      || run.snapshot.extraction.evidenceCount > 0
+      || run.snapshot.extraction.factCount > 0
+      || run.snapshot.extraction.resourceCount > 0);
 }
 
 export async function cancelWorkspaceCreationRun(input: { actorId: string; runId: string }, dependencies: WorkspaceCreationRunDependencies = {}) {
@@ -995,8 +1004,11 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     );
     if (context.extractionSummary) run = await updateExtractionSnapshot(filePath, run, dependencies, context.extractionSummary);
     const staged = await dependencies.readContextMetadata({ actorId, draftContextId: run.draftContextId! }).catch(() => null);
-    if (staged?.extraction) {
+    const briefOnlyFastPath = isBriefOnlyFastPath(run);
+    if (staged?.extraction && !briefOnlyFastPath) {
       run = await synthesizeCreationIntelligence(filePath, actorId, run, dependencies, staged.extraction, contextPartial && usableContext, deadline, controller.signal);
+    } else if (briefOnlyFastPath) {
+      run = await markBriefOnlyIntelligenceSkipped(filePath, run, dependencies, contextPartial && usableContext);
     }
     const intelligencePack = run.draftContextId
       ? await dependencies.readIntelligencePack({ actorId, draftContextId: run.draftContextId }).catch(() => null)
@@ -1051,6 +1063,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
       maxRetries: attempts - 1,
       ...(staged ? { currentKnowledgeGenerationId: staged.generationId } : {}),
       maxSpecialists: policy.maxSpecialists,
+      ...(briefOnlyFastPath ? { deterministicSafe: true } : {}),
       onLifecycleEvent: (event) => recordArchitectLifecycle(filePath, dependencies, event)
     });
     const result = applyCreationProfileLimits(generatedResult, policy);
@@ -1224,6 +1237,16 @@ function managedCompositionProfile(run: WorkspaceCreationRun): WorkspaceCreation
   return run.input.profile && !["quick", "deep"].includes(run.input.profile)
     ? normalizeWorkspaceCreationProfile(run.input.profile)
     : undefined;
+}
+
+function isBriefOnlyFastPath(run: WorkspaceCreationRun) {
+  const materialization = run.input.materialization;
+  return run.input.profile !== undefined
+    && normalizeWorkspaceCreationProfile(run.input.profile) === "fast"
+    && run.input.mode === "automatic"
+    && run.input.sources.length === 0
+    && run.input.operatorConstraints.length === 0
+    && Boolean(materialization && typeof materialization === "object" && (materialization as { mode?: unknown }).mode === "empty");
 }
 
 function compositionResultFromPlan(plan: WorkspaceCompositionPlan): WorkspaceCompositionResult {
@@ -1480,6 +1503,42 @@ async function updateIntelligenceSnapshot(filePath: string, run: WorkspaceCreati
     }
   };
   return appendAndPersist(filePath, run, dependencies, snapshot, "intelligence-updated", fallback ? result.execution.failureCode : null, intelligenceFailure ? { kind: intelligenceFailure.kind, code: intelligenceFailure.code, retryability: intelligenceFailure.retryability } : null, dependencies.now().toISOString(), fallback ? "intelligence-fallback" : "intelligence-completed", { intelligenceStatus: fallback ? "fallback" : "model", packState: result.pack.state, packId: result.pack.id });
+}
+
+async function markBriefOnlyIntelligenceSkipped(filePath: string, run: WorkspaceCreationRun, dependencies: ResolvedDependencies, partialContext: boolean) {
+  const now = dependencies.now().toISOString();
+  const snapshot: WorkspaceCreationSnapshot = {
+    ...run.snapshot,
+    intelligence: {
+      ...run.snapshot.intelligence,
+      status: "fallback",
+      attempts: 0,
+      elapsedMs: Math.max(run.snapshot.intelligence.elapsedMs, elapsedMs(run.createdAt, now)),
+      failure: null,
+      modelExecutionOccurred: false,
+      retryAvailable: false,
+      packId: null,
+      packState: null,
+      partialContext
+    }
+  };
+  return appendAndPersist(
+    filePath,
+    run,
+    dependencies,
+    snapshot,
+    "intelligence-updated",
+    null,
+    null,
+    now,
+    "intelligence-skipped",
+    {
+      runtimeMode: "deterministic-safe-fallback",
+      intelligenceStatus: "fallback",
+      packState: null,
+      packId: null
+    }
+  );
 }
 
 function createIntelligenceReviewSnapshot(pack: ProjectIntelligencePack) {
@@ -1815,7 +1874,7 @@ function updateCreationTimings(run: WorkspaceCreationRun, snapshot: WorkspaceCre
     provisioningReadyMs: null,
     enrichmentDurationMs: null
   };
-  const signalCodes: WorkspaceCreationActivityCode[] = ["page-fetched", "document-stored", "evidence-created", "fact-extracted", "resource-extracted", "intelligence-completed", "architect-completed", "composition-completed"];
+  const signalCodes: WorkspaceCreationActivityCode[] = ["page-fetched", "document-stored", "evidence-created", "fact-extracted", "resource-extracted", "intelligence-skipped", "intelligence-completed", "architect-completed", "composition-completed"];
   const elapsed = snapshot.elapsedMs;
   return {
     firstUsefulSignalMs: previous.firstUsefulSignalMs ?? (activityCode && signalCodes.includes(activityCode) ? elapsed : null),
@@ -2005,6 +2064,7 @@ function asCreationActivityCode(value: string): WorkspaceCreationActivityCode {
     "source-started", "page-discovered", "page-fetch-started", "page-fetched", "rendered-fallback-started", "rendered-fallback-used", "document-stored", "source-partial", "source-completed", "source-failed",
     "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
     "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected",
+    "intelligence-synthesis-started", "intelligence-skipped", "intelligence-fallback", "intelligence-completed", "intelligence-failed",
     "continue-now-requested", "enrichment-started", "enrichment-completed"
   ];
   return codes.includes(value as WorkspaceCreationActivityCode) ? value as WorkspaceCreationActivityCode : "source-started";

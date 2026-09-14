@@ -96,6 +96,7 @@ export type WorkspaceCreationActivityCode =
   | "resource-verified"
   | "conflict-detected"
   | "intelligence-synthesis-started"
+  | "intelligence-skipped"
   | "intelligence-fallback"
   | "intelligence-completed"
   | "intelligence-failed"
@@ -741,7 +742,7 @@ const workspaceCreationActivityCodes: readonly WorkspaceCreationActivityCode[] =
   "source-started", "page-discovered", "page-fetch-started", "page-fetched", "rendered-fallback-started", "rendered-fallback-used", "document-stored", "source-partial", "source-completed", "source-failed",
   "architect-started", "architect-runtime-ready", "architect-attempt-started", "architect-model-started", "architect-model-completed", "architect-structured-output-rejected", "architect-attempt-failed", "architect-retry-scheduled", "architect-attempt-completed", "architect-fallback", "architect-completed",
   "extraction-started", "extraction-completed", "extraction-partial", "evidence-created", "fact-extracted", "resource-extracted", "resource-verified", "conflict-detected",
-  "intelligence-synthesis-started", "intelligence-fallback", "intelligence-completed", "intelligence-failed",
+  "intelligence-synthesis-started", "intelligence-skipped", "intelligence-fallback", "intelligence-completed", "intelligence-failed",
   "composition-started", "composition-model-completed", "composition-fallback", "composition-completed",
   "continue-now-requested", "enrichment-started", "enrichment-completed"
 ];

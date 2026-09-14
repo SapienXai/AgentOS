@@ -516,6 +516,8 @@ export type WorkspaceArchitectRunOptions = {
   onLifecycleEvent?: (event: WorkspaceArchitectLifecycleEvent) => void | Promise<void>;
   /** Policy guard supplied by the creation service; does not create a second pipeline. */
   maxSpecialists?: number;
+  /** Trusted server-side fast path for brief-only setup; skips remote retrieval and model execution. */
+  deterministicSafe?: boolean;
 };
 
 export type WorkspaceArchitectModelExecutionRequest = {

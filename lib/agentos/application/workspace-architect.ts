@@ -531,7 +531,9 @@ export async function generateWorkspaceBlueprint(
     ? normalizeArchitectIntelligenceInput(input.projectIntelligence, { brief, constraints: operatorConstraints, mode: input.mode, materialization })
     : undefined;
   const sourceIds = knowledge.sources.map((source) => source.id);
-  const nativeSearch = options.nativeSearch ?? buildNativeSearch(options.adapter, options.nativeAgentId);
+  const nativeSearch = options.deterministicSafe
+    ? undefined
+    : options.nativeSearch ?? buildNativeSearch(options.adapter, options.nativeAgentId);
   const knowledgeEvidence = await buildKnowledgeEvidence(brief, knowledge, {
     nativeSearch: projectIntelligence ? undefined : nativeSearch,
     now,
@@ -1288,6 +1290,38 @@ async function runArchitectReasoning(input: {
   const lifecycleStartedAt = Date.now();
   await emitArchitectLifecycle(input.options, { code: "architect-started", attempt: 0, maxAttempts, elapsedMs: 0 });
 
+  if (input.options.deterministicSafe) {
+    const warning = "Brief-only Fast setup used a deterministic safe draft.";
+    await emitArchitectLifecycle(input.options, {
+      code: "architect-fallback",
+      attempt: 0,
+      maxAttempts,
+      elapsedMs: Date.now() - lifecycleStartedAt,
+      failureKind: "none",
+      failureCode: "brief-only-fast-path",
+      retryability: "terminal",
+      runtimeMode: "deterministic-safe-fallback",
+      structuredOutputAccepted: false
+    });
+    return {
+      proposal: createSafeFallbackProposal({
+        recommendation: "No project context was supplied; the Fast profile uses the brief as the initial workspace context.",
+        warning
+      }),
+      status: "fallback",
+      attempts: 0,
+      modelId: null,
+      runtime: "bounded-local",
+      reasoningMode: "deterministic-safe-fallback",
+      warning,
+      failureKind: "none",
+      failureCode: "brief-only-fast-path",
+      retryability: "terminal",
+      remoteRunId: null,
+      remoteSessionKey: null
+    };
+  }
+
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     attempts = attempt;
     await emitArchitectLifecycle(input.options, { code: "architect-runtime-ready", attempt, maxAttempts, elapsedMs: Date.now() - lifecycleStartedAt, runtimeMode: "openclaw-agent" });
@@ -1548,16 +1582,19 @@ function buildArchitectEvidencePack(input: {
   };
 }
 
-function createSafeFallbackProposal(): WorkspaceArchitectProposal {
+function createSafeFallbackProposal(copy: {
+  recommendation?: string;
+  warning?: string;
+} = {}): WorkspaceArchitectProposal {
   return {
     workforce: { specialists: [] },
     operations: { workflows: [], automations: [], channels: [] },
     capabilities: { skills: [], tools: [] },
     memory: { durableFacts: [] },
     connections: [],
-    recommendations: ["Architect reasoning was unavailable; review this minimal draft before continuing."],
+    recommendations: [copy.recommendation ?? "Architect reasoning was unavailable; review this minimal draft before continuing."],
     assumptions: [],
-    warnings: ["No AI architecture proposal was accepted."]
+    warnings: [copy.warning ?? "No AI architecture proposal was accepted."]
   };
 }
 

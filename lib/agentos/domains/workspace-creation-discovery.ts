@@ -74,6 +74,7 @@ const ACTIVITY_LABELS: Partial<Record<WorkspaceCreationActivityCode, string>> = 
   "resource-verified": "Project resource qualified",
   "conflict-detected": "Project conflict needs review",
   "intelligence-synthesis-started": "Understanding project context",
+  "intelligence-skipped": "No project context to synthesize",
   "intelligence-fallback": "Using preserved project evidence",
   "intelligence-completed": "Project understanding ready",
   "architect-started": "Preparing workspace design",

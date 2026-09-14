@@ -19,8 +19,18 @@ import {
 } from "@/lib/agentos/application/workspace-creation-run-store";
 import { createInitialWorkspaceCreationSnapshot } from "@/lib/agentos/domains/workspace-creation-run";
 import { resolveWorkspaceCreationPolicy } from "@/lib/agentos/domains/workspace-creation-policy";
+import { createWorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { generateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import { createDeterministicWorkspaceComposition } from "@/lib/agentos/application/workspace-composer";
+
+const source = createWorkspaceKnowledgeSource({
+  id: "project-file",
+  kind: "file",
+  label: "Project brief",
+  summary: "A project brief.",
+  locator: { kind: "file", path: "staged-upload:project-file" },
+  provenance: "operator"
+});
 
 test("Quick is the bounded default and Deep keeps the full policy", () => {
   const quick = resolveWorkspaceCreationPolicy("quick");
@@ -45,7 +55,9 @@ test("invalid creation profiles are rejected before a run is persisted", async (
 
 test("Fast keeps its bounded Architect budget when execution dependencies are resolved twice", async () => {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-fast-budget-"));
-  let architectOptions: { maxRetries?: number; timeoutMs?: number } | undefined;
+  let architectOptions: { deterministicSafe?: boolean; maxRetries?: number; timeoutMs?: number } | undefined;
+  let intelligenceCalls = 0;
+  let architectModelCalls = 0;
   try {
     const actorId = "fast-budget-actor";
     const dependencies: WorkspaceCreationRunDependencies = {
@@ -68,17 +80,25 @@ test("Fast keeps its bounded Architect budget when execution dependencies are re
         sources: [],
         sourceReports: [],
         warnings: [],
+        extraction: {} as never,
         knowledge: { generationId: null, sources: [], documents: [], warnings: [] }
       }),
+      synthesizeIntelligence: async () => {
+        intelligenceCalls += 1;
+        throw new Error("Brief-only Fast setup must not synthesize project intelligence.");
+      },
       readIntelligencePack: async () => null,
       readIntelligenceSummary: async () => null,
       readCompositionPlan: async () => null,
       persistCompositionPlan: async ({ plan }) => ({ planId: plan.planId, inputFingerprint: plan.inputFingerprint, status: plan.status }),
       generateArchitect: async (input, options) => {
-        architectOptions = { maxRetries: options?.maxRetries, timeoutMs: options?.timeoutMs };
+        architectOptions = { deterministicSafe: options?.deterministicSafe, maxRetries: options?.maxRetries, timeoutMs: options?.timeoutMs };
         return generateWorkspaceBlueprint(input, {
           ...options,
-          modelExecutor: async () => ({ text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" })
+          modelExecutor: async () => {
+            architectModelCalls += 1;
+            return { text: JSON.stringify({ workforce: { specialists: [] } }), runtime: "model-runtime" };
+          }
         });
       },
       composeWorkspace: async (input, options) => createDeterministicWorkspaceComposition(input, { runId: options?.runId ?? "fast-budget-composition" })
@@ -86,8 +106,14 @@ test("Fast keeps its bounded Architect budget when execution dependencies are re
     const started = await startWorkspaceCreationRun({ actorId, idempotencyKey: "fast-budget", brief: "Build a workspace", profile: "fast" }, dependencies);
     const finished = await waitForWorkspaceCreationRunIdle({ actorId, runId: started.runId }, dependencies);
     assert.equal(finished?.snapshot.state, "review-ready");
+    assert.equal(architectOptions?.deterministicSafe, true);
     assert.equal(architectOptions?.maxRetries, 0);
     assert.ok((architectOptions?.timeoutMs ?? 0) <= 8_000);
+    assert.equal(intelligenceCalls, 0);
+    assert.equal(architectModelCalls, 0);
+    assert.equal(finished?.snapshot.intelligence.modelExecutionOccurred, false);
+    assert.equal(finished?.snapshot.architect.modelExecutionOccurred, false);
+    assert.ok(finished?.events.some((event) => event.activityCode === "intelligence-skipped"));
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }
@@ -140,9 +166,14 @@ test("post-create enrichment is one immutable Deep child of a Quick run", async 
       actorHash: workspaceCreationActorHash(actorId),
       idempotencyKeyHash: "parent-key",
       attempt: 1,
-      input: { brief: "Build a workspace", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [], profile: "quick", continueLearningAfterCreation: true },
+      input: { brief: "Build a workspace", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [source], profile: "quick", continueLearningAfterCreation: true },
       draftContextId: "22222222-2222-4222-8222-222222222222",
-      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      snapshot: {
+        ...createInitialWorkspaceCreationSnapshot(1),
+        state: "review-ready",
+        stage: "review-preparation",
+        context: { ...createInitialWorkspaceCreationSnapshot(1).context, status: "ready", sourceCount: 1, usableEvidence: true }
+      },
       result: parentResult
     });
     const dependencies: WorkspaceCreationRunDependencies = {
@@ -172,6 +203,26 @@ test("post-create enrichment is one immutable Deep child of a Quick run", async 
     assert.equal(first?.lineage?.parentRunId, parent.run.runId);
     assert.equal(first?.lineage?.trigger, "post-create-enrichment");
     if (first) await waitForWorkspaceCreationRunIdle({ actorId, runId: first.runId }, dependencies);
+  } finally {
+    await rm(rootPath, { recursive: true, force: true });
+  }
+});
+
+test("post-create enrichment skips a Fast run with no project context", async () => {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-creation-empty-enrichment-"));
+  try {
+    const actorId = "empty-enrichment-actor";
+    const created = await createWorkspaceCreationRunAtomically(rootPath, workspaceCreationStorageKey(actorId, "empty-parent"), {
+      actorHash: workspaceCreationActorHash(actorId),
+      idempotencyKeyHash: "empty-parent-key",
+      attempt: 1,
+      input: { brief: "faros", mode: "automatic", operatorConstraints: [], materialization: { mode: "empty" }, sources: [], profile: "fast", continueLearningAfterCreation: true },
+      draftContextId: null,
+      snapshot: { ...createInitialWorkspaceCreationSnapshot(0), state: "review-ready", stage: "review-preparation" },
+      result: null
+    });
+    const enrichment = await startWorkspacePostCreateEnrichment({ actorId, parentRunId: created.run.runId }, { rootPath });
+    assert.equal(enrichment, null);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }
