@@ -1419,7 +1419,19 @@ function WorkspaceSwitcher({
     [deletionClockMs, pendingWorkspaceDeletions]
   );
   const timedOutWorkspaceDeletionIds = timedOutWorkspaceDeletions.map((entry) => entry.id).sort().join("|");
-  const timedOutWorkspaceDeletionNames = timedOutWorkspaceDeletions.map((entry) => entry.name).join(", ");
+  const timedOutWorkspaceDeletionLiveIds = timedOutWorkspaceDeletions
+    .filter((entry) => snapshot.workspaces.some((workspace) => workspace.id === entry.id))
+    .map((entry) => entry.id)
+    .sort()
+    .join("|");
+  const timedOutWorkspaceDeletionLiveNames = timedOutWorkspaceDeletions
+    .filter((entry) => snapshot.workspaces.some((workspace) => workspace.id === entry.id))
+    .map((entry) => entry.name)
+    .join(", ");
+  const timedOutWorkspaceDeletionRecoveryKey = JSON.stringify([
+    timedOutWorkspaceDeletionLiveIds,
+    timedOutWorkspaceDeletionLiveNames
+  ]);
 
   useEffect(() => {
     if (pendingWorkspaceDeletions.length === 0) {
@@ -1430,26 +1442,6 @@ function WorkspaceSwitcher({
 
     return () => window.clearInterval(intervalId);
   }, [pendingWorkspaceDeletions.length]);
-
-  useEffect(() => {
-    if (!timedOutWorkspaceDeletionIds) {
-      return;
-    }
-
-    const timedOutIds = new Set(timedOutWorkspaceDeletionIds.split("|"));
-    setPendingWorkspaceDeletions((current) => current.filter((entry) => !timedOutIds.has(entry.id)));
-    setDeletingWorkspaceId((current) => (current && timedOutIds.has(current) ? null : current));
-    setWorkspaceDeletionNeedsAttentionIds((current) => {
-      const next = new Set(current);
-      for (const id of timedOutIds) {
-        next.add(id);
-      }
-      return next;
-    });
-    toast.error("Workspace deletion needs attention.", {
-      description: `${timedOutWorkspaceDeletionNames || "The workspace"} was not confirmed by OpenClaw within 45 seconds. You can retry the deletion.`
-    });
-  }, [timedOutWorkspaceDeletionIds, timedOutWorkspaceDeletionNames]);
 
   const pendingWorkspaceDeletionIds = useMemo(
     () => new Set(pendingWorkspaceDeletions.map((entry) => entry.id)),
@@ -1534,6 +1526,35 @@ function WorkspaceSwitcher({
       window.clearInterval(intervalId);
     };
   }, [onForceRefresh, pendingWorkspaceDeletions.length, reconcilePendingWorkspaceDeletions]);
+
+  useEffect(() => {
+    if (!timedOutWorkspaceDeletionIds) {
+      return;
+    }
+
+    const timedOutIds = new Set(timedOutWorkspaceDeletionIds.split("|"));
+    setPendingWorkspaceDeletions((current) => current.filter((entry) => !timedOutIds.has(entry.id)));
+    setDeletingWorkspaceId((current) => (current && timedOutIds.has(current) ? null : current));
+    const [liveTimedOutWorkspaceDeletionIds, liveTimedOutWorkspaceDeletionNames] = JSON.parse(
+      timedOutWorkspaceDeletionRecoveryKey
+    ) as [string, string];
+
+    if (!liveTimedOutWorkspaceDeletionIds) {
+      return;
+    }
+
+    const liveTimedOutIds = new Set(liveTimedOutWorkspaceDeletionIds.split("|"));
+    setWorkspaceDeletionNeedsAttentionIds((current) => {
+      const next = new Set(current);
+      for (const id of liveTimedOutIds) {
+        next.add(id);
+      }
+      return next;
+    });
+    toast.error("Workspace deletion needs attention.", {
+      description: `${liveTimedOutWorkspaceDeletionNames || "The workspace"} was not confirmed by OpenClaw within 45 seconds. You can retry the deletion.`
+    });
+  }, [timedOutWorkspaceDeletionIds, timedOutWorkspaceDeletionRecoveryKey]);
 
   useEffect(() => {
     if (deletingWorkspaceId && !snapshot.workspaces.some((entry) => entry.id === deletingWorkspaceId)) {

@@ -20,6 +20,7 @@ import {
 } from "@/components/mission-control/pending-agent-projection";
 import {
   parsePendingWorkspaceDeletions,
+  pendingWorkspaceDeletionRetentionMs,
   pendingWorkspaceDeletionTimeoutMs,
   serializePendingWorkspaceDeletions
 } from "@/components/mission-control/workspace-deletion-projection";
@@ -62,7 +63,7 @@ test("workspace deletion projections survive refresh until OpenClaw confirms rem
     serializePendingWorkspaceDeletions([
       { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - 1_000 },
       { id: "workspace-1", name: "Workspace One (new request)", requestedAt: referenceTime - 100 },
-      { id: "workspace-expired", name: "Expired", requestedAt: referenceTime - pendingWorkspaceDeletionTimeoutMs - 1 },
+      { id: "workspace-expired", name: "Expired", requestedAt: referenceTime - pendingWorkspaceDeletionRetentionMs - 1 },
       { id: "workspace-invalid", name: "", requestedAt: referenceTime - 100 }
     ]),
     referenceTime
@@ -73,17 +74,13 @@ test("workspace deletion projections survive refresh until OpenClaw confirms rem
   ]);
 });
 
-test("workspace deletion projection expires unconfirmed requests quickly", () => {
+test("workspace deletion projection keeps a timed-out request long enough to show recovery", () => {
   const referenceTime = 1_000_000;
+  const entry = { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - pendingWorkspaceDeletionTimeoutMs - 1 };
 
   assert.deepEqual(
-    parsePendingWorkspaceDeletions(
-      serializePendingWorkspaceDeletions([
-        { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - pendingWorkspaceDeletionTimeoutMs }
-      ]),
-      referenceTime
-    ),
-    []
+    parsePendingWorkspaceDeletions(serializePendingWorkspaceDeletions([entry]), referenceTime),
+    [entry]
   );
 });
 
