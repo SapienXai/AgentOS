@@ -979,6 +979,19 @@ test("unavailable Architect runtime returns an honest safe fallback", async () =
   assert.match(result.blueprint.warnings.join(" "), /runtime bootstrap failed/i);
 });
 
+test("brief-only deterministic fallback keeps review warnings unique", async () => {
+  const result = await generateWorkspaceBlueprint(input("faros"), {
+    deterministicSafe: true,
+    modelExecutor: async () => {
+      throw new Error("brief-only Fast path must not call the model");
+    }
+  });
+
+  assert.equal(result.reasoning.mode, "deterministic-safe-fallback");
+  assert.equal(result.blueprint.warnings.filter((warning) => warning === "Brief-only Fast setup used a deterministic safe draft.").length, 1);
+  assert.equal(new Set(result.blueprint.warnings).size, result.blueprint.warnings.length);
+});
+
 test("revision re-runs Architect reasoning for unlocked sections", async () => {
   const initial = await generateWorkspaceBlueprint(input("Build a SaaS workspace."), { modelExecutor: minimalModel() });
   const revised = await reviseWorkspaceBlueprint(initial.blueprint, {

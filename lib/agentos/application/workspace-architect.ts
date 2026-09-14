@@ -579,13 +579,13 @@ export async function generateWorkspaceBlueprint(
     targetedEvidence: knowledgeEvidence.targetedEvidence,
     maxSpecialists: options.maxSpecialists
   });
-  const warnings = [
+  const warnings = [...new Set([
     ...(knowledgeEvidence.warning ? [knowledgeEvidence.warning] : []),
     ...knowledge.warnings,
     ...knowledge.sources.filter((source) => source.status === "error").map((source) => `${source.label} is declared but currently unavailable.`),
     ...normalized.warnings,
     ...(reasoning.warning ? [reasoning.warning] : [])
-  ];
+  ])];
   const identity = normalized.identity;
   const createdAt = now();
   const blueprint: WorkspaceBlueprint = {
