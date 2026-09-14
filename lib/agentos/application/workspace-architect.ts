@@ -1168,20 +1168,43 @@ function buildNativeSearch(
   };
 }
 
+function deriveRepositoryName(remoteUrl: string | undefined) {
+  if (!remoteUrl) return null;
+  try {
+    const pathname = new URL(remoteUrl).pathname;
+    return pathname.split("/").filter(Boolean).at(-1)?.replace(/\.git$/iu, "") || null;
+  } catch {
+    return remoteUrl.split(/[/?#]/u).filter(Boolean).at(-1)?.replace(/\.git$/iu, "") || null;
+  }
+}
+
 function inferIdentity(brief: string, sources: WorkspaceKnowledgeSource[], pack?: ProjectIntelligencePack) {
-  const sourceName = sources.find((source) => source.kind === "website" || source.kind === "repository")?.label;
   const packPurpose = pack?.identity.description.value || pack?.overview.whatItDoes.value;
   const packType = pack?.identity.projectType.value;
   const briefName = deriveProjectNameFromText(brief);
-  const sourceDerivedName = deriveProjectNameFromText(sourceName);
+  const sourceDerivedNames = sources
+    .filter((entry) => entry.kind === "website" || entry.kind === "repository")
+    .flatMap((entry) => {
+      const candidates: Array<string | null> = [];
+      if (entry.locator.kind === "website") {
+        candidates.push(deriveProjectNameFromText(entry.locator.url));
+      }
+      if (entry.locator.kind === "repository") {
+        const repositoryName = deriveRepositoryName(entry.locator.remoteUrl);
+        if (repositoryName) candidates.push(deriveProjectNameFromText(repositoryName + " project"));
+      }
+      candidates.push(deriveProjectNameFromText(entry.label));
+      return candidates;
+    })
+    .filter((candidate): candidate is string => Boolean(candidate && !isGenericWorkspaceName(candidate)));
   const explicitName = [
     pack?.identity.projectName.value,
     pack?.identity.displayName.value,
     pack?.identity.organizationName.value,
     briefName,
-    sourceDerivedName
+    ...sourceDerivedNames
   ].find((candidate) => candidate?.trim() && !isGenericWorkspaceName(candidate));
-  const name = redactSecretText((explicitName || sourceName || "Workspace").replace(/[.,!?]+$/, "").trim()).slice(0, 80) || "Workspace";
+  const name = redactSecretText((explicitName || "Workspace").replace(/[.,!?]+$/, "").trim()).slice(0, 80) || "Workspace";
   const purpose = redactSecretText(packPurpose || brief.split(/[.!?\n]/)[0]?.trim() || "Operate the requested workspace.").slice(0, 240);
   const projectType = packType || (/support|customer service|tickets|müşteri desteği/i.test(brief)
     ? "support"
@@ -1551,9 +1574,10 @@ function normalizeArchitectProposal(input: {
   maxSpecialists?: number;
 }): ArchitectNormalizationResult {
   const fallbackIdentity = inferIdentity(input.brief, input.knowledge.sources, input.projectIntelligence?.pack);
-  const identityName = fallbackIdentity.explicitName
+  const proposedName = boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80);
+  const identityName = fallbackIdentity.explicitName || isGenericWorkspaceName(proposedName)
     ? fallbackIdentity.name
-    : boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80);
+    : proposedName;
   const identity = {
     name: buildCompactWorkspaceName(identityName),
     purpose: boundedText(input.proposal.identity?.purpose, fallbackIdentity.purpose, 240),

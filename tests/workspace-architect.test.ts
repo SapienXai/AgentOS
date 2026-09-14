@@ -135,7 +135,7 @@ test("an explicit project name in the brief wins over a generic Architect worksp
   const result = await generateWorkspaceBlueprint(input("nitroclash projemize marketing ekibi kuracaz"), {
     runId: "architect-project-name",
     modelExecutor: modelFor(() => ({
-      identity: { name: "Workspace Works", purpose: "Operate the marketing team", projectType: "content" },
+      identity: { name: "Workspace Maker", purpose: "Operate the marketing team", projectType: "content" },
       workforce: { specialists: [] },
       operations: { workflows: [], automations: [], channels: [] },
       capabilities: { skills: [], tools: [] },
@@ -150,6 +150,68 @@ test("an explicit project name in the brief wins over a generic Architect worksp
   assert.match(result.blueprint.identity.name, /^nitroclash\s/i);
   assert.doesNotMatch(result.blueprint.identity.name, /^workspace\s/i);
   assert.match(result.blueprint.workforce.primaryAgent.name, /^nitroclash\s/i);
+});
+
+test("a website source anchors identity when the Architect returns a generic name", async () => {
+  const website = createWorkspaceKnowledgeSource({
+    id: "coincollect-site",
+    kind: "website",
+    label: "Selected website",
+    summary: "The operator selected the project's public website.",
+    locator: { kind: "website", url: "https://coincollect.org" },
+    provenance: "operator"
+  });
+  const result = await generateWorkspaceBlueprint(input("Create a marketing workspace for this business.", {
+    knowledge: { sources: [website] }
+  }), {
+    runId: "architect-website-name",
+    modelExecutor: modelFor(() => ({
+      identity: { name: "Workspace Works", purpose: "Operate the marketing team", projectType: "content" },
+      workforce: { specialists: [] },
+      operations: { workflows: [], automations: [], channels: [] },
+      capabilities: { skills: [], tools: [] },
+      memory: { durableFacts: [] },
+      connections: [],
+      recommendations: [],
+      assumptions: [],
+      warnings: []
+    }))
+  });
+
+  assert.match(result.blueprint.identity.name, /^coincollect\s/i);
+  assert.doesNotMatch(result.blueprint.identity.name, /^workspace\s/i);
+  assert.match(result.blueprint.workforce.primaryAgent.name, /^coincollect\s/i);
+});
+
+test("a repository source uses its repository path instead of the hosting domain", async () => {
+  const repository = createWorkspaceKnowledgeSource({
+    id: "paperkite-repository",
+    kind: "repository",
+    label: "Selected repository",
+    summary: "The operator selected the project's repository.",
+    locator: { kind: "repository", remoteUrl: "https://github.com/example/paperkite.git" },
+    provenance: "operator"
+  });
+  const result = await generateWorkspaceBlueprint(input("Create a software workspace.", {
+    knowledge: { sources: [repository] }
+  }), {
+    runId: "architect-repository-name",
+    modelExecutor: modelFor(() => ({
+      identity: { name: "Workspace Maker", purpose: "Operate the software project", projectType: "software" },
+      workforce: { specialists: [] },
+      operations: { workflows: [], automations: [], channels: [] },
+      capabilities: { skills: [], tools: [] },
+      memory: { durableFacts: [] },
+      connections: [],
+      recommendations: [],
+      assumptions: [],
+      warnings: []
+    }))
+  });
+
+  assert.match(result.blueprint.identity.name, /^paperkite\s/i);
+  assert.doesNotMatch(result.blueprint.identity.name, /^github\s/i);
+  assert.match(result.blueprint.workforce.primaryAgent.name, /^paperkite\s/i);
 });
 
 test("software project remains one primary without size-driven topology", async () => {

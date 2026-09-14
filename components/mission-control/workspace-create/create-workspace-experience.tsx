@@ -68,6 +68,7 @@ type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
 type ContextAction = "website" | "github" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
+type UrlSourceBuildResult = { source: WorkspaceKnowledgeSource } | { error: string };
 type ContextSourceStatus = "attached" | "reading" | "ready" | "partial" | "error" | "unsupported";
 type ContextSourceState = {
   status: ContextSourceStatus;
@@ -81,6 +82,45 @@ type ContextSourceState = {
 type UploadGroup = { sourceId: string; files: File[] };
 type EnvironmentPreparationIntent = { requested: boolean; profileId: string };
 type NativeEnvironmentInventoryState = "idle" | "loading" | "available" | "empty" | "unavailable" | "unsupported" | "denied" | "degraded";
+
+function buildUrlSource(draft: SourceDraft): UrlSourceBuildResult {
+  const value = draft.value.trim();
+  if (!value) return { error: "Add a URL first." };
+
+  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : "https://" + value;
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    return { error: "Use a valid http or https URL." };
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { error: "Use a valid http or https URL." };
+  }
+
+  if (draft.kind === "repository" && !["github.com", "www.github.com"].includes(url.hostname.toLowerCase())) {
+    return { error: "Add a GitHub repository URL." };
+  }
+
+  if (draft.kind === "repository" && url.pathname.split("/").filter(Boolean).length < 2) {
+    return { error: "Add a GitHub repository URL." };
+  }
+
+  const label = draft.kind === "repository"
+    ? url.pathname.replace(/^\/+|\/+$/g, "") || "GitHub repository"
+    : url.hostname;
+  const source = createWorkspaceKnowledgeSource({
+    id: draft.kind + "-" + slugify(label) + "-" + Date.now(),
+    kind: draft.kind,
+    label,
+    summary: draft.kind === "repository" ? "User-selected GitHub repository source." : "User-selected website source.",
+    locator: draft.kind === "repository" ? { kind: "repository", remoteUrl: url.toString() } : { kind: "website", url: url.toString() },
+    provenance: "operator"
+  });
+  return { source };
+}
+
 type ProvisioningRun = {
   runId: string;
   state: "pending" | "validating" | "materializing" | "bootstrapping" | "preparing-environment" | "applying-composition" | "promoting-knowledge" | "provisioning-agents" | "binding-knowledge" | "applying-capabilities" | "recording-declarations" | "verifying" | "ready" | "partial" | "failed" | "cancelled";
@@ -379,6 +419,31 @@ export function CreateWorkspaceExperience({
     const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating") return;
 
+    const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
+    if (pendingSourceResult && "error" in pendingSourceResult) {
+      setSourceError(pendingSourceResult.error);
+      setNotice({
+        tone: "error",
+        title: "Check the project URL",
+        description: pendingSourceResult.error
+      });
+      return;
+    }
+    const pendingSource = pendingSourceResult && "source" in pendingSourceResult ? pendingSourceResult.source : null;
+    const nextSources = pendingSource ? [...sources, pendingSource] : sources;
+    const pendingRepositoryUrl = pendingSource?.locator.kind === "repository" ? pendingSource.locator.remoteUrl : undefined;
+    const nextMaterialization: WorkspaceMaterialization = pendingRepositoryUrl
+      ? { mode: "clone", repoUrl: pendingRepositoryUrl }
+      : materialization;
+    if (pendingSource) {
+      setSources(nextSources);
+      setSourceStates((current) => ({ ...current, [pendingSource.id]: { status: "attached" } }));
+      if (pendingRepositoryUrl) setMaterialization(nextMaterialization);
+      setContextAction(null);
+      setSourceDraft({ kind: "website", value: "" });
+      setSourceError(null);
+    }
+
     clearWorkspaceCreationMinimizedRun();
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -396,8 +461,8 @@ export function CreateWorkspaceExperience({
       formData.set("profile", profile);
       formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
-      formData.set("materialization", JSON.stringify(materialization));
-      formData.set("sources", JSON.stringify(sources));
+      formData.set("materialization", JSON.stringify(nextMaterialization));
+      formData.set("sources", JSON.stringify(nextSources));
       if (draftContextId) formData.set("draftContextId", draftContextId);
       const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
       for (const group of uploadGroups) {
@@ -413,7 +478,7 @@ export function CreateWorkspaceExperience({
       hasLocalDraftRef.current = true;
       setCreationRun(initial);
       setDraftContextId(initial.draftContextId);
-      const completedRun = await pollCreationRun(initial.runId, controller, initial, sources);
+      const completedRun = await pollCreationRun(initial.runId, controller, initial, nextSources);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
@@ -856,49 +921,18 @@ export function CreateWorkspaceExperience({
   };
 
   const addUrlSource = () => {
-    const value = sourceDraft.value.trim();
-    if (!value) {
-      setSourceError("Add a URL first.");
+    const result = buildUrlSource(sourceDraft);
+    if ("error" in result) {
+      setSourceError(result.error);
       return;
     }
 
-    const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
-    let url: URL;
-    try {
-      url = new URL(normalized);
-    } catch {
-      setSourceError("Use a valid http or https URL.");
-      return;
-    }
-
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      setSourceError("Use a valid http or https URL.");
-      return;
-    }
-
-    if (sourceDraft.kind === "repository" && !["github.com", "www.github.com"].includes(url.hostname.toLowerCase())) {
-      setSourceError("Add a GitHub repository URL.");
-      return;
-    }
-
-    if (sourceDraft.kind === "repository" && url.pathname.split("/").filter(Boolean).length < 2) {
-      setSourceError("Add a GitHub repository URL.");
-      return;
-    }
-
-    const kind = sourceDraft.kind;
-    const label = kind === "repository" ? url.pathname.replace(/^\/+|\/+$/g, "") || "GitHub repository" : url.hostname;
-    const source = createWorkspaceKnowledgeSource({
-      id: `${kind}-${slugify(label)}-${Date.now()}`,
-      kind,
-      label,
-      summary: kind === "repository" ? "User-selected GitHub repository source." : "User-selected website source.",
-      locator: kind === "repository" ? { kind: "repository", remoteUrl: url.toString() } : { kind: "website", url: url.toString() },
-      provenance: "operator"
-    });
+    const { source } = result;
     setSources((current) => [...current, source]);
     setSourceStates((current) => ({ ...current, [source.id]: { status: "attached" } }));
-    if (kind === "repository") setMaterialization({ mode: "clone", repoUrl: url.toString() });
+    if (source.locator.kind === "repository" && source.locator.remoteUrl) {
+      setMaterialization({ mode: "clone", repoUrl: source.locator.remoteUrl });
+    }
     setContextAction(null);
     setSourceDraft({ kind: "website", value: "" });
     setSourceError(null);

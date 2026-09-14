@@ -11,8 +11,12 @@ import {
 
 test("project identity extraction ignores generic workspace labels", () => {
   assert.equal(deriveProjectNameFromText("nitroclash projemize marketing ekibi kuracaz"), "nitroclash");
+  assert.equal(deriveProjectNameFromText("coincollect marketing ekibi oluşturalım"), "coincollect");
+  assert.equal(deriveProjectNameFromText("https://coincollect.org"), "coincollect");
+  assert.equal(deriveProjectNameFromText("Visit https://paperkite.co.uk for the project context."), "paperkite");
   assert.equal(deriveProjectNameFromText("Build a simple product for independent makers."), null);
   assert.equal(isGenericWorkspaceName("Workspace Works"), true);
+  assert.equal(isGenericWorkspaceName("Workspace Maker"), true);
   assert.equal(isGenericWorkspaceName("NitroClash Works"), false);
 });
 

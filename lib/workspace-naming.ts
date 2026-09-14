@@ -22,6 +22,62 @@ const PRIMARY_AGENT_NAME_SUFFIXES = [
 
 const WORKSPACE_SUFFIXES = new Set<string>(WORKSPACE_NAME_SUFFIXES.map((suffix) => suffix.toLowerCase()));
 const GENERIC_WORKSPACE_WORDS = new Set(["new", "project", "product", "untitled", "workspace", "workspaces"]);
+const PROJECT_CONTEXT_WORDS = new Set([
+  "app",
+  "application",
+  "brand",
+  "business",
+  "campaign",
+  "content",
+  "company",
+  "ekip",
+  "hakkında",
+  "ile",
+  "ilgili",
+  "marketing",
+  "platform",
+  "product",
+  "project",
+  "proje",
+  "research",
+  "service",
+  "software",
+  "team",
+  "website",
+  "workspace"
+]);
+const LEADING_BRIEF_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "about",
+  "basic",
+  "build",
+  "create",
+  "design",
+  "develop",
+  "for",
+  "general",
+  "help",
+  "i",
+  "independent",
+  "make",
+  "my",
+  "new",
+  "one",
+  "please",
+  "simple",
+  "single",
+  "small",
+  "set",
+  "the",
+  "this",
+  "that",
+  "we",
+  "workspace",
+  "you"
+]);
+const SECOND_LEVEL_TLDS = new Set(["ac", "co", "com", "edu", "gov", "net", "org"]);
+const HOSTNAME_TOKEN = /(?:https?:\/\/)?(?:www\.)?(?:[a-z\d-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#][^\s]*)?/iu;
 const MAX_BRAND_WORDS = 2;
 
 function nameWords(value: string | undefined) {
@@ -51,6 +107,23 @@ function normalizeNameCandidate(value: string | undefined) {
   return words[0] ?? null;
 }
 
+function deriveNameFromHostname(value: string) {
+  const hostnameLike = /^(?:https?:\/\/)?(?:www\.)?(?:[a-z\d-]+\.)+[a-z]{2,}(?::\d+)?(?:[/?#].*)?$/iu;
+  if (!hostnameLike.test(value.trim())) return null;
+
+  try {
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//iu.test(value) ? value : `https://${value}`);
+    const labels = parsed.hostname.toLowerCase().split(".").filter((label) => label && label !== "www");
+    if (labels.length < 2) return null;
+    const registrableIndex = labels.length >= 3 && parsed.hostname.endsWith(`.${labels.at(-1)}`) && labels.at(-2) && labels.at(-2)!.length <= 3 && SECOND_LEVEL_TLDS.has(labels.at(-2)!)
+      ? labels.length - 3
+      : labels.length - 2;
+    return normalizeNameCandidate(labels[registrableIndex]);
+  } catch {
+    return null;
+  }
+}
+
 function stableIndex(seed: string, length: number) {
   let hash = 0;
   for (const character of seed.toLowerCase()) {
@@ -71,7 +144,9 @@ export function deriveWorkspaceBrandName(value: string | undefined) {
 /** Returns whether a generated identity is only a generic workspace label. */
 export function isGenericWorkspaceName(value: string | undefined) {
   const words = stripWorkspaceSuffix(nameWords(value)).map((word) => word.toLowerCase());
-  return words.length === 0 || words.every((word) => GENERIC_WORKSPACE_WORDS.has(word));
+  return words.length === 0
+    || words.every((word) => GENERIC_WORKSPACE_WORDS.has(word))
+    || GENERIC_WORKSPACE_WORDS.has(words[0] ?? "");
 }
 
 /**
@@ -83,16 +158,22 @@ export function deriveProjectNameFromText(value: string | undefined) {
   const text = value?.replace(/\s+/gu, " ").trim() ?? "";
   if (!text) return null;
 
+  const hostnameName = deriveNameFromHostname(text) ?? deriveNameFromHostname(text.match(HOSTNAME_TOKEN)?.[0] ?? "");
+  if (hostnameName && !GENERIC_WORKSPACE_WORDS.has(hostnameName.toLowerCase())) return hostnameName;
+
   const patterns = [
     /\b(?:called|named)\s+["“']?([^\s,.;:!?()[\]{}]+)["”']?/iu,
     /\b(?:project|product|workspace)\s+(?:name|title)?\s*(?:is|:|-)\s*["“']?([^\s,.;:!?()[\]{}]+)["”']?/iu,
     /\b(?:project|workspace)\s+for\s+["“']?([A-Z][A-Za-z0-9_-]{1,54})["”']?/u,
-    /\b([^\s,.;:!?()[\]{}]+)\s+proje\w*\b/iu
+    /\b([^\s,.;:!?()[\]{}]+)\s+proje\w*\b/iu,
+    /^["“']?([\p{L}\p{N}][\p{L}\p{N}_-]{1,54})["”']?\s+(?=(?:marketing|content|product|project|workspace|website|business|brand|team|ekip|proje\w*|hakkında|ile\s+ilgili)\b)/iu,
+    /^(?:please\s+)?(?:build|create|design|develop|make|set\s+up)\s+([\p{L}\p{N}][\p{L}\p{N}_-]{1,54})\s+(?=(?:marketing|content|product|project|workspace|website|business|brand|team|ekip|proje\w*|hakkında|ile\s+ilgili)\b)/iu
   ];
 
   for (const pattern of patterns) {
     const candidate = normalizeNameCandidate(text.match(pattern)?.[1]);
-    if (candidate && !GENERIC_WORKSPACE_WORDS.has(candidate.toLowerCase())) {
+    const normalizedCandidate = candidate?.toLowerCase();
+    if (candidate && normalizedCandidate && !GENERIC_WORKSPACE_WORDS.has(normalizedCandidate) && !LEADING_BRIEF_STOP_WORDS.has(normalizedCandidate) && !PROJECT_CONTEXT_WORDS.has(normalizedCandidate)) {
       return candidate;
     }
   }
