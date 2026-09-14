@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.9.4-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-09-13T13:10:02.187Z",
+  "generatedAt": "2026-09-14T21:08:13.102Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "eae2e1ba2d71cb379b2a3ea74b7e9f2bc56fcd54",
-    "evidenceCommit": "b54d26c8504abe3b26c9bbb763abab673bf30417",
-    "branch": "codex/auto-dev",
+    "certifiedCodeHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
+    "evidenceCommit": "3bab65ec0b374916a81707751ab168038d4bf580",
+    "branch": "",
     "node": "v24.20.0",
     "openClaw": {
       "version": "2026.9.4",
@@ -130,9 +130,9 @@
       "runtime": {
         "path": "docs/evidence/openclaw-2026.9.4-runtime-certification.json",
         "status": "PASS",
-        "skips": 36,
+        "skips": 12,
         "environmentLimited": 0,
-        "expectedDenials": 39
+        "expectedDenials": 13
       },
       "migration": {
         "path": "docs/evidence/openclaw-2026.9.3-to-2026.9.4-migration.json",
@@ -255,8 +255,8 @@
       }
     }
   },
-  "skips": 92,
-  "expectedAuthorizationDenials": 67,
+  "skips": 68,
+  "expectedAuthorizationDenials": 41,
   "production": {
     "status": "not-tested",
     "gatewayTouched": false,
@@ -286,9 +286,9 @@
     "runtime": {
       "path": "docs/evidence/openclaw-2026.9.4-runtime-certification.json",
       "status": "PASS",
-      "skips": 36,
+      "skips": 12,
       "environmentLimited": 0,
-      "expectedDenials": 39
+      "expectedDenials": 13
     },
     "migration": {
       "path": "docs/evidence/openclaw-2026.9.3-to-2026.9.4-migration.json",
@@ -413,9 +413,9 @@
   "classification": {
     "pass": 20,
     "fail": 0,
-    "skipped": 92,
+    "skipped": 68,
     "environmentLimited": 0,
-    "expectedAuthorizationDenials": 67,
+    "expectedAuthorizationDenials": 41,
     "productionGatewayTouched": false,
     "railwayMutated": false,
     "realCredentialsAccessed": false
