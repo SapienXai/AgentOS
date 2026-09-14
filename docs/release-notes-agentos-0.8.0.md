@@ -24,10 +24,10 @@ OpenClaw alignment, and desktop reliability.
 - Recommended and native contract target: OpenClaw `2026.9.4`.
 - Supported minimum: OpenClaw `2026.9.1` with explicit security-sensitive
   session configuration.
-- The release candidate is being certified against source commit
+- The release candidate is certified against source commit
   `3a9d69db306cd7f081e06254cb89c4bcc14a7107` and the exact 2026.9.4 build
-  contract. Final certification status is recorded only after the complete
-  isolated certification run.
+  contract. The final certification matrix passed all 20 required evidence
+  families with no FAIL or UNKNOWN outcomes.
 - Native Gateway/API ownership remains authoritative; existing CLI fallback
   paths stay explicit and observable.
 
@@ -39,20 +39,30 @@ OpenClaw alignment, and desktop reliability.
 
 ## Validation
 
-- Release-candidate validation is executed as part of the 0.8.0 release
-  closure.
-- Final results are recorded only after quality, certification, package,
-  desktop, signing, and distribution gates complete.
+- Lint, type generation, typecheck, 1,913 tests, production build, release
+  consistency, and diff checks passed.
+- Exact OpenClaw 2026.9.4 contract, runtime, migration, lifecycle, identity,
+  multi-user, native capability, official transport, and official production
+  certification passed.
+- Package tarball validation and clean temporary install smoke passed for
+  `@sapienx/agentos@0.8.0`.
+- Desktop shell check, package audit, packaged-server smoke, and local macOS
+  `.app`/`.dmg` build completed. The updater signing step was blocked because
+  the local environment has no private updater key.
 
 ## Smoke Status
 
-- Package, Desktop, Mission Control, and OpenClaw certification smoke status:
-  pending final release-closure gates.
+- Package, Desktop, Mission Control, and OpenClaw certification smoke passed.
+- Mission Control smoke used an isolated exact 2026.9.4 Gateway and disposable
+  workspace; no user Gateway or production state was used.
 
 ## Known Limitations
 
-- Production updater-key control, macOS Developer ID/notarization, and
-  Windows Authenticode status must be verified before public distribution.
+- Public distribution is blocked until the updater public key is confirmed as
+  organization-controlled and the corresponding private key is available to
+  the release workflow.
+- The local macOS build is ad-hoc and has no Developer ID/notarization. Windows
+  Authenticode and cross-platform Desktop artifacts were not produced locally.
 - OpenClaw certification must use exact disposable 2026.9.4 inputs and a
   fresh evidence provenance chain; historical PASS evidence is not reused.
 
