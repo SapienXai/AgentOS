@@ -165,6 +165,7 @@ export function CreateWorkspaceExperience({
   const [isSavingCustomization, setIsSavingCustomization] = useState(false);
   const [provisioningRun, setProvisioningRun] = useState<ProvisioningRun | null>(null);
   const [provisioningError, setProvisioningError] = useState<string | null>(null);
+  const [isProvisioningStarting, setIsProvisioningStarting] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [basicDraftApproved, setBasicDraftApproved] = useState(false);
   const [isRebuildingPlan, setIsRebuildingPlan] = useState(false);
@@ -257,7 +258,7 @@ export function CreateWorkspaceExperience({
     nativeEnvironmentTopology,
     nativeEnvironmentInventoryError
   );
-  const isActiveRun = stage === "generating" || stage === "provisioning";
+  const isActiveRun = stage === "generating" || stage === "provisioning" || isProvisioningStarting;
 
   const resetCreationState = () => {
     abortControllerRef.current?.abort();
@@ -292,6 +293,7 @@ export function CreateWorkspaceExperience({
     setIsCustomizing(false);
     setProvisioningRun(null);
     setProvisioningError(null);
+    setIsProvisioningStarting(false);
     setBasicDraftApproved(false);
     setIsRebuildingPlan(false);
     setShowStartOverConfirmation(false);
@@ -382,6 +384,7 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setStage("generating");
+    setIsProvisioningStarting(false);
     setNotice(null);
     setRevisionError(null);
 
@@ -410,11 +413,17 @@ export function CreateWorkspaceExperience({
       hasLocalDraftRef.current = true;
       setCreationRun(initial);
       setDraftContextId(initial.draftContextId);
-      await pollCreationRun(initial.runId, controller, initial, sources);
+      const completedRun = await pollCreationRun(initial.runId, controller, initial, sources);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
-      setStage("review");
+      setStage(
+        mode === "automatic"
+          && !environmentPreparation.requested
+          && completedRun.snapshot.reviewReadiness?.provisionable === true
+          ? "generating"
+          : "review"
+      );
       setRevisionValue("");
       setIsCustomizing(false);
     } catch (error) {
@@ -468,7 +477,6 @@ export function CreateWorkspaceExperience({
         if (!generated?.blueprint) throw new Error("Workspace creation completed without a reviewable blueprint.");
         setResult(generated);
         setFreshness(generated.freshness);
-        setStage("review");
         setRevisionValue("");
         setIsCustomizing(false);
         setCustomName(generated.blueprint.identity.name);
@@ -538,6 +546,7 @@ export function CreateWorkspaceExperience({
         const recoveredRun = await pollCreationRun(activeRun.runId, controller, activeRun, recoveredSources);
         const completedProvisioning = recoveredProvisioning ?? await recoverProvisioningRun(recoveredRun);
         if (completedProvisioning) setStage(isProvisioningTerminal(completedProvisioning.state) ? "review" : "provisioning");
+        else setStage("review");
       } catch {
         // Reload recovery is best-effort; the durable run remains available to a later poll.
       }
@@ -562,6 +571,7 @@ export function CreateWorkspaceExperience({
       setResult(null);
       setFreshness(null);
       await pollCreationRun(next.runId, controller, next, sources);
+      setStage("review");
     } catch (error) {
       if (!controller.signal.aborted) setRevisionError(error instanceof Error ? error.message : "The project context could not be refreshed.");
       if (!controller.signal.aborted) setStage("review");
@@ -726,7 +736,7 @@ export function CreateWorkspaceExperience({
   };
 
   const provision = useCallback(async (options: { retryEnvironmentPreparation?: boolean } = {}) => {
-    if (!result || stage === "provisioning") return;
+    if (!result || stage === "provisioning" || isProvisioningStarting) return;
     if (!creationRun) return;
     if (!nativeEnvironmentPreparationReady) {
       setRevisionError(nativeEnvironmentPreparationMessage);
@@ -736,21 +746,24 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     provisioningPollRef.current?.abort();
     provisioningPollRef.current = controller;
+    setIsProvisioningStarting(true);
+    setStage("generating");
+    setProvisioningRun(null);
+    setProvisioningError(null);
     try {
       const certified = await certifyReview(creationRun.runId, basicDraftApproved);
       if (!certified.readiness.provisionable) {
         setRevisionError(certified.readiness.message);
+        setStage("review");
         return;
       }
       const serverRun = certified.run;
       const serverResult = serverRun.result as WorkspaceArchitectResult | null;
       if (!serverResult?.blueprint) {
         setRevisionError("The reviewed workspace draft is no longer available.");
+        setStage("review");
         return;
       }
-      setStage("provisioning");
-      setProvisioningRun(null);
-      setProvisioningError(null);
       const response = await fetch("/api/workspaces/provision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -775,6 +788,8 @@ export function CreateWorkspaceExperience({
 
       let current = payload;
       setProvisioningRun(current);
+      setIsProvisioningStarting(false);
+      setStage("provisioning");
       while (!isProvisioningTerminal(current.state)) {
         await wait(450, controller.signal);
         const statusResponse = await fetch(`/api/workspaces/provision?runId=${encodeURIComponent(current.runId)}`, { signal: controller.signal });
@@ -791,13 +806,19 @@ export function CreateWorkspaceExperience({
       }
       setStage("review");
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        setIsProvisioningStarting(false);
+        setStage("review");
+        return;
+      }
       setProvisioningError(error instanceof Error ? error.message : "Workspace provisioning did not complete.");
+      setIsProvisioningStarting(false);
       setStage("review");
     } finally {
+      setIsProvisioningStarting(false);
       if (provisioningPollRef.current === controller) provisioningPollRef.current = null;
     }
-  }, [result, stage, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh]);
+  }, [result, stage, isProvisioningStarting, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh]);
 
   const retryProvisioning = useCallback(async () => {
     setProvisioningError(null);
@@ -814,14 +835,15 @@ export function CreateWorkspaceExperience({
   }, [onOpenModelSetup]);
 
   useEffect(() => {
-    if (!open || stage !== "review" || !creationRun || !result || !reviewReadiness?.provisionable
-      || reviewRunId || provisioningRun || provisioningError || creationRun.input.mode !== "automatic"
+    if (!open || (stage !== "review" && stage !== "generating") || !creationRun || !result || !reviewReadiness?.provisionable
+      || creationRun.snapshot.state !== "review-ready"
+      || reviewRunId || provisioningRun || provisioningError || isProvisioningStarting || creationRun.input.mode !== "automatic"
       || environmentPreparation.requested
       || creationRun.input.trigger === "post-create-enrichment" || creationRun.input.trigger === "manual-refresh"
       || automaticProvisionRef.current === creationRun.runId) return;
     automaticProvisionRef.current = creationRun.runId;
     void provision();
-  }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, environmentPreparation.requested, provision]);
+  }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, isProvisioningStarting, environmentPreparation.requested, provision]);
 
   const openProvisionedWorkspace = () => {
     if (!provisioningRun?.result) {
@@ -921,6 +943,7 @@ export function CreateWorkspaceExperience({
     : null;
 
   const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
+  const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
 
@@ -928,8 +951,8 @@ export function CreateWorkspaceExperience({
     <>
       <PikoLoader
         open={open && !isMinimized && isActiveRun}
-        title={stage === "provisioning" ? "Creating your workspace" : "Learning about your project"}
-        description={experience.primaryStatus}
+        title={isProvisioningInFlight ? "Creating your workspace" : "Learning about your project"}
+        description={isProvisioningStarting ? "Setting up your workspace…" : experience.primaryStatus}
       />
       <MissionControlDialogShell
       open={open && !isMinimized}
@@ -959,13 +982,13 @@ export function CreateWorkspaceExperience({
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
       footerInnerClassName="p-0"
       footer={
-        stage === "generating" ? (
+        stage === "generating" && !isProvisioningStarting ? (
           <div className="flex w-full items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={cancelGeneration} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
               Cancel
             </Button>
           </div>
-        ) : stage === "provisioning" ? (
+        ) : stage === "generating" || stage === "provisioning" ? (
           <div className="flex w-full items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={minimizeWorkspaceCreation} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Minimize</Button>
           </div>
@@ -1069,8 +1092,13 @@ export function CreateWorkspaceExperience({
             folderInputRef={folderInputRef}
             notice={notice}
           />
-        ) : stage === "generating" ? (
-          <CreationProgressView run={creationRun} isLight={isLight} onContinueNow={() => void continueNow()} />
+        ) : stage === "generating" || isProvisioningStarting ? (
+          <CreationProgressView
+            run={creationRun}
+            provisioningStarting={isProvisioningStarting}
+            isLight={isLight}
+            onContinueNow={isProvisioningStarting ? undefined : () => void continueNow()}
+          />
         ) : stage === "provisioning" ? (
           <CreationProgressView run={creationRun} provisioning={provisioningRun} isLight={isLight} />
         ) : isProvisioned ? (
@@ -1422,12 +1450,13 @@ function mapCreationSourceStatus(state: "pending" | "discovering" | "fetching" |
   return "reading";
 }
 
-function CreationProgressView({ run, provisioning, isLight, onContinueNow }: {
-  run: WorkspaceCreationRun | null; provisioning?: ProvisioningRun | null; isLight: boolean; onContinueNow?: () => void;
+function CreationProgressView({ run, provisioning, provisioningStarting = false, isLight, onContinueNow }: {
+  run: WorkspaceCreationRun | null; provisioning?: ProvisioningRun | null; provisioningStarting?: boolean; isLight: boolean; onContinueNow?: () => void;
 }) {
-  const display = presentWorkspaceCreationDisplay(run, provisioning);
-  const experience = presentWorkspaceCreationExperience({ run, provisioningRun: provisioning });
-  const progress = workspaceCreationProgress(run, provisioning);
+  const progressProvisioning = provisioning ?? (provisioningStarting ? { state: "pending" as const, steps: [] as const } : null);
+  const display = presentWorkspaceCreationDisplay(run, progressProvisioning);
+  const experience = presentWorkspaceCreationExperience({ run, provisioningRun: progressProvisioning });
+  const progress = workspaceCreationProgress(run, progressProvisioning);
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     const updateClock = () => setClockNow(Date.now());
@@ -1655,26 +1684,30 @@ function environmentStatusLabel(status: ProvisioningRun["environmentPreparation"
   return "Preparation is partial";
 }
 
-function workspaceCreationProgress(run: WorkspaceCreationRun | null, provisioning?: ProvisioningRun | null) {
+function workspaceCreationProgress(
+  run: WorkspaceCreationRun | null,
+  provisioning?: Pick<ProvisioningRun, "state"> & Partial<Pick<ProvisioningRun, "steps">> | null
+) {
   if (provisioning) {
     if (provisioning.state === "ready" || provisioning.state === "partial") return 100;
-    const total = Math.max(1, provisioning.steps.length);
-    const complete = provisioning.steps.filter((step) => step.status === "complete").length;
-    const active = provisioning.steps.some((step) => step.status === "active") ? 0.5 : 0;
-    return Math.min(99, Math.round(((complete + active) / total) * 100));
+    const total = provisioning.steps?.length ?? 0;
+    if (!total) return 66;
+    const complete = provisioning.steps?.filter((step) => step.status === "complete").length ?? 0;
+    const active = provisioning.steps?.some((step) => step.status === "active") ? 0.5 : 0;
+    return Math.min(99, 66 + Math.round(((complete + active) / total) * 34));
   }
   if (!run) return 0;
-  if (run.snapshot.state === "review-ready") return 100;
+  if (run.snapshot.state === "review-ready") return 66;
   const stageProgress: Record<string, number> = {
-    "context-staging": 12,
-    "source-ingestion": 24,
-    "structured-extraction": 38,
-    "intelligence-synthesis": 52,
-    "architect-runtime-preparation": 64,
-    "architect-reasoning": 72,
-    "architect-validation": 82,
-    "review-preparation": 94,
-    "workspace-composition": 94
+    "context-staging": 8,
+    "source-ingestion": 18,
+    "structured-extraction": 28,
+    "intelligence-synthesis": 38,
+    "architect-runtime-preparation": 48,
+    "architect-reasoning": 55,
+    "architect-validation": 60,
+    "workspace-composition": 63,
+    "review-preparation": 65
   };
   return stageProgress[run.snapshot.stage ?? ""] ?? 8;
 }
