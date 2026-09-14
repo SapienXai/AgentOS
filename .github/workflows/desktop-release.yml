@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Existing or new release tag, for example agentos-v0.7.7
+        description: Existing or new release tag, for example agentos-v0.8.0
         required: true
         type: string
 
