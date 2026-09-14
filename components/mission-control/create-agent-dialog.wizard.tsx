@@ -2,8 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Copy, LoaderCircle } from "lucide-react";
+import { Check, ChevronDown, Copy, LoaderCircle } from "lucide-react";
 
+import { AgentCreationProgress } from "@/components/mission-control/agent-creation-progress";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import {
@@ -51,9 +52,10 @@ import {
   type AgentDraft
 } from "@/components/mission-control/create-agent-dialog.utils";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
+import { PikoLoader } from "@/components/ui/piko-loader";
 
 type SurfaceTheme = "dark" | "light";
-type CreateAgentProgress = "idle" | "creating" | "syncing";
+type CreateAgentProgress = "idle" | "creating" | "syncing" | "complete";
 type QuickRolePreset = Exclude<AgentPreset, "custom">;
 
 type CreateAgentDialogProps = {
@@ -100,6 +102,7 @@ export function CreateAgentDialog({
   const isSubmittingRef = useRef(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const createSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createCompletionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const open = controlledOpen ?? uncontrolledOpen;
 
   const setDialogOpen = useCallback((nextOpen: boolean) => {
@@ -134,7 +137,7 @@ export function CreateAgentDialog({
       ? "Select a workspace under Advanced settings before creating the agent."
       : "Create a workspace before adding an agent."
     : automaticModelReadinessMessage;
-  const canCreate = !isSaving && !creationBlockedReason && Boolean(generatedAgentId && effectiveModelId);
+  const canCreate = createProgress === "idle" && !isSaving && !creationBlockedReason && Boolean(generatedAgentId && effectiveModelId);
   const createdAgentVisible = Boolean(createdAgentId && snapshot.agents.some((agent) => agent.id === createdAgentId));
   const modelSummaryLabel = draft.modelId.trim() || "Automatic model";
   const headerDescription = selectedWorkspace
@@ -174,6 +177,10 @@ export function CreateAgentDialog({
       clearTimeout(createSyncTimeoutRef.current);
       createSyncTimeoutRef.current = null;
     }
+    if (createCompletionTimeoutRef.current) {
+      clearTimeout(createCompletionTimeoutRef.current);
+      createCompletionTimeoutRef.current = null;
+    }
     isSubmittingRef.current = false;
   }, []);
 
@@ -201,6 +208,9 @@ export function CreateAgentDialog({
       if (createSyncTimeoutRef.current) {
         clearTimeout(createSyncTimeoutRef.current);
       }
+      if (createCompletionTimeoutRef.current) {
+        clearTimeout(createCompletionTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -219,12 +229,30 @@ export function CreateAgentDialog({
     toast.success("Agent created", {
       description: selectedWorkspace ? `Added to ${selectedWorkspace.name}.` : "Added to your AI workforce."
     });
-    setCreateProgress("idle");
-    setCreatedAgentId(null);
-    setCreatedAgentWarning(null);
     setIsSaving(false);
-    setDialogOpen(false);
+    setCreateProgress("complete");
   }, [createdAgentId, createdAgentVisible, createProgress, onAgentCreated, onAgentCreatedVisible, selectedWorkspace, setDialogOpen]);
+
+  useEffect(() => {
+    if (createProgress !== "complete" || !createdAgentId) {
+      return;
+    }
+
+    createCompletionTimeoutRef.current = setTimeout(() => {
+      createCompletionTimeoutRef.current = null;
+      setCreateProgress("idle");
+      setCreatedAgentId(null);
+      setCreatedAgentWarning(null);
+      setDialogOpen(false);
+    }, 900);
+
+    return () => {
+      if (createCompletionTimeoutRef.current) {
+        clearTimeout(createCompletionTimeoutRef.current);
+        createCompletionTimeoutRef.current = null;
+      }
+    };
+  }, [createdAgentId, createProgress, setDialogOpen]);
 
   useEffect(() => {
     if (createProgress !== "syncing" || !createdAgentId || createdAgentVisible) {
@@ -414,30 +442,52 @@ export function CreateAgentDialog({
   }
 
   const progressMessage = createProgress === "creating"
-    ? "Creating agent…"
+    ? "OpenClaw is provisioning the agent…"
     : createProgress === "syncing"
-      ? "Agent created. Waiting for it to appear…"
-      : null;
+      ? "Syncing the new agent into the workspace…"
+      : createProgress === "complete"
+        ? "Agent is live on the canvas."
+        : null;
+  const pikoTitle = createProgress === "syncing"
+    ? "Agent joining workspace"
+    : createProgress === "complete"
+      ? "Agent online"
+      : "Agent birth in progress";
+  const pikoDescription = createProgress === "syncing"
+    ? "Mission Control is waiting for the live snapshot."
+    : createProgress === "complete"
+      ? "The new specialist is ready for work."
+      : "OpenClaw is provisioning the new specialist.";
 
   return (
-    <MissionControlDialogShell
-      open={open}
-      onOpenChange={handleOpenChange}
-      surfaceTheme={surfaceTheme}
-      variant="quiet"
-      trigger={trigger}
-      title="Create agent"
-      description={headerDescription}
-      contentClassName="sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl"
-      headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
-      bodyClassName="px-5 py-5 sm:px-7 sm:py-6"
-      footerClassName="px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-7 sm:py-3"
-      disableOutsideDismiss
-      footer={
+    <>
+      <PikoLoader
+        open={isSaving}
+        title={pikoTitle}
+        description={pikoDescription}
+      />
+      <MissionControlDialogShell
+        open={open}
+        onOpenChange={handleOpenChange}
+        surfaceTheme={surfaceTheme}
+        variant="quiet"
+        trigger={trigger}
+        title="Create agent"
+        description={headerDescription}
+        contentClassName="sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl"
+        headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
+        bodyClassName="px-5 py-5 sm:px-7 sm:py-6"
+        footerClassName="px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-7 sm:py-3"
+        disableOutsideDismiss
+        footer={
         <div className="w-full space-y-3">
           {progressMessage ? (
             <div className={cn("flex items-center gap-2 text-xs", isLight ? "text-[#806f63]" : "text-slate-300")} role="status" aria-live="polite">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              {createProgress === "complete" ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+              ) : (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              )}
               <span>{progressMessage}</span>
             </div>
           ) : null}
@@ -466,7 +516,7 @@ export function CreateAgentDialog({
               variant="secondary"
               size="sm"
               onClick={() => handleOpenChange(false)}
-              disabled={isSaving}
+              disabled={isSaving || createProgress !== "idle"}
               className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 rounded-md px-4")}
             >
               Cancel
@@ -483,12 +533,29 @@ export function CreateAgentDialog({
                 "rounded-md"
               )}
             >
-              {createProgress === "creating" ? "Creating agent…" : createProgress === "syncing" ? "Agent created…" : "Create agent"}
+              {createProgress === "creating"
+                ? "Provisioning…"
+                : createProgress === "syncing"
+                  ? "Joining workspace…"
+                  : createProgress === "complete"
+                    ? "Agent online"
+                    : "Create agent"}
             </Button>
           </div>
         </div>
-      }
-    >
+        }
+      >
+      {createProgress !== "idle" ? (
+        <AgentCreationProgress
+          state={createProgress}
+          agentName={draft.name.trim() || currentPresetMeta.defaultName}
+          workspaceName={selectedWorkspace?.name ?? "Selected workspace"}
+          modelLabel={modelSummaryLabel}
+          hasChannelBindings={draft.channelIds.length > 0}
+          warning={createdAgentWarning}
+          surfaceTheme={surfaceTheme}
+        />
+      ) : (
       <div className="mx-auto w-full max-w-[620px] space-y-6">
         <section className="space-y-3" aria-labelledby="create-agent-role-baseline-heading">
           <div className="flex items-start justify-between gap-4">
@@ -742,7 +809,9 @@ export function CreateAgentDialog({
           ) : null}
         </section>
       </div>
-    </MissionControlDialogShell>
+      )}
+      </MissionControlDialogShell>
+    </>
   );
 }
 

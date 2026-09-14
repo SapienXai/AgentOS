@@ -7,6 +7,7 @@ import { BrainCircuit, ChevronDown, Cpu, KeyRound, Layers3, LocateFixed, Message
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
+import { AgentCreationCardOverlay, AgentCreationWarningNotice } from "@/components/mission-control/agent-creation-progress";
 import { resolveAgentProfileVisual, resolveAgentVisualTheme } from "@/components/mission-control/agent-profile-visuals";
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
 import {
@@ -761,6 +762,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   return (
     <div
       style={profileVisual.style as CSSProperties}
+      data-agent-creation-state={isPendingCreation ? "pending" : isCreationPulse ? "online" : undefined}
       className={cn(
         "agent-node dark group relative isolate w-[272px] overflow-visible rounded-[12px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
@@ -782,6 +784,12 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           <div className="absolute inset-0 rounded-[14px] border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_34px_rgba(34,211,238,0.28)]" />
           <div className="absolute inset-[10px] rounded-[8px] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.18),transparent_62%)] opacity-90" />
         </motion.div>
+      ) : null}
+
+      {isPendingCreation ? (
+        <AgentCreationCardOverlay phase="pending" agentName={agentLabel} modelLabel={modelBadgeLabel} />
+      ) : isCreationPulse ? (
+        <AgentCreationCardOverlay phase="online" agentName={agentLabel} modelLabel={modelBadgeLabel} />
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[12px]">
@@ -1230,9 +1238,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   {activeTaskCount} live task{activeTaskCount === 1 ? "" : "s"}
                 </Badge>
               ) : null}
+              {isCreationPulse ? (
+                <Badge variant="success" data-agent-status="live" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
+                  Agent online
+                </Badge>
+              ) : null}
               {creationWarning ? (
                 <Badge variant="warning" data-agent-status="warning" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
-                  Model warning
+                  Sync note
                 </Badge>
               ) : null}
               <button
@@ -1260,11 +1273,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
 
           <div className="mt-2.5">
-            {creationWarning ? (
-              <p className="mb-2 rounded-[14px] border border-amber-300/18 bg-amber-300/[0.07] px-2.5 py-2 text-[11px] leading-4 text-amber-100/90">
-                {creationWarning}
-              </p>
-            ) : null}
+            {creationWarning ? <AgentCreationWarningNotice message={creationWarning} /> : null}
             <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
           </div>
 
