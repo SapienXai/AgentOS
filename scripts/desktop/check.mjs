@@ -22,6 +22,10 @@ const config = JSON.parse(await readFile(configPath, "utf8"));
 const capabilities = JSON.parse(await readFile(capabilityPath, "utf8"));
 const packageMetadata = JSON.parse(await readFile(packagePath, "utf8"));
 const cargoManifest = await readFile(cargoPath, "utf8");
+const bootstrapHtml = await readFile(path.join(desktopRoot, "bootstrap", "index.html"), "utf8");
+if (!bootstrapHtml.includes("agentos-splash.mp4") || bootstrapHtml.includes("pikoLoader")) {
+  throw new Error("Desktop bootstrap must use the AgentOS splash video and must not reference Piko loader assets.");
+}
 const runtimeMetadata = JSON.parse(await readFile(path.join(runtimeRoot, "metadata.json"), "utf8"));
 const requiredPaths = [
   path.join(desktopRoot, "bootstrap", "index.html"),
