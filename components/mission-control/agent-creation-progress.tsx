@@ -315,7 +315,7 @@ export function AgentCreationCardOverlay({
         {!isOnline ? (
           <motion.div
             key="pending"
-            initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
+            initial={reduceMotion ? false : { opacity: 1, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, filter: "blur(6px)" }}
             transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
@@ -356,16 +356,16 @@ export function AgentCreationCardOverlay({
               </div>
             </div>
           </div>
-          <BirthInfoGrid reduceMotion={reduceMotion} />
-            <BirthStatusRail reduceMotion={reduceMotion} />
+          <BirthInfoGrid phase="pending" reduceMotion={reduceMotion} />
+          <BirthStatusRail phase="pending" reduceMotion={reduceMotion} />
           </motion.div>
         ) : (
           <motion.div
             key="online"
-            initial={reduceMotion ? false : { opacity: 0, scale: 0.84 }}
-            animate={reduceMotion ? { opacity: 1, scale: 1 } : { opacity: [0, 1, 0.96, 0.74, 0], scale: [0.84, 1.02, 1.03, 1.05, 1.08] }}
-            transition={{ duration: reduceMotion ? 0 : onlineDuration, times: [0, 0.12, 0.56, 0.86, 1], ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 flex items-center justify-center"
+            initial={reduceMotion ? false : { opacity: 1, scale: 0.96 }}
+            animate={reduceMotion ? { opacity: 1, scale: 1 } : { opacity: [1, 1, 0.98, 0], scale: [0.96, 1, 1.02, 1.08] }}
+            transition={{ duration: reduceMotion ? 0 : onlineDuration, times: [0, 0.08, 0.84, 1], ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0"
           >
           <motion.div
             aria-hidden="true"
@@ -381,33 +381,20 @@ export function AgentCreationCardOverlay({
             transition={{ duration: reduceMotion ? 0.2 : 1.45, delay: 0.08, ease: "easeOut" }}
             className="absolute h-24 w-24 rounded-full border border-cyan-100/75"
           />
-          <div className="relative flex flex-col items-center rounded-[18px] border border-emerald-100/25 bg-slate-950/68 px-4 py-3 text-center shadow-[0_18px_40px_rgba(2,6,23,0.32)] backdrop-blur-xl">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200/55 bg-emerald-300/18 text-emerald-100 shadow-[0_0_22px_rgba(52,211,153,0.3)]">
-              <Check className="h-5 w-5" strokeWidth={2.5} />
-            </span>
-            <span className="agent-node__birth-online-kicker mt-2 text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
-            <span className="agent-node__birth-online-title mt-0.5 max-w-[190px] truncate text-[12px] font-semibold text-white">{agentName} joined the workspace</span>
-            <div className="mt-2.5 w-full max-w-[190px] text-left">
-              <div className="agent-node__birth-online-meta flex items-center justify-between text-[8px] uppercase tracking-[0.14em] text-emerald-100/65">
-                <span>Birth sequence</span>
-                <span>Complete</span>
-              </div>
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                <motion.span
-                  aria-hidden="true"
-                  initial={{ width: 0 }}
-                  animate={{ width: "100%" }}
-                  transition={{ duration: reduceMotion ? 0 : onlineDuration * 0.72, delay: reduceMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
-                  className="block h-full rounded-full bg-[linear-gradient(90deg,#67e8f9,#34d399)]"
-                />
-              </div>
-              <div className="agent-node__birth-online-steps mt-1.5 flex items-center justify-between text-[8px] text-emerald-100/55">
-                <span>Profile</span>
-                <span>Runtime</span>
-                <span>Canvas</span>
-              </div>
+          <div className="absolute inset-x-4 top-[11%] flex justify-center">
+            <div className="relative flex w-full max-w-[218px] items-center gap-2.5 rounded-[16px] border border-emerald-100/25 bg-slate-950/68 px-3 py-2.5 text-left shadow-[0_18px_40px_rgba(2,6,23,0.32)] backdrop-blur-xl">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-emerald-200/55 bg-emerald-300/18 text-emerald-100 shadow-[0_0_22px_rgba(52,211,153,0.3)]">
+                <Check className="h-4 w-4" strokeWidth={2.5} />
+              </span>
+              <span className="min-w-0">
+                <span className="agent-node__birth-online-kicker block text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
+                <span className="agent-node__birth-online-title mt-0.5 block truncate text-[11px] font-semibold text-white">{agentName} joined the workspace</span>
+              </span>
+              <Sparkles className="ml-auto h-3.5 w-3.5 shrink-0 text-emerald-200/80" aria-hidden="true" />
             </div>
           </div>
+          <BirthInfoGrid phase="online" reduceMotion={reduceMotion} />
+          <BirthStatusRail phase="online" reduceMotion={reduceMotion} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -415,19 +402,20 @@ export function AgentCreationCardOverlay({
   );
 }
 
-function BirthInfoGrid({ reduceMotion }: { reduceMotion: boolean }) {
+function BirthInfoGrid({ phase, reduceMotion }: { phase: AgentCreationCardPhase; reduceMotion: boolean }) {
+  const isOnline = phase === "online";
   const steps = [
-    { label: "Identity", detail: "Profile drafted", state: "ready", Icon: BadgeCheck },
-    { label: "OpenClaw", detail: "Runtime forming", state: "active", Icon: Cpu },
-    { label: "Workspace", detail: "Joining workspace", state: "queued", Icon: FolderOpen },
-    { label: "Canvas", detail: "Reveal queued", state: "queued", Icon: Sparkles }
+    { label: "Identity", detail: isOnline ? "Profile live" : "Profile drafted", state: "ready", Icon: BadgeCheck },
+    { label: "OpenClaw", detail: isOnline ? "Runtime ready" : "Runtime forming", state: isOnline ? "ready" : "active", Icon: Cpu },
+    { label: "Workspace", detail: isOnline ? "Workspace joined" : "Joining workspace", state: isOnline ? "ready" : "queued", Icon: FolderOpen },
+    { label: "Canvas", detail: isOnline ? "Live on canvas" : "Reveal queued", state: isOnline ? "ready" : "queued", Icon: Sparkles }
   ] as const;
 
   return (
-    <div className="agent-node__birth-sequence absolute inset-x-3.5 top-[55%] rounded-[12px] border px-2.5 py-2">
+    <div className={cn("agent-node__birth-sequence absolute inset-x-3.5 rounded-[12px] border px-2.5 py-2", isOnline ? "top-[39%]" : "top-[55%]")}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="agent-node__birth-sequence-label text-[8px] font-semibold uppercase tracking-[0.2em]">Provisioning steps</span>
-        <span className="agent-node__birth-sequence-count rounded-full border px-1.5 py-0.5 text-[8px] font-semibold tabular-nums">2 / 4</span>
+        <span className="agent-node__birth-sequence-count rounded-full border px-1.5 py-0.5 text-[8px] font-semibold tabular-nums">{isOnline ? "4 / 4" : "2 / 4"}</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         {steps.map((step, index) => {
@@ -438,7 +426,7 @@ function BirthInfoGrid({ reduceMotion }: { reduceMotion: boolean }) {
           return (
             <motion.div
               key={step.label}
-              initial={reduceMotion ? false : { opacity: 0, y: 5, scale: 0.98 }}
+              initial={reduceMotion ? false : { opacity: 0.72, y: 5, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: reduceMotion ? 0 : 0.24, delay: reduceMotion ? 0 : index * 0.06, ease: [0.22, 1, 0.36, 1] }}
               className={cn("agent-node__birth-info-card min-w-0 rounded-[9px] border px-2 py-1.5", stateClassName)}
@@ -476,11 +464,12 @@ function BirthInfoGrid({ reduceMotion }: { reduceMotion: boolean }) {
   );
 }
 
-function BirthStatusRail({ reduceMotion }: { reduceMotion: boolean }) {
+function BirthStatusRail({ phase, reduceMotion }: { phase: AgentCreationCardPhase; reduceMotion: boolean }) {
+  const isOnline = phase === "online";
   const steps = [
     { label: "Identity", state: "ready" },
-    { label: "Runtime", state: "active" },
-    { label: "Canvas", state: "queued" }
+    { label: "Runtime", state: isOnline ? "ready" : "active" },
+    { label: "Canvas", state: isOnline ? "ready" : "queued" }
   ] as const;
 
   return (

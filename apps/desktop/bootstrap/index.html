@@ -9,27 +9,29 @@
       body { min-height: 100vh; margin: 0; overflow: hidden; background: #05070b; }
       main { width: 100%; height: 100vh; min-height: 100vh; overflow: hidden; }
       .crt-screen { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: #080b10; }
-      .crt-screen::before { position: absolute; z-index: 2; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, .38) 0 .55px, transparent .75px), repeating-linear-gradient(0deg, rgba(255, 255, 255, .1) 0 1px, transparent 1px 4px); background-position: 0 0, 0 0; background-size: 4px 4px, 100% 4px; content: ""; mix-blend-mode: screen; opacity: .25; pointer-events: none; }
+      .crt-screen::before { position: absolute; z-index: 2; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, .44) 0 .8px, transparent 1.15px), repeating-linear-gradient(0deg, rgba(255, 255, 255, .1) 0 1px, transparent 1px 4px); background-position: 0 0, 0 0; background-size: 4.5px 4.5px, 100% 4px; content: ""; mix-blend-mode: screen; opacity: .32; pointer-events: none; }
       .crt-screen::after { position: absolute; z-index: 3; inset: -3%; background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, .1) 72%, rgba(0, 0, 0, .56) 100%), linear-gradient(90deg, rgba(255, 54, 93, .08), transparent 17%, transparent 83%, rgba(49, 210, 255, .09)); content: ""; mix-blend-mode: multiply; pointer-events: none; }
       .splash-video, .splash-poster { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
       .splash-video { filter: saturate(1.1) contrast(1.07) brightness(.94); transform: scale(1.01); }
       .crt-bloom { position: absolute; z-index: 0; inset: 10%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 106, 64, .32), rgba(115, 73, 152, .16) 42%, transparent 72%); filter: blur(34px); opacity: .65; pointer-events: none; }
-      .glyph-field { position: absolute; z-index: 4; inset: -12%; overflow: hidden; opacity: 0; animation: glyph-field-life 5.2s cubic-bezier(.22, .7, .2, 1) forwards; pointer-events: none; }
-      .glyph-track { position: absolute; top: var(--top); left: var(--left); display: flex; align-items: center; gap: var(--gap); width: max-content; color: rgba(255, 255, 255, var(--opacity)); direction: ltr; font-family: "SF Mono", "JetBrains Mono", "IBM Plex Mono", monospace; font-size: var(--size); font-weight: 500; letter-spacing: .16em; line-height: 1; text-shadow: 0 0 8px rgba(255, 255, 255, .55), 0 0 24px rgba(196, 218, 255, .24); filter: blur(var(--blur)); transform: rotate(var(--rotate)); animation: glyph-flow var(--duration) linear var(--delay) infinite; }
-      .glyph-track span { display: inline-block; min-width: 2.2em; }
-      .brand-lockup { position: absolute; z-index: 5; top: 50%; left: 50%; display: inline-flex; align-items: center; gap: clamp(10px, 2vw, 16px); opacity: 0; transform: translate(-50%, -50%) scale(.82); filter: blur(10px); animation: brand-reveal 5.2s cubic-bezier(.2, .72, .16, 1) forwards; pointer-events: none; }
-      .brand-lockup::before { position: absolute; z-index: -1; inset: -30px -48px; border-radius: 999px; background: radial-gradient(ellipse, rgba(255, 255, 255, .22), rgba(196, 218, 255, .08) 42%, transparent 72%); filter: blur(18px); content: ""; }
-      .brand-icon { width: clamp(34px, 8vw, 52px); height: clamp(34px, 8vw, 52px); object-fit: contain; filter: drop-shadow(0 0 7px rgba(255, 255, 255, .62)) drop-shadow(0 0 20px rgba(255, 55, 95, .3)); }
-      .brand-wordmark { display: inline-flex; color: #fff; font-size: clamp(25px, 6vw, 40px); font-weight: 650; letter-spacing: -.055em; line-height: 1; text-shadow: 0 0 7px rgba(255, 255, 255, .92), 0 0 24px rgba(255, 255, 255, .42); }
-      .brand-wordmark .accent { color: #ff5275; text-shadow: 0 0 7px rgba(255, 255, 255, .78), 0 0 22px rgba(255, 70, 105, .72); }
+      .glyph-field { position: absolute; z-index: 4; inset: -12%; overflow: hidden; perspective: 700px; opacity: 0; animation: glyph-field-life 5.2s cubic-bezier(.22, .7, .2, 1) forwards; pointer-events: none; }
+      .glyph-pop { position: absolute; top: var(--y); left: var(--x); display: block; width: max-content; max-width: 28vw; color: rgba(255, 255, 255, var(--opacity)); direction: ltr; font-family: "SF Mono", "JetBrains Mono", "IBM Plex Mono", monospace; font-size: var(--size); font-weight: 500; letter-spacing: .12em; line-height: 1; opacity: 0; text-shadow: 0 0 8px rgba(255, 255, 255, .65), 0 0 24px rgba(196, 218, 255, .28); transform: translate3d(-50%, -50%, -120px) scale(.3) rotate(var(--rotate)); transform-origin: center; transform-style: preserve-3d; filter: blur(8px); will-change: transform, opacity, filter; }
+      .brand-lockup { position: absolute; z-index: 5; top: 50%; left: 50%; display: inline-flex; align-items: center; gap: clamp(10px, 2vw, 16px); padding: clamp(9px, 1.6vw, 12px) clamp(14px, 2.8vw, 22px); border: 1px solid rgba(255, 255, 255, .27); border-radius: 999px; background: linear-gradient(135deg, rgba(255, 255, 255, .24), rgba(255, 255, 255, .09) 46%, rgba(255, 255, 255, .16)); box-shadow: 0 18px 38px rgba(0, 0, 0, .4), 0 5px 14px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 -1px 0 rgba(0, 0, 0, .28); -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2); isolation: isolate; overflow: hidden; opacity: 0; transform: translate(-50%, -50%) scale(.82); filter: blur(10px); animation: brand-reveal 5.2s cubic-bezier(.2, .72, .16, 1) forwards; pointer-events: none; }
+      .brand-lockup::before { position: absolute; z-index: 2; inset: 1px; border-radius: inherit; background: linear-gradient(115deg, transparent 28%, rgba(255, 255, 255, .42) 46%, rgba(255, 255, 255, .12) 52%, transparent 68%); content: ""; opacity: 0; pointer-events: none; transform: translateX(-135%) skewX(-14deg); animation: brand-shine 5.2s cubic-bezier(.18, .72, .2, 1) forwards; }
+      .brand-lockup::after { position: absolute; z-index: 0; inset: 1px; border-radius: inherit; background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent 38%, rgba(0, 0, 0, .08)); content: ""; pointer-events: none; }
+      .brand-icon { position: relative; z-index: 1; width: clamp(34px, 8vw, 52px); height: clamp(34px, 8vw, 52px); box-sizing: border-box; padding: 4px; border: 1px solid rgba(255, 255, 255, .34); border-radius: 14px; background: linear-gradient(145deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .08)); box-shadow: 0 8px 16px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .48); object-fit: contain; filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .42)); }
+      .brand-wordmark { position: relative; z-index: 1; display: inline-flex; font-size: clamp(25px, 6vw, 40px); font-weight: 650; letter-spacing: -.055em; line-height: 1; text-shadow: 0 2px 2px rgba(0, 0, 0, .56), 0 5px 12px rgba(0, 0, 0, .32); }
+      .brand-wordmark > span { display: inline-block; color: #fff; -webkit-text-stroke: .25px rgba(255, 255, 255, .3); }
+      .brand-wordmark .accent { color: #ff5275; -webkit-text-stroke: .25px rgba(255, 186, 201, .3); text-shadow: 0 2px 2px rgba(0, 0, 0, .5), 0 5px 12px rgba(0, 0, 0, .28); }
       .crt-noise { position: absolute; z-index: 6; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, .023) 3px 4px); mix-blend-mode: overlay; opacity: .4; animation: crt-flicker 7s steps(8, end) infinite; pointer-events: none; }
       [data-error] { position: relative; z-index: 7; width: min(28rem, calc(100vw - 3rem)); padding: 2rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: 1rem; background: rgba(15, 18, 30, .92); box-shadow: 0 24px 80px rgba(0, 0, 0, .35); color: #fda4af; line-height: 1.5; }
       .hidden { display: none !important; }
       @keyframes crt-flicker { 0%, 100% { opacity: .4; } 48% { opacity: .3; } 52% { opacity: .44; } }
       @keyframes glyph-field-life { 0%, 3% { opacity: 0; } 10% { opacity: .88; } 25% { opacity: .68; } 54% { opacity: .62; } 68% { opacity: .28; } 79%, 100% { opacity: 0; } }
-      @keyframes glyph-flow { from { transform: translate3d(-4%, 0, 0) rotate(var(--rotate)); } to { transform: translate3d(5%, 0, 0) rotate(var(--rotate)); } }
+      @keyframes glyph-pop { 0% { opacity: 0; transform: translate3d(-50%, -50%, -120px) scale(.3) rotate(var(--rotate)); filter: blur(8px); } 18% { opacity: calc(var(--opacity) * .45); transform: translate3d(-50%, -50%, -40px) scale(.62) rotate(var(--rotate)); filter: blur(3px); } 34% { opacity: var(--opacity); transform: translate3d(-50%, -50%, 10px) scale(.92) rotate(var(--rotate)); filter: blur(0); } 58% { opacity: var(--opacity); transform: translate3d(-50%, -50%, 32px) scale(1) rotate(var(--rotate)); filter: blur(0); } 78% { opacity: calc(var(--opacity) * .62); transform: translate3d(-50%, -50%, 90px) scale(1.13) rotate(var(--rotate)); filter: blur(1.4px); } 100% { opacity: 0; transform: translate3d(-50%, -50%, 170px) scale(1.44) rotate(var(--rotate)); filter: blur(7px); } }
+      @keyframes brand-shine { 0%, 54% { opacity: 0; transform: translateX(-135%) skewX(-14deg); } 66% { opacity: .18; } 76% { opacity: .72; transform: translateX(5%) skewX(-14deg); } 88% { opacity: .08; transform: translateX(145%) skewX(-14deg); } 100% { opacity: 0; transform: translateX(145%) skewX(-14deg); } }
       @keyframes brand-reveal { 0%, 58% { opacity: 0; transform: translate(-50%, -50%) scale(.82); filter: blur(10px); } 70% { opacity: .18; transform: translate(-50%, -50%) scale(.94); filter: blur(3px); } 82% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); } }
-      @media (prefers-reduced-motion: reduce) { .glyph-field { opacity: .16; animation: none; } .glyph-track { animation: none; } .brand-lockup { opacity: 1; transform: translate(-50%, -50%); filter: none; animation: none; } .crt-noise { animation: none; } }
+      @media (prefers-reduced-motion: reduce) { .glyph-field { opacity: .16; animation: none; } .glyph-pop { opacity: .12; transform: translate(-50%, -50%); filter: none; } .brand-lockup { opacity: 1; transform: translate(-50%, -50%); filter: none; animation: none; } .brand-lockup::before { opacity: .14; transform: translateX(-38%) skewX(-14deg); animation: none; } .crt-noise { animation: none; } }
     </style>
   </head>
   <body>
@@ -58,42 +60,50 @@
         "СЕТЬ", "ПРОТОКОЛ", "КОНТУР", "ПАМЯТЬ", "نظام", "شبكة", "ذاكرة", "ممر",
         "NŒUD", "LIAISON", "ÉTAT", "VEILLE", "ÆTHER", "SIGNAL", "⟟⧫⟐", "∆-07", "1010", "//", "::", "⟁"
       ];
-      const glyphTrackPlans = [
-        ["5%", "-12%", "clamp(9px, 1.15vw, 13px)", ".72", "1.45rem", "16s", "-8s", "-4deg", "0px"],
-        ["14%", "-20%", "clamp(10px, 1.4vw, 15px)", ".46", "2rem", "21s", "-14s", "3deg", ".2px"],
-        ["23%", "-8%", "clamp(8px, 1vw, 12px)", ".64", "1.2rem", "14s", "-4s", "-2deg", "0px"],
-        ["32%", "-24%", "clamp(11px, 1.65vw, 17px)", ".34", "2.4rem", "25s", "-20s", "4deg", ".3px"],
-        ["41%", "-10%", "clamp(9px, 1.2vw, 14px)", ".56", "1.7rem", "18s", "-11s", "-3deg", "0px"],
-        ["50%", "-18%", "clamp(10px, 1.4vw, 15px)", ".4", "2.8rem", "23s", "-3s", "2deg", ".25px"],
-        ["59%", "-5%", "clamp(8px, 1vw, 12px)", ".66", "1.25rem", "15s", "-10s", "-4deg", "0px"],
-        ["68%", "-22%", "clamp(10px, 1.3vw, 14px)", ".48", "2.1rem", "20s", "-17s", "3deg", ".2px"],
-        ["77%", "-12%", "clamp(9px, 1.15vw, 13px)", ".7", "1.5rem", "17s", "-6s", "-2deg", "0px"],
-        ["87%", "-26%", "clamp(8px, 1vw, 12px)", ".5", "2.4rem", "24s", "-13s", "4deg", ".25px"]
+      const glyphSpots = [
+        [10, 14], [29, 17], [51, 13], [75, 16], [91, 22],
+        [7, 33], [25, 29], [76, 34], [93, 40],
+        [11, 58], [27, 67], [77, 61], [91, 69],
+        [8, 84], [30, 86], [51, 84], [75, 86], [92, 81]
       ];
-      const glyphNodes = [];
-      glyphTrackPlans.forEach((plan, row) => {
-        const track = document.createElement("div");
-        track.className = "glyph-track";
-        ["--top", "--left", "--size", "--opacity", "--gap", "--duration", "--delay", "--rotate", "--blur"].forEach((property, index) => {
-          track.style.setProperty(property, plan[index]);
-        });
-        for (let index = 0; index < 18; index += 1) {
-          const token = document.createElement("span");
-          const offset = (row * 13 + index * 7) % glyphVocabulary.length;
-          token.textContent = glyphVocabulary[offset];
-          glyphNodes.push({ node: token, offset });
-          track.append(token);
-        }
-        glyphField.append(track);
-      });
-      const morphGlyphs = () => {
-        const tick = Math.floor(performance.now() / 460);
-        glyphNodes.forEach(({ node, offset }) => {
-          node.textContent = glyphVocabulary[(tick + offset) % glyphVocabulary.length];
-        });
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const glyphStartedAt = performance.now();
+      const randomBetween = (min, max) => min + Math.random() * (max - min);
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const animateGlyph = (node, index) => {
+        const [baseX, baseY] = glyphSpots[index % glyphSpots.length];
+        const x = clamp(baseX + randomBetween(-4.5, 4.5), 4, 96);
+        const y = clamp(baseY + randomBetween(-4, 4), 5, 95);
+        const duration = randomBetween(3600, 4900);
+        node.textContent = glyphVocabulary[Math.floor(Math.random() * glyphVocabulary.length)];
+        node.style.setProperty("--x", `${x}%`);
+        node.style.setProperty("--y", `${y}%`);
+        node.style.setProperty("--size", `${randomBetween(10, 20).toFixed(1)}px`);
+        node.style.setProperty("--opacity", randomBetween(.3, .65).toFixed(2));
+        node.style.setProperty("--rotate", `${randomBetween(-8, 8).toFixed(1)}deg`);
+        node.style.setProperty("--duration", `${duration.toFixed(0)}ms`);
+        node.style.setProperty("--delay", `${-randomBetween(250, 2100).toFixed(0)}ms`);
+        node.style.animation = "none";
+        void node.offsetWidth;
+        node.style.animation = "glyph-pop var(--duration) cubic-bezier(.2, .75, .16, 1) var(--delay) both";
       };
-      morphGlyphs();
-      window.setInterval(morphGlyphs, 460);
+      glyphSpots.forEach((_, index) => {
+        const node = document.createElement("span");
+        node.className = "glyph-pop";
+        glyphField.append(node);
+        if (reduceMotion) {
+          animateGlyph(node, index);
+          node.style.animation = "none";
+        } else {
+          node.addEventListener("animationend", () => {
+            if (performance.now() - glyphStartedAt >= 4100) return;
+            window.setTimeout(() => {
+              if (performance.now() - glyphStartedAt < 4100) animateGlyph(node, index + 1);
+            }, randomBetween(450, 950));
+          });
+          window.setTimeout(() => animateGlyph(node, index), index * 65);
+        }
+      });
       const showFallback = () => {
         video.classList.add("hidden");
         poster.classList.remove("hidden");
