@@ -476,7 +476,10 @@ export function CreateAgentDialog({
         description={headerDescription}
         contentClassName="sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl"
         headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
-        bodyClassName="px-5 py-5 sm:px-7 sm:py-6"
+        bodyClassName={cn(
+          "px-5 py-5 sm:px-7 sm:py-6",
+          createProgress !== "idle" && "!overflow-hidden flex min-h-0 items-center px-4 py-3 sm:px-6 sm:py-4"
+        )}
         footerClassName="px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-7 sm:py-3"
         disableOutsideDismiss
         footer={
