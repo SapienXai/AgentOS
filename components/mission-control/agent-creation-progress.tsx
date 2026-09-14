@@ -311,7 +311,7 @@ export function AgentCreationCardOverlay({
         isOnline ? "agent-node__birth-layer--online" : "agent-node__birth-layer--pending"
       )}
     >
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="sync" initial={false}>
         {!isOnline ? (
           <motion.div
             key="pending"
