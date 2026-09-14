@@ -2030,6 +2030,10 @@ html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute
   color: rgb(226 232 240 / 0.75);
 }
 
+.agent-node__birth-rail-track {
+  background: rgb(148 163 184 / 0.12);
+}
+
 .agent-node__birth-icon {
   color: rgb(207 250 254 / 0.95);
 }
@@ -2056,6 +2060,22 @@ html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute
 
 .agent-node__birth-online-kicker {
   color: rgb(167 243 208 / 0.84);
+}
+
+.agent-node__birth-online-card {
+  border-color: rgb(167 243 208 / 0.25);
+  background: rgb(4 12 18 / 0.78);
+  box-shadow: 0 18px 40px rgb(2 6 23 / 0.32);
+}
+
+.agent-node__birth-online-icon {
+  border-color: rgb(167 243 208 / 0.55);
+  background: rgb(52 211 153 / 0.18);
+  color: rgb(209 250 229);
+}
+
+.agent-node__birth-online-sparkle {
+  color: rgb(167 243 208 / 0.8);
 }
 
 .agent-node__birth-online-title {
@@ -2214,6 +2234,10 @@ html:not(.dark) .agent-node__birth-rail-step {
   color: rgb(63 51 43 / 0.78);
 }
 
+html:not(.dark) .agent-node__birth-rail-track {
+  background: rgb(133 92 53 / 0.12);
+}
+
 html:not(.dark) .agent-node__birth-icon {
   border-color: rgb(8 145 178 / 0.22);
   background: rgb(8 145 178 / 0.08);
@@ -2244,6 +2268,22 @@ html:not(.dark) .agent-node__birth-provider {
 
 html:not(.dark) .agent-node__birth-online-kicker {
   color: rgb(4 120 87 / 0.86);
+}
+
+html:not(.dark) .agent-node__birth-online-card {
+  border-color: rgb(16 185 129 / 0.24);
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.96), rgb(236 253 245 / 0.92));
+  box-shadow: 0 18px 40px rgb(15 23 42 / 0.14);
+}
+
+html:not(.dark) .agent-node__birth-online-icon {
+  border-color: rgb(16 185 129 / 0.35);
+  background: rgb(209 250 229 / 0.92);
+  color: rgb(4 120 87);
+}
+
+html:not(.dark) .agent-node__birth-online-sparkle {
+  color: rgb(4 120 87 / 0.78);
 }
 
 html:not(.dark) .agent-node__birth-online-title {

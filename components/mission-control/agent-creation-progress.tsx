@@ -372,25 +372,25 @@ export function AgentCreationCardOverlay({
             initial={{ scale: 0.52, opacity: 0.1 }}
             animate={reduceMotion ? { scale: 1, opacity: 0 } : { scale: [0.52, 1.24, 1.52], opacity: [0.5, 0.2, 0] }}
             transition={{ duration: reduceMotion ? 0.2 : 1.9, ease: "easeOut" }}
-            className="absolute h-40 w-40 rounded-full border border-emerald-200/70 shadow-[0_0_44px_rgba(52,211,153,0.3)]"
+            className="absolute left-1/2 top-[23%] h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-200/70 shadow-[0_0_44px_rgba(52,211,153,0.3)]"
           />
           <motion.div
             aria-hidden="true"
             initial={{ scale: 0.72, opacity: 0.1 }}
             animate={reduceMotion ? { scale: 1, opacity: 0 } : { scale: [0.72, 1.08, 1.24], opacity: [0.65, 0.24, 0] }}
             transition={{ duration: reduceMotion ? 0.2 : 1.45, delay: 0.08, ease: "easeOut" }}
-            className="absolute h-24 w-24 rounded-full border border-cyan-100/75"
+            className="absolute left-1/2 top-[23%] h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100/75"
           />
           <div className="absolute inset-x-4 top-[11%] flex justify-center">
-            <div className="relative flex w-full max-w-[218px] items-center gap-2.5 rounded-[16px] border border-emerald-100/25 bg-slate-950/68 px-3 py-2.5 text-left shadow-[0_18px_40px_rgba(2,6,23,0.32)] backdrop-blur-xl">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-emerald-200/55 bg-emerald-300/18 text-emerald-100 shadow-[0_0_22px_rgba(52,211,153,0.3)]">
+            <div className="agent-node__birth-online-card relative flex w-full max-w-[218px] items-center gap-2.5 rounded-[16px] border px-3 py-2.5 text-left backdrop-blur-xl">
+              <span className="agent-node__birth-online-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border shadow-[0_0_22px_rgba(52,211,153,0.3)]">
                 <Check className="h-4 w-4" strokeWidth={2.5} />
               </span>
               <span className="min-w-0">
                 <span className="agent-node__birth-online-kicker block text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">Agent online</span>
                 <span className="agent-node__birth-online-title mt-0.5 block truncate text-[11px] font-semibold text-white">{agentName} joined the workspace</span>
               </span>
-              <Sparkles className="ml-auto h-3.5 w-3.5 shrink-0 text-emerald-200/80" aria-hidden="true" />
+              <Sparkles className="agent-node__birth-online-sparkle ml-auto h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             </div>
           </div>
           <BirthInfoGrid phase="online" reduceMotion={reduceMotion} />
@@ -490,7 +490,7 @@ function BirthStatusRail({ phase, reduceMotion }: { phase: AgentCreationCardPhas
               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", step.state === "ready" ? "bg-emerald-300" : step.state === "active" ? "bg-cyan-200 shadow-[0_0_8px_rgba(103,232,249,0.75)]" : "bg-slate-500")} />
               <span className="agent-node__birth-rail-step truncate text-[8px]">{step.label}</span>
             </div>
-            <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/10">
+            <div className="agent-node__birth-rail-track mt-1 h-0.5 overflow-hidden rounded-full">
               <motion.span
                 aria-hidden="true"
                 initial={{ width: 0 }}
