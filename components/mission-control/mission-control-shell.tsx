@@ -4373,6 +4373,7 @@ export function MissionControlShell({
               openWorkspaceOnCanvas(workspaceId);
             }}
             onRefresh={refresh}
+            onForceRefresh={refreshSnapshot}
             onRunModelRefresh={runModelRefresh}
             onRunModelDiscover={runModelDiscover}
             onRunModelSetDefault={runModelSetDefault}
@@ -4479,6 +4480,7 @@ export function MissionControlShell({
               openWorkspaceOnCanvas(workspaceId);
             }}
             onRefresh={refresh}
+            onForceRefresh={refreshSnapshot}
             onRunModelRefresh={runModelRefresh}
             onRunModelDiscover={runModelDiscover}
             onRunModelSetDefault={runModelSetDefault}

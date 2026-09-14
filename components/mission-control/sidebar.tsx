@@ -55,6 +55,12 @@ import {
   type PendingAgentProjection,
   type PendingWorkspaceMenuEntry
 } from "@/components/mission-control/pending-agent-projection";
+import {
+  loadPendingWorkspaceDeletions,
+  pendingWorkspaceDeletionStorageKey,
+  serializePendingWorkspaceDeletions,
+  type PendingWorkspaceDeletion
+} from "@/components/mission-control/workspace-deletion-projection";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
@@ -161,6 +167,7 @@ type MissionSidebarProps = {
   onToggleTheme: () => void;
   onSelectWorkspace: (workspaceId: string | null) => void;
   onRefresh: () => Promise<void>;
+  onForceRefresh?: () => Promise<MissionControlSnapshot>;
   onRunModelRefresh: () => void;
   onRunModelDiscover: () => void;
   onRunModelSetDefault: (modelId?: string) => void;
@@ -259,6 +266,7 @@ export function MissionSidebar({
   onToggleTheme,
   onSelectWorkspace,
   onRefresh,
+  onForceRefresh,
   onOpenCreateAgent,
   onOpenWorkspaceCreate,
   onEditWorkspace,
@@ -639,6 +647,8 @@ export function MissionSidebar({
                 onOpenWorkspaceCreate={onOpenWorkspaceCreate}
                 onEditWorkspace={onEditWorkspace}
                 onRefresh={onRefresh}
+                onForceRefresh={onForceRefresh}
+                onSnapshotChange={onSnapshotChange}
               />
 
               <SidebarCreateAgentAction
@@ -1361,7 +1371,9 @@ function WorkspaceSwitcher({
   onSelectWorkspace,
   onOpenWorkspaceCreate,
   onEditWorkspace,
-  onRefresh
+  onRefresh,
+  onForceRefresh,
+  onSnapshotChange
 }: {
   activeWorkspaceId: string | null;
   snapshot: MissionControlSnapshot;
@@ -1376,6 +1388,8 @@ function WorkspaceSwitcher({
   onOpenWorkspaceCreate: () => void;
   onEditWorkspace: (workspaceId: string) => void;
   onRefresh: () => Promise<void>;
+  onForceRefresh?: () => Promise<MissionControlSnapshot>;
+  onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [workspaceActionsOpenForId, setWorkspaceActionsOpenForId] = useState<string | null>(null);
@@ -1383,8 +1397,89 @@ function WorkspaceSwitcher({
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
+  const [pendingWorkspaceDeletions, setPendingWorkspaceDeletions] = useState<PendingWorkspaceDeletion[]>(
+    loadPendingWorkspaceDeletions
+  );
   const deleteImpact = deleteTarget ? getWorkspaceDeleteImpact(snapshot, deleteTarget) : null;
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const deletionRefreshInFlightRef = useRef(false);
+
+  const pendingWorkspaceDeletionIds = useMemo(
+    () => new Set(pendingWorkspaceDeletions.map((entry) => entry.id)),
+    [pendingWorkspaceDeletions]
+  );
+
+  useEffect(() => {
+    if (typeof globalThis.localStorage === "undefined") {
+      return;
+    }
+
+    try {
+      if (pendingWorkspaceDeletions.length === 0) {
+        globalThis.localStorage.removeItem(pendingWorkspaceDeletionStorageKey);
+      } else {
+        globalThis.localStorage.setItem(
+          pendingWorkspaceDeletionStorageKey,
+          serializePendingWorkspaceDeletions(pendingWorkspaceDeletions)
+        );
+      }
+    } catch {
+      // Local storage is only a recovery hint; the live OpenClaw snapshot remains authoritative.
+    }
+  }, [pendingWorkspaceDeletions]);
+
+  const reconcilePendingWorkspaceDeletions = useCallback(
+    async (entries = pendingWorkspaceDeletions) => {
+      if (!onForceRefresh || entries.length === 0 || deletionRefreshInFlightRef.current) {
+        return null;
+      }
+
+      deletionRefreshInFlightRef.current = true;
+
+      try {
+        const nextSnapshot = await onForceRefresh();
+        const liveWorkspaceIds = new Set(nextSnapshot.workspaces.map((entry) => entry.id));
+        const confirmedIds = new Set(entries.filter((entry) => !liveWorkspaceIds.has(entry.id)).map((entry) => entry.id));
+
+        if (confirmedIds.size > 0) {
+          setPendingWorkspaceDeletions((current) => current.filter((entry) => !confirmedIds.has(entry.id)));
+          setDeletingWorkspaceId((current) => (current && confirmedIds.has(current) ? null : current));
+          onSnapshotChange?.((currentSnapshot) => ({
+            ...currentSnapshot,
+            workspaces: currentSnapshot.workspaces.filter((entry) => !confirmedIds.has(entry.id))
+          }));
+        }
+
+        return nextSnapshot;
+      } finally {
+        deletionRefreshInFlightRef.current = false;
+      }
+    },
+    [onForceRefresh, onSnapshotChange, pendingWorkspaceDeletions]
+  );
+
+  useEffect(() => {
+    if (pendingWorkspaceDeletions.length === 0 || !onForceRefresh) {
+      return;
+    }
+
+    let cancelled = false;
+    const reconcile = () => {
+      if (cancelled) {
+        return;
+      }
+
+      void reconcilePendingWorkspaceDeletions().catch(() => {});
+    };
+
+    reconcile();
+    const intervalId = window.setInterval(reconcile, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [onForceRefresh, pendingWorkspaceDeletions.length, reconcilePendingWorkspaceDeletions]);
 
   useEffect(() => {
     if (deletingWorkspaceId && !snapshot.workspaces.some((entry) => entry.id === deletingWorkspaceId)) {
@@ -1448,9 +1543,19 @@ function WorkspaceSwitcher({
     const workspaceToDelete = deleteTarget;
     setIsDeletingWorkspace(true);
     setDeletingWorkspaceId(workspaceToDelete.id);
+    const pendingDeletion = {
+      id: workspaceToDelete.id,
+      name: workspaceToDelete.name,
+      requestedAt: Date.now()
+    } satisfies PendingWorkspaceDeletion;
+    setPendingWorkspaceDeletions((current) => [
+      pendingDeletion,
+      ...current.filter((entry) => entry.id !== pendingDeletion.id)
+    ]);
     setDeleteTarget(null);
     setDeleteConfirmText("");
     setOpen(true);
+    let deletionRequestSucceeded = false;
 
     try {
       const response = await fetch("/api/workspaces", {
@@ -1468,6 +1573,8 @@ function WorkspaceSwitcher({
         throw new Error(result.error || "OpenClaw could not delete the workspace.");
       }
 
+      deletionRequestSucceeded = true;
+
       const remainingWorkspaces = snapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id);
       const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === workspaceToDelete.id);
       const nextWorkspace =
@@ -1479,15 +1586,40 @@ function WorkspaceSwitcher({
         onSelectWorkspace(nextWorkspace?.id ?? null);
       }
 
-      toast.success("Workspace deleted.", {
-        description: workspaceToDelete.name
+      onSnapshotChange?.((currentSnapshot) => ({
+        ...currentSnapshot,
+        workspaces: currentSnapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id)
+      }));
+
+      const refreshedSnapshot = onForceRefresh
+        ? await reconcilePendingWorkspaceDeletions([pendingDeletion])
+        : (await onRefresh(), null);
+      const deletionConfirmed = Boolean(
+        refreshedSnapshot && !refreshedSnapshot.workspaces.some((entry) => entry.id === workspaceToDelete.id)
+      );
+
+      toast.success(deletionConfirmed ? "Workspace deleted." : "Workspace deletion is syncing.", {
+        description: deletionConfirmed
+          ? workspaceToDelete.name
+          : "OpenClaw is confirming removal from the live workspace registry."
       });
-      void onRefresh().catch(() => {});
+
+      if (!deletionConfirmed) {
+        setDeletingWorkspaceId(null);
+      }
     } catch (error) {
-      setDeletingWorkspaceId(null);
-      toast.error("Workspace deletion failed.", {
-        description: error instanceof Error ? error.message : "Unknown workspace error."
-      });
+      if (deletionRequestSucceeded) {
+        setDeletingWorkspaceId(null);
+        toast.success("Workspace deletion is syncing.", {
+          description: "The deletion request completed; OpenClaw live-state confirmation is still pending."
+        });
+      } else {
+        setDeletingWorkspaceId(null);
+        setPendingWorkspaceDeletions((current) => current.filter((entry) => entry.id !== workspaceToDelete.id));
+        toast.error("Workspace deletion failed.", {
+          description: error instanceof Error ? error.message : "Unknown workspace error."
+        });
+      }
     } finally {
       setIsDeletingWorkspace(false);
     }
@@ -1559,45 +1691,49 @@ function WorkspaceSwitcher({
 
             <div className="workspace-menu-scroll mt-1 flex max-h-[356px] flex-col gap-1 overflow-y-auto pr-1">
               <AnimatePresence initial={false}>
-              {workspaceMenuEntries.map((entry, index) => (
-                <motion.div
-                  key={entry.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={entry.id === deletingWorkspaceId ? { opacity: [1, 0.58, 1], x: [0, 2, 0] } : { opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, height: 0, y: -4 }}
-                  transition={entry.id === deletingWorkspaceId ? { duration: 1.15, ease: "easeInOut", repeat: Infinity } : { delay: Math.min(index, 6) * 0.015, duration: 0.14 }}
-                >
-                  <WorkspaceMenuRow
-                    label={entry.name}
-                    detail={entry.id === deletingWorkspaceId ? "Deleting workspace" : entry.detail}
-                    selected={entry.id === activeWorkspaceId}
-                    pending={entry.pending}
-                    deleting={entry.id === deletingWorkspaceId}
-                    actionsOpen={workspaceActionsOpenForId === entry.id}
-                    onClick={() => {
-                      if (entry.id === deletingWorkspaceId) return;
-                      onSelectWorkspace(entry.id);
-                      setOpen(false);
-                      setWorkspaceActionsOpenForId(null);
-                    }}
-                    onToggleActions={
-                      entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId
-                        ? undefined
-                        : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
-                    }
-                    onEdit={
-                      entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId
-                        ? undefined
-                        : () => {
-                            onEditWorkspace(entry.id);
-                            setOpen(false);
-                            setWorkspaceActionsOpenForId(null);
-                          }
-                    }
-                    onDelete={entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId ? undefined : () => requestDeleteWorkspace(entry.id)}
-                  />
-                </motion.div>
-              ))}
+              {workspaceMenuEntries.map((entry, index) => {
+                const isDeletingEntry = deletingWorkspaceId === entry.id || pendingWorkspaceDeletionIds.has(entry.id);
+
+                return (
+                  <motion.div
+                    key={entry.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, height: 0, y: -4 }}
+                    transition={{ delay: Math.min(index, 6) * 0.015, duration: 0.14 }}
+                  >
+                    <WorkspaceMenuRow
+                      label={entry.name}
+                      detail={isDeletingEntry ? "Deleting workspace" : entry.detail}
+                      selected={entry.id === activeWorkspaceId}
+                      pending={entry.pending}
+                      deleting={isDeletingEntry}
+                      actionsOpen={workspaceActionsOpenForId === entry.id}
+                      onClick={() => {
+                        if (isDeletingEntry) return;
+                        onSelectWorkspace(entry.id);
+                        setOpen(false);
+                        setWorkspaceActionsOpenForId(null);
+                      }}
+                      onToggleActions={
+                        entry.pending || isDeletingWorkspace || isDeletingEntry
+                          ? undefined
+                          : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
+                      }
+                      onEdit={
+                        entry.pending || isDeletingWorkspace || isDeletingEntry
+                          ? undefined
+                          : () => {
+                              onEditWorkspace(entry.id);
+                              setOpen(false);
+                              setWorkspaceActionsOpenForId(null);
+                            }
+                      }
+                      onDelete={entry.pending || isDeletingWorkspace || isDeletingEntry ? undefined : () => requestDeleteWorkspace(entry.id)}
+                    />
+                  </motion.div>
+                );
+              })}
               </AnimatePresence>
             </div>
 

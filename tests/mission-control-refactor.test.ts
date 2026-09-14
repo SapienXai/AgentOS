@@ -18,6 +18,10 @@ import {
   parsePendingAgentProjections
 } from "@/components/mission-control/pending-agent-projection";
 import {
+  parsePendingWorkspaceDeletions,
+  serializePendingWorkspaceDeletions
+} from "@/components/mission-control/workspace-deletion-projection";
+import {
   createOptimisticMissionTaskRecord,
   buildLaunchpadWorkspaceHandoffProgress,
   buildWorkspaceSelectionStorageKey,
@@ -49,6 +53,33 @@ import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 
 const rootDir = process.cwd();
+
+test("workspace deletion projections survive refresh until OpenClaw confirms removal", () => {
+  const referenceTime = 1_000_000;
+  const entries = parsePendingWorkspaceDeletions(
+    serializePendingWorkspaceDeletions([
+      { id: "workspace-1", name: "Workspace One", requestedAt: referenceTime - 1_000 },
+      { id: "workspace-1", name: "Workspace One (new request)", requestedAt: referenceTime - 100 },
+      { id: "workspace-expired", name: "Expired", requestedAt: referenceTime - 30 * 60 * 1000 - 1 },
+      { id: "workspace-invalid", name: "", requestedAt: referenceTime - 100 }
+    ]),
+    referenceTime
+  );
+
+  assert.deepEqual(entries, [
+    { id: "workspace-1", name: "Workspace One (new request)", requestedAt: referenceTime - 100 }
+  ]);
+});
+
+test("workspace deletion keeps a stable recoverable progress row", () => {
+  const sidebarSource = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+
+  assert.match(sidebarSource, /pendingWorkspaceDeletionStorageKey/);
+  assert.match(sidebarSource, /onForceRefresh/);
+  assert.match(sidebarSource, /Workspace deletion is syncing/);
+  assert.match(sidebarSource, /animate=\{\{ opacity: 1, y: 0 \}\}/);
+  assert.doesNotMatch(sidebarSource, /opacity: \[1, 0\.58, 1\]/);
+});
 
 test("onboarding model selection follows live OpenClaw readiness metadata", () => {
   const models = [
