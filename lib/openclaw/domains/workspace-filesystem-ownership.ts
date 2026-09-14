@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readFile, rename } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
@@ -29,9 +29,12 @@ export type WorkspaceFilesystemOwnershipRecord = {
   recordedAt: string;
 };
 
-export function workspaceFilesystemOwnershipPath(workspacePath: string) {
+export function workspaceFilesystemOwnershipPath(
+  workspacePath: string,
+  rootPath = WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT
+) {
   const digest = createHash("sha256").update(path.resolve(workspacePath)).digest("hex");
-  return path.join(path.resolve(WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT), `${digest}.json`);
+  return path.join(path.resolve(rootPath), `${digest}.json`);
 }
 
 export function ownershipForWorkspaceMaterialization(
@@ -77,14 +80,15 @@ export async function writeWorkspaceFilesystemOwnership(
     ownership: Exclude<WorkspaceFilesystemOwnership, "unknown">;
     materialization: WorkspaceMaterialization["mode"];
     recordedAt?: string;
-  }
+  },
+  rootPath = WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT
 ) {
   const resolvedPath = path.resolve(workspacePath);
   const directoryStat = await lstat(resolvedPath, { bigint: true });
   if (!directoryStat.isDirectory()) {
     throw new Error("Workspace ownership can only be recorded for a directory.");
   }
-  const filePath = workspaceFilesystemOwnershipPath(resolvedPath);
+  const filePath = workspaceFilesystemOwnershipPath(resolvedPath, rootPath);
   await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   const record: WorkspaceFilesystemOwnershipRecord = {
@@ -105,7 +109,13 @@ export async function writeWorkspaceFilesystemOwnership(
   } finally {
     await handle.close();
   }
-  await rename(temporaryPath, filePath);
+  try {
+    await rename(temporaryPath, filePath);
+    await syncDirectory(path.dirname(filePath));
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
   return record;
 }
 
@@ -114,9 +124,16 @@ export async function writeWorkspaceFilesystemOwnership(
  * unknown. Callers must preserve the directory in that case.
  */
 export async function readWorkspaceFilesystemOwnership(workspacePath: string) {
+  return readWorkspaceFilesystemOwnershipAtRoot(workspacePath, WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT);
+}
+
+export async function readWorkspaceFilesystemOwnershipAtRoot(
+  workspacePath: string,
+  rootPath = WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT
+) {
   try {
     const parsed = JSON.parse(
-      await readFile(workspaceFilesystemOwnershipPath(workspacePath), "utf8")
+      await readFile(workspaceFilesystemOwnershipPath(workspacePath, rootPath), "utf8")
     ) as Partial<WorkspaceFilesystemOwnershipRecord>;
     if (
       parsed.schemaVersion !== WORKSPACE_FILESYSTEM_OWNERSHIP_SCHEMA_VERSION ||
@@ -145,6 +162,85 @@ export async function readWorkspaceFilesystemOwnership(workspacePath: string) {
     return parsed as WorkspaceFilesystemOwnershipRecord;
   } catch {
     return null;
+  }
+}
+
+export async function readWorkspaceDirectoryIdentity(workspacePath: string) {
+  const directoryStat = await lstat(path.resolve(workspacePath), { bigint: true });
+  if (!directoryStat.isDirectory()) {
+    throw new Error("Workspace ownership can only be recorded for a directory.");
+  }
+  return {
+    device: directoryStat.dev.toString(),
+    inode: directoryStat.ino.toString()
+  };
+}
+
+export async function removeWorkspaceFilesystemOwnership(
+  workspacePath: string,
+  rootPath = WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT
+) {
+  await rm(workspaceFilesystemOwnershipPath(workspacePath, rootPath), { force: true });
+}
+
+/**
+ * Moves an ownership proof only after the renamed directory proves it is the
+ * same device/inode. Missing evidence remains unknown and is never upgraded
+ * into AgentOS ownership by a move.
+ */
+export async function migrateWorkspaceFilesystemOwnership(input: {
+  fromPath: string;
+  toPath: string;
+  record: WorkspaceFilesystemOwnershipRecord | null | undefined;
+  rootPath?: string;
+}) {
+  if (!input.record) {
+    return {
+      record: null,
+      migrated: false,
+      oldEvidenceRemoved: false
+    };
+  }
+
+  const fromPath = path.resolve(input.fromPath);
+  const toPath = path.resolve(input.toPath);
+  if (path.resolve(input.record.workspacePath) !== fromPath) {
+    throw new Error("Workspace ownership evidence does not match the move source.");
+  }
+
+  const directoryIdentity = await readWorkspaceDirectoryIdentity(toPath);
+  if (
+    directoryIdentity.device !== input.record.directoryIdentity.device ||
+    directoryIdentity.inode !== input.record.directoryIdentity.inode
+  ) {
+    throw new Error("Workspace ownership evidence does not match the moved directory.");
+  }
+
+  const rootPath = input.rootPath ?? WORKSPACE_FILESYSTEM_OWNERSHIP_ROOT;
+  const migrated = await writeWorkspaceFilesystemOwnership(toPath, {
+    ownership: input.record.ownership,
+    materialization: input.record.materialization,
+    recordedAt: input.record.recordedAt
+  }, rootPath);
+  await removeWorkspaceFilesystemOwnership(fromPath, rootPath);
+
+  return {
+    record: migrated,
+    migrated: true,
+    oldEvidenceRemoved: true
+  };
+}
+
+async function syncDirectory(directoryPath: string) {
+  try {
+    const handle = await open(directoryPath, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    // Some filesystems do not permit syncing directories; the atomic rename remains the boundary.
   }
 }
 

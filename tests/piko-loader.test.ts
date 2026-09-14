@@ -45,12 +45,13 @@ test("Piko renders the static spinner after a transparent-video error", async ()
   assert.match(source, /<LoaderCircle className=.*animate-spin/);
 });
 
-test("desktop bootstrap keeps the Piko startup surface asset-backed", async () => {
+test("desktop bootstrap keeps the AgentOS splash startup surface asset-backed", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile("apps/desktop/bootstrap/index.html", "utf8");
 
-  assert.match(source, /pikoLoader\.hevc\.mov/);
-  assert.match(source, /pikoLoader\.webm/);
+  assert.match(source, /agentos-splash\.mp4/);
+  assert.match(source, /agentos-splash-poster\.jpg/);
+  assert.doesNotMatch(source, /pikoLoader/);
   assert.match(source, /showFallback/);
 });
 
@@ -64,7 +65,8 @@ test("every Piko surface uses the generated macOS alpha asset", async () => {
 
   assert.match(source, /src: "\/assets\/pikoLoader\.hevc\.mov"/);
   assert.match(loader, /resolveRuntimePikoVideoSource/);
-  assert.match(bootstrap, /\/assets\/pikoLoader\.hevc\.mov/);
+  assert.match(bootstrap, /\/assets\/agentos-splash\.mp4/);
+  assert.doesNotMatch(bootstrap, /pikoLoader/);
   assert.ok((await stat("public/assets/pikoLoader.hevc.mov")).size > 0);
 });
 

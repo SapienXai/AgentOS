@@ -1,6 +1,6 @@
 import "server-only";
 
-import { access, readFile, rename, rm } from "node:fs/promises";
+import { lstat, readFile, rename, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -85,9 +85,16 @@ import {
   workspaceMaterializationsEqual
 } from "@/lib/agentos/domains/workspace-materialization";
 import type { WorkspaceProjectManifestAgent } from "@/lib/openclaw/domains/workspace-manifest";
-import { writeWorkspaceFilesystemOwnership } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
+import {
+  migrateWorkspaceFilesystemOwnership,
+  readWorkspaceFilesystemOwnership,
+  readWorkspaceDirectoryIdentity,
+  writeWorkspaceFilesystemOwnership,
+  type WorkspaceFilesystemOwnershipRecord
+} from "@/lib/openclaw/domains/workspace-filesystem-ownership";
 import {
   createOrReadLifecycleOperation,
+  lifecycleWorkspaceResourceKey,
   updateLifecycleOperation,
   withLifecycleOperationLock,
   type StoredLifecycleOperation
@@ -96,7 +103,6 @@ import { reconcileLifecycleState } from "@/lib/openclaw/application/lifecycle-re
 import { executeNativeMutationWithVerification } from "@/lib/openclaw/application/native-mutation-service";
 import {
   decideWorkspaceFilesystemCleanup,
-  readWorkspaceFilesystemOwnership,
   resolveWorkspaceFilesystemOwnership
 } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
 import { runLifecycleSidecarSteps } from "@/lib/openclaw/application/lifecycle-sidecar-service";
@@ -137,7 +143,9 @@ import type {
   WorkspaceTemplate,
   WorkspaceUpdateInput,
   WorkspaceAgentBlueprintInput,
-  WorkspaceDeleteResult
+  WorkspaceDeleteResult,
+  WorkspaceUpdateResult,
+  LifecycleOperationOutcome
 } from "@/lib/openclaw/types";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import { redactSecretText } from "@/lib/security/redaction";
@@ -503,6 +511,30 @@ export async function updateWorkspaceProject(
     throw new Error("Workspace id is required.");
   }
 
+  const workspaceResourceId = await resolveWorkspaceLockId(workspaceId);
+  return withLifecycleOperationLock({
+    kind: "workspace.move",
+    targetId: workspaceResourceId,
+    resourceKeys: [lifecycleWorkspaceResourceKey(workspaceResourceId)],
+    run: () => updateWorkspaceProjectInternal(input, gatewayOptions)
+  });
+}
+
+async function resolveWorkspaceLockId(workspaceId: string) {
+  try {
+    const snapshot = await getMissionControlSnapshot({ includeHidden: true });
+    return findWorkspaceById(snapshot.workspaces, workspaceId)?.id ?? workspaceId;
+  } catch {
+    return workspaceId;
+  }
+}
+
+async function updateWorkspaceProjectInternal(
+  input: WorkspaceUpdateInput,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
+  const workspaceId = input.workspaceId.trim();
+
   if (input.plan) {
     const baseline = input.baseline ?? (await readWorkspaceEditSeed(workspaceId));
     const workspace = createWorkspaceProjectFromEditSeed(baseline);
@@ -510,7 +542,8 @@ export async function updateWorkspaceProject(
       name: input.name,
       directory: input.directory,
       baseline,
-      gatewayOptions
+      gatewayOptions,
+      recoveryGeneration: input.recoveryGeneration
     });
   }
 
@@ -524,31 +557,19 @@ export async function updateWorkspaceProject(
   const targetPath = resolveWorkspaceTargetPath(workspace.path, input.name, input.directory);
 
   if (targetPath !== workspace.path) {
-    await ensurePathAvailable(targetPath, workspace.path);
-
-    try {
-      await rename(workspace.path, targetPath);
-    } catch (error) {
-      throw new Error(
-        error instanceof Error ? `Unable to move workspace directory. ${error.message}` : "Unable to move workspace directory."
-      );
+    const moved = await moveWorkspaceProjectLifecycle({
+      workspace,
+      snapshot,
+      targetPath,
+      gatewayOptions,
+      recoveryGeneration: input.recoveryGeneration
+    });
+    if (moved.outcome !== "ready" && moved.outcome !== "partial") {
+      return moved;
     }
-
-    const configList = await readAgentConfigList(snapshot, gatewayOptions);
-    const updatedConfig = configList.map((entry) =>
-      entry.workspace === workspace.path
-        ? {
-            ...entry,
-            workspace: targetPath,
-            agentDir:
-              typeof entry.agentDir === "string" && entry.agentDir.startsWith(`${workspace.path}${path.sep}`)
-                ? path.join(targetPath, path.relative(workspace.path, entry.agentDir))
-                : entry.agentDir
-          }
-        : entry
-    );
-
-    await writeAgentConfigList(updatedConfig, gatewayOptions);
+    invalidateSnapshotCache();
+    clearRuntimeHistoryCache();
+    return moved;
   }
 
   invalidateSnapshotCache();
@@ -557,8 +578,591 @@ export async function updateWorkspaceProject(
   return {
     workspaceId: resolveWorkspaceIdForSnapshotPath(snapshot.workspaces, targetPath, workspace.path),
     previousWorkspaceId: workspace.id,
-    workspacePath: targetPath
+    workspacePath: targetPath,
+    outcome: "ready" as const,
+    nativeAccepted: false,
+    nativeConfirmed: true,
+    sidecarSynchronized: true,
+    warnings: []
+  } satisfies WorkspaceUpdateResult;
+}
+
+async function moveWorkspaceProjectLifecycle(input: {
+  workspace: WorkspaceProject;
+  snapshot: MissionControlSnapshot;
+  targetPath: string;
+  gatewayOptions: OpenClawCommandOptions;
+  recoveryGeneration?: number;
+}): Promise<WorkspaceUpdateResult> {
+  const previousWorkspacePath = path.resolve(input.workspace.path);
+  const targetWorkspacePath = path.resolve(input.targetPath);
+  const workspaceId = input.workspace.id;
+  const agentIds = uniqueStrings([
+    ...input.workspace.agentIds,
+    ...input.snapshot.agents
+      .filter((agent) => agent.workspaceId === workspaceId || path.resolve(agent.workspacePath) === previousWorkspacePath)
+      .map((agent) => agent.id)
+  ]);
+  const initialOwnership = await readWorkspaceFilesystemOwnership(previousWorkspacePath);
+  let operation = (await createOrReadLifecycleOperation({
+    kind: "workspace.move",
+    targetId: workspaceId,
+    metadata: {
+      workspaceId,
+      workspacePath: previousWorkspacePath,
+      previousWorkspacePath,
+      targetWorkspacePath,
+      filesystemOwnership: initialOwnership?.ownership ?? null,
+      materialization: initialOwnership?.materialization ?? null,
+      ownershipRecordedAt: initialOwnership?.recordedAt ?? null,
+      directoryIdentity: initialOwnership?.directoryIdentity ?? null,
+      agentIds
+    }
+  })).operation;
+
+  const storedTargetPath = operation.metadata.targetWorkspacePath;
+  if (storedTargetPath && path.resolve(storedTargetPath) !== targetWorkspacePath) {
+    if (operation.state === "ready" && operation.result) {
+      operation = await updateLifecycleOperation(operation, {
+        state: "requested",
+        stage: "requested",
+        nativeAccepted: false,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: [],
+        error: null,
+        result: null,
+        metadata: {
+          workspaceId,
+          workspacePath: previousWorkspacePath,
+          previousWorkspacePath,
+          targetWorkspacePath,
+          agentIds
+        },
+        items: {},
+        sidecars: {}
+      });
+    } else {
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "unknown",
+        nativeAccepted: operation.nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: ["A previous workspace move is still unresolved; reconcile it before requesting another target path."],
+        error: { code: "workspace-move-target-conflict", message: "A previous workspace move is still unresolved." }
+      }));
+    }
+  }
+
+  if (operation.state === "failed" && !operation.nativeAccepted) {
+    if (!isExplicitWorkspaceRecovery(input.recoveryGeneration, operation.recoveryGeneration)) {
+      if (operation.result) return operation.result as WorkspaceUpdateResult;
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "failed",
+        nativeAccepted: false,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: ["The previous workspace move failed. An explicit recovery attempt is required before AgentOS can issue a new move request."],
+        error: { code: "workspace-move-recovery-required", message: "Explicit workspace move recovery is required." }
+      }));
+    }
+    operation = await updateLifecycleOperation(operation, {
+      state: "requested",
+      stage: "recovering",
+      recoveryGeneration: input.recoveryGeneration,
+      warnings: [],
+      error: null,
+      result: null,
+      items: {},
+      sidecars: {}
+    });
+  }
+
+  if (operation.state === "ready" && operation.result) {
+    const proof = await verifyWorkspaceMoveNative({
+      previousWorkspacePath,
+      targetWorkspacePath,
+      agentIds,
+      gatewayOptions: input.gatewayOptions
+    });
+    if (proof.confirmed) {
+      return operation.result as WorkspaceUpdateResult;
+    }
+    return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+      operation,
+      workspaceId,
+      previousWorkspaceId: workspaceId,
+      previousWorkspacePath,
+      workspacePath: targetWorkspacePath,
+      outcome: "unknown",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [proof.error ?? "OpenClaw could not re-confirm the completed workspace move."],
+      error: { code: "workspace-move-state-drift", message: proof.error ?? "Workspace move state drifted." }
+    }));
+  }
+
+  const requiresNativeMoveReconciliation = operation.state === "unknown" ||
+    (operation.state === "failed" && operation.nativeAccepted);
+
+  const ownershipRecord = initialOwnership ?? ownershipRecordFromLifecycleOperation(operation);
+  let ownershipMigration: Awaited<ReturnType<typeof migrateWorkspaceFilesystemOwnership>> = {
+    record: ownershipRecord,
+    migrated: false,
+    oldEvidenceRemoved: false
   };
+  const warnings: string[] = [];
+
+  const sourceStat = await lstat(previousWorkspacePath).catch(() => null);
+  const targetStat = await lstat(targetWorkspacePath).catch(() => null);
+  if (targetStat && !targetStat.isDirectory()) {
+    return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+      operation,
+      workspaceId,
+      previousWorkspaceId: workspaceId,
+      previousWorkspacePath,
+      workspacePath: targetWorkspacePath,
+      outcome: "failed",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: ["The requested workspace target exists but is not a directory."],
+      error: { code: "workspace-target-not-directory", message: "The requested workspace target is not a directory." }
+    }));
+  }
+
+  if (sourceStat && targetStat) {
+    return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+      operation,
+      workspaceId,
+      previousWorkspaceId: workspaceId,
+      previousWorkspacePath,
+      workspacePath: targetWorkspacePath,
+      outcome: "unknown",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: ["Both the old and target workspace directories exist; AgentOS will not guess which one is authoritative."],
+      error: { code: "workspace-move-ambiguous-filesystem", message: "Both workspace move paths exist." }
+    }));
+  }
+
+  if (!sourceStat && !targetStat) {
+    return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+      operation,
+      workspaceId,
+      previousWorkspaceId: workspaceId,
+      previousWorkspacePath,
+      workspacePath: targetWorkspacePath,
+      outcome: "unknown",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: ["Neither the old nor target workspace directory exists; AgentOS will not recreate or guess the move."],
+      error: { code: "workspace-move-path-missing", message: "Workspace move paths are missing." }
+    }));
+  }
+
+  if (sourceStat && !targetStat) {
+    operation = await updateLifecycleOperation(operation, {
+      state: "running",
+      stage: "moving-filesystem",
+      metadata: {
+        workspaceId,
+        workspacePath: previousWorkspacePath,
+        previousWorkspacePath,
+        targetWorkspacePath,
+        filesystemOwnership: ownershipRecord?.ownership ?? null,
+        materialization: ownershipRecord?.materialization ?? null,
+        ownershipRecordedAt: ownershipRecord?.recordedAt ?? null,
+        directoryIdentity: ownershipRecord?.directoryIdentity ?? null,
+        agentIds
+      }
+    });
+
+    try {
+      await rename(previousWorkspacePath, targetWorkspacePath);
+    } catch (error) {
+      const message = error instanceof Error
+        ? `Unable to move workspace directory. ${safeLifecycleError(error)}`
+        : "Unable to move workspace directory.";
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "failed",
+        nativeAccepted: false,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: [message],
+        error: { code: "workspace-filesystem-move-failed", message }
+      }));
+    }
+  } else if (!ownershipRecord) {
+    const directoryIdentity = await readWorkspaceDirectoryIdentity(targetWorkspacePath).catch(() => null);
+    if (
+      !directoryIdentity ||
+      !operation.metadata.directoryIdentity ||
+      directoryIdentity.device !== operation.metadata.directoryIdentity.device ||
+      directoryIdentity.inode !== operation.metadata.directoryIdentity.inode
+    ) {
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "unknown",
+        nativeAccepted: operation.nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: ["The target directory exists without enough persisted identity evidence to prove this move."],
+        error: { code: "workspace-move-identity-unknown", message: "Workspace move identity could not be proven." }
+      }));
+    }
+  }
+
+  if (ownershipRecord) {
+    try {
+      ownershipMigration = await migrateWorkspaceFilesystemOwnership({
+        fromPath: previousWorkspacePath,
+        toPath: targetWorkspacePath,
+        record: ownershipRecord
+      });
+      operation = await updateLifecycleOperation(operation, {
+        sidecars: { "filesystem-ownership": "confirmed" },
+        metadata: {
+          filesystemOwnership: ownershipMigration.record?.ownership ?? null,
+          materialization: ownershipMigration.record?.materialization ?? null,
+          ownershipRecordedAt: ownershipMigration.record?.recordedAt ?? null,
+          directoryIdentity: ownershipMigration.record?.directoryIdentity ?? operation.metadata.directoryIdentity
+        }
+      });
+    } catch (error) {
+      warnings.push(`AgentOS could not migrate workspace ownership evidence: ${safeLifecycleError(error)}.`);
+      operation = await updateLifecycleOperation(operation, {
+        sidecars: { "filesystem-ownership": "failed" }
+      });
+    }
+  } else {
+    operation = await updateLifecycleOperation(operation, {
+      sidecars: { "filesystem-ownership": "skipped" }
+    });
+    warnings.push("AgentOS could not prove ownership of the moved workspace directory; it will remain conservatively preserved during cleanup.");
+  }
+
+  let nativeAccepted = operation.nativeAccepted;
+  let nativeConfirmed = false;
+  if (requiresNativeMoveReconciliation) {
+    const proof = await verifyWorkspaceMoveNative({
+      previousWorkspacePath,
+      targetWorkspacePath,
+      agentIds,
+      gatewayOptions: input.gatewayOptions
+    });
+    if (!proof.confirmed) {
+      const message = proof.error ?? "OpenClaw did not confirm the previous workspace configuration move.";
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "unknown",
+        nativeAccepted: operation.nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: uniqueStrings([...warnings, message]),
+        error: { code: "workspace-config-move-uncertain", message }
+      }));
+    }
+    nativeAccepted = true;
+    nativeConfirmed = true;
+  }
+
+  operation = await updateLifecycleOperation(operation, {
+    state: "running",
+    stage: "syncing-workspace-config",
+    metadata: {
+      workspaceId,
+      workspacePath: targetWorkspacePath,
+      previousWorkspacePath,
+      targetWorkspacePath,
+      agentIds
+    }
+  });
+
+  const configList = await readAgentConfigList(input.snapshot, input.gatewayOptions);
+  const agentIdSet = new Set(agentIds);
+  const updatedConfig = configList.map((entry) => {
+    const belongsToWorkspace = path.resolve(entry.workspace) === previousWorkspacePath || agentIdSet.has(entry.id);
+    if (!belongsToWorkspace) return entry;
+    return {
+      ...entry,
+      workspace: targetWorkspacePath,
+      agentDir:
+        typeof entry.agentDir === "string" && entry.agentDir.startsWith(`${previousWorkspacePath}${path.sep}`)
+          ? path.join(targetWorkspacePath, path.relative(previousWorkspacePath, entry.agentDir))
+          : entry.agentDir
+    };
+  });
+  const configChanged = updatedConfig.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(configList[index]));
+
+  if (requiresNativeMoveReconciliation) {
+    nativeAccepted = true;
+    nativeConfirmed = true;
+  } else if (configChanged) {
+    operation = await updateLifecycleOperation(operation, {
+      stage: "native-mutation",
+      mutationAttemptCount: operation.mutationAttemptCount + 1,
+      lastMutationAt: new Date().toISOString()
+    });
+    const execution = await executeNativeMutationWithVerification({
+      operation: "workspace.move.config",
+      mutate: () => writeAgentConfigList(updatedConfig, input.gatewayOptions),
+      verify: async () => (await verifyWorkspaceMoveNative({
+        previousWorkspacePath,
+        targetWorkspacePath,
+        agentIds,
+        gatewayOptions: input.gatewayOptions
+      })).confirmed
+    });
+    nativeAccepted = execution.outcome !== "failed" || execution.classification.requestSent === true;
+    if (execution.outcome !== "succeeded") {
+      const message = execution.classification.message || "OpenClaw did not confirm the workspace configuration move.";
+      const outcome = execution.outcome;
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome,
+        nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: uniqueStrings([...warnings, message]),
+        error: { code: outcome === "unknown" ? "workspace-config-move-uncertain" : "workspace-config-move-failed", message }
+      }));
+    }
+    nativeConfirmed = true;
+  } else {
+    const proof = await verifyWorkspaceMoveNative({
+      previousWorkspacePath,
+      targetWorkspacePath,
+      agentIds,
+      gatewayOptions: input.gatewayOptions
+    });
+    if (!proof.confirmed) {
+      const message = proof.error ?? "OpenClaw did not confirm the workspace configuration move.";
+      if (operation.nativeAccepted || operation.state === "unknown") {
+        return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+          operation,
+          workspaceId,
+          previousWorkspaceId: workspaceId,
+          previousWorkspacePath,
+          workspacePath: targetWorkspacePath,
+          outcome: "unknown",
+          nativeAccepted: operation.nativeAccepted,
+          nativeConfirmed: false,
+          sidecarSynchronized: false,
+          warnings: uniqueStrings([...warnings, message]),
+          error: { code: "workspace-config-move-uncertain", message }
+        }));
+      }
+      return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+        operation,
+        workspaceId,
+        previousWorkspaceId: workspaceId,
+        previousWorkspacePath,
+        workspacePath: targetWorkspacePath,
+        outcome: "failed",
+        nativeAccepted: false,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: uniqueStrings([...warnings, message]),
+        error: { code: "workspace-config-move-not-confirmed", message }
+      }));
+    }
+    nativeAccepted = true;
+    nativeConfirmed = true;
+  }
+
+  operation = await updateLifecycleOperation(operation, {
+    state: "running",
+    stage: "workspace-move-confirmed",
+    nativeAccepted,
+    nativeConfirmed,
+    lastReconciledAt: new Date().toISOString(),
+    lastConfirmedNativeStateAt: new Date().toISOString()
+  });
+
+  const finalSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const finalAgentPaths = finalSnapshot.agents.filter((agent) => agentIds.includes(agent.id));
+  if (agentIds.length > 0 && (finalAgentPaths.length !== agentIds.length || finalAgentPaths.some((agent) => path.resolve(agent.workspacePath) !== targetWorkspacePath))) {
+    const message = "OpenClaw did not retain the moved workspace path in its authoritative snapshot.";
+    return finishWorkspaceMoveOperation(operation, buildWorkspaceMoveResult({
+      operation,
+      workspaceId,
+      previousWorkspaceId: workspaceId,
+      previousWorkspacePath,
+      workspacePath: targetWorkspacePath,
+      outcome: "unknown",
+      nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: uniqueStrings([...warnings, message]),
+      error: { code: "workspace-move-state-regressed", message }
+    }));
+  }
+
+  const finalWarnings = uniqueStrings(warnings);
+  const outcome: LifecycleOperationOutcome = finalWarnings.length > 0 ? "partial" : "ready";
+  const result = buildWorkspaceMoveResult({
+    operation,
+    workspaceId: resolveWorkspaceIdForSnapshotPath(finalSnapshot.workspaces, targetWorkspacePath, previousWorkspacePath),
+    previousWorkspaceId: workspaceId,
+    previousWorkspacePath,
+    workspacePath: targetWorkspacePath,
+    outcome,
+    nativeAccepted,
+    nativeConfirmed: true,
+    sidecarSynchronized: finalWarnings.length === 0,
+    warnings: finalWarnings,
+    filesystem: {
+      ownership: resolveWorkspaceFilesystemOwnership(ownershipMigration.record ?? ownershipRecord),
+      migrated: ownershipMigration.migrated
+    }
+  });
+  return finishWorkspaceMoveOperation(operation, result);
+}
+
+async function verifyWorkspaceMoveNative(input: {
+  previousWorkspacePath: string;
+  targetWorkspacePath: string;
+  agentIds: string[];
+  gatewayOptions: OpenClawCommandOptions;
+}) {
+  try {
+    const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    const configList = await readAgentConfigList(undefined, input.gatewayOptions);
+    const agentIdSet = new Set(input.agentIds);
+    const relevantConfig = configList.filter((entry) =>
+      agentIdSet.has(entry.id) ||
+      path.resolve(entry.workspace) === path.resolve(input.previousWorkspacePath) ||
+      path.resolve(entry.workspace) === path.resolve(input.targetWorkspacePath)
+    );
+    const configConfirmed = relevantConfig.every((entry) => path.resolve(entry.workspace) === path.resolve(input.targetWorkspacePath));
+    const nativeAgents = snapshot.agents.filter((agent) => input.agentIds.includes(agent.id));
+    const nativeConfirmed = input.agentIds.length === 0 || (
+      nativeAgents.length === input.agentIds.length &&
+      nativeAgents.every((agent) => path.resolve(agent.workspacePath) === path.resolve(input.targetWorkspacePath))
+    );
+    return {
+      confirmed: configConfirmed && nativeConfirmed,
+      error: configConfirmed && nativeConfirmed
+        ? null
+        : "OpenClaw's authoritative config or agent snapshot still references the previous workspace path."
+    };
+  } catch (error) {
+    return {
+      confirmed: false,
+      error: safeLifecycleError(error)
+    };
+  }
+}
+
+function ownershipRecordFromLifecycleOperation(operation: StoredLifecycleOperation): WorkspaceFilesystemOwnershipRecord | null {
+  const ownership = operation.metadata.filesystemOwnership;
+  const directoryIdentity = operation.metadata.directoryIdentity;
+  const materialization = operation.metadata.materialization;
+  if (
+    !isKnownWorkspaceFilesystemOwnership(ownership) ||
+    !directoryIdentity ||
+    typeof directoryIdentity.device !== "string" ||
+    typeof directoryIdentity.inode !== "string" ||
+    !isKnownWorkspaceMaterialization(materialization) ||
+    typeof operation.metadata.previousWorkspacePath !== "string"
+  ) {
+    return null;
+  }
+  return {
+    schemaVersion: 1,
+    workspacePath: path.resolve(operation.metadata.previousWorkspacePath),
+    ownership,
+    materialization,
+    directoryIdentity,
+    recordedAt: operation.metadata.ownershipRecordedAt ?? operation.createdAt
+  };
+}
+
+function isKnownWorkspaceFilesystemOwnership(value: string | null | undefined): value is Exclude<WorkspaceFilesystemOwnershipRecord["ownership"], "unknown"> {
+  return value === "agentos-created-empty" || value === "agentos-created-clone" || value === "user-selected-existing" || value === "external-imported";
+}
+
+function isKnownWorkspaceMaterialization(value: string | null | undefined): value is WorkspaceFilesystemOwnershipRecord["materialization"] {
+  return value === "empty" || value === "clone" || value === "existing";
+}
+
+function buildWorkspaceMoveResult(input: {
+  operation: StoredLifecycleOperation;
+  workspaceId: string;
+  previousWorkspaceId: string;
+  previousWorkspacePath: string;
+  workspacePath: string;
+  outcome: LifecycleOperationOutcome;
+  nativeAccepted: boolean;
+  nativeConfirmed: boolean;
+  sidecarSynchronized: boolean;
+  warnings: string[];
+  error?: { code: string; message: string };
+  filesystem?: WorkspaceUpdateResult["filesystem"];
+}): WorkspaceUpdateResult {
+  return {
+    workspaceId: input.workspaceId,
+    previousWorkspaceId: input.previousWorkspaceId,
+    previousWorkspacePath: input.previousWorkspacePath,
+    workspacePath: input.workspacePath,
+    outcome: input.outcome,
+    operationId: input.operation.operationId,
+    recoveryGeneration: input.operation.recoveryGeneration,
+    nativeAccepted: input.nativeAccepted,
+    nativeConfirmed: input.nativeConfirmed,
+    sidecarSynchronized: input.sidecarSynchronized,
+    warnings: uniqueStrings(input.warnings),
+    ...(input.error ? { error: input.error } : {}),
+    ...(input.filesystem ? { filesystem: input.filesystem } : {})
+  };
+}
+
+async function finishWorkspaceMoveOperation(
+  operation: StoredLifecycleOperation,
+  result: WorkspaceUpdateResult
+) {
+  await updateLifecycleOperation(operation, {
+    state: result.outcome,
+    stage: result.outcome === "ready" ? "complete" : result.outcome === "partial" ? "cleanup-partial" : "reconciling-native-state",
+    nativeAccepted: result.nativeAccepted ?? operation.nativeAccepted,
+    nativeConfirmed: result.nativeConfirmed ?? operation.nativeConfirmed,
+    sidecarSynchronized: result.sidecarSynchronized ?? false,
+    warnings: result.warnings ?? [],
+    result,
+    error: result.error ?? null
+  });
+  return result;
 }
 
 export async function deleteWorkspaceProject(
@@ -570,9 +1174,11 @@ export async function deleteWorkspaceProject(
     throw new Error("Workspace id is required.");
   }
 
+  const workspaceResourceId = await resolveWorkspaceLockId(workspaceId);
   return withLifecycleOperationLock({
     kind: "workspace.delete",
-    targetId: workspaceId,
+    targetId: workspaceResourceId,
+    resourceKeys: [lifecycleWorkspaceResourceKey(workspaceResourceId)],
     run: () => deleteWorkspaceProjectInternal(input, gatewayOptions)
   });
 }
@@ -592,6 +1198,34 @@ async function deleteWorkspaceProjectInternal(
     targetId: workspaceId,
     metadata: { workspaceId }
   })).operation;
+
+  const failedItemIds = Object.entries(operation.items)
+    .filter(([, state]) => state === "failed")
+    .map(([agentId]) => agentId);
+  if (
+    (operation.state === "failed" && !operation.nativeAccepted) ||
+    (failedItemIds.length > 0 && !operation.nativeAccepted)
+  ) {
+    if (!isExplicitWorkspaceRecovery(input.recoveryGeneration, operation.recoveryGeneration)) {
+      if (operation.result) return operation.result as WorkspaceDeleteResult;
+      throw new Error(
+        "The previous AgentOS workspace deletion failed. An explicit recovery attempt is required before AgentOS can issue a new delete request."
+      );
+    }
+    const retainedItems = Object.fromEntries(
+      Object.entries(operation.items).filter(([, state]) => state === "confirmed" || state === "skipped")
+    );
+    operation = await updateLifecycleOperation(operation, {
+      state: "requested",
+      stage: "recovering",
+      recoveryGeneration: input.recoveryGeneration,
+      warnings: [],
+      error: null,
+      result: null,
+      items: retainedItems,
+      sidecars: {}
+    });
+  }
 
   if (operation.state === "ready" && operation.result) {
     const liveSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
@@ -654,7 +1288,7 @@ async function deleteWorkspaceProjectInternal(
       .map((channel) => channel.id)
   ]);
   const adapter = getOpenClawAdapter();
-  const warnings = [...operation.warnings];
+  const warnings: string[] = [];
 
   operation = await updateLifecycleOperation(operation, {
     stage: "deleting-agents",
@@ -671,12 +1305,35 @@ async function deleteWorkspaceProjectInternal(
       continue;
     }
 
+    if (operation.items[agentId] === "failed") {
+      if (!operation.nativeAccepted) {
+        return finalizeWorkspaceDeleteOperation(operation, {
+          workspaceId: resolvedWorkspaceId,
+          workspacePath: workspacePath!,
+          deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+          deletedRuntimeCount: runtimeCount,
+          filesystem: { ownership: "unknown", action: "preserved" },
+          outcome: "failed",
+          nativeAccepted: false,
+          nativeConfirmed: false,
+          sidecarSynchronized: false,
+          warnings: [...warnings, `Deletion of agent ${agentId} requires explicit recovery.`],
+          error: { code: "native-agent-removal-failed", message: `Deletion of agent ${agentId} requires explicit recovery.` }
+        });
+      }
+      operation = await updateLifecycleOperation(operation, {
+        items: { [agentId]: "unknown" }
+      });
+    }
+
     if (operation.items[agentId] !== "unknown") {
       const currentSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
       if (!currentSnapshot.agents.some((agent) => agent.id === agentId)) {
         operation = await updateLifecycleOperation(operation, {
           items: { [agentId]: "confirmed" },
-          nativeConfirmed: true
+          nativeConfirmed: true,
+          lastReconciledAt: new Date().toISOString(),
+          lastConfirmedNativeStateAt: new Date().toISOString()
         });
         continue;
       }
@@ -703,13 +1360,17 @@ async function deleteWorkspaceProjectInternal(
         });
       }
       operation = await updateLifecycleOperation(operation, {
-        items: { [agentId]: "confirmed" }
+        items: { [agentId]: "confirmed" },
+        lastReconciledAt: new Date().toISOString(),
+        lastConfirmedNativeStateAt: new Date().toISOString()
       });
       continue;
     }
 
     operation = await updateLifecycleOperation(operation, {
-      stage: "native-mutation"
+      stage: "native-mutation",
+      mutationAttemptCount: operation.mutationAttemptCount + 1,
+      lastMutationAt: new Date().toISOString()
     });
     const execution = await executeNativeMutationWithVerification({
       operation: "workspace.delete.agent",
@@ -728,7 +1389,9 @@ async function deleteWorkspaceProjectInternal(
       operation = await updateLifecycleOperation(operation, {
         items: { [agentId]: "confirmed" },
         nativeAccepted: mutationAccepted || operation.nativeAccepted,
-        nativeConfirmed: true
+        nativeConfirmed: true,
+        lastReconciledAt: new Date().toISOString(),
+        lastConfirmedNativeStateAt: new Date().toISOString()
       });
       continue;
     }
@@ -739,6 +1402,7 @@ async function deleteWorkspaceProjectInternal(
       stage: "reconciling-native-state",
       nativeAccepted: mutationAccepted || operation.nativeAccepted,
       nativeConfirmed: false,
+      lastReconciledAt: new Date().toISOString(),
       items: { [agentId]: execution.outcome === "unknown" ? "unknown" : "failed" },
       error: { code: execution.outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message }
     });
@@ -799,6 +1463,7 @@ async function deleteWorkspaceProjectInternal(
   operation = await updateLifecycleOperation(operation, { stage: "disconnecting-bindings" });
   const sidecarResult = await runLifecycleSidecarSteps([
     ...workspaceChannelIds.map((channelId) => ({
+      id: `channel:${channelId}`,
       label: `disconnect channel ${channelId}`,
       run: () => disconnectWorkspaceChannel({
         workspaceId: resolvedWorkspaceId,
@@ -806,10 +1471,23 @@ async function deleteWorkspaceProjectInternal(
       })
     })),
     {
+      id: "workspace-agent-config",
       label: "finish workspace config cleanup",
       run: () => removeWorkspaceAgentConfigEntries(workspacePath!, new Set(agentIds), gatewayOptions)
     }
-  ]);
+  ], {
+    completed: operation.sidecars,
+    onSuccess: async (stepId) => {
+      operation = await updateLifecycleOperation(operation, {
+        sidecars: { [stepId]: "confirmed" }
+      });
+    },
+    onFailure: async (stepId) => {
+      operation = await updateLifecycleOperation(operation, {
+        sidecars: { [stepId]: "failed" }
+      });
+    }
+  });
   warnings.push(...sidecarResult.warnings);
 
   operation = await updateLifecycleOperation(operation, { stage: "sidecar-sync" });
@@ -905,7 +1583,11 @@ function finalizeWorkspaceDeleteOperation(
 ) {
   return updateLifecycleOperation(operation, {
     state: result.outcome === "ready" ? "ready" : result.outcome,
-    stage: "complete",
+    stage: result.outcome === "ready"
+      ? "complete"
+      : result.outcome === "partial"
+        ? "cleanup-partial"
+        : "reconciling-native-state",
     nativeAccepted: result.nativeAccepted ?? operation.nativeAccepted,
     nativeConfirmed: result.nativeConfirmed ?? operation.nativeConfirmed,
     sidecarSynchronized: result.sidecarSynchronized ?? false,
@@ -1073,6 +1755,10 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function isExplicitWorkspaceRecovery(requestedGeneration: number | undefined, currentGeneration: number) {
+  return Number.isInteger(requestedGeneration) && requestedGeneration === currentGeneration + 1;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -1088,6 +1774,7 @@ async function applyWorkspacePlanEdits(
     directory?: string;
     baseline: WorkspaceEditSeed;
     gatewayOptions?: OpenClawCommandOptions;
+    recoveryGeneration?: number;
   }
 ) {
   const desiredName = normalizeOptionalValue(input.name) ?? normalizeOptionalValue(plan.workspace.name) ?? workspace.name;
@@ -1120,35 +1807,19 @@ async function applyWorkspacePlanEdits(
   const snapshot = workspaceRelocated
     ? await getMissionControlSnapshot({ force: true, includeHidden: true })
     : null;
+  let moveLifecycle: WorkspaceUpdateResult | null = null;
 
   if (workspaceRelocated) {
-    await ensurePathAvailable(targetPath, workspace.path);
-
-    try {
-      await rename(workspace.path, targetPath);
-    } catch (error) {
-      throw new Error(
-        error instanceof Error
-          ? `Unable to move workspace directory. ${error.message}`
-          : "Unable to move workspace directory."
-      );
+    moveLifecycle = await moveWorkspaceProjectLifecycle({
+      workspace,
+      snapshot: snapshot ?? await getMissionControlSnapshot({ force: true, includeHidden: true }),
+      targetPath,
+      gatewayOptions: input.gatewayOptions ?? {},
+      recoveryGeneration: input.recoveryGeneration
+    });
+    if (moveLifecycle.outcome !== "ready" && moveLifecycle.outcome !== "partial") {
+      return moveLifecycle;
     }
-
-    const configList = await readAgentConfigList(snapshot ?? undefined, input.gatewayOptions);
-    const updatedConfig = configList.map((entry) =>
-      entry.workspace === workspace.path
-        ? {
-            ...entry,
-            workspace: targetPath,
-            agentDir:
-              typeof entry.agentDir === "string" && entry.agentDir.startsWith(`${workspace.path}${path.sep}`)
-                ? path.join(targetPath, path.relative(workspace.path, entry.agentDir))
-                : entry.agentDir
-          }
-        : entry
-    );
-
-    await writeAgentConfigList(updatedConfig, input.gatewayOptions);
   }
 
   const currentWorkspacePath = targetPath;
@@ -1315,11 +1986,21 @@ async function applyWorkspacePlanEdits(
 
   return {
     workspaceId: workspaceRelocated
-      ? resolveWorkspaceIdForSnapshotPath(snapshot?.workspaces ?? [], currentWorkspacePath, workspace.path)
+      ? moveLifecycle?.workspaceId ?? resolveWorkspaceIdForSnapshotPath(snapshot?.workspaces ?? [], currentWorkspacePath, workspace.path)
       : workspace.id,
     previousWorkspaceId: workspace.id,
-    workspacePath: currentWorkspacePath
-  };
+    previousWorkspacePath: workspaceRelocated ? workspace.path : undefined,
+    workspacePath: currentWorkspacePath,
+    outcome: moveLifecycle?.outcome ?? "ready",
+    operationId: moveLifecycle?.operationId,
+    recoveryGeneration: moveLifecycle?.recoveryGeneration,
+    nativeAccepted: moveLifecycle?.nativeAccepted ?? false,
+    nativeConfirmed: moveLifecycle?.nativeConfirmed ?? true,
+    sidecarSynchronized: moveLifecycle?.sidecarSynchronized ?? true,
+    warnings: moveLifecycle?.warnings ?? [],
+    error: moveLifecycle?.error,
+    filesystem: moveLifecycle?.filesystem
+  } satisfies WorkspaceUpdateResult;
 }
 
 function findWorkspaceById(workspaces: WorkspaceProject[], workspaceId: string) {
@@ -1518,29 +2199,6 @@ function resolveWorkspaceRoot(configuredWorkspaceRoot?: string | null) {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-async function ensurePathAvailable(targetPath: string, currentPath: string) {
-  if (targetPath === currentPath) {
-    return;
-  }
-
-  try {
-    await access(targetPath);
-    throw new Error("Target workspace directory already exists.");
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-
-    if (code === "ENOENT") {
-      return;
-    }
-
-    if (error instanceof Error) {
-      throw error;
-    }
-
-    throw new Error("Unable to verify target workspace directory.");
-  }
 }
 
 function resolveWorkspaceTargetPath(currentPath: string, name?: string, directory?: string) {

@@ -2211,16 +2211,19 @@ export interface WorkspaceUpdateInput {
   directory?: string;
   plan?: WorkspacePlan;
   baseline?: WorkspaceEditSeed;
+  recoveryGeneration?: number;
 }
 
 export interface WorkspaceDeleteInput {
   workspaceId: string;
+  recoveryGeneration?: number;
 }
 
 export type LifecycleOperationOutcome = "ready" | "partial" | "failed" | "unknown";
 
 export interface LifecycleOperationStatus {
   operationId?: string;
+  recoveryGeneration?: number;
   outcome?: LifecycleOperationOutcome;
   nativeAccepted?: boolean;
   nativeConfirmed?: boolean;
@@ -2240,6 +2243,17 @@ export interface WorkspaceCreateResult extends LifecycleOperationStatus {
   kickoffStatus?: string;
   kickoffError?: string;
   warnings?: string[];
+}
+
+export interface WorkspaceUpdateResult extends LifecycleOperationStatus {
+  workspaceId: string;
+  previousWorkspaceId: string;
+  workspacePath: string;
+  previousWorkspacePath?: string;
+  filesystem?: {
+    ownership: "agentos-created-empty" | "agentos-created-clone" | "user-selected-existing" | "external-imported" | "unknown";
+    migrated: boolean;
+  };
 }
 
 export interface WorkspaceCreateAgentProjection {
@@ -2613,6 +2627,7 @@ export interface WorkspaceDeleteResult extends LifecycleOperationStatus {
 export interface AgentCreateInput {
   id: string;
   workspaceId: string;
+  recoveryGeneration?: number;
   workspacePath?: string;
   modelId?: string;
   name?: string;
@@ -2652,6 +2667,7 @@ export interface AgentUpdateInput {
 
 export interface AgentDeleteInput {
   agentId: string;
+  recoveryGeneration?: number;
 }
 
 export type ResetTarget = "mission-control" | "full-uninstall";

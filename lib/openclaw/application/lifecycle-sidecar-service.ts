@@ -1,11 +1,19 @@
 import "server-only";
 
 import { redactSecretText } from "@/lib/security/redaction";
+import type { LifecycleOperationItemState } from "@/lib/openclaw/application/lifecycle-operation-store";
 
 export type LifecycleSidecarStep = {
+  id?: string;
   label: string;
   run: () => Promise<unknown>;
   formatError?: (error: unknown) => string | null;
+};
+
+export type LifecycleSidecarRunOptions = {
+  completed?: Record<string, LifecycleOperationItemState>;
+  onSuccess?: (stepId: string) => Promise<void> | void;
+  onFailure?: (stepId: string) => Promise<void> | void;
 };
 
 export type LifecycleSidecarResult = {
@@ -19,16 +27,24 @@ export type LifecycleSidecarResult = {
  * native failure, and one failed step does not prevent independent cleanup.
  */
 export async function runLifecycleSidecarSteps(
-  steps: readonly LifecycleSidecarStep[]
+  steps: readonly LifecycleSidecarStep[],
+  options: LifecycleSidecarRunOptions = {}
 ): Promise<LifecycleSidecarResult> {
   const warnings: string[] = [];
 
   for (const step of steps) {
+    const stepId = step.id ?? step.label;
+    if (options.completed?.[stepId] === "confirmed" || options.completed?.[stepId] === "skipped") {
+      continue;
+    }
+
     try {
       await step.run();
+      await options.onSuccess?.(stepId);
     } catch (error) {
       const formatted = step.formatError?.(error);
       warnings.push(formatted || `AgentOS could not ${step.label}: ${safeLifecycleSidecarError(error)}.`);
+      await Promise.resolve(options.onFailure?.(stepId)).catch(() => undefined);
     }
   }
 

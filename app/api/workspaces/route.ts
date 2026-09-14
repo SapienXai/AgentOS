@@ -120,6 +120,7 @@ const workspaceCreateRequestSchema = workspaceSchema.extend({
 
 const workspaceUpdateSchema = z.object({
   workspaceId: z.string().min(1),
+  recoveryGeneration: z.number().int().min(1).optional(),
   name: z.string().optional(),
   directory: z.string().optional(),
   plan: z.any().optional(),
@@ -127,7 +128,8 @@ const workspaceUpdateSchema = z.object({
 });
 
 const workspaceDeleteSchema = z.object({
-  workspaceId: z.string().min(1)
+  workspaceId: z.string().min(1),
+  recoveryGeneration: z.number().int().min(1).optional()
 });
 
 export async function GET(request: Request) {
@@ -307,16 +309,17 @@ export async function PATCH(request: Request) {
       result: "started"
     }).catch(() => {});
     const updated = await updateWorkspaceProject(input, authorization.commandOptions);
+    correlationId = updated.operationId ?? correlationId;
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "workspace.update",
       targetKind: "workspace",
       targetId,
       correlationId,
-      result: "succeeded"
+      result: auditResultForLifecycleOutcome(updated.outcome)
     }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(updated));
+    return NextResponse.json(redactSecrets(updated), { status: lifecycleHttpStatus(updated.outcome) });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
@@ -330,7 +333,7 @@ export async function PATCH(request: Request) {
       {
         error: redactErrorMessage(error, "Unable to update workspace.")
       },
-      { status: 400 }
+      { status: lifecycleErrorHttpStatus(error) }
     );
   }
 }
@@ -379,7 +382,7 @@ export async function DELETE(request: Request) {
       {
         error: redactErrorMessage(error, "Unable to delete workspace.")
       },
-      { status: 400 }
+      { status: lifecycleErrorHttpStatus(error) }
     );
   }
 }
@@ -390,4 +393,9 @@ function auditResultForLifecycleOutcome(outcome: "ready" | "partial" | "failed" 
 
 function lifecycleHttpStatus(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
   return outcome === "unknown" ? 409 : outcome === "failed" ? 400 : 200;
+}
+
+function lifecycleErrorHttpStatus(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return code === "lifecycle-operation-busy" || code === "lifecycle-operation-revision-conflict" ? 409 : 400;
 }

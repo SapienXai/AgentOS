@@ -294,6 +294,7 @@ export function MissionSidebar({
   const [agentDeleteConfirmText, setAgentDeleteConfirmText] = useState("");
   const [operatorProfile, setOperatorProfile] = useState<OperatorProfileSummary>(emptyOperatorProfile);
   const handledRequestedAgentActionIdRef = useRef<string | null>(null);
+  const agentRecoveryGenerationRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -542,6 +543,8 @@ export function MissionSidebar({
     let deletedAgentId = agentDeleteTarget.id;
     let deletedAgentOutcome: "ready" | "partial" | "failed" | "unknown" | undefined;
     let deletedAgentWarning: string | undefined;
+    const previousRecoveryGeneration = agentRecoveryGenerationRef.current.get(agentDeleteTarget.id);
+    const recoveryGeneration = previousRecoveryGeneration === undefined ? undefined : previousRecoveryGeneration + 1;
 
     try {
       const response = await fetch("/api/agents", {
@@ -550,7 +553,8 @@ export function MissionSidebar({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          agentId: agentDeleteTarget.id
+          agentId: agentDeleteTarget.id,
+          ...(recoveryGeneration === undefined ? {} : { recoveryGeneration })
         })
       });
 
@@ -559,11 +563,18 @@ export function MissionSidebar({
         deletedRuntimeCount?: number;
         error?: string | { message?: string };
         outcome?: "ready" | "partial" | "failed" | "unknown";
+        recoveryGeneration?: number;
         warnings?: string[];
       };
 
       deletedAgentOutcome = result.outcome;
       deletedAgentWarning = result.warnings?.[0];
+      if (result.outcome === "failed" || result.outcome === "unknown") {
+        agentRecoveryGenerationRef.current.set(
+          agentDeleteTarget.id,
+          result.recoveryGeneration ?? previousRecoveryGeneration ?? 0
+        );
+      }
       if (!response.ok || result.error) {
         const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
         throw new Error(errorMessage || result.warnings?.[0] || "OpenClaw could not delete the agent.");
@@ -575,6 +586,7 @@ export function MissionSidebar({
 
       closeDeleteAgent();
       deletedAgentId = result.agentId || agentDeleteTarget.id;
+      agentRecoveryGenerationRef.current.delete(agentDeleteTarget.id);
       succeeded = true;
     } catch (error) {
       const ambiguous = deletedAgentOutcome === "unknown";
@@ -1433,6 +1445,7 @@ function WorkspaceSwitcher({
   const deleteImpact = deleteTarget ? getWorkspaceDeleteImpact(snapshot, deleteTarget) : null;
   const menuRef = useRef<HTMLDivElement | null>(null);
   const deletionRefreshInFlightRef = useRef(false);
+  const workspaceRecoveryGenerationRef = useRef(new Map<string, number>());
 
   const timedOutWorkspaceDeletions = useMemo(
     () => pendingWorkspaceDeletions.filter((entry) => deletionClockMs - entry.requestedAt >= pendingWorkspaceDeletionTimeoutMs),
@@ -1660,6 +1673,8 @@ function WorkspaceSwitcher({
     setDeleteConfirmText("");
     setOpen(true);
     let deletionRequestSucceeded = false;
+    const previousRecoveryGeneration = workspaceRecoveryGenerationRef.current.get(workspaceToDelete.id);
+    const recoveryGeneration = previousRecoveryGeneration === undefined ? undefined : previousRecoveryGeneration + 1;
 
     try {
       const response = await fetch("/api/workspaces", {
@@ -1668,18 +1683,26 @@ function WorkspaceSwitcher({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          workspaceId: workspaceToDelete.id
+          workspaceId: workspaceToDelete.id,
+          ...(recoveryGeneration === undefined ? {} : { recoveryGeneration })
         })
       });
       const result = (await response.json()) as {
         error?: string | { message?: string };
         outcome?: "ready" | "partial" | "failed" | "unknown";
+        recoveryGeneration?: number;
         warnings?: string[];
         filesystem?: { action?: "deleted" | "preserved" | "failed" };
       };
 
       if (result.outcome === "unknown") {
         deletionRequestSucceeded = true;
+      }
+      if (result.outcome === "failed" || result.outcome === "unknown") {
+        workspaceRecoveryGenerationRef.current.set(
+          workspaceToDelete.id,
+          result.recoveryGeneration ?? previousRecoveryGeneration ?? 0
+        );
       }
       if (!response.ok || result.error) {
         const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
@@ -1701,6 +1724,8 @@ function WorkspaceSwitcher({
         }
         throw new Error("OpenClaw did not confirm removal from the live workspace registry.");
       }
+
+      workspaceRecoveryGenerationRef.current.delete(workspaceToDelete.id);
 
       const remainingWorkspaces = refreshedSnapshot?.workspaces ?? snapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id);
       const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === workspaceToDelete.id);

@@ -108,6 +108,7 @@ export function useWorkspaceWizardDraft({
   const planRequestRef = useRef<Promise<WorkspacePlan | null> | null>(null);
   const planRef = useRef<WorkspacePlan | null>(null);
   const workspaceEditSeedRef = useRef<WorkspaceEditSeed | null>(null);
+  const workspaceRecoveryGenerationRef = useRef(new Map<string, number>());
   const storageKey = useMemo(
     () => (workspaceEditId ? `${plannerStorageKey}:${workspaceEditId}` : plannerStorageKey),
     [workspaceEditId]
@@ -591,6 +592,8 @@ export function useWorkspaceWizardDraft({
     }
 
     setIsApplyingWorkspaceChanges(true);
+    const previousRecoveryGeneration = workspaceRecoveryGenerationRef.current.get(workspaceEditId);
+    const recoveryGeneration = previousRecoveryGeneration === undefined ? undefined : previousRecoveryGeneration + 1;
 
     try {
       const response = await fetch("/api/workspaces", {
@@ -600,6 +603,7 @@ export function useWorkspaceWizardDraft({
         },
         body: JSON.stringify({
           workspaceId: workspaceEditId,
+          ...(recoveryGeneration === undefined ? {} : { recoveryGeneration }),
           name: activePlan.workspace.name,
           directory: activePlan.workspace.directory,
           plan: activePlan,
@@ -611,13 +615,23 @@ export function useWorkspaceWizardDraft({
         workspaceId?: string;
         workspacePath?: string;
         error?: string;
+        outcome?: "ready" | "partial" | "failed" | "unknown";
+        recoveryGeneration?: number;
       };
+
+      if (result.outcome === "failed" || result.outcome === "unknown") {
+        workspaceRecoveryGenerationRef.current.set(
+          workspaceEditId,
+          result.recoveryGeneration ?? previousRecoveryGeneration ?? 0
+        );
+      }
 
       if (!response.ok || result.error) {
         throw new Error(result.error || "OpenClaw could not update the workspace.");
       }
 
       clearStoredPlan();
+      workspaceRecoveryGenerationRef.current.delete(workspaceEditId);
       await onRefresh();
       onWorkspaceUpdated?.(result.workspaceId ?? workspaceEditId);
 

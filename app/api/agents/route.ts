@@ -64,6 +64,7 @@ const memorySearchSchema = z.object({
 const createAgentSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
+  recoveryGeneration: z.number().int().min(1).optional(),
   modelId: z.string().optional(),
   name: z.string().optional(),
   emoji: z.string().optional(),
@@ -100,7 +101,8 @@ const updateAgentSchema = z.object({
 });
 
 const deleteAgentSchema = z.object({
-  agentId: z.string().min(1)
+  agentId: z.string().min(1),
+  recoveryGeneration: z.number().int().min(1).optional()
 });
 
 export async function GET(request: Request) {
@@ -156,7 +158,7 @@ export async function POST(request: Request) {
       {
         error: formatAgentApiError("create", error)
       },
-      { status: 400 }
+      { status: lifecycleErrorHttpStatus(error) }
     );
   }
 }
@@ -243,7 +245,7 @@ export async function DELETE(request: Request) {
       {
         error: formatAgentApiError("delete", error)
       },
-      { status: 400 }
+      { status: lifecycleErrorHttpStatus(error) }
     );
   }
 }
@@ -254,6 +256,11 @@ function auditResultForLifecycleOutcome(outcome: "ready" | "partial" | "failed" 
 
 function lifecycleHttpStatus(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
   return outcome === "unknown" ? 409 : outcome === "failed" ? 400 : 200;
+}
+
+function lifecycleErrorHttpStatus(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return code === "lifecycle-operation-busy" || code === "lifecycle-operation-revision-conflict" ? 409 : 400;
 }
 
 function formatAgentApiError(
