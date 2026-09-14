@@ -21,6 +21,7 @@ const PRIMARY_AGENT_NAME_SUFFIXES = [
 ] as const;
 
 const WORKSPACE_SUFFIXES = new Set<string>(WORKSPACE_NAME_SUFFIXES.map((suffix) => suffix.toLowerCase()));
+const GENERIC_WORKSPACE_WORDS = new Set(["new", "project", "product", "untitled", "workspace", "workspaces"]);
 const MAX_BRAND_WORDS = 2;
 
 function nameWords(value: string | undefined) {
@@ -39,6 +40,17 @@ function stripWorkspaceSuffix(words: string[]) {
   return words;
 }
 
+function normalizeNameCandidate(value: string | undefined) {
+  const candidate = (value ?? "")
+    .replace(/[.,!?;:]+$/u, "")
+    .replace(/^["“'`]+|["”'`]+$/gu, "")
+    .trim();
+  if (!candidate || candidate.length > 80) return null;
+  const words = nameWords(candidate);
+  if (words.length !== 1) return null;
+  return words[0] ?? null;
+}
+
 function stableIndex(seed: string, length: number) {
   let hash = 0;
   for (const character of seed.toLowerCase()) {
@@ -54,6 +66,38 @@ function stableIndex(seed: string, length: number) {
 export function deriveWorkspaceBrandName(value: string | undefined) {
   const words = stripWorkspaceSuffix(nameWords(value));
   return words.slice(0, MAX_BRAND_WORDS).join(" ") || "Workspace";
+}
+
+/** Returns whether a generated identity is only a generic workspace label. */
+export function isGenericWorkspaceName(value: string | undefined) {
+  const words = stripWorkspaceSuffix(nameWords(value)).map((word) => word.toLowerCase());
+  return words.length === 0 || words.every((word) => GENERIC_WORKSPACE_WORDS.has(word));
+}
+
+/**
+ * Extracts a short project token from an operator brief when the brief names
+ * the project directly. This intentionally returns only explicit identity
+ * signals; the Architect may still choose a name when the brief is generic.
+ */
+export function deriveProjectNameFromText(value: string | undefined) {
+  const text = value?.replace(/\s+/gu, " ").trim() ?? "";
+  if (!text) return null;
+
+  const patterns = [
+    /\b(?:called|named)\s+["“']?([^\s,.;:!?()[\]{}]+)["”']?/iu,
+    /\b(?:project|product|workspace)\s+(?:name|title)?\s*(?:is|:|-)\s*["“']?([^\s,.;:!?()[\]{}]+)["”']?/iu,
+    /\b(?:project|workspace)\s+for\s+["“']?([A-Z][A-Za-z0-9_-]{1,54})["”']?/u,
+    /\b([^\s,.;:!?()[\]{}]+)\s+proje\w*\b/iu
+  ];
+
+  for (const pattern of patterns) {
+    const candidate = normalizeNameCandidate(text.match(pattern)?.[1]);
+    if (candidate && !GENERIC_WORKSPACE_WORDS.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -80,4 +124,3 @@ export function buildCompactPrimaryAgentName(workspaceName: string | undefined) 
   const suffix = PRIMARY_AGENT_NAME_SUFFIXES[stableIndex(`primary-agent-name-v1|${brand}`, PRIMARY_AGENT_NAME_SUFFIXES.length)];
   return `${brand} ${suffix}`;
 }
-

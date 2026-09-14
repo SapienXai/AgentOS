@@ -379,13 +379,15 @@ test("workspace review recovery maps observed failures to one meaningful action"
 });
 
 test("create mode is Blueprint-first and does not enter the legacy Planner", async () => {
-  const [wrapperSource, source, contextRoute, activitySource, layoutSource, shellSource] = await Promise.all([
+  const [wrapperSource, source, contextRoute, activitySource, intelligenceIndicatorSource, layoutSource, shellSource, operationsShellSource] = await Promise.all([
     readFile("components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx", "utf8"),
     readFile(componentPath, "utf8"),
     readFile("app/api/workspaces/context/route.ts", "utf8"),
     readFile("components/workspace-creation-activity-indicator.tsx", "utf8"),
+    readFile("components/mission-control/workspace-intelligence-status-indicator.tsx", "utf8"),
     readFile("app/layout.tsx", "utf8"),
-    readFile("components/mission-control/mission-control-shell.tsx", "utf8")
+    readFile("components/mission-control/mission-control-shell.tsx", "utf8"),
+    readFile("components/operations/operations-shell.tsx", "utf8")
   ]);
 
   assert.match(wrapperSource, /if \(!props\.workspaceEditId\)/);
@@ -417,11 +419,16 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(activitySource, /workspaceCreationReopen/);
   assert.match(activitySource, /requestWorkspaceCreationReopen/);
   assert.match(activitySource, /clearWorkspaceCreationMinimizedRun/);
+  assert.match(activitySource, /bottom-\[calc\(max\(1rem,env\(safe-area-inset-bottom\)\)\+3\.5rem\)\]/);
+  assert.match(intelligenceIndicatorSource, /fixed inset-x-0 bottom-\[max\(1rem,env\(safe-area-inset-bottom\)\)\]/);
+  assert.doesNotMatch(intelligenceIndicatorSource, /fixed right-4 top-4/);
   assert.match(layoutSource, /WorkspaceCreationActivityIndicator/);
   assert.match(shellSource, /workspaceCreationReopen/);
   assert.match(shellSource, /workspaceCreationReopenEvent/);
   assert.match(shellSource, /event\.preventDefault\(\)/);
   assert.match(shellSource, /creationReopenRequest/);
+  assert.match(operationsShellSource, /WorkspaceIntelligenceStatusIndicator/);
+  assert.match(operationsShellSource, /creationReviewRunId=\{workspaceCreationReviewRunId\}/);
   assert.match(source, /reopenRequest/);
   assert.match(source, /persistWorkspaceCreationMinimizedRun/);
   assert.match(source, /readWorkspaceCreationMinimizedRunId/);

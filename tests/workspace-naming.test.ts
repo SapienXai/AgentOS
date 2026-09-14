@@ -4,8 +4,17 @@ import { test } from "node:test";
 import {
   buildCompactPrimaryAgentName,
   buildCompactWorkspaceName,
-  deriveWorkspaceBrandName
+  deriveProjectNameFromText,
+  deriveWorkspaceBrandName,
+  isGenericWorkspaceName
 } from "@/lib/workspace-naming";
+
+test("project identity extraction ignores generic workspace labels", () => {
+  assert.equal(deriveProjectNameFromText("nitroclash projemize marketing ekibi kuracaz"), "nitroclash");
+  assert.equal(deriveProjectNameFromText("Build a simple product for independent makers."), null);
+  assert.equal(isGenericWorkspaceName("Workspace Works"), true);
+  assert.equal(isGenericWorkspaceName("NitroClash Works"), false);
+});
 
 test("workspace naming keeps a long project title out of the workspace identity", () => {
   assert.equal(
@@ -50,4 +59,3 @@ test("existing workspace suffixes are not duplicated and names stay bounded", ()
   assert.ok(longName.split(/\s+/u).length <= 3);
   assert.equal(buildCompactPrimaryAgentName(workspaceName).split(/\s+/u).length, 3);
 });
-

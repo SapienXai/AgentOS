@@ -28,7 +28,9 @@ import {
 import { redactSecretText } from "@/lib/security/redaction";
 import {
   buildCompactPrimaryAgentName,
-  buildCompactWorkspaceName
+  buildCompactWorkspaceName,
+  deriveProjectNameFromText,
+  isGenericWorkspaceName
 } from "@/lib/workspace-naming";
 import {
   selectProjectIntelligenceContextExcerpts
@@ -103,6 +105,7 @@ export const WORKSPACE_ARCHITECT_SYSTEM_POLICY = [
   "A specialist requires a distinct persistent responsibility or security, tool, communication, queue, or context boundary and must cite evidence.",
   "An automation requires actual requested recurring or event-driven intent, not merely descriptive cadence.",
   "A channel requires actual AI communication intent, not merely a statement about where customers or staff communicate.",
+  "When the brief or validated Project Intelligence names a project, preserve that project identity in identity.name; never replace it with a generic Workspace label.",
   "Do not invent credentials, runtime IDs, deployment state, or capabilities already provided by OpenClaw or AgentOS.",
   "OpenClaw owns agent execution, memory, indexing, embeddings, and search. AgentOS only proposes and validates architecture.",
   "Return JSON only. Return a proposal, never a final WorkspaceBlueprint and never provisioning instructions.",
@@ -1166,12 +1169,19 @@ function buildNativeSearch(
 }
 
 function inferIdentity(brief: string, sources: WorkspaceKnowledgeSource[], pack?: ProjectIntelligencePack) {
-  const nameMatch = brief.match(/\b(?:called|named|for|project)\s+["“']?([A-Za-z0-9][A-Za-z0-9 ._-]{1,54})["”']?/i);
   const sourceName = sources.find((source) => source.kind === "website" || source.kind === "repository")?.label;
-  const packName = pack?.identity.projectName.value || pack?.identity.displayName.value || pack?.identity.organizationName.value;
   const packPurpose = pack?.identity.description.value || pack?.overview.whatItDoes.value;
   const packType = pack?.identity.projectType.value;
-  const name = redactSecretText((packName || nameMatch?.[1] || sourceName || "Workspace").replace(/[.,!?]+$/, "").trim()).slice(0, 80) || "Workspace";
+  const briefName = deriveProjectNameFromText(brief);
+  const sourceDerivedName = deriveProjectNameFromText(sourceName);
+  const explicitName = [
+    pack?.identity.projectName.value,
+    pack?.identity.displayName.value,
+    pack?.identity.organizationName.value,
+    briefName,
+    sourceDerivedName
+  ].find((candidate) => candidate?.trim() && !isGenericWorkspaceName(candidate));
+  const name = redactSecretText((explicitName || sourceName || "Workspace").replace(/[.,!?]+$/, "").trim()).slice(0, 80) || "Workspace";
   const purpose = redactSecretText(packPurpose || brief.split(/[.!?\n]/)[0]?.trim() || "Operate the requested workspace.").slice(0, 240);
   const projectType = packType || (/support|customer service|tickets|müşteri desteği/i.test(brief)
     ? "support"
@@ -1182,7 +1192,7 @@ function inferIdentity(brief: string, sources: WorkspaceKnowledgeSource[], pack?
         : /software|app|product|repo|code|kod|uygulama/i.test(brief)
         ? "software"
           : "general");
-  return { name, purpose, projectType };
+  return { name, purpose, projectType, explicitName: Boolean(explicitName) };
 }
 
 type ArchitectReasoningState = {
@@ -1541,8 +1551,11 @@ function normalizeArchitectProposal(input: {
   maxSpecialists?: number;
 }): ArchitectNormalizationResult {
   const fallbackIdentity = inferIdentity(input.brief, input.knowledge.sources, input.projectIntelligence?.pack);
+  const identityName = fallbackIdentity.explicitName
+    ? fallbackIdentity.name
+    : boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80);
   const identity = {
-    name: buildCompactWorkspaceName(boundedText(input.proposal.identity?.name, fallbackIdentity.name, 80)),
+    name: buildCompactWorkspaceName(identityName),
     purpose: boundedText(input.proposal.identity?.purpose, fallbackIdentity.purpose, 240),
     projectType: boundedText(input.proposal.identity?.projectType, fallbackIdentity.projectType, 80)
   };

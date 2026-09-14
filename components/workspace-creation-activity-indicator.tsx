@@ -127,7 +127,7 @@ export function WorkspaceCreationActivityIndicator() {
       }}
       aria-label="Reopen workspace creation"
       className={cn(
-        "fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-[#e4d7ca] bg-white/95 px-3 py-2 text-left text-[#4d4036] shadow-[0_16px_40px_rgba(15,23,42,0.2)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70",
+        "fixed bottom-[calc(max(1rem,env(safe-area-inset-bottom))+3.5rem)] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-[#e4d7ca] bg-white/95 px-3 py-2 text-left text-[#4d4036] shadow-[0_16px_40px_rgba(15,23,42,0.2)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70",
         "dark:border-white/15 dark:bg-[#111827]/95 dark:text-slate-100"
       )}
     >

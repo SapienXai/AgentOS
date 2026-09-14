@@ -128,6 +128,28 @@ test("simple product uses the minimum automatic topology", async () => {
   assert.equal(result.blueprint.operations.automations.length, 0);
   assert.equal(result.blueprint.operations.channels.length, 0);
   assert.equal(result.blueprint.safety.generationSideEffectFree, true);
+  assert.match(result.blueprint.identity.name, /^Acme\s/i);
+});
+
+test("an explicit project name in the brief wins over a generic Architect workspace name", async () => {
+  const result = await generateWorkspaceBlueprint(input("nitroclash projemize marketing ekibi kuracaz"), {
+    runId: "architect-project-name",
+    modelExecutor: modelFor(() => ({
+      identity: { name: "Workspace Works", purpose: "Operate the marketing team", projectType: "content" },
+      workforce: { specialists: [] },
+      operations: { workflows: [], automations: [], channels: [] },
+      capabilities: { skills: [], tools: [] },
+      memory: { durableFacts: [] },
+      connections: [],
+      recommendations: [],
+      assumptions: [],
+      warnings: []
+    }))
+  });
+
+  assert.match(result.blueprint.identity.name, /^nitroclash\s/i);
+  assert.doesNotMatch(result.blueprint.identity.name, /^workspace\s/i);
+  assert.match(result.blueprint.workforce.primaryAgent.name, /^nitroclash\s/i);
 });
 
 test("software project remains one primary without size-driven topology", async () => {

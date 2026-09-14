@@ -5,6 +5,7 @@ import { Menu } from "lucide-react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
+import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
 import {
   buildPendingAgentRecord,
@@ -113,6 +114,7 @@ export function OperationsShell({
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
+  const [workspaceCreationReviewRunId, setWorkspaceCreationReviewRunId] = useState<string | null>(null);
   const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const liveAgentIds = useMemo(() => new Set(snapshot.agents.map((agent) => agent.id)), [snapshot.agents]);
@@ -271,6 +273,7 @@ export function OperationsShell({
 
   const openWorkspaceWizard = (mode: "basic" | "advanced" = "basic") => {
     setWorkspaceWizardEditId(null);
+    setWorkspaceCreationReviewRunId(null);
     setWorkspaceWizardInitialMode(mode);
     setIsWorkspaceWizardOpen(true);
   };
@@ -286,8 +289,16 @@ export function OperationsShell({
 
     if (!nextOpen) {
       setWorkspaceWizardEditId(null);
+      setWorkspaceCreationReviewRunId(null);
       setWorkspaceWizardInitialMode("basic");
     }
+  };
+
+  const openWorkspaceUpdateReview = (creationRunId: string) => {
+    setWorkspaceWizardEditId(null);
+    setWorkspaceCreationReviewRunId(creationRunId);
+    setWorkspaceWizardInitialMode("basic");
+    setIsWorkspaceWizardOpen(true);
   };
 
   const handleWorkspaceCreated = (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => {
@@ -323,6 +334,7 @@ export function OperationsShell({
         surfaceTheme === "light" && "mission-shell--light"
       )}
     >
+      <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspace?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
       <div className="mission-canvas-backdrop fixed inset-0 z-0">
         <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0 opacity-60" />
         <div
@@ -527,6 +539,7 @@ export function OperationsShell({
         snapshot={snapshot}
         onRefresh={refresh}
         onWorkspaceCreated={handleWorkspaceCreated}
+        creationReviewRunId={workspaceCreationReviewRunId}
         onWorkspaceUpdated={setActiveWorkspaceId}
       />
 
