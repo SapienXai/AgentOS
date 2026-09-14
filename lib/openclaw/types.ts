@@ -2217,7 +2217,19 @@ export interface WorkspaceDeleteInput {
   workspaceId: string;
 }
 
-export interface WorkspaceCreateResult {
+export type LifecycleOperationOutcome = "ready" | "partial" | "failed" | "unknown";
+
+export interface LifecycleOperationStatus {
+  operationId?: string;
+  outcome?: LifecycleOperationOutcome;
+  nativeAccepted?: boolean;
+  nativeConfirmed?: boolean;
+  sidecarSynchronized?: boolean;
+  warnings?: string[];
+  error?: { code: string; message: string };
+}
+
+export interface WorkspaceCreateResult extends LifecycleOperationStatus {
   workspaceId: string;
   workspaceName?: string;
   workspacePath: string;
@@ -2258,6 +2270,7 @@ export type WorkspaceCreateStreamEvent =
       ok: false;
       error: string;
       progress?: OperationProgressSnapshot;
+      result?: WorkspaceCreateResult;
     };
 
 export type WorkspacePlanStatus =
@@ -2572,6 +2585,30 @@ export type WorkspacePlanDeployStreamEvent =
       error: string;
       progress?: OperationProgressSnapshot;
     };
+
+export interface AgentCreateResult extends LifecycleOperationStatus {
+  agentId: string;
+  workspaceId: string;
+  warnings: string[];
+}
+
+export interface AgentDeleteResult extends LifecycleOperationStatus {
+  agentId: string;
+  workspaceId: string;
+  workspacePath: string;
+  deletedRuntimeCount: number;
+}
+
+export interface WorkspaceDeleteResult extends LifecycleOperationStatus {
+  workspaceId: string;
+  workspacePath: string;
+  deletedAgentIds: string[];
+  deletedRuntimeCount: number;
+  filesystem: {
+    ownership: "agentos-created-empty" | "agentos-created-clone" | "user-selected-existing" | "external-imported" | "unknown";
+    action: "deleted" | "preserved" | "failed";
+  };
+}
 
 export interface AgentCreateInput {
   id: string;

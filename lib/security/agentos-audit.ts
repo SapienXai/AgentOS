@@ -8,7 +8,7 @@ import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
 
 export const AGENTOS_AUDIT_FILE = "agentos-audit.jsonl";
 
-export type AgentOsAuditResult = "started" | "succeeded" | "denied" | "failed" | "unknown";
+export type AgentOsAuditResult = "started" | "succeeded" | "denied" | "failed" | "unknown" | "partial";
 
 export type AgentOsAuditEvent = {
   schemaVersion: 1;
@@ -17,6 +17,7 @@ export type AgentOsAuditEvent = {
   operation: string;
   targetKind: string;
   targetId?: string;
+  correlationId?: string;
   result: AgentOsAuditResult;
   timestamp: string;
 };
@@ -32,6 +33,7 @@ export async function recordAgentOsAuditEvent(input: {
   targetKind: string;
   targetId?: string | null;
   result: AgentOsAuditResult;
+  correlationId?: string | null;
   env?: NodeJS.ProcessEnv;
   timestamp?: string;
 }) {
@@ -43,6 +45,7 @@ export async function recordAgentOsAuditEvent(input: {
     operation: input.operation,
     targetKind: input.targetKind,
     ...(safeTargetId(input.targetId) ? { targetId: safeTargetId(input.targetId)! } : {}),
+    ...(safeTargetId(input.correlationId) ? { correlationId: safeTargetId(input.correlationId)! } : {}),
     result: input.result,
     timestamp: input.timestamp ?? new Date().toISOString()
   };

@@ -59,6 +59,18 @@ import { buildUniqueAgentName } from "@/lib/openclaw/agent-naming";
 import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
+import {
+  bindWorkspaceChannelAgent,
+  unbindWorkspaceChannelAgent
+} from "@/lib/openclaw/application/channel-service";
+import { executeNativeMutationWithVerification } from "@/lib/openclaw/application/native-mutation-service";
+import { reconcileLifecycleState } from "@/lib/openclaw/application/lifecycle-reconciliation";
+import { runLifecycleSidecarSteps } from "@/lib/openclaw/application/lifecycle-sidecar-service";
+import {
+  createOrReadLifecycleOperation,
+  updateLifecycleOperation,
+  withLifecycleOperationLock
+} from "@/lib/openclaw/application/lifecycle-operation-store";
 import { workspaceIdFromPath, workspacePathMatchesId } from "@/lib/openclaw/domains/workspace-id";
 import {
   resolveAgentCreationReadinessError,
@@ -66,11 +78,14 @@ import {
 } from "@/lib/openclaw/readiness";
 import type {
   AgentCreateInput,
+  AgentCreateResult,
   AgentDeleteInput,
+  AgentDeleteResult,
   AgentPolicy,
   AgentUpdateInput,
   MissionControlSnapshot,
-  OpenClawAgent
+  OpenClawAgent,
+  LifecycleOperationOutcome
 } from "@/lib/openclaw/types";
 import type {
   OpenClawCommandOptions,
@@ -80,6 +95,19 @@ import type {
 const LEGACY_CUSTOM_PRESET_SKILL_IDS = ["project-researcher", "project-builder", "project-analyst"];
 
 export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenClawCommandOptions = {}) {
+  const agentId = slugify(input.id.trim());
+  if (!agentId) {
+    throw new Error("Agent id is required.");
+  }
+
+  return withLifecycleOperationLock({
+    kind: "agent.create",
+    targetId: `${input.workspaceId}:${agentId}`,
+    run: () => createAgentInternal(input, gatewayOptions)
+  });
+}
+
+async function createAgentInternal(input: AgentCreateInput, gatewayOptions: OpenClawCommandOptions = {}) {
   const agentId = slugify(input.id.trim());
 
   if (!agentId) {
@@ -102,7 +130,6 @@ export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenC
 
   const resolvedWorkspaceId =
     resolvedWorkspace?.id ?? (resolvedWorkspacePath ? workspaceIdFromPath(resolvedWorkspacePath) : input.workspaceId || null);
-  assertAgentIdAvailable(snapshot, agentId, resolvedWorkspaceId);
 
   if (!resolvedWorkspacePath || !resolvedWorkspaceId) {
     throw new Error("Workspace was not found for this agent.");
@@ -126,6 +153,81 @@ export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenC
 
   if (readinessError) {
     throw new Error(readinessError);
+  }
+
+  let lifecycleOperation = (await createOrReadLifecycleOperation({
+    kind: "agent.create",
+    targetId: `${resolvedWorkspaceId}:${agentId}`,
+    metadata: {
+      workspaceId: resolvedWorkspaceId,
+      workspacePath: resolvedWorkspacePath
+    }
+  })).operation;
+
+  if (lifecycleOperation.state === "ready" && lifecycleOperation.result) {
+    const currentSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    if (currentSnapshot.agents.some((entry) =>
+      entry.id === agentId &&
+      (entry.workspaceId === resolvedWorkspaceId || path.resolve(entry.workspacePath) === path.resolve(resolvedWorkspacePath))
+    )) {
+      return lifecycleOperation.result as unknown as AgentCreateResult;
+    }
+    snapshot = currentSnapshot;
+    lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+      state: "requested",
+      stage: "requested",
+      nativeAccepted: false,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [],
+      error: null,
+      result: null,
+      items: {}
+    });
+  }
+
+  let existingAgent = snapshot.agents.find((entry) => entry.id === agentId);
+  if (lifecycleOperation.nativeAccepted && !existingAgent) {
+    snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    existingAgent = snapshot.agents.find((entry) => entry.id === agentId);
+    if (!existingAgent) {
+      const warning = "AgentOS will not repeat an ambiguous OpenClaw create request until the native agent state is confirmed.";
+      const result = {
+        agentId,
+        workspaceId: resolvedWorkspaceId,
+        outcome: "unknown",
+        operationId: lifecycleOperation.operationId,
+        nativeAccepted: true,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: [warning]
+      } satisfies AgentCreateResult;
+      await updateLifecycleOperation(lifecycleOperation, {
+        state: "unknown",
+        stage: "reconciling-native-state",
+        nativeAccepted: true,
+        nativeConfirmed: false,
+        warnings: [warning],
+        error: { code: "native-agent-creation-uncertain", message: warning },
+        result
+      });
+      return result;
+    }
+  }
+  const isRecoveryOfAcceptedNativeAgent = Boolean(
+    existingAgent &&
+    (existingAgent.workspaceId === resolvedWorkspaceId || path.resolve(existingAgent.workspacePath) === path.resolve(resolvedWorkspacePath)) &&
+    lifecycleOperation.nativeAccepted
+  );
+  if (existingAgent && !isRecoveryOfAcceptedNativeAgent) {
+    lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+      state: "failed",
+      error: {
+        code: "agent-id-conflict",
+        message: `Agent id "${agentId}" already exists in workspace "${describeAgentWorkspace(snapshot, existingAgent)}".`
+      }
+    });
+    assertAgentIdAvailable(snapshot, agentId, resolvedWorkspaceId);
   }
 
   const policy = resolveAgentPolicy(input.policy?.preset ?? DEFAULT_AGENT_PRESET, input.policy);
@@ -163,94 +265,205 @@ export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenC
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup")?.id ?? null;
   const agentDir = buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId);
   const syncWarnings: string[] = [...modelSelection.warnings];
-
-  await getOpenClawAdapter().addAgent({
-    id: agentId,
-    workspace: resolvedWorkspacePath,
-    agentDir,
-    model: agentModelId,
-    name: displayName,
-    emoji,
-    avatar
-  }, gatewayOptions);
-
-  const policySkillId = await ensureAgentPolicySkillFromProvisioning({
-    workspacePath: resolvedWorkspacePath,
-    agentId,
-    agentName: displayName,
-    policy,
-    behaviorInstructions: workerProfile.employment.behaviorInstructions,
-    setupAgentId,
-    snapshot
+  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+    stage: "creating-native-agent",
+    state: "running",
+    metadata: { workspaceId: resolvedWorkspaceId, workspacePath: resolvedWorkspacePath }
   });
-  for (const skillId of declaredSkillIds) {
-    await ensureWorkspaceSkillMarkdownFromProvisioning(resolvedWorkspacePath, skillId);
-  }
 
-  try {
-    await upsertAgentConfigEntryWithRecovery(
-      agentId,
-      resolvedWorkspacePath,
-      {
+  let nativeAccepted = lifecycleOperation.nativeAccepted;
+  let nativeConfirmed = isRecoveryOfAcceptedNativeAgent;
+  if (!isRecoveryOfAcceptedNativeAgent) {
+    const nativeExecution = await executeNativeMutationWithVerification({
+      operation: "agent.create",
+      mutate: () => getOpenClawAdapter().addAgent({
+        id: agentId,
+        workspace: resolvedWorkspacePath,
         agentDir,
-        name: displayName,
-        description: workerProfile.employment.mission,
         model: agentModelId,
-        heartbeat,
-        skills: uniqueStrings([...declaredSkillIds, policySkillId]),
-        tools: toolPolicy,
-        sandbox: input.sandbox,
-        memorySearch: input.memorySearch,
-        identity: {
-          name: displayName,
-          emoji,
-          theme,
-          avatar
-        }
-      },
-      snapshot,
-      undefined,
-      gatewayOptions
-    );
-  } catch (error) {
-    syncWarnings.push(assertPostCreateAgentConfigSyncWarning(error));
+        name: displayName,
+        emoji,
+        avatar
+      }, gatewayOptions),
+      verify: async () => {
+        const reconciliation = await reconcileLifecycleState({
+          read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+          isConfirmed: (current) => current.agents.some((agent) =>
+            agent.id === agentId &&
+            (agent.workspaceId === resolvedWorkspaceId || path.resolve(agent.workspacePath) === path.resolve(resolvedWorkspacePath))
+          )
+        });
+        return reconciliation.outcome === "confirmed";
+      }
+    });
+
+    nativeAccepted = nativeExecution.outcome !== "failed" || nativeExecution.classification.requestSent === true;
+    if (nativeExecution.outcome !== "succeeded") {
+      const warning = nativeExecution.classification.message || "OpenClaw did not confirm the new agent.";
+      const result = {
+        agentId,
+        workspaceId: resolvedWorkspaceId,
+        outcome: nativeExecution.outcome,
+        operationId: lifecycleOperation.operationId,
+        nativeAccepted,
+        nativeConfirmed: false,
+        sidecarSynchronized: false,
+        warnings: [warning]
+      } satisfies AgentCreateResult;
+      await updateLifecycleOperation(lifecycleOperation, {
+        state: nativeExecution.outcome,
+        stage: "reconciling-native-state",
+        nativeAccepted,
+        nativeConfirmed: false,
+        warnings: result.warnings,
+        error: { code: nativeExecution.outcome === "unknown" ? "native-agent-creation-uncertain" : "native-agent-creation-failed", message: warning },
+        result
+      });
+      return result;
+    }
+    nativeConfirmed = true;
   }
 
-  await upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
-    id: agentId,
-    name: displayName,
-    role: workerProfile.employment.role ?? formatAgentPresetLabel(policy.preset),
-    emoji,
-    theme,
-    enabled: true,
-    skillId: declaredSkillIds[0] ?? null,
-    skillIds: declaredSkillIds,
-    toolIds: declaredToolIds,
-    modelId: agentModelId,
-    isPrimary: false,
-    policy,
-    channelIds: input.channelIds ?? [],
-    workerProfile
+  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+    stage: "syncing-profile-config",
+    nativeAccepted,
+    nativeConfirmed
   });
-  await syncWorkspaceAgentsMarkdown(resolvedWorkspacePath);
-  await pruneUnreferencedGeneratedWorkspaceSkills(
-    resolvedWorkspacePath,
-    collectWorkspaceSkillReferences(snapshot, resolvedWorkspacePath, new Map([[agentId, declaredSkillIds]]))
+
+  let policySkillId = buildAgentPolicySkillId(agentId);
+  const profileSidecarResult = await runLifecycleSidecarSteps([
+    {
+      label: "prepare the agent policy",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: async () => {
+        policySkillId = await ensureAgentPolicySkillFromProvisioning({
+          workspacePath: resolvedWorkspacePath,
+          agentId,
+          agentName: displayName,
+          policy,
+          behaviorInstructions: workerProfile.employment.behaviorInstructions,
+          setupAgentId,
+          snapshot
+        });
+      }
+    },
+    ...declaredSkillIds.map((skillId) => ({
+      label: `prepare skill ${skillId}`,
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => ensureWorkspaceSkillMarkdownFromProvisioning(resolvedWorkspacePath, skillId)
+    })),
+    {
+      label: "sync the agent config",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => upsertAgentConfigEntryWithRecovery(
+        agentId,
+        resolvedWorkspacePath,
+        {
+          agentDir,
+          name: displayName,
+          description: workerProfile.employment.mission,
+          model: agentModelId,
+          heartbeat,
+          skills: uniqueStrings([...declaredSkillIds, policySkillId]),
+          tools: toolPolicy,
+          sandbox: input.sandbox,
+          memorySearch: input.memorySearch,
+          identity: {
+            name: displayName,
+            emoji,
+            theme,
+            avatar
+          }
+        },
+        snapshot,
+        undefined,
+        gatewayOptions
+      )
+    },
+    {
+      label: "record the workspace agent metadata",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
+        id: agentId,
+        name: displayName,
+        role: workerProfile.employment.role ?? formatAgentPresetLabel(policy.preset),
+        emoji,
+        theme,
+        enabled: true,
+        skillId: declaredSkillIds[0] ?? null,
+        skillIds: declaredSkillIds,
+        toolIds: declaredToolIds,
+        modelId: agentModelId,
+        isPrimary: false,
+        policy,
+        channelIds: input.channelIds ?? [],
+        workerProfile
+      })
+    },
+    {
+      label: "sync the workspace agent document",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => syncWorkspaceAgentsMarkdown(resolvedWorkspacePath)
+    },
+    {
+      label: "prune generated workspace skills",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => pruneUnreferencedGeneratedWorkspaceSkills(
+        resolvedWorkspacePath,
+        collectWorkspaceSkillReferences(snapshot, resolvedWorkspacePath, new Map([[agentId, declaredSkillIds]]))
+      )
+    },
+    {
+      label: "preserve legacy agent context",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => preserveLegacyAgentContextFiles(agentId, resolvedWorkspacePath, agentDir)
+    },
+    {
+      label: "sync workspace policy skills",
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => syncWorkspaceAgentPolicySkills(resolvedWorkspacePath, gatewayOptions)
+    }
+  ]);
+  syncWarnings.push(...profileSidecarResult.warnings);
+  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, { stage: "binding-channels" });
+  const channelSidecarResult = await runLifecycleSidecarSteps(
+    uniqueStrings(input.channelIds ?? []).map((channelId) => ({
+      label: `bind channel ${channelId}`,
+      formatError: formatPostCreateAgentConfigSyncWarning,
+      run: () => bindWorkspaceChannelAgent({
+        channelId,
+        workspaceId: resolvedWorkspaceId,
+        workspacePath: resolvedWorkspacePath,
+        agentId
+      })
+    }))
   );
-  await preserveLegacyAgentContextFiles(agentId, resolvedWorkspacePath, agentDir);
+  syncWarnings.push(...channelSidecarResult.warnings);
 
   invalidateMissionControlSnapshotCache();
-  try {
-    await syncWorkspaceAgentPolicySkills(resolvedWorkspacePath);
-  } catch (error) {
-    syncWarnings.push(assertPostCreateAgentConfigSyncWarning(error));
-  }
-
-  return {
+  const warnings = uniqueStrings(syncWarnings);
+  const outcome: LifecycleOperationOutcome = warnings.length > 0 ? "partial" : "ready";
+  const result = {
     agentId,
     workspaceId: resolvedWorkspaceId,
-    warnings: uniqueStrings(syncWarnings)
-  };
+    outcome,
+    operationId: lifecycleOperation.operationId,
+    nativeAccepted,
+    nativeConfirmed,
+    sidecarSynchronized: warnings.length === 0,
+    warnings
+  } satisfies AgentCreateResult;
+  await updateLifecycleOperation(lifecycleOperation, {
+    state: outcome,
+    stage: outcome === "partial" ? "cleanup-partial" : "complete",
+    nativeAccepted,
+    nativeConfirmed,
+    sidecarSynchronized: warnings.length === 0,
+    warnings,
+    result,
+    error: null
+  });
+  return result;
 }
 
 export function formatPostCreateAgentConfigSyncWarning(error: unknown) {
@@ -261,16 +474,6 @@ export function formatPostCreateAgentConfigSyncWarning(error: unknown) {
   }
 
   return "AgentOS created the agent, but OpenClaw could not finish the config sync in time. Restart or refresh the OpenClaw Gateway if the agent profile looks incomplete, then refresh AgentOS.";
-}
-
-function assertPostCreateAgentConfigSyncWarning(error: unknown) {
-  const warning = formatPostCreateAgentConfigSyncWarning(error);
-
-  if (!warning) {
-    throw error;
-  }
-
-  return warning;
 }
 
 function isTransientGatewayConfigSyncFailure(message: string) {
@@ -564,7 +767,7 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
     gatewayOptions
   );
   if (input.skills !== undefined) {
-    await assertAgentSkillConfigPersisted(agentId, nextDeclaredSkills);
+    await assertAgentSkillConfigPersisted(agentId, nextDeclaredSkills, gatewayOptions);
   }
   const nextDeclaredTools =
     input.tools === undefined
@@ -610,69 +813,292 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
 
 export async function deleteAgent(input: AgentDeleteInput, gatewayOptions: OpenClawCommandOptions = {}) {
   const agentId = input.agentId.trim();
+  if (!agentId) {
+    throw new Error("Agent id is required.");
+  }
+
+  return withLifecycleOperationLock({
+    kind: "agent.delete",
+    targetId: agentId,
+    run: () => deleteAgentInternal(input, gatewayOptions)
+  });
+}
+
+async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: OpenClawCommandOptions = {}) {
+  const agentId = input.agentId.trim();
 
   if (!agentId) {
     throw new Error("Agent id is required.");
   }
 
+  let lifecycleOperation = (await createOrReadLifecycleOperation({
+    kind: "agent.delete",
+    targetId: agentId,
+  })).operation;
+  if (lifecycleOperation.state === "ready" && lifecycleOperation.result) {
+    const liveSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    if (!liveSnapshot.agents.some((entry) => entry.id === agentId)) {
+      return lifecycleOperation.result as unknown as AgentDeleteResult;
+    }
+    lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+      state: "requested",
+      stage: "requested",
+      nativeAccepted: false,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [],
+      error: null,
+      result: null,
+      metadata: { workspaceId: null, workspacePath: null, agentIds: [agentId], channelIds: [] },
+      items: {}
+    });
+  }
+
   let snapshot = await getMissionControlSnapshot({ includeHidden: true });
   let agent = snapshot.agents.find((entry) => entry.id === agentId);
-
   if (!agent) {
     snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
     agent = snapshot.agents.find((entry) => entry.id === agentId);
   }
 
-  if (!agent) {
-    throw new Error("Agent was not found.");
-  }
+  const workspace = agent
+    ? snapshot.workspaces.find((entry) => entry.id === agent.workspaceId) ?? null
+    : null;
+  const workspaceId = agent?.workspaceId ?? lifecycleOperation.metadata.workspaceId ?? "";
+  const workspacePath = agent?.workspacePath ?? workspace?.path ?? lifecycleOperation.metadata.workspacePath ?? "";
+  const runtimeCount = agent
+    ? snapshot.runtimes.filter((runtime) => runtime.agentId === agent.id).length
+    : 0;
+  const channelIds = uniqueStrings([
+    ...(lifecycleOperation.metadata.channelIds ?? []),
+    ...snapshot.channelRegistry.channels
+      .filter((channel) => channel.workspaces.some((binding) =>
+        binding.workspaceId === workspaceId &&
+        (binding.agentIds.includes(agentId) || binding.groupAssignments.some((assignment) => assignment.agentId === agentId))
+      ))
+      .map((channel) => channel.id)
+  ]);
+  const warnings = [...lifecycleOperation.warnings];
 
-  const workspace = snapshot.workspaces.find((entry) => entry.id === agent.workspaceId) ?? null;
-  const runtimeCount = snapshot.runtimes.filter((runtime) => runtime.agentId === agent.id).length;
-
-  await getOpenClawAdapter().deleteAgent(agent.id, gatewayOptions);
-
-  try {
-    const configList = await readAgentConfigList(snapshot);
-    const nextConfigList = configList.filter((entry) => entry.id !== agent.id);
-
-    if (nextConfigList.length !== configList.length) {
-      await writeAgentConfigList(nextConfigList);
+  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+    state: "running",
+    stage: "reading-native-state",
+    metadata: {
+      workspaceId,
+      workspacePath,
+      agentIds: [agentId],
+      channelIds
     }
-  } catch {
-    // Ignore config cleanup failures if the CLI delete already removed the entry.
-  }
+  });
 
-  if (workspace) {
-    await removeWorkspaceProjectAgentMetadata(workspace.path, agent.id);
-    await syncWorkspaceAgentsMarkdown(workspace.path);
-    await pruneUnreferencedGeneratedWorkspaceSkills(
-      workspace.path,
-      collectWorkspaceSkillReferences(snapshot, workspace.path, new Map([[agent.id, []]]))
-    );
-  await preserveLegacyAgentContextFiles(agent.id, workspace.path, agent.agentDir);
-
-    try {
-      await rm(path.join(workspace.path, "skills", buildAgentPolicySkillId(agent.id)), {
-        recursive: true,
-        force: true
+  let nativeAccepted = lifecycleOperation.nativeAccepted;
+  let nativeConfirmed = !agent;
+  if (agent) {
+    const priorNativeOutcome = lifecycleOperation.items[agentId] === "unknown" || lifecycleOperation.items[agentId] === "confirmed";
+    if (priorNativeOutcome) {
+      const reconciliation = await reconcileLifecycleState({
+        read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+        isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
       });
-    } catch {
-      // Ignore skill cleanup failures for already-pruned workspaces.
+      if (reconciliation.outcome !== "confirmed") {
+        const message = reconciliation.error ?? `OpenClaw still reports agent ${agentId}.`;
+        const result = {
+          agentId,
+          workspaceId,
+          workspacePath,
+          deletedRuntimeCount: runtimeCount,
+          outcome: "unknown",
+          operationId: lifecycleOperation.operationId,
+          nativeAccepted,
+          nativeConfirmed: false,
+          sidecarSynchronized: false,
+          warnings: uniqueStrings([...warnings, message])
+        } satisfies AgentDeleteResult;
+        await updateLifecycleOperation(lifecycleOperation, {
+          state: "unknown",
+          stage: "reconciling-native-state",
+          nativeConfirmed: false,
+          error: { code: "native-agent-removal-uncertain", message: result.warnings[0] ?? message },
+          result
+        });
+        return result;
+      }
+      nativeConfirmed = true;
+      lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+        items: { [agentId]: "confirmed" },
+        nativeConfirmed: true
+      });
+    } else {
+      lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+        stage: "native-mutation"
+      });
+      const nativeExecution = await executeNativeMutationWithVerification({
+        operation: "agent.delete",
+        mutate: () => getOpenClawAdapter().deleteAgent(agentId, gatewayOptions),
+        verify: async () => {
+          const reconciliation = await reconcileLifecycleState({
+            read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+            isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
+          });
+          return reconciliation.outcome === "confirmed";
+        }
+      });
+      nativeAccepted = nativeExecution.outcome !== "failed" || nativeExecution.classification.requestSent === true;
+      if (nativeExecution.outcome !== "succeeded") {
+        const message = nativeExecution.classification.message || `OpenClaw could not delete agent ${agentId}.`;
+        const outcome = nativeExecution.outcome;
+        const result = {
+          agentId,
+          workspaceId,
+          workspacePath,
+          deletedRuntimeCount: runtimeCount,
+          outcome,
+          operationId: lifecycleOperation.operationId,
+          nativeAccepted,
+          nativeConfirmed: false,
+          sidecarSynchronized: false,
+          warnings: uniqueStrings([...warnings, message])
+        } satisfies AgentDeleteResult;
+        await updateLifecycleOperation(lifecycleOperation, {
+          state: outcome,
+          stage: "reconciling-native-state",
+          nativeAccepted,
+          nativeConfirmed: false,
+          items: { [agentId]: outcome === "unknown" ? "unknown" : "failed" },
+          error: { code: outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message },
+          result
+        });
+        return result;
+      }
+      nativeConfirmed = true;
+      lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+        items: { [agentId]: "confirmed" },
+        nativeAccepted,
+        nativeConfirmed: true
+      });
     }
+  }
 
-    invalidateMissionControlSnapshotCache();
-    await syncWorkspaceAgentPolicySkills(workspace.path);
+  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
+    stage: "sidecar-sync",
+    nativeAccepted,
+    nativeConfirmed
+  });
+  const sidecarSteps = [
+    ...channelIds.map((channelId) => ({
+      label: `disconnect channel ${channelId}`,
+      run: () => unbindWorkspaceChannelAgent({
+        channelId,
+        workspaceId,
+        agentId
+      })
+    })),
+    {
+      label: "sync the agent config",
+      run: async () => {
+        const configList = await readAgentConfigList(snapshot, gatewayOptions);
+        const nextConfigList = configList.filter((entry) => entry.id !== agentId);
+        if (nextConfigList.length !== configList.length) {
+          await writeAgentConfigList(nextConfigList, gatewayOptions);
+        }
+      }
+    },
+    ...(workspacePath ? [
+      {
+        label: "remove workspace agent metadata",
+        run: () => removeWorkspaceProjectAgentMetadata(workspacePath, agentId)
+      },
+      {
+        label: "sync the workspace agent document",
+        run: () => syncWorkspaceAgentsMarkdown(workspacePath)
+      },
+      {
+        label: "prune generated workspace skills",
+        run: () => pruneUnreferencedGeneratedWorkspaceSkills(
+          workspacePath,
+          collectWorkspaceSkillReferences(snapshot, workspacePath, new Map([[agentId, []]]))
+        )
+      },
+      {
+        label: "preserve legacy agent context",
+        run: () => preserveLegacyAgentContextFiles(
+          agentId,
+          workspacePath,
+          agent?.agentDir ?? buildWorkspaceAgentStatePath(workspacePath, agentId)
+        )
+      },
+      {
+        label: "remove the generated policy skill",
+        run: () => rm(path.join(workspacePath, "skills", buildAgentPolicySkillId(agentId)), {
+          recursive: true,
+          force: true
+        })
+      },
+      {
+        label: "sync workspace policy skills",
+        run: () => syncWorkspaceAgentPolicySkills(workspacePath, gatewayOptions)
+      }
+    ] : [])
+  ];
+  const sidecarResult = await runLifecycleSidecarSteps(sidecarSteps);
+  warnings.push(...sidecarResult.warnings);
+
+  invalidateMissionControlSnapshotCache();
+  const finalReconciliation = await reconcileLifecycleState({
+    read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+    isConfirmed: (current) => !current.agents.some((entry) => entry.id === agentId)
+  });
+  if (finalReconciliation.outcome !== "confirmed") {
+    const message = finalReconciliation.error ?? `OpenClaw still reports agent ${agentId}.`;
+    const result = {
+      agentId,
+      workspaceId,
+      workspacePath,
+      deletedRuntimeCount: runtimeCount,
+      outcome: "unknown",
+      operationId: lifecycleOperation.operationId,
+      nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: uniqueStrings([...warnings, message])
+    } satisfies AgentDeleteResult;
+    await updateLifecycleOperation(lifecycleOperation, {
+      state: "unknown",
+      stage: "reconciling-native-state",
+      nativeConfirmed: false,
+      warnings: result.warnings,
+      error: { code: "native-agent-removal-uncertain", message },
+      result
+    });
+    return result;
   }
 
   clearMissionControlRuntimeHistoryCache();
-
-  return {
-    agentId: agent.id,
-    workspaceId: agent.workspaceId,
-    workspacePath: agent.workspacePath,
-    deletedRuntimeCount: runtimeCount
-  };
+  const finalWarnings = uniqueStrings(warnings);
+  const outcome: LifecycleOperationOutcome = finalWarnings.length > 0 ? "partial" : "ready";
+  const result = {
+    agentId,
+    workspaceId,
+    workspacePath,
+    deletedRuntimeCount: runtimeCount,
+    outcome,
+    operationId: lifecycleOperation.operationId,
+    nativeAccepted,
+    nativeConfirmed: true,
+    sidecarSynchronized: finalWarnings.length === 0,
+    warnings: finalWarnings
+  } satisfies AgentDeleteResult;
+  await updateLifecycleOperation(lifecycleOperation, {
+    state: outcome,
+    stage: outcome === "partial" ? "cleanup-partial" : "complete",
+    nativeAccepted,
+    nativeConfirmed: true,
+    sidecarSynchronized: finalWarnings.length === 0,
+    warnings: finalWarnings,
+    error: null,
+    result
+  });
+  return result;
 }
 
 function resolveSnapshotDefaultAgentModelId(snapshot: MissionControlSnapshot) {
@@ -829,7 +1255,11 @@ function describeAgentWorkspace(
   );
 }
 
-async function syncAgentPolicySkills(agentIds: string[], snapshot?: MissionControlSnapshot) {
+async function syncAgentPolicySkills(
+  agentIds: string[],
+  snapshot?: MissionControlSnapshot,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const relevantAgentIds = uniqueStrings(agentIds);
 
   if (relevantAgentIds.length === 0) {
@@ -882,7 +1312,9 @@ async function syncAgentPolicySkills(agentIds: string[], snapshot?: MissionContr
           avatar: agent.identity.avatar
         }
       },
-      nextSnapshot
+      nextSnapshot,
+      undefined,
+      gatewayOptions
     );
   }
 }
@@ -891,8 +1323,12 @@ async function upsertAgentConfigEntryWithRecovery(...args: Parameters<typeof ups
   return runAgentGatewayMutation("syncing the agent config", () => upsertAgentConfigEntry(...args));
 }
 
-async function assertAgentSkillConfigPersisted(agentId: string, expectedSkills: string[]) {
-  const configList = await readAgentConfigList();
+async function assertAgentSkillConfigPersisted(
+  agentId: string,
+  expectedSkills: string[],
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
+  const configList = await readAgentConfigList(undefined, gatewayOptions);
   const persistedAgent = configList.find((entry) => entry.id === agentId);
   const persistedSkills = filterAgentPolicySkills(persistedAgent?.skills ?? []);
 
@@ -911,13 +1347,17 @@ async function runAgentGatewayMutation<T>(operationLabel: string, operation: () 
   return result.value;
 }
 
-async function syncWorkspaceAgentPolicySkills(workspacePath: string, snapshot?: MissionControlSnapshot) {
+async function syncWorkspaceAgentPolicySkills(
+  workspacePath: string,
+  gatewayOptions: OpenClawCommandOptions = {},
+  snapshot?: MissionControlSnapshot
+) {
   const nextSnapshot = snapshot ?? (await getMissionControlSnapshot({ includeHidden: true }));
   const agentIds = nextSnapshot.agents
     .filter((entry) => entry.workspacePath === workspacePath)
     .map((entry) => entry.id);
 
-  await syncAgentPolicySkills(agentIds, nextSnapshot);
+  await syncAgentPolicySkills(agentIds, nextSnapshot, gatewayOptions);
 }
 
 async function upsertWorkspaceProjectAgentMetadata(

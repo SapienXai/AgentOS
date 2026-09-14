@@ -1490,7 +1490,6 @@ function CreationProgressView({ run, provisioning, provisioningStarting = false,
   const progressProvisioning = provisioning ?? (provisioningStarting ? { state: "pending" as const, steps: [] as const } : null);
   const display = presentWorkspaceCreationDisplay(run, progressProvisioning);
   const experience = presentWorkspaceCreationExperience({ run, provisioningRun: progressProvisioning });
-  const progress = workspaceCreationProgress(run, progressProvisioning);
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     const updateClock = () => setClockNow(Date.now());
@@ -1513,10 +1512,6 @@ function CreationProgressView({ run, provisioning, provisioningStarting = false,
         <span className={cn("shrink-0 text-[11px] tabular-nums", isLight ? "text-[#8f8074]" : "text-slate-500")} aria-label={`Working for ${formatElapsed(elapsedMs)}`}>
           {formatElapsed(elapsedMs)}
         </span>
-      </div>
-      <div className={cn("relative my-6 h-2 overflow-hidden rounded-full", isLight ? "bg-black/5" : "bg-white/10")} role="progressbar" aria-label="Creating workspace" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-        <div className="h-full rounded-full bg-violet-400/80 transition-[width] duration-500" style={{ width: `${progress}%` }} />
-        {progress < 100 ? <div className={cn("workspace-progress-shimmer absolute inset-y-0 left-0 w-1/3 rounded-full", isLight ? "bg-white/70" : "bg-white/25")} aria-hidden="true" /> : null}
       </div>
       <ol className="grid gap-2 sm:grid-cols-2" aria-label="Workspace creation progress" aria-live="polite">
         {experience.activities.map((activity) => {
@@ -1716,34 +1711,6 @@ function environmentStatusLabel(status: ProvisioningRun["environmentPreparation"
   if (status === "unknown") return "Preparation status is unknown";
   if (status === "failed") return "OpenClaw preparation failed";
   return "Preparation is partial";
-}
-
-function workspaceCreationProgress(
-  run: WorkspaceCreationRun | null,
-  provisioning?: Pick<ProvisioningRun, "state"> & Partial<Pick<ProvisioningRun, "steps">> | null
-) {
-  if (provisioning) {
-    if (provisioning.state === "ready" || provisioning.state === "partial") return 100;
-    const total = provisioning.steps?.length ?? 0;
-    if (!total) return 66;
-    const complete = provisioning.steps?.filter((step) => step.status === "complete").length ?? 0;
-    const active = provisioning.steps?.some((step) => step.status === "active") ? 0.5 : 0;
-    return Math.min(99, 66 + Math.round(((complete + active) / total) * 34));
-  }
-  if (!run) return 0;
-  if (run.snapshot.state === "review-ready") return 66;
-  const stageProgress: Record<string, number> = {
-    "context-staging": 8,
-    "source-ingestion": 18,
-    "structured-extraction": 28,
-    "intelligence-synthesis": 38,
-    "architect-runtime-preparation": 48,
-    "architect-reasoning": 55,
-    "architect-validation": 60,
-    "workspace-composition": 63,
-    "review-preparation": 65
-  };
-  return stageProgress[run.snapshot.stage ?? ""] ?? 8;
 }
 
 function ReviewView({

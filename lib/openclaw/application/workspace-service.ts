@@ -85,6 +85,21 @@ import {
   workspaceMaterializationsEqual
 } from "@/lib/agentos/domains/workspace-materialization";
 import type { WorkspaceProjectManifestAgent } from "@/lib/openclaw/domains/workspace-manifest";
+import { writeWorkspaceFilesystemOwnership } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
+import {
+  createOrReadLifecycleOperation,
+  updateLifecycleOperation,
+  withLifecycleOperationLock,
+  type StoredLifecycleOperation
+} from "@/lib/openclaw/application/lifecycle-operation-store";
+import { reconcileLifecycleState } from "@/lib/openclaw/application/lifecycle-reconciliation";
+import { executeNativeMutationWithVerification } from "@/lib/openclaw/application/native-mutation-service";
+import {
+  decideWorkspaceFilesystemCleanup,
+  readWorkspaceFilesystemOwnership,
+  resolveWorkspaceFilesystemOwnership
+} from "@/lib/openclaw/domains/workspace-filesystem-ownership";
+import { runLifecycleSidecarSteps } from "@/lib/openclaw/application/lifecycle-sidecar-service";
 import { syncWorkspaceAgentsMarkdown } from "@/lib/openclaw/domains/workspace-agents-document-sync";
 import {
   completeWorkspaceCreateAudit,
@@ -121,11 +136,15 @@ import type {
   WorkspaceTeamPreset,
   WorkspaceTemplate,
   WorkspaceUpdateInput,
-  WorkspaceAgentBlueprintInput
+  WorkspaceAgentBlueprintInput,
+  WorkspaceDeleteResult
 } from "@/lib/openclaw/types";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
+import { redactSecretText } from "@/lib/security/redaction";
 
 type WorkspaceCreateOptions = {
   onProgress?: (snapshot: OperationProgressSnapshot) => Promise<void> | void;
+  gatewayOptions?: OpenClawCommandOptions;
 };
 
 type KickoffProgressHandler = (update: {
@@ -152,8 +171,12 @@ export async function createWorkspaceProject(
   try {
     audit = await startWorkspaceCreateAudit(input);
     const result = await createWorkspaceProjectInternal(input, options);
-    await completeWorkspaceCreateAudit(audit.auditPath, audit.audit, result);
-    return result;
+    const correlatedResult = {
+      ...result,
+      operationId: audit.audit.id
+    } satisfies WorkspaceCreateResult;
+    await completeWorkspaceCreateAudit(audit.auditPath, audit.audit, correlatedResult);
+    return correlatedResult;
   } catch (error) {
     if (audit) {
       await failWorkspaceCreateAudit(audit.auditPath, audit.audit, error).catch(() => undefined);
@@ -270,9 +293,13 @@ async function createWorkspaceProjectInternal(
 
   await progress.startStep("source", describeWorkspaceSourceStart(normalized.sourceMode, targetDir));
   await progress.addActivity("source", describeWorkspaceSourceActivity(normalized.sourceMode, normalized), "active");
-  await materializeWorkspaceSource({
+  const materializationResult = await materializeWorkspaceSource({
     targetDir,
     materialization: normalized.materialization
+  });
+  await writeWorkspaceFilesystemOwnership(targetDir, {
+    ownership: materializationResult.ownership,
+    materialization: normalized.materialization.mode
   });
   await progress.completeStep("source", describeWorkspaceSourceCompletion(normalized.sourceMode, targetDir));
 
@@ -321,7 +348,8 @@ async function createWorkspaceProjectInternal(
         workspacePath: targetDir,
         workspaceSlug: normalized.slug,
         workspaceModelId,
-        agent
+        agent,
+        gatewayOptions: options.gatewayOptions
       });
     } catch (error) {
       agentSyncWarning = assertWorkspacePostCreateConfigSyncWarning(error);
@@ -349,7 +377,7 @@ async function createWorkspaceProjectInternal(
 
   invalidateSnapshotCache();
   try {
-    await syncWorkspaceAgentPolicySkills(targetDir);
+    await syncWorkspaceAgentPolicySkills(targetDir, options.gatewayOptions);
   } catch (error) {
     syncWarnings.push(assertWorkspacePostCreateConfigSyncWarning(error));
     await progress.addActivity("agents", "Agent policy config sync needs a Gateway refresh.", "done");
@@ -380,6 +408,7 @@ async function createWorkspaceProjectInternal(
         template: normalized.template,
         rules: normalized.rules
       }, {
+        gatewayOptions: options.gatewayOptions,
         onProgress: async ({ message, percent }) => {
           await progress.updateStep("kickoff", {
             percent,
@@ -407,11 +436,27 @@ async function createWorkspaceProjectInternal(
     await progress.completeStep("kickoff", "Workspace bootstrap finished without kickoff.");
   }
 
+  const finalNativeSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const workspaceId = resolveWorkspaceIdForSnapshotPath(snapshot.workspaces, targetDir);
+  const nativeWorkspaceConfirmed = finalNativeSnapshot.workspaces.some((workspace) =>
+    workspace.id === workspaceId || path.resolve(workspace.path) === path.resolve(targetDir)
+  );
+  const nativeConfirmed = createdAgentIds.every((agentId) =>
+    finalNativeSnapshot.agents.some((agent) =>
+      agent.id === agentId && path.resolve(agent.workspacePath) === path.resolve(targetDir)
+    )
+  ) && nativeWorkspaceConfirmed;
+  if (!nativeConfirmed) {
+    syncWarnings.push("AgentOS could not confirm the complete workspace and agent state in the live OpenClaw snapshot.");
+  }
+  const finalWarnings = uniqueStrings(syncWarnings);
+  const outcome = !nativeConfirmed ? "unknown" : finalWarnings.length > 0 ? "partial" : "ready";
+
   invalidateSnapshotCache();
   clearRuntimeHistoryCache();
 
   return {
-    workspaceId: resolveWorkspaceIdForSnapshotPath(snapshot.workspaces, targetDir),
+    workspaceId,
     workspaceName: normalized.name,
     workspacePath: targetDir,
     agentIds: createdAgentIds,
@@ -420,7 +465,11 @@ async function createWorkspaceProjectInternal(
     kickoffRunId,
     kickoffStatus,
     kickoffError,
-    warnings: uniqueStrings(syncWarnings)
+    warnings: finalWarnings,
+    outcome,
+    nativeAccepted: true,
+    nativeConfirmed,
+    sidecarSynchronized: finalWarnings.length === 0
   };
 }
 
@@ -444,7 +493,10 @@ function assertWorkspacePostCreateConfigSyncWarning(error: unknown) {
   return warning;
 }
 
-export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
+export async function updateWorkspaceProject(
+  input: WorkspaceUpdateInput,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const workspaceId = input.workspaceId.trim();
 
   if (!workspaceId) {
@@ -457,7 +509,8 @@ export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
     return applyWorkspacePlanEdits(workspace, input.plan, {
       name: input.name,
       directory: input.directory,
-      baseline
+      baseline,
+      gatewayOptions
     });
   }
 
@@ -481,7 +534,7 @@ export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
       );
     }
 
-    const configList = await readAgentConfigList(snapshot);
+    const configList = await readAgentConfigList(snapshot, gatewayOptions);
     const updatedConfig = configList.map((entry) =>
       entry.workspace === workspace.path
         ? {
@@ -495,7 +548,7 @@ export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
         : entry
     );
 
-    await writeAgentConfigList(updatedConfig);
+    await writeAgentConfigList(updatedConfig, gatewayOptions);
   }
 
   invalidateSnapshotCache();
@@ -508,63 +561,362 @@ export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
   };
 }
 
-export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
+export async function deleteWorkspaceProject(
+  input: WorkspaceDeleteInput,
+  gatewayOptions: OpenClawCommandOptions = {}
+): Promise<WorkspaceDeleteResult> {
+  const workspaceId = input.workspaceId.trim();
+  if (!workspaceId) {
+    throw new Error("Workspace id is required.");
+  }
+
+  return withLifecycleOperationLock({
+    kind: "workspace.delete",
+    targetId: workspaceId,
+    run: () => deleteWorkspaceProjectInternal(input, gatewayOptions)
+  });
+}
+
+async function deleteWorkspaceProjectInternal(
+  input: WorkspaceDeleteInput,
+  gatewayOptions: OpenClawCommandOptions = {}
+): Promise<WorkspaceDeleteResult> {
   const workspaceId = input.workspaceId.trim();
 
   if (!workspaceId) {
     throw new Error("Workspace id is required.");
   }
 
-  const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-  const workspace = findWorkspaceById(snapshot.workspaces, workspaceId);
+  let operation = (await createOrReadLifecycleOperation({
+    kind: "workspace.delete",
+    targetId: workspaceId,
+    metadata: { workspaceId }
+  })).operation;
 
-  if (!workspace) {
-    throw new Error("Workspace was not found.");
-  }
-
-  const workspaceAgents = snapshot.agents.filter((agent) => agent.workspaceId === workspace.id);
-  const runtimeCount = snapshot.runtimes.filter((runtime) => runtime.workspaceId === workspace.id).length;
-  const workspaceChannelIds = snapshot.channelRegistry.channels
-    .filter((channel) => channel.workspaces.some((binding) => binding.workspaceId === workspace.id))
-    .map((channel) => channel.id);
-  const adapter = getOpenClawAdapter();
-
-  for (const agent of workspaceAgents) {
-    await adapter.deleteAgent(agent.id);
-  }
-
-  for (const channelId of workspaceChannelIds) {
-    await disconnectWorkspaceChannel({
-      workspaceId: workspace.id,
-      channelId
+  if (operation.state === "ready" && operation.result) {
+    const liveSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+    const storedResult = operation.result as unknown as WorkspaceDeleteResult;
+    const stillRegistered = liveSnapshot.workspaces.some((entry) =>
+      entry.id === workspaceId || path.resolve(entry.path) === path.resolve(storedResult.workspacePath)
+    ) || liveSnapshot.agents.some((agent) => storedResult.deletedAgentIds.includes(agent.id));
+    if (!stillRegistered) {
+      return storedResult;
+    }
+    operation = await updateLifecycleOperation(operation, {
+      state: "requested",
+      stage: "requested",
+      nativeAccepted: false,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [],
+      error: null,
+      result: null,
+      metadata: {
+        workspaceId,
+        workspacePath: null,
+        agentIds: [],
+        channelIds: []
+      },
+      items: {}
     });
   }
 
-  await removeWorkspaceAgentConfigEntries(
-    workspace.path,
-    new Set(workspaceAgents.map((agent) => agent.id))
-  );
+  operation = await updateLifecycleOperation(operation, {
+    state: "running",
+    stage: "reading-native-state"
+  });
+
+  const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const workspace = findWorkspaceById(snapshot.workspaces, workspaceId);
+  const workspacePath = workspace?.path ?? operation.metadata.workspacePath ?? null;
+
+  if (!workspace && !workspacePath) {
+    operation = await updateLifecycleOperation(operation, {
+      state: "failed",
+      error: { code: "workspace-not-found", message: "Workspace was not found." }
+    });
+    throw new Error("Workspace was not found.");
+  }
+
+  const resolvedWorkspaceId = workspace?.id ?? operation.metadata.workspaceId ?? workspaceId;
+  const workspaceAgents = workspace
+    ? snapshot.agents.filter((agent) => agent.workspaceId === workspace.id)
+    : snapshot.agents.filter((agent) => agent.workspaceId === resolvedWorkspaceId || path.resolve(agent.workspacePath) === path.resolve(workspacePath!));
+  const storedAgentIds = operation.metadata.agentIds ?? [];
+  const agentIds = uniqueStrings([...storedAgentIds, ...workspaceAgents.map((agent) => agent.id)]);
+  const runtimeCount = workspace
+    ? snapshot.runtimes.filter((runtime) => runtime.workspaceId === workspace.id).length
+    : 0;
+  const workspaceChannelIds = uniqueStrings([
+    ...(operation.metadata.channelIds ?? []),
+    ...snapshot.channelRegistry.channels
+      .filter((channel) => channel.workspaces.some((binding) => binding.workspaceId === resolvedWorkspaceId))
+      .map((channel) => channel.id)
+  ]);
+  const adapter = getOpenClawAdapter();
+  const warnings = [...operation.warnings];
+
+  operation = await updateLifecycleOperation(operation, {
+    stage: "deleting-agents",
+    metadata: {
+      workspaceId: resolvedWorkspaceId,
+      workspacePath,
+      agentIds,
+      channelIds: workspaceChannelIds
+    }
+  });
+
+  for (const agentId of agentIds) {
+    if (operation.items[agentId] === "confirmed" || operation.items[agentId] === "skipped") {
+      continue;
+    }
+
+    if (operation.items[agentId] !== "unknown") {
+      const currentSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+      if (!currentSnapshot.agents.some((agent) => agent.id === agentId)) {
+        operation = await updateLifecycleOperation(operation, {
+          items: { [agentId]: "confirmed" },
+          nativeConfirmed: true
+        });
+        continue;
+      }
+    }
+
+    if (operation.items[agentId] === "unknown") {
+      const reread = await reconcileLifecycleState({
+        read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+        isConfirmed: (current) => !current.agents.some((agent) => agent.id === agentId)
+      });
+      if (reread.outcome !== "confirmed") {
+        return finalizeWorkspaceDeleteOperation(operation, {
+          workspaceId: resolvedWorkspaceId,
+          workspacePath: workspacePath!,
+          deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+          deletedRuntimeCount: runtimeCount,
+          filesystem: { ownership: "unknown", action: "preserved" },
+          outcome: "unknown",
+          nativeAccepted: operation.nativeAccepted,
+          nativeConfirmed: false,
+          sidecarSynchronized: false,
+          warnings: [...warnings, `OpenClaw has not confirmed removal of agent ${agentId}.`],
+          error: { code: "native-agent-removal-uncertain", message: "OpenClaw still reports an agent for this workspace." }
+        });
+      }
+      operation = await updateLifecycleOperation(operation, {
+        items: { [agentId]: "confirmed" }
+      });
+      continue;
+    }
+
+    operation = await updateLifecycleOperation(operation, {
+      stage: "native-mutation"
+    });
+    const execution = await executeNativeMutationWithVerification({
+      operation: "workspace.delete.agent",
+      mutate: () => adapter.deleteAgent(agentId, gatewayOptions),
+      verify: async () => {
+        const reread = await reconcileLifecycleState({
+          read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+          isConfirmed: (current) => !current.agents.some((agent) => agent.id === agentId)
+        });
+        return reread.outcome === "confirmed";
+      }
+    });
+
+    const mutationAccepted = execution.outcome !== "failed" || execution.classification.requestSent === true;
+    if (execution.outcome === "succeeded") {
+      operation = await updateLifecycleOperation(operation, {
+        items: { [agentId]: "confirmed" },
+        nativeAccepted: mutationAccepted || operation.nativeAccepted,
+        nativeConfirmed: true
+      });
+      continue;
+    }
+
+    const message = execution.classification.message || `OpenClaw could not confirm removal of agent ${agentId}.`;
+    operation = await updateLifecycleOperation(operation, {
+      state: execution.outcome === "unknown" ? "unknown" : "failed",
+      stage: "reconciling-native-state",
+      nativeAccepted: mutationAccepted || operation.nativeAccepted,
+      nativeConfirmed: false,
+      items: { [agentId]: execution.outcome === "unknown" ? "unknown" : "failed" },
+      error: { code: execution.outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message }
+    });
+    return finalizeWorkspaceDeleteOperation(operation, {
+      workspaceId: resolvedWorkspaceId,
+      workspacePath: workspacePath!,
+      deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+      deletedRuntimeCount: runtimeCount,
+      filesystem: { ownership: "unknown", action: "preserved" },
+      outcome: execution.outcome,
+      nativeAccepted: mutationAccepted || operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [...warnings, message],
+      error: { code: execution.outcome === "unknown" ? "native-agent-removal-uncertain" : "native-agent-removal-failed", message }
+    });
+  }
+
+  operation = await updateLifecycleOperation(operation, {
+    stage: "reconciling-native-state",
+    nativeAccepted: agentIds.length > 0 || operation.nativeAccepted
+  });
+  const nativeRemoval = await reconcileLifecycleState({
+    read: () => getMissionControlSnapshot({ force: true, includeHidden: true }),
+    isConfirmed: (current) =>
+      !current.workspaces.some((entry) => entry.id === resolvedWorkspaceId || (workspacePath && path.resolve(entry.path) === path.resolve(workspacePath))) &&
+      !current.agents.some((agent) => agentIds.includes(agent.id))
+  });
+
+  if (nativeRemoval.outcome !== "confirmed") {
+    const message = nativeRemoval.error ?? "OpenClaw still reports this workspace in the live workspace registry.";
+    operation = await updateLifecycleOperation(operation, {
+      state: "unknown",
+      stage: "reconciling-native-state",
+      nativeConfirmed: false,
+      error: { code: "native-workspace-removal-uncertain", message }
+    });
+    return finalizeWorkspaceDeleteOperation(operation, {
+      workspaceId: resolvedWorkspaceId,
+      workspacePath: workspacePath!,
+      deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+      deletedRuntimeCount: runtimeCount,
+      filesystem: { ownership: "unknown", action: "preserved" },
+      outcome: "unknown",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [...warnings, message],
+      error: { code: "native-workspace-removal-uncertain", message }
+    });
+  }
+
+  operation = await updateLifecycleOperation(operation, {
+    stage: "native-removal-confirmed",
+    nativeConfirmed: true
+  });
+
+  operation = await updateLifecycleOperation(operation, { stage: "disconnecting-bindings" });
+  const sidecarResult = await runLifecycleSidecarSteps([
+    ...workspaceChannelIds.map((channelId) => ({
+      label: `disconnect channel ${channelId}`,
+      run: () => disconnectWorkspaceChannel({
+        workspaceId: resolvedWorkspaceId,
+        channelId
+      })
+    })),
+    {
+      label: "finish workspace config cleanup",
+      run: () => removeWorkspaceAgentConfigEntries(workspacePath!, new Set(agentIds), gatewayOptions)
+    }
+  ]);
+  warnings.push(...sidecarResult.warnings);
+
+  operation = await updateLifecycleOperation(operation, { stage: "sidecar-sync" });
 
   clearMissionControlCaches();
   const verifiedSnapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
   const workspaceStillRegistered = verifiedSnapshot.workspaces.some(
-    (entry) => entry.id === workspace.id || path.resolve(entry.path) === path.resolve(workspace.path)
+    (entry) => entry.id === resolvedWorkspaceId || path.resolve(entry.path) === path.resolve(workspacePath!)
   );
+  const agentStillRegistered = verifiedSnapshot.agents.some((agent) => agentIds.includes(agent.id));
 
-  if (workspaceStillRegistered) {
-    throw new Error("OpenClaw still reports this workspace in the live workspace registry.");
+  if (workspaceStillRegistered || agentStillRegistered) {
+    const message = "OpenClaw still reports this workspace or one of its agents after cleanup.";
+    operation = await updateLifecycleOperation(operation, {
+      state: "unknown",
+      stage: "reconciling-native-state",
+      nativeConfirmed: false,
+      error: { code: "native-state-regressed", message }
+    });
+    return finalizeWorkspaceDeleteOperation(operation, {
+      workspaceId: resolvedWorkspaceId,
+      workspacePath: workspacePath!,
+      deletedAgentIds: agentIds.filter((id) => operation.items[id] === "confirmed"),
+      deletedRuntimeCount: runtimeCount,
+      filesystem: { ownership: "unknown", action: "preserved" },
+      outcome: "unknown",
+      nativeAccepted: operation.nativeAccepted,
+      nativeConfirmed: false,
+      sidecarSynchronized: false,
+      warnings: [...warnings, message],
+      error: { code: "native-state-regressed", message }
+    });
   }
 
-  await rm(workspace.path, { recursive: true, force: true });
+  operation = await updateLifecycleOperation(operation, {
+    stage: "filesystem-cleanup",
+    nativeConfirmed: true
+  });
+  const ownershipRecord = await readWorkspaceFilesystemOwnership(workspacePath!);
+  const ownership = resolveWorkspaceFilesystemOwnership(ownershipRecord);
+  const filesystemDecision = decideWorkspaceFilesystemCleanup({
+    nativeConfirmed: true,
+    ownership
+  });
+  let filesystemAction: WorkspaceDeleteResult["filesystem"]["action"] = "preserved";
+
+  if (filesystemDecision.action === "delete") {
+    try {
+      await rm(workspacePath!, { recursive: true, force: true });
+      filesystemAction = "deleted";
+    } catch (error) {
+      filesystemAction = "failed";
+      warnings.push(`AgentOS could not remove its owned workspace files: ${safeLifecycleError(error)}.`);
+    }
+  } else {
+    warnings.push(
+      filesystemDecision.reason === "native-state-not-confirmed"
+        ? "The workspace folder was preserved because OpenClaw removal was not confirmed."
+        : "The workspace folder was preserved because AgentOS could not prove that it owns the directory."
+    );
+  }
 
   clearMissionControlCaches();
+  const outcome = warnings.length > 0 ? "partial" : "ready";
+  const result = {
+    workspaceId: resolvedWorkspaceId,
+    workspacePath: workspacePath!,
+    deletedAgentIds: agentIds,
+    deletedRuntimeCount: runtimeCount,
+    filesystem: { ownership, action: filesystemAction },
+    outcome,
+    operationId: operation.operationId,
+    nativeAccepted: operation.nativeAccepted,
+    nativeConfirmed: true,
+    sidecarSynchronized: warnings.length === 0,
+    warnings
+  } satisfies WorkspaceDeleteResult;
+  await updateLifecycleOperation(operation, {
+    state: outcome,
+    stage: outcome === "partial" ? "cleanup-partial" : "complete",
+    nativeConfirmed: true,
+    sidecarSynchronized: warnings.length === 0,
+    warnings,
+    result: result as unknown,
+    error: null
+  });
+  return result;
+}
 
-  return {
-    workspaceId: workspace.id,
-    workspacePath: workspace.path,
-    deletedAgentIds: workspaceAgents.map((agent) => agent.id),
-    deletedRuntimeCount: runtimeCount
-  };
+function finalizeWorkspaceDeleteOperation(
+  operation: StoredLifecycleOperation,
+  result: WorkspaceDeleteResult
+) {
+  return updateLifecycleOperation(operation, {
+    state: result.outcome === "ready" ? "ready" : result.outcome,
+    stage: "complete",
+    nativeAccepted: result.nativeAccepted ?? operation.nativeAccepted,
+    nativeConfirmed: result.nativeConfirmed ?? operation.nativeConfirmed,
+    sidecarSynchronized: result.sidecarSynchronized ?? false,
+    warnings: result.warnings ?? operation.warnings,
+    result,
+    error: result.outcome === "ready" ? null : operation.error
+  }).then(() => result);
+}
+
+function safeLifecycleError(error: unknown) {
+  return error instanceof Error ? redactSecretText(error.message).replace(/[\r\n]+/g, " ").slice(0, 240) : "unknown error";
 }
 
 export async function readWorkspaceEditSeed(workspaceId: string): Promise<WorkspaceEditSeed> {
@@ -735,6 +1087,7 @@ async function applyWorkspacePlanEdits(
     name?: string;
     directory?: string;
     baseline: WorkspaceEditSeed;
+    gatewayOptions?: OpenClawCommandOptions;
   }
 ) {
   const desiredName = normalizeOptionalValue(input.name) ?? normalizeOptionalValue(plan.workspace.name) ?? workspace.name;
@@ -781,7 +1134,7 @@ async function applyWorkspacePlanEdits(
       );
     }
 
-    const configList = await readAgentConfigList(snapshot ?? undefined);
+    const configList = await readAgentConfigList(snapshot ?? undefined, input.gatewayOptions);
     const updatedConfig = configList.map((entry) =>
       entry.workspace === workspace.path
         ? {
@@ -795,7 +1148,7 @@ async function applyWorkspacePlanEdits(
         : entry
     );
 
-    await writeAgentConfigList(updatedConfig);
+    await writeAgentConfigList(updatedConfig, input.gatewayOptions);
   }
 
   const currentWorkspacePath = targetPath;
@@ -949,7 +1302,8 @@ async function applyWorkspacePlanEdits(
       desiredAgents: plan.team.persistentAgents,
       workspaceSlug: slugify(path.basename(currentWorkspacePath)),
       previousWorkspaceId: input.baseline.workspaceId,
-      previousWorkspacePath: input.baseline.workspacePath
+      previousWorkspacePath: input.baseline.workspacePath,
+      gatewayOptions: input.gatewayOptions
     });
   }
 
@@ -997,6 +1351,7 @@ async function syncWorkspaceAgentsToPlan(input: {
   workspaceSlug: string;
   previousWorkspaceId?: string;
   previousWorkspacePath?: string;
+  gatewayOptions?: OpenClawCommandOptions;
 }) {
   const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
   const currentAgents = Array.from(
@@ -1024,7 +1379,7 @@ async function syncWorkspaceAgentsToPlan(input: {
     if (!desiredAgent.enabled) {
       if (currentAgent) {
         matchedAgentIds.add(currentAgent.id);
-        await deleteAgent({ agentId: currentAgent.id });
+        await deleteAgent({ agentId: currentAgent.id }, input.gatewayOptions);
       }
 
       continue;
@@ -1043,7 +1398,7 @@ async function syncWorkspaceAgentsToPlan(input: {
         policy: desiredAgent.policy,
         heartbeat: desiredAgent.heartbeat,
         channelIds: desiredAgent.channelIds
-      });
+      }, input.gatewayOptions);
       continue;
     }
 
@@ -1058,14 +1413,14 @@ async function syncWorkspaceAgentsToPlan(input: {
       policy: desiredAgent.policy,
       heartbeat: desiredAgent.heartbeat,
       channelIds: desiredAgent.channelIds
-    });
+    }, input.gatewayOptions);
 
     matchedAgentIds.add(createdAgentId.agentId);
   }
 
   for (const currentAgent of currentAgents) {
     if (!matchedAgentIds.has(currentAgent.id)) {
-      await deleteAgent({ agentId: currentAgent.id });
+      await deleteAgent({ agentId: currentAgent.id }, input.gatewayOptions);
     }
   }
 }
@@ -1363,7 +1718,10 @@ function resolveManifestWorkspaceAgentProvisioningRef(
   };
 }
 
-async function syncWorkspaceAgentPolicySkills(workspacePath: string) {
+async function syncWorkspaceAgentPolicySkills(
+  workspacePath: string,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const snapshot = await getMissionControlSnapshot({ includeHidden: true });
   const agentIds = snapshot.agents
     .filter((entry) => entry.workspacePath === workspacePath)
@@ -1406,7 +1764,9 @@ async function syncWorkspaceAgentPolicySkills(workspacePath: string) {
             }
           : null
       },
-      snapshot
+      snapshot,
+      undefined,
+      gatewayOptions
     );
   }
 }
@@ -1422,6 +1782,7 @@ async function runWorkspaceKickoffMission(
   },
   options: {
     onProgress?: KickoffProgressHandler;
+    gatewayOptions?: OpenClawCommandOptions;
   } = {}
 ) {
   const prompt = buildWorkspaceKickoffPrompt(params.template, params.brief, params.rules);
@@ -1485,7 +1846,7 @@ async function runWorkspaceKickoffMission(
         });
       }
     },
-    { timeoutMs: 120000 }
+    { ...options.gatewayOptions, timeoutMs: 120000 }
   );
 
   await options.onProgress?.({

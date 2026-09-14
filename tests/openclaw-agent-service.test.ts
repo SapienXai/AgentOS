@@ -236,7 +236,7 @@ test("capability updates keep their freshly written agent config instead of repl
   assert.match(updateAgentSource, /skills: uniqueStrings\(\[\.\.\.nextDeclaredSkills, policySkillId\]\)/);
   assert.match(updateAgentSource, /checking agent skill configuration access/);
   assert.match(updateAgentSource, /assertGatewayNativeConfigMutationAccess/);
-  assert.match(updateAgentSource, /assertAgentSkillConfigPersisted\(agentId, nextDeclaredSkills\)/);
+  assert.match(updateAgentSource, /assertAgentSkillConfigPersisted\(agentId, nextDeclaredSkills(?:, gatewayOptions)?\)/);
   assert.match(updateAgentSource, /invalidateMissionControlSnapshotCache\(\);/);
   assert.match(modelOnlyBranch, /if \(!updatedViaGateway\) \{\s+await upsertAgentConfigEntryWithRecovery\(/);
   assert.doesNotMatch(updateAgentSource, /syncWorkspaceAgentPolicySkills\(resolvedWorkspacePath\)/);

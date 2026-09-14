@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 
 import {
   createWorkspaceProject,
@@ -10,6 +11,8 @@ import {
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type { OperationProgressSnapshot, WorkspaceCreateStreamEvent } from "@/lib/agentos/contracts";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -137,16 +140,43 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
-  if ("response" in permission) return permission.response;
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace.create",
+    method: "agents.create",
+    targetKind: "workspace",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "workspace.manage"
+  });
+  if ("response" in authorization) return authorization.response;
+  let targetId: string | undefined;
   try {
     const parsed = workspaceCreateRequestSchema.parse(await request.json());
     const { stream, ...input } = parsed;
+    targetId = input.creation?.idempotencyKey ?? input.name;
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.create",
+      targetKind: "workspace",
+      targetId,
+      result: "started"
+    }).catch(() => {});
 
     if (!stream) {
-      const created = await createWorkspaceProject(input);
+      const created = await createWorkspaceProject(input, {
+        gatewayOptions: authorization.commandOptions
+      });
 
-      return NextResponse.json(redactSecrets(created));
+      await recordAgentOsAuditEvent({
+        actor: authorization.actor,
+        operation: "workspace.create",
+        targetKind: "workspace",
+        targetId: created.workspaceId,
+        correlationId: created.operationId,
+        result: auditResultForLifecycleOutcome(created.outcome)
+      }).catch(() => {});
+
+      return NextResponse.json(redactSecrets(created), { status: lifecycleHttpStatus(created.outcome) });
     }
 
     const responseStream = new TransformStream();
@@ -167,6 +197,7 @@ export async function POST(request: Request) {
     void (async () => {
       try {
         const created = await createWorkspaceProject(input, {
+          gatewayOptions: authorization.commandOptions,
           onProgress: async (progress) => {
             latestProgress = progress;
             await send({
@@ -176,20 +207,45 @@ export async function POST(request: Request) {
           }
         });
 
-        await send({
-          type: "done",
-          ok: true,
-          progress:
-            latestProgress ??
-            ({
-              title: "Provisioning workspace",
-              description: "Workspace bootstrap finished.",
-              percent: 100,
-              steps: []
-            } satisfies OperationProgressSnapshot),
-          result: created
-        });
+        await recordAgentOsAuditEvent({
+          actor: authorization.actor,
+          operation: "workspace.create",
+          targetKind: "workspace",
+          targetId: created.workspaceId,
+          correlationId: created.operationId,
+          result: auditResultForLifecycleOutcome(created.outcome)
+        }).catch(() => {});
+
+        const progress = latestProgress ?? ({
+          title: "Provisioning workspace",
+          description: "Workspace bootstrap finished.",
+          percent: 100,
+          steps: []
+        } satisfies OperationProgressSnapshot);
+        if (created.outcome === "unknown" || created.outcome === "failed") {
+          await send({
+            type: "done",
+            ok: false,
+            progress,
+            result: created,
+            error: created.error?.message ?? created.warnings?.[0] ?? "Workspace creation could not be confirmed."
+          });
+        } else {
+          await send({
+            type: "done",
+            ok: true,
+            progress,
+            result: created
+          });
+        }
       } catch (error) {
+        await recordAgentOsAuditEvent({
+          actor: authorization.actor,
+          operation: "workspace.create",
+          targetKind: "workspace",
+          targetId,
+          result: "failed"
+        }).catch(() => {});
         await send({
           type: "done",
           ok: false,
@@ -210,6 +266,13 @@ export async function POST(request: Request) {
     });
 
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.create",
+      targetKind: "workspace",
+      targetId,
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to create workspace.")
@@ -220,14 +283,49 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
-  if ("response" in permission) return permission.response;
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace.update",
+    method: "config.patch",
+    targetKind: "workspace",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "workspace.manage"
+  });
+  if ("response" in authorization) return authorization.response;
+  let targetId: string | undefined;
+  let correlationId: string | undefined;
   try {
     const input = workspaceUpdateSchema.parse(await request.json());
-    const updated = await updateWorkspaceProject(input);
+    targetId = input.workspaceId;
+    correlationId = randomUUID();
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.update",
+      targetKind: "workspace",
+      targetId,
+      correlationId,
+      result: "started"
+    }).catch(() => {});
+    const updated = await updateWorkspaceProject(input, authorization.commandOptions);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.update",
+      targetKind: "workspace",
+      targetId,
+      correlationId,
+      result: "succeeded"
+    }).catch(() => {});
 
     return NextResponse.json(redactSecrets(updated));
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.update",
+      targetKind: "workspace",
+      targetId,
+      correlationId,
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to update workspace.")
@@ -238,14 +336,45 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
-  if ("response" in permission) return permission.response;
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace.delete",
+    method: "agents.delete",
+    targetKind: "workspace",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "workspace.manage"
+  });
+  if ("response" in authorization) return authorization.response;
+  let targetId: string | undefined;
   try {
     const input = workspaceDeleteSchema.parse(await request.json());
-    const deleted = await deleteWorkspaceProject(input);
+    targetId = input.workspaceId;
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.delete",
+      targetKind: "workspace",
+      targetId,
+      result: "started"
+    }).catch(() => {});
+    const deleted = await deleteWorkspaceProject(input, authorization.commandOptions);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.delete",
+      targetKind: "workspace",
+      targetId,
+      correlationId: deleted.operationId,
+      result: auditResultForLifecycleOutcome(deleted.outcome)
+    }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(deleted));
+    return NextResponse.json(redactSecrets(deleted), { status: lifecycleHttpStatus(deleted.outcome) });
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "workspace.delete",
+      targetKind: "workspace",
+      targetId,
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to delete workspace.")
@@ -253,4 +382,12 @@ export async function DELETE(request: Request) {
       { status: 400 }
     );
   }
+}
+
+function auditResultForLifecycleOutcome(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
+  return outcome === "partial" ? "partial" : outcome === "unknown" ? "unknown" : outcome === "failed" ? "failed" : "succeeded";
+}
+
+function lifecycleHttpStatus(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
+  return outcome === "unknown" ? 409 : outcome === "failed" ? 400 : 200;
 }

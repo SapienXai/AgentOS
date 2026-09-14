@@ -41,12 +41,6 @@ const progressStageByState: Record<AgentCreationProgressState, number> = {
   complete: 4
 };
 
-const progressPercentByState: Record<AgentCreationProgressState, number> = {
-  creating: 42,
-  syncing: 78,
-  complete: 100
-};
-
 /**
  * The steps represent lifecycle milestones known to the client. They are not
  * pretending to be byte-level backend progress; each transition maps to a
@@ -65,14 +59,14 @@ export function resolveAgentCreationProgressSteps(
   return [
     {
       id: "identity",
-      label: "Identity drafted",
-      description: "Role, mission, and safe access defaults are ready to send.",
+      label: "Preparing agent",
+      description: "Role, mission, and safe access defaults are being prepared.",
       status: activeStage > 0 ? "done" : "active"
     },
     {
       id: "openclaw",
-      label: "Provisioning in OpenClaw",
-      description: "The native agent profile and runtime configuration are being written.",
+      label: "Creating agent",
+      description: "The native agent profile is being created.",
       status: activeStage > 1 ? "done" : activeStage === 1 ? "active" : "pending"
     },
     {
@@ -83,13 +77,9 @@ export function resolveAgentCreationProgressSteps(
     },
     {
       id: "online",
-      label: "Live on canvas",
-      description: "The live Mission Control snapshot will welcome the new agent.",
+      label: "Ready",
+      description: "The live Mission Control snapshot can now show the agent.",
       status: activeStage >= 4 ? "done" : "pending"
     }
   ];
-}
-
-export function resolveAgentCreationProgressPercent(state: AgentCreationProgressState) {
-  return progressPercentByState[state];
 }

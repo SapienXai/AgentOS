@@ -39,6 +39,13 @@ export type NativeMutationExecution<T> =
       classification: NativeMutationErrorClassification;
     };
 
+export type VerifiedNativeMutationRequest<T> = {
+  operation: string;
+  mutate: () => Promise<T>;
+  /** Read-only authoritative verification. It must not issue another mutation. */
+  verify: () => Promise<boolean>;
+};
+
 /**
  * Runs one native mutation and reconciles only errors whose delivery is
  * ambiguous. Target-specific reconciliation must prove causality before it
@@ -95,6 +102,81 @@ export async function executeNativeMutation<T>(input: NativeMutationRequest<T>):
       classification
     };
   }
+}
+
+/**
+ * Executes one native mutation and verifies the resulting OpenClaw state for
+ * both successful and ambiguous transport outcomes. A mutation is never
+ * repeated by this helper.
+ */
+export async function executeNativeMutationWithVerification<T>(
+  input: VerifiedNativeMutationRequest<T>
+): Promise<NativeMutationExecution<T>> {
+  let result: T;
+
+  try {
+    result = await input.mutate();
+  } catch (error) {
+    const classification = classifyNativeMutationError(error);
+    if (classification.disposition === "definite-rejection") {
+      return {
+        outcome: "failed",
+        reconciled: false,
+        retryable: false,
+        result: null,
+        classification
+      };
+    }
+
+    try {
+      if (await input.verify()) {
+        return {
+          outcome: "succeeded",
+          reconciled: true,
+          retryable: false,
+          result: undefined as T,
+          classification: null
+        };
+      }
+    } catch {
+      // An unreadable authoritative state remains unknown.
+    }
+
+    return {
+      outcome: "unknown",
+      reconciled: false,
+      retryable: false,
+      result: null,
+      classification
+    };
+  }
+
+  try {
+    if (await input.verify()) {
+      return {
+        outcome: "succeeded",
+        reconciled: false,
+        retryable: false,
+        result,
+        classification: null
+      };
+    }
+  } catch {
+    // A successful response without a readable final state is not proof.
+  }
+
+  return {
+    outcome: "unknown",
+    reconciled: false,
+    retryable: false,
+    result: null,
+    classification: {
+      disposition: "ambiguous-outcome",
+      kind: "timeout",
+      requestSent: true,
+      message: NATIVE_MUTATION_UNKNOWN_MESSAGE
+    }
+  };
 }
 
 export function buildNativeMutationFailureResponse(

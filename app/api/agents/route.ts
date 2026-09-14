@@ -123,22 +123,33 @@ export async function POST(request: Request) {
   });
   if ("response" in authorization) return authorization.response;
 
+  let targetId: string | undefined;
   try {
     const input = createAgentSchema.parse(await request.json());
+    targetId = input.id;
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.create",
+      targetKind: "agent",
+      targetId,
+      result: "started"
+    }).catch(() => {});
     const created = await createAgent(input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.create",
       targetKind: "agent",
       targetId: input.id,
-      result: "succeeded"
+      correlationId: created.operationId,
+      result: auditResultForLifecycleOutcome(created.outcome)
     }).catch(() => {});
-    return NextResponse.json(redactSecrets(created));
+    return NextResponse.json(redactSecrets(created), { status: lifecycleHttpStatus(created.outcome) });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.create",
       targetKind: "agent",
+      targetId,
       result: "failed"
     }).catch(() => {});
     return NextResponse.json(
@@ -199,22 +210,33 @@ export async function DELETE(request: Request) {
   });
   if ("response" in authorization) return authorization.response;
 
+  let targetId: string | undefined;
   try {
     const input = deleteAgentSchema.parse(await request.json());
+    targetId = input.agentId;
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.delete",
+      targetKind: "agent",
+      targetId,
+      result: "started"
+    }).catch(() => {});
     const deleted = await deleteAgent(input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.delete",
       targetKind: "agent",
       targetId: input.agentId,
-      result: "succeeded"
+      correlationId: deleted.operationId,
+      result: auditResultForLifecycleOutcome(deleted.outcome)
     }).catch(() => {});
-    return NextResponse.json(redactSecrets(deleted));
+    return NextResponse.json(redactSecrets(deleted), { status: lifecycleHttpStatus(deleted.outcome) });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.delete",
       targetKind: "agent",
+      targetId,
       result: "failed"
     }).catch(() => {});
     return NextResponse.json(
@@ -224,6 +246,14 @@ export async function DELETE(request: Request) {
       { status: 400 }
     );
   }
+}
+
+function auditResultForLifecycleOutcome(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
+  return outcome === "partial" ? "partial" : outcome === "unknown" ? "unknown" : outcome === "failed" ? "failed" : "succeeded";
+}
+
+function lifecycleHttpStatus(outcome: "ready" | "partial" | "failed" | "unknown" | undefined) {
+  return outcome === "unknown" ? 409 : outcome === "failed" ? 400 : 200;
 }
 
 function formatAgentApiError(

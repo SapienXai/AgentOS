@@ -81,6 +81,7 @@ import type {
   WorkspaceCreateResult,
   WorkspaceTemplate
 } from "@/lib/openclaw/types";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
 const POLL_INTERVAL_MS = 100;
@@ -176,6 +177,8 @@ type PreparedProvisioning = {
 
 export type WorkspaceProvisioningDependencies = {
   rootPath?: string;
+  /** Native mutation proof for this execution attempt; never persisted in the run manifest. */
+  gatewayOptions?: OpenClawCommandOptions;
   workspaceIntelligenceBindingRootPath?: string;
   now?: () => Date;
   /** Test-only barrier used to deterministically exercise the atomic-create race. */
@@ -198,6 +201,7 @@ export type WorkspaceProvisioningDependencies = {
 
 type ResolvedWorkspaceProvisioningDependencies = {
   rootPath: string;
+  gatewayOptions?: OpenClawCommandOptions;
   workspaceIntelligenceBindingRootPath: string | undefined;
   now: () => Date;
   beforeAtomicRunCreate?: () => Promise<void>;
@@ -223,6 +227,7 @@ const startInFlight = new Map<string, Promise<void>>();
 function resolveDependencies(input: WorkspaceProvisioningDependencies = {}): ResolvedWorkspaceProvisioningDependencies {
   return {
     rootPath: resolveProvisioningRoot(input.rootPath),
+    gatewayOptions: input.gatewayOptions,
     workspaceIntelligenceBindingRootPath: input.workspaceIntelligenceBindingRootPath
       ?? (input.rootPath ? path.join(resolveProvisioningRoot(input.rootPath), "..", "workspace-intelligence-bindings") : undefined),
     now: input.now ?? (() => new Date()),
@@ -935,7 +940,7 @@ async function prepareWorkspaceEnvironment(
     await lease.assertOwned();
     execution = await dependencies.prepareNativeEnvironment(
       { profileId: intent.profileId, projectPath: created.workspacePath },
-      { commandOptions: { signal } }
+      { commandOptions: { ...dependencies.gatewayOptions, signal } }
     );
   } catch (error) {
     const failure = classifyEnvironmentPreparationFailure(error);
@@ -946,7 +951,7 @@ async function prepareWorkspaceEnvironment(
     let environment = null;
     try {
       environment = await dependencies.readNativeEnvironment(execution.result.environmentId, {
-        commandOptions: { signal }
+        commandOptions: { ...dependencies.gatewayOptions, signal }
       });
     } catch {
       // The native identity is still authoritative; status remains partial until
@@ -1130,6 +1135,7 @@ async function ensureWorkspaceBootstrap(
     run = await transition(filePath, run, "materializing", "Creating or reusing the workspace through the canonical OpenClaw workspace service.", lease, dependencies);
     try {
       created = await dependencies.createWorkspaceProject(prepared.createInput, {
+        gatewayOptions: dependencies.gatewayOptions,
         onProgress: async (snapshot: OperationProgressSnapshot) => {
           await updateCanonicalOpenClawProgress(filePath, snapshot, lease, dependencies);
         }
@@ -1406,7 +1412,8 @@ async function bindNativeKnowledge(
   await lease.assertOwned();
   return dependencies.ensureWorkspaceNativeKnowledge({
     workspacePath: created.workspacePath,
-    agentIds: created.agentIds
+    agentIds: created.agentIds,
+    commandOptions: dependencies.gatewayOptions
   });
 }
 
@@ -1459,7 +1466,7 @@ async function applyAgentCapabilities(
         tools,
         policy: desired.policy,
         name: desired.name
-      });
+      }, dependencies.gatewayOptions);
       manifestIds.add(agentId);
     } catch (error) {
       warnings.push(`${desired.name}: ${redactErrorMessage(error, "Selected capabilities could not be applied.")}`);

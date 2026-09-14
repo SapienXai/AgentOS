@@ -65,8 +65,9 @@ test("provisioning writes an AgentOS-owned manifest and records setup without ac
 test("provisioning API authenticates the actor and never accepts a client actor or workspace path", async () => {
   const source = await readFile(routePath, "utf8");
 
-  assert.match(source, /requireAgentOsProductPermission\(request, "workspace\.manage"\)/g);
-  assert.match(source, /actorId: permission\.actor\.actorId/);
+  assert.match(source, /requireAgentOsOpenClawPreflight\(request, \{/g);
+  assert.match(source, /productPermission: "workspace\.manage"/g);
+  assert.match(source, /actorId: authorization\.actor\.actorId/);
   assert.match(source, /blueprint: z\.unknown\(\)/);
   assert.match(source, /idempotencyKey/);
   assert.doesNotMatch(source, /actorId: z\.|workspacePath: z\.|existingPath: z\./);

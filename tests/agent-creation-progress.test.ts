@@ -4,7 +4,6 @@ import { test } from "node:test";
 import {
   AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS,
   AGENT_CREATION_SNAPSHOT_RECONCILIATION_TIMEOUT_MS,
-  resolveAgentCreationProgressPercent,
   resolveAgentCreationProgressSteps
 } from "@/components/mission-control/agent-creation-progress.utils";
 
@@ -42,10 +41,11 @@ test("agent creation progress exposes the real create lifecycle boundaries", () 
   );
 });
 
-test("agent creation progress percentages are lifecycle milestones", () => {
-  assert.equal(resolveAgentCreationProgressPercent("creating"), 42);
-  assert.equal(resolveAgentCreationProgressPercent("syncing"), 78);
-  assert.equal(resolveAgentCreationProgressPercent("complete"), 100);
+test("agent creation progress uses truthful lifecycle labels", () => {
+  assert.equal(resolveAgentCreationProgressSteps("creating", false)[0]?.label, "Preparing agent");
+  assert.equal(resolveAgentCreationProgressSteps("creating", false)[1]?.label, "Creating agent");
+  assert.equal(resolveAgentCreationProgressSteps("syncing", false)[2]?.label, "Joining workspace");
+  assert.equal(resolveAgentCreationProgressSteps("complete", false)[3]?.label, "Ready");
 });
 
 test("agent creation reconciliation remains bounded and retries the live snapshot", () => {

@@ -490,10 +490,16 @@ export function MissionSidebar({
         body: JSON.stringify(editDraft)
       });
 
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as {
+        error?: string | { message?: string };
+        outcome?: "ready" | "partial" | "failed" | "unknown";
+        warnings?: string[];
+        filesystem?: { action?: "deleted" | "preserved" | "failed" };
+      };
 
       if (!response.ok || result.error) {
-        throw new Error(result.error || "OpenClaw could not update the agent.");
+        const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
+        throw new Error(errorMessage || "OpenClaw could not update the agent.");
       }
 
       if (targetWorkspace) {
@@ -534,6 +540,8 @@ export function MissionSidebar({
     setIsDeletingAgent(true);
     let succeeded = false;
     let deletedAgentId = agentDeleteTarget.id;
+    let deletedAgentOutcome: "ready" | "partial" | "failed" | "unknown" | undefined;
+    let deletedAgentWarning: string | undefined;
 
     try {
       const response = await fetch("/api/agents", {
@@ -549,11 +557,16 @@ export function MissionSidebar({
       const result = (await response.json()) as {
         agentId?: string;
         deletedRuntimeCount?: number;
-        error?: string;
+        error?: string | { message?: string };
+        outcome?: "ready" | "partial" | "failed" | "unknown";
+        warnings?: string[];
       };
 
+      deletedAgentOutcome = result.outcome;
+      deletedAgentWarning = result.warnings?.[0];
       if (!response.ok || result.error) {
-        throw new Error(result.error || "OpenClaw could not delete the agent.");
+        const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
+        throw new Error(errorMessage || result.warnings?.[0] || "OpenClaw could not delete the agent.");
       }
 
       if (editDraft?.id === agentDeleteTarget.id) {
@@ -564,7 +577,8 @@ export function MissionSidebar({
       deletedAgentId = result.agentId || agentDeleteTarget.id;
       succeeded = true;
     } catch (error) {
-      toast.error("Agent deletion failed.", {
+      const ambiguous = deletedAgentOutcome === "unknown";
+      (ambiguous ? toast.message : toast.error)(ambiguous ? "Agent deletion needs attention." : "Agent deletion failed.", {
         description: error instanceof Error ? error.message : "Unknown agent error."
       });
     } finally {
@@ -573,9 +587,15 @@ export function MissionSidebar({
 
     if (succeeded) {
       void onRefresh().catch(() => {});
-      toast.success("Agent deleted from OpenClaw.", {
-        description: deletedAgentId
-      });
+      if (deletedAgentOutcome === "partial") {
+        toast.message("Agent deleted; cleanup needs attention.", {
+          description: deletedAgentWarning || deletedAgentId
+        });
+      } else {
+        toast.success("Agent deleted from OpenClaw.", {
+          description: deletedAgentId
+        });
+      }
     }
   };
 
@@ -1651,10 +1671,19 @@ function WorkspaceSwitcher({
           workspaceId: workspaceToDelete.id
         })
       });
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as {
+        error?: string | { message?: string };
+        outcome?: "ready" | "partial" | "failed" | "unknown";
+        warnings?: string[];
+        filesystem?: { action?: "deleted" | "preserved" | "failed" };
+      };
 
+      if (result.outcome === "unknown") {
+        deletionRequestSucceeded = true;
+      }
       if (!response.ok || result.error) {
-        throw new Error(result.error || "OpenClaw could not delete the workspace.");
+        const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
+        throw new Error(errorMessage || result.warnings?.[0] || "OpenClaw could not delete the workspace.");
       }
 
       deletionRequestSucceeded = true;
@@ -1684,9 +1713,20 @@ function WorkspaceSwitcher({
         onSelectWorkspace(nextWorkspace?.id ?? null);
       }
 
-      toast.success("Workspace deleted.", {
-        description: workspaceToDelete.name
-      });
+      const cleanupDescription = result.filesystem?.action === "preserved"
+        ? `${workspaceToDelete.name}. The folder was preserved because AgentOS could not prove it owns the directory.`
+        : result.outcome === "partial"
+          ? result.warnings?.[0] ?? `${workspaceToDelete.name}. Cleanup needs attention.`
+          : workspaceToDelete.name;
+      if (result.outcome === "partial") {
+        toast.message("Workspace removed; cleanup needs attention.", {
+          description: cleanupDescription
+        });
+      } else {
+        toast.success("Workspace deleted.", {
+          description: cleanupDescription
+        });
+      }
     } catch (error) {
       if (deletionRequestSucceeded) {
         setDeletingWorkspaceId(null);
@@ -1716,7 +1756,7 @@ function WorkspaceSwitcher({
       <PikoLoader
         open={isDeletingWorkspace}
         title="Deleting workspace"
-        description="Removing its OpenClaw workspace, agents, runtime references, and managed files."
+        description="Removing the OpenClaw workspace first; managed files are cleaned only when AgentOS can prove it owns them."
       />
       <div className="relative mt-5" ref={menuRef}>
       <button
@@ -1871,8 +1911,8 @@ function WorkspaceSwitcher({
               <DialogHeader className="space-y-1.5">
                 <DialogTitle>Delete workspace</DialogTitle>
                 <DialogDescription>
-                  This removes the workspace from OpenClaw. Workspace-scoped agents, runtime references, and the
-                  folder under this workspace path are cleaned up.
+                  This removes the workspace from OpenClaw. Registered agents and runtime references are handled
+                  first. The folder is removed only when AgentOS has explicit proof that it created and owns it.
                 </DialogDescription>
               </DialogHeader>
             </div>
@@ -1887,11 +1927,11 @@ function WorkspaceSwitcher({
                       </div>
                       <div className="flex flex-1 flex-col gap-2">
                         <p className="text-sm font-semibold text-rose-950 dark:text-rose-50">
-                          This action cannot be undone.
+                          Removing the OpenClaw workspace cannot be undone.
                         </p>
                         <p className="text-sm leading-6 text-rose-900/90 dark:text-rose-100/80">
-                          OpenClaw will remove {deleteTarget.name}, delete its registered agents, and clean the
-                          workspace folder at this path.
+                          OpenClaw will remove {deleteTarget.name} and its registered agents. Existing, imported, or
+                          unverified folders are preserved.
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           <Badge

@@ -36,8 +36,7 @@ import {
   defaultHeartbeatForPreset
 } from "@/lib/openclaw/agent-heartbeat";
 import {
-  getWorkspaceChannelIdsForAgent,
-  syncWorkspaceAgentChannelBindings
+  getWorkspaceChannelIdsForAgent
 } from "@/lib/openclaw/channel-bindings";
 import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import type { AgentPreset, MissionControlSnapshot } from "@/lib/agentos/contracts";
@@ -89,6 +88,7 @@ export function CreateAgentDialog({
   open: controlledOpen,
   onOpenChange: onControlledOpenChange
 }: CreateAgentDialogProps) {
+  void onSnapshotChange;
   const isLight = surfaceTheme === "light";
   const initialWorkspaceId = resolveInitialWorkspaceId(snapshot, defaultWorkspaceId);
   const initialAgentName = buildUniqueAgentName(
@@ -275,12 +275,18 @@ export function CreateAgentDialog({
 
     onAgentCreatedVisible?.(createdAgentId);
     onAgentCreated?.(createdAgentId);
-    toast.success("Agent created", {
-      description: selectedWorkspace ? `Added to ${selectedWorkspace.name}.` : "Added to your AI workforce."
-    });
+    if (createdAgentWarning) {
+      toast.message("Agent created; setup needs attention.", {
+        description: createdAgentWarning
+      });
+    } else {
+      toast.success("Agent created", {
+        description: selectedWorkspace ? `Added to ${selectedWorkspace.name}.` : "Added to your AI workforce."
+      });
+    }
     setIsSaving(false);
     setCreateProgress("complete");
-  }, [createdAgentId, createdAgentVisible, createProgress, onAgentCreated, onAgentCreatedVisible, selectedWorkspace, setDialogOpen]);
+  }, [createdAgentId, createdAgentVisible, createdAgentWarning, createProgress, onAgentCreated, onAgentCreatedVisible, selectedWorkspace, setDialogOpen]);
 
   useEffect(() => {
     if (createProgress !== "complete" || !createdAgentId) {
@@ -317,7 +323,7 @@ export function CreateAgentDialog({
       onAgentCreated?.(createdAgentId);
       toast.message("Agent created", {
         description: createdAgentWarning
-          ? "It may take a moment to appear in the workspace."
+          ? createdAgentWarning
           : "It may take a moment to appear in the workspace."
       });
       setCreateProgress("idle");
@@ -455,24 +461,15 @@ export function CreateAgentDialog({
 
       const result = (await response.json()) as {
         agentId?: string;
-        error?: string;
+        error?: string | { message?: string };
         warning?: string;
         warnings?: string[];
+        outcome?: "ready" | "partial" | "failed" | "unknown";
       };
 
       if (!response.ok || result.error || !result.agentId) {
-        throw new Error(result.error || "OpenClaw could not create the agent.");
-      }
-
-      if (draft.channelIds.length > 0) {
-        await syncWorkspaceAgentChannelBindings({
-          workspaceId: draft.workspaceId,
-          workspacePath: selectedWorkspace.path,
-          agentId: result.agentId,
-          currentChannelIds: [],
-          nextChannelIds: draft.channelIds,
-          onRegistryChange: onSnapshotChange
-        });
+        const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
+        throw new Error(errorMessage || result.warnings?.[0] || "OpenClaw could not create the agent.");
       }
 
       const presetMeta = getAgentPresetMeta(draft.policy.preset);

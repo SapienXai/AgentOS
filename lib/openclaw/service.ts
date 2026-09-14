@@ -96,6 +96,7 @@ export { discoverDiscordRoutes, discoverSurfaceRoutes, discoverTelegramGroups, g
 // exports stable unless a deliberate compatibility audit removes them.
 type WorkspaceCreateOptions = {
   onProgress?: (snapshot: OperationProgressSnapshot) => Promise<void> | void;
+  gatewayOptions?: OpenClawCommandOptions;
 };
 
 export function clearMissionControlCaches() {
@@ -228,12 +229,18 @@ export async function createWorkspaceProject(
   return createWorkspaceProjectFromApplication(input, options);
 }
 
-export async function updateWorkspaceProject(input: WorkspaceUpdateInput) {
-  return updateWorkspaceProjectFromApplication(input);
+export async function updateWorkspaceProject(
+  input: WorkspaceUpdateInput,
+  options: OpenClawCommandOptions = {}
+) {
+  return updateWorkspaceProjectFromApplication(input, options);
 }
 
-export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
-  return deleteWorkspaceProjectFromApplication(input);
+export async function deleteWorkspaceProject(
+  input: WorkspaceDeleteInput,
+  options: OpenClawCommandOptions = {}
+) {
+  return deleteWorkspaceProjectFromApplication(input, options);
 }
 
 export async function updateGatewayRemoteUrl(

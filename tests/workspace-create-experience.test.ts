@@ -439,10 +439,10 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /readWorkspaceCreationMinimizedRunId/);
   assert.match(source, /onOutsideInteraction/);
   assert.match(source, /fetch\("\/api\/workspaces\/provision"/);
-  assert.match(source, /workspace-progress-shimmer/);
+  assert.doesNotMatch(source, /workspace-progress-shimmer/);
   assert.match(source, /isProvisioningStarting/);
   assert.match(source, /provisioningStarting/);
-  assert.match(source, /66 \+ Math\.round/);
+  assert.doesNotMatch(source, /66 \+ Math\.round/);
   assert.match(source, /Setting up your workspace…/);
   assert.match(source, /Working for/);
   assert.match(source, /Workspace creation progress/);

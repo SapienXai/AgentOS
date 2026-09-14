@@ -45,6 +45,7 @@ import {
   normalizeWorkspaceKnowledgeSources,
   type WorkspaceKnowledgeSource
 } from "@/lib/agentos/domains/workspace-knowledge";
+import type { WorkspaceFilesystemOwnership } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
 
 const execFileAsync = promisify(execFile);
 
@@ -202,12 +203,15 @@ async function ensureFreshWorkspaceDirectory(targetDir: string) {
     if (entries.length > 0) {
       throw new Error("Target workspace directory already contains files. Use Existing folder instead.");
     }
+
+    await mkdir(targetDir, { recursive: true });
+    return false;
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
 
     if (code === "ENOENT") {
       await mkdir(targetDir, { recursive: true });
-      return;
+      return true;
     }
 
     if (error instanceof Error) {
@@ -217,7 +221,6 @@ async function ensureFreshWorkspaceDirectory(targetDir: string) {
     throw new Error("Unable to prepare the workspace directory.");
   }
 
-  await mkdir(targetDir, { recursive: true });
 }
 
 async function ensureExistingDirectory(targetDir: string) {
@@ -525,12 +528,15 @@ export async function materializeWorkspaceSource(params: {
   materialization?: WorkspaceMaterialization;
   sourceMode?: WorkspaceSourceMode;
   repoUrl?: string;
-}) {
+}): Promise<{
+  ownership: Exclude<WorkspaceFilesystemOwnership, "unknown">;
+  wasDirectoryCreated: boolean;
+}> {
   const materialization = params.materialization ?? legacyWorkspaceMaterializationFromFields(params);
 
   if (materialization.mode === "existing") {
     await ensureExistingDirectory(params.targetDir);
-    return;
+    return { ownership: "user-selected-existing", wasDirectoryCreated: false };
   }
 
   if (materialization.mode === "clone") {
@@ -539,10 +545,14 @@ export async function materializeWorkspaceSource(params: {
     await ensureTargetPathVacant(params.targetDir);
     await mkdir(path.dirname(params.targetDir), { recursive: true });
     await runSystemCommand("git", ["clone", "--", repoUrl, params.targetDir]);
-    return;
+    return { ownership: "agentos-created-clone", wasDirectoryCreated: true };
   }
 
-  await ensureFreshWorkspaceDirectory(params.targetDir);
+  const wasDirectoryCreated = await ensureFreshWorkspaceDirectory(params.targetDir);
+  return {
+    ownership: wasDirectoryCreated ? "agentos-created-empty" : "external-imported",
+    wasDirectoryCreated
+  };
 }
 
 export function assertSafeWorkspaceCloneRepoUrl(repoUrl: string) {

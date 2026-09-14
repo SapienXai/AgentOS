@@ -124,11 +124,16 @@ export function AgentsPageContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentId: agent.source.id })
       });
-      const result = await response.json().catch(() => null) as { error?: string } | null;
+      const result = await response.json().catch(() => null) as { error?: string | { message?: string }; outcome?: "ready" | "partial" | "failed" | "unknown"; warnings?: string[] } | null;
       if (!response.ok || result?.error) {
-        throw new Error(result?.error || "Agent deletion failed.");
+        const errorMessage = typeof result?.error === "string" ? result.error : result?.error?.message;
+        throw new Error(errorMessage || result?.warnings?.[0] || "Agent deletion failed.");
       }
-      toast.success("Agent deleted.");
+      if (result?.outcome === "partial") {
+        toast.message("Agent deleted; cleanup needs attention.", { description: result.warnings?.[0] || "Review the operation details." });
+      } else {
+        toast.success("Agent deleted.");
+      }
       setSelectedId("");
       await refresh();
     } catch (error) {

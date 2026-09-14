@@ -3267,11 +3267,17 @@ export function MissionControlShell({
         if (event.ok) {
           createdResult = event.result;
         } else {
+          if (event.result) {
+            createdResult = event.result;
+          }
           createError = event.error;
         }
       });
 
       if (createError || !createdResult) {
+        if (createdResult) {
+          createdResultForError = createdResult;
+        }
         throw new Error(createError || "OpenClaw could not create the workspace.");
       }
 

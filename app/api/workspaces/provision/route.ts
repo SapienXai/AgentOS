@@ -10,7 +10,7 @@ import {
   attachWorkspaceProvisioningRun,
   getWorkspaceCreationProvisioningIntent
 } from "@/lib/agentos/application/workspace-creation-run-service";
-import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -34,13 +34,20 @@ const provisionRequestSchema = z.object({
 }).strict();
 
 export async function POST(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
-  if ("response" in permission) return permission.response;
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace.provision",
+    method: "agents.create",
+    targetKind: "workspace",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "workspace.manage"
+  });
+  if ("response" in authorization) return authorization.response;
 
   try {
     const parsed = provisionRequestSchema.parse(await request.json());
     const certified = parsed.creationRunId
-      ? await getWorkspaceCreationProvisioningIntent({ actorId: permission.actor.actorId, runId: parsed.creationRunId, acceptDraft: parsed.acceptDraft })
+      ? await getWorkspaceCreationProvisioningIntent({ actorId: authorization.actor.actorId, runId: parsed.creationRunId, acceptDraft: parsed.acceptDraft })
       : null;
     if (parsed.creationRunId && !certified) return NextResponse.json({ error: "Workspace creation run was not found." }, { status: 404 });
     if (certified && (!certified.readiness.provisionable || !certified.idempotencyKey || !certified.run.result || typeof certified.run.result !== "object" || !("blueprint" in certified.run.result))) {
@@ -50,7 +57,7 @@ export async function POST(request: Request) {
       ? certified.run.result as { blueprint: unknown; freshness?: { currentGenerationId?: string | null } }
       : null;
     const run = await provisionWorkspaceFromBlueprint({
-      actorId: permission.actor.actorId,
+      actorId: authorization.actor.actorId,
       blueprint: canonicalResult?.blueprint ?? parsed.blueprint,
       draftContextId: certified?.run.draftContextId ?? parsed.draftContextId ?? null,
       expectedKnowledgeGenerationId: canonicalResult?.freshness?.currentGenerationId ?? parsed.expectedKnowledgeGenerationId ?? null,
@@ -62,10 +69,12 @@ export async function POST(request: Request) {
       creationRunId: parsed.creationRunId ?? null,
       environmentPreparation: parsed.environmentPreparation ?? null,
       retryEnvironmentPreparation: parsed.retryEnvironmentPreparation === true
+    }, {
+      gatewayOptions: authorization.commandOptions
     });
     if (parsed.creationRunId) {
       await attachWorkspaceProvisioningRun({
-        actorId: permission.actor.actorId,
+        actorId: authorization.actor.actorId,
         runId: parsed.creationRunId,
         provisioningRunId: run.runId
       });
@@ -81,14 +90,26 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
-  if ("response" in permission) return permission.response;
+  // This endpoint may resume an active provisioning run, so it is a recovery
+  // trigger rather than a passive status read and needs mutation proof.
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "workspace.provision.recover",
+    method: "agents.create",
+    targetKind: "workspace",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "workspace.manage"
+  });
+  if ("response" in authorization) return authorization.response;
 
   const runId = new URL(request.url).searchParams.get("runId")?.trim() || "";
   if (!runId) return NextResponse.json({ error: "A provisioning run id is required." }, { status: 400 });
 
   try {
-    const run = await getWorkspaceProvisioningRun({ actorId: permission.actor.actorId, runId });
+    const run = await getWorkspaceProvisioningRun(
+      { actorId: authorization.actor.actorId, runId },
+      { gatewayOptions: authorization.commandOptions }
+    );
     if (!run) return NextResponse.json({ error: "Provisioning run was not found." }, { status: 404 });
     return NextResponse.json(redactSecrets(run));
   } catch (error) {
