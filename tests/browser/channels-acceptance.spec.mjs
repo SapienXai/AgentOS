@@ -191,6 +191,57 @@ test("Discord hierarchy keeps thread routing inherited from #support", async ({ 
   await page.getByText("Support thread", { exact: true }).click();
   await expect(page.locator("body")).toContainText("Threads inherit their parent peer in this OpenClaw release.");
   expect(await page.locator('select:has(option[value="agent-key-2-lead"])').count()).toBe(0);
+
+  const boundState = await page.evaluate(async () => (await fetch("/api/openclaw/channels/directory?provider=discord&accountId=discord-support-bot&kind=groups")).json());
+  const boundSupport = boundState.entries.find((entry) => entry.routeId === "discord-support");
+  expect(boundSupport).toMatchObject({ agentId: ids.agentId, bindingMatch: "exact" });
+
+  await page.goto("/mission-control");
+  await expect(page.getByText("Key 2 Lead", { exact: true }).first()).toBeVisible();
+  const reopened = await openAgentConnections(page, "discord");
+  await selectAccount(reopened, ids.discordAccountId);
+  await expect(reopened.getByText("#support", { exact: true })).toBeVisible();
+  await expect(reopened.getByRole("button", { name: "Remove override" })).toHaveCount(1);
+  await reopened.getByRole("button", { name: "Remove override" }).click();
+  await expect.poll(() => fixture.routeMutations.length).toBe(2);
+  expect(fixture.routeMutations[1]).toMatchObject({
+    route: {
+      provider: "discord",
+      accountId: ids.discordAccountId,
+      kind: "channel",
+      routeId: ids.discordSupportRouteId,
+      parentRouteId: ids.discordServerRouteId
+    },
+    agentId: null
+  });
+
+  const removedState = await page.evaluate(async () => {
+    const [directory, routes, snapshot] = await Promise.all([
+      fetch("/api/openclaw/channels/directory?provider=discord&accountId=discord-support-bot&kind=groups").then((response) => response.json()),
+      fetch("/api/openclaw/channels/agent-routes?agentId=agent-key-2-lead").then((response) => response.json()),
+      fetch("/api/snapshot").then((response) => response.json())
+    ]);
+    return { directory, routes, snapshot };
+  });
+  const removedSupport = removedState.directory.entries.find((entry) => entry.routeId === ids.discordSupportRouteId);
+  const removedThread = removedState.directory.entries.find((entry) => entry.routeId === ids.discordThreadRouteId);
+  expect(removedSupport).toMatchObject({ agentId: null, bindingMatch: "none", inheritedFrom: null });
+  expect(removedThread).toMatchObject({ agentId: null, bindingMatch: "none", inheritedFrom: null });
+  expect(removedState.routes.routes).toHaveLength(0);
+  expect(removedState.snapshot.nativeChannelRouteBadges?.[ids.agentId]).toBeUndefined();
+  expect(fixture.routeMutations.filter(({ route }) => route.routeId === ids.discordThreadRouteId)).toHaveLength(0);
+
+  await closeDialog(page);
+  await expect(page.getByRole("button", { name: "Open Discord connections for Key 2 Lead" })).toHaveCount(0);
+
+  await page.goto("/channels?provider=discord");
+  await expect(page.getByText("SapienX Server", { exact: true }).first()).toBeVisible();
+  await page.getByText("#support", { exact: true }).first().click();
+  await expect(page.locator('select:has(option:checked[value="agent-key-2-lead"])')).toHaveCount(0);
+  await expect(page.getByText("Support thread", { exact: true })).toBeVisible();
+  await page.getByText("Support thread", { exact: true }).click();
+  await expect(page.locator("body")).toContainText("Threads inherit their parent peer in this OpenClaw release.");
+  expect(await page.locator('select:has(option[value="agent-key-2-lead"])').count()).toBe(0);
 });
 
 test("Agent badges show Telegram 2 and Discord 1 while default-only routes stay unbadged", async ({ page }) => {
