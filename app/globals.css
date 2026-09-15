@@ -148,7 +148,7 @@
     --agentos-status-danger: 0 73% 57%;
     --agentos-status-muted: 218 13% 66%;
     --lock-glass-surface: 2 7 17;
-    --lock-glass-surface-alpha: 0.36;
+    --lock-glass-surface-alpha: 0.28;
     --lock-glass-border: 255 255 255;
     --lock-glass-border-alpha: 0.16;
     --lock-glass-input: 4 10 24;
@@ -208,8 +208,8 @@
     inset 0 1px 0 rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.96)),
     inset 0 -1px 0 rgb(var(--lock-glass-border) / calc(var(--lock-glass-border-alpha) * 0.36)),
     0 34px 100px rgb(var(--lock-glass-shadow) / var(--lock-glass-shadow-alpha));
-  -webkit-backdrop-filter: blur(20px) saturate(1.52) brightness(var(--lock-glass-backdrop-brightness));
-  backdrop-filter: blur(20px) saturate(1.52) brightness(var(--lock-glass-backdrop-brightness));
+  -webkit-backdrop-filter: blur(4px) saturate(1.2) brightness(var(--lock-glass-backdrop-brightness));
+  backdrop-filter: blur(4px) saturate(1.2) brightness(var(--lock-glass-backdrop-brightness));
 }
 
 .lockscreen-splash-video {

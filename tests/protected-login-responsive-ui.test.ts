@@ -15,14 +15,16 @@ test("protected login keeps mobile status quiet and content comfortably inset", 
 test("protected login title scales down fluidly on small screens", async () => {
   const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
 
-  assert.match(source, /text-\[clamp\(1\.75rem,8vw,2rem\)\]/);
-  assert.match(source, /sm:text-\[2\.25rem\]/);
-  assert.match(source, /lg:text-\[2\.35rem\]/);
+  assert.match(source, /text-\[clamp\(1\.75rem,7\.5vw,1\.95rem\)\]/);
+  assert.match(source, /sm:text-\[2rem\]/);
+  assert.match(source, /lg:text-\[2\.15rem\]/);
   assert.match(source, /font-sans text-\[clamp/);
+  assert.match(source, /font-semibold leading-\[1\.05\]/);
   assert.match(source, /leading-\[1\.05\]/);
   assert.match(source, /tracking-\[-0\.03em\]/);
-  assert.match(source, /text-left text-white/);
-  assert.match(source, />Control plane locked<\/h1>/);
+  assert.match(source, /text-center text-white/);
+  assert.match(source, /text-shadow:0_3px_18px_rgba\(0,0,0,\.55\)/);
+  assert.match(source, />AgentOS is Locked<\/h1>/);
   assert.match(source, />Authenticate to unlock this instance\.<\/p>/);
   assert.match(source, /Need a reset\? Run[\s\S]*agentos auth reset[\s\S]*<\/p>/);
 });
@@ -45,10 +47,10 @@ test("protected login composes a theme-aware glass access card", async () => {
   assert.match(source, /<CardFooter/);
   assert.equal(source.match(/className="lock-glass-input/g)?.length, 2);
   assert.match(styles, /--lock-glass-surface-alpha: 0\.22/);
-  assert.match(styles, /\.dark[\s\S]+--lock-glass-surface-alpha: 0\.36/);
+  assert.match(styles, /\.dark[\s\S]+--lock-glass-surface-alpha: 0\.28/);
   assert.match(styles, /--lock-glass-foreground: 17 27 47/);
   assert.match(styles, /\.dark[\s\S]+--lock-glass-foreground: 244 248 255/);
-  assert.match(styles, /backdrop-filter: blur\(20px\) saturate\(1\.52\)/);
+  assert.match(styles, /backdrop-filter: blur\(4px\) saturate\(1\.2\)/);
   assert.match(source, /className="lock-glass-chip/);
   assert.match(styles, /\.lock-glass-chip \{/);
   assert.match(source, /font-sans text-\[15px\] font-medium leading-5 tracking-\[-0\.02em\]">Operator access/);

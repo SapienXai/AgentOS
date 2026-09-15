@@ -118,8 +118,8 @@ export function ProtectedLogin() {
 
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-6 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
-          <div className="mb-6 -translate-y-4 text-left text-white lg:mb-6 lg:translate-y-0">
-            <h1 id="protected-title" className="whitespace-nowrap font-sans text-[clamp(1.75rem,8vw,2rem)] font-medium leading-[1.05] tracking-[-0.03em] sm:text-[2.25rem] lg:text-[2.35rem]">Control plane locked</h1>
+          <div className="mb-6 -translate-y-4 text-center text-white lg:mb-6 lg:translate-y-0">
+            <h1 id="protected-title" className="whitespace-nowrap font-sans text-[clamp(1.75rem,7.5vw,1.95rem)] font-semibold leading-[1.05] tracking-[-0.03em] [text-shadow:0_3px_18px_rgba(0,0,0,.55)] sm:text-[2rem] lg:text-[2.15rem]">AgentOS is Locked</h1>
             <p className="mt-2 whitespace-nowrap text-[13px] font-normal leading-5 text-white/60 sm:text-sm">Authenticate to unlock this instance.</p>
           </div>
 
