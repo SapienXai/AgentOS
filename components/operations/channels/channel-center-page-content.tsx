@@ -254,8 +254,18 @@ export function ChannelCenterPageContent({
     });
   };
 
-  const openAdvanced = () => {
-    window.open("/integrations", "_blank", "noopener,noreferrer");
+  const openControlUi = async () => {
+    setActionKey("open-control-ui");
+    try {
+      const response = await fetch("/api/openclaw/dashboard", { method: "POST", cache: "no-store" });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to open the OpenClaw Control UI.");
+      toast.success("OpenClaw Control UI opened.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to open the OpenClaw Control UI.");
+    } finally {
+      setActionKey(null);
+    }
   };
 
   return (
@@ -320,7 +330,7 @@ export function ChannelCenterPageContent({
                   </div>
 
                   <div className="min-w-0">
-                    {selectedAccount ? <AccountPanel provider={selectedProvider} account={selectedAccount} actionKey={actionKey} onAction={runAccountAction} onAdvanced={openAdvanced} /> : <EmptyState title="Select an account" description="Choose an account to inspect its routes." />}
+                    {selectedAccount ? <AccountPanel provider={selectedProvider} account={selectedAccount} actionKey={actionKey} onAction={runAccountAction} onOpenControlUi={openControlUi} /> : <EmptyState title="Select an account" description="Choose an account to inspect its routes." />}
                   </div>
                 </div>
               </SectionCard>
@@ -405,11 +415,11 @@ function ProviderCard({ provider, selected, onClick }: { provider: ChannelCenter
   );
 }
 
-function AccountPanel({ provider, account, actionKey, onAction, onAdvanced }: { provider: ChannelCenterProvider; account: ChannelCenterProvider["accounts"][number]; actionKey: string | null; onAction: (action: "start" | "stop" | "restart" | "logout") => void; onAdvanced: () => void }) {
+function AccountPanel({ provider, account, actionKey, onAction, onOpenControlUi }: { provider: ChannelCenterProvider; account: ChannelCenterProvider["accounts"][number]; actionKey: string | null; onAction: (action: "start" | "stop" | "restart" | "logout") => void; onOpenControlUi: () => void }) {
   const canAct = ACTION_PROVIDERS.has(provider.id);
   return (
     <div className="rounded-xl border border-border bg-card/45 p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-foreground">{account.name}</h3><StatusBadge label={accountStatus(account)} tone={accountTone(account)} /></div><p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">{account.accountId}{account.isDefault ? " · default" : ""}</p></div><div className="flex flex-wrap gap-1.5"><Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onAdvanced}><ExternalLink className="mr-1 h-3 w-3" />Advanced</Button>{canAct && account.running ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : canAct ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={!canAct || Boolean(actionKey)}><LogOut className="mr-1 h-3 w-3" />Log out</Button></div></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-foreground">{account.name}</h3><StatusBadge label={accountStatus(account)} tone={accountTone(account)} /></div><p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">{account.accountId}{account.isDefault ? " · default" : ""}</p></div><div className="flex flex-wrap gap-1.5"><Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}><ExternalLink className="mr-1 h-3 w-3" />Open Control UI</Button>{canAct && account.running ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : canAct ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={!canAct || Boolean(actionKey)}><LogOut className="mr-1 h-3 w-3" />Log out</Button></div></div>
       {account.lastError ? <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-2 text-xs text-destructive">{account.lastError}</div> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-3"><KeyValue label="Runtime" value={account.connected ? "Connected" : account.running ? "Running" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Authentication" value={account.authenticationRequired ? "Required" : account.linked ? "Linked" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Inventory" value={account.liveStatusAvailable ? "Gateway status" : "Config only"} /></div>
     </div>
