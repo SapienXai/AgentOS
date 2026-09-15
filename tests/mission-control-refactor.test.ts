@@ -429,8 +429,8 @@ test("Agent routing surfaces do not use workspace metadata as a runtime binding 
     path.join(rootDir, "components/mission-control/create-agent-dialog.wizard.tsx"),
     "utf8"
   );
-  const workspaceChannelsSource = readFileSync(
-    path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
+  const workspaceAccountsSource = readFileSync(
+    path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"),
     "utf8"
   );
   const workspaceChannelsRouteSource = readFileSync(
@@ -443,10 +443,50 @@ test("Agent routing surfaces do not use workspace metadata as a runtime binding 
   assert.doesNotMatch(workerProfileSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|channelIds/);
   assert.doesNotMatch(sidebarSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|bind-agent|unbind-agent/);
   assert.doesNotMatch(createDialogSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|channelIds/);
-  assert.match(workspaceChannelsSource, /Metadata only/);
-  assert.match(workspaceChannelsSource, /does not assign messages to an agent/);
-  assert.doesNotMatch(workspaceChannelsSource, /Owner agent|Assistant agent|Route owner|bind-agent|unbind-agent/);
+  assert.match(workspaceAccountsSource, /Workspace accounts/);
+  assert.match(workspaceAccountsSource, /Channel connections are managed from the selected Agent/);
+  assert.match(workspaceAccountsSource, /AccountsSurfaceSection/);
+  assert.doesNotMatch(workspaceAccountsSource, /LEGACY_SURFACE_MANAGEMENT_ENABLED|Metadata only|does not assign messages to an agent/);
+  assert.doesNotMatch(workspaceAccountsSource, /Owner agent|Assistant agent|Route owner|bind-agent|unbind-agent/);
   assert.doesNotMatch(workspaceChannelsRouteSource, /bind-agent|unbind-agent|setWorkspaceChannelPrimary|setWorkspaceChannelGroups/);
+});
+
+test("Agent card connections use the Agent-scoped channel flow and verify native mutations", () => {
+  const agentConnectionsSource = readFileSync(
+    path.join(rootDir, "components/mission-control/agent-connections-dialog.tsx"),
+    "utf8"
+  );
+  const agentChannelsSource = readFileSync(
+    path.join(rootDir, "components/operations/agents/agent-channels-section.tsx"),
+    "utf8"
+  );
+  const agentNodeSource = readFileSync(
+    path.join(rootDir, "components/mission-control/nodes/agent-node.tsx"),
+    "utf8"
+  );
+  const routeBindingApiSource = readFileSync(
+    path.join(rootDir, "app/api/openclaw/channels/route-binding/route.ts"),
+    "utf8"
+  );
+
+  assert.match(agentConnectionsSource, /AgentChannelsSection/);
+  assert.match(agentConnectionsSource, /choose a real group or channel/);
+  assert.match(agentConnectionsSource, /workspaceId/);
+  assert.match(agentConnectionsSource, /workspacePath/);
+  assert.doesNotMatch(agentConnectionsSource, /ChannelCenterAddAccountDialog|onConnectAccount/);
+  assert.match(agentConnectionsSource, /Open Channel Center/);
+  assert.match(agentChannelsSource, /groupDirectoryEntries/);
+  assert.match(agentChannelsSource, /topicDirectoryEntries/);
+  assert.match(agentChannelsSource, /pollChannelAccount/);
+  assert.match(agentChannelsSource, /Start and continue/);
+  assert.match(agentChannelsSource, /Connect account and continue/);
+  assert.match(agentChannelsSource, /initialProviderId/);
+  assert.match(agentChannelsSource, /No groups found/);
+  assert.match(agentChannelsSource, /verification\?\.verified/);
+  assert.match(agentChannelsSource, /Connect to \$\{agentLabel\}/);
+  assert.match(agentNodeSource, /data\.onOpenWorkspaceChannels\?\.\(data\.agent\.workspaceId, data\.agent\.id, surfaceBadge\.provider\)/);
+  assert.match(routeBindingApiSource, /verifyRouteBinding/);
+  assert.match(routeBindingApiSource, /effectiveAgentId/);
 });
 
 test("workspace Context Engine selects only the preferred agent in that workspace", () => {

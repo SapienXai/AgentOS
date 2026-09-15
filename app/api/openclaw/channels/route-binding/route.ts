@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   clearChannelRouteBinding,
   formatChannelRouteBindingError,
+  getChannelRouteBinding,
   migrateLegacyChannelRouteBindings,
   setChannelRouteBinding
 } from "@/lib/openclaw/application/channel-route-binding-service";
@@ -52,6 +53,7 @@ export async function PATCH(request: Request) {
     const result = input.agentId === null
       ? await clearChannelRouteBinding({ route })
       : await setChannelRouteBinding({ route, agentId: input.agentId });
+    const verification = await verifyRouteBinding(route, input.agentId);
 
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
@@ -61,7 +63,10 @@ export async function PATCH(request: Request) {
       result: "succeeded"
     }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(presentBindingMutation(result)), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(redactSecrets({
+      ...presentBindingMutation(result),
+      verification
+    }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof z.ZodError
       ? "The channel route binding request is invalid."
@@ -69,6 +74,21 @@ export async function PATCH(request: Request) {
     const status = error instanceof z.ZodError ? 400 : error instanceof Error && error.name === "ChannelRouteBindingConflictError" ? 409 : 503;
     return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
   }
+}
+
+async function verifyRouteBinding(route: ReturnType<typeof buildChannelRouteIdentity>, expectedAgentId: string | null) {
+  const resolution = await getChannelRouteBinding(route);
+  const normalizedExpectedAgentId = expectedAgentId?.trim() || null;
+  const verified = normalizedExpectedAgentId === null
+    ? resolution.explicitAgentId === null
+    : resolution.explicitAgentId === normalizedExpectedAgentId && resolution.agentId === normalizedExpectedAgentId;
+
+  return {
+    verified,
+    effectiveAgentId: resolution.agentId,
+    explicitAgentId: resolution.explicitAgentId,
+    match: resolution.effectiveMatch
+  };
 }
 
 export async function POST(request: Request) {

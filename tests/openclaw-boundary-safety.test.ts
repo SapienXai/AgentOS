@@ -361,7 +361,7 @@ test("surface reconcile dry-run skips OpenClaw config writes and provider side e
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
   const surfaceRuntime = readFileSync(path.join(rootDir, "lib/openclaw/surface-runtime.ts"), "utf8");
   const route = readFileSync(path.join(rootDir, "app/api/workspaces/[workspaceId]/surfaces/reconcile/route.ts"), "utf8");
-  const dialog = readFileSync(path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"), "utf8");
+  const dialog = readFileSync(path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"), "utf8");
 
   assert.match(source, /const dryRun = input\.dryRun === true/);
   assert.match(source, /readSurfaceReconcilePreviewAudit\(confirmedPreviewAuditId\)/);
@@ -384,6 +384,7 @@ test("surface reconcile dry-run skips OpenClaw config writes and provider side e
   assert.match(route, /Integration repair apply requires explicit confirmation/);
   assert.match(route, /Integration repair apply requires a dry-run preview audit id/);
   assert.doesNotMatch(dialog, /window\.confirm/);
+  assert.match(dialog, /OpenClaw binding diagnostics/);
   assert.match(dialog, /Apply OpenClaw binding repair/);
   assert.match(dialog, /handleApplySurfaceRepairPreview/);
 });
@@ -1204,7 +1205,15 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
     "utf8"
   );
   const channelsDialogSource = readFileSync(
-    path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
+    path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"),
+    "utf8"
+  );
+  const agentConnectionsSource = readFileSync(
+    path.join(rootDir, "components/mission-control/agent-connections-dialog.tsx"),
+    "utf8"
+  );
+  const dialogShellSource = readFileSync(
+    path.join(rootDir, "components/mission-control/mission-control-dialog-shell.tsx"),
     "utf8"
   );
   const accountsSource = readFileSync(
@@ -1228,14 +1237,15 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
   assert.match(capabilityColumnSource, /<div className="space-y-3">/);
   assert.doesNotMatch(capabilityColumnSource, /max-h-\[min\(38dvh,360px\)\]/);
   assert.match(capabilityColumnSource, /bg-\[var\(--cap-accent-soft\)\]/);
-  assert.match(channelsDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
-  assert.match(channelsDialogSource, /const workspaceDialogThemeStyles: Record<"dark" \| "light", WorkspaceDialogThemeStyle>/);
-  assert.match(channelsDialogSource, /bg-\[image:var\(--wi-surface\)\]/);
-  assert.match(channelsDialogSource, /workspace \? `\$\{workspace\.name\} · accounts and workspace metadata`/);
-  assert.match(channelsDialogSource, /safe-area-inset-top/);
-  assert.match(channelsDialogSource, /overflow-x-hidden overflow-y-auto/);
-  assert.match(channelsDialogSource, /flex h-9 w-full gap-1 overflow-x-auto rounded-\[10px\] border/);
-  assert.match(channelsDialogSource, /min-w-\[148px\] shrink-0/);
+  assert.match(dialogShellSource, /h-dvh max-h-dvh w-screen max-w-none/);
+  assert.match(dialogShellSource, /safe-area-inset-top/);
+  assert.match(agentConnectionsSource, /<AgentChannelsSection/);
+  assert.doesNotMatch(agentConnectionsSource, /<ChannelCenterAddAccountDialog/);
+  assert.match(agentConnectionsSource, /workspacePath/);
+  assert.match(agentConnectionsSource, /Open Channel Center/);
+  assert.match(channelsDialogSource, /OpenClaw binding diagnostics/);
+  assert.match(channelsDialogSource, /Apply OpenClaw binding repair/);
+  assert.match(channelsDialogSource, /overflow-hidden rounded-none border-0/);
   assert.match(accountsSource, /const connectAccountThemeStyles: Record<"dark" \| "light", ConnectAccountThemeStyle>/);
   assert.match(accountsSource, /bg-\[image:var\(--ca-surface\)\]/);
   assert.match(accountsSource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);

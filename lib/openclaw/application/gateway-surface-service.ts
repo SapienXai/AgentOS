@@ -289,7 +289,7 @@ const surfaceDefinitions: SurfaceDefinition[] = [
     agentOsComponents: [
       "app/integrations/page.tsx",
       "app/accounts/page.tsx",
-      "components/mission-control/workspace-channels-dialog.tsx",
+      "components/mission-control/workspace-accounts-dialog.tsx",
       "components/mission-control/accounts-surface-section.tsx"
     ],
     probes: [

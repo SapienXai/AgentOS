@@ -7,7 +7,7 @@ import { AccountIcon } from "@/components/mission-control/account-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { agentHasBrowserAccess } from "@/components/mission-control/workspace-channels-dialog.utils";
+import { agentHasBrowserAccess } from "@/components/mission-control/workspace-account-access.utils";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";

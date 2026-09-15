@@ -331,7 +331,7 @@ export function WorkerProfileDialog({
               </ProfileSection>
 
               <ProfileSection id="worker-profile-channels" eyebrow="05 · Message routing" icon={MessageCircle} title="Channels" description="Manage effective provider routes through OpenClaw's canonical Channel Center binding service.">
-                <AgentChannelsSection agentId={agent.id} surfaceTheme={surfaceTheme} />
+                <AgentChannelsSection agentId={agent.id} workspaceId={workspace.id} workspacePath={workspace.path} surfaceTheme={surfaceTheme} onRouteChanged={onRefresh} />
               </ProfileSection>
             </div>
           </div>

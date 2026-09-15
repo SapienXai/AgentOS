@@ -84,6 +84,7 @@ import type { AddModelsProviderId } from "@/lib/openclaw/types";
 import {
   hydrateMissionControlChannels
 } from "@/lib/openclaw/application/mission-control/channel-hydration";
+import { getAgentChannelRouteBadgeSummaries } from "@/lib/openclaw/application/agent-channel-route-service";
 import {
   buildFallbackModels,
   buildLiveMissionControlDiagnostics,
@@ -455,7 +456,13 @@ async function loadMissionControlSnapshots({
       resolvedSessions.value?.sessions ?? [],
       dispatchRecords
     );
-    const { channelRegistry, channelAccounts, surfaceRuntime, surfaceDrift } = await hydrateMissionControlChannels(profile);
+    const [{ channelRegistry, channelAccounts, surfaceRuntime, surfaceDrift }, nativeChannelRouteBadges] = await Promise.all([
+      hydrateMissionControlChannels(profile),
+      getAgentChannelRouteBadgeSummaries({
+        agentIds: agentsList.map((agent) => agent.id),
+        adapter: getOpenClawAdapter()
+      }).catch(() => ({}))
+    ]);
     const workspaceBindings = createMissionControlWorkspaceBindings(agentsList);
     const runtimes = await reconcileMissionControlRuntimes({
       sessions,
@@ -572,6 +579,7 @@ async function loadMissionControlSnapshots({
       diagnostics,
       channelAccounts,
       channelRegistry,
+      nativeChannelRouteBadges,
       surfaceRuntime,
       surfaceDrift,
       presence: buildPresenceRecords(presence),

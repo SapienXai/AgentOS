@@ -82,7 +82,7 @@ export function buildCanvasGraph(
   onRefresh: (() => Promise<void> | void) | undefined,
   onAgentConnectionMenuOpenChange: ((agentId: string, open: boolean) => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
-  onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
+  onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string, provider?: string) => void) | undefined,
   onOpenAccounts: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenWorkspaceContextEngine: ((workspaceId: string) => void) | undefined,
   onReplyTask: (task: WorkItemRecord) => void,
@@ -296,7 +296,8 @@ export function buildCanvasGraph(
             surfaceNames: surfaceBadge.surfaceNames ?? [],
             roleLabel: surfaceBadge.roleLabel,
             roleTone: surfaceBadge.roleTone ?? "primary",
-            accentColor: surfaceBadge.accentColor ?? null
+            accentColor: surfaceBadge.accentColor ?? null,
+            onClick: () => onOpenWorkspaceChannels?.(workspace.id, agent.id, surfaceBadge.provider)
           }
         });
       });
@@ -719,89 +720,25 @@ function resolveStackOffset(itemCount: number, preferredOffset: number, availabl
 
 export function buildAgentSurfaceBadges(
   snapshot: MissionControlSnapshot,
-  workspace: MissionControlSnapshot["workspaces"][number],
+  _workspace: MissionControlSnapshot["workspaces"][number],
   agent: AgentRecord
 ) {
-  const summaries = new Map<
-    string,
-    {
-      surfaceIds: Set<string>;
-      surfaceNames: Set<string>;
-      primaryCount: number;
-      assistantCount: number;
-      routeCount: number;
-    }
-  >();
+  const summary = snapshot.nativeChannelRouteBadges?.[agent.id];
+  if (!summary) return [];
 
-  for (const channel of snapshot.channelRegistry.channels) {
-    const workspaceBinding = channel.workspaces.find((entry) => entry.workspaceId === workspace.id) ?? null;
-    if (!workspaceBinding) {
-      continue;
-    }
-
-    const enabledAssignments = workspaceBinding.groupAssignments.filter((assignment) => assignment.enabled !== false);
-    const ownedAssignments = enabledAssignments.filter((assignment) => assignment.agentId === agent.id);
-    const isPrimary = channel.primaryAgentId === agent.id;
-    const isAssistant = !isPrimary && workspaceBinding.agentIds.includes(agent.id);
-
-    if (!isPrimary && !isAssistant && ownedAssignments.length === 0) {
-      continue;
-    }
-
-    const current =
-      summaries.get(channel.type) ?? {
-        surfaceIds: new Set<string>(),
-        surfaceNames: new Set<string>(),
-        primaryCount: 0,
-        assistantCount: 0,
-        routeCount: 0
-      };
-    current.surfaceIds.add(channel.id);
-    current.surfaceNames.add(channel.name);
-    current.primaryCount += isPrimary ? 1 : 0;
-    current.assistantCount += isAssistant ? 1 : 0;
-    current.routeCount += ownedAssignments.length;
-    summaries.set(channel.type, current);
-  }
-
-  return Array.from(summaries.entries())
-    .map(([provider, summary]) => {
+  return summary.providers
+    .map(({ provider, routeCount }) => {
       const catalogEntry = getSurfaceCatalogEntry(provider);
-      const roleParts: string[] = [];
-
-      if (summary.primaryCount > 0) {
-        roleParts.push(
-          `Primary on ${summary.primaryCount} ${summary.primaryCount === 1 ? "integration" : "integrations"}`
-        );
-      }
-
-      if (summary.routeCount > 0) {
-        roleParts.push(`Owns ${summary.routeCount} ${summary.routeCount === 1 ? "route" : "routes"}`);
-      }
-
-      if (summary.assistantCount > 0) {
-        roleParts.push(
-          `Assistant on ${summary.assistantCount} ${summary.assistantCount === 1 ? "integration" : "integrations"}`
-        );
-      }
-
-      const roleTone =
-        summary.primaryCount > 0 && (summary.routeCount > 0 || summary.assistantCount > 0)
-          ? "mixed"
-          : summary.primaryCount > 0
-            ? "primary"
-            : summary.routeCount > 0
-              ? "owner"
-              : "delegate";
+      const roleLabel = `${catalogEntry.label} · ${routeCount} ${routeCount === 1 ? "route" : "routes"}`;
 
       return {
         provider,
         label: catalogEntry.label,
-        count: summary.surfaceIds.size,
-        roleLabel: roleParts.join(" · "),
-        roleTone,
+        count: routeCount,
+        roleLabel,
+        roleTone: "owner" as const,
         accentColor: catalogEntry.accentColor ?? null,
-        surfaceNames: Array.from(summary.surfaceNames).sort((left, right) => left.localeCompare(right))
+        surfaceNames: []
       } satisfies AgentSurfaceBadge;
     })
     .sort((left, right) => left.label.localeCompare(right.label));

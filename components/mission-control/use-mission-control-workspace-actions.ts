@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { WorkspaceDialogSection } from "@/components/mission-control/workspace-channels-dialog";
 import type { ConnectBrowserProfileInput } from "@/components/operations/accounts/accounts-page-content";
 import {
   prepareSecureBrowserPopup,
@@ -39,9 +38,11 @@ export function useMissionControlWorkspaceActions({
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
-  const [isWorkspaceChannelsOpen, setIsWorkspaceChannelsOpen] = useState(false);
-  const [workspaceChannelsInitialAgentId, setWorkspaceChannelsInitialAgentId] = useState<string | null>(null);
-  const [workspaceChannelsInitialSection, setWorkspaceChannelsInitialSection] = useState<WorkspaceDialogSection>("surfaces");
+  const [isWorkspaceAccountsOpen, setIsWorkspaceAccountsOpen] = useState(false);
+  const [workspaceAccountsInitialAgentId, setWorkspaceAccountsInitialAgentId] = useState<string | null>(null);
+  const [isAgentConnectionsOpen, setIsAgentConnectionsOpen] = useState(false);
+  const [agentConnectionsInitialAgentId, setAgentConnectionsInitialAgentId] = useState<string | null>(null);
+  const [agentConnectionsInitialProviderId, setAgentConnectionsInitialProviderId] = useState<string | null>(null);
   const [isConnectAccountDialogOpen, setIsConnectAccountDialogOpen] = useState(false);
   const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
   const [accountBrowserProfilesError, setAccountBrowserProfilesError] = useState<string | null>(null);
@@ -147,21 +148,25 @@ export function useMissionControlWorkspaceActions({
     void loadAccountBindings();
   }, [loadAccountBindings]);
 
-  const openWorkspaceChannels = useCallback((workspaceId?: string, agentId?: string, section: WorkspaceDialogSection = "surfaces") => {
+  const openAgentConnections = useCallback((workspaceId?: string, agentId?: string, provider?: string) => {
     if (workspaceId) {
       openWorkspaceOnCanvas(workspaceId);
     }
 
-    setWorkspaceChannelsInitialAgentId(agentId ?? null);
-    setWorkspaceChannelsInitialSection(section);
-    setIsWorkspaceChannelsOpen(true);
-    void loadAccountBindings();
-    void loadAccountSecureBrowserCapabilities(workspaceId);
-  }, [loadAccountBindings, loadAccountSecureBrowserCapabilities, openWorkspaceOnCanvas]);
+    setAgentConnectionsInitialAgentId(agentId ?? null);
+    setAgentConnectionsInitialProviderId(provider ?? null);
+    setIsAgentConnectionsOpen(true);
+  }, [openWorkspaceOnCanvas]);
 
   const openAccountsConnect = useCallback((workspaceId?: string, agentId?: string) => {
-    openWorkspaceChannels(workspaceId, agentId, "accounts");
-  }, [openWorkspaceChannels]);
+    if (workspaceId) {
+      openWorkspaceOnCanvas(workspaceId);
+    }
+
+    setWorkspaceAccountsInitialAgentId(agentId ?? null);
+    setIsWorkspaceAccountsOpen(true);
+    void loadAccountBindings();
+  }, [loadAccountBindings, openWorkspaceOnCanvas]);
 
   const openConnectAccountDialog = useCallback(() => {
     setIsConnectAccountDialogOpen(true);
@@ -317,13 +322,17 @@ export function useMissionControlWorkspaceActions({
     openWorkspaceWizard,
     openWorkspaceWizardForEdit,
     handleWorkspaceWizardOpenChange,
-    isWorkspaceChannelsOpen,
-    setIsWorkspaceChannelsOpen,
-    workspaceChannelsInitialAgentId,
-    setWorkspaceChannelsInitialAgentId,
-    workspaceChannelsInitialSection,
-    setWorkspaceChannelsInitialSection,
-    openWorkspaceChannels,
+    isWorkspaceAccountsOpen,
+    setIsWorkspaceAccountsOpen,
+    workspaceAccountsInitialAgentId,
+    setWorkspaceAccountsInitialAgentId,
+    isAgentConnectionsOpen,
+    setIsAgentConnectionsOpen,
+    agentConnectionsInitialAgentId,
+    setAgentConnectionsInitialAgentId,
+    agentConnectionsInitialProviderId,
+    setAgentConnectionsInitialProviderId,
+    openAgentConnections,
     openAccountsConnect,
     isConnectAccountDialogOpen,
     setIsConnectAccountDialogOpen,

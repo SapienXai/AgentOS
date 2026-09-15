@@ -41,7 +41,6 @@ import {
 
 import { InstanceProtectionDialog } from "@/components/auth/instance-protection-dialog";
 import { useInstanceProtection } from "@/components/auth/instance-protection-provider";
-import { ConnectChannelsDialog } from "@/components/mission-control/connect-channels-dialog";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import {
   MissionControlDialogChip,
@@ -697,7 +696,6 @@ export function MissionSidebar({
               surfaceTheme={surfaceTheme}
               operatorProfile={operatorProfile}
               onProfileSaved={setOperatorProfile}
-              onRefresh={onRefresh}
               onToggleTheme={onToggleTheme}
             />
           </div>
@@ -2475,7 +2473,6 @@ function SidebarUserMenu({
   surfaceTheme,
   operatorProfile,
   onProfileSaved,
-  onRefresh,
   onToggleTheme
 }: {
   snapshot: MissionControlSnapshot;
@@ -2483,12 +2480,10 @@ function SidebarUserMenu({
   surfaceTheme: "dark" | "light";
   operatorProfile: OperatorProfileSummary;
   onProfileSaved: (profile: OperatorProfileSummary) => void;
-  onRefresh: () => Promise<void>;
   onToggleTheme: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [connectOpen, setConnectOpen] = useState(false);
   const [protectionOpen, setProtectionOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
   const { status: protectionStatus, lock } = useInstanceProtection();
@@ -2549,7 +2544,7 @@ function SidebarUserMenu({
               label="Connect"
               onSelect={() => {
                 setOpen(false);
-                setConnectOpen(true);
+                window.location.assign("/channels");
               }}
             />
             <SidebarUserMenuAction
@@ -2634,13 +2629,6 @@ function SidebarUserMenu({
         snapshot={snapshot}
         activeWorkspaceId={activeWorkspaceId}
         onProfileSaved={onProfileSaved}
-      />
-      <ConnectChannelsDialog
-        open={connectOpen}
-        onOpenChange={setConnectOpen}
-        snapshot={snapshot}
-        activeWorkspaceId={activeWorkspaceId}
-        onRefresh={onRefresh}
       />
       <InstanceProtectionDialog open={protectionOpen} onOpenChange={setProtectionOpen} />
       <UserManagementDialog open={userManagementOpen} onOpenChange={setUserManagementOpen} />

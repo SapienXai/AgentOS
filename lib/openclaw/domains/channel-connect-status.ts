@@ -30,11 +30,23 @@ export function normalizeChannelConnectAccounts(
       live.linked === false &&
       live.connected === false &&
       live.running === false;
+    const configured = live?.configured === true || config?.configured === true;
+    const credentialState = liveStatusAvailable
+      ? live?.configured === false
+        ? "missing" as const
+        : configured
+          ? "present" as const
+          : "unknown" as const
+      : config
+        ? config.configured === true
+          ? "present" as const
+          : "missing" as const
+        : "unknown" as const;
 
     return {
       accountId,
       name: live?.name?.trim() || config?.name?.trim() || accountId,
-      configured: live?.configured === true || config?.configured === true,
+      configured,
       enabled: live?.enabled ?? config?.enabled !== false,
       isDefault: defaultAccountId ? defaultAccountId === accountId : config?.isDefault ?? null,
       linked: live?.linked === true,
@@ -42,6 +54,15 @@ export function normalizeChannelConnectAccounts(
       connected: live?.connected === true,
       liveStatusAvailable,
       authenticationRequired,
+      healthState: typeof live?.healthState === "string" ? live.healthState : null,
+      credentialState,
+      evidence: liveStatusAvailable
+        ? config
+          ? "live-and-config" as const
+          : "live-only" as const
+        : config
+          ? "config-only" as const
+          : "unknown" as const,
       lastError: typeof live?.lastError === "string" && live.lastError.trim()
         ? redactErrorMessage(live.lastError, "OpenClaw reported a channel error.")
         : null

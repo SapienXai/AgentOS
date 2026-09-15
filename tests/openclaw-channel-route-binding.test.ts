@@ -201,10 +201,15 @@ test("deleting an agent clears native Telegram topic ownership without touching 
   const writes: string[] = [];
   const adapter = {
     getConfig: async (path: string) => path === "bindings" ? bindings : telegramConfig,
-    setConfig: async (path: string, value: unknown) => {
+    getConfigSnapshot: async () => ({
+      hash: "telegram-hash-1",
+      config: { channels: { telegram: telegramConfig } }
+    }),
+    setConfig: async (path: string, value: unknown, options: Record<string, unknown>) => {
       writes.push(path);
       if (path === "bindings") bindings = value as unknown[];
       if (path === "channels.telegram") telegramConfig = value as Record<string, unknown>;
+      assert.equal(options.baseHash, "telegram-hash-1");
       return { stdout: JSON.stringify({ configMutation: { appliedVia: "config.patch", reloadKind: "hot" } }), stderr: "" };
     }
   } as unknown as OpenClawAdapter;
