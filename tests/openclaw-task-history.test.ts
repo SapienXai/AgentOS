@@ -47,7 +47,7 @@ test("task history capability is version-gated to the certified native contract"
   assert.equal(certified.effectiveMethods.includes("tasks.history"), true);
 });
 
-test("task history contract probes exact params and operator.read scope", async () => {
+test("task history contract avoids a synthetic live probe and preserves operator.read scope", async () => {
   let probe: { method: string; params: Record<string, unknown> } | null = null;
   const taskHistoryCheck = (await checkOpenClawCompatibilityContracts({
     effectiveMethods: ["tasks.history"],
@@ -63,12 +63,10 @@ test("task history contract probes exact params and operator.read scope", async 
     }
   })).find((entry) => entry.operation === "taskHistory");
 
-  assert.deepEqual(probe, {
-    method: "tasks.history",
-    params: { taskId: "__agentos_contract_probe__", limit: 1 }
-  });
+  assert.equal(probe, null);
   assert.equal(taskHistoryCheck?.status, "ok");
-  assert.equal(taskHistoryCheck?.responseShapeStatus, "valid");
+  assert.equal(taskHistoryCheck?.responseShapeStatus, "not-checked");
+  assert.equal(taskHistoryCheck?.responseShapeValid, null);
   assert.deepEqual(taskHistoryCheck?.requiredScopes, ["operator.read"]);
 });
 
