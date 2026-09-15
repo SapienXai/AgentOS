@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-15T13:15:51.300Z",
-  "agentosHead": "b2b850adfbbadcb74fb6a64af34647dd0f0d3769",
+  "generatedAt": "2026-09-15T13:25:56.300Z",
+  "agentosHead": "d6baafe08594b2f108e01e9ee9c9da18fc7a75b2",
   "openclawVersion": "2026.9.4",
   "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
   "methodology": {
@@ -35,18 +35,18 @@
         "source": "bundled"
       },
       "account": {
-        "configured": ["telegram-agentosbot"],
+        "configured": ["telegram-agentosbot-2"],
         "configuredCount": 1,
         "declaredCount": 3,
         "running": false,
         "connected": false,
         "state": "recovering",
         "explicitOwnerError": true,
-        "duplicateTokenAccount": "telegram-agentosbot-2",
-        "duplicateTokenConflict": true
+        "duplicateTokenAccount": null,
+        "duplicateTokenConflict": false
       },
       "directory": {
-        "command": "openclaw directory groups list --channel telegram --account telegram-agentosbot --json",
+        "command": "openclaw directory groups list --channel telegram --account telegram-agentosbot-2 --json",
         "status": "supported-empty",
         "groupCount": 0,
         "groups": []
@@ -123,8 +123,8 @@
     }
   },
   "knownExceptions": [
-    "telegram-agentosbot is configured but cannot start because multi-agent routing has no explicit owner.",
-    "telegram-agentosbot-2 has a duplicate Telegram bot token and was not mutated.",
+    "telegram-agentosbot-2 is configured but cannot start because multi-agent routing has no explicit owner.",
+    "telegram-agentosbot is logged out and unconfigured; no account or credential mutation was attempted.",
     "Telegram directory returned an honest empty result; no group route or live message was claimed.",
     "Discord, Slack, and WhatsApp have official catalog contracts but no local plugin/account, so they remain contract-verified only."
   ]
