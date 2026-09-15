@@ -31,6 +31,7 @@ const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_
 const UPSTREAM_EVIDENCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_UPSTREAM_EVIDENCE?.trim() || null;
 const COMPATIBILITY_REPORT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_COMPATIBILITY_REPORT?.trim() || null;
 const CHANNEL_RUNTIME_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_RUNTIME_ACCEPTANCE?.trim() || null;
+const CERTIFIED_CODE_HEAD_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CERTIFIED_CODE_HEAD?.trim() || null;
 const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
 const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
 const FINAL_CERTIFICATION_FILENAME = getOpenClawFinalCertificationFilename(TARGET_VERSION);
@@ -180,7 +181,7 @@ async function main() {
   if (migration?.success !== true || !Object.values(asRecord(migration?.checks)).every(Boolean)) failures.push("9.3 to 9.4 migration checks are incomplete");
 
   const deploymentPin = await readRepositoryDeploymentPin();
-  const certifiedCodeHead = await gitOutput(["rev-parse", "HEAD"]);
+  const certifiedCodeHead = await gitOutput(["rev-parse", CERTIFIED_CODE_HEAD_INPUT || "HEAD"]);
   if (!resolveRepositoryCommit(certifiedCodeHead)) failures.push("The certified code HEAD does not resolve to a Git commit in the repository");
   if (EVIDENCE_COMMIT_INPUT && EVIDENCE_COMMIT_INPUT.toLowerCase() === certifiedCodeHead.toLowerCase()) failures.push("Certified code and evidence commits must be distinct bindings");
   const report = buildOpenClawFinalCertificationReport({
