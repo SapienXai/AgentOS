@@ -4,6 +4,7 @@ import { afterEach, test } from "node:test";
 import {
   buildNativeRouteBinding,
   clearChannelRouteBinding,
+  clearNativeRouteBindingsForAgent,
   migrateLegacyChannelRouteBindings,
   resolveChannelRouteBinding,
   setChannelRouteBinding
@@ -151,6 +152,74 @@ test("clearing an exact native binding does not alter account or provider siblin
     existing[1],
     existing[2]
   ]);
+});
+
+test("deleting an agent clears every native route binding it owns and preserves other agents", async () => {
+  let current: unknown[] = [
+    { agentId: "deleted-agent", match: { channel: "telegram", accountId: "main", peer: { kind: "group", id: "-1001" } } },
+    { agentId: "deleted-agent", match: { channel: "discord", accountId: "main", peer: { kind: "channel", id: "channel-1" } } },
+    { agentId: "surviving-agent", match: { channel: "telegram", accountId: "main", peer: { kind: "group", id: "-1002" } } },
+    { type: "acp", agentId: "deleted-agent", match: { channel: "telegram", accountId: "main" } }
+  ];
+  const writes: unknown[] = [];
+  const adapter = {
+    getConfig: async (path: string) => path === "bindings" ? current : null,
+    setConfig: async (_path: string, value: unknown) => {
+      writes.push(value);
+      current = value as unknown[];
+      return { stdout: JSON.stringify({ configMutation: { appliedVia: "config.patch", reloadKind: "hot" } }), stderr: "" };
+    }
+  } as unknown as OpenClawAdapter;
+
+  const result = await clearNativeRouteBindingsForAgent({ agentId: "deleted-agent", adapter });
+
+  assert.equal(result.removed, 2);
+  assert.equal(result.changed, true);
+  assert.deepEqual(writes[0], current);
+  assert.deepEqual(current, [
+    { agentId: "surviving-agent", match: { channel: "telegram", accountId: "main", peer: { kind: "group", id: "-1002" } } },
+    { type: "acp", agentId: "deleted-agent", match: { channel: "telegram", accountId: "main" } }
+  ]);
+});
+
+test("deleting an agent clears native Telegram topic ownership without touching other topics", async () => {
+  let bindings: unknown[] = [];
+  let telegramConfig: Record<string, unknown> = {
+    accounts: {
+      main: {
+        groups: {
+          "-1001": {
+            topics: {
+              "42": { name: "Support", agentId: "deleted-agent" },
+              "43": { name: "Billing", agentId: "surviving-agent" }
+            }
+          }
+        }
+      }
+    }
+  };
+  const writes: string[] = [];
+  const adapter = {
+    getConfig: async (path: string) => path === "bindings" ? bindings : telegramConfig,
+    setConfig: async (path: string, value: unknown) => {
+      writes.push(path);
+      if (path === "bindings") bindings = value as unknown[];
+      if (path === "channels.telegram") telegramConfig = value as Record<string, unknown>;
+      return { stdout: JSON.stringify({ configMutation: { appliedVia: "config.patch", reloadKind: "hot" } }), stderr: "" };
+    }
+  } as unknown as OpenClawAdapter;
+
+  const result = await clearNativeRouteBindingsForAgent({ agentId: "deleted-agent", adapter });
+
+  assert.equal(result.topicRemoved, 1);
+  assert.equal(result.removed, 1);
+  assert.deepEqual(writes, ["channels.telegram"]);
+  const topics = (telegramConfig.accounts as Record<string, unknown>).main as Record<string, unknown>;
+  const group = (topics.groups as Record<string, unknown>)["-1001"] as Record<string, unknown>;
+  assert.deepEqual(group.topics, {
+    "42": { name: "Support" },
+    "43": { name: "Billing", agentId: "surviving-agent" }
+  });
 });
 
 test("legacy Telegram group assignments migrate idempotently without overwriting OpenClaw", async () => {

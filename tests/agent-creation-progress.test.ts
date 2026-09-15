@@ -9,7 +9,7 @@ import {
 
 test("agent creation progress exposes the real create lifecycle boundaries", () => {
   assert.deepEqual(
-    resolveAgentCreationProgressSteps("creating", false).map(({ id, status }) => ({ id, status })),
+    resolveAgentCreationProgressSteps("creating").map(({ id, status }) => ({ id, status })),
     [
       { id: "identity", status: "done" },
       { id: "openclaw", status: "active" },
@@ -19,7 +19,7 @@ test("agent creation progress exposes the real create lifecycle boundaries", () 
   );
 
   assert.deepEqual(
-    resolveAgentCreationProgressSteps("syncing", true).map(({ id, status }) => ({ id, status })),
+    resolveAgentCreationProgressSteps("syncing").map(({ id, status }) => ({ id, status })),
     [
       { id: "identity", status: "done" },
       { id: "openclaw", status: "done" },
@@ -27,11 +27,11 @@ test("agent creation progress exposes the real create lifecycle boundaries", () 
       { id: "online", status: "pending" }
     ]
   );
-  assert.equal(resolveAgentCreationProgressSteps("syncing", true)[2]?.label, "Linking workspace routes");
-  assert.ok(resolveAgentCreationProgressSteps("syncing", false)[2]?.description.includes("workspace snapshot"));
+  assert.equal(resolveAgentCreationProgressSteps("syncing")[2]?.label, "Joining workspace");
+  assert.ok(resolveAgentCreationProgressSteps("syncing")[2]?.description.includes("workspace snapshot"));
 
   assert.deepEqual(
-    resolveAgentCreationProgressSteps("complete", false).map(({ id, status }) => ({ id, status })),
+    resolveAgentCreationProgressSteps("complete").map(({ id, status }) => ({ id, status })),
     [
       { id: "identity", status: "done" },
       { id: "openclaw", status: "done" },
@@ -42,10 +42,10 @@ test("agent creation progress exposes the real create lifecycle boundaries", () 
 });
 
 test("agent creation progress uses truthful lifecycle labels", () => {
-  assert.equal(resolveAgentCreationProgressSteps("creating", false)[0]?.label, "Preparing agent");
-  assert.equal(resolveAgentCreationProgressSteps("creating", false)[1]?.label, "Creating agent");
-  assert.equal(resolveAgentCreationProgressSteps("syncing", false)[2]?.label, "Joining workspace");
-  assert.equal(resolveAgentCreationProgressSteps("complete", false)[3]?.label, "Ready");
+  assert.equal(resolveAgentCreationProgressSteps("creating")[0]?.label, "Preparing agent");
+  assert.equal(resolveAgentCreationProgressSteps("creating")[1]?.label, "Creating agent");
+  assert.equal(resolveAgentCreationProgressSteps("syncing")[2]?.label, "Joining workspace");
+  assert.equal(resolveAgentCreationProgressSteps("complete")[3]?.label, "Ready");
 });
 
 test("agent creation reconciliation remains bounded and retries the live snapshot", () => {

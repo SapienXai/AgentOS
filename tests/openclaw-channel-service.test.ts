@@ -5,25 +5,17 @@ import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/e
 import { clearMissionControlCaches } from "@/lib/openclaw/application/mission-control-service";
 import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
-  bindWorkspaceChannelAgent as bindApplicationWorkspaceChannelAgent,
   createManagedChatChannelAccount as createApplicationManagedChatChannelAccount,
   createManagedSurfaceAccount as createApplicationManagedSurfaceAccount,
   deleteWorkspaceChannelEverywhere as deleteApplicationWorkspaceChannelEverywhere,
   disconnectWorkspaceChannel as disconnectApplicationWorkspaceChannel,
-  setWorkspaceChannelGroups as setApplicationWorkspaceChannelGroups,
-  setWorkspaceChannelPrimary as setApplicationWorkspaceChannelPrimary,
-  unbindWorkspaceChannelAgent as unbindApplicationWorkspaceChannelAgent,
   upsertWorkspaceChannel as upsertApplicationWorkspaceChannel
 } from "@/lib/openclaw/application/channel-service";
 import {
-  bindWorkspaceChannelAgent as bindCompatibilityWorkspaceChannelAgent,
   createManagedChatChannelAccount as createCompatibilityManagedChatChannelAccount,
   createManagedSurfaceAccount as createCompatibilityManagedSurfaceAccount,
   deleteWorkspaceChannelEverywhere as deleteCompatibilityWorkspaceChannelEverywhere,
   disconnectWorkspaceChannel as disconnectCompatibilityWorkspaceChannel,
-  setWorkspaceChannelGroups as setCompatibilityWorkspaceChannelGroups,
-  setWorkspaceChannelPrimary as setCompatibilityWorkspaceChannelPrimary,
-  unbindWorkspaceChannelAgent as unbindCompatibilityWorkspaceChannelAgent,
   upsertWorkspaceChannel as upsertCompatibilityWorkspaceChannel
 } from "@/lib/openclaw/service";
 
@@ -78,58 +70,6 @@ test("channel application service preserves delete missing-channel shape", async
   assert.equal(
     await readErrorMessage(() => deleteApplicationWorkspaceChannelEverywhere(input)),
     await readErrorMessage(() => deleteCompatibilityWorkspaceChannelEverywhere(input))
-  );
-});
-
-test("channel application service preserves primary missing-channel shape", async () => {
-  const input = {
-    channelId: "missing-channel-characterization",
-    primaryAgentId: null
-  };
-
-  assert.equal(
-    await readErrorMessage(() => setApplicationWorkspaceChannelPrimary(input)),
-    await readErrorMessage(() => setCompatibilityWorkspaceChannelPrimary(input))
-  );
-});
-
-test("channel application service preserves group missing-channel shape", async () => {
-  const input = {
-    channelId: "missing-channel-characterization",
-    workspaceId: "workspace:test",
-    groupAssignments: []
-  };
-
-  assert.equal(
-    await readErrorMessage(() => setApplicationWorkspaceChannelGroups(input)),
-    await readErrorMessage(() => setCompatibilityWorkspaceChannelGroups(input))
-  );
-});
-
-test("channel application service preserves bind validation shape", async () => {
-  const input = {
-    channelId: " ",
-    workspaceId: "workspace:test",
-    workspacePath: "/tmp/workspace-test",
-    agentId: " "
-  };
-
-  assert.equal(
-    await readErrorMessage(() => bindApplicationWorkspaceChannelAgent(input)),
-    await readErrorMessage(() => bindCompatibilityWorkspaceChannelAgent(input))
-  );
-});
-
-test("channel application service preserves unbind validation shape", async () => {
-  const input = {
-    channelId: " ",
-    workspaceId: "workspace:test",
-    agentId: " "
-  };
-
-  assert.equal(
-    await readErrorMessage(() => unbindApplicationWorkspaceChannelAgent(input)),
-    await readErrorMessage(() => unbindCompatibilityWorkspaceChannelAgent(input))
   );
 });
 

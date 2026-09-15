@@ -264,13 +264,11 @@ test("mission composer keeps internal controls open during blur transitions", ()
 });
 
 test("agent draft helpers keep create flows stable", () => {
-  const draft = buildAgentDraft("workspace-1", {
-    channelIds: ["alpha", "alpha", "", "beta"]
-  });
+  const draft = buildAgentDraft("workspace-1");
   const existingAgents = [{ id: "my-workspace-agent-name" }] as unknown as MissionControlSnapshot["agents"];
 
   assert.equal(draft.workspaceId, "workspace-1");
-  assert.deepEqual(draft.channelIds, ["alpha", "beta"]);
+  assert.equal("channelIds" in draft, false);
   assert.equal(buildScopedAgentId("My Workspace", "Agent Name"), "my-workspace-agent-name");
   assert.equal(buildUniqueAgentId(existingAgents, "My Workspace", "Agent Name"), "my-workspace-agent-name-2");
   assert.equal(applyAgentPreset(draft, "setup").policy.preset, "setup");
@@ -388,14 +386,14 @@ test("cloning seeds supported profile data without credentials or sessions", () 
     tools: ["browser", "fs.workspaceOnly"]
   } as unknown as MissionControlSnapshot["agents"][number];
 
-  const sameWorkspaceDraft = buildImportedAgentDraft("workspace-source", sourceAgent, ["channel-1"]);
-  const crossWorkspaceDraft = buildImportedAgentDraft("workspace-target", sourceAgent, []);
+  const sameWorkspaceDraft = buildImportedAgentDraft("workspace-source", sourceAgent);
+  const crossWorkspaceDraft = buildImportedAgentDraft("workspace-target", sourceAgent);
 
   assert.equal(sameWorkspaceDraft.name, "Source Agent");
   assert.equal(sameWorkspaceDraft.mission, "Own research");
   assert.equal(sameWorkspaceDraft.behaviorInstructions, "Cite evidence");
-  assert.deepEqual(sameWorkspaceDraft.channelIds, ["channel-1"]);
-  assert.deepEqual(crossWorkspaceDraft.channelIds, []);
+  assert.equal("channelIds" in sameWorkspaceDraft, false);
+  assert.equal("channelIds" in crossWorkspaceDraft, false);
   assert.deepEqual(sameWorkspaceDraft.skills, ["project-browser"]);
   assert.deepEqual(sameWorkspaceDraft.tools, ["browser"]);
   assert.equal("credentials" in sameWorkspaceDraft, false);
@@ -419,6 +417,36 @@ test("Create Agent uses one quick-create form without wizard or import placehold
   assert.match(createDialogSource, /Create agent/);
   assert.doesNotMatch(createDialogSource, /WizardStage|MobileDetailsStep|WizardStepper|Profile review|Generated id|Create Worker Profile|digital employee/);
   assert.doesNotMatch(agentsPageSource, /Import Agent/);
+});
+
+test("Agent routing surfaces do not use workspace metadata as a runtime binding path", () => {
+  const workerProfileSource = readFileSync(
+    path.join(rootDir, "components/operations/agents/worker-profile-dialog.tsx"),
+    "utf8"
+  );
+  const sidebarSource = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+  const createDialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/create-agent-dialog.wizard.tsx"),
+    "utf8"
+  );
+  const workspaceChannelsSource = readFileSync(
+    path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
+    "utf8"
+  );
+  const workspaceChannelsRouteSource = readFileSync(
+    path.join(rootDir, "app/api/workspaces/[workspaceId]/channels/route.ts"),
+    "utf8"
+  );
+
+  assert.match(workerProfileSource, /AgentChannelsSection/);
+  assert.match(workerProfileSource, /Message routing/);
+  assert.doesNotMatch(workerProfileSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|channelIds/);
+  assert.doesNotMatch(sidebarSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|bind-agent|unbind-agent/);
+  assert.doesNotMatch(createDialogSource, /ChannelBindingPicker|syncWorkspaceAgentChannelBindings|channelIds/);
+  assert.match(workspaceChannelsSource, /Metadata only/);
+  assert.match(workspaceChannelsSource, /does not assign messages to an agent/);
+  assert.doesNotMatch(workspaceChannelsSource, /Owner agent|Assistant agent|Route owner|bind-agent|unbind-agent/);
+  assert.doesNotMatch(workspaceChannelsRouteSource, /bind-agent|unbind-agent|setWorkspaceChannelPrimary|setWorkspaceChannelGroups/);
 });
 
 test("workspace Context Engine selects only the preferred agent in that workspace", () => {

@@ -6,7 +6,6 @@ import * as openClawService from "@/lib/openclaw/service";
 test("OpenClaw service compatibility surface stays explicit", () => {
   const expectedExports = [
     "abortMissionTask",
-    "bindWorkspaceChannelAgent",
     "clearMissionControlCaches",
     "createAgent",
     "createManagedChatChannelAccount",
@@ -41,11 +40,8 @@ test("OpenClaw service compatibility surface stays explicit", () => {
     "renderSoulMarkdown",
     "renderTemplateSpecificDoc",
     "renderToolsMarkdown",
-    "setWorkspaceChannelGroups",
-    "setWorkspaceChannelPrimary",
     "submitMission",
     "touchOpenClawRuntimeStateAccess",
-    "unbindWorkspaceChannelAgent",
     "updateAgent",
     "updateGatewayRemoteUrl",
     "updateWorkspaceProject",

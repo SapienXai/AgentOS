@@ -143,6 +143,39 @@ Integrations is not a second channel registry. It may project installed
 OpenClaw capabilities and non-channel integrations, while channel account and
 route management belongs to Channels.
 
+## Cross-surface routing
+
+Channels and Agent Profile are two projections of the same OpenClaw-native
+routing state. Channel Center remains the canonical provider -> account ->
+route management surface; Agent Profile adds an agent-centric view of the
+same native bindings and uses the same route-binding application service for
+supported mutations.
+
+- Channel Center does not own a different binding model for its UI.
+- Agent Profile does not persist an AgentOS-owned route list or participation
+  list. It reads native bindings, native default resolution, and provider-native
+  child state such as Telegram topic `agentId`.
+- Both surfaces use `/api/openclaw/channels/route-binding` for route changes,
+  preserving the existing permission, OpenClaw preflight, audit, optimistic
+  concurrency, and secret-redaction boundaries.
+- Agent Profile loads the current route summary when opened and loads provider,
+  account, and directory candidates only when the operator starts Add route.
+  Directory entries are normalized through the canonical resolver so explicit,
+  inherited, and default states remain distinguishable.
+- Threads remain inherited from their parent route when OpenClaw does not
+  expose a thread binding primitive. Telegram topics are displayed as routes,
+  but their mutations remain native topic-config mutations rather than invented
+  `bindings[]` entries.
+- The workspace registry may retain account attachment, visibility, and legacy
+  group-assignment metadata for compatibility. It never determines runtime
+  message routing and is not consulted by Agent Profile's native route
+  summary.
+
+Consequently, a route changed in Channel Center is visible in Agent Profile
+after refresh, and a route changed in Agent Profile is visible in Channel
+Center after refresh. Removing an explicit child override removes only that
+exact native binding and reveals the effective inherited or default result.
+
 ## Migration and compatibility
 
 1. Read old workspace manifests and `channel-registry.json` through the existing

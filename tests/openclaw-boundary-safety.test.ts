@@ -1231,7 +1231,7 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
   assert.match(channelsDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
   assert.match(channelsDialogSource, /const workspaceDialogThemeStyles: Record<"dark" \| "light", WorkspaceDialogThemeStyle>/);
   assert.match(channelsDialogSource, /bg-\[image:var\(--wi-surface\)\]/);
-  assert.match(channelsDialogSource, /workspace \? `\$\{workspace\.name\} · accounts, owners, and routes`/);
+  assert.match(channelsDialogSource, /workspace \? `\$\{workspace\.name\} · accounts and workspace metadata`/);
   assert.match(channelsDialogSource, /safe-area-inset-top/);
   assert.match(channelsDialogSource, /overflow-x-hidden overflow-y-auto/);
   assert.match(channelsDialogSource, /flex h-9 w-full gap-1 overflow-x-auto rounded-\[10px\] border/);

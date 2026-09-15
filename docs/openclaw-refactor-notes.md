@@ -103,10 +103,7 @@ Application call sites moved from direct gateway-client usage to the adapter:
 - `upsertWorkspaceChannel`
 - `disconnectWorkspaceChannel`
 - `deleteWorkspaceChannelEverywhere`
-- `setWorkspaceChannelPrimary`
-- `setWorkspaceChannelGroups`
-- `bindWorkspaceChannelAgent`
-- `unbindWorkspaceChannelAgent`
+- `removeWorkspaceChannelAgentMetadata` (agent-deletion cleanup for legacy registry data only)
 - Managed routing sync for bindings, Telegram group config, Discord guild config, Telegram session store reconciliation, and Telegram coordination policy skill sync.
 - Managed channel/surface account provisioning for Telegram, Discord, Slack, Google Chat, Gmail, webhook, cron, and email surfaces.
 - Telegram account resolution helpers, managed surface config normalization, Gmail setup argument building, and CLI fallback provisioning calls.
@@ -164,7 +161,7 @@ Remaining exports are classified as:
   - Agent workflows: `createAgent`, `updateAgent`, `deleteAgent`
   - Workspace workflows: `createWorkspaceProject`, `updateWorkspaceProject`, `deleteWorkspaceProject`, `readWorkspaceEditSeed`
   - Settings workflows: `updateGatewayRemoteUrl`, `updateWorkspaceRoot`
-  - Channel workflows: `upsertWorkspaceChannel`, `disconnectWorkspaceChannel`, `deleteWorkspaceChannelEverywhere`, `setWorkspaceChannelPrimary`, `setWorkspaceChannelGroups`, `bindWorkspaceChannelAgent`, `unbindWorkspaceChannelAgent`
+  - Channel workflows: `upsertWorkspaceChannel`, `disconnectWorkspaceChannel`, `deleteWorkspaceChannelEverywhere`
   - Managed provisioning: `createManagedChatChannelAccount`, `createManagedSurfaceAccount`, `createTelegramChannelAccount`
   - Discovery/model/session re-exports: `discoverDiscordRoutes`, `discoverSurfaceRoutes`, `discoverTelegramGroups`, `getChannelRegistry`, `inferSessionKindFromCatalogEntry`, `inferFallbackModelMetadata`
 - Legacy workspace document render helper compatibility delegates:

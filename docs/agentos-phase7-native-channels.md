@@ -1,5 +1,9 @@
 # AgentOS Phase 7.1 — Native Channel Setup
 
+> Historical setup contract. The current Channel Center cross-surface routing
+> contract supersedes workspace `agentIds` as a runtime routing authority;
+> those fields are retained only as workspace metadata compatibility.
+
 The readiness projection is aligned with the OpenClaw 2026.9.4 channel
 account-state contract: `running` is the native started state, while a
 configured account with no running transport is stopped. WhatsApp linking is
@@ -16,7 +20,7 @@ AgentOS workspace channel registry.
 ```text
 Channel declaration  = historical desired setup from the validated blueprint
 OpenClaw account      = provider account owned by OpenClaw
-Workspace binding     = AgentOS workspace/agent routing ownership
+Workspace binding     = AgentOS workspace/account visibility metadata
 Runtime status        = live OpenClaw account state
 ```
 
@@ -36,12 +40,11 @@ operational, and WhatsApp `linked` alone is not operational when the native
 account is stopped. Those states remain pending and expose `Start`; a failed
 or disabled account exposes `Needs attention`/`Retry`.
 
-The workspace's ordered `agentIds` list is the authoritative routing source;
-its first entry is the canonical primary agent established by provisioning.
-An omitted agent selection uses only that primary. An explicit agent id that
-is no longer in the workspace is rejected with a typed setup error, and an
-existing binding that points outside the workspace is projected as drift
-without being rewritten during status reads.
+The workspace's ordered `agentIds` list is a compatibility projection used for
+workspace visibility and setup history; it is not the runtime routing source.
+OpenClaw native bindings and provider-native route state determine message
+routing. An existing metadata reference that points outside the workspace is
+projected as drift without being rewritten during status reads.
 
 The workspace projection is available at:
 
