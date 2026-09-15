@@ -1,6 +1,6 @@
 {
   "report": {
-    "generatedAt": "2026-09-15T13:26:50.393Z",
+    "generatedAt": "2026-09-15T19:55:51.683Z",
     "target": {
       "name": "real-local",
       "kind": "real",
@@ -2553,14 +2553,14 @@
           "operator.read"
         ],
         "missingScopes": [],
-        "nativeGatewaySupported": true,
+        "nativeGatewaySupported": false,
         "cliFallbackAvailable": false,
-        "responseShapeStatus": "valid",
-        "responseShapeValid": true,
-        "status": "ok",
-        "reason": "Native plugin discovery catalog is native through plugins.catalog.browse and the response shape matched AgentOS' contract.",
-        "suggestedRecovery": "No recovery action required.",
-        "epistemicStatus": "observed-native-success",
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Native plugin discovery catalog could not be observed because the OpenClaw Gateway is unreachable.",
+        "suggestedRecovery": "Update OpenClaw for native Native plugin discovery catalog support.",
+        "epistemicStatus": "unreachable",
         "fallbackStatus": "not-allowed",
         "fallbackUsed": false,
         "expectedMethod": "plugins.catalog.browse",
@@ -3720,9 +3720,9 @@
       }
     ],
     "summary": {
-      "nativeGatewayCoveragePercent": 89,
-      "nativeGatewayCoverageLabel": "78/88 operations",
-      "cliFallbackOperationCount": 9,
+      "nativeGatewayCoveragePercent": 88,
+      "nativeGatewayCoverageLabel": "77/88 operations",
+      "cliFallbackOperationCount": 10,
       "activeCliFallbackCount": 0,
       "degradedSurfaces": [
         "Agent identity sync",
@@ -3733,6 +3733,7 @@
         "Gmail webhook setup",
         "Model auth order",
         "Model scan",
+        "Native plugin discovery catalog",
         "Session usage"
       ],
       "unsupportedSurfaces": [
@@ -3745,7 +3746,7 @@
         "2026.9.4"
       ],
       "unsupportedOperationCount": 1,
-      "degradedOperationCount": 9,
+      "degradedOperationCount": 10,
       "failedOperationCount": 0,
       "targetName": "real-local",
       "targetKind": "real",
@@ -3759,8 +3760,8 @@
     "targetKind": "real",
     "isRealRuntime": true,
     "isSimulatedRuntime": false,
-    "nativeGatewayCoveragePercent": 89,
-    "cliFallbackCount": 9,
+    "nativeGatewayCoveragePercent": 88,
+    "cliFallbackCount": 10,
     "degradedSurfaces": [
       "Agent identity sync",
       "Browser profiles",
@@ -3770,6 +3771,7 @@
       "Gmail webhook setup",
       "Model auth order",
       "Model scan",
+      "Native plugin discovery catalog",
       "Session usage"
     ],
     "unsupportedSurfaces": [
