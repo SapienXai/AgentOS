@@ -418,132 +418,19 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
   return repair;
 }
 
-export async function setWorkspaceChannelPrimary(input: {
-  channelId: string;
-  primaryAgentId: string | null;
-}, timings?: TimingCollector) {
-  const channelId = normalizeChannelId(input.channelId);
-  if (!channelId) {
-    throw new Error("Channel id is required.");
-  }
-
-  await measureTiming(timings, "channel.primary-update", () =>
-    mutateChannelRegistry((registry) => {
-      const channel = registry.channels.find((entry) => entry.id === channelId);
-      if (!channel) {
-        throw new Error("Channel was not found.");
-      }
-
-      channel.primaryAgentId = normalizeOptionalValue(input.primaryAgentId) ?? null;
-    }, timings)
-  );
-
-  invalidateSnapshotCache();
-  return getChannelRegistry();
-}
-
-export async function setWorkspaceChannelGroups(input: {
-  channelId: string;
-  workspaceId: string;
-  groupAssignments: WorkspaceChannelGroupAssignment[];
-}, timings?: TimingCollector) {
-  const channelId = normalizeChannelId(input.channelId);
-  if (!channelId) {
-    throw new Error("Channel id is required.");
-  }
-
-  await measureTiming(timings, "channel.groups-update", () =>
-    mutateChannelRegistry((registry) => {
-      const channel = registry.channels.find((entry) => entry.id === channelId);
-      if (!channel) {
-        throw new Error("Channel was not found.");
-      }
-
-      const workspace = channel.workspaces.find((entry) => entry.workspaceId === input.workspaceId);
-      if (!workspace) {
-        throw new Error("Workspace binding was not found for this channel.");
-      }
-
-      workspace.groupAssignments = uniqueByChatId(
-        input.groupAssignments.map((assignment) => ({
-          chatId: assignment.chatId.trim(),
-          agentId: normalizeOptionalValue(assignment.agentId) ?? null,
-          title: normalizeOptionalValue(assignment.title) ?? null,
-          enabled: assignment.enabled !== false
-        }))
-      );
-      workspace.agentIds = uniqueStrings([
-        ...workspace.agentIds,
-        ...workspace.groupAssignments
-          .filter((assignment) => assignment.enabled !== false && assignment.agentId)
-          .map((assignment) => assignment.agentId as string)
-      ]);
-
-    }, timings)
-  );
-
-  invalidateSnapshotCache();
-  return getChannelRegistry();
-}
-
-export async function bindWorkspaceChannelAgent(input: {
-  channelId: string;
-  workspaceId: string;
-  workspacePath: string;
-  agentId: string;
-}, timings?: TimingCollector) {
-  const channelId = normalizeChannelId(input.channelId);
-  const agentId = slugify(input.agentId.trim());
-  if (!channelId || !agentId) {
-    throw new Error("Channel id and agent id are required.");
-  }
-
-  await measureTiming(timings, "channel.bind-agent", () =>
-    mutateChannelRegistry((registry) => {
-      const channel = registry.channels.find((entry) => entry.id === channelId);
-      if (!channel) {
-        throw new Error("Channel was not found.");
-      }
-
-      const workspace = channel.workspaces.find((entry) => entry.workspaceId === input.workspaceId);
-      const nextWorkspace: WorkspaceChannelWorkspaceBinding =
-        workspace ??
-        ({
-          workspaceId: input.workspaceId,
-          workspacePath: input.workspacePath,
-          agentIds: [],
-          groupAssignments: []
-        } satisfies WorkspaceChannelWorkspaceBinding);
-
-      nextWorkspace.agentIds = uniqueStrings([...nextWorkspace.agentIds, agentId]);
-      nextWorkspace.workspacePath = input.workspacePath;
-      channel.workspaces = [
-        ...channel.workspaces.filter((entry) => entry.workspaceId !== input.workspaceId),
-        nextWorkspace
-      ];
-
-      if (!channel.primaryAgentId) {
-        channel.primaryAgentId = agentId;
-      }
-    }, timings)
-  );
-
-  invalidateSnapshotCache();
-  return getChannelRegistry();
-}
-
-export async function unbindWorkspaceChannelAgent(input: {
+/** Remove an agent from the legacy workspace registry without changing native routing. */
+export async function removeWorkspaceChannelAgentMetadata(input: {
   channelId: string;
   workspaceId: string;
   agentId: string;
 }, timings?: TimingCollector) {
   const channelId = normalizeChannelId(input.channelId);
-  const agentId = slugify(input.agentId.trim());
+  const agentId = normalizeOptionalValue(input.agentId.trim());
   if (!channelId || !agentId) {
     throw new Error("Channel id and agent id are required.");
   }
 
-  await measureTiming(timings, "channel.unbind-agent", () =>
+  await measureTiming(timings, "workspace-channel.metadata-remove-agent", () =>
     mutateChannelRegistry((registry) => {
       const channel = registry.channels.find((entry) => entry.id === channelId);
       if (!channel) {
@@ -551,36 +438,15 @@ export async function unbindWorkspaceChannelAgent(input: {
       }
 
       const workspace = channel.workspaces.find((entry) => entry.workspaceId === input.workspaceId);
-      if (!workspace) {
-        return;
-      }
+      if (!workspace) return;
 
       workspace.agentIds = workspace.agentIds.filter((entry) => entry !== agentId);
       workspace.groupAssignments = workspace.groupAssignments.filter((assignment) => assignment.agentId !== agentId);
-
       if (channel.primaryAgentId === agentId) {
-        const fallbackAgent =
-          workspace.agentIds[0] ??
-          workspace.groupAssignments.find((assignment) => assignment.enabled !== false && assignment.agentId)?.agentId ??
-          channel.workspaces
-            .flatMap((binding) => binding.agentIds)
-            .find((candidate) => candidate !== agentId) ??
-          channel.workspaces
-            .flatMap((binding) => binding.groupAssignments)
-            .find((assignment) => assignment.enabled !== false && assignment.agentId && assignment.agentId !== agentId)
-            ?.agentId ??
-          null;
-        channel.primaryAgentId = fallbackAgent;
+        channel.primaryAgentId = channel.workspaces
+          .flatMap((binding) => binding.agentIds)
+          .find((candidate) => candidate !== agentId) ?? null;
       }
-
-      channel.workspaces = [
-        ...channel.workspaces.filter((entry) => entry.workspaceId !== input.workspaceId),
-        {
-          ...workspace,
-          agentIds: workspace.agentIds,
-          groupAssignments: workspace.groupAssignments
-        }
-      ];
     }, timings)
   );
 

@@ -6,15 +6,11 @@ import {
   updateAgent as updateAgentFromApplication
 } from "@/lib/openclaw/application/agent-service";
 import {
-  bindWorkspaceChannelAgent as bindWorkspaceChannelAgentFromApplication,
   createManagedChatChannelAccount as createManagedChatChannelAccountFromApplication,
   createManagedSurfaceAccount as createManagedSurfaceAccountFromApplication,
   createTelegramChannelAccount as createTelegramChannelAccountFromApplication,
   deleteWorkspaceChannelEverywhere as deleteWorkspaceChannelEverywhereFromApplication,
   disconnectWorkspaceChannel as disconnectWorkspaceChannelFromApplication,
-  setWorkspaceChannelGroups as setWorkspaceChannelGroupsFromApplication,
-  setWorkspaceChannelPrimary as setWorkspaceChannelPrimaryFromApplication,
-  unbindWorkspaceChannelAgent as unbindWorkspaceChannelAgentFromApplication,
   upsertWorkspaceChannel as upsertWorkspaceChannelFromApplication
 } from "@/lib/openclaw/application/channel-service";
 import {
@@ -188,38 +184,6 @@ export async function deleteWorkspaceChannelEverywhere(input: {
   channelId: string;
 }, timings?: TimingCollector) {
   return deleteWorkspaceChannelEverywhereFromApplication(input, timings);
-}
-
-export async function setWorkspaceChannelPrimary(input: {
-  channelId: string;
-  primaryAgentId: string | null;
-}, timings?: TimingCollector) {
-  return setWorkspaceChannelPrimaryFromApplication(input, timings);
-}
-
-export async function setWorkspaceChannelGroups(input: {
-  channelId: string;
-  workspaceId: string;
-  groupAssignments: WorkspaceChannelGroupAssignment[];
-}, timings?: TimingCollector) {
-  return setWorkspaceChannelGroupsFromApplication(input, timings);
-}
-
-export async function bindWorkspaceChannelAgent(input: {
-  channelId: string;
-  workspaceId: string;
-  workspacePath: string;
-  agentId: string;
-}, timings?: TimingCollector) {
-  return bindWorkspaceChannelAgentFromApplication(input, timings);
-}
-
-export async function unbindWorkspaceChannelAgent(input: {
-  channelId: string;
-  workspaceId: string;
-  agentId: string;
-}, timings?: TimingCollector) {
-  return unbindWorkspaceChannelAgentFromApplication(input, timings);
 }
 
 export async function createWorkspaceProject(

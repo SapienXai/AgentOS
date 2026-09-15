@@ -59,10 +59,8 @@ import { buildUniqueAgentName } from "@/lib/openclaw/agent-naming";
 import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
-import {
-  bindWorkspaceChannelAgent,
-  unbindWorkspaceChannelAgent
-} from "@/lib/openclaw/application/channel-service";
+import { removeWorkspaceChannelAgentMetadata } from "@/lib/openclaw/application/channel-service";
+import { clearNativeRouteBindingsForAgent } from "@/lib/openclaw/application/channel-route-binding-service";
 import {
   executeNativeMutationWithVerification,
   isNativeAgentNotFoundMessage
@@ -517,35 +515,6 @@ async function createAgentInternal(input: AgentCreateInput, gatewayOptions: Open
     }
   });
   syncWarnings.push(...profileSidecarResult.warnings);
-  lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, { stage: "binding-channels" });
-  const channelSidecarResult = await runLifecycleSidecarSteps(
-    uniqueStrings(input.channelIds ?? []).map((channelId) => ({
-      id: `channel:${channelId}`,
-      label: `bind channel ${channelId}`,
-      formatError: formatPostCreateAgentConfigSyncWarning,
-      run: () => bindWorkspaceChannelAgent({
-        channelId,
-        workspaceId: resolvedWorkspaceId,
-        workspacePath: resolvedWorkspacePath,
-        agentId
-      })
-    })),
-    {
-      completed: lifecycleOperation.sidecars,
-      onSuccess: async (stepId) => {
-        lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
-          sidecars: { [stepId]: "confirmed" }
-        });
-      },
-      onFailure: async (stepId) => {
-        lifecycleOperation = await updateLifecycleOperation(lifecycleOperation, {
-          sidecars: { [stepId]: "failed" }
-        });
-      }
-    }
-  );
-  syncWarnings.push(...channelSidecarResult.warnings);
-
   invalidateMissionControlSnapshotCache();
   const warnings = uniqueStrings(syncWarnings);
   const outcome: LifecycleOperationOutcome = warnings.length > 0 ? "partial" : "ready";
@@ -1207,10 +1176,15 @@ async function deleteAgentInternal(input: AgentDeleteInput, gatewayOptions: Open
     nativeConfirmed
   });
   const sidecarSteps = [
+    {
+      id: "native-route-bindings",
+      label: "remove native route bindings",
+      run: () => clearNativeRouteBindingsForAgent({ agentId })
+    },
     ...channelIds.map((channelId) => ({
       id: `channel:${channelId}`,
       label: `disconnect channel ${channelId}`,
-      run: () => unbindWorkspaceChannelAgent({
+      run: () => removeWorkspaceChannelAgentMetadata({
         channelId,
         workspaceId,
         agentId

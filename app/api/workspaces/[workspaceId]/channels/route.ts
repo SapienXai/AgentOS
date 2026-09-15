@@ -5,11 +5,7 @@ import {
   createManagedSurfaceAccount,
   disconnectWorkspaceChannel,
   deleteWorkspaceChannelEverywhere,
-  setWorkspaceChannelGroups,
-  setWorkspaceChannelPrimary,
-  upsertWorkspaceChannel,
-  bindWorkspaceChannelAgent,
-  unbindWorkspaceChannelAgent
+  upsertWorkspaceChannel
 } from "@/lib/agentos/control-plane";
 import { hydrateMissionControlChannels } from "@/lib/openclaw/application/mission-control/channel-hydration";
 import type {
@@ -48,15 +44,6 @@ const createChannelSchema = z.object({
   webhookUrl: z.string().optional(),
   primaryAgentId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
-  groupAssignments: z.array(groupAssignmentSchema).optional()
-});
-
-const patchChannelSchema = z.object({
-  channelId: z.string().min(1),
-  action: z.enum(["bind-agent", "unbind-agent", "primary", "groups"]),
-  agentId: z.string().nullable().optional(),
-  primaryAgentId: z.string().nullable().optional(),
-  workspacePath: z.string().min(1).optional(),
   groupAssignments: z.array(groupAssignmentSchema).optional()
 });
 
@@ -186,74 +173,6 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       {
         error: formatChannelMutationError(error, "Unable to create channel.", "integration provisioning"),
         timings: summary
-      },
-      { status: 400 }
-    );
-  }
-}
-
-export async function PATCH(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
-  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
-  if ("response" in permission) return permission.response;
-
-  try {
-    const { workspaceId } = await context.params;
-    const input = patchChannelSchema.parse(await request.json());
-
-    if (input.action === "primary") {
-      const registry = await setWorkspaceChannelPrimary({
-        channelId: input.channelId,
-        primaryAgentId: input.primaryAgentId ?? null
-      });
-
-      return NextResponse.json(redactSecrets({ registry }));
-    }
-
-    if (input.action === "groups") {
-      const registry = await setWorkspaceChannelGroups({
-        channelId: input.channelId,
-        workspaceId,
-        groupAssignments: normalizeGroupAssignments(input.groupAssignments ?? [])
-      });
-
-      return NextResponse.json(redactSecrets({ registry }));
-    }
-
-    if (input.action === "bind-agent") {
-      if (!input.agentId) {
-        throw new Error("Agent id is required.");
-      }
-
-      const workspacePath = input.workspacePath?.trim();
-      if (!workspacePath) {
-        throw new Error("Workspace path is required.");
-      }
-
-      const registry = await bindWorkspaceChannelAgent({
-        channelId: input.channelId,
-        workspaceId,
-        workspacePath,
-        agentId: input.agentId
-      });
-
-      return NextResponse.json(redactSecrets({ registry }));
-    }
-
-    if (!input.agentId) {
-      throw new Error("Agent id is required.");
-    }
-
-    const registry = await unbindWorkspaceChannelAgent({
-      channelId: input.channelId,
-      workspaceId,
-      agentId: input.agentId
-    });
-
-    return NextResponse.json(redactSecrets({ registry }));
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: formatChannelMutationError(error, "Unable to update channel.", "integration update")
       },
       { status: 400 }
     );

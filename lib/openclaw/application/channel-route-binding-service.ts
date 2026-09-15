@@ -85,6 +85,16 @@ export type ChannelRouteBindingMutation = {
   changedPaths: string[];
 };
 
+export type NativeAgentRouteBindingCleanup = {
+  changed: boolean;
+  removed: number;
+  topicRemoved: number;
+  applyMode: OpenClawConfigMutationOutcome["applyMode"] | null;
+  reloadKind: OpenClawConfigMutationOutcome["reloadKind"] | null;
+  pending: boolean;
+  appliedVia: OpenClawConfigMutationOutcome["appliedVia"] | null;
+};
+
 export type ChannelRouteBindingMigrationConflict = ChannelRouteBindingConflict & {
   compatibilityAgentIds: string[];
   nativeAgentIds: string[];
@@ -241,6 +251,145 @@ export async function clearChannelRouteBinding(input: {
   adapter?: OpenClawAdapter;
 }) {
   return setChannelRouteBinding({ ...input, agentId: null });
+}
+
+/** Remove only native route bindings owned by a deleted OpenClaw agent. */
+export async function clearNativeRouteBindingsForAgent(input: {
+  agentId: string;
+  adapter?: OpenClawAdapter;
+}): Promise<NativeAgentRouteBindingCleanup> {
+  const agentId = normalizeAgentId(input.agentId);
+  if (!agentId) throw new Error("An agent id is required to clear native route bindings.");
+
+  const adapter = input.adapter ?? getOpenClawAdapter();
+  const current = await readNativeRouteBindings(adapter);
+  const telegramTopics = await readTelegramTopicAgentBindings(adapter, agentId);
+  const ownedIndexes = new Set(
+    current.entries
+      .filter((entry) => entry.binding.agentId === agentId)
+      .map((entry) => entry.index)
+  );
+  if (ownedIndexes.size === 0 && telegramTopics.removed === 0) {
+    return {
+      changed: false,
+      removed: 0,
+      topicRemoved: 0,
+      applyMode: null,
+      reloadKind: null,
+      pending: false,
+      appliedVia: null
+    };
+  }
+
+  let mutation: OpenClawConfigMutationOutcome | null = null;
+  if (ownedIndexes.size > 0) {
+    const nextBindings = current.raw.filter((_entry, index) => !ownedIndexes.has(index));
+    const result = await adapter.setConfig("bindings", nextBindings, {
+      strictJson: true,
+      ...(current.baseHash ? { baseHash: current.baseHash } : {}),
+      replacePaths: ["bindings"],
+      timeoutMs: 15_000
+    });
+    mutation = readConfigMutationOutcome(result, "bindings");
+    const after = await readNativeRouteBindings(adapter);
+    if (after.entries.some((entry) => entry.binding.agentId === agentId)) {
+      throw new Error("OpenClaw accepted route cleanup, but the deleted agent still has native route bindings.");
+    }
+  }
+
+  let topicMutation: OpenClawConfigMutationOutcome | null = null;
+  if (telegramTopics.removed > 0 && telegramTopics.nextConfig) {
+    const result = await adapter.setConfig("channels.telegram", telegramTopics.nextConfig, {
+      strictJson: true,
+      replacePaths: ["channels.telegram"],
+      timeoutMs: 15_000
+    });
+    topicMutation = readConfigMutationOutcome(result, "channels.telegram");
+    const after = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
+    if (countTelegramTopicAgentBindings(after, agentId) > 0) {
+      throw new Error("OpenClaw accepted topic cleanup, but the deleted agent still owns a Telegram topic route.");
+    }
+  }
+
+  return {
+    changed: ownedIndexes.size > 0 || telegramTopics.removed > 0,
+    removed: ownedIndexes.size + telegramTopics.removed,
+    topicRemoved: telegramTopics.removed,
+    applyMode: topicMutation?.applyMode ?? mutation?.applyMode ?? null,
+    reloadKind: topicMutation?.reloadKind ?? mutation?.reloadKind ?? null,
+    pending: Boolean(topicMutation?.pending || mutation?.pending),
+    appliedVia: topicMutation?.appliedVia ?? mutation?.appliedVia ?? null
+  };
+}
+
+async function readTelegramTopicAgentBindings(adapter: OpenClawAdapter, agentId: string) {
+  const config = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
+  if (!isRecord(config)) return { nextConfig: null, removed: 0 };
+  const nextConfig = cloneTelegramTopicConfigWithoutAgent(config, agentId);
+  return {
+    nextConfig: nextConfig.removed > 0 ? nextConfig.config : null,
+    removed: nextConfig.removed
+  };
+}
+
+function countTelegramTopicAgentBindings(config: unknown, agentId: string) {
+  if (!isRecord(config)) return 0;
+  let count = 0;
+  const countGroups = (groups: unknown) => {
+    if (!isRecord(groups)) return;
+    for (const rawGroup of Object.values(groups)) {
+      if (!isRecord(rawGroup) || !isRecord(rawGroup.topics)) continue;
+      for (const rawTopic of Object.values(rawGroup.topics)) {
+        if (isRecord(rawTopic) && normalizeAgentId(rawTopic.agentId) === agentId) count += 1;
+      }
+    }
+  };
+  countGroups(config.groups);
+  if (isRecord(config.accounts)) {
+    for (const account of Object.values(config.accounts)) {
+      if (isRecord(account)) countGroups(account.groups);
+    }
+  }
+  return count;
+}
+
+function cloneTelegramTopicConfigWithoutAgent(config: Record<string, unknown>, agentId: string) {
+  let removed = 0;
+  const cloneGroups = (groups: unknown) => {
+    if (!isRecord(groups)) return groups;
+    const nextGroups: Record<string, unknown> = { ...groups };
+    for (const [groupId, rawGroup] of Object.entries(groups)) {
+      if (!isRecord(rawGroup) || !isRecord(rawGroup.topics)) continue;
+      const topics: Record<string, unknown> = { ...rawGroup.topics };
+      for (const [topicId, rawTopic] of Object.entries(rawGroup.topics)) {
+        if (!isRecord(rawTopic) || normalizeAgentId(rawTopic.agentId) !== agentId) continue;
+        const topicWithoutAgent = Object.fromEntries(Object.entries(rawTopic).filter(([key]) => key !== "agentId"));
+        topics[topicId] = topicWithoutAgent;
+        removed += 1;
+      }
+      nextGroups[groupId] = { ...rawGroup, topics };
+    }
+    return nextGroups;
+  };
+
+  const nextConfig: Record<string, unknown> = { ...config };
+  if (Object.prototype.hasOwnProperty.call(config, "groups")) {
+    nextConfig.groups = cloneGroups(config.groups);
+  }
+  if (isRecord(config.accounts)) {
+    const accounts: Record<string, unknown> = { ...config.accounts };
+    for (const [accountId, rawAccount] of Object.entries(config.accounts)) {
+      if (!isRecord(rawAccount)) continue;
+      const nextAccount: Record<string, unknown> = { ...rawAccount };
+      if (Object.prototype.hasOwnProperty.call(rawAccount, "groups")) {
+        nextAccount.groups = cloneGroups(rawAccount.groups);
+      }
+      accounts[accountId] = nextAccount;
+    }
+    nextConfig.accounts = accounts;
+  }
+
+  return { config: nextConfig, removed };
 }
 
 export async function migrateLegacyChannelRouteBindings(input: {
@@ -423,9 +572,7 @@ export function resolveChannelRouteBinding(
       .map((candidate) => candidate.binding);
     const effectiveMatch = resolution.matchedBy === "binding.peer"
       ? "exact"
-      : resolution.matchedBy === "binding.peer.parent"
-        ? "inherited"
-        : "fallback";
+      : "inherited";
     const exact = effectiveMatch === "exact";
 
     return {
@@ -437,7 +584,9 @@ export function resolveChannelRouteBinding(
       effectiveMatch,
       matchedBy: resolution.matchedBy,
       sourceBinding: resolution.selected.binding,
-      inheritedFrom: effectiveMatch === "inherited" ? inheritedRoute(route, resolution.context.parentPeer) : null,
+      inheritedFrom: effectiveMatch === "inherited"
+        ? inheritedRoute(route, resolution.matchedBy, resolution.context.parentPeer)
+        : null,
       shadowedBindings,
       editingAmbiguity: shadowedBindings.length > 0,
       conflict: null
@@ -831,9 +980,63 @@ function matchesBindingScope(
   return true;
 }
 
-function inheritedRoute(route: ChannelRouteIdentity, parentPeer: NativePeer | null) {
-  if (!parentPeer) return null;
+function inheritedRoute(
+  route: ChannelRouteIdentity,
+  matchedBy: ChannelRouteBindingMatchedBy,
+  parentPeer: NativePeer | null
+) {
+  if (matchedBy === "default") return null;
+  if (matchedBy === "binding.peer.parent" && !parentPeer) return null;
   const provider = route.provider.toLowerCase();
+  if (matchedBy === "binding.peer.parent" && parentPeer) {
+    return buildChannelRouteIdentity({
+      provider: route.provider,
+      accountId: route.accountId,
+      kind: parentPeer.kind === "channel" ? "channel" : "group",
+      routeId: parentPeer.id,
+      parentRouteId: provider === "discord" ? normalizeString(route.metadata?.guildId) : provider === "slack" ? normalizeString(route.metadata?.teamId) : null,
+      metadata: {
+        nativePeerKind: parentPeer.kind,
+        ...(provider === "discord" && route.metadata?.guildId ? { guildId: route.metadata.guildId } : {}),
+        ...(provider === "slack" && route.metadata?.teamId ? { teamId: route.metadata.teamId } : {})
+      }
+    });
+  }
+  if (matchedBy === "binding.guild" || matchedBy === "binding.guild+roles") {
+    const guildId = normalizeString(route.metadata?.guildId) ?? route.parentRouteId;
+    return guildId
+      ? buildChannelRouteIdentity({
+          provider: route.provider,
+          accountId: route.accountId,
+          kind: "group",
+          routeId: guildId,
+          metadata: { nativeScope: "guild", guildId }
+        })
+      : null;
+  }
+  if (matchedBy === "binding.team") {
+    const teamId = normalizeString(route.metadata?.teamId) ?? route.parentRouteId;
+    return teamId
+      ? buildChannelRouteIdentity({
+          provider: route.provider,
+          accountId: route.accountId,
+          kind: "group",
+          routeId: teamId,
+          metadata: { nativeScope: "team", teamId }
+        })
+      : null;
+  }
+  if (matchedBy === "binding.peer.wildcard") {
+    return buildChannelRouteIdentity({
+      provider: route.provider,
+      accountId: route.accountId,
+      kind: route.kind,
+      routeId: "*",
+      parentRouteId: route.parentRouteId,
+      metadata: route.metadata
+    });
+  }
+  if (!parentPeer) return null;
   return buildChannelRouteIdentity({
     provider: route.provider,
     accountId: route.accountId,

@@ -40,7 +40,6 @@ import {
 } from "@/lib/openclaw/application/settings-service";
 import { reconcileAgentOsSessionSecurityDefaults } from "@/lib/openclaw/domains/session-security-policy";
 import {
-  bindWorkspaceChannelAgent,
   createManagedSurfaceAccount,
   createTelegramChannelAccount,
   deleteWorkspaceChannelEverywhere,
@@ -50,9 +49,6 @@ import {
   discoverTelegramGroups,
   getChannelRegistry,
   reconcileWorkspaceSurfaceBindings,
-  setWorkspaceChannelGroups,
-  setWorkspaceChannelPrimary,
-  unbindWorkspaceChannelAgent,
   upsertWorkspaceChannel
 } from "@/lib/openclaw/application/channel-service";
 import {
@@ -80,7 +76,6 @@ export const getMissionControlSnapshot = getControlPlaneSnapshot;
 export {
   abortMissionTask,
   approveRuntimeIssue,
-  bindWorkspaceChannelAgent,
   clearMissionControlCaches,
   controlRunningTaskSession,
   createAgent,
@@ -116,8 +111,6 @@ export {
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
   runTaskHealthAudit,
-  setWorkspaceChannelGroups,
-  setWorkspaceChannelPrimary,
   submitMission,
   updateAgent,
   updateCrossAgentMessageSettings,
@@ -126,7 +119,6 @@ export {
   updateWorkspaceProject,
   updateWorkspaceRoot,
   touchOpenClawRuntimeStateAccess,
-  unbindWorkspaceChannelAgent,
   upsertWorkspaceChannel
 };
 

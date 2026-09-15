@@ -324,7 +324,6 @@ export function AgentsPageContent({
         snapshot={rootSnapshot}
         onOpenChange={(open) => setProfileAgentId(open ? profileAgentId : null)}
         onRefresh={refresh}
-        onSnapshotChange={setSnapshot}
         onChangeModel={(agentId) => {
           setProfileAgentId(null);
           setModelAgentId(agentId);

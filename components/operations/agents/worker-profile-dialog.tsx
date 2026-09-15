@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Bot,
   BrainCircuit,
@@ -10,6 +10,7 @@ import {
   KeyRound,
   Layers3,
   LoaderCircle,
+  MessageCircle,
   RotateCcw,
   Save,
   ShieldCheck,
@@ -18,7 +19,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 
-import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
 import { Button } from "@/components/ui/button";
 import {
   MissionControlDialogChip,
@@ -29,7 +30,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { getWorkspaceChannelIdsForAgent, syncWorkspaceAgentChannelBindings } from "@/lib/openclaw/channel-bindings";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { AgentPolicy, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type {
@@ -53,7 +53,6 @@ type WorkerProfileDialogProps = {
   snapshot: MissionControlSnapshot;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void>;
-  onSnapshotChange?: Dispatch<SetStateAction<MissionControlSnapshot>>;
   onChangeModel: (agentId: string) => void;
   onManageCapabilities: (agentId: string, focus: "skills" | "tools") => void;
   surfaceTheme?: SurfaceTheme;
@@ -79,7 +78,6 @@ type WorkerProfileDraft = {
   workspaceAccess: WorkspaceAccess;
   memoryEnabled: boolean;
   memorySources: Array<"memory" | "sessions">;
-  channelIds: string[];
 };
 
 export function WorkerProfileDialog({
@@ -88,7 +86,6 @@ export function WorkerProfileDialog({
   snapshot,
   onOpenChange,
   onRefresh,
-  onSnapshotChange,
   onChangeModel,
   onManageCapabilities,
   surfaceTheme = "dark"
@@ -108,7 +105,7 @@ export function WorkerProfileDialog({
       return;
     }
 
-    setDraft(buildDraft(agent, snapshot));
+    setDraft(buildDraft(agent));
   }, [agent, open, snapshot]);
 
   useEffect(() => {
@@ -152,7 +149,7 @@ export function WorkerProfileDialog({
       : "No browser tool is declared or observed. Effective browser use is not established for this worker."
   }, [agent]);
 
-  const baselineDraft = useMemo(() => agent ? buildDraft(agent, snapshot) : null, [agent, snapshot]);
+  const baselineDraft = useMemo(() => agent ? buildDraft(agent) : null, [agent]);
   const hasChanges = Boolean(draft && baselineDraft && !areSameDraft(draft, baselineDraft));
 
   if (!agent || !workspace || !draft) {
@@ -222,18 +219,6 @@ export function WorkerProfileDialog({
         throw new Error(payload.error || "Unable to save the Worker Profile.");
       }
 
-      const currentChannelIds = getWorkspaceChannelIdsForAgent(snapshot, workspace.id, agent.id);
-      if (!areSameValues(currentChannelIds, draft.channelIds)) {
-        await syncWorkspaceAgentChannelBindings({
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          agentId: agent.id,
-          currentChannelIds,
-          nextChannelIds: draft.channelIds,
-          onRegistryChange: onSnapshotChange
-        });
-      }
-
       toast.success("Worker Profile saved.");
       await onRefresh();
       onOpenChange(false);
@@ -264,7 +249,7 @@ export function WorkerProfileDialog({
       footer={
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
           <div className="mr-auto hidden items-center gap-2 text-xs text-slate-400 sm:flex"><span className={cn("h-2 w-2 rounded-full", hasChanges ? "bg-amber-400" : "bg-emerald-400")} />{hasChanges ? "Review and save your profile changes" : "No pending profile changes"}</div>
-          {hasChanges ? <Button variant="secondary" size="sm" onClick={() => setDraft(buildDraft(agent, snapshot))} disabled={saving} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />Reset changes</Button> : null}
+          {hasChanges ? <Button variant="secondary" size="sm" onClick={() => setDraft(buildDraft(agent))} disabled={saving} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />Reset changes</Button> : null}
           <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)} disabled={saving} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Cancel</Button>
           <Button size="sm" onClick={() => void save()} disabled={saving || !draft.name.trim() || !hasChanges} className={missionControlDialogButtonClassName("primary", surfaceTheme)}>{saving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}{saving ? "Saving profile" : "Save Worker Profile"}</Button>
         </div>
@@ -339,11 +324,14 @@ export function WorkerProfileDialog({
                 <div className="flex flex-wrap gap-2 pt-1"><Button variant="secondary" size="sm" onClick={() => onManageCapabilities(agent.id, "skills")}>Manage skills ({agent.skills.length})</Button><Button variant="secondary" size="sm" onClick={() => onManageCapabilities(agent.id, "tools")}>Manage declared tools</Button></div>
               </ProfileSection>
 
-              <ProfileSection id="worker-profile-safety" eyebrow="04 · Guardrails & reach" icon={ShieldCheck} title="Access & safety" description="Set supported sandbox limits and connect the worker to the channels it may serve.">
+              <ProfileSection id="worker-profile-safety" eyebrow="04 · Guardrails & reach" icon={ShieldCheck} title="Access & safety" description="Set supported sandbox limits and keep the worker's runtime boundary explicit.">
                 <div className="grid gap-3 sm:grid-cols-3"><Field label="Sandbox mode"><select value={draft.sandboxMode} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxMode: event.target.value as SandboxMode })}><option value="">Inherit</option><option value="off">Off</option><option value="non-main">Non-main</option><option value="all">All sessions</option></select></Field><Field label="Scope"><select value={draft.sandboxScope} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxScope: event.target.value as SandboxScope })}><option value="">Inherit</option><option value="session">Session</option><option value="agent">Agent</option><option value="shared">Shared</option></select></Field><Field label="Workspace in sandbox"><select value={draft.workspaceAccess} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, workspaceAccess: event.target.value as WorkspaceAccess })}><option value="">Inherit</option><option value="none">No access</option><option value="ro">Read only</option><option value="rw">Read/write</option></select></Field></div>
                 <div className="rounded-2xl border border-amber-300/25 bg-amber-400/5 px-4 py-3 text-xs leading-5 text-muted-foreground"><FolderLock className="mr-1.5 inline h-4 w-4 text-amber-500" />Sandbox changes can alter the worker&apos;s visible workspace and may recreate its runtime on the next turn.</div>
                 <div className="rounded-2xl border border-border bg-muted/25 p-4"><p className="text-sm font-medium">Accounts & browser profiles</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{accountSummary}</p></div>
-                <ChannelBindingPicker snapshot={snapshot} workspaceId={workspace.id} agentId={agent.id} channelIds={draft.channelIds} isSaving={saving} surfaceTheme={surfaceTheme} onChange={(channelIds) => setDraft({ ...draft, channelIds })} />
+              </ProfileSection>
+
+              <ProfileSection id="worker-profile-channels" eyebrow="05 · Message routing" icon={MessageCircle} title="Channels" description="Manage effective provider routes through OpenClaw's canonical Channel Center binding service.">
+                <AgentChannelsSection agentId={agent.id} surfaceTheme={surfaceTheme} />
               </ProfileSection>
             </div>
           </div>
@@ -485,9 +473,8 @@ function shortId(value: string | null) {
   return value ? `${value.slice(0, 8)}…` : "unknown";
 }
 
-function buildDraft(agent: MissionControlSnapshot["agents"][number], snapshot: MissionControlSnapshot): WorkerProfileDraft {
+function buildDraft(agent: MissionControlSnapshot["agents"][number]): WorkerProfileDraft {
   const profile = agent.workerProfile;
-  const channels = getWorkspaceChannelIdsForAgent(snapshot, agent.workspaceId, agent.id);
   return {
     name: profile?.identity.displayName ?? agent.name,
     emoji: profile?.identity.emoji ?? agent.identity.emoji ?? "",
@@ -507,8 +494,7 @@ function buildDraft(agent: MissionControlSnapshot["agents"][number], snapshot: M
     sandboxScope: agent.sandbox?.scope ?? "",
     workspaceAccess: agent.sandbox?.workspaceAccess ?? "",
     memoryEnabled: agent.memorySearch?.enabled ?? false,
-    memorySources: agent.memorySearch?.sources ?? ["memory"],
-    channelIds: channels
+    memorySources: agent.memorySearch?.sources ?? ["memory"]
   };
 }
 
@@ -589,5 +575,4 @@ function ToggleChip({ label, active, onClick }: { label: string; active: boolean
 
 function splitList(value: string) { return Array.from(new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))); }
 function toggleValue(values: Array<"memory" | "sessions">, value: "memory" | "sessions") { return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]; }
-function areSameValues(left: string[], right: string[]) { return left.length === right.length && left.every((value) => right.includes(value)); }
 function areSameDraft(left: WorkerProfileDraft, right: WorkerProfileDraft) { return JSON.stringify(left) === JSON.stringify(right); }
