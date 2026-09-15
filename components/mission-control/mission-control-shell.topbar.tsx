@@ -108,7 +108,11 @@ export function CanvasTopBar({
       data-tauri-drag-region="deep"
       className="pointer-events-auto flex h-16 w-full items-center px-0 pt-6"
     >
-      <div ref={settingsRef} className="pointer-events-auto relative ml-auto">
+      <div
+        ref={settingsRef}
+        data-tauri-drag-region="false"
+        className="pointer-events-auto relative ml-auto"
+      >
         <div
           className={cn(
             "flex h-11 items-center gap-3 rounded-full border px-4 shadow-[0_18px_50px_rgba(0,0,0,0.24)] backdrop-blur-xl",
