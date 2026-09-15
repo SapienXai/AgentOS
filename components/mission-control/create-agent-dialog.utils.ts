@@ -29,7 +29,6 @@ export type AgentDraft = {
   labels: string[];
   policy: AgentPolicy;
   heartbeat: AgentHeartbeatDraft;
-  channelIds: string[];
   skills: string[];
   tools: string[];
 };
@@ -60,11 +59,6 @@ export function buildAgentDraft(workspaceId: string, seed: Partial<AgentDraft> =
     labels: Array.from(new Set((seed.labels ?? []).map((entry) => entry.trim()).filter(Boolean))),
     policy,
     heartbeat,
-    channelIds: Array.from(
-      new Set(
-        (seed.channelIds ?? []).filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
-      )
-    ),
     skills: normalizeDraftCapabilityIds(seed.skills ?? presetMeta.skillIds, "skill"),
     tools: normalizeDraftCapabilityIds(seed.tools ?? presetMeta.tools, "tool")
   };
@@ -263,8 +257,7 @@ export function rebaseAgentBootstrapFilesForDraft(
 
 export function buildImportedAgentDraft(
   workspaceId: string,
-  sourceAgent: MissionControlSnapshot["agents"][number],
-  channelIds: string[]
+  sourceAgent: MissionControlSnapshot["agents"][number]
 ): AgentDraft {
   const capabilities = normalizeAgentDraftCapabilities(sourceAgent.skills, sourceAgent.tools);
 
@@ -283,7 +276,6 @@ export function buildImportedAgentDraft(
       enabled: sourceAgent.heartbeat.enabled,
       every: sourceAgent.heartbeat.every ?? undefined
     }),
-    channelIds,
     skills: capabilities.skills,
     tools: capabilities.tools
   });

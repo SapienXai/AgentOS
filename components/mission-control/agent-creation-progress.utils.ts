@@ -47,14 +47,11 @@ const progressStageByState: Record<AgentCreationProgressState, number> = {
  * real client/server boundary in the create flow.
  */
 export function resolveAgentCreationProgressSteps(
-  state: AgentCreationProgressState,
-  hasChannelBindings: boolean
+  state: AgentCreationProgressState
 ): AgentCreationProgressStep[] {
   const activeStage = progressStageByState[state];
-  const workspaceLabel = hasChannelBindings ? "Linking workspace routes" : "Joining workspace";
-  const workspaceDescription = hasChannelBindings
-    ? "The selected workspace routes are being attached after OpenClaw provisions the agent."
-    : "AgentOS is refreshing the workspace snapshot so the new agent can appear on the canvas.";
+  const workspaceLabel = "Joining workspace";
+  const workspaceDescription = "AgentOS is refreshing the workspace snapshot so the new agent can appear on the canvas.";
 
   return [
     {

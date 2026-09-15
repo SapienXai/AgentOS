@@ -7,7 +7,6 @@ import { Check, ChevronDown, Copy, LoaderCircle } from "lucide-react";
 import { AgentCreationProgress } from "@/components/mission-control/agent-creation-progress";
 import { AGENT_CREATION_SNAPSHOT_RECONCILIATION_TIMEOUT_MS } from "@/components/mission-control/agent-creation-progress.utils";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
-import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import {
   AgentSetupSummary,
   CloneAgentPicker,
@@ -35,9 +34,6 @@ import {
   AGENT_HEARTBEAT_INTERVAL_OPTIONS,
   defaultHeartbeatForPreset
 } from "@/lib/openclaw/agent-heartbeat";
-import {
-  getWorkspaceChannelIdsForAgent
-} from "@/lib/openclaw/channel-bindings";
 import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import type { AgentPreset, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { toast } from "@/components/ui/sonner";
@@ -381,11 +377,7 @@ export function CreateAgentDialog({
     }
 
     const workspaceId = draft.workspaceId || initialWorkspaceId;
-    const channelIds = workspaceId === sourceAgent.workspaceId
-      ? getWorkspaceChannelIdsForAgent(snapshot, sourceAgent.workspaceId, sourceAgent.id)
-      : [];
-
-    setDraft(buildImportedAgentDraft(workspaceId, sourceAgent, channelIds));
+    setDraft(buildImportedAgentDraft(workspaceId, sourceAgent));
     setNameWasEdited(true);
     setSelectedCloneAgentId(agentId);
     setClonePickerOpen(false);
@@ -412,8 +404,7 @@ export function CreateAgentDialog({
         ...current,
         workspaceId,
         name: nextName,
-        modelId: current.modelId.trim() ? current.modelId : "",
-        channelIds: []
+        modelId: current.modelId.trim() ? current.modelId : ""
       };
     });
   };
@@ -645,7 +636,6 @@ export function CreateAgentDialog({
           agentName={agentNameForCreation}
           workspaceName={selectedWorkspace?.name ?? "Selected workspace"}
           modelLabel={modelSummaryLabel}
-          hasChannelBindings={draft.channelIds.length > 0}
           warning={createdAgentWarning}
           surfaceTheme={surfaceTheme}
         />
@@ -866,21 +856,6 @@ export function CreateAgentDialog({
                   <PolicySelect label="Install permissions" htmlFor="create-agent-install-scope" value={draft.policy.installScope} options={AGENT_INSTALL_SCOPE_OPTIONS} surfaceTheme={surfaceTheme} onChange={(value) => setDraft((current) => ({ ...current, policy: { ...current.policy, installScope: value } }))} />
                   <PolicySelect label="Network" htmlFor="create-agent-network-access" value={draft.policy.networkAccess} options={AGENT_NETWORK_ACCESS_OPTIONS} surfaceTheme={surfaceTheme} onChange={(value) => setDraft((current) => ({ ...current, policy: { ...current.policy, networkAccess: value } }))} />
                 </div>
-              </AdvancedSection>
-
-              <AdvancedSection title="Channels" description="Select configured workspace bindings for this agent. Credentials remain owned by OpenClaw." surfaceTheme={surfaceTheme}>
-                {draft.workspaceId ? (
-                  <ChannelBindingPicker
-                    snapshot={snapshot}
-                    workspaceId={draft.workspaceId}
-                    channelIds={draft.channelIds}
-                    isSaving={isSaving}
-                    surfaceTheme={surfaceTheme}
-                    onChange={(channelIds) => setDraft((current) => ({ ...current, channelIds }))}
-                  />
-                ) : (
-                  <p className={cn("text-xs leading-4", isLight ? "text-[#806f63]" : "text-slate-400")}>Select a workspace before configuring channels.</p>
-                )}
               </AdvancedSection>
 
               <AdvancedSection title="Appearance" description="Optional visual identity for the agent." surfaceTheme={surfaceTheme}>

@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { AccountsSurfaceSection } from "@/components/mission-control/accounts-surface-section";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
@@ -52,7 +52,6 @@ import {
 } from "@/lib/openclaw/gateway-config-errors";
 import {
   buildFallbackGatewayRepairAction,
-  buildSurfaceRouteOptions,
   filterWorkspaceDriftIssues,
   formatSurfaceAccountStatus,
   formatSurfaceDriftIssueDetail,
@@ -61,8 +60,6 @@ import {
   formatSurfaceKindLabel,
   formatSurfaceProviderLabelFromCatalog,
   formatSurfaceRuntimeSource,
-  formatSurfaceTimestamp,
-  getEmptyRouteDiscoveryCopy,
   getSurfaceAccountRuntime,
   getSurfaceRuntimeBadgeClass,
   isGatewayRecoveryCandidate,
@@ -74,12 +71,10 @@ import {
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type {
   ChannelAccountRecord,
-  DiscoveredSurfaceRoute,
   MissionControlSnapshot,
   MissionControlSurfaceKind,
   MissionControlSurfaceProvider,
-  SurfaceBindingRepairResult,
-  WorkspaceChannelGroupAssignment
+  SurfaceBindingRepairResult
 } from "@/lib/agentos/contracts";
 import type {
   WorkspaceChannelSetupAction,
@@ -235,13 +230,6 @@ export function WorkspaceChannelsDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const [newPrimaryAgentId, setNewPrimaryAgentId] = useState("");
-  const [delegateDraftBySurfaceId, setDelegateDraftBySurfaceId] = useState<Record<string, string>>({});
-  const [delegateRouteDraftBySurfaceId, setDelegateRouteDraftBySurfaceId] = useState<Record<string, string>>({});
-  const [discoveredRoutesBySurfaceId, setDiscoveredRoutesBySurfaceId] = useState<
-    Record<string, DiscoveredSurfaceRoute[]>
-  >({});
-  const [loadingRoutesBySurfaceId, setLoadingRoutesBySurfaceId] = useState<Record<string, boolean>>({});
-  const [routeErrorsBySurfaceId, setRouteErrorsBySurfaceId] = useState<Record<string, string | null>>({});
   const [deleteTarget, setDeleteTarget] = useState<ChannelAccountRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [repairPreview, setRepairPreview] = useState<SurfaceBindingRepairResult | null>(null);
@@ -372,57 +360,9 @@ export function WorkspaceChannelsDialog({
     },
     [snapshot.agents]
   );
-  const resolveWorkspaceDisplayName = useCallback(
-    (candidateWorkspaceId: string) =>
-      snapshot.workspaces.find((entry) => entry.id === candidateWorkspaceId)?.name ?? candidateWorkspaceId,
-    [snapshot.workspaces]
-  );
-
   const providerOptions = useMemo(() => {
     return surfaceCatalogEntries.filter((entry) => entry.kind === activeKind).map((entry) => entry.provider);
   }, [activeKind, surfaceCatalogEntries]);
-
-  const refreshSurfaceRoutes = useCallback(
-    async (surfaceId: string, provider: MissionControlSurfaceProvider) => {
-      if (!workspace?.id) {
-        return;
-      }
-
-      setLoadingRoutesBySurfaceId((current) => ({ ...current, [surfaceId]: true }));
-      setRouteErrorsBySurfaceId((current) => ({ ...current, [surfaceId]: null }));
-
-      try {
-        const response = await fetch(
-          `/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/discovery?provider=${encodeURIComponent(
-            provider
-          )}&accountId=${encodeURIComponent(surfaceId)}`
-        );
-        const result = (await response.json()) as {
-          error?: string;
-          routes?: DiscoveredSurfaceRoute[];
-          supported?: boolean;
-        };
-
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `${getSurfaceCatalogEntry(provider).label} route discovery failed.`);
-        }
-
-        setDiscoveredRoutesBySurfaceId((current) => ({
-          ...current,
-          [surfaceId]: result.supported === false || !Array.isArray(result.routes) ? [] : result.routes
-        }));
-      } catch (error) {
-        setRouteErrorsBySurfaceId((current) => ({
-          ...current,
-          [surfaceId]:
-            error instanceof Error ? error.message : `${getSurfaceCatalogEntry(provider).label} discovery failed.`
-        }));
-      } finally {
-        setLoadingRoutesBySurfaceId((current) => ({ ...current, [surfaceId]: false }));
-      }
-    },
-    [workspace]
-  );
 
   useEffect(() => {
     if (!open) {
@@ -431,11 +371,6 @@ export function WorkspaceChannelsDialog({
       setDeleteTarget(null);
       setDeleteConfirmText("");
       setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
-      setDelegateDraftBySurfaceId({});
-      setDelegateRouteDraftBySurfaceId({});
-      setDiscoveredRoutesBySurfaceId({});
-      setRouteErrorsBySurfaceId({});
-      setLoadingRoutesBySurfaceId({});
       setRepairPreview(null);
       setWorkspaceSetup(null);
       setWorkspaceSetupError(null);
@@ -469,28 +404,6 @@ export function WorkspaceChannelsDialog({
       setActiveProvider(providerOptions[0] ?? "telegram");
     }
   }, [activeProvider, providerOptions]);
-
-  useEffect(() => {
-    if (!LEGACY_SURFACE_MANAGEMENT_ENABLED || !open || !workspace?.id || !currentCatalogEntry.supportsRouteDiscovery) {
-      return;
-    }
-
-    for (const surface of providerWorkspaceSurfaces) {
-      if (discoveredRoutesBySurfaceId[surface.id] || loadingRoutesBySurfaceId[surface.id]) {
-        continue;
-      }
-
-      void refreshSurfaceRoutes(surface.id, surface.type);
-    }
-  }, [
-    currentCatalogEntry.supportsRouteDiscovery,
-    discoveredRoutesBySurfaceId,
-    loadingRoutesBySurfaceId,
-    open,
-    providerWorkspaceSurfaces,
-    refreshSurfaceRoutes,
-    workspace?.id
-  ]);
 
   const postWorkspaceSurface = async (payload: Record<string, unknown>) => {
     if (!workspace) {
@@ -667,27 +580,6 @@ export function WorkspaceChannelsDialog({
     } finally {
       setWorkspaceSetupBusy(null);
     }
-  };
-
-  const patchWorkspaceSurface = async (payload: Record<string, unknown>) => {
-    if (!workspace) {
-      throw new Error("Workspace was not found.");
-    }
-
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/channels`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const result = (await response.json()) as ChannelMutationResult;
-    if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this integration right now.");
-    }
-
-    return result;
   };
 
   const deleteWorkspaceSurface = async (payload: Record<string, unknown>) => {
@@ -922,44 +814,6 @@ export function WorkspaceChannelsDialog({
     }
   };
 
-  const handlePrimaryChange = async (surfaceId: string, primaryAgentId: string) => {
-    if (!workspace || !primaryAgentId) {
-      return;
-    }
-
-    beginSaving("Updating owner agent...");
-
-    try {
-      const surface = workspaceSurfaces.find((entry) => entry.id === surfaceId) ?? null;
-      const binding = surface?.workspaces.find((entry) => entry.workspaceId === workspace.id) ?? null;
-
-      if (surface && binding && !binding.agentIds.includes(primaryAgentId)) {
-        const bindResult = await patchWorkspaceSurface({
-          action: "bind-agent",
-          channelId: surfaceId,
-          agentId: primaryAgentId,
-          workspacePath: workspace.path
-        });
-        applyRegistryUpdate(bindResult);
-      }
-
-      const result = await patchWorkspaceSurface({
-        action: "primary",
-        channelId: surfaceId,
-        primaryAgentId
-      });
-      applyRegistryUpdate(result);
-      toast.success("Owner agent updated.");
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Integration update failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
   const handleDisconnectSurface = async (surfaceId: string) => {
     beginSaving("Disconnecting integration from workspace...");
 
@@ -971,127 +825,6 @@ export function WorkspaceChannelsDialog({
     } catch (error) {
       toast.error("Integration disconnect failed.", {
         description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleAddAssistant = async (surfaceId: string) => {
-    const agentId = delegateDraftBySurfaceId[surfaceId]?.trim();
-    const routeId = delegateRouteDraftBySurfaceId[surfaceId]?.trim();
-    if (!workspace || !agentId) {
-      return;
-    }
-
-    beginSaving(routeId ? "Adding assistant and assigning route..." : "Adding assistant agent...");
-
-    try {
-      const result = await patchWorkspaceSurface({
-        action: "bind-agent",
-        channelId: surfaceId,
-        agentId,
-        workspacePath: workspace.path
-      });
-      applyRegistryUpdate(result);
-
-      let assignedRouteTitle: string | null = null;
-      if (routeId) {
-        const surface = workspaceSurfaces.find((entry) => entry.id === surfaceId) ?? null;
-        const workspaceBinding = surface?.workspaces.find((entry) => entry.workspaceId === workspace.id) ?? null;
-
-        if (!surface || !workspaceBinding) {
-          throw new Error("Integration route binding was not found.");
-        }
-
-        const currentAssignments = (workspaceBinding.groupAssignments ?? []).filter(
-          (assignment) => assignment.enabled !== false
-        );
-        const visibleAssignments = surface.workspaces.flatMap((binding) =>
-          (binding.groupAssignments ?? []).filter((assignment) => assignment.enabled !== false)
-        );
-        const route =
-          buildSurfaceRouteOptions(discoveredRoutesBySurfaceId[surfaceId] ?? [], visibleAssignments, surface.type).find(
-            (entry) => entry.routeId === routeId
-          ) ?? null;
-        assignedRouteTitle = route?.title ?? routeId;
-
-        const nextAssignment: WorkspaceChannelGroupAssignment = {
-          chatId: routeId,
-          title: route?.title ?? currentAssignments.find((assignment) => assignment.chatId === routeId)?.title ?? null,
-          agentId,
-          enabled: true
-        };
-        const nextAssignments = currentAssignments.some((assignment) => assignment.chatId === routeId)
-          ? currentAssignments.map((assignment) =>
-              assignment.chatId === routeId ? { ...assignment, ...nextAssignment } : assignment
-            )
-          : [...currentAssignments, nextAssignment];
-
-        const routeResult = await patchWorkspaceSurface({
-          action: "groups",
-          channelId: surfaceId,
-          groupAssignments: nextAssignments
-        });
-        applyRegistryUpdate(routeResult);
-      }
-
-      setDelegateDraftBySurfaceId((current) => ({ ...current, [surfaceId]: "" }));
-      setDelegateRouteDraftBySurfaceId((current) => ({ ...current, [surfaceId]: "" }));
-      toast.success(routeId ? "Assistant added and assigned." : "Assistant agent added.", {
-        description:
-          routeId && assignedRouteTitle
-            ? `${resolveAgentDisplayName(agentId, agentId)} now owns ${assignedRouteTitle}.`
-            : undefined
-      });
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Assistant update failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleRemoveAssistant = async (surfaceId: string, agentId: string) => {
-    beginSaving("Removing assistant agent...");
-
-    try {
-      const result = await patchWorkspaceSurface({
-        action: "unbind-agent",
-        channelId: surfaceId,
-        agentId
-      });
-      applyRegistryUpdate(result);
-      toast.success("Assistant agent removed.");
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Assistant update failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const updateSurfaceAssignments = async (
-    surfaceId: string,
-    nextAssignments: WorkspaceChannelGroupAssignment[]
-  ) => {
-    beginSaving("Updating integration routes...");
-
-    try {
-      const result = await patchWorkspaceSurface({
-        action: "groups",
-        channelId: surfaceId,
-        groupAssignments: nextAssignments
-      });
-      applyRegistryUpdate(result);
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Integration route update failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration routing error."
       });
     } finally {
       endSaving();
@@ -1333,7 +1066,7 @@ export function WorkspaceChannelsDialog({
                   Workspace integrations
                 </DialogTitle>
                 <DialogDescription className="mt-0.5 truncate text-xs text-[var(--wi-text-muted)]">
-                  {workspace ? `${workspace.name} · accounts, owners, and routes` : "Manage accounts, owners, and routes."}
+                  {workspace ? `${workspace.name} · accounts and workspace metadata` : "Manage accounts and workspace metadata."}
                 </DialogDescription>
               </div>
             </div>
@@ -1713,56 +1446,6 @@ export function WorkspaceChannelsDialog({
               {providerWorkspaceSurfaces.length > 0 ? (
                 <div className="mt-3 space-y-2.5">
                   {providerWorkspaceSurfaces.map((surface) => {
-                    const workspaceBinding =
-                      surface.workspaces.find((binding) => binding.workspaceId === workspace?.id) ?? null;
-                    const assistantIds = (workspaceBinding?.agentIds ?? []).filter(
-                      (agentId) => agentId !== surface.primaryAgentId
-                    );
-                    const availableAssistantAgents = workspaceAgents.filter(
-                      (agent) =>
-                        agent.id !== surface.primaryAgentId &&
-                        !(workspaceBinding?.agentIds ?? []).includes(agent.id)
-                    );
-                    const currentAssignments = (workspaceBinding?.groupAssignments ?? []).filter(
-                      (assignment) => assignment.enabled !== false
-                    );
-                    const visibleRouteAssignments = surface.workspaces.flatMap((binding) =>
-                      (binding.groupAssignments ?? []).filter((assignment) => assignment.enabled !== false)
-                    );
-                    const externalRouteOwnersByRouteId = surface.workspaces
-                      .filter((binding) => binding.workspaceId !== workspace?.id)
-                      .flatMap((binding) =>
-                        (binding.groupAssignments ?? [])
-                          .filter((assignment) => assignment.enabled !== false && assignment.chatId)
-                          .map((assignment) => ({
-                            routeId: assignment.chatId,
-                            workspaceName: resolveWorkspaceDisplayName(binding.workspaceId),
-                            ownerName: assignment.agentId
-                              ? resolveAgentDisplayName(assignment.agentId, assignment.agentId)
-                              : `${resolveAgentDisplayName(surface.primaryAgentId, "Primary agent")} fallback`
-                          }))
-                      )
-                      .reduce<Record<string, Array<{ workspaceName: string; ownerName: string }>>>(
-                        (groups, owner) => ({
-                          ...groups,
-                          [owner.routeId]: [
-                            ...(groups[owner.routeId] ?? []),
-                            { workspaceName: owner.workspaceName, ownerName: owner.ownerName }
-                          ]
-                        }),
-                        {}
-                      );
-                    const discoveredRoutes = discoveredRoutesBySurfaceId[surface.id] ?? [];
-                    const isLoadingRoutes = Boolean(loadingRoutesBySurfaceId[surface.id]);
-                    const routeError = routeErrorsBySurfaceId[surface.id] ?? null;
-                    const routeOptions = buildSurfaceRouteOptions(
-                      discoveredRoutes,
-                      visibleRouteAssignments.length > 0 ? visibleRouteAssignments : currentAssignments,
-                      surface.type
-                    );
-                    const primaryAgentIsInWorkspace = workspaceAgents.some(
-                      (agent) => agent.id === surface.primaryAgentId
-                    );
                     const runtimeStatus = getSurfaceAccountRuntime(snapshot, surface.type, surface.id);
                     const surfaceDriftIssues = activeProviderDriftIssues.filter(
                       (issue) => issue.accountId === surface.id || issue.accountId === toLegacySurfaceId(surface.id)
@@ -1793,7 +1476,7 @@ export function WorkspaceChannelsDialog({
                                 </Badge>
                                 {surfaceDriftIssues.length > 0 ? (
                                   <Badge className="h-5 rounded-full border-amber-300/40 bg-amber-100 px-2 text-[10px] text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100">
-                                    Drift
+                                    Metadata drift
                                   </Badge>
                                 ) : null}
                               </div>
@@ -1812,7 +1495,7 @@ export function WorkspaceChannelsDialog({
                               onClick={() => void handleDisconnectSurface(surface.id)}
                             >
                               <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                              Disconnect
+                              Disconnect workspace link
                             </Button>
                             <Button
                               type="button"
@@ -1820,7 +1503,7 @@ export function WorkspaceChannelsDialog({
                               size="sm"
                               className="h-8 w-8 rounded-full p-0"
                               disabled={isSaving}
-                              aria-label={`Delete ${surface.name}`}
+                              aria-label={"Delete " + surface.name}
                               title="Delete everywhere"
                               onClick={() => {
                                 const exactAccount = providerAccounts.find((entry) => entry.id === surface.id) ?? null;
@@ -1842,263 +1525,18 @@ export function WorkspaceChannelsDialog({
                           </div>
                         </div>
 
-                        <div className="mt-3 grid gap-2 text-[11px] text-muted-foreground dark:text-slate-400 sm:grid-cols-4">
-                          <SurfaceMetric label="Primary" value={resolveAgentDisplayName(surface.primaryAgentId)} />
-                          <SurfaceMetric label="Assistants" value={String(assistantIds.length)} />
-                          <SurfaceMetric label="Routes" value={String(currentAssignments.length)} />
+                        <div className="mt-3 grid gap-2 text-[11px] text-muted-foreground dark:text-slate-400 sm:grid-cols-3">
+                          <SurfaceMetric label="Workspace link" value="Metadata only" />
+                          <SurfaceMetric label="Runtime routing" value="Channel Center" />
                           <SurfaceMetric
                             label="Health"
                             value={formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
                           />
                         </div>
-
-                        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                          <div className="space-y-2">
-                            <FormField label={currentCatalogEntry.kind === "chat" ? "Primary agent" : "Owner agent"} htmlFor={`primary-${surface.id}`}>
-                              <select
-                                id={`primary-${surface.id}`}
-                                value={surface.primaryAgentId ?? ""}
-                                disabled={isSaving}
-                                onChange={(event) => void handlePrimaryChange(surface.id, event.target.value)}
-                                className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-                              >
-                                <option value="">Select agent</option>
-                                {surface.primaryAgentId && !primaryAgentIsInWorkspace ? (
-                                  <option value={surface.primaryAgentId}>
-                                    {resolveAgentDisplayName(surface.primaryAgentId, surface.primaryAgentId)} · outside this workspace
-                                  </option>
-                                ) : null}
-                                {workspaceAgents.map((agent) => (
-                                  <option key={agent.id} value={agent.id}>
-                                    {formatAgentDisplayName(agent)}
-                                  </option>
-                                ))}
-                              </select>
-                            </FormField>
-                            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground dark:text-slate-500">
-                              <UserRound className="h-3 w-3" />
-                              {resolveAgentDisplayName(surface.primaryAgentId)}
-                            </p>
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-400">
-                                Assistants available for routes
-                              </p>
-                              <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
-                                Add an agent to the integration, then optionally assign it to a route.
-                              </p>
-                            </div>
-                            {assistantIds.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {assistantIds.map((agentId) => (
-                                  <button
-                                    key={`${surface.id}-${agentId}`}
-                                    type="button"
-                                    disabled={isSaving}
-                                    onClick={() => void handleRemoveAssistant(surface.id, agentId)}
-                                    className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground transition-colors hover:bg-muted dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.08]"
-                                  >
-                                    <span>{resolveAgentDisplayName(agentId, agentId)}</span>
-                                    <span className="text-muted-foreground dark:text-slate-500">remove</span>
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-[11px] text-muted-foreground dark:text-slate-400">No assistant agents attached yet.</p>
-                            )}
-
-                            {availableAssistantAgents.length > 0 ? (
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                                <div className="grid flex-1 gap-2 sm:grid-cols-2">
-                                  <select
-                                    value={delegateDraftBySurfaceId[surface.id] ?? ""}
-                                    disabled={isSaving}
-                                    aria-label="Assistant agent"
-                                    onChange={(event) =>
-                                      setDelegateDraftBySurfaceId((current) => ({
-                                        ...current,
-                                        [surface.id]: event.target.value
-                                      }))
-                                    }
-                                    className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-                                  >
-                                    <option value="">Select assistant</option>
-                                    {availableAssistantAgents.map((agent) => (
-                                      <option key={agent.id} value={agent.id}>
-                                        {formatAgentDisplayName(agent)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <select
-                                    value={delegateRouteDraftBySurfaceId[surface.id] ?? ""}
-                                    disabled={isSaving || routeOptions.length === 0}
-                                    aria-label="Initial route assignment"
-                                    onChange={(event) =>
-                                      setDelegateRouteDraftBySurfaceId((current) => ({
-                                        ...current,
-                                        [surface.id]: event.target.value
-                                      }))
-                                    }
-                                    className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                                  >
-                                    <option value="">
-                                      {routeOptions.length > 0 ? "No route yet" : "No discovered routes"}
-                                    </option>
-                                    {routeOptions.map((route) => (
-                                      <option key={`${surface.id}-target-${route.routeId}`} value={route.routeId}>
-                                        Assign to {route.title ?? route.routeId}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-9 rounded-full px-3 text-[11px] sm:shrink-0"
-                                  disabled={isSaving || !(delegateDraftBySurfaceId[surface.id] ?? "").trim()}
-                                  onClick={() => void handleAddAssistant(surface.id)}
-                                >
-                                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                  Add
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {currentCatalogEntry.supportsRouteDiscovery ? (
-                          <div className="mt-3 rounded-2xl border border-border/80 bg-background p-3 dark:border-white/8 dark:bg-white/[0.025]">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground dark:text-white">
-                                  {getSurfaceCatalogEntry(surface.type).label} routes
-                                </p>
-                                <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-slate-500">Unassigned routes use the primary agent.</p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 rounded-full px-3 text-[11px]"
-                                disabled={isSaving || isLoadingRoutes}
-                                onClick={() => void refreshSurfaceRoutes(surface.id, surface.type)}
-                              >
-                                {isLoadingRoutes ? (
-                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                                )}
-                                Routes
-                              </Button>
-                            </div>
-
-                            {routeError ? (
-                              <p className="mt-3 text-[11px] text-rose-300">{routeError}</p>
-                            ) : null}
-
-                            {routeOptions.length > 0 ? (
-                              <div className="mt-3 space-y-2">
-                                {routeOptions.map((route) => {
-                                  const currentAssignment =
-                                    currentAssignments.find((assignment) => assignment.chatId === route.routeId) ?? null;
-                                  const externalOwners = externalRouteOwnersByRouteId[route.routeId] ?? [];
-                                  const enabled = Boolean(currentAssignment);
-                                  const nextAssignments = enabled
-                                    ? currentAssignments.filter((assignment) => assignment.chatId !== route.routeId)
-                                    : [
-                                        ...currentAssignments,
-                                        {
-                                          chatId: route.routeId,
-                                          title: route.title ?? null,
-                                          agentId: null,
-                                          enabled: true
-                                        }
-                                      ];
-
-                                  return (
-                                    <div
-                                      key={`${surface.id}:${route.routeId}`}
-                                      className="rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 dark:border-white/8 dark:bg-white/[0.02]"
-                                    >
-                                      <div className="flex items-start gap-3">
-                                        <input
-                                          type="checkbox"
-                                          className="mt-0.5 h-4 w-4 rounded border-border bg-background accent-cyan-600 dark:border-white/15 dark:bg-white/5 dark:accent-cyan-300"
-                                          checked={enabled}
-                                          disabled={isSaving}
-                                          onChange={() => void updateSurfaceAssignments(surface.id, nextAssignments)}
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <div className="min-w-0">
-                                              <div className="flex flex-wrap items-center gap-2">
-                                                <p className="truncate text-sm font-medium text-foreground dark:text-white">
-                                                  {route.title ?? route.routeId}
-                                                </p>
-                                                <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                                                  {route.kind}
-                                                </Badge>
-                                              </div>
-                                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
-                                                {route.subtitle ?? route.routeId}
-                                                {route.lastSeen ? ` · seen ${formatSurfaceTimestamp(route.lastSeen)}` : ""}
-                                              </p>
-                                              {externalOwners.length > 0 ? (
-                                                <p className="mt-1 text-[11px] leading-4 text-amber-800 dark:text-amber-100/75">
-                                                  Also routed in{" "}
-                                                  {externalOwners
-                                                    .map((owner) => `${owner.workspaceName} by ${owner.ownerName}`)
-                                                    .join(", ")}
-                                                </p>
-                                              ) : null}
-                                            </div>
-                                            <div className="w-full space-y-1 sm:min-w-[190px] sm:w-auto">
-                                              <p className="px-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground dark:text-slate-500">
-                                                Route owner
-                                              </p>
-                                              <select
-                                                value={currentAssignment?.agentId ?? ""}
-                                                disabled={isSaving || !enabled}
-                                                onChange={(event) =>
-                                                  void updateSurfaceAssignments(
-                                                    surface.id,
-                                                    currentAssignments.map((assignment) =>
-                                                      assignment.chatId === route.routeId
-                                                        ? {
-                                                            ...assignment,
-                                                            title: route.title ?? assignment.title ?? null,
-                                                            agentId: event.target.value || null
-                                                          }
-                                                        : assignment
-                                                    )
-                                                  )
-                                                }
-                                                className="flex h-8 w-full rounded-full border border-input bg-background px-3 text-[11px] text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                                              >
-                                                <option value="">Primary fallback</option>
-                                                {workspaceAgents.map((agent) => (
-                                                  <option key={agent.id} value={agent.id}>
-                                                    {formatAgentDisplayName(agent)}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-[11px] text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-                                {getEmptyRouteDiscoveryCopy(surface.type)}
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
+                        <p className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-50/70 px-3 py-2.5 text-[11px] leading-5 text-cyan-900/80 dark:border-cyan-300/15 dark:bg-cyan-400/[0.05] dark:text-cyan-100/75">
+                          This workspace link controls organization and visibility only. It does not assign messages to an agent.
+                          Manage native route bindings from Channel Center or the Agent Profile Channels section.
+                        </p>
                       </div>
                     );
                   })}
@@ -2231,14 +1669,14 @@ export function WorkspaceChannelsDialog({
                         </details>
                       ) : null}
 
-                      <FormField label="Primary agent" htmlFor="surface-primary-agent">
+                      <FormField label="Workspace association (metadata only)" htmlFor="surface-primary-agent">
                         <select
                           id="surface-primary-agent"
                           value={newPrimaryAgentId}
                           onChange={(event) => setNewPrimaryAgentId(event.target.value)}
                           className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                         >
-                          <option value="">Select agent</option>
+                            <option value="">No workspace association</option>
                           {workspaceAgents.map((agent) => (
                             <option key={agent.id} value={agent.id}>
                               {formatAgentDisplayName(agent)}

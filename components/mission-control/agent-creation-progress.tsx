@@ -27,7 +27,6 @@ export function AgentCreationProgress({
   agentName,
   workspaceName,
   modelLabel,
-  hasChannelBindings,
   warning,
   surfaceTheme = "dark"
 }: {
@@ -35,13 +34,12 @@ export function AgentCreationProgress({
   agentName: string;
   workspaceName: string;
   modelLabel: string;
-  hasChannelBindings: boolean;
   warning?: string | null;
   surfaceTheme?: SurfaceTheme;
 }) {
   const isLight = surfaceTheme === "light";
   const reduceMotion = useReducedMotion() ?? false;
-  const steps = resolveAgentCreationProgressSteps(state, hasChannelBindings);
+  const steps = resolveAgentCreationProgressSteps(state);
   const activeStep = steps.find((step) => step.status === "active");
   const isComplete = state === "complete";
   const statusCopy = isComplete

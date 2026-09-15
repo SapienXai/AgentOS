@@ -39,7 +39,6 @@ import {
   Users
 } from "lucide-react";
 
-import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import { InstanceProtectionDialog } from "@/components/auth/instance-protection-dialog";
 import { useInstanceProtection } from "@/components/auth/instance-protection-provider";
 import { ConnectChannelsDialog } from "@/components/mission-control/connect-channels-dialog";
@@ -105,10 +104,6 @@ import {
   resolveHeartbeatDraft,
   type AgentHeartbeatDraft
 } from "@/lib/openclaw/agent-heartbeat";
-import {
-  getWorkspaceChannelIdsForAgent,
-  syncWorkspaceAgentChannelBindings
-} from "@/lib/openclaw/channel-bindings";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type {
   AgentPolicy,
@@ -128,7 +123,6 @@ type AgentDraft = {
   avatar: string;
   policy: AgentPolicy;
   heartbeat: AgentHeartbeatDraft;
-  channelIds: string[];
 };
 
 type SidebarSection = "overview" | "operations" | "system";
@@ -291,7 +285,6 @@ export function MissionSidebar({
   const [isDeleteAgentOpen, setIsDeleteAgentOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const [editDraft, setEditDraft] = useState<AgentDraft | null>(null);
-  const [editChannelIdsBaseline, setEditChannelIdsBaseline] = useState<string[]>([]);
   const [agentDeleteTarget, setAgentDeleteTarget] = useState<MissionControlSnapshot["agents"][number] | null>(null);
   const [agentDeleteConfirmText, setAgentDeleteConfirmText] = useState("");
   const [operatorProfile, setOperatorProfile] = useState<OperatorProfileSummary>(emptyOperatorProfile);
@@ -386,15 +379,12 @@ export function MissionSidebar({
 
     if (!nextOpen) {
       setEditDraft(null);
-      setEditChannelIdsBaseline([]);
       setShowEditIdentityDetails(false);
       setIsEditAgentAdvancedOpen(false);
     }
   };
 
   const openEditAgent = useCallback((agent: MissionControlSnapshot["agents"][number]) => {
-    const nextChannelIds = getWorkspaceChannelIdsForAgent(snapshot, agent.workspaceId, agent.id);
-
     setEditDraft({
       ...buildAgentDraft(agent.workspaceId, {
         id: agent.id,
@@ -407,11 +397,9 @@ export function MissionSidebar({
         heartbeat: resolveHeartbeatDraft(agent.policy.preset, {
           enabled: agent.heartbeat.enabled,
           every: agent.heartbeat.every ?? undefined
-        }),
-        channelIds: nextChannelIds
+        })
       })
     });
-    setEditChannelIdsBaseline(nextChannelIds);
     setIsEditAgentAdvancedOpen(false);
     onAgentActionModalOpenChange?.(true);
     setIsEditAgentOpen(true);
@@ -480,7 +468,6 @@ export function MissionSidebar({
       return;
     }
 
-    const targetWorkspace = snapshot.workspaces.find((workspace) => workspace.id === editDraft.workspaceId) ?? null;
     setIsSavingAgent(true);
     let succeeded = false;
 
@@ -503,17 +490,6 @@ export function MissionSidebar({
       if (!response.ok || result.error) {
         const errorMessage = typeof result.error === "string" ? result.error : result.error?.message;
         throw new Error(errorMessage || "OpenClaw could not update the agent.");
-      }
-
-      if (targetWorkspace) {
-        await syncWorkspaceAgentChannelBindings({
-          workspaceId: editDraft.workspaceId,
-          workspacePath: targetWorkspace.path,
-          agentId: editDraft.id,
-          currentChannelIds: editChannelIdsBaseline,
-          nextChannelIds: editDraft.channelIds,
-          onRegistryChange: onSnapshotChange
-        });
       }
 
       onSnapshotChange?.((currentSnapshot) => applyEditedAgentDraftToSnapshot(currentSnapshot, editDraft));
@@ -627,7 +603,7 @@ export function MissionSidebar({
       <PikoLoader
         open={isSavingAgent}
         title="Saving agent profile"
-        description="Updating the profile, policy, and workspace channel bindings."
+        description="Updating the profile, policy, and OpenClaw agent state."
       />
       {collapsed ? (
         <CollapsedSidebar
@@ -1015,25 +991,6 @@ export function MissionSidebar({
                   </div>
                 ) : null}
               </div>
-
-              <ChannelBindingPicker
-                snapshot={snapshot}
-                workspaceId={editDraft.workspaceId}
-                channelIds={editDraft.channelIds}
-                agentId={editDraft.id}
-                isSaving={isSavingAgent}
-                surfaceTheme="dark"
-                onChange={(channelIds) =>
-                  setEditDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          channelIds
-                        }
-                      : current
-                  )
-                }
-              />
 
               <div className={missionControlDialogPanelClassName("p-3.5")}>
                 <div className="flex items-center justify-between gap-3">
@@ -3174,12 +3131,7 @@ function buildAgentDraft(workspaceId: string, seed: Partial<AgentDraft> = {}): A
     theme: seed.theme ?? presetMeta.defaultTheme,
     avatar: seed.avatar ?? "",
     policy,
-    heartbeat,
-    channelIds: Array.from(
-      new Set(
-        (seed.channelIds ?? []).filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
-      )
-    )
+    heartbeat
   };
 }
 
