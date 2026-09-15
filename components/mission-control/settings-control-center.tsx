@@ -471,7 +471,9 @@ export function SettingsControlCenter(
             ? "Applying the requested Gateway operation and refreshing its status."
             : "Saving the setting and refreshing the OpenClaw configuration.";
   const gatewayAuthNeedsScopeRepair = gatewayAuthStatus?.native.kind === "scope-limited";
-  const gatewayAuthNeedsTokenRepair = gatewayAuthStatus?.native.kind === "auth";
+  const gatewayAuthNeedsTokenRepair = gatewayAuthStatus?.native.kind === "auth" ||
+    gatewayAuthStatus?.native.kind === "timeout" ||
+    gatewayAuthStatus?.native.kind === "unreachable";
   const gatewayAccessRepairDisabledReason = gatewayAccessRepairBlockMessage || (
     !gatewayAuthStatus
       ? "Wait for the current authentication check to finish."
@@ -481,8 +483,10 @@ export function SettingsControlCenter(
   );
   const gatewayTokenRepairDisabledReason = !gatewayAuthStatus
     ? "Wait for the current authentication check to finish."
+    : !isGatewayServiceOnline
+      ? "Token repair needs a running Gateway. Start the Gateway first."
     : !gatewayAuthNeedsTokenRepair
-      ? "Token repair is available when the configured credential does not match the Gateway."
+      ? "Token repair is available when native Gateway authentication cannot be established."
       : null;
   const hasGatewayEndpointChanges = gatewayDraft.trim() !== (snapshot.diagnostics.gatewayUrl || "");
   const hasConfiguredGatewayEndpoint = Boolean(snapshot.diagnostics.configuredGatewayUrl);
@@ -901,14 +905,30 @@ export function SettingsControlCenter(
       });
 
       if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        const result = (await response.json().catch(() => null)) as {
+          error?: string;
+          snapshot?: MissionControlShellSettingsPanelProps["snapshot"];
+        } | null;
         throw new Error(result?.error || "Gateway credential could not be saved.");
       }
 
-      const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
+      const result = (await response.json()) as {
+        authStatus: GatewayNativeAuthStatus;
+        snapshot?: MissionControlShellSettingsPanelProps["snapshot"];
+      };
       setGatewayAuthStatus(result.authStatus);
+      if (result.snapshot) {
+        onSnapshotChange?.(result.snapshot);
+      }
       setGatewayAuthCredential("");
-      setGatewayAuthSaveMessage("Saved to .env.local and applied to the current AgentOS server session.");
+      setGatewayAuthSaveMessage(
+        result.authStatus.native.ok
+          ? "Saved to .env.local and verified against the current Gateway."
+          : "Saved to .env.local, but native Gateway authentication is still unverified."
+      );
+      if (!result.authStatus.native.ok) {
+        setGatewayAuthError(result.authStatus.native.issue || "Native Gateway authentication is still unverified.");
+      }
     } catch (error) {
       setGatewayAuthError(error instanceof Error ? error.message : "Unable to save Gateway credential.");
     } finally {
@@ -1017,13 +1037,37 @@ export function SettingsControlCenter(
         body: JSON.stringify({ action: "generateLocalToken" })
       });
 
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+        authStatus?: GatewayNativeAuthStatus;
+        snapshot?: MissionControlShellSettingsPanelProps["snapshot"];
+        result?: {
+          verified?: boolean;
+          verificationIssue?: string | null;
+          restartIssue?: string | null;
+        };
+      } | null;
       if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(result?.error || "Gateway token could not be generated.");
+        const detail = result?.result?.verificationIssue || result?.authStatus?.native.issue;
+        throw new Error([result?.error || "Gateway token could not be generated.", detail].filter(Boolean).join(" "));
       }
 
-      const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
+      if (!result?.authStatus) {
+        throw new Error("Gateway token repair returned no authentication status.");
+      }
+
       setGatewayAuthStatus(result.authStatus);
+      if (result.snapshot) {
+        onSnapshotChange?.(result.snapshot);
+      }
+      const verified = result.result?.verified === true && result.authStatus.native.ok === true;
+      if (!verified) {
+        const message = result.result?.verificationIssue || result.authStatus.native.issue || "Native Gateway authentication is still unverified.";
+        setGatewayAuthError(message);
+        finishGatewayOperation("repair-token", "error", message);
+        return;
+      }
+
       setGatewayAuthSaveMessage("Generated a local Gateway token and applied it to AgentOS.");
       finishGatewayOperation("repair-token", "success", "Gateway token repaired and native authentication verified.");
     } catch (error) {
@@ -1050,13 +1094,30 @@ export function SettingsControlCenter(
         body: JSON.stringify({ action: "repairDeviceAccess" })
       });
 
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+        authStatus?: GatewayNativeAuthStatus;
+        snapshot?: MissionControlShellSettingsPanelProps["snapshot"];
+      } | null;
       if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(result?.error || "Gateway device access could not be repaired.");
+        throw new Error(result?.error || result?.authStatus?.native.issue || "Gateway device access could not be repaired.");
       }
 
-      const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
+      if (!result?.authStatus) {
+        throw new Error("Gateway access repair returned no authentication status.");
+      }
+
       setGatewayAuthStatus(result.authStatus);
+      if (result.snapshot) {
+        onSnapshotChange?.(result.snapshot);
+      }
+      if (!result.authStatus.native.ok) {
+        const message = result.authStatus.native.issue || "Native Gateway authentication is still unverified.";
+        setGatewayAuthError(message);
+        finishGatewayOperation("repair-access", "error", message);
+        return;
+      }
+
       setGatewayAuthSaveMessage("Local Gateway device access repaired for AgentOS.");
       finishGatewayOperation("repair-access", "success", "Local Gateway access repaired and native authentication verified.");
     } catch (error) {
@@ -4630,7 +4691,7 @@ function gatewayOperationSteps(kind: GatewayOperationKind) {
     case "repair-access":
       return ["Prepare access repair", "Approve scopes and sync", "Verify native authentication"];
     case "restart":
-      return ["Prepare native request", "Request safe Gateway restart", "Await reconnect verification"];
+      return ["Prepare recovery request", "Restart Gateway service", "Verify service liveness"];
     case "start":
       return ["Prepare control request", "Start Gateway service", "Verify refreshed runtime state"];
     case "stop":
@@ -4658,7 +4719,7 @@ function gatewayControlRunningMessage(action: GatewayControlAction) {
     case "doctor":
       return "Reading native OpenClaw diagnostics and waiting for refreshed Gateway state.";
     case "restart":
-      return "Requesting a safe native Gateway restart and waiting for reconnect state.";
+      return "Requesting a Gateway restart and waiting for service liveness; native authentication is checked separately.";
     case "start":
       return "Starting the Gateway service and waiting for a refreshed runtime snapshot.";
     case "stop":
@@ -4671,7 +4732,7 @@ function gatewayControlSuccessMessage(action: GatewayControlAction) {
     case "doctor":
       return "Native OpenClaw diagnostics completed and Gateway state was refreshed.";
     case "restart":
-      return "Native Gateway restart was accepted; reconnect verification is pending.";
+      return "Gateway service restart completed and the runtime snapshot was refreshed.";
     case "start":
       return "Gateway started and the refreshed runtime state was received.";
     case "stop":

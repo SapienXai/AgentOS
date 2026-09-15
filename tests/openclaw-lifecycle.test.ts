@@ -175,6 +175,67 @@ test("external lifecycle delegates every mutation to the supervisor and preserve
   await assert.rejects(offline.restart(), /supervisor endpoint|unavailable/i);
 });
 
+test("recovery restart verifies liveness without treating it as native authentication", async () => {
+  const commands: string[] = [];
+  const service = new OpenClawLifecycleService({
+    env: {
+      OPENCLAW_SUPERVISOR_MODE: "external",
+      AGENTOS_SUPERVISOR_SOCKET_PATH: "/tmp/agentos-test-recovery-supervisor.sock",
+      OPENCLAW_STATE_DIR: "/tmp/agentos-recovery-state",
+      OPENCLAW_CONFIG_PATH: "/tmp/agentos-recovery-state/openclaw.json"
+    },
+    externalSupervisor: {
+      request: async (command) => {
+        commands.push(command);
+        return {
+          protocolVersion: 1,
+          requestId: `recovery-${commands.length}`,
+          ok: true,
+          command,
+          owner: "external-supervisor",
+          state: "ready",
+          pid: 9876,
+          generation: 3,
+          gatewayPort: 18789,
+          gatewayUrl: "ws://127.0.0.1:18789",
+          ready: true,
+          authenticated: false,
+          health: "live",
+          protocolVersionGateway: null,
+          message: "recovery supervisor"
+        };
+      }
+    },
+    livenessProbe: async () => ({
+      ready: true,
+      authenticated: false,
+      health: "live",
+      protocolVersion: null,
+      version: null,
+      sourceCommit: null,
+      checkedAt: new Date().toISOString(),
+      reason: null
+    }),
+    readinessProbe: async () => ({
+      ready: false,
+      authenticated: false,
+      health: "live",
+      protocolVersion: null,
+      version: null,
+      sourceCommit: null,
+      checkedAt: new Date().toISOString(),
+      reason: "native auth unavailable"
+    })
+  });
+
+  const result = await service.restartForRecovery();
+
+  assert.deepEqual(commands, ["restart"]);
+  assert.equal(result.descriptor.ready, true);
+  assert.equal(result.descriptor.authenticated, false);
+  assert.match(result.message, /native authentication still needs verification/i);
+});
+
 test("lifecycle recovery blocks a bounded crash loop", async () => {
   let generation = 0;
   const service = new OpenClawLifecycleService({

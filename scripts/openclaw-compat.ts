@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -54,12 +54,23 @@ type GatewayFrame = {
   params?: Record<string, unknown>;
 };
 
+const gatewayAuthEnvNames = new Set([
+  "AGENTOS_OPENCLAW_GATEWAY_TOKEN",
+  "OPENCLAW_GATEWAY_TOKEN",
+  "AGENTOS_OPENCLAW_GATEWAY_PASSWORD",
+  "OPENCLAW_GATEWAY_PASSWORD"
+]);
+
 void main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   finishCliProcess(1);
 });
 
 async function main() {
+  // Compatibility runs are standalone Node processes, so they do not inherit
+  // Next.js' automatic .env.local loading. Read only the Gateway credential
+  // keys as data; never execute the env file or print its values.
+  await loadLocalGatewayAuthEnv();
   const options = parseArgs(process.argv.slice(2));
   const target = resolveOpenClawCompatibilityTarget({
     target: options.target,
@@ -385,6 +396,12 @@ async function waitForRealGatewayReady(input: {
   while (Date.now() - startedAt <= input.timeoutMs) {
     const client = createOfficialBackedOpenClawGatewayClient({
       ...(input.gatewayUrl ? { url: input.gatewayUrl } : {}),
+      ...(process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() || process.env.OPENCLAW_GATEWAY_TOKEN?.trim()
+        ? { token: process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() || process.env.OPENCLAW_GATEWAY_TOKEN?.trim() }
+        : {}),
+      ...(process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD?.trim() || process.env.OPENCLAW_GATEWAY_PASSWORD?.trim()
+        ? { password: process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD?.trim() || process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() }
+        : {}),
       timeoutMs: input.nativeTimeoutMs
     });
 
@@ -411,6 +428,40 @@ async function waitForRealGatewayReady(input: {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function loadLocalGatewayAuthEnv() {
+  let content: string;
+  try {
+    content = await readFile(path.join(process.cwd(), ".env.local"), "utf8");
+  } catch {
+    return;
+  }
+
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || !gatewayAuthEnvNames.has(match[1]) || process.env[match[1]]?.trim()) {
+      continue;
+    }
+
+    process.env[match[1]] = parseLocalEnvValue(match[2]);
+  }
+}
+
+function parseLocalEnvValue(value: string) {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value) as string;
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/\\'/g, "'");
+  }
+
+  return value;
 }
 
 async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget) {

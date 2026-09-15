@@ -5,6 +5,7 @@ import {
   generateGatewayNativeAuthToken,
   getGatewayBindMode,
   getGatewayNativeAuthStatus,
+  getMissionControlSnapshot,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
   updateGatewayRemoteUrl
@@ -36,6 +37,10 @@ const gatewayAuthRepairSchema = z.object({
   action: z.literal("repairDeviceAccess")
 });
 
+const noStoreHeaders = {
+  "Cache-Control": "private, no-store, max-age=0"
+};
+
 export async function GET(request: Request) {
   const bindOnly = new URL(request.url).searchParams.get("view") === "bind";
 
@@ -43,14 +48,14 @@ export async function GET(request: Request) {
     if (bindOnly) {
       return NextResponse.json({
         gatewayBind: await getGatewayBindMode()
-      });
+      }, { headers: noStoreHeaders });
     }
 
     const authStatus = await getGatewayNativeAuthStatus();
 
     return NextResponse.json({
       authStatus: redactSecrets(authStatus)
-    });
+    }, { headers: noStoreHeaders });
   } catch (error) {
     return NextResponse.json(
       {
@@ -91,7 +96,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({
       snapshot: redactSecrets(snapshot)
-    });
+    }, { headers: noStoreHeaders });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
@@ -109,7 +114,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const actorResult = await requireAgentOsActorContext(request);
+  const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
 
   try {
@@ -120,19 +125,33 @@ export async function POST(request: Request) {
       if ("response" in permission) return permission.response;
       const result = await generateGatewayNativeAuthToken();
       const authStatus = await getGatewayNativeAuthStatus();
+      const verified = result.verified === true && authStatus.native.ok === true;
+      const snapshot = verified ? await getMissionControlSnapshot({ force: true }) : null;
       await recordAgentOsAuditEvent({
         actor: actorResult.actor,
         operation: "gateway.auth.generate-token",
         targetKind: "gateway-credential",
-        result: "succeeded"
+        result: verified ? "succeeded" : "partial"
       }).catch(() => {});
+
+      if (!verified) {
+        return NextResponse.json({
+          error: "Gateway token repair was applied, but native authentication could not be verified. Test auth again or use a known credential.",
+          saved: true,
+          generated: true,
+          result: redactSecrets(result),
+          authStatus: redactSecrets(authStatus),
+          ...(snapshot ? { snapshot: redactSecrets(snapshot) } : {})
+        }, { status: 409, headers: noStoreHeaders });
+      }
 
       return NextResponse.json({
         saved: true,
         generated: true,
         result: redactSecrets(result),
-        authStatus: redactSecrets(authStatus)
-      });
+        authStatus: redactSecrets(authStatus),
+        ...(snapshot ? { snapshot: redactSecrets(snapshot) } : {})
+      }, { headers: noStoreHeaders });
     }
 
     const repairInput = gatewayAuthRepairSchema.safeParse(body);
@@ -153,19 +172,33 @@ export async function POST(request: Request) {
         gatewayOptions: repairAuthorization.commandOptions
       });
       const authStatus = await getGatewayNativeAuthStatus();
+      const verified = authStatus.native.ok === true;
+      const snapshot = verified ? await getMissionControlSnapshot({ force: true }) : null;
       await recordAgentOsAuditEvent({
         actor: actorResult.actor,
         operation: "gateway.device.repair",
         targetKind: "gateway-device",
-        result: "succeeded"
+        result: verified ? "succeeded" : "partial"
       }).catch(() => {});
+
+      if (!verified) {
+        return NextResponse.json({
+          error: "Local Gateway access was updated, but native authentication could not be verified. Test auth again.",
+          saved: true,
+          repaired: true,
+          result: redactSecrets(result),
+          authStatus: redactSecrets(authStatus),
+          ...(snapshot ? { snapshot: redactSecrets(snapshot) } : {})
+        }, { status: 409, headers: noStoreHeaders });
+      }
 
       return NextResponse.json({
         saved: true,
         repaired: true,
         result: redactSecrets(result),
-        authStatus: redactSecrets(authStatus)
-      });
+        authStatus: redactSecrets(authStatus),
+        ...(snapshot ? { snapshot: redactSecrets(snapshot) } : {})
+      }, { headers: noStoreHeaders });
     }
 
     const input = gatewayAuthCredentialSchema.parse(body);
@@ -173,18 +206,20 @@ export async function POST(request: Request) {
     if ("response" in permission) return permission.response;
     const result = await saveGatewayNativeAuthCredential(input);
     const authStatus = await getGatewayNativeAuthStatus();
+    const snapshot = authStatus.native.ok ? await getMissionControlSnapshot({ force: true }) : null;
     await recordAgentOsAuditEvent({
       actor: actorResult.actor,
       operation: "gateway.auth.save-credential",
       targetKind: "gateway-credential",
-      result: "succeeded"
+      result: authStatus.native.ok ? "succeeded" : "partial"
     }).catch(() => {});
 
     return NextResponse.json({
       saved: true,
       result: redactSecrets(result),
-      authStatus: redactSecrets(authStatus)
-    });
+      authStatus: redactSecrets(authStatus),
+      ...(snapshot ? { snapshot: redactSecrets(snapshot) } : {})
+    }, { headers: noStoreHeaders });
   } catch (error) {
     await recordAgentOsAuditEvent({
       actor: actorResult.actor,

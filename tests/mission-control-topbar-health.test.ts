@@ -3,18 +3,21 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-test("topbar keeps the Gateway online while event delivery uses polling", () => {
+test("topbar shares degraded Gateway and polling-fallback labels with the settings menu", () => {
   const source = readFileSync(
     join(process.cwd(), "components/mission-control/mission-control-shell.topbar.tsx"),
     "utf8"
   );
-  const pollingBranch = source.match(
-    /if \(diagnostics\.eventBridge\?\.mode === "polling"\) \{[\s\S]*?\n\s*\}/
-  )?.[0];
+  const utilitySource = readFileSync(
+    join(process.cwd(), "components/mission-control/settings-control-center.utils.ts"),
+    "utf8"
+  );
 
-  assert.ok(pollingBranch);
-  assert.match(pollingBranch, /return "Online"/);
-  assert.doesNotMatch(pollingBranch, /return "Polling"/);
+  assert.match(source, /formatGatewayHealthLabel\(snapshot\)/);
+  assert.match(utilitySource, /gatewayMode === "fallback-active"/);
+  assert.match(utilitySource, /return "Degraded"/);
+  assert.match(utilitySource, /eventBridge\?\.mode === "polling"/);
+  assert.match(utilitySource, /return "Polling fallback"/);
 });
 
 test("CLI fallback status indicators stay stateless across Mission Control refreshes", () => {

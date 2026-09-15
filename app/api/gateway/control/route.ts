@@ -8,7 +8,10 @@ import {
   getNativeDoctorSnapshot,
   reconcileNativeDoctorMutation
 } from "@/lib/openclaw/application/native-doctor-service";
-import { controlGateway } from "@/lib/openclaw/application/gateway-service";
+import {
+  controlGateway,
+  controlGatewayForRecovery
+} from "@/lib/openclaw/application/gateway-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -62,11 +65,34 @@ export async function POST(request: Request) {
 
     if (input.action === "restart") {
       const nativeDoctor = await getNativeDoctorSnapshot();
-      if (!nativeDoctor.identity.connectionId || nativeDoctor.runtime.status === "unavailable") {
-        return NextResponse.json(
-          { error: "Native Gateway restart requires a reachable, authenticated OpenClaw Gateway." },
-          { status: 409 }
-        );
+      const nativeIdentityAvailable = Boolean(
+        nativeDoctor.identity.connectionId &&
+        nativeDoctor.identity.authenticated === true &&
+        nativeDoctor.runtime.status !== "unavailable"
+      );
+
+      if (!nativeIdentityAvailable) {
+        const recovery = await controlGatewayForRecovery("restart");
+        await recordAgentOsAuditEvent({
+          actor: authorization.actor,
+          operation: "gateway.restart.cli-recovery",
+          targetKind: "gateway",
+          targetId: nativeDoctor.identity.connectionId ?? "gateway",
+          result: recovery.descriptor.ready ? "succeeded" : "unknown"
+        }).catch(() => {});
+        const snapshot = await getMissionControlSnapshot({ force: true });
+
+        return NextResponse.json({
+          message: "Gateway restarted through the explicit CLI recovery path. Native authentication still needs verification.",
+          recovery: {
+            transport: "cli-fallback",
+            livenessVerified: recovery.descriptor.ready,
+            nativeAuthVerified: recovery.descriptor.authenticated,
+            ownership: recovery.descriptor.ownership,
+            detail: recovery.message
+          },
+          snapshot: redactSecrets(snapshot)
+        });
       }
       const nativeResult = await executeNativeDoctorMutation({
         action: "gateway.restart.request",
@@ -86,9 +112,11 @@ export async function POST(request: Request) {
         targetId: nativeDoctor.identity.connectionId,
         result: auditResultForNativeDoctorMutation(reconciledResult.outcome)
       }).catch(() => {});
+      const snapshot = await getMissionControlSnapshot({ force: true });
       return NextResponse.json({
         message: reconciledResult.verification.status === "verified" ? "Native Gateway restart verified." : "Native Gateway restart requested.",
-        nativeResult: reconciledResult
+        nativeResult: reconciledResult,
+        snapshot: redactSecrets(snapshot)
       });
     }
 

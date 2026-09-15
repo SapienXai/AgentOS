@@ -182,6 +182,7 @@ export type GatewayLifecycleServiceOptions = {
   now?: () => Date;
   resolveBinary?: () => Promise<string>;
   readinessProbe?: (descriptor: GatewayRuntimeDescriptor) => Promise<GatewayReadinessResult>;
+  livenessProbe?: (descriptor: GatewayRuntimeDescriptor) => Promise<GatewayReadinessResult>;
   spawnGateway?: (descriptor: GatewayRuntimeDescriptor) => Promise<GatewayLifecycleChild>;
   stopGateway?: (child: GatewayLifecycleChild) => Promise<void>;
   externalSupervisor?: {
@@ -196,6 +197,8 @@ export interface GatewayLifecycleService {
   start(): Promise<GatewayLifecycleResult>;
   stop(): Promise<GatewayLifecycleResult>;
   restart(): Promise<GatewayLifecycleResult>;
+  startForRecovery(): Promise<GatewayLifecycleResult>;
+  restartForRecovery(): Promise<GatewayLifecycleResult>;
   waitForReady(timeoutMs?: number): Promise<GatewayLifecycleResult>;
   recover(): Promise<GatewayLifecycleResult>;
   prepareForMaintenance(): Promise<GatewayLifecycleResult>;

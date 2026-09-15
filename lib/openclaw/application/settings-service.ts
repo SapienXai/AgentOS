@@ -471,10 +471,12 @@ export async function generateGatewayNativeAuthToken(input: {
   const token = randomBytes(32).toString("base64url");
 
   const modeMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_MODE_CONFIG_KEY, "token", {
-    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS
+    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS,
+    allowGatewayAuthRepairFallback: true
   });
   const tokenMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_TOKEN_CONFIG_KEY, token, {
-    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS
+    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS,
+    allowGatewayAuthRepairFallback: true
   });
 
   let restarted = false;
@@ -528,7 +530,7 @@ export async function generateGatewayNativeAuthToken(input: {
 
 async function restartGatewayAfterAuthTokenRotation() {
   try {
-    await getOpenClawLifecycleService().restart();
+    await getOpenClawLifecycleService().restartForRecovery();
     resetOpenClawGatewayClient("gateway auth token rotated");
     await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
 
@@ -555,7 +557,7 @@ async function cycleGatewayAfterAuthTokenRotation() {
   }
 
   try {
-    await getOpenClawLifecycleService().start();
+    await getOpenClawLifecycleService().startForRecovery();
     resetOpenClawGatewayClient("gateway auth token rotation stop/start completed");
     await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
 

@@ -11,6 +11,33 @@ export type GatewayActionGuidance = {
   label: string;
   detail: string;
 };
+
+export function formatGatewayHealthLabel(snapshot: MissionControlSnapshot) {
+  const { diagnostics } = snapshot;
+
+  if (diagnostics.health === "degraded") {
+    if (diagnostics.transport?.gatewayMode === "fallback-active") {
+      return "Degraded";
+    }
+
+    if (diagnostics.eventBridge?.mode === "reconnecting") {
+      return "Reconnecting";
+    }
+
+    if (diagnostics.eventBridge?.mode === "polling") {
+      return "Polling fallback";
+    }
+  }
+
+  switch (diagnostics.health) {
+    case "healthy":
+      return "Online";
+    case "degraded":
+      return "Degraded";
+    default:
+      return "Offline";
+  }
+}
 export type OpenClawCapabilityRowStatus =
   | "gateway-native"
   | "cli-fallback"

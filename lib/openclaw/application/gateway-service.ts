@@ -4,6 +4,7 @@ import { runOpenClaw } from "@/lib/openclaw/cli";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 
 export type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
+export type GatewayRecoveryAction = "start" | "restart";
 
 const inFlightGatewayControls = new Map<GatewayControlAction, Promise<unknown>>();
 let openDashboardTask: Promise<void> | null = null;
@@ -22,6 +23,18 @@ export function controlGateway(action: GatewayControlAction) {
 
   inFlightGatewayControls.set(action, task);
   return task;
+}
+
+/**
+ * Explicit process recovery for the narrow case where native Gateway auth is
+ * unavailable. This path proves only service liveness; privileged Gateway
+ * requests remain fail-closed until a fresh native identity is available.
+ */
+export function controlGatewayForRecovery(action: GatewayRecoveryAction) {
+  const lifecycle = getOpenClawLifecycleService();
+  return action === "restart"
+    ? lifecycle.restartForRecovery()
+    : lifecycle.startForRecovery();
 }
 
 export function openOpenClawDashboard() {

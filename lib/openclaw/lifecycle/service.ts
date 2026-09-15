@@ -36,7 +36,9 @@ import type {
 import { GatewayLifecycleError } from "./types";
 
 const DEFAULT_READY_TIMEOUT_MS = 180_000;
+const DEFAULT_LIVENESS_TIMEOUT_MS = 30_000;
 const READY_POLL_INTERVAL_MS = 500;
+const LIVENESS_POLL_INTERVAL_MS = 250;
 const gatewayChildOutput = new WeakMap<import("node:child_process").ChildProcess, string>();
 
 let defaultLifecycleService: OpenClawLifecycleService | null = null;
@@ -141,6 +143,25 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
     return this.mutate("restart", async () => this.restartInternal(await this.discover()));
   }
 
+  /**
+   * Restarts the process while native Gateway authentication is unavailable.
+   * This is intentionally limited to the lifecycle recovery surface: it only
+   * proves HTTP liveness and never turns an unauthenticated process control
+   * path into proof for Gateway-backed mutations.
+   */
+  restartForRecovery() {
+    return this.mutate("restart", async () => this.restartInternal(await this.discover(), "restart", "liveness"));
+  }
+
+  /**
+   * Starts the process while native Gateway authentication is unavailable.
+   * The result is marked live, not authenticated, until a native auth check
+   * succeeds separately.
+   */
+  startForRecovery() {
+    return this.mutate("start", async () => this.startInternal(await this.discover(), "liveness"));
+  }
+
   waitForReady(timeoutMs = DEFAULT_READY_TIMEOUT_MS) {
     return this.mutate("waitForReady", async () => {
       let descriptor = await this.discover();
@@ -188,35 +209,74 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
     });
   }
 
-  private async startInternal(descriptor: GatewayRuntimeDescriptor) {
+  private async startInternal(
+    descriptor: GatewayRuntimeDescriptor,
+    verification: "native" | "liveness" = "native"
+  ) {
     if (descriptor.ownership === "external-supervisor") {
       const response = await this.requestExternal("start", descriptor);
       resetOpenClawGatewayClient("External Gateway resumed after maintenance");
       this.crashRecoveryAttempts = 0;
-      return this.result("start", mergeSupervisorResponse(descriptor, response), true, "External Gateway started.");
+      const current = mergeSupervisorResponse(descriptor, response);
+      if (verification === "liveness") {
+        const live = await this.waitForLiveness(current);
+        return this.result("start", mergeReadiness(current, live), true, "External Gateway is live; native authentication still needs verification.");
+      }
+      return this.result("start", current, true, "External Gateway started.");
     }
     if (this.env().OPENCLAW_GATEWAY_PROCESS_MODE?.trim().toLowerCase() === "child") {
       this.child = await this.spawnChild(descriptor);
-      const ready = await this.waitForReadiness(descriptor);
+      const ready = verification === "liveness"
+        ? await this.waitForLiveness(descriptor)
+        : await this.waitForReadiness(descriptor);
       this.crashRecoveryAttempts = 0;
-      return this.result("start", this.withManagedChildIdentity(mergeReadiness(descriptor, ready)), true, "OpenClaw Gateway resumed.");
+      return this.result(
+        "start",
+        this.withManagedChildIdentity(mergeReadiness(descriptor, ready)),
+        true,
+        verification === "liveness"
+          ? "OpenClaw Gateway is live; native authentication still needs verification."
+          : "OpenClaw Gateway resumed."
+      );
     }
     await getOpenClawAdapter().controlGateway("start");
     resetOpenClawGatewayClient("Gateway resumed after maintenance");
     this.crashRecoveryAttempts = 0;
-    const ready = await this.waitForReadiness(descriptor);
-    return this.result("start", mergeReadiness(descriptor, ready), true, "OpenClaw Gateway resumed and is ready.");
+    const ready = verification === "liveness"
+      ? await this.waitForLiveness(descriptor)
+      : await this.waitForReadiness(descriptor);
+    return this.result(
+      "start",
+      mergeReadiness(descriptor, ready),
+      true,
+      verification === "liveness"
+        ? "OpenClaw Gateway is live; native authentication still needs verification."
+        : "OpenClaw Gateway resumed and is ready."
+    );
   }
 
-  private async restartInternal(descriptor: GatewayRuntimeDescriptor, operation: "restart" | "recover" = "restart") {
+  private async restartInternal(
+    descriptor: GatewayRuntimeDescriptor,
+    operation: "restart" | "recover" = "restart",
+    verification: "native" | "liveness" = "native"
+  ) {
     this.assertMutationOwnership(descriptor, operation);
     if (descriptor.ownership === "external-supervisor") {
       const response = await this.requestExternal("restart", descriptor);
       const current = mergeSupervisorResponse(descriptor, response);
       resetOpenClawGatewayClient("External Gateway restarted");
-      const ready = await this.waitForReadiness(current);
+      const ready = verification === "liveness"
+        ? await this.waitForLiveness(current)
+        : await this.waitForReadiness(current);
       if (operation === "restart") this.crashRecoveryAttempts = 0;
-      return this.result(operation, mergeReadiness(current, ready), true, "External Gateway restarted and is ready.");
+      return this.result(
+        operation,
+        mergeReadiness(current, ready),
+        true,
+        verification === "liveness"
+          ? "External Gateway is live; native authentication still needs verification."
+          : "External Gateway restarted and is ready."
+      );
     }
     if (this.env().OPENCLAW_GATEWAY_PROCESS_MODE?.trim().toLowerCase() === "child") {
       if (this.child) {
@@ -226,14 +286,32 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
         await this.stopChild(child);
       }
       this.child = await this.spawnChild(descriptor);
-      const ready = await this.waitForReadiness(descriptor);
+      const ready = verification === "liveness"
+        ? await this.waitForLiveness(descriptor)
+        : await this.waitForReadiness(descriptor);
       if (operation === "restart") this.crashRecoveryAttempts = 0;
-      return this.result(operation, this.withManagedChildIdentity(mergeReadiness(descriptor, ready)), true, "OpenClaw Gateway restarted and is ready.");
+      return this.result(
+        operation,
+        this.withManagedChildIdentity(mergeReadiness(descriptor, ready)),
+        true,
+        verification === "liveness"
+          ? "OpenClaw Gateway is live; native authentication still needs verification."
+          : "OpenClaw Gateway restarted and is ready."
+      );
     }
     await getOpenClawAdapter().controlGateway("restart", { force: true });
     resetOpenClawGatewayClient("Gateway restarted");
-    const ready = await this.waitForReadiness(descriptor);
-    return this.result(operation, mergeReadiness(descriptor, ready), true, "OpenClaw Gateway restarted and is ready.");
+    const ready = verification === "liveness"
+      ? await this.waitForLiveness(descriptor)
+      : await this.waitForReadiness(descriptor);
+    return this.result(
+      operation,
+      mergeReadiness(descriptor, ready),
+      true,
+      verification === "liveness"
+        ? "OpenClaw Gateway is live; native authentication still needs verification."
+        : "OpenClaw Gateway restarted and is ready."
+    );
   }
 
   private async stopInternal(descriptor: GatewayRuntimeDescriptor) {
@@ -292,6 +370,41 @@ export class OpenClawLifecycleService implements GatewayLifecycleService {
       await delay(READY_POLL_INTERVAL_MS);
     }
     throw this.error("waitForReady", "gateway-not-ready", last?.reason || "OpenClaw Gateway did not become ready in time.", true);
+  }
+
+  private async probeLiveness(descriptor: GatewayRuntimeDescriptor) {
+    if (this.options.livenessProbe) {
+      return this.options.livenessProbe(descriptor);
+    }
+
+    // Test and embedded callers may already provide a deterministic probe.
+    // Production uses the unauthenticated HTTP liveness endpoints above.
+    return this.options.readinessProbe
+      ? this.options.readinessProbe(descriptor)
+      : probeGatewayLiveness(descriptor);
+  }
+
+  private async waitForLiveness(descriptor: GatewayRuntimeDescriptor, timeoutMs = DEFAULT_LIVENESS_TIMEOUT_MS) {
+    const startedAt = Date.now();
+    let last: GatewayReadinessResult | null = null;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      last = await this.probeLiveness(descriptor).catch((error) => ({
+        ready: false,
+        authenticated: false,
+        health: "unknown" as const,
+        protocolVersion: null,
+        version: null,
+        sourceCommit: null,
+        checkedAt: new Date().toISOString(),
+        reason: redactErrorMessage(error, "Gateway liveness probe failed.")
+      }));
+
+      if (last.ready) return last;
+      await delay(LIVENESS_POLL_INTERVAL_MS);
+    }
+
+    throw this.error("waitForReady", "gateway-not-ready", last?.reason || "OpenClaw Gateway did not become live in time.", true);
   }
 
   private async spawnChild(descriptor: GatewayRuntimeDescriptor) {
@@ -464,6 +577,28 @@ async function probeNativeGatewayReadiness(
   } finally {
     client.close("lifecycle readiness probe");
   }
+}
+
+async function probeGatewayLiveness(descriptor: GatewayRuntimeDescriptor): Promise<GatewayReadinessResult> {
+  const checkedAt = new Date().toISOString();
+  const httpOrigin = descriptor.gatewayUrl.replace(/^ws/, "http");
+  const health = await fetchGatewayEndpoint(`${httpOrigin}/healthz`).catch(() => false);
+  const readyEndpoint = await fetchGatewayEndpoint(`${httpOrigin}/readyz`).catch(() => false);
+
+  return {
+    ready: health && readyEndpoint,
+    authenticated: false,
+    health: health || readyEndpoint ? "live" : "not-live",
+    protocolVersion: null,
+    version: descriptor.version,
+    sourceCommit: descriptor.sourceCommit,
+    checkedAt,
+    reason: health && readyEndpoint
+      ? null
+      : health || readyEndpoint
+        ? "Gateway liveness is available, but its readiness endpoint is not ready."
+        : "Gateway liveness endpoints are not available."
+  };
 }
 
 async function spawnGatewayChild(

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
+import { formatGatewayHealthLabel } from "@/components/mission-control/settings-control-center.utils";
 import type {
   AddModelsProviderId,
   MissionControlSnapshot,
@@ -164,7 +165,7 @@ export function MissionControlShellSettingsPanel({
               OpenClaw
             </p>
             <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="font-display text-[1rem]">{formatSnapshotHealthLabel(snapshot)}</span>
+              <span className="font-display text-[1rem]">{formatGatewayHealthLabel(snapshot)}</span>
               <StatusPill snapshot={snapshot} surfaceTheme={surfaceTheme} />
             </div>
           </div>
@@ -324,7 +325,7 @@ function StatusPill({
   surfaceTheme: SurfaceTheme;
 }) {
   const isCliFallbackActive = snapshot.diagnostics.transport?.gatewayMode === "fallback-active";
-  const health = isCliFallbackActive ? "healthy" : snapshot.diagnostics.health;
+  const health = snapshot.diagnostics.health;
 
   return (
     <span
@@ -344,7 +345,7 @@ function StatusPill({
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {isCliFallbackActive ? "Online" : formatHealthLabel(health)}
+      {formatGatewayHealthLabel(snapshot)}
       {isCliFallbackActive ? <CliFallbackInfo surfaceTheme={surfaceTheme} /> : null}
     </span>
   );
@@ -429,36 +430,6 @@ async function fetchGatewayAuthStatus() {
 
   const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
   return result.authStatus;
-}
-
-function formatSnapshotHealthLabel(snapshot: MissionControlSnapshot) {
-  const { diagnostics } = snapshot;
-  if (diagnostics.health === "degraded") {
-    if (diagnostics.transport?.gatewayMode === "fallback-active") {
-      return "Online";
-    }
-
-    if (diagnostics.eventBridge?.mode === "reconnecting") {
-      return "Reconnecting";
-    }
-
-    if (diagnostics.eventBridge?.mode === "polling") {
-      return "Polling fallback";
-    }
-  }
-
-  return formatHealthLabel(diagnostics.health);
-}
-
-function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health"]) {
-  switch (health) {
-    case "healthy":
-      return "Online";
-    case "degraded":
-      return "Degraded";
-    default:
-      return "Offline";
-  }
 }
 
 function menuPanelClassName(surfaceTheme: SurfaceTheme) {

@@ -58,7 +58,7 @@ test("Gateway settings prioritize actions from current service and auth state", 
   assert.match(source, /aria-label="Recommended Gateway action"/);
   assert.match(source, /The Gateway is already running\./);
   assert.match(source, /Local access repair is available when required operator scopes are missing\./);
-  assert.match(source, /Token repair is available when the configured credential does not match the Gateway\./);
+  assert.match(source, /Token repair is available when native Gateway authentication cannot be established\./);
   assert.match(source, /Use a known credential/);
   assert.match(source, /disabled=\{isSavingGatewayAuthCredential \|\| !gatewayAuthCredential\.trim\(\)\}/);
 });
@@ -68,7 +68,7 @@ test("Gateway operations keep visible progress and durable results", () => {
   const shellSource = readFileSync(join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(settingsSource, /aria-label="Gateway operation progress"/);
-  assert.match(settingsSource, /"Prepare native request", "Request safe Gateway restart", "Await reconnect verification"/);
+  assert.match(settingsSource, /"Prepare recovery request", "Restart Gateway service", "Verify service liveness"/);
   assert.match(settingsSource, /finishGatewayOperation\("repair-token", "success"/);
   assert.match(settingsSource, /finishGatewayOperation\("repair-access", "error"/);
   assert.match(settingsSource, /Dismiss Gateway operation result/);
@@ -412,9 +412,11 @@ test("Gateway native auth token repair gives CLI config fallback enough time to 
   const cwd = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-timeout-"));
   const adapter = createSettingsAdapter();
   const mutationTimeouts: Array<number | undefined> = [];
+  const repairFallbackFlags: Array<boolean | undefined> = [];
   const originalSetConfig = adapter.setConfig.bind(adapter);
   adapter.setConfig = async (path, value, options) => {
     mutationTimeouts.push(options?.timeoutMs);
+    repairFallbackFlags.push(options?.allowGatewayAuthRepairFallback);
     return originalSetConfig(path, value, options);
   };
   setOpenClawAdapterForTesting(adapter);
@@ -425,6 +427,7 @@ test("Gateway native auth token repair gives CLI config fallback enough time to 
   });
 
   assert.deepEqual(mutationTimeouts, [30_000, 30_000]);
+  assert.deepEqual(repairFallbackFlags, [true, true]);
 });
 
 test("Gateway native auth token repair restarts before writing the development env file", async () => {
