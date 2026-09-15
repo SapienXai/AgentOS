@@ -19,7 +19,10 @@ import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ChannelCenterSnapshot } from "@/lib/openclaw/application/channel-center-service";
 import { presentChannelAccountState } from "@/lib/openclaw/domains/channel-account-presentation";
-import { pollChannelAccount } from "@/lib/openclaw/domains/channel-account-polling";
+import {
+  classifyChannelAccountPollState,
+  pollChannelAccount
+} from "@/lib/openclaw/domains/channel-account-polling";
 
 type AddAccountDialogProps = {
   open: boolean;
@@ -162,7 +165,7 @@ export function ChannelCenterAddAccountDialog({
         || (typeof body.channelId === "string" ? body.channelId.trim() : null)
         || null;
       const accountName = payload.account?.name ?? body.name;
-      const verified = await pollChannelAccount({
+      const verifiedPoll = await pollChannelAccount({
         signal: controller.signal,
         read: async () => {
           const refreshedCenter = await loadCenter(controller.signal);
@@ -189,14 +192,19 @@ export function ChannelCenterAddAccountDialog({
             }, { statusError: refreshedCenter?.statusError }) : null
           };
         },
-        isTerminal: (value) => Boolean(value.account && value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+        classify: (value) => value.account
+          ? classifyChannelAccountPollState({ operation: "post-create", state: value.presentation?.state })
+          : "RETRY"
       });
+      const verified = verifiedPoll.value;
       const verifiedCenter = verified.center;
       const verifiedProvider = verified.provider;
       const verifiedAccount = verified.account;
 
       if (!verifiedProvider || !verifiedAccount) {
-        throw new Error(`${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state.`);
+        throw new Error(verifiedPoll.timedOut
+          ? `${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state within the expected time.`
+          : `${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state.`);
       }
 
       let presentation = verified.presentation ?? presentChannelAccountState({
@@ -225,7 +233,7 @@ export function ChannelCenterAddAccountDialog({
           throw new Error(startPayload?.error ?? `${selectedProvider.label} was saved, but OpenClaw could not start the account.`);
         }
 
-        const polled = await pollChannelAccount({
+        const polledResult = await pollChannelAccount({
           signal: controller.signal,
           read: async () => {
             const refreshedCenter = await loadCenter(controller.signal);
@@ -250,10 +258,17 @@ export function ChannelCenterAddAccountDialog({
               }, { statusError: refreshedCenter?.statusError })
             };
           },
-          isTerminal: (value) => Boolean(value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+          classify: (value) => classifyChannelAccountPollState({
+            operation: "start",
+            state: value.presentation?.state
+          })
         });
+        const polled = polledResult.value;
         if (polled.presentation) {
           presentation = polled.presentation;
+        }
+        if (polledResult.timedOut && presentation.state !== "ONLINE") {
+          throw new Error(`${selectedProvider.label} did not come online within the expected time. Current state: ${presentation.label}.`);
         }
       }
 

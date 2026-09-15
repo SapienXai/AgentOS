@@ -10,7 +10,10 @@ import { toast } from "@/components/ui/sonner";
 import type { ChannelCenterSnapshot } from "@/lib/openclaw/application/channel-center-service";
 import type { ChannelRouteKind, ChannelRouteIdentity } from "@/lib/openclaw/domains/channel-center";
 import { presentChannelAccountState } from "@/lib/openclaw/domains/channel-account-presentation";
-import { pollChannelAccount } from "@/lib/openclaw/domains/channel-account-polling";
+import {
+  classifyChannelAccountPollState,
+  pollChannelAccount
+} from "@/lib/openclaw/domains/channel-account-polling";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -317,12 +320,19 @@ export function AgentChannelsSection({
     };
   }, [loadCenter]);
 
-  const startAndDiscover = useCallback(async (nextProviderId: string, nextAccountId: string, shouldStart = true) => {
+  const startAndDiscover = useCallback(async (
+    nextProviderId: string,
+    nextAccountId: string,
+    shouldStart = true,
+    existingController?: AbortController
+  ) => {
     const provider = providers.find((entry) => entry.id === nextProviderId);
     if (!provider) return;
 
-    lifecycleControllerRef.current?.abort();
-    const controller = new AbortController();
+    if (!existingController) {
+      lifecycleControllerRef.current?.abort();
+    }
+    const controller = existingController ?? new AbortController();
     lifecycleControllerRef.current = controller;
     setAccountAction("start");
     setDirectoryError(null);
@@ -338,14 +348,20 @@ export function AgentChannelsSection({
         if (!startResponse.ok) throw new Error(startPayload?.error ?? `${provider.label} could not be started.`);
       }
 
-      const finalState = await pollChannelAccount({
+      const polled = await pollChannelAccount({
         signal: controller.signal,
         read: () => readAccount(nextProviderId, nextAccountId, controller.signal),
-        isTerminal: (value) => Boolean(value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+        classify: (value) => classifyChannelAccountPollState({
+          operation: "start",
+          state: value.presentation?.state
+        })
       });
+      const finalState = polled.value;
 
-      if (!finalState.account || finalState.presentation?.state !== "ONLINE") {
-        throw new Error(finalState.presentation?.detail ?? `${provider.label} did not become usable.`);
+      if (polled.classification !== "SUCCESS" || !finalState.account || finalState.presentation?.state !== "ONLINE") {
+        throw new Error(polled.timedOut
+          ? `${provider.label} did not come online within the expected time. Current state: ${finalState.presentation?.label ?? "Status unavailable"}.`
+          : finalState.presentation?.detail ?? `${provider.label} did not become usable.`);
       }
 
       setProviderId(nextProviderId);
@@ -393,7 +409,7 @@ export function AgentChannelsSection({
 
       const accountIdFromResponse = payload?.account?.accountId?.trim() || payload?.account?.id?.trim();
       const configuredAccountName = payload?.account?.name ?? accountName.trim();
-      const verified = await pollChannelAccount({
+      const verifiedPoll = await pollChannelAccount({
         signal: controller.signal,
         read: async () => {
           const center = await loadCenter(true, controller.signal);
@@ -409,11 +425,16 @@ export function AgentChannelsSection({
             presentation: account ? presentChannelAccountState(accountStateInput(account), { statusError: center?.statusError }) : null
           };
         },
-          isTerminal: (value) => Boolean(value.account && value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+          classify: (value) => value.account
+            ? classifyChannelAccountPollState({ operation: "post-create", state: value.presentation?.state })
+            : "RETRY"
       });
+      const verified = verifiedPoll.value;
       const verifiedAccount = verified.account;
       if (!verified.provider || !verifiedAccount) {
-        throw new Error(`${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state.`);
+        throw new Error(verifiedPoll.timedOut
+          ? `${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state within the expected time.`
+          : `${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state.`);
       }
 
       setProviderId(selectedProvider.id);
@@ -428,7 +449,9 @@ export function AgentChannelsSection({
         setDirectoryStatus(null);
         await readDirectory("groups", null, selectedProvider.id, verifiedAccount.accountId, controller.signal);
       } else if ((presentation.state === "READY" || presentation.state === "STOPPED") && selectedProvider.capabilities?.supportsStart) {
-        await startAndDiscover(selectedProvider.id, verifiedAccount.accountId);
+        await startAndDiscover(selectedProvider.id, verifiedAccount.accountId, true, controller);
+      } else if (verifiedPoll.timedOut) {
+        throw new Error(`${selectedProvider.label} did not come online within the expected time. Current state: ${presentation.label}.`);
       } else {
         throw new Error(`${selectedProvider.label} is not ready: ${presentation.detail}`);
       }

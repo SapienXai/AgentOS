@@ -1,41 +1,81 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { pollChannelAccount } from "@/lib/openclaw/domains/channel-account-polling";
+import {
+  classifyChannelAccountPollState,
+  pollChannelAccount
+} from "@/lib/openclaw/domains/channel-account-polling";
 
-type AccountState = "STARTING" | "ONLINE" | "NEEDS_ATTENTION";
-
-test("channel account polling returns immediately when the account is online", async () => {
+test("start polling keeps stale STOPPED snapshots retryable until ONLINE", async () => {
+  const states = ["STOPPED", "STOPPED", "STARTING", "ONLINE"] as const;
   let reads = 0;
 
   const result = await pollChannelAccount({
-    delaysMs: [0, 1],
-    read: async () => {
-      reads += 1;
-      return "ONLINE" as const;
-    },
-    isTerminal: (state) => state === "ONLINE"
+    delaysMs: [0, 1, 1, 1],
+    read: async () => states[reads++] ?? "ONLINE",
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
   });
 
-  assert.equal(result, "ONLINE");
-  assert.equal(reads, 1);
+  assert.equal(result.value, "ONLINE");
+  assert.equal(result.classification, "SUCCESS");
+  assert.equal(result.timedOut, false);
+  assert.equal(reads, 4);
 });
 
-test("channel account polling waits for a delayed online state", async () => {
-  const states: AccountState[] = ["STARTING", "STARTING", "ONLINE"];
+test("start polling keeps READY retryable while OpenClaw starts the account", async () => {
+  const states = ["READY", "STARTING", "ONLINE"] as const;
   let reads = 0;
 
   const result = await pollChannelAccount({
     delaysMs: [0, 1, 1],
     read: async () => states[reads++] ?? "ONLINE",
-    isTerminal: (state) => state === "ONLINE" || state === "NEEDS_ATTENTION"
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
   });
 
-  assert.equal(result, "ONLINE");
+  assert.equal(result.value, "ONLINE");
+  assert.equal(result.classification, "SUCCESS");
   assert.equal(reads, 3);
 });
 
-test("channel account polling stops immediately on a definitive failure", async () => {
+test("start polling continues through STARTING snapshots", async () => {
+  const states = ["STARTING", "STARTING", "ONLINE"] as const;
+  let reads = 0;
+
+  const result = await pollChannelAccount({
+    delaysMs: [0, 1, 1],
+    read: async () => states[reads++] ?? "ONLINE",
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
+  });
+
+  assert.equal(result.value, "ONLINE");
+  assert.equal(result.classification, "SUCCESS");
+  assert.equal(reads, 3);
+});
+
+test("post-create polling treats READY and STOPPED as account-found handoff states", () => {
+  assert.equal(
+    classifyChannelAccountPollState({ operation: "post-create", state: "READY" }),
+    "SUCCESS"
+  );
+  assert.equal(
+    classifyChannelAccountPollState({ operation: "post-create", state: "STOPPED" }),
+    "SUCCESS"
+  );
+  assert.equal(
+    classifyChannelAccountPollState({ operation: "post-create", state: "STARTING" }),
+    "RETRY"
+  );
+  assert.equal(
+    classifyChannelAccountPollState({ operation: "post-create", state: "STATUS_UNAVAILABLE" }),
+    "RETRY"
+  );
+  assert.equal(
+    classifyChannelAccountPollState({ operation: "post-create", state: "NEEDS_SETUP" }),
+    "FAILURE"
+  );
+});
+
+test("start polling stops immediately on a definitive failure", async () => {
   let reads = 0;
 
   const result = await pollChannelAccount({
@@ -44,26 +84,30 @@ test("channel account polling stops immediately on a definitive failure", async 
       reads += 1;
       return "NEEDS_ATTENTION" as const;
     },
-    isTerminal: (state) => state === "NEEDS_ATTENTION"
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
   });
 
-  assert.equal(result, "NEEDS_ATTENTION");
+  assert.equal(result.value, "NEEDS_ATTENTION");
+  assert.equal(result.classification, "FAILURE");
+  assert.equal(result.timedOut, false);
   assert.equal(reads, 1);
 });
 
-test("channel account polling returns the latest state after its bounded window", async () => {
+test("start polling returns the latest STOPPED state after its bounded timeout", async () => {
   let reads = 0;
 
   const result = await pollChannelAccount({
     delaysMs: [0, 1, 1],
     read: async () => {
       reads += 1;
-      return `STARTING-${reads}`;
+      return "STOPPED" as const;
     },
-    isTerminal: () => false
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
   });
 
-  assert.equal(result, "STARTING-3");
+  assert.equal(result.value, "STOPPED");
+  assert.equal(result.classification, "RETRY");
+  assert.equal(result.timedOut, true);
   assert.equal(reads, 3);
 });
 
@@ -73,7 +117,7 @@ test("channel account polling is cancel-safe", async () => {
     delaysMs: [0, 50],
     signal: controller.signal,
     read: async () => "STARTING" as const,
-    isTerminal: () => false
+    classify: (state) => classifyChannelAccountPollState({ operation: "start", state })
   });
 
   setTimeout(() => controller.abort(), 5);

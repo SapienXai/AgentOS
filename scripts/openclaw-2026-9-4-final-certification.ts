@@ -31,6 +31,7 @@ const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_
 const UPSTREAM_EVIDENCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_UPSTREAM_EVIDENCE?.trim() || null;
 const COMPATIBILITY_REPORT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_COMPATIBILITY_REPORT?.trim() || null;
 const CHANNEL_RUNTIME_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_RUNTIME_ACCEPTANCE?.trim() || null;
+const CHANNEL_BROWSER_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_BROWSER_ACCEPTANCE?.trim() || null;
 const CERTIFIED_CODE_HEAD_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CERTIFIED_CODE_HEAD?.trim() || null;
 const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
 const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
@@ -86,6 +87,9 @@ export type OpenClawFinalCertificationReport = {
   contractAudit: JsonRecord | null;
   compatibility: JsonRecord | null;
   runtimeAcceptance: JsonRecord | null;
+  telegramBrowserAcceptance: JsonRecord | null;
+  discordBrowserAcceptance: JsonRecord | null;
+  liveTelegram: JsonRecord | null;
   knownExceptions: string[];
   provenance: {
     repository: string;
@@ -139,6 +143,23 @@ async function main() {
   const upstreamEvidence = await readOptionalJson(UPSTREAM_EVIDENCE_INPUT, "upstream evidence", failures);
   const compatibilityReport = await readOptionalJson(COMPATIBILITY_REPORT_INPUT, "compatibility report", failures);
   const channelRuntimeAcceptance = await readOptionalJson(CHANNEL_RUNTIME_ACCEPTANCE_INPUT, "channel runtime acceptance", failures);
+  const channelBrowserAcceptance = await readOptionalJson(CHANNEL_BROWSER_ACCEPTANCE_INPUT, "channel browser acceptance", failures);
+  if (!CHANNEL_BROWSER_ACCEPTANCE_INPUT) {
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_BROWSER_ACCEPTANCE is required for final human UX acceptance");
+  } else {
+    const telegramBrowserAcceptance = asRecord(channelBrowserAcceptance?.telegramBrowserAcceptance);
+    const discordBrowserAcceptance = asRecord(channelBrowserAcceptance?.discordBrowserAcceptance);
+    const liveTelegram = asRecord(channelBrowserAcceptance?.liveTelegram);
+    if (telegramBrowserAcceptance.passed !== true || telegramBrowserAcceptance.stepsPassed !== 26 || telegramBrowserAcceptance.stepsTotal !== 26) {
+      failures.push("Telegram browser acceptance must pass all 26 steps");
+    }
+    if (discordBrowserAcceptance.passed !== true) {
+      failures.push("Discord browser acceptance must pass");
+    }
+    if (!["VERIFIED", "PARTIALLY_VERIFIED", "BLOCKED_BY_ENVIRONMENT"].includes(String(liveTelegram.classification ?? ""))) {
+      failures.push("Live Telegram classification must be VERIFIED, PARTIALLY_VERIFIED, or BLOCKED_BY_ENVIRONMENT");
+    }
+  }
   if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE is not set");
   if (!GATEWAY_CLIENT_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE is not set");
   if (!GATEWAY_PROTOCOL_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE is not set");
@@ -196,6 +217,7 @@ async function main() {
     upstreamEvidence,
     compatibilityReport,
     channelRuntimeAcceptance,
+    channelBrowserAcceptance,
     failures,
     repositoryPath: process.cwd()
   });
@@ -219,6 +241,7 @@ export function buildOpenClawFinalCertificationReport(input: {
   upstreamEvidence?: JsonRecord | null;
   compatibilityReport?: JsonRecord | null;
   channelRuntimeAcceptance?: JsonRecord | null;
+  channelBrowserAcceptance?: JsonRecord | null;
   failures: string[];
   repositoryPath?: string;
 }): OpenClawFinalCertificationReport {
@@ -293,6 +316,9 @@ export function buildOpenClawFinalCertificationReport(input: {
     contractAudit: input.artifacts["contract-diff"] ?? null,
     compatibility: input.compatibilityReport ?? null,
     runtimeAcceptance: input.channelRuntimeAcceptance ?? null,
+    telegramBrowserAcceptance: input.channelBrowserAcceptance ? asRecord(input.channelBrowserAcceptance.telegramBrowserAcceptance) : null,
+    discordBrowserAcceptance: input.channelBrowserAcceptance ? asRecord(input.channelBrowserAcceptance.discordBrowserAcceptance) : null,
+    liveTelegram: input.channelBrowserAcceptance ? asRecord(input.channelBrowserAcceptance.liveTelegram) : null,
     knownExceptions,
     provenance: {
       repository: "SapienXai/AgentOS",
