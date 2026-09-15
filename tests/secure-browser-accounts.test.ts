@@ -328,6 +328,7 @@ test("late authentication verification cannot revive a revoked account", async (
 test("sensitive authenticated-browser actions require approval or fail closed", () => {
   assert.equal(evaluateBrowserActionPolicy({
     actionDescription: "Read the current dashboard",
+    actionKind: "snapshot",
     approvalInfrastructureAvailable: false
   }).decision, "allow");
   assert.equal(evaluateBrowserActionPolicy({
@@ -834,6 +835,17 @@ test("OpenClaw policy plugin binds by trusted session key and fails managed prof
   assert.match(source, /profile: binding\.openClawProfileName/);
   assert.match(source, /isAllowedUrl\(targetUrl, binding\.allowedDomains\)/);
   assert.match(source, /requireApproval/);
+  assert.match(source, /after_tool_call/);
+  assert.match(source, /api\?\.runtime\?\.gateway/);
+  assert.match(source, /gateway\.request/);
+  assert.match(source, /parseBrowserToolSnapshotResult/);
+  assert.match(source, /trusted browser target safely/i);
+  assert.match(source, /observedBrowserSnapshots/);
+  assert.match(source, /targetId: trustedContext\.targetId/);
+  assert.match(source, /profile: binding\.openClawProfileName/);
+  assert.match(source, /hasWaitPredicate/);
+  assert.match(source, /JavaScript wait predicates are disabled/);
+  assert.doesNotMatch(source, /readActionDescription/);
   assert.match(source, /managed browser profiles require an active task binding/i);
   assert.match(source, /Arbitrary page evaluation is disabled/);
   assert.match(source, /AGENTOS_BROWSER_POLICY_TOKEN/);

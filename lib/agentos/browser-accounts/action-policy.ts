@@ -19,11 +19,28 @@ export type BrowserActionDecision = {
   reason: string;
 };
 
+export type BrowserActionTargetMetadata = {
+  role?: string;
+  name?: string;
+  value?: string;
+  description?: string;
+};
+
+export type TrustedBrowserActionContext = {
+  targetId: string;
+  url: string;
+  refs: Record<string, BrowserActionTargetMetadata>;
+  pageSignals?: string[];
+  dialogMessages?: string[];
+  semanticSnapshotGeneration?: string;
+};
+
 const accountAdminPatterns = [
   /\b(change|reset|update|remove|disable|enable)\b.{0,40}\b(password|passcode|mfa|2fa|two-factor|authenticator|security|recovery email|recovery phone)\b/i,
   /\b(create|generate|rotate|revoke)\b.{0,40}\b(api key|access token|secret)\b/i,
   /\b(change|grant|revoke|remove)\b.{0,40}\b(permission|role|admin|owner)\b/i,
-  /\b(delete|close)\b.{0,32}\b(account|workspace|organization)\b/i
+  /\b(delete|close)\b.{0,32}\b(account|workspace|organization)\b/i,
+  /\b(account|security|privacy|recovery)\s+settings?\b/i
 ];
 
 const transactionPatterns = [
@@ -36,37 +53,80 @@ const publishPatterns = [
   /\b(create|edit)\b.{0,32}\b(listing|release|announcement|article|issue|pull request)\b/i
 ];
 
-const legacySensitivePatterns = [
-  ...accountAdminPatterns,
-  ...transactionPatterns,
-  ...publishPatterns,
-  /\b(bulk delete|delete all|mass delete)\b/i,
-  /\b(export|download)\b.{0,32}\b(customer|personal|private|sensitive|account)\b/i
-];
-
 /**
- * Classify only the coarse action category that the policy can defend. This
- * intentionally does not inspect arbitrary page DOM or guess from CSS refs.
+ * Classify only the coarse action category that the policy can defend.
+ *
+ * A ref-based mutation is unknown unless a trusted OpenClaw snapshot for the
+ * same tab and page is supplied. `actionDescription` is intentionally not
+ * used for authorization: it is model-controlled and is only retained in the
+ * public input for compatibility with older callers.
  */
 export function classifyBrowserAction(input: {
-  actionDescription: string;
+  action?: string | null;
+  actionDescription?: string;
   actionKind?: string | null;
   serviceId?: BrowserServiceId | null;
+  actionRef?: string | null;
+  actionRefs?: string[];
+  submit?: boolean;
+  key?: string | null;
+  dialogAccepted?: boolean;
+  waitPredicate?: string | null;
+  trustedContext?: TrustedBrowserActionContext;
+  observedContext?: TrustedBrowserActionContext;
 }): BrowserActionCapability {
-  const description = input.actionDescription.trim();
-  if (accountAdminPatterns.some((pattern) => pattern.test(description))) return "account_admin";
-  if (transactionPatterns.some((pattern) => pattern.test(description))) return "transact";
-  if (publishPatterns.some((pattern) => pattern.test(description))) return "publish";
-
+  const action = input.action?.trim().toLowerCase() ?? "";
   const kind = input.actionKind?.trim().toLowerCase() ?? "";
-  if (["tabs", "snapshot", "screenshot", "console", "wait"].includes(kind)) return "read";
-  if (["click", "type", "press", "hover", "select", "fill", "scrollintoview", "drag", "dialog", "open", "navigate"].includes(kind)) {
-    return "interact";
+  if (action === "wait" && input.waitPredicate?.trim()) return "account_admin";
+  if (["tabs", "snapshot", "screenshot", "console", "wait"].includes(action || kind)) return "read";
+  if (["open", "navigate"].includes(action || kind)) return "read";
+  if (kind === "evaluate" || (action === "act" && kind === "close")) return "account_admin";
+  if (action === "dialog" && input.dialogAccepted === false) return "interact";
+  if (["hover", "scrollintoview", "wait"].includes(kind)) return "interact";
+  if (kind === "press" && isSafePressKey(input.key)) return "interact";
+
+  const trusted = input.trustedContext;
+  const observed = input.observedContext;
+  if (!trusted || !observed || !samePage(trusted, observed)) return "unknown";
+
+  const submitLike =
+    input.submit === true ||
+    (kind === "press" && isEnterKey(input.key)) ||
+    (action === "dialog" && input.dialogAccepted === true);
+  const refs = [...(input.actionRefs ?? []), input.actionRef]
+    .filter((ref): ref is string => Boolean(ref?.trim()))
+    .map((ref) => ref.trim())
+    .filter((ref, index, values) => values.indexOf(ref) === index);
+  if (refs.length > 0) {
+    if (refs.some((ref) => !trusted.refs[ref] || !observed.refs[ref] || !sameTarget(trusted.refs[ref], observed.refs[ref]))) {
+      return "unknown";
+    }
+    const targetRisk = highestRisk(refs.map((ref) => classifyTargetRisk(targetText(trusted.refs[ref]), input.serviceId)));
+    if (targetRisk !== "interact" && trusted.semanticSnapshotGeneration !== observed.semanticSnapshotGeneration) {
+      return "unknown";
+    }
+    if (submitLike) {
+      if (trusted.semanticSnapshotGeneration !== observed.semanticSnapshotGeneration) return "unknown";
+      return highestRisk([
+        targetRisk,
+        ...(trusted.pageSignals ?? []).map((value) => classifyTargetRisk(value, input.serviceId)),
+        ...(trusted.dialogMessages ?? []).map((value) => classifyTargetRisk(value, input.serviceId))
+      ]);
+    }
+    return targetRisk;
   }
 
-  // Service-specific rules have a deliberate extension point without making
-  // the first version depend on brittle per-site DOM heuristics.
-  void input.serviceId;
+  if (submitLike) {
+    if (trusted.semanticSnapshotGeneration !== observed.semanticSnapshotGeneration) return "unknown";
+    return highestRisk([
+      ...(trusted.pageSignals ?? []).map((value) => classifyTargetRisk(value, input.serviceId)),
+      ...(trusted.dialogMessages ?? []).map((value) => classifyTargetRisk(value, input.serviceId))
+    ]);
+  }
+
+  if (["click", "clickcoords", "click-coords", "drag", "fill", "press", "select", "type"].includes(kind)) {
+    return "interact";
+  }
   return "unknown";
 }
 
@@ -76,9 +136,18 @@ export function classifyBrowserAction(input: {
  * callers, but it never grants an authenticated sensitive action implicitly.
  */
 export function evaluateBrowserActionPolicy(input: {
-  actionDescription: string;
+  actionDescription?: string;
+  action?: string | null;
   actionKind?: string | null;
   serviceId?: BrowserServiceId | null;
+  actionRef?: string | null;
+  actionRefs?: string[];
+  submit?: boolean;
+  key?: string | null;
+  dialogAccepted?: boolean;
+  waitPredicate?: string | null;
+  trustedContext?: TrustedBrowserActionContext;
+  observedContext?: TrustedBrowserActionContext;
   grantedCapabilities?: BrowserAccountCapability[];
   approvalPolicy?: BrowserAccountApprovalPolicy;
   approvalInfrastructureAvailable: boolean;
@@ -88,27 +157,26 @@ export function evaluateBrowserActionPolicy(input: {
   const granted = new Set(input.grantedCapabilities ?? []);
 
   if (!hasCapabilityGrant) {
-    const sensitive = legacySensitivePatterns.some((pattern) => pattern.test(input.actionDescription.trim()));
-    if (!sensitive) {
+    if (capability === "read") {
       return {
-        capability: capability === "unknown" ? "interact" : capability,
+        capability,
         risk: "standard",
         decision: "allow",
-        reason: "The requested browser action does not match a protected sensitive-action category."
+        reason: "The requested browser action is read-only."
       };
     }
     return input.approvalInfrastructureAvailable
       ? {
-          capability: capability === "unknown" ? "account_admin" : capability,
+          capability,
           risk: "high",
           decision: "require_approval",
-          reason: "Sensitive authenticated-browser actions require explicit human approval."
+          reason: "A mutating authenticated-browser action has no explicit account grant and requires human approval."
         }
       : {
-          capability: capability === "unknown" ? "account_admin" : capability,
+          capability,
           risk: "high",
           decision: "block",
-          reason: "Sensitive authenticated-browser actions are blocked because no task-bound approval contract is available."
+          reason: "A mutating authenticated-browser action is blocked because no task-bound approval contract is available."
         };
   }
 
@@ -152,6 +220,55 @@ export function evaluateBrowserActionPolicy(input: {
   return input.approvalInfrastructureAvailable
     ? requireApproval("unknown", "The browser action could not be classified safely; explicit approval is required.")
     : block("unknown", "The browser action could not be classified safely and approval is unavailable.");
+}
+
+function samePage(current: TrustedBrowserActionContext, observed: TrustedBrowserActionContext) {
+  return current.targetId === observed.targetId && current.url === observed.url;
+}
+
+function sameTarget(current: BrowserActionTargetMetadata, observed: BrowserActionTargetMetadata) {
+  return targetText(current) === targetText(observed);
+}
+
+function targetText(target: BrowserActionTargetMetadata) {
+  return [target.role, target.name, target.value, target.description]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(" ")
+    .trim();
+}
+
+function classifyTargetRisk(value: string, serviceId?: BrowserServiceId | null): BrowserActionCapability {
+  if (!value) return "unknown";
+  if (accountAdminPatterns.some((pattern) => pattern.test(value))) return "account_admin";
+  if (serviceId === "github" && /\b(merge|approve|delete|close)\b/i.test(value)) return "account_admin";
+  if (transactionPatterns.some((pattern) => pattern.test(value))) return "transact";
+  if (serviceId === "amazon" && /\b(buy now|proceed to checkout|checkout|place (?:your )?order|purchase|pay|payment|subscribe)\b/i.test(value)) {
+    return "transact";
+  }
+  if (publishPatterns.some((pattern) => pattern.test(value))) return "publish";
+  if (serviceId === "x" && /\b(tweet|post|reply|quote|repost|direct message|dm|send)\b/i.test(value)) return "publish";
+  if (serviceId === "producthunt" && /\b(launch|comment|upvote|submit)\b/i.test(value)) return "publish";
+  if (serviceId === "github" && /\b(create|open|comment|edit)\b.{0,32}\b(issue|pull request|release)\b|\b(publish|release)\b/i.test(value)) {
+    return "publish";
+  }
+  return "interact";
+}
+
+function highestRisk(values: BrowserActionCapability[]) {
+  if (values.includes("account_admin")) return "account_admin" as const;
+  if (values.includes("transact")) return "transact" as const;
+  if (values.includes("publish")) return "publish" as const;
+  if (values.includes("unknown")) return "unknown" as const;
+  return "interact" as const;
+}
+
+function isEnterKey(value?: string | null) {
+  return ["enter", "return", "numpadenter"].includes(value?.trim().toLowerCase().replaceAll(" ", "") ?? "");
+}
+
+function isSafePressKey(value?: string | null) {
+  return ["arrowdown", "arrowleft", "arrowright", "arrowup", "escape", "esc", "tab", "pagedown", "pageup", "home", "end"]
+    .includes(value?.trim().toLowerCase().replaceAll(" ", "") ?? "");
 }
 
 function allow(capability: BrowserActionCapability, reason: string): BrowserActionDecision {

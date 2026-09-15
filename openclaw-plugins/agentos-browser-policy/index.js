@@ -3,6 +3,15 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/pr
 import path from "node:path";
 
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import {
+  buildTrustedBrowserActionContext,
+  classifyBrowserAction,
+  parseBrowserToolSnapshotResult,
+  readActKind,
+  readActRefs,
+  readActRequest,
+  readTargetId
+} from "./action-context.js";
 
 const managedProfilePattern = /^acct-[a-z0-9](?:[a-z0-9-]{0,56}[a-z0-9])?$/;
 const readOnlyActions = new Set([
@@ -15,28 +24,18 @@ const readOnlyActions = new Set([
 const lifecycleActions = new Set(["close", "profiles", "doctor", "status", "start", "stop", "focus"]);
 const navigationActions = new Set(["open", "navigate"]);
 const interactiveActions = new Set(["act", "dialog"]);
-const interactiveKinds = new Set([
-  "click",
-  "clickcoors",
-  "click-coords",
-  "drag",
-  "fill",
-  "hover",
-  "press",
-  "scrollintoview",
-  "select",
-  "type"
-]);
-const accountAdminPattern = /\b(change|reset|update|remove|disable|enable)\b.{0,40}\b(password|passcode|mfa|2fa|two-factor|authenticator|security|recovery email|recovery phone)\b|\b(create|generate|rotate|revoke)\b.{0,40}\b(api key|access token|secret)\b|\b(change|grant|revoke|remove)\b.{0,40}\b(permission|role|admin|owner)\b|\b(delete|close)\b.{0,32}\b(account|workspace|organization)\b/i;
-const transactionPattern = /\b(purchase|buy|checkout|pay|payment|transfer money|wire transfer|place an order|subscribe|upgrade plan)\b|\b(confirm|submit)\b.{0,32}\b(order|payment|purchase|checkout)\b/i;
-const publishPattern = /\b(publish|post|tweet|reply|comment|send|email|message|submit)\b|\b(create|edit)\b.{0,32}\b(listing|release|announcement|article|issue|pull request)\b/i;
 const accountCapabilities = new Set(["read", "interact", "publish", "transact", "account_admin"]);
-const serviceRiskPatterns = {
-  github: /\b(merge|approve|open|create|edit)\b.{0,32}\b(pull request|issue|release)\b/i,
-  x: /\b(tweet|post|reply|quote|repost|direct message)\b/i,
-  producthunt: /\b(launch|comment|upvote|submit)\b/i,
-  amazon: /\b(add to cart|buy now|order|checkout|return)\b/i
-};
+const observationTtlMs = 10 * 60_000;
+const maxObservations = 512;
+const observedBrowserSnapshots = new Map();
+const observationInvalidatingActions = new Set([
+  "act",
+  "dialog",
+  "navigate",
+  "open",
+  "close",
+  "focus"
+]);
 
 export default definePluginEntry({
   id: "agentos-browser-policy",
@@ -50,9 +49,32 @@ export default definePluginEntry({
     });
 
     api.on("gateway_stop", async () => {
+      observedBrowserSnapshots.clear();
       await unlink(resolveReadyPath()).catch((error) => {
         if (error?.code !== "ENOENT") throw error;
       });
+    });
+
+    api.on("after_tool_call", async (event, ctx) => {
+      if (event.toolName !== "browser") return;
+      const key = observationKey(ctx.sessionKey, ctx.agentId);
+      if (!key) return;
+
+      const action = typeof event.params?.action === "string" ? event.params.action.toLowerCase() : "";
+      if (action === "snapshot") {
+        const binding = await findBinding(ctx.sessionKey, ctx.agentId);
+        const context = binding
+          ? parseBrowserToolSnapshotResult(event.result, { allowedDomains: binding.allowedDomains })
+          : null;
+        if (context && binding && isAllowedUrl(context.url, binding.allowedDomains)) {
+          rememberObservation(key, context);
+        } else {
+          observedBrowserSnapshots.delete(key);
+        }
+        return;
+      }
+
+      if (observationInvalidatingActions.has(action)) observedBrowserSnapshots.delete(key);
     });
 
     api.on(
@@ -129,6 +151,14 @@ export default definePluginEntry({
           };
         }
 
+        if (action === "wait" && hasWaitPredicate(params)) {
+          await appendPolicyAudit(binding, "sensitive_action_blocked");
+          return {
+            block: true,
+            blockReason: "JavaScript wait predicates are disabled for Secure Browser Accounts."
+          };
+        }
+
         if (navigationActions.has(action)) {
           const targetUrl = readNavigationUrl(params);
           if (!targetUrl || !isAllowedUrl(targetUrl, binding.allowedDomains)) {
@@ -149,7 +179,20 @@ export default definePluginEntry({
         }
 
         if (interactiveActions.has(action)) {
-          return await enforceCapabilityPolicy({ action, params, binding });
+          const observedContext = getObservation(observationKey(ctx.sessionKey, ctx.agentId));
+          const trustedContext = await resolveTrustedBrowserActionContext({
+            api,
+            params,
+            binding,
+            observedContext
+          });
+          return await enforceCapabilityPolicy({
+            action,
+            params,
+            binding,
+            trustedContext,
+            observedContext
+          });
         }
 
         if (readOnlyActions.has(action)) {
@@ -281,46 +324,9 @@ function readNavigationUrl(params) {
   return value?.trim() || null;
 }
 
-function readActKind(params) {
-  const request = params.request && typeof params.request === "object" ? params.request : null;
-  const kind =
-    typeof request?.kind === "string"
-      ? request.kind
-      : typeof params.kind === "string"
-        ? params.kind
-        : "interaction";
-  return kind.slice(0, 32);
-}
-
-function readActionDescription(action, params) {
-  const request = params.request && typeof params.request === "object" ? params.request : null;
-  const candidates = [
-    params.actionDescription,
-    params.description,
-    params.intent,
-    request?.actionDescription,
-    request?.description,
-    request?.intent,
-    request?.text,
-    request?.value
-  ];
-  return [action, readActKind(params), ...candidates]
-    .filter((value) => typeof value === "string" && value.trim())
-    .join(" ")
-    .slice(0, 2_000);
-}
-
-function classifyAction(action, params, binding) {
-  const description = readActionDescription(action, params);
-  if (accountAdminPattern.test(description)) return "account_admin";
-  if (transactionPattern.test(description)) return "transact";
-  if (publishPattern.test(description) || serviceRiskPatterns[binding.serviceId]?.test(description)) {
-    return "publish";
-  }
-  if (readOnlyActions.has(action) || navigationActions.has(action)) return "read";
-  const kind = readActKind(params).toLowerCase();
-  if (interactiveKinds.has(kind) || action === "dialog") return "interact";
-  return "unknown";
+function hasWaitPredicate(params) {
+  const request = readActRequest(params);
+  return typeof request?.fn === "string" && request.fn.trim().length > 0;
 }
 
 function hasCapability(binding, capability) {
@@ -332,8 +338,18 @@ function hasCapability(binding, capability) {
     : capability === "read" || capability === "interact";
 }
 
-async function enforceCapabilityPolicy({ action, params, binding }) {
-  const capability = classifyAction(action, params, binding);
+async function enforceCapabilityPolicy({ action, params, binding, trustedContext, observedContext }) {
+  const classification = classifyBrowserAction({
+    action,
+    params,
+    binding,
+    trustedContext,
+    observedContext
+  });
+  const capability = classification.capability;
+  const boundParams = trustedContext?.targetId
+    ? { ...params, targetId: trustedContext.targetId }
+    : params;
   if (capability === "read") {
     if (!hasCapability(binding, "read")) {
       await appendPolicyAudit(binding, "sensitive_action_blocked");
@@ -342,7 +358,7 @@ async function enforceCapabilityPolicy({ action, params, binding }) {
         blockReason: "Read capability is not granted for this browser account identity."
       };
     }
-    return { params };
+    return { params: boundParams };
   }
 
   if (capability === "interact") {
@@ -353,7 +369,7 @@ async function enforceCapabilityPolicy({ action, params, binding }) {
         blockReason: "Interaction capability is not granted for this browser account identity."
       };
     }
-    return { params };
+    return { params: boundParams };
   }
 
   if (capability === "account_admin") {
@@ -388,15 +404,15 @@ async function enforceCapabilityPolicy({ action, params, binding }) {
     capability === "transact" ||
     (capability === "publish" && binding.approvalPolicy === "require_approval") ||
     capability === "unknown";
-  if (!requiresApproval) return { params };
+  if (!requiresApproval) return { params: boundParams };
 
   await appendPolicyAudit(binding, "sensitive_action_requested");
   return {
-    params,
+    params: boundParams,
     requireApproval: {
       title: capability === "transact" ? "Approve browser transaction" : "Approve sensitive browser action",
       description: capability === "unknown"
-        ? "Allow this browser action? AgentOS could not classify it safely."
+        ? "Allow this browser action? AgentOS could not classify its trusted browser target safely."
         : `Allow ${capability} action on ${binding.allowedDomains[0] ?? "the connected account"}?`,
       severity: capability === "transact" ? "critical" : "warning",
       allowedDecisions: ["allow-once", "deny"],
@@ -412,9 +428,89 @@ async function enforceCapabilityPolicy({ action, params, binding }) {
   };
 }
 
+function observationKey(sessionKey, agentId) {
+  return typeof sessionKey === "string" && typeof agentId === "string" && sessionKey && agentId
+    ? `${sessionKey}\u0000${agentId}`
+    : null;
+}
+
+function getObservation(key) {
+  if (!key) return null;
+  const entry = observedBrowserSnapshots.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.observedAt > observationTtlMs) {
+    observedBrowserSnapshots.delete(key);
+    return null;
+  }
+  return entry.context;
+}
+
+function rememberObservation(key, context) {
+  if (!key || !context) return;
+  if (observedBrowserSnapshots.size >= maxObservations && !observedBrowserSnapshots.has(key)) {
+    const oldestKey = observedBrowserSnapshots.keys().next().value;
+    if (oldestKey) observedBrowserSnapshots.delete(oldestKey);
+  }
+  observedBrowserSnapshots.set(key, { context, observedAt: Date.now() });
+}
+
+async function resolveTrustedBrowserActionContext({ api, params, binding, observedContext }) {
+  const refs = readActRefs(params);
+  const requestedRef = refs[0] ?? "";
+  const snapshotQuery = {
+    profile: binding.openClawProfileName,
+    format: requestedRef.toLowerCase().startsWith("ax") ? "aria" : "ai",
+    maxChars: "40000",
+    ...(requestedRef.toLowerCase().startsWith("ax")
+      ? {}
+      : { interactive: "true", refs: "role" })
+  };
+  const targetId = readTargetId(params) ?? observedContext?.targetId ?? await resolveSingleBrowserTarget(api, binding);
+  if (!targetId) return null;
+
+  const raw = await browserGatewayRequest(api, {
+    target: "host",
+    method: "GET",
+    path: "/snapshot",
+    query: { ...snapshotQuery, targetId }
+  });
+  if (!raw || typeof raw !== "object") return null;
+  return buildTrustedBrowserActionContext(raw, {
+    allowedDomains: binding.allowedDomains
+  });
+}
+
+async function resolveSingleBrowserTarget(api, binding) {
+  const raw = await browserGatewayRequest(api, {
+    target: "host",
+    method: "GET",
+    path: "/tabs",
+    query: { profile: binding.openClawProfileName }
+  });
+  const tabs = Array.isArray(raw?.tabs) ? raw.tabs : [];
+  const allowedTabs = tabs.filter((tab) =>
+    typeof tab?.targetId === "string" &&
+    typeof tab?.url === "string" &&
+    isAllowedUrl(tab.url, binding.allowedDomains)
+  );
+  return allowedTabs.length === 1 ? allowedTabs[0].targetId : null;
+}
+
+async function browserGatewayRequest(api, params) {
+  const gateway = api?.runtime?.gateway;
+  if (!gateway || typeof gateway.request !== "function") return null;
+  try {
+    if (typeof gateway.isAvailable === "function" && !(await gateway.isAvailable())) return null;
+    return await gateway.request("browser.request", params, { timeoutMs: 2_000 });
+  } catch {
+    return null;
+  }
+}
+
 function isAllowedUrl(value, allowedDomains) {
   try {
     const url = new URL(value);
+    if (url.username || url.password) return false;
     const localHttp =
       url.protocol === "http:" &&
       (url.hostname === "127.0.0.1" || url.hostname === "localhost");
