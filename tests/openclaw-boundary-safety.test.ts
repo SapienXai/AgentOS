@@ -83,7 +83,8 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
     "lib/openclaw/application/channel-connect-service.ts",
     "lib/openclaw/application/chatgpt-provider-auth-service.ts",
     "lib/openclaw/application/mobile-pairing-service.ts",
-    "lib/openclaw/application/task-health-service.ts"
+    "lib/openclaw/application/task-health-service.ts",
+    "lib/openclaw/application/channel-directory-service.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
     .filter((filePath) => readFileSync(filePath, "utf8").includes("runOpenClawJson"))
@@ -320,12 +321,17 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
     "utf8"
   );
   const channelsSource = readFileSync(path.join(rootDir, "lib/openclaw/domains/channels.ts"), "utf8");
+  const directorySource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/channel-directory-service.ts"),
+    "utf8"
+  );
 
   assert.match(agentConfigSource, /const OPENCLAW_AGENT_CONFIG_PATH = "agents\.entries"/);
   assert.match(agentConfigSource, /getOpenClawAdapter\(\)\.getConfig<unknown>\(OPENCLAW_AGENT_CONFIG_PATH, options\)/);
-  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<TelegramAllowlistConfig>\("channels\.telegram\.groups"\)/);
   assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<DiscordGuildConfig>\("channels\.discord\.guilds"\)/);
   assert.match(channelsSource, /getOpenClawAdapter\(\)\.getChannelLogs/);
+  assert.match(channelsSource, /listChannelGroups/);
+  assert.match(directorySource, /getOpenClawAdapter\(\)\.getConfig<Record<string, unknown>>\("channels\.telegram"/);
   assert.doesNotMatch(agentConfigSource, /runOpenClawJson/);
   assert.doesNotMatch(channelsSource, /runOpenClawJson/);
 });
@@ -633,7 +639,7 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
   assert.match(source, /aria-pressed=\{pinned\}/);
   assert.match(source, /<SidebarPanelToggleIcon filled=\{pinned\} \/>/);
   assert.match(source, /filled \? "fill-slate-950 dark:fill-slate-100" : "fill-transparent"/);
-  assert.match(source, /const collapsedSidebarItems = sidebarItems\.slice\([\s\S]*?item\.label === "Accounts"[\s\S]*?\);/);
+  assert.match(source, /const collapsedSidebarItems = sidebarItems\.slice\([\s\S]*?item\.label === "Channels"[\s\S]*?\);/);
   assert.match(source, /\{collapsedSidebarItems[\s\S]*?\.filter\(\(item\) => item\.section === section\.id\)/);
   assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
   assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
