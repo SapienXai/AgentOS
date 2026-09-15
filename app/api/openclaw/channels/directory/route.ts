@@ -7,6 +7,7 @@ import {
   listChannelPeers,
   listTelegramTopics
 } from "@/lib/openclaw/application/channel-directory-service";
+import { readChannelRegistry } from "@/lib/openclaw/domains/channels";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
@@ -19,7 +20,8 @@ const querySchema = z.object({
   kind: z.enum(["peers", "groups", "members", "topics"]),
   groupId: z.string().trim().min(1).max(256).optional(),
   query: z.string().trim().max(256).optional(),
-  limit: z.coerce.number().int().positive().max(500).optional()
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  workspaceId: z.string().trim().min(1).max(128).optional()
 });
 
 export async function GET(request: Request) {
@@ -35,10 +37,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Topics are currently supported only for Telegram." }, { status: 400 });
     }
 
+    const compatibilityAssignments = query.kind === "groups" && query.workspaceId
+      ? await readLegacyAssignments(query.provider, query.accountId, query.workspaceId)
+      : undefined;
     const result = query.kind === "peers"
-      ? await listChannelPeers(query)
+      ? await listChannelPeers({ ...query, resolveBindings: true })
       : query.kind === "groups"
-        ? await listChannelGroups(query)
+        ? await listChannelGroups({ ...query, resolveBindings: true, compatibilityAssignments })
         : query.kind === "members"
           ? await listChannelGroupMembers({ ...query, groupId: query.groupId! })
           : await listTelegramTopics({
@@ -60,3 +65,10 @@ export async function GET(request: Request) {
   }
 }
 
+async function readLegacyAssignments(provider: string, accountId: string, workspaceId: string) {
+  const registry = await readChannelRegistry();
+  const channel = registry.channels.find((entry) =>
+    entry.type === provider && (entry.accountId?.trim() || entry.id) === accountId
+  );
+  return channel?.workspaces.find((binding) => binding.workspaceId === workspaceId)?.groupAssignments ?? [];
+}

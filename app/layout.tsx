@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 
 import { Toaster } from "@/components/ui/sonner";
 import { InstanceProtectionProvider } from "@/components/auth/instance-protection-provider";
+import { DesktopNativeTitlebar } from "@/components/desktop/native-titlebar";
 import { PwaServiceWorkerRegistration } from "@/components/pwa/pwa-service-worker-registration";
 import { WorkspaceCreationActivityIndicator } from "@/components/workspace-creation-activity-indicator";
 import { getInstanceProtectionStatus, INSTANCE_PROTECTION_COOKIE } from "@/lib/security/instance-protection";
@@ -114,6 +115,7 @@ export default async function RootLayout({
           <PwaServiceWorkerRegistration />
           <Toaster theme="system" richColors closeButton />
         </InstanceProtectionProvider>
+        <DesktopNativeTitlebar />
       </body>
     </html>
   );

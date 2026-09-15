@@ -3,12 +3,16 @@ import "server-only";
 import { runOpenClawJson } from "@/lib/openclaw/cli";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
+  readNativeRouteBindings,
+  resolveChannelRouteBinding
+} from "@/lib/openclaw/application/channel-route-binding-service";
+import {
   buildChannelRouteIdentity,
   normalizeChannelRouteKind,
   type ChannelRouteAccessPolicy,
   type ChannelRouteKind
 } from "@/lib/openclaw/domains/channel-center";
-import type { MissionControlSurfaceProvider } from "@/lib/openclaw/types";
+import type { MissionControlSurfaceProvider, WorkspaceChannelGroupAssignment } from "@/lib/openclaw/types";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
@@ -26,6 +30,9 @@ export type ChannelDirectoryEntry = {
   memberCount: number | null;
   rank: number | null;
   agentId: string | null;
+  bindingSource: "openclaw" | "agentos-compatibility" | null;
+  bindingMatch: "exact" | "fallback" | "none" | "conflict" | null;
+  bindingConflict: boolean;
   accessPolicy: ChannelRouteAccessPolicy | null;
 };
 
@@ -44,6 +51,8 @@ export type ChannelDirectoryListInput = {
   accountId?: string | null;
   query?: string | null;
   limit?: number | null;
+  resolveBindings?: boolean;
+  compatibilityAssignments?: WorkspaceChannelGroupAssignment[];
 };
 
 export type ChannelDirectoryMembersInput = ChannelDirectoryListInput & {
@@ -75,7 +84,8 @@ export async function listChannelPeers(
   input: ChannelDirectoryListInput,
   options: { timings?: TimingCollector } = {}
 ): Promise<ChannelDirectoryResult> {
-  return listDirectoryEntries("peers", input, options);
+  const result = await listDirectoryEntries("peers", input, options);
+  return input.resolveBindings ? enrichRouteBindings(result, input) : result;
 }
 
 export async function listChannelGroups(
@@ -85,18 +95,19 @@ export async function listChannelGroups(
   const result = await listDirectoryEntries("groups", input, options);
 
   if (result.status !== "unsupported" || input.provider !== "telegram") {
-    return result;
+    return input.resolveBindings ? enrichRouteBindings(result, input) : result;
   }
 
   const compatibility = await readTelegramGroupsFromConfig(input, options.timings);
   if (compatibility.entries.length > 0 || compatibility.status === "empty") {
-    return {
+    const resolved = {
       ...compatibility,
       fallbackReason: result.error ?? "OpenClaw directory groups are unsupported for this installed provider."
     };
+    return input.resolveBindings ? enrichRouteBindings(resolved, input) : resolved;
   }
 
-  return result;
+  return input.resolveBindings ? enrichRouteBindings(result, input) : result;
 }
 
 export async function listChannelGroupMembers(
@@ -366,6 +377,9 @@ function normalizeDirectoryEntry(
     memberCount: normalizeNumber(value.memberCount ?? value.membersCount ?? value.member_count),
     rank: input.rank,
     agentId: normalizeString(value.agentId ?? value.agent),
+    bindingSource: null,
+    bindingMatch: null,
+    bindingConflict: false,
     accessPolicy: normalizeAccessPolicy(value)
   };
 }
@@ -386,7 +400,64 @@ function normalizeTopicEntry(topicId: string, value: unknown, accountId: string,
     ...normalized,
     title: normalized.title ?? (topicId === "*" ? "All topics" : `Topic ${topicId}`),
     agentId: normalizeString(isRecord(value) ? value.agentId : null),
+    bindingSource: normalized.agentId ? "openclaw" : null,
+    bindingMatch: normalized.agentId ? "exact" : null,
+    bindingConflict: false,
     accessPolicy: isRecord(value) ? normalizeAccessPolicy(value) : normalized.accessPolicy
+  };
+}
+
+async function enrichRouteBindings(result: ChannelDirectoryResult, input: ChannelDirectoryListInput) {
+  if (!input.accountId || result.entries.length === 0) {
+    return result;
+  }
+
+  let snapshot: Awaited<ReturnType<typeof readNativeRouteBindings>>;
+  try {
+    snapshot = await readNativeRouteBindings(getOpenClawAdapter());
+  } catch {
+    // Directory data remains useful when the optional native binding projection is unavailable.
+    return result;
+  }
+
+  const compatibilityByRouteId = new Map(
+    (input.compatibilityAssignments ?? [])
+      .filter((assignment) => assignment.chatId.trim())
+      .map((assignment) => [assignment.chatId.trim(), assignment] as const)
+  );
+
+  return {
+    ...result,
+    entries: result.entries.map((entry) => {
+      const route = buildChannelRouteIdentity({
+        provider: result.provider,
+        accountId: entry.accountId,
+        kind: entry.kind,
+        routeId: entry.routeId,
+        parentRouteId: entry.parentRouteId
+      });
+      const legacyAssignment = compatibilityByRouteId.get(entry.routeId);
+      const resolution = resolveChannelRouteBinding(
+        route,
+        snapshot,
+        legacyAssignment
+          ? {
+              route,
+              agentId: legacyAssignment.agentId,
+              workspaceId: null,
+              source: "agentos-compatibility"
+            }
+          : null
+      );
+
+      return {
+        ...entry,
+        agentId: resolution.match === "conflict" ? null : resolution.agentId ?? entry.agentId,
+        bindingSource: resolution.source === "unknown" ? (entry.agentId ? "openclaw" : null) : resolution.source,
+        bindingMatch: resolution.match,
+        bindingConflict: Boolean(resolution.conflict)
+      };
+    })
   };
 }
 

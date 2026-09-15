@@ -71,7 +71,6 @@ import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import { resolveTaskWorkspaceId } from "@/components/mission-control/canvas.graph";
 import type { OptimisticMissionTask } from "@/components/mission-control/mission-control-shell.utils";
 import {
-  CanvasNativeTitlebar as MissionControlCanvasNativeTitlebar,
   CanvasTitlePill as MissionControlCanvasTitlePill,
   CanvasTopBar as MissionControlCanvasTopBar
 } from "@/components/mission-control/mission-control-shell.topbar";
@@ -4394,8 +4393,6 @@ export function MissionControlShell({
         <div className="mission-canvas-backdrop fixed inset-0 z-0">
           <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
         </div>
-        <MissionControlCanvasNativeTitlebar />
-
         <div
           className={cn(
             "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
@@ -4772,8 +4769,6 @@ export function MissionControlShell({
           />
         </div>
       </div>
-
-      <MissionControlCanvasNativeTitlebar />
 
       {!isFloatingHeaderHidden ? (
         <>

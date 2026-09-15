@@ -62,7 +62,16 @@ export async function PATCH(request: Request) {
       groupId: result.groupId,
       topicId: result.topicId,
       changedFields: result.changedFields,
-      restartRequired: result.restartRequired
+      configPath: result.configPath,
+      applyMode: result.applyMode,
+      reloadKind: result.reloadKind,
+      restartRequired: result.restartRequired,
+      hotReloaded: result.hotReloaded,
+      appliedVia: result.appliedVia,
+      pending: result.pending,
+      baseHash: result.baseHash,
+      changedPaths: result.changedPaths,
+      mutations: result.mutations
     }));
   } catch (error) {
     const message = error instanceof z.ZodError
@@ -71,4 +80,3 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
-

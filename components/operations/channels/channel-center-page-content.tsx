@@ -44,6 +44,9 @@ type DirectoryEntry = {
   handle: string | null;
   memberCount: number | null;
   agentId: string | null;
+  bindingSource: "openclaw" | "agentos-compatibility" | null;
+  bindingMatch: "exact" | "fallback" | "none" | "conflict" | null;
+  bindingConflict: boolean;
   accessPolicy: {
     enabled: boolean | null;
     groupPolicy: string | null;
@@ -60,15 +63,11 @@ type DirectoryResponse = {
   error: string | null;
 };
 
-const ACTION_PROVIDERS = new Set(["whatsapp", "telegram", "discord", "slack", "googlechat", "imessage", "signal"]);
-
 export function ChannelCenterPageContent({
-  snapshot,
   rootSnapshot,
   activeWorkspaceId,
   refresh,
 }: {
-  snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   refresh: () => Promise<void>;
@@ -115,12 +114,7 @@ export function ChannelCenterPageContent({
   const selectedGroup = groups.find((route) => route.routeId === selectedRouteId) ?? null;
   const selectedTopic = topics.find((route) => route.routeId === selectedTopicId) ?? null;
   const selectedRoute = selectedTopic ?? selectedGroup;
-  const workspaceChannel = findWorkspaceChannel(snapshot, activeWorkspaceId, selectedProvider?.id ?? null, selectedAccount?.accountId ?? null);
-  const workspaceBinding = workspaceChannel?.workspaces.find((binding) => binding.workspaceId === activeWorkspaceId) ?? null;
-  const currentAssignment = selectedGroup && workspaceBinding
-    ? workspaceBinding.groupAssignments.find((assignment) => assignment.chatId === selectedGroup.routeId) ?? null
-    : null;
-  const currentAgentId = selectedTopic?.agentId ?? currentAssignment?.agentId ?? selectedGroup?.agentId ?? null;
+  const currentAgentId = selectedTopic?.agentId ?? selectedGroup?.agentId ?? null;
 
   useEffect(() => {
     if (!selectedProviderId && providers[0]) setSelectedProviderId(providers[0].id);
@@ -149,7 +143,7 @@ export function ChannelCenterPageContent({
     setLoadingRoutes(true);
     setRouteError(null);
     try {
-      const payload = await readDirectory(selectedProvider.id, selectedAccount.accountId, "groups");
+      const payload = await readDirectory(selectedProvider.id, selectedAccount.accountId, "groups", undefined, activeWorkspaceId);
       setGroups(payload.entries);
       if (payload.status === "failed" || payload.status === "unsupported") {
         setRouteError(payload.error ?? payload.fallbackReason ?? "Groups are not available for this provider.");
@@ -161,7 +155,7 @@ export function ChannelCenterPageContent({
     } finally {
       setLoadingRoutes(false);
     }
-  }, [selectedAccount, selectedProvider]);
+  }, [activeWorkspaceId, selectedAccount, selectedProvider]);
 
   useEffect(() => {
     void loadRoutes();
@@ -174,7 +168,7 @@ export function ChannelCenterPageContent({
     }
     setLoadingTopics(true);
     try {
-      const payload = await readDirectory("telegram", selectedAccount.accountId, "topics", selectedGroup.routeId);
+      const payload = await readDirectory("telegram", selectedAccount.accountId, "topics", selectedGroup.routeId, activeWorkspaceId);
       setTopics(payload.entries);
       setSelectedTopicId((current) => payload.entries.some((entry) => entry.routeId === current) ? current : null);
     } catch {
@@ -182,14 +176,14 @@ export function ChannelCenterPageContent({
     } finally {
       setLoadingTopics(false);
     }
-  }, [selectedAccount, selectedGroup, selectedProvider?.id]);
+  }, [activeWorkspaceId, selectedAccount, selectedGroup, selectedProvider?.id]);
 
   useEffect(() => {
     void loadTopics();
   }, [loadTopics]);
 
   const runAccountAction = async (action: "start" | "stop" | "restart" | "logout") => {
-    if (!selectedProvider || !selectedAccount || !ACTION_PROVIDERS.has(selectedProvider.id)) return;
+    if (!selectedProvider || !selectedAccount || !canRunAccountAction(selectedProvider, action)) return;
     if (action === "logout" && !window.confirm(`Log out the ${selectedAccount.name} account from OpenClaw?`)) return;
     const key = `${action}:${selectedProvider.id}:${selectedAccount.accountId}`;
     setActionKey(key);
@@ -212,27 +206,30 @@ export function ChannelCenterPageContent({
   };
 
   const updateGroupAgent = async (agentId: string | null) => {
-    if (!selectedGroup || !workspaceChannel || !activeWorkspaceId || !workspaceBinding) {
-      toast.message("Attach this account to the selected workspace before assigning a group agent.");
+    if (!selectedGroup || !selectedProvider || !selectedAccount) {
+      toast.message("Select an account and route before assigning an agent.");
       return;
     }
-    const assignments = workspaceBinding.groupAssignments.filter((assignment) => assignment.chatId !== selectedGroup.routeId);
-    assignments.push({
-      chatId: selectedGroup.routeId,
-      title: selectedGroup.title,
-      agentId,
-      enabled: true
-    });
-    await runMutation(`/api/workspaces/${encodeURIComponent(activeWorkspaceId)}/channels`, {
-      channelId: workspaceChannel.id,
-      action: "groups",
-      groupAssignments: assignments
+    await runRouteBindingMutation({
+      provider: selectedProvider.id,
+      accountId: selectedAccount.accountId,
+      kind: "group",
+      routeId: selectedGroup.routeId,
+      parentRouteId: null,
+      agentId
     }, "Group agent updated.");
   };
 
   const updateTopicAgent = async (agentId: string | null) => {
     if (!selectedGroup || !selectedTopic || !selectedAccount) return;
-    await runPolicyMutation({ agentId }, "Topic agent updated.", selectedGroup.routeId, selectedTopic.routeId);
+    await runRouteBindingMutation({
+      provider: "telegram",
+      accountId: selectedAccount.accountId,
+      kind: "topic",
+      routeId: selectedTopic.routeId,
+      parentRouteId: selectedGroup.routeId,
+      agentId
+    }, "Topic agent updated.");
   };
 
   const runPolicyMutation = async (
@@ -249,6 +246,20 @@ export function ChannelCenterPageContent({
       topicId,
       patch
     }, successMessage, async () => {
+      await loadRoutes();
+      await loadTopics();
+    });
+  };
+
+  const runRouteBindingMutation = async (body: {
+    provider: string;
+    accountId: string;
+    kind: DirectoryEntry["kind"];
+    routeId: string;
+    parentRouteId: string | null;
+    agentId: string | null;
+  }, successMessage: string) => {
+    await runMutation("/api/openclaw/channels/route-binding", body, successMessage, async () => {
       await loadRoutes();
       await loadTopics();
     });
@@ -395,9 +406,9 @@ export function ChannelCenterPageContent({
   async function runMutation(url: string, body: Record<string, unknown>, successMessage: string, after?: () => Promise<void>) {
     try {
       const response = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const payload = await response.json() as { error?: string; restartRequired?: boolean };
+      const payload = await response.json() as { error?: string; applyMode?: string; pending?: boolean };
       if (!response.ok) throw new Error(payload.error ?? "The channel change could not be saved.");
-      toast.success(payload.restartRequired ? `${successMessage} Restart OpenClaw to apply routing changes.` : successMessage);
+      toast.success(successMessage, { description: describeMutationOutcome(payload.applyMode, payload.pending) });
       await after?.();
       await refresh();
     } catch (error) {
@@ -416,10 +427,13 @@ function ProviderCard({ provider, selected, onClick }: { provider: ChannelCenter
 }
 
 function AccountPanel({ provider, account, actionKey, onAction, onOpenControlUi }: { provider: ChannelCenterProvider; account: ChannelCenterProvider["accounts"][number]; actionKey: string | null; onAction: (action: "start" | "stop" | "restart" | "logout") => void; onOpenControlUi: () => void }) {
-  const canAct = ACTION_PROVIDERS.has(provider.id);
+  const canStart = provider.capabilities.supportsStart;
+  const canStop = provider.capabilities.supportsStop;
+  const canRestart = provider.capabilities.supportsRestart;
+  const canLogout = provider.capabilities.supportsLogout;
   return (
     <div className="rounded-xl border border-border bg-card/45 p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-foreground">{account.name}</h3><StatusBadge label={accountStatus(account)} tone={accountTone(account)} /></div><p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">{account.accountId}{account.isDefault ? " · default" : ""}</p></div><div className="flex flex-wrap gap-1.5"><Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}><ExternalLink className="mr-1 h-3 w-3" />Open Control UI</Button>{canAct && account.running ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : canAct ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={!canAct || Boolean(actionKey)}><LogOut className="mr-1 h-3 w-3" />Log out</Button></div></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-foreground">{account.name}</h3><StatusBadge label={accountStatus(account)} tone={accountTone(account)} /></div><p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">{account.accountId}{account.isDefault ? " · default" : ""}</p></div><div className="flex flex-wrap gap-1.5"><Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}><ExternalLink className="mr-1 h-3 w-3" />Open Control UI</Button>{account.running && canStop ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : !account.running && canStart ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}{canRestart ? <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("restart")} disabled={Boolean(actionKey)}><RefreshCw className="mr-1 h-3 w-3" />Restart</Button> : null}<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={!canLogout || Boolean(actionKey)}><LogOut className="mr-1 h-3 w-3" />Log out</Button></div></div>
       {account.lastError ? <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-2 text-xs text-destructive">{account.lastError}</div> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-3"><KeyValue label="Runtime" value={account.connected ? "Connected" : account.running ? "Running" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Authentication" value={account.authenticationRequired ? "Required" : account.linked ? "Linked" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Inventory" value={account.liveStatusAvailable ? "Gateway status" : "Config only"} /></div>
     </div>
@@ -451,19 +465,41 @@ function RouteDetail({ provider, accountId, group, topic, topics, loadingTopics,
   );
 }
 
-function findWorkspaceChannel(snapshot: MissionControlSnapshot, workspaceId: string | null, provider: string | null, accountId: string | null) {
-  if (!workspaceId || !provider || !accountId) return null;
-  const workspace = snapshot.workspaces.find((entry) => entry.id === workspaceId);
-  return workspace?.channels.find((channel) => channel.type === provider && channel.id === accountId) ?? null;
-}
-
-async function readDirectory(provider: string, accountId: string, kind: "groups" | "members" | "topics", groupId?: string): Promise<DirectoryResponse> {
+async function readDirectory(provider: string, accountId: string, kind: "groups" | "members" | "topics", groupId?: string, workspaceId?: string | null): Promise<DirectoryResponse> {
   const params = new URLSearchParams({ provider, accountId, kind });
   if (groupId) params.set("groupId", groupId);
+  if (workspaceId) params.set("workspaceId", workspaceId);
   const response = await fetch(`/api/openclaw/channels/directory?${params.toString()}`, { cache: "no-store" });
   const payload = await response.json() as DirectoryResponse & { error?: string };
   if (!response.ok && !payload.status) throw new Error(payload.error ?? "Channel routes are unavailable.");
   return payload;
+}
+
+function canRunAccountAction(provider: ChannelCenterProvider, action: "start" | "stop" | "restart" | "logout") {
+  switch (action) {
+    case "start":
+      return provider.capabilities.supportsStart;
+    case "stop":
+      return provider.capabilities.supportsStop;
+    case "restart":
+      return provider.capabilities.supportsRestart;
+    case "logout":
+      return provider.capabilities.supportsLogout;
+  }
+}
+
+function describeMutationOutcome(applyMode?: string, pending?: boolean) {
+  if (pending || applyMode === "pending") return "Saved and queued for OpenClaw to apply.";
+  switch (applyMode) {
+    case "live":
+      return "OpenClaw applied the change live.";
+    case "reload":
+      return "OpenClaw reloaded the affected configuration.";
+    case "restart":
+      return "OpenClaw reported that a restart is required.";
+    default:
+      return "OpenClaw accepted the change; apply status is not available.";
+  }
 }
 
 function providerStatus(provider: ChannelCenterProvider) {

@@ -29,7 +29,7 @@ export type ChannelAgentBinding = {
   route: ChannelRouteIdentity;
   agentId: string | null;
   workspaceId: string | null;
-  source: "openclaw" | "agentos-compatibility";
+  source: "openclaw" | "agentos-compatibility" | "unknown";
 };
 
 export type ChannelRoute = {
@@ -104,12 +104,16 @@ export function legacyAssignmentToRouteBinding(
   };
 }
 
-export function routeBindingToLegacyAssignment(binding: ChannelAgentBinding, title?: string | null) {
+export function routeBindingToLegacyAssignment(
+  binding: ChannelAgentBinding,
+  title?: string | null,
+  accessPolicy?: Pick<ChannelRouteAccessPolicy, "enabled"> | null
+) {
   return {
     chatId: binding.route.routeId,
     agentId: binding.agentId,
     title: title ?? null,
-    enabled: binding.agentId !== null
+    // Compatibility projection only. Routing state must never determine access state.
+    enabled: accessPolicy?.enabled ?? true
   } satisfies WorkspaceChannelGroupAssignment;
 }
-

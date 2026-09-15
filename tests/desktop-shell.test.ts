@@ -59,24 +59,29 @@ test("desktop shell uses native macOS overlay titlebar without replacing traffic
 });
 
 test("declared drag regions stay on shell surfaces instead of the sidebar controls", async () => {
-  const [topbar, shell, onboarding, sidebar] = await Promise.all([
+  const [layout, nativeTitlebar, topbar, shell, onboarding, sidebar] = await Promise.all([
+    readFile(join(repoRoot, "app/layout.tsx"), "utf8"),
+    readFile(join(repoRoot, "components/desktop/native-titlebar.tsx"), "utf8"),
     readFile(join(repoRoot, "components/mission-control/mission-control-shell.topbar.tsx"), "utf8"),
     readFile(join(repoRoot, "components/mission-control/mission-control-shell.tsx"), "utf8"),
     readFile(join(repoRoot, "components/mission-control/openclaw-onboarding.tsx"), "utf8"),
     readFile(join(repoRoot, "components/mission-control/sidebar.tsx"), "utf8")
   ]);
 
+  assert.match(layout, /DesktopNativeTitlebar/);
+  assert.match(nativeTitlebar, /data-tauri-drag-region="deep"/);
+  assert.match(nativeTitlebar, /agentos-native-drag-strip[\s\S]*fixed[\s\S]*z-20[\s\S]*h-8/);
   assert.match(topbar, /data-tauri-drag-region="deep"/);
   assert.match(topbar, /data-tauri-drag-region="false"/);
-  assert.match(topbar, /agentos-native-drag-strip[\s\S]*z-20[\s\S]*h-8/);
-  assert.doesNotMatch(topbar, /z-\[55\]/);
+  assert.doesNotMatch(topbar, /agentos-native-drag-strip/);
   assert.match(shell, /data-tauri-drag-region="deep"[\s\S]*h-11/);
   assert.match(shell, /data-tauri-drag-region="deep"/);
   assert.match(shell, /const isFloatingHeaderHidden =/);
   assert.match(shell, /!isFloatingHeaderHidden/);
   assert.match(shell, /z-\[60\][\s\S]*lg:left-\[316px\][\s\S]*lg:left-\[80px\]/);
   assert.match(onboarding, /data-tauri-drag-region="deep"/);
-  assert.match(sidebar, /agentos-sidebar-surface relative flex h-full w-full flex-col overflow-hidden/);
+  assert.match(sidebar, /agentos-sidebar-surface relative flex h-full min-h-0 flex-col px-4 py-5/);
+  assert.match(sidebar, /agentos-sidebar-surface relative flex h-full w-full flex-col items-center/);
   assert.match(onboarding, /agentos-titlebar-surface/);
   assert.doesNotMatch(sidebar, /data-tauri-drag-region/);
 });

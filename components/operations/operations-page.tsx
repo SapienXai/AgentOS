@@ -116,7 +116,6 @@ export function OperationsPage({
         if (page === "channels") {
           return (
             <ChannelCenterPageContent
-              snapshot={context.snapshot}
               rootSnapshot={context.rootSnapshot}
               activeWorkspaceId={context.activeWorkspaceId}
               refresh={context.refresh}

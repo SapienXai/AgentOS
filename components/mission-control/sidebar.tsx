@@ -651,7 +651,7 @@ export function MissionSidebar({
       ) : (
         <aside
           className={cn(
-            "agentos-sidebar-surface relative flex h-full w-full flex-col overflow-hidden border-r border-border text-card-foreground shadow-panel",
+            "relative flex h-full w-full flex-col overflow-hidden border-r border-border text-card-foreground shadow-panel",
             surfaceTheme === "light" ? "bg-[#fbf7f3] lg:bg-card" : "bg-card"
           )}
         >
@@ -661,7 +661,7 @@ export function MissionSidebar({
           />
           <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border" />
 
-          <div className="relative flex h-full min-h-0 flex-col px-4 py-5">
+          <div className="agentos-sidebar-surface relative flex h-full min-h-0 flex-col px-4 py-5">
             <div className="shrink-0">
               <SidebarBrand
                 pinned={sidebarPinned}
