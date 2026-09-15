@@ -1,13 +1,9 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
-import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { AlertTriangle, KeyRound } from "lucide-react";
 
 import { AccountsSurfaceSection } from "@/components/mission-control/accounts-surface-section";
-import { SurfaceIcon } from "@/components/mission-control/surface-icon";
-import { useWorkspaceAccountAccess } from "@/components/mission-control/use-workspace-account-access";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,161 +14,26 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import {
-  getWorkspaceChannels,
-  removeSnapshotChannelAccount,
-  replaceSnapshotChannelRegistry,
-  upsertSnapshotChannelAccount
-} from "@/lib/openclaw/channel-bindings";
-import {
-  buildSurfaceCatalogEntries,
-  getSurfaceCatalogEntry,
-  sortSurfaceAccounts,
-  type SurfaceProvisionField
-} from "@/lib/openclaw/surface-catalog";
-import {
-  buildEmptyProvisionDraft,
-  buildProvisionConfig,
-  getProvisionConfigPath,
-  getProvisionDraftText,
-  isProvisionFieldSatisfied
-} from "@/lib/openclaw/surface-provision";
-import {
-  resolveGatewayAuthRepairAction,
-  type GatewayAuthRepairAction
-} from "@/lib/openclaw/gateway-auth-actions";
-import {
-  formatGatewayConfigRateLimitMessage,
-  isGatewayConfigRateLimitMessage
-} from "@/lib/openclaw/gateway-config-errors";
-import {
-  buildFallbackGatewayRepairAction,
-  filterWorkspaceDriftIssues,
-  formatSurfaceAccountStatus,
-  formatSurfaceDriftIssueDetail,
-  formatSurfaceDriftKind,
-  formatSurfaceDriftSummary,
-  formatSurfaceKindLabel,
-  formatSurfaceProviderLabelFromCatalog,
-  formatSurfaceRuntimeSource,
-  getSurfaceAccountRuntime,
-  getSurfaceRuntimeBadgeClass,
-  isGatewayRecoveryCandidate,
-  mergeRuntimeSurfaceAccounts,
-  readSurfaceErrorMessage,
-  summarizeSurfaceDriftIssues,
-  toLegacySurfaceId
-} from "@/components/mission-control/workspace-channels-dialog.utils";
-import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
-import type {
-  ChannelAccountRecord,
-  MissionControlSnapshot,
-  MissionControlSurfaceKind,
-  MissionControlSurfaceProvider,
-  SurfaceBindingRepairResult
-} from "@/lib/agentos/contracts";
-import type {
-  WorkspaceChannelSetupAction,
-  WorkspaceChannelSetupItem,
-  WorkspaceChannelSetupProjection
-} from "@/lib/openclaw/domains/workspace-channel-setup";
+import { useWorkspaceAccountAccess } from "@/components/mission-control/use-workspace-account-access";
+import type { MissionControlSnapshot, SurfaceBindingRepairResult } from "@/lib/agentos/contracts";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
-import { cn } from "@/lib/utils";
 
-type ChannelMutationResult = {
-  error?: string;
-  registry?: MissionControlSnapshot["channelRegistry"];
-  account?: MissionControlSnapshot["channelAccounts"][number];
-  snapshot?: MissionControlSnapshot;
-};
-
-type SurfaceReconcileResult = {
-  error?: string;
-  repair?: SurfaceBindingRepairResult;
-  snapshot?: MissionControlSnapshot;
-};
-
-type GatewayAuthStatusResult = {
-  authStatus?: {
-    native?: {
-      ok?: boolean;
-      issue?: string | null;
-    };
-    recommendation?: string | null;
-  };
-  error?: string;
-};
-
-type WorkspaceChannelSetupResponse = WorkspaceChannelSetupProjection & {
-  workspaceId: string;
-  workspaceName: string;
-  plugin?: {
-    restarted?: boolean;
-    restartError?: string | null;
-  };
-  login?: {
-    connected?: boolean;
-    qrDataUrl?: string;
-    message?: string;
-  };
-  setup?: WorkspaceChannelSetupResponse;
-  error?: string;
-};
-
-const SURFACE_KIND_ORDER: MissionControlSurfaceKind[] = ["chat", "inbox", "trigger"];
-// Workspace-specific channel management is intentionally routed to Channel Center.
-// Keep the old surface code only as a compatibility shell until its callers are removed.
-const LEGACY_SURFACE_MANAGEMENT_ENABLED = false;
-export type WorkspaceDialogSection = "surfaces" | "accounts";
-type WorkspaceDialogThemeStyle = CSSProperties & Record<`--wi-${string}`, string>;
-
-const workspaceDialogThemeStyles: Record<"dark" | "light", WorkspaceDialogThemeStyle> = {
-  dark: {
-    "--wi-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.16), transparent 30%), linear-gradient(135deg, rgba(16,20,31,0.99), rgba(8,11,19,0.99) 66%)",
-    "--wi-panel": "rgba(255,255,255,0.045)",
-    "--wi-panel-strong": "rgba(2,6,23,0.62)",
-    "--wi-panel-hover": "rgba(255,255,255,0.085)",
-    "--wi-border": "rgba(255,255,255,0.11)",
-    "--wi-border-subtle": "rgba(255,255,255,0.07)",
-    "--wi-text-strong": "#f8fafc",
-    "--wi-text": "#dbe4f0",
-    "--wi-text-muted": "#9ba9ba",
-    "--wi-accent": "#c4b5fd",
-    "--wi-accent-soft": "rgba(139,92,246,0.17)"
-  },
-  light: {
-    "--wi-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.1), transparent 32%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 66%)",
-    "--wi-panel": "rgba(255,255,255,0.72)",
-    "--wi-panel-strong": "rgba(255,255,255,0.92)",
-    "--wi-panel-hover": "rgba(109,40,217,0.09)",
-    "--wi-border": "rgba(91,70,57,0.2)",
-    "--wi-border-subtle": "rgba(91,70,57,0.13)",
-    "--wi-text-strong": "#241b16",
-    "--wi-text": "#493a31",
-    "--wi-text-muted": "#736258",
-    "--wi-accent": "#6d28d9",
-    "--wi-accent-soft": "rgba(109,40,217,0.1)"
-  }
-};
-
+/**
+ * Workspace account access remains useful for browser-profile permissions.
+ * Channel connections intentionally live in AgentConnectionsDialog instead of
+ * keeping a disabled workspace routing surface alive here.
+ */
 export function WorkspaceChannelsDialog({
   snapshot,
   workspaceId,
   accountTargets = [],
   accountAccessRules = [],
   initialAgentId = null,
-  initialSection = "surfaces",
   open,
-  initialProvider = null,
   onOpenChange,
   onRefresh,
-  onSnapshotChange,
   onAccountAccessRulesChange,
   onAccountTargetsChange,
   onConnectAccount,
@@ -183,12 +44,9 @@ export function WorkspaceChannelsDialog({
   accountTargets?: AccountLoginTargetView[];
   accountAccessRules?: AccountAccessRuleView[];
   initialAgentId?: string | null;
-  initialSection?: WorkspaceDialogSection;
   open: boolean;
-  initialProvider?: MissionControlSurfaceProvider | null;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void>;
-  onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAccountAccessRulesChange?: (rules: AccountAccessRuleView[]) => void;
   onAccountTargetsChange?: (targets: AccountLoginTargetView[]) => void;
   onConnectAccount?: () => void;
@@ -202,135 +60,12 @@ export function WorkspaceChannelsDialog({
     () => snapshot.agents.filter((agent) => agent.workspaceId === workspace?.id),
     [snapshot.agents, workspace?.id]
   );
-  const workspaceSurfaces = useMemo(
-    () => (workspace ? getWorkspaceChannels(snapshot, workspace.id) : []),
-    [snapshot, workspace]
-  );
-  const allAccounts = useMemo(() => sortSurfaceAccounts(snapshot.channelAccounts), [snapshot.channelAccounts]);
-  const surfaceCatalogEntries = useMemo(
-    () =>
-      buildSurfaceCatalogEntries({
-        channelAccounts: allAccounts,
-        surfaceRuntime: snapshot.surfaceRuntime
-      }),
-    [allAccounts, snapshot.surfaceRuntime]
-  );
-  const surfaceCatalogByProvider = useMemo(
-    () => new Map(surfaceCatalogEntries.map((entry) => [entry.provider, entry] as const)),
-    [surfaceCatalogEntries]
-  );
-  const availableKinds = useMemo(() => {
-    const catalogKinds = new Set(surfaceCatalogEntries.map((entry) => entry.kind));
-    return SURFACE_KIND_ORDER.filter((kind) => catalogKinds.has(kind));
-  }, [surfaceCatalogEntries]);
-
-  const [activeSection, setActiveSection] = useState<WorkspaceDialogSection>("surfaces");
-  const [activeKind, setActiveKind] = useState<MissionControlSurfaceKind>("chat");
-  const [activeProvider, setActiveProvider] = useState<MissionControlSurfaceProvider>("telegram");
   const [isSaving, setIsSaving] = useState(false);
-  const [savingMessage, setSavingMessage] = useState<string | null>(null);
-  const [newPrimaryAgentId, setNewPrimaryAgentId] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<ChannelAccountRecord | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [repairPreview, setRepairPreview] = useState<SurfaceBindingRepairResult | null>(null);
-  const [provisionDraft, setProvisionDraft] = useState<Record<string, string | boolean>>(
-    buildEmptyProvisionDraft(getSurfaceCatalogEntry(activeProvider))
-  );
-  const [workspaceSetup, setWorkspaceSetup] = useState<WorkspaceChannelSetupResponse | null>(null);
-  const [workspaceSetupError, setWorkspaceSetupError] = useState<string | null>(null);
-  const [workspaceSetupLoading, setWorkspaceSetupLoading] = useState(false);
-  const [workspaceSetupBusy, setWorkspaceSetupBusy] = useState<WorkspaceChannelSetupAction | null>(null);
-  const [workspaceSetupQr, setWorkspaceSetupQr] = useState<{ item: WorkspaceChannelSetupItem; dataUrl: string } | null>(null);
-  const [workspaceSetupQrMessage, setWorkspaceSetupQrMessage] = useState<string | null>(null);
-  const beginSaving = useCallback((message: string) => {
-    setIsSaving(true);
-    setSavingMessage(message);
-  }, []);
-  const endSaving = useCallback(() => {
-    setIsSaving(false);
-    setSavingMessage(null);
-  }, []);
+  const [repairBusy, setRepairBusy] = useState(false);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    setActiveSection(initialSection);
-  }, [initialSection, open]);
-
-  useEffect(() => {
-    if (!open || !initialProvider) {
-      return;
-    }
-
-    const entry = surfaceCatalogByProvider.get(initialProvider) ?? getSurfaceCatalogEntry(initialProvider);
-    setActiveKind(entry.kind);
-    setActiveProvider(initialProvider);
-    setProvisionDraft(buildEmptyProvisionDraft(entry));
-  }, [initialProvider, open, surfaceCatalogByProvider]);
-
-  const providerAccounts = useMemo(
-    () =>
-      mergeRuntimeSurfaceAccounts(
-        allAccounts.filter((account) => account.type === activeProvider),
-        Object.values(snapshot.surfaceRuntime.accountsByProvider[activeProvider] ?? {})
-      ),
-    [activeProvider, allAccounts, snapshot.surfaceRuntime.accountsByProvider]
-  );
-  const providerWorkspaceSurfaces = useMemo(
-    () => workspaceSurfaces.filter((surface) => surface.type === activeProvider),
-    [activeProvider, workspaceSurfaces]
-  );
-  const currentCatalogEntry = useMemo(
-    () => surfaceCatalogByProvider.get(activeProvider) ?? getSurfaceCatalogEntry(activeProvider),
-    [activeProvider, surfaceCatalogByProvider]
-  );
-  const surfaceGatewayAccess = snapshot.surfaceRuntime.gatewayAccess;
-  const loadWorkspaceSetup = useCallback(async () => {
-    if (!workspace?.id) {
-      setWorkspaceSetup(null);
-      return;
-    }
-
-    setWorkspaceSetupLoading(true);
-    setWorkspaceSetupError(null);
-    try {
-      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/setup`, {
-        cache: "no-store"
-      });
-      const result = (await response.json()) as WorkspaceChannelSetupResponse;
-      if (!response.ok || result.error) {
-        throw new Error(result.error || "Workspace channel setup could not be loaded.");
-      }
-      setWorkspaceSetup(result);
-    } catch (error) {
-      setWorkspaceSetupError(error instanceof Error ? error.message : "Workspace channel setup could not be loaded.");
-    } finally {
-      setWorkspaceSetupLoading(false);
-    }
-  }, [workspace?.id]);
-  const workspaceDriftIssues = useMemo(
-    () => filterWorkspaceDriftIssues(snapshot.surfaceDrift.issues, workspace?.id ?? null),
-    [snapshot.surfaceDrift.issues, workspace?.id]
-  );
-  const workspaceDriftSummary = useMemo(
-    () => summarizeSurfaceDriftIssues(workspaceDriftIssues),
-    [workspaceDriftIssues]
-  );
-  const activeProviderDriftIssues = useMemo(
-    () => workspaceDriftIssues.filter((issue) => issue.provider === activeProvider),
-    [activeProvider, workspaceDriftIssues]
-  );
-  const basicProvisionFields = currentCatalogEntry.provisionFields.filter((field) => field.section !== "advanced");
-  const advancedProvisionFields = currentCatalogEntry.provisionFields.filter((field) => field.section === "advanced");
-  const isLinkedAccountId = useCallback(
-    (accountId: string) =>
-      providerWorkspaceSurfaces.some(
-        (surface) => surface.id === accountId || surface.id === toLegacySurfaceId(accountId)
-      ),
-    [providerWorkspaceSurfaces]
-  );
+  const beginSaving = useCallback(() => setIsSaving(true), []);
+  const endSaving = useCallback(() => setIsSaving(false), []);
   const {
     accountRulesByTargetId,
     refreshAccounts,
@@ -350,562 +85,65 @@ export function WorkspaceChannelsDialog({
     onAccountAccessRulesChange,
     onAccountTargetsChange
   });
-  const resolveAgentDisplayName = useCallback(
-    (agentId: string | null | undefined, fallback = "Unset") => {
-      if (!agentId) {
-        return fallback;
-      }
 
-      return formatAgentDisplayName(snapshot.agents.find((agent) => agent.id === agentId) ?? { name: agentId });
-    },
-    [snapshot.agents]
-  );
-  const providerOptions = useMemo(() => {
-    return surfaceCatalogEntries.filter((entry) => entry.kind === activeKind).map((entry) => entry.provider);
-  }, [activeKind, surfaceCatalogEntries]);
+  const handleRefreshAccounts = useCallback(async () => {
+    beginSaving();
+    try {
+      await refreshAccounts();
+      await onRefresh();
+    } catch (error) {
+      toast.error("Accounts refresh failed.", {
+        description: error instanceof Error ? error.message : "Account access could not be refreshed."
+      });
+    } finally {
+      endSaving();
+    }
+  }, [beginSaving, endSaving, onRefresh, refreshAccounts]);
 
-  useEffect(() => {
-    if (!open) {
-      setIsSaving(false);
-      setSavingMessage(null);
-      setDeleteTarget(null);
-      setDeleteConfirmText("");
-      setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
-      setRepairPreview(null);
-      setWorkspaceSetup(null);
-      setWorkspaceSetupError(null);
-      setWorkspaceSetupLoading(false);
-      setWorkspaceSetupBusy(null);
-      setWorkspaceSetupQr(null);
-      setWorkspaceSetupQrMessage(null);
+  const handleConnectAccount = useCallback(() => {
+    if (onConnectAccount) {
+      onConnectAccount();
       return;
     }
 
-    if (!newPrimaryAgentId) {
-      setNewPrimaryAgentId(initialAgentId ?? workspaceAgents[0]?.id ?? "");
-    }
-
-  }, [currentCatalogEntry, initialAgentId, newPrimaryAgentId, open, workspaceAgents]);
-
-  useEffect(() => {
-    if (!LEGACY_SURFACE_MANAGEMENT_ENABLED || !open || !workspace?.id) {
-      return;
-    }
-
-    void loadWorkspaceSetup();
-  }, [loadWorkspaceSetup, open, workspace?.id]);
-
-  useEffect(() => {
-    setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
-  }, [currentCatalogEntry]);
-
-  useEffect(() => {
-    if (!providerOptions.includes(activeProvider)) {
-      setActiveProvider(providerOptions[0] ?? "telegram");
-    }
-  }, [activeProvider, providerOptions]);
-
-  const postWorkspaceSurface = async (payload: Record<string, unknown>) => {
-    if (!workspace) {
-      throw new Error("Workspace was not found.");
-    }
-
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/channels`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
+    toast.info("Account setup is unavailable.", {
+      description: "Choose a workspace account setup action from the Accounts page."
     });
+  }, [onConnectAccount]);
 
-    const result = (await response.json()) as ChannelMutationResult;
-    if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this integration right now.");
-    }
-
-    return result;
-  };
-
-  const postWorkspaceSetup = async (payload: Record<string, unknown>) => {
-    if (!workspace) {
-      throw new Error("Workspace was not found.");
-    }
-
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/setup`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    const result = (await response.json()) as WorkspaceChannelSetupResponse;
-    if (!response.ok || result.error) {
-      throw new Error(result.error || "Workspace channel setup could not be updated.");
-    }
-
-    const nextSetup = result.setup ?? result;
-    if (Array.isArray(nextSetup.items)) {
-      setWorkspaceSetup(nextSetup);
-    }
-    return result;
-  };
-
-  const waitForWorkspaceWhatsAppLogin = async () => {
-    if (!workspaceSetupQr || !workspace) {
-      return;
-    }
-
-    setWorkspaceSetupBusy("authenticate");
+  const handleRepairSurfaceDrift = useCallback(async () => {
+    if (!workspace) return;
+    setRepairBusy(true);
     try {
-      const result = await postWorkspaceSetup({
-        action: "login-wait",
-        provider: "whatsapp",
-        declarationId: workspaceSetupQr.item.declarationId,
-        accountId: workspaceSetupQr.item.accountId,
-        currentQrDataUrl: workspaceSetupQr.dataUrl
-      });
-      const login = result.login;
-      if (login?.qrDataUrl) {
-        setWorkspaceSetupQr((current) => current ? { ...current, dataUrl: login.qrDataUrl! } : current);
-      }
-      setWorkspaceSetupQrMessage(login?.message ?? null);
-      if (login?.connected) {
-        setWorkspaceSetupQr(null);
-        toast.success("WhatsApp linked by OpenClaw.", {
-          description: "Choose the verified account below to bind it to this workspace."
-        });
-      }
-    } catch (error) {
-      toast.error("WhatsApp setup failed.", {
-        description: error instanceof Error ? error.message : "OpenClaw could not complete QR login."
-      });
-    } finally {
-      setWorkspaceSetupBusy(null);
-    }
-  };
-
-  const handleWorkspaceSetupAction = async (item: WorkspaceChannelSetupItem) => {
-    if (!workspace || item.action === "none") {
-      return;
-    }
-
-    const catalogEntry = surfaceCatalogByProvider.get(item.provider) ?? getSurfaceCatalogEntry(item.provider);
-    setActiveSection("surfaces");
-    setActiveKind(catalogEntry.kind);
-    setActiveProvider(item.provider);
-
-    if (item.action === "configure" || item.action === "select-account") {
-      window.setTimeout(() => document.getElementById("workspace-channel-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-      return;
-    }
-
-    if (item.action === "retry") {
-      await loadWorkspaceSetup();
-      return;
-    }
-
-    if (item.action === "authenticate") {
-      setWorkspaceSetupBusy("authenticate");
-      setWorkspaceSetupQrMessage(null);
-      try {
-        const result = await postWorkspaceSetup({
-          action: "login-start",
-          provider: "whatsapp",
-          declarationId: item.declarationId,
-          accountId: item.accountId
-        });
-        if (result.login?.qrDataUrl) {
-          setWorkspaceSetupQr({ item, dataUrl: result.login.qrDataUrl });
-        }
-        setWorkspaceSetupQrMessage(result.login?.message ?? null);
-      } catch (error) {
-        toast.error("WhatsApp setup failed.", {
-          description: error instanceof Error ? error.message : "OpenClaw could not start QR login."
-        });
-      } finally {
-        setWorkspaceSetupBusy(null);
-      }
-      return;
-    }
-
-    if (item.action === "install-plugin") {
-      setWorkspaceSetupBusy("install-plugin");
-      try {
-        const result = await postWorkspaceSetup({
-          action: "install-plugin",
-          provider: item.provider,
-          declarationId: item.declarationId
-        });
-        await onRefresh().catch(() => {});
-        if (result.plugin?.restartError) {
-          toast.warning(`${item.label} plugin installed; restart still required.`, {
-            description: result.plugin.restartError
-          });
-        } else {
-          toast.success(`${item.label} plugin is ready.`);
-        }
-      } catch (error) {
-        toast.error("Channel plugin setup failed.", {
-          description: error instanceof Error ? error.message : "OpenClaw could not install this channel plugin."
-        });
-      } finally {
-        setWorkspaceSetupBusy(null);
-      }
-      return;
-    }
-
-    const accountId = item.accountId ?? (item.accountIds.length === 1 ? item.accountIds[0] : null);
-    if (!accountId) {
-      window.setTimeout(() => document.getElementById("workspace-channel-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-      toast.message("Choose an OpenClaw account", {
-        description: "AgentOS will not select between multiple native accounts automatically."
-      });
-      return;
-    }
-
-    setWorkspaceSetupBusy(item.action);
-    try {
-      await postWorkspaceSetup({
-        action: item.action,
-        provider: item.provider,
-        declarationId: item.declarationId,
-        accountId
-      });
-      await onRefresh().catch(() => {});
-      toast.success(item.action === "bind" ? "Channel bound to this workspace." : "OpenClaw channel setup updated.");
-    } catch (error) {
-      toast.error("Workspace channel setup failed.", {
-        description: error instanceof Error ? error.message : "OpenClaw could not update this channel."
-      });
-    } finally {
-      setWorkspaceSetupBusy(null);
-    }
-  };
-
-  const deleteWorkspaceSurface = async (payload: Record<string, unknown>) => {
-    if (!workspace) {
-      throw new Error("Workspace was not found.");
-    }
-
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/channels`, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const result = (await response.json()) as ChannelMutationResult;
-    if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this integration right now.");
-    }
-
-    return result;
-  };
-
-  const applyRegistryUpdate = (result: ChannelMutationResult) => {
-    if (!result.registry || !onSnapshotChange) {
-      return;
-    }
-
-    onSnapshotChange((current) => {
-      let next = replaceSnapshotChannelRegistry(current, result.registry!);
-      if (result.account) {
-        next = upsertSnapshotChannelAccount(next, result.account);
-      }
-      return next;
-    });
-  };
-
-  const resolveSurfaceGatewayRepairAction = async (message: string) => {
-    const directAction = resolveGatewayAuthRepairAction(message);
-    if (directAction) {
-      return directAction;
-    }
-
-    if (!isGatewayRecoveryCandidate(message)) {
-      return null;
-    }
-
-    try {
-      const response = await fetch("/api/settings/gateway", {
-        method: "GET"
-      });
-      const result = (await response.json().catch(() => null)) as GatewayAuthStatusResult | null;
-      const nativeIssue = result?.authStatus?.native?.issue ?? null;
-      const recommendation = result?.authStatus?.recommendation ?? null;
-
-      return resolveGatewayAuthRepairAction([message, nativeIssue, recommendation].filter(Boolean).join("\n"));
-    } catch {
-      return null;
-    }
-  };
-
-  const repairGatewayAccessAndRetry = async (
-    action: GatewayAuthRepairAction,
-    retry: () => Promise<void>,
-    scopes: string[] = ["operator.admin"]
-  ) => {
-    beginSaving(`${action.label} repair...`);
-
-    try {
-      const response = await fetch("/api/settings/gateway", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ action: action.apiAction, scopes })
-      });
-      const result = (await response.json().catch(() => null)) as GatewayAuthStatusResult | null;
-
-      if (!response.ok) {
-        throw new Error(result?.error || "Gateway access could not be repaired.");
-      }
-
-      if (result?.authStatus?.native && result.authStatus.native.ok === false) {
-        throw new Error(result.authStatus.native.issue || "Gateway access still needs attention.");
-      }
-
-      toast.success(`${action.label} repaired.`, {
-        description: "Retrying the integration operation."
-      });
-      await onRefresh().catch(() => undefined);
-      await retry();
-    } catch (error) {
-      toast.error("Gateway repair failed.", {
-        description: error instanceof Error ? error.message : "Unable to repair Gateway access."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const showSurfaceMutationError = async (
-    title: string,
-    error: unknown,
-    retry?: () => Promise<void>,
-    repairScopes: string[] = ["operator.admin"]
-  ) => {
-    const message = readSurfaceErrorMessage(error);
-
-    if (isGatewayConfigRateLimitMessage(message) && retry) {
-      toast.error(title, {
-        description: formatGatewayConfigRateLimitMessage(message, "the integration operation"),
-        duration: 12_000,
-        action: {
-          label: "Retry",
-          onClick: () => void retry()
-        }
-      });
-      return;
-    }
-
-    const repairAction =
-      (await resolveSurfaceGatewayRepairAction(message)) ??
-      (isGatewayRecoveryCandidate(message) ? buildFallbackGatewayRepairAction() : null);
-
-    if (repairAction && retry) {
-      toast.error(title, {
-        description: `${message} ${repairAction.detail}`,
-        duration: 12_000,
-        action: {
-          label: "Repair & retry",
-          onClick: () => void repairGatewayAccessAndRetry(repairAction, retry, repairScopes)
-        }
-      });
-      return;
-    }
-
-    if (isGatewayRecoveryCandidate(message) && retry) {
-      toast.error(title, {
-        description: `${message} Wait for the OpenClaw Gateway to finish restarting, then retry.`,
-        duration: 10_000,
-        action: {
-          label: "Retry",
-          onClick: () => void retry()
-        }
-      });
-      return;
-    }
-
-    toast.error(title, {
-      description: message
-    });
-  };
-
-  const handleAttachExisting = async (account: ChannelAccountRecord) => {
-    if (!workspace) {
-      return;
-    }
-
-    beginSaving(`Connecting ${account.name}...`);
-
-    try {
-      const result = await postWorkspaceSurface({
-        channelId: account.id,
-        type: activeProvider,
-        name: account.name,
-        workspacePath: workspace.path,
-        primaryAgentId: newPrimaryAgentId || null,
-        agentId: newPrimaryAgentId || undefined
-      });
-      applyRegistryUpdate(result);
-      toast.success(`${getSurfaceCatalogEntry(activeProvider).label} connected to this workspace.`);
-      void onRefresh().catch(() => {});
-      void loadWorkspaceSetup();
-    } catch (error) {
-      await showSurfaceMutationError("Integration connection failed.", error, () => handleAttachExisting(account));
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleProvisionSurface = async () => {
-    if (!workspace) {
-      return;
-    }
-
-    if (!getProvisionDraftText(provisionDraft, "name").trim()) {
-      toast.error("An integration name is required.");
-      return;
-    }
-
-    beginSaving(`Provisioning ${currentCatalogEntry.label}...`);
-
-    try {
-      const config = buildProvisionConfig(currentCatalogEntry.provisionFields, provisionDraft);
-      const payload: Record<string, unknown> = {
-        type: activeProvider,
-        name: getProvisionDraftText(provisionDraft, "name").trim(),
-        workspacePath: workspace.path,
-        config,
-        primaryAgentId: newPrimaryAgentId || null,
-        agentId: newPrimaryAgentId || undefined
-      };
-
-      for (const field of currentCatalogEntry.provisionFields) {
-        if (field.key === "token" && typeof config.token === "string") {
-          payload.token = config.token;
-        }
-
-        if (field.key === "botToken" && typeof config.botToken === "string") {
-          payload.botToken = config.botToken;
-        }
-
-        if (field.key === "appToken" && typeof config.appToken === "string") {
-          payload.appToken = config.appToken;
-        }
-
-        if (field.key === "webhookUrl" && typeof config.webhookUrl === "string") {
-          payload.webhookUrl = config.webhookUrl;
-        }
-      }
-
-      const result = await postWorkspaceSurface(payload);
-      applyRegistryUpdate(result);
-      setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
-      toast.success(`${currentCatalogEntry.label} provisioned and connected.`);
-      void onRefresh().catch(() => {});
-      void loadWorkspaceSetup();
-    } catch (error) {
-      await showSurfaceMutationError("Integration provisioning failed.", error, handleProvisionSurface);
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleDisconnectSurface = async (surfaceId: string) => {
-    beginSaving("Disconnecting integration from workspace...");
-
-    try {
-      const result = await deleteWorkspaceSurface({ channelId: surfaceId });
-      applyRegistryUpdate(result);
-      toast.success("Integration disconnected from this workspace.");
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Integration disconnect failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleDeleteAccountEverywhere = async () => {
-    if (!deleteTarget) {
-      return;
-    }
-
-    beginSaving(`Deleting ${deleteTarget.name} from OpenClaw...`);
-
-    try {
-      const result = await deleteWorkspaceSurface({
-        channelId: deleteTarget.id,
-        scope: "global"
-      });
-      if (result.registry && onSnapshotChange) {
-        onSnapshotChange((current) =>
-          removeSnapshotChannelAccount(replaceSnapshotChannelRegistry(current, result.registry!), deleteTarget.id)
-        );
-      }
-      setDeleteTarget(null);
-      setDeleteConfirmText("");
-      toast.success("Integration account deleted everywhere.");
-      void onRefresh().catch(() => {});
-    } catch (error) {
-      toast.error("Integration deletion failed.", {
-        description: error instanceof Error ? error.message : "Unknown integration error."
-      });
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleRepairSurfaceDrift = async () => {
-    if (!workspace) {
-      return;
-    }
-
-    beginSaving("Previewing OpenClaw binding repair...");
-
-    try {
-      const previewResponse = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ scope: "workspace", dryRun: true })
-      });
-      const previewResult = (await previewResponse.json()) as SurfaceReconcileResult;
-
-      if (!previewResponse.ok || previewResult.error || !previewResult.repair?.auditId) {
-        throw new Error(previewResult.error || "OpenClaw binding repair preview could not be created.");
-      }
-
-      const preview = previewResult.repair;
-      setRepairPreview(preview);
-      toast.info("Binding repair preview created.", {
-        description: `Audit ${preview.auditId} was written without changing OpenClaw config.`
-      });
-    } catch (error) {
-      await showSurfaceMutationError("Binding repair preview failed.", error, handleRepairSurfaceDrift, ["operator.admin"]);
-    } finally {
-      endSaving();
-    }
-  };
-
-  const handleApplySurfaceRepairPreview = async () => {
-    if (!workspace || !repairPreview?.auditId) {
-      return;
-    }
-
-    try {
-      beginSaving("Applying OpenClaw binding repair...");
       const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "workspace", dryRun: true })
+      });
+      const result = await response.json() as { error?: string; repair?: SurfaceBindingRepairResult };
+      if (!response.ok || result.error || !result.repair?.auditId) {
+        throw new Error(result.error ?? "OpenClaw binding repair preview could not be created.");
+      }
+      setRepairPreview(result.repair);
+      toast.info("Binding repair preview created.", {
+        description: `Audit ${result.repair.auditId} was written without changing OpenClaw config.`
+      });
+    } catch (error) {
+      toast.error("Binding repair preview failed.", {
+        description: error instanceof Error ? error.message : "OpenClaw binding repair could not be previewed."
+      });
+    } finally {
+      setRepairBusy(false);
+    }
+  }, [workspace]);
+
+  const handleApplySurfaceRepairPreview = useCallback(async () => {
+    if (!workspace || !repairPreview?.auditId) return;
+    setRepairBusy(true);
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope: "workspace",
           dryRun: false,
@@ -913,1061 +151,128 @@ export function WorkspaceChannelsDialog({
           previewAuditId: repairPreview.auditId
         })
       });
-      const result = (await response.json()) as SurfaceReconcileResult;
-
+      const result = await response.json() as { error?: string; repair?: SurfaceBindingRepairResult };
       if (!response.ok || result.error) {
-        throw new Error(result.error || "OpenClaw bindings could not be reconciled.");
+        throw new Error(result.error ?? "OpenClaw bindings could not be reconciled.");
       }
-      if (result.snapshot && onSnapshotChange) {
-        onSnapshotChange(() => result.snapshot!);
-      }
-
-      const repair = result.repair;
       setRepairPreview(null);
       toast.success("OpenClaw bindings repaired.", {
-        description: repair
-          ? `${repair.addedBindingCount} added, ${repair.removedBindingCount} removed. Backup ${repair.backupId || "recorded"}.`
+        description: result.repair
+          ? `${result.repair.addedBindingCount} added, ${result.repair.removedBindingCount} removed. Backup ${result.repair.backupId ?? "recorded"}.`
           : "Managed bindings were rewritten from the AgentOS registry."
       });
-      void onRefresh().catch(() => {});
+      await onRefresh();
     } catch (error) {
-      await showSurfaceMutationError("Binding repair failed.", error, undefined, ["operator.admin"]);
+      toast.error("Binding repair failed.", {
+        description: error instanceof Error ? error.message : "OpenClaw bindings could not be reconciled."
+      });
     } finally {
-      endSaving();
+      setRepairBusy(false);
     }
-  };
-
-  const deleteConfirmationValid = deleteTarget
-    ? deleteConfirmText.trim().toLowerCase() === deleteTarget.name.trim().toLowerCase()
-    : false;
-  const provisionPreviewConfig = currentCatalogEntry.kind === "chat"
-    ? null
-    : buildProvisionConfig(currentCatalogEntry.provisionFields, provisionDraft);
-  const provisionPreviewPath = currentCatalogEntry.kind === "chat"
-    ? null
-    : getProvisionConfigPath(currentCatalogEntry.provider);
-  const provisionFieldsReady = currentCatalogEntry.provisionFields.every((field) =>
-    isProvisionFieldSatisfied(field, provisionDraft)
-  );
-  const canProvisionSurface =
-    currentCatalogEntry.supportsProvisioning &&
-    !isSaving &&
-    Boolean(newPrimaryAgentId) &&
-    Boolean(getProvisionDraftText(provisionDraft, "name").trim()) &&
-    provisionFieldsReady;
-  const repairPreviewConfigPaths = repairPreview?.restorePlan?.configPaths ?? [];
-
-  const renderProvisionField = (field: SurfaceProvisionField) => {
-    const fieldId = `surface-${field.key}`;
-    const value = provisionDraft[field.key];
-
-    if (field.inputType === "checkbox") {
-      return (
-        <label
-          key={field.key}
-          htmlFor={fieldId}
-          className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50 dark:border-white/8 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
-        >
-          <input
-            id={fieldId}
-            type="checkbox"
-            checked={Boolean(value)}
-            disabled={isSaving}
-            onChange={(event) =>
-              setProvisionDraft((current) => ({
-                ...current,
-                [field.key]: event.target.checked
-              }))
-            }
-            className="mt-0.5 h-4 w-4 rounded border-border bg-background text-cyan-600 focus:ring-cyan-500/60 dark:border-white/20 dark:bg-white/5 dark:text-cyan-400 dark:focus:ring-cyan-400/60"
-          />
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground dark:text-white">{field.label}</p>
-            {field.helpText ? <p className="mt-1 text-[11px] leading-4 text-muted-foreground dark:text-slate-500">{field.helpText}</p> : null}
-          </div>
-        </label>
-      );
-    }
-
-    return (
-      <FormField key={field.key} label={field.label} htmlFor={fieldId}>
-        {field.inputType === "select" ? (
-          <select
-            id={fieldId}
-            value={typeof value === "string" ? value : ""}
-            onChange={(event) =>
-              setProvisionDraft((current) => ({
-                ...current,
-                [field.key]: event.target.value
-              }))
-            }
-            className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-            disabled={isSaving}
-          >
-            <option value="">Select one</option>
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : field.inputType === "textarea" ? (
-          <Textarea
-            id={fieldId}
-            value={typeof value === "string" ? value : ""}
-            onChange={(event) =>
-              setProvisionDraft((current) => ({
-                ...current,
-                [field.key]: event.target.value
-              }))
-            }
-            placeholder={field.placeholder}
-            disabled={isSaving}
-            className="min-h-20 rounded-xl px-3 py-2"
-          />
-        ) : (
-          <Input
-            id={fieldId}
-            type={field.inputType === "number" ? "number" : field.secret ? "password" : field.inputType ?? "text"}
-            value={typeof value === "string" ? value : ""}
-            onChange={(event) =>
-              setProvisionDraft((current) => ({
-                ...current,
-                [field.key]: event.target.value
-              }))
-            }
-            placeholder={field.placeholder}
-            disabled={isSaving}
-            className="h-10 rounded-xl px-3"
-          />
-        )}
-        {field.helpText ? <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">{field.helpText}</p> : null}
-      </FormField>
-    );
-  };
+  }, [onRefresh, repairPreview, workspace]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-[image:var(--wi-surface)] p-0 text-[var(--wi-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-1rem)] sm:max-w-5xl sm:rounded-[22px] sm:border-[var(--wi-border)]"
-        style={workspaceDialogThemeStyles[surfaceTheme]}
-        overlayClassName="bg-black/78 backdrop-blur-lg"
-        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 w-9 text-[var(--wi-text)] hover:bg-[var(--wi-panel-hover)] hover:text-[var(--wi-text-strong)]"
+        className={surfaceTheme === "light"
+          ? "w-[calc(100vw-1.5rem)] max-w-4xl rounded-[22px] bg-background text-foreground"
+          : "w-[calc(100vw-1.5rem)] max-w-4xl rounded-[22px] bg-slate-950 text-slate-100"}
       >
-        <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader className="border-b border-[var(--wi-border-subtle)] px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--wi-accent-soft)] text-[var(--wi-accent)] shadow-[0_0_20px_rgba(124,58,237,0.2)]">
-                <Link2 className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <DialogTitle className="truncate font-display text-[17px] font-semibold leading-5 text-[var(--wi-text-strong)]">
-                  Workspace integrations
-                </DialogTitle>
-                <DialogDescription className="mt-0.5 truncate text-xs text-[var(--wi-text-muted)]">
-                  {workspace ? `${workspace.name} · accounts and workspace metadata` : "Manage accounts and workspace metadata."}
-                </DialogDescription>
-              </div>
-            </div>
-            <Badge variant="muted" className="h-6 shrink-0 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)] sm:hidden">
-              {activeSection === "surfaces" ? "Integrations" : "Accounts"}
-            </Badge>
-            <div className="hidden items-center gap-2 text-[10px] sm:flex">
-              <Badge variant="muted" className="h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)]">
-                {workspaceSurfaces.length} linked
-              </Badge>
-              <Badge variant="muted" className="h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)]">
-                {allAccounts.length} accounts
-              </Badge>
-              <Badge variant="muted" className="hidden h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)] lg:inline-flex">
-                {workspaceAccountTargets.length} account targets
-              </Badge>
+        <DialogHeader>
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <KeyRound className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle>Workspace accounts</DialogTitle>
+              <DialogDescription className="mt-1">
+                Manage browser-profile account access for agents in {workspace?.name ?? "this workspace"}. Channel connections are managed from the selected Agent.
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        {isSaving && savingMessage ? (
-          <div className="mx-4 mt-4 rounded-2xl border border-cyan-300/35 bg-cyan-50 px-3 py-2 sm:mx-6 dark:border-cyan-300/20 dark:bg-cyan-400/[0.08]">
-            <div className="flex items-center gap-2 text-[11px] text-cyan-900 dark:text-cyan-50">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>{savingMessage}</span>
+        <AccountsSurfaceSection
+          workspaceAgents={workspaceAgents}
+          selectedAgentId={selectedAccountAgentId}
+          onSelectedAgentIdChange={setSelectedAccountAgentId}
+          accountTargets={workspaceAccountTargets}
+          accountRulesByTargetId={accountRulesByTargetId}
+          isSaving={isSaving}
+          onToggleAccountAccess={(target, linked) => void updateAgentAccountAccess(target, linked)}
+          onRefreshAccounts={() => void handleRefreshAccounts()}
+          onConnectAccount={handleConnectAccount}
+        />
+
+        <section className="rounded-xl border border-border bg-muted/20 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">OpenClaw binding diagnostics</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">Preview a bounded workspace repair when the native OpenClaw binding projection has drifted. Preview does not change OpenClaw config.</p>
             </div>
+            <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0 rounded-lg px-2.5 text-xs" onClick={() => void handleRepairSurfaceDrift()} disabled={!workspace || isSaving || repairBusy}>
+              {repairBusy ? "Preparing…" : "Preview binding repair"}
+            </Button>
           </div>
-        ) : null}
+        </section>
 
-        {LEGACY_SURFACE_MANAGEMENT_ENABLED && surfaceGatewayAccess.blocked ? (
-          <div className="mx-4 mt-4 rounded-2xl border border-amber-300/40 bg-amber-50 px-3 py-3 sm:mx-6 dark:border-amber-300/25 dark:bg-amber-400/[0.08]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex min-w-0 gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-amber-950 dark:text-amber-50">Gateway access blocked</p>
-                  <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">
-                    {surfaceGatewayAccess.issue ??
-                      "OpenClaw Gateway pairing or scope approval is blocking live channel status."}
-                  </p>
-                  {surfaceGatewayAccess.missingScopes.length > 0 ? (
-                    <p className="mt-1 text-[11px] text-amber-900/70 dark:text-amber-100/70">
-                      Missing scopes: {surfaceGatewayAccess.missingScopes.join(", ")}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-              {surfaceGatewayAccess.repairAction ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
-                  disabled={isSaving}
-                  onClick={() =>
-                    void repairGatewayAccessAndRetry(
-                      surfaceGatewayAccess.repairAction!,
-                      async () => {
-                        await onRefresh();
-                      },
-                      surfaceGatewayAccess.missingScopes.length > 0
-                        ? surfaceGatewayAccess.missingScopes
-                        : ["operator.read"]
-                    )
-                  }
-                >
-                  Repair Gateway Access
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {LEGACY_SURFACE_MANAGEMENT_ENABLED && workspaceSetupError ? (
-          <div className="mx-4 mt-4 rounded-2xl border border-rose-300/40 bg-rose-50 px-3 py-3 sm:mx-6 dark:border-rose-300/25 dark:bg-rose-400/[0.08]">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-rose-950 dark:text-rose-50">Channel setup status unavailable</p>
-                <p className="mt-1 text-xs leading-5 text-rose-900/80 dark:text-rose-100/80">{workspaceSetupError}</p>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {LEGACY_SURFACE_MANAGEMENT_ENABLED && workspaceSetup?.items.length ? (
-          <section className="mx-4 mt-4 rounded-2xl border border-violet-300/35 bg-violet-50/70 p-3.5 sm:mx-6 dark:border-violet-300/20 dark:bg-violet-400/[0.06]">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-violet-950 dark:text-violet-50">Finish workspace channel setup</p>
-                  <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                    {workspaceSetup.pendingCount} pending
-                  </Badge>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-violet-900/75 dark:text-violet-100/75">
-                  Historical declarations are shown against the latest native OpenClaw account and binding status.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
-                disabled={workspaceSetupLoading}
-                onClick={() => void loadWorkspaceSetup()}
-              >
-                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", workspaceSetupLoading && "animate-spin")} />
-                Refresh status
-              </Button>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {workspaceSetup.items.map((item) => (
-                <div key={`${item.provider}:${item.declarationId}`} className="flex flex-col gap-3 rounded-xl border border-violet-300/25 bg-white/70 px-3 py-2.5 dark:border-white/10 dark:bg-black/15 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <SurfaceIcon provider={item.provider} className="h-8 w-8 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-violet-950 dark:text-violet-50">{item.label}</p>
-                        <Badge variant="muted" className={cn("h-5 rounded-full px-2 text-[10px]", workspaceSetupBadgeClass(item.status))}>
-                          {item.statusLabel}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 truncate text-[11px] text-violet-900/70 dark:text-violet-100/70">
-                        {item.setupLabel} · {item.bindingPresent ? "workspace binding present" : "not bound to this workspace"}
-                      </p>
-                      {item.lastError || item.availabilityReason ? (
-                        <p className="mt-1 text-[11px] leading-4 text-violet-900/75 dark:text-violet-100/70">{item.lastError || item.availabilityReason}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                  {item.action !== "none" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={item.action === "authenticate" ? "default" : "secondary"}
-                      className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
-                      disabled={Boolean(workspaceSetupBusy) || workspaceSetupLoading}
-                      onClick={() => void handleWorkspaceSetupAction(item)}
-                    >
-                      {workspaceSetupBusy === item.action ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                      {workspaceSetupActionLabel(item.action)}
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-
-            {workspaceSetupQr ? (
-              <div className="mt-3 flex flex-col gap-3 rounded-xl border border-emerald-300/35 bg-emerald-50/70 p-3 dark:border-emerald-300/20 dark:bg-emerald-400/[0.06] sm:flex-row sm:items-center">
-                <div className="rounded-lg bg-white p-2 shadow-sm">
-                  <Image unoptimized src={workspaceSetupQr.dataUrl} alt="WhatsApp connection QR code" width={156} height={156} className="h-[156px] w-[156px]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-emerald-950 dark:text-emerald-50">Scan with WhatsApp</p>
-                  <p className="mt-1 text-xs leading-5 text-emerald-900/75 dark:text-emerald-100/75">
-                    OpenClaw owns this QR session. After scanning, check native status and bind the verified account to this workspace.
-                  </p>
-                  {workspaceSetupQrMessage ? <p className="mt-1 text-[11px] text-emerald-900/70 dark:text-emerald-100/70">{workspaceSetupQrMessage}</p> : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="mt-3 h-8 rounded-full px-3 text-[11px]"
-                    disabled={workspaceSetupBusy === "authenticate"}
-                    onClick={() => void waitForWorkspaceWhatsAppLogin()}
-                  >
-                    {workspaceSetupBusy === "authenticate" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
-                    {workspaceSetupBusy === "authenticate" ? "Checking…" : "Check connection"}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
-        <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="sticky top-0 z-10 h-fit rounded-[14px] border border-[var(--wi-border)] bg-[var(--wi-panel)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:top-0">
-            <div className="grid grid-cols-2 gap-1 rounded-[10px] border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-1">
-              {(["surfaces", "accounts"] as WorkspaceDialogSection[]).map((section) => (
-                <button
-                  key={section}
-                  type="button"
-                  onClick={() => setActiveSection(section)}
-                  className={cn(
-                    "rounded-[8px] px-2 py-2 text-[11px] font-medium transition-colors",
-                    activeSection === section
-                      ? "bg-[var(--wi-accent-soft)] text-[var(--wi-accent)]"
-                      : "text-[var(--wi-text-muted)] hover:bg-[var(--wi-panel-hover)] hover:text-[var(--wi-text-strong)]"
-                  )}
-                >
-                  {section === "surfaces" ? "Integrations" : "Accounts"}
-                </button>
-              ))}
-            </div>
-
-            {activeSection === "surfaces" ? (
-              LEGACY_SURFACE_MANAGEMENT_ENABLED ? (
-                <>
-                <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2">
-                  <TabsList className="flex h-9 w-full gap-1 overflow-x-auto rounded-[10px] border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-1">
-                    {availableKinds.map((kind) => (
-                      <TabsTrigger key={kind} className="h-7 min-w-fit flex-1 rounded-lg px-2 text-[11px]" value={kind}>
-                        {formatSurfaceKindLabel(kind)}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-
-                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 sm:block sm:mt-2.5 sm:space-y-1.5 sm:overflow-visible sm:pb-0">
-                  {providerOptions.map((provider) => {
-                const entry = surfaceCatalogByProvider.get(provider) ?? getSurfaceCatalogEntry(provider);
-                const providerSurfaceCount = workspaceSurfaces.filter((surface) => surface.type === provider).length;
-                const providerAccountCount = allAccounts.filter((account) => account.type === provider).length;
-                const providerRuntimeCount = Object.keys(
-                  snapshot.surfaceRuntime.accountsByProvider[provider] ?? {}
-                ).length;
-
-                return (
-                  <button
-                    key={provider}
-                    type="button"
-                    onClick={() => setActiveProvider(provider)}
-                    className={cn(
-                      "flex min-w-[148px] shrink-0 items-center justify-between gap-2 rounded-[10px] border px-2.5 py-2 text-left transition-colors sm:w-full sm:min-w-0 sm:gap-3",
-                      activeProvider === provider
-                        ? "border-violet-300/35 bg-[var(--wi-accent-soft)]"
-                        : "border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] hover:bg-[var(--wi-panel-hover)]"
-                    )}
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <SurfaceIcon provider={provider} className="h-8 w-8 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-[var(--wi-text-strong)]">{entry.label}</p>
-                        <p className="mt-0.5 truncate text-[10px] text-[var(--wi-text-muted)]">
-                          {Math.max(providerAccountCount, providerRuntimeCount)} account
-                          {Math.max(providerAccountCount, providerRuntimeCount) === 1 ? "" : "s"} ·{" "}
-                          {formatSurfaceRuntimeSource(snapshot.surfaceRuntime.source)}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="muted" className="h-5 shrink-0 rounded-full px-2 text-[10px]">
-                      {providerSurfaceCount}
-                    </Badge>
-                  </button>
-                );
-                  })}
-                </div>
-                </>
-              ) : (
-                <div className="mt-2 space-y-3 rounded-xl border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-3">
-                  <div className="flex items-center gap-2">
-                    <Link2 className="h-3.5 w-3.5 text-[var(--wi-accent)]" />
-                    <p className="text-xs font-medium text-[var(--wi-text-strong)]">Channel Center</p>
-                  </div>
-                  <p className="text-[11px] leading-4 text-[var(--wi-text-muted)]">
-                    OpenClaw-backed channel accounts, routes, policies, and agent bindings are managed there.
-                  </p>
-                  <Label htmlFor="workspace-channel-provider" className="text-[10px] uppercase tracking-[0.14em] text-[var(--wi-text-muted)]">
-                    Provider context
-                  </Label>
-                  <select
-                    id="workspace-channel-provider"
-                    value={activeProvider}
-                    onChange={(event) => setActiveProvider(event.target.value as MissionControlSurfaceProvider)}
-                    className="h-9 w-full rounded-lg border border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-xs text-[var(--wi-text-strong)]"
-                  >
-                    {surfaceCatalogEntries.map((entry) => <option key={entry.provider} value={entry.provider}>{entry.label}</option>)}
-                  </select>
-                </div>
-              )
-            ) : (
-              <div className="mt-2 hidden space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 sm:block dark:border-white/8 dark:bg-white/[0.02]">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="h-3.5 w-3.5 text-amber-600 dark:text-amber-200" />
-                  <p className="text-xs font-medium text-foreground dark:text-white">Workspace accounts</p>
-                </div>
-                <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
-                  Grant saved browser-profile account targets to workspace agents.
-                </p>
-                <Badge variant="muted" className="h-5 w-fit rounded-full px-2 text-[10px]">
-                  {workspaceAccountTargets.length} available
-                </Badge>
-              </div>
-            )}
-          </aside>
-
-          <div className="min-w-0 space-y-4">
-            {activeSection === "accounts" ? (
-              <AccountsSurfaceSection
-                workspaceAgents={workspaceAgents}
-                selectedAgentId={selectedAccountAgentId}
-                onSelectedAgentIdChange={setSelectedAccountAgentId}
-                accountTargets={workspaceAccountTargets}
-                accountRulesByTargetId={accountRulesByTargetId}
-                isSaving={isSaving}
-                onToggleAccountAccess={(target, linked) => void updateAgentAccountAccess(target, linked)}
-                onRefreshAccounts={() => void refreshAccounts().catch((error) => {
-                  toast.error("Accounts refresh failed.", {
-                    description: error instanceof Error ? error.message : "Unknown account refresh error."
-                  });
-                })}
-                onConnectAccount={() => onConnectAccount?.()}
-              />
-            ) : LEGACY_SURFACE_MANAGEMENT_ENABLED ? (
-              <>
-            {workspaceDriftIssues.length > 0 ? (
-              <section className="rounded-2xl border border-amber-300/35 bg-amber-50 p-3.5 dark:border-amber-300/20 dark:bg-amber-400/[0.06]">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-amber-950 dark:text-amber-50">OpenClaw binding drift</p>
-                      <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                        {workspaceDriftIssues.length} issue{workspaceDriftIssues.length === 1 ? "" : "s"}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/75">
-                      AgentOS registry and OpenClaw runtime bindings differ for this workspace.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {formatSurfaceDriftSummary(workspaceDriftSummary).map((item) => (
-                        <Badge key={item} variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                          {item}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
-                    disabled={isSaving || !snapshot.surfaceDrift.checked}
-                    onClick={() => void handleRepairSurfaceDrift()}
-                  >
-                    Repair bindings
-                  </Button>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {workspaceDriftIssues.slice(0, 4).map((issue) => (
-                    <div key={issue.id} className="rounded-xl border border-amber-300/30 bg-white px-3 py-2 dark:border-white/8 dark:bg-black/15">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                          {formatSurfaceProviderLabelFromCatalog(issue.provider, surfaceCatalogByProvider)}
-                        </Badge>
-                        <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                          {formatSurfaceDriftKind(issue.kind)}
-                        </Badge>
-                        <p className="min-w-0 flex-1 truncate text-xs font-medium text-foreground dark:text-white">{issue.title}</p>
-                      </div>
-                      <p className="mt-1 text-[11px] leading-4 text-amber-900/80 dark:text-amber-100/75">
-                        {formatSurfaceDriftIssueDetail(issue, resolveAgentDisplayName)}
-                      </p>
-                    </div>
-                  ))}
-                  {workspaceDriftIssues.length > 4 ? (
-                    <p className="text-[11px] text-amber-900/70 dark:text-amber-100/65">
-                      {workspaceDriftIssues.length - 4} more drift issue
-                      {workspaceDriftIssues.length - 4 === 1 ? "" : "s"} hidden.
-                    </p>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
-            <section id="workspace-channel-connect" className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
-              <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">{currentCatalogEntry.label} integrations</p>
-                <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
-                  {providerWorkspaceSurfaces.length} linked
-                </Badge>
-              </div>
-
-              {providerWorkspaceSurfaces.length > 0 ? (
-                <div className="mt-3 space-y-2.5">
-                  {providerWorkspaceSurfaces.map((surface) => {
-                    const runtimeStatus = getSurfaceAccountRuntime(snapshot, surface.type, surface.id);
-                    const surfaceDriftIssues = activeProviderDriftIssues.filter(
-                      (issue) => issue.accountId === surface.id || issue.accountId === toLegacySurfaceId(surface.id)
-                    );
-
-                    return (
-                      <div
-                        key={surface.id}
-                        className="rounded-2xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <SurfaceIcon provider={surface.type} className="h-9 w-9 shrink-0" />
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-foreground dark:text-white">{surface.name}</p>
-                                <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                                  {formatSurfaceKindLabel(currentCatalogEntry.kind)}
-                                </Badge>
-                                <Badge
-                                  variant="muted"
-                                  className={cn(
-                                    "h-5 rounded-full px-2 text-[10px]",
-                                    getSurfaceRuntimeBadgeClass(runtimeStatus, surfaceGatewayAccess.blocked)
-                                  )}
-                                >
-                                  {formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
-                                </Badge>
-                                {surfaceDriftIssues.length > 0 ? (
-                                  <Badge className="h-5 rounded-full border-amber-300/40 bg-amber-100 px-2 text-[10px] text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100">
-                                    Metadata drift
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
-                                {surface.type}:{surface.id} · {formatSurfaceRuntimeSource(runtimeStatus?.source ?? snapshot.surfaceRuntime.source)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="h-8 rounded-full px-3 text-[11px]"
-                              disabled={isSaving}
-                              onClick={() => void handleDisconnectSurface(surface.id)}
-                            >
-                              <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                              Disconnect workspace link
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="h-8 w-8 rounded-full p-0"
-                              disabled={isSaving}
-                              aria-label={"Delete " + surface.name}
-                              title="Delete everywhere"
-                              onClick={() => {
-                                const exactAccount = providerAccounts.find((entry) => entry.id === surface.id) ?? null;
-                                const legacyAccount =
-                                  exactAccount ??
-                                  providerAccounts.find((entry) => toLegacySurfaceId(entry.id) === surface.id) ??
-                                  null;
-                                const account =
-                                  exactAccount ??
-                                  (legacyAccount ? { ...legacyAccount, id: surface.id } : null);
-                                if (account) {
-                                  setDeleteTarget(account);
-                                  setDeleteConfirmText("");
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid gap-2 text-[11px] text-muted-foreground dark:text-slate-400 sm:grid-cols-3">
-                          <SurfaceMetric label="Workspace link" value="Metadata only" />
-                          <SurfaceMetric label="Runtime routing" value="Channel Center" />
-                          <SurfaceMetric
-                            label="Health"
-                            value={formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
-                          />
-                        </div>
-                        <p className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-50/70 px-3 py-2.5 text-[11px] leading-5 text-cyan-900/80 dark:border-cyan-300/15 dark:bg-cyan-400/[0.05] dark:text-cyan-100/75">
-                          This workspace link controls organization and visibility only. It does not assign messages to an agent.
-                          Manage native route bindings from Channel Center or the Agent Profile Channels section.
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-                  No {currentCatalogEntry.label} integrations are linked to this workspace yet.
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
-              <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Connect {currentCatalogEntry.label}</p>
-                <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
-                  {providerAccounts.length} available
-                </Badge>
-              </div>
-
-              <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Existing accounts</p>
-                  {providerAccounts.length > 0 ? (
-                    providerAccounts.map((account) => {
-                      const linked = isLinkedAccountId(account.id);
-                      const runtimeStatus = getSurfaceAccountRuntime(snapshot, account.type, account.id);
-                      return (
-                        <div
-                          key={account.id}
-                          className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-white/8 dark:bg-white/[0.02]"
-                        >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <SurfaceIcon provider={account.type} className="h-8 w-8 shrink-0" />
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-foreground dark:text-white">{account.name}</p>
-                                <Badge
-                                  variant="muted"
-                                  className={cn(
-                                    "h-5 rounded-full px-2 text-[10px]",
-                                    getSurfaceRuntimeBadgeClass(runtimeStatus, surfaceGatewayAccess.blocked)
-                                  )}
-                                >
-                                  {formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
-                                </Badge>
-                              </div>
-                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
-                                {account.id} · {formatSurfaceRuntimeSource(runtimeStatus?.source ?? snapshot.surfaceRuntime.source)}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={linked ? "secondary" : "default"}
-                            className="h-8 rounded-full px-3 text-[11px]"
-                            disabled={isSaving || linked}
-                            onClick={() => void handleAttachExisting(account)}
-                          >
-                            {linked ? "Linked" : (
-                              <>
-                                <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                                Connect
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-                      No {currentCatalogEntry.label} accounts found.
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3 rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground dark:text-white">Provision</p>
-                    <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                      {currentCatalogEntry.supportsProvisioning ? "AgentOS" : "OpenClaw"}
-                    </Badge>
-                  </div>
-
-                  {currentCatalogEntry.supportsProvisioning ? (
-                    <>
-                      <FormField label="Integration name" htmlFor="surface-name">
-                        <Input
-                          id="surface-name"
-                          value={getProvisionDraftText(provisionDraft, "name")}
-                          onChange={(event) =>
-                            setProvisionDraft((current) => ({ ...current, name: event.target.value }))
-                          }
-                          placeholder={`${currentCatalogEntry.label} workspace integration`}
-                          className="h-10 rounded-xl px-3"
-                        />
-                      </FormField>
-
-                      {basicProvisionFields.length > 0 ? (
-                        <div className="grid gap-3 md:grid-cols-2">{basicProvisionFields.map(renderProvisionField)}</div>
-                      ) : null}
-
-                      {advancedProvisionFields.length > 0 ? (
-                        <details className="rounded-xl border border-border/80 bg-background p-3 dark:border-white/8 dark:bg-white/[0.015]">
-                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">
-                            Advanced settings
-                          </summary>
-                          <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            {advancedProvisionFields.map(renderProvisionField)}
-                          </div>
-                        </details>
-                      ) : null}
-
-                      {provisionPreviewConfig && provisionPreviewPath ? (
-                        <details className="rounded-xl border border-cyan-300/30 bg-cyan-50 p-3 dark:border-cyan-300/15 dark:bg-cyan-400/[0.04]">
-                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-cyan-800 dark:text-cyan-100">
-                            Config preview
-                          </summary>
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
-                              {provisionPreviewPath}
-                            </Badge>
-                          </div>
-                          {currentCatalogEntry.provider === "gmail" ? (
-                            <p className="mt-2 text-[11px] leading-5 text-cyan-800/75 dark:text-cyan-100/70">Includes Gmail hook enablement.</p>
-                          ) : null}
-                          <pre className="mt-3 max-h-52 overflow-auto rounded-xl border border-border bg-slate-950 p-3 text-[11px] leading-5 text-slate-100 dark:border-white/10 dark:bg-slate-950/80">
-                            {JSON.stringify(provisionPreviewConfig, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
-
-                      <FormField label="Workspace association (metadata only)" htmlFor="surface-primary-agent">
-                        <select
-                          id="surface-primary-agent"
-                          value={newPrimaryAgentId}
-                          onChange={(event) => setNewPrimaryAgentId(event.target.value)}
-                          className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        >
-                            <option value="">No workspace association</option>
-                          {workspaceAgents.map((agent) => (
-                            <option key={agent.id} value={agent.id}>
-                              {formatAgentDisplayName(agent)}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-
-                      <Button
-                        type="button"
-                        className="h-10 rounded-full px-4 text-sm"
-                        disabled={!canProvisionSurface}
-                        onClick={() => void handleProvisionSurface()}
-                      >
-                        {isSaving ? (
-                          "Provisioning..."
-                        ) : (
-                          <>
-                            <Plus className="mr-1.5 h-4 w-4" />
-                            Provision
-                          </>
-                        )}
-                      </Button>
-                    </>
-                  ) : (
-                    <div className="rounded-xl border border-border/80 bg-background px-3 py-3 text-sm leading-5 text-muted-foreground dark:border-white/8 dark:bg-white/[0.02] dark:text-slate-400">
-                      Provisioning is not exposed for this OpenClaw provider in AgentOS. Existing OpenClaw accounts can
-                      still be attached, monitored, and routed from this workspace.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-              </>
-            ) : (
-              <WorkspaceChannelCenterHandoff
-                workspaceId={workspace?.id ?? workspaceId}
-                provider={activeProvider}
-                onClose={() => onOpenChange(false)}
-              />
-            )}
-          </div>
-        </div>
-
-        </div>
-
-        <DialogFooter className="border-t border-border px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:py-3 dark:border-white/10">
-          <Button variant="secondary" className="h-10 w-full sm:h-9 sm:w-auto" onClick={() => onOpenChange(false)}>
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Close
           </Button>
         </DialogFooter>
-        </div>
       </DialogContent>
-
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
-        <DialogContent className="h-dvh max-h-dvh w-screen max-w-none rounded-none border-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:h-auto sm:w-auto sm:max-w-2xl sm:rounded-lg sm:border">
-          <DialogHeader className="pr-10">
-            <DialogTitle>Delete OpenClaw account</DialogTitle>
-            <DialogDescription>
-              This removes the account from every workspace overlay. For provider-backed chat accounts, AgentOS also asks
-              OpenClaw to delete the underlying account when supported.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="rounded-[20px] border border-rose-300/40 bg-rose-50 p-4 dark:border-rose-500/25 dark:bg-rose-500/[0.08]">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-rose-950 dark:text-rose-50">
-                  Type {deleteTarget?.name ?? "the account name"} to confirm deletion.
-                </p>
-                <p className="mt-1 text-xs leading-5 text-rose-900/80 dark:text-rose-100/80">
-                  This action removes the account overlay everywhere and may delete the underlying OpenClaw provider
-                  account if the provider supports it.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <FormField label={`Type ${deleteTarget?.name ?? ""} to confirm`} htmlFor="delete-surface-confirm">
-            <Input
-              id="delete-surface-confirm"
-              value={deleteConfirmText}
-              onChange={(event) => setDeleteConfirmText(event.target.value)}
-              placeholder={deleteTarget?.name ?? ""}
-            />
-          </FormField>
-
-          <DialogFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setDeleteTarget(null);
-                setDeleteConfirmText("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!deleteConfirmationValid || isSaving}
-              onClick={() => void handleDeleteAccountEverywhere()}
-            >
-              {isSaving ? "Deleting..." : "Delete everywhere"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
       </Dialog>
 
       <Dialog
         open={Boolean(repairPreview)}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && !isSaving) {
-            setRepairPreview(null);
-          }
+          if (!nextOpen && !repairBusy) setRepairPreview(null);
         }}
       >
-        <DialogContent className="h-dvh max-h-dvh w-screen max-w-none rounded-none border-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:h-auto sm:w-auto sm:max-w-2xl sm:rounded-lg sm:border">
+        <DialogContent className="h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:h-auto sm:w-auto sm:max-w-2xl sm:rounded-lg sm:border">
           <DialogHeader className="pr-10">
             <DialogTitle>Apply OpenClaw binding repair</DialogTitle>
-            <DialogDescription>
-              Confirm the previewed repair before AgentOS writes a bounded OpenClaw config patch.
-            </DialogDescription>
+            <DialogDescription>Confirm the previewed repair before AgentOS writes a bounded OpenClaw config patch.</DialogDescription>
           </DialogHeader>
-
-          <div className="rounded-[20px] border border-amber-300/40 bg-amber-50 p-4 dark:border-amber-300/25 dark:bg-amber-400/[0.08]">
-            <div className="flex items-start gap-3">
+          <div className="rounded-xl border border-amber-300/35 bg-amber-50/70 p-3 dark:border-amber-300/20 dark:bg-amber-400/[0.07]">
+            <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-amber-950 dark:text-amber-50">Operator confirmation required</p>
-                <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">
-                  AgentOS will write a redacted backup snapshot before changing only the approved OpenClaw config
-                  paths shown here.
-                </p>
-              </div>
+              <p className="text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">AgentOS writes a redacted backup before changing only the approved OpenClaw config paths shown here.</p>
             </div>
           </div>
-
           <div className="grid gap-3 sm:grid-cols-2">
-            <SurfaceMetric label="Bindings added" value={String(repairPreview?.addedBindingCount ?? 0)} />
-            <SurfaceMetric label="Bindings removed" value={String(repairPreview?.removedBindingCount ?? 0)} />
+            <RepairMetric label="Bindings added" value={String(repairPreview?.addedBindingCount ?? 0)} />
+            <RepairMetric label="Bindings removed" value={String(repairPreview?.removedBindingCount ?? 0)} />
           </div>
-
-          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Preview audit</p>
-            <p className="mt-1 break-all font-mono text-[11px] leading-5 text-foreground dark:text-slate-200">
-              {repairPreview?.auditId ?? "unknown"}
-            </p>
+          <div className="rounded-xl border border-border bg-muted/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Preview audit</p>
+            <p className="mt-1 break-all font-mono text-[11px] leading-5 text-foreground">{repairPreview?.auditId ?? "unknown"}</p>
           </div>
-
-          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Approved config paths</p>
+          <div className="rounded-xl border border-border bg-muted/20 p-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Approved config paths</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {repairPreviewConfigPaths.length > 0 ? (
-                repairPreviewConfigPaths.map((configPath) => (
-                  <Badge key={configPath} variant="muted" className="h-6 rounded-full px-2 text-[10px]">
-                    {configPath}
-                  </Badge>
-                ))
-              ) : (
-                <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
-                  no config changes
-                </Badge>
-              )}
+              {(repairPreview?.restorePlan?.configPaths ?? []).length > 0
+                ? repairPreview?.restorePlan?.configPaths.map((configPath) => <Badge key={configPath} variant="muted" className="h-6 rounded-full px-2 text-[10px]">{configPath}</Badge>)
+                : <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">no config changes</Badge>}
             </div>
           </div>
-
           <DialogFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
-            <Button
-              variant="secondary"
-              disabled={isSaving}
-              onClick={() => setRepairPreview(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={isSaving || !repairPreview?.auditId}
-              onClick={() => void handleApplySurfaceRepairPreview()}
-            >
-              {isSaving ? "Applying..." : "Apply repair"}
-            </Button>
+            <Button type="button" variant="secondary" disabled={repairBusy} onClick={() => setRepairPreview(null)}>Cancel</Button>
+            <Button type="button" disabled={repairBusy || !repairPreview?.auditId} onClick={() => void handleApplySurfaceRepairPreview()}>{repairBusy ? "Applying…" : "Apply repair"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </>
   );
 }
 
-function FormField({
-  label,
-  htmlFor,
-  children
-}: {
-  label: string;
-  htmlFor: string;
-  children: ReactNode;
-}) {
+function RepairMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-400">
-        {label}
-      </Label>
-      {children}
+    <div className="rounded-xl border border-border bg-background px-3 py-2">
+      <p className="truncate text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-[11px] text-foreground">{value}</p>
     </div>
   );
-}
-
-function WorkspaceChannelCenterHandoff({
-  workspaceId,
-  provider,
-  onClose
-}: {
-  workspaceId: string | null;
-  provider: MissionControlSurfaceProvider;
-  onClose: () => void;
-}) {
-  const openChannelCenter = () => {
-    const params = new URLSearchParams();
-    if (workspaceId) params.set("workspaceId", workspaceId);
-    if (provider) params.set("provider", provider);
-    window.location.assign(`/channels${params.toString() ? `?${params.toString()}` : ""}`);
-  };
-
-  return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.025]">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Link2 className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">Channel Center owns channel management</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Provider status, account lifecycle, route discovery, access policy, and agent bindings now come from the OpenClaw-backed Channel Center.
-          </p>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button type="button" size="sm" className="h-9 rounded-full px-3 text-xs" onClick={openChannelCenter}>
-          Open Channel Center
-        </Button>
-        <Button type="button" size="sm" variant="ghost" className="h-9 rounded-full px-3 text-xs" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-function SurfaceMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border/80 bg-background px-3 py-2 dark:border-white/8 dark:bg-white/[0.018]">
-      <p className="truncate text-[9px] uppercase tracking-[0.14em] text-muted-foreground dark:text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-[11px] text-foreground dark:text-slate-200">{value}</p>
-    </div>
-  );
-}
-
-function workspaceSetupActionLabel(action: WorkspaceChannelSetupAction) {
-  switch (action) {
-    case "install-plugin":
-      return "Install plugin";
-    case "authenticate":
-      return "Open QR setup";
-    case "select-account":
-      return "Choose account";
-    case "bind":
-      return "Bind account";
-    case "configure":
-      return "Configure account";
-    case "start":
-      return "Start account";
-    case "retry":
-      return "Retry status";
-    case "none":
-      return "";
-  }
-}
-
-function workspaceSetupBadgeClass(status: WorkspaceChannelSetupItem["status"]) {
-  switch (status) {
-    case "connected":
-    case "running":
-    case "linked":
-      return "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100";
-    case "configured":
-      return "border-cyan-300/45 bg-cyan-50 text-cyan-700 dark:border-cyan-300/25 dark:bg-cyan-400/10 dark:text-cyan-100";
-    case "unavailable":
-    case "blocked":
-    case "error":
-      return "border-amber-300/45 bg-amber-50 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100";
-    default:
-      return "border-violet-300/45 bg-violet-50 text-violet-700 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-100";
-  }
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import {
+  getAgentChannelRouteBadgeSummaries,
   getAgentChannelRouteSummary,
   projectChannelDirectoryEntryForAgent
 } from "@/lib/openclaw/application/agent-channel-route-service";
@@ -165,6 +166,52 @@ test("default routing and no binding remain distinct in the Agent Profile projec
 
   assert.equal(defaultSummary.routes[0]?.displayMatch, "default");
   assert.equal(emptySummary.routes.length, 0);
+});
+
+test("Agent card route badges come only from native provider bindings, never default-only routing", async () => {
+  const route = buildChannelRouteIdentity({
+    provider: "telegram",
+    accountId: "main",
+    kind: "group",
+    routeId: "-1001"
+  });
+  const adapter = {
+    getConfig: async (path: string) => path === "bindings"
+      ? [buildNativeRouteBinding(route, "agent-explicit")]
+      : {},
+    listAgents: async () => ({ defaultId: "agent-default", agents: [{ id: "agent-explicit" }, { id: "agent-default" }] })
+  } as unknown as OpenClawAdapter;
+
+  const badges = await getAgentChannelRouteBadgeSummaries({
+    agentIds: ["agent-explicit", "agent-default"],
+    adapter
+  });
+
+  assert.deepEqual(badges["agent-explicit"], { providers: ["telegram"], routeCount: 1 });
+  assert.equal(badges["agent-default"], undefined);
+});
+
+test("Telegram topic native overrides add their provider to Agent card badges", async () => {
+  const adapter = {
+    getConfig: async (path: string) => {
+      if (path === "bindings") return [];
+      if (path === "channels.telegram") {
+        return {
+          accounts: {
+            main: {
+              groups: {
+                "-1001": { topics: { "42": { agentId: "agent-topic" } } }
+              }
+            }
+          }
+        };
+      }
+      return {};
+    }
+  } as unknown as OpenClawAdapter;
+
+  const badges = await getAgentChannelRouteBadgeSummaries({ agentIds: ["agent-topic"], adapter });
+  assert.deepEqual(badges["agent-topic"], { providers: ["telegram"], routeCount: 1 });
 });
 
 test("Channel Center and Agent Profile share native mutation state and restore inheritance after override removal", async () => {

@@ -928,9 +928,18 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                       />
                     }
                   >
-                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
+                    <button
+                      type="button"
+                      className="nodrag nopan inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                      aria-label={`Open ${surfaceBadge.label} connections for ${agentLabel}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <SurfaceIcon provider={surfaceBadge.provider} className="h-7 w-7 border-white/12 bg-slate-950/72" />
-                    </span>
+                    </button>
                   </AgentConnectionTooltip>
                 ))}
 
@@ -1153,8 +1162,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                     />
                     <ConnectionMenuButton
                       icon={<Layers3 className="h-[17px] w-[17px]" />}
-                      label="Integrations"
-                      description="Workspace routes"
+                      label="Channels"
+                      description="Connect & route"
                       disabled={!canOpenWorkspaceChannels}
                       onClick={() => {
                         data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);

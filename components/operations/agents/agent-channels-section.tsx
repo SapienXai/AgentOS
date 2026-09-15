@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GitBranch, LoaderCircle, MessageCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { GitBranch, KeyRound, LoaderCircle, MessageCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import type { ChannelRouteKind, ChannelRouteIdentity } from "@/lib/openclaw/domains/channel-center";
+import { presentChannelAccountState } from "@/lib/openclaw/domains/channel-account-presentation";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -43,7 +44,16 @@ type CenterProvider = {
     accountId: string;
     name?: string | null;
     configured?: boolean;
+    enabled?: boolean;
+    linked?: boolean;
     running?: boolean;
+    connected?: boolean;
+    liveStatusAvailable?: boolean;
+    authenticationRequired?: boolean;
+    healthState?: string | null;
+    lastError?: string | null;
+    credentialState?: "present" | "missing" | "unknown";
+    evidence?: "live-and-config" | "live-only" | "config-only" | "unknown";
   }>;
   capabilities?: { supportsTopics?: boolean };
 };
@@ -69,7 +79,17 @@ type DirectoryResponse = {
   error: string | null;
 };
 
-export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agentId: string; surfaceTheme?: SurfaceTheme }) {
+export function AgentChannelsSection({
+  agentId,
+  surfaceTheme = "dark",
+  onConnectAccount,
+  onRouteChanged
+}: {
+  agentId: string;
+  surfaceTheme?: SurfaceTheme;
+  onConnectAccount?: () => void;
+  onRouteChanged?: () => Promise<void> | void;
+}) {
   const isLight = surfaceTheme === "light";
   const [summary, setSummary] = useState<AgentRouteSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
@@ -81,7 +101,9 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
   const [accountId, setAccountId] = useState("");
   const [routeKind, setRouteKind] = useState<"groups" | "peers" | "topics">("groups");
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
+  const [groupDirectoryEntries, setGroupDirectoryEntries] = useState<DirectoryEntry[]>([]);
+  const [peerDirectoryEntries, setPeerDirectoryEntries] = useState<DirectoryEntry[]>([]);
+  const [topicDirectoryEntries, setTopicDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryResponse["status"] | null>(null);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
@@ -89,22 +111,29 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
 
   const selectedProvider = providers.find((provider) => provider.id === providerId) ?? null;
   const selectedAccount = selectedProvider?.accounts.find((account) => account.accountId === accountId) ?? null;
+  const directoryEntries = routeKind === "groups"
+    ? groupDirectoryEntries
+    : routeKind === "peers"
+      ? peerDirectoryEntries
+      : topicDirectoryEntries;
   const groupEntries = useMemo(
-    () => directoryEntries.filter((entry) => entry.kind === "group"),
-    [directoryEntries]
+    () => groupDirectoryEntries.filter((entry) => entry.kind === "group"),
+    [groupDirectoryEntries]
   );
 
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async (): Promise<AgentRouteSummary | null> => {
     setLoadingSummary(true);
     setSummaryError(null);
     try {
       const response = await fetch(`/api/openclaw/channels/agent-routes?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" });
       const payload = await response.json() as AgentRouteSummary & { error?: string };
-      if (!response.ok || payload.error) throw new Error(payload.error ?? "Agent channel routes are unavailable.");
+      if (!response.ok || payload.error) throw new Error(payload.error ?? "Agent channels are unavailable.");
       setSummary(payload);
+      return payload;
     } catch (error) {
       setSummary(null);
-      setSummaryError(error instanceof Error ? error.message : "Agent channel routes are unavailable.");
+      setSummaryError(error instanceof Error ? error.message : "Agent channels are unavailable.");
+      return null;
     } finally {
       setLoadingSummary(false);
     }
@@ -124,10 +153,12 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
       const nextProviders = payload.providers ?? [];
       setProviders(nextProviders);
       const nextProvider = nextProviders[0];
-      const nextAccount = nextProvider?.accounts[0];
+      const nextAccount = nextProvider?.accounts.find((account) => isRouteAccountSelectable(account)) ?? nextProvider?.accounts[0];
       setProviderId(nextProvider?.id ?? "");
       setAccountId(nextAccount?.accountId ?? "");
-      setDirectoryEntries([]);
+      setGroupDirectoryEntries([]);
+      setPeerDirectoryEntries([]);
+      setTopicDirectoryEntries([]);
       setDirectoryStatus(null);
       setDirectoryError(null);
     } catch (error) {
@@ -147,11 +178,23 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
       const response = await fetch(`/api/openclaw/channels/directory?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json() as DirectoryResponse & { error?: string };
       if (!response.ok && !payload.status) throw new Error(payload.error ?? "Channel routes are unavailable.");
-      setDirectoryEntries(payload.entries ?? []);
+      if (nextKind === "groups") {
+        setGroupDirectoryEntries(payload.entries ?? []);
+      } else if (nextKind === "peers") {
+        setPeerDirectoryEntries(payload.entries ?? []);
+      } else {
+        setTopicDirectoryEntries(payload.entries ?? []);
+      }
       setDirectoryStatus(payload.status ?? "failed");
       if (payload.error) setDirectoryError(payload.error);
     } catch (error) {
-      setDirectoryEntries([]);
+      if (nextKind === "groups") {
+        setGroupDirectoryEntries([]);
+      } else if (nextKind === "peers") {
+        setPeerDirectoryEntries([]);
+      } else {
+        setTopicDirectoryEntries([]);
+      }
       setDirectoryStatus("failed");
       setDirectoryError(error instanceof Error ? error.message : "Channel routes are unavailable.");
     } finally {
@@ -167,9 +210,12 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
   const chooseProvider = (nextProviderId: string) => {
     const nextProvider = providers.find((provider) => provider.id === nextProviderId);
     setProviderId(nextProviderId);
-    setAccountId(nextProvider?.accounts[0]?.accountId ?? "");
+    setAccountId(nextProvider?.accounts.find((account) => isRouteAccountSelectable(account))?.accountId ?? nextProvider?.accounts[0]?.accountId ?? "");
+    setRouteKind("groups");
     setGroupId(null);
-    setDirectoryEntries([]);
+    setGroupDirectoryEntries([]);
+    setPeerDirectoryEntries([]);
+    setTopicDirectoryEntries([]);
     setDirectoryStatus(null);
     setDirectoryError(null);
   };
@@ -177,7 +223,9 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
   const chooseAccount = (nextAccountId: string) => {
     setAccountId(nextAccountId);
     setGroupId(null);
-    setDirectoryEntries([]);
+    setGroupDirectoryEntries([]);
+    setPeerDirectoryEntries([]);
+    setTopicDirectoryEntries([]);
     setDirectoryStatus(null);
     setDirectoryError(null);
   };
@@ -191,17 +239,40 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...route, agentId: nextAgentId })
       });
-      const payload = await response.json() as { error?: string; pending?: boolean; applyMode?: string };
-      if (!response.ok || payload.error) throw new Error(payload.error ?? "OpenClaw could not update the route.");
-      toast.success(successMessage, {
-        description: payload.pending || payload.applyMode === "pending"
-          ? "OpenClaw accepted the change and will apply it asynchronously."
-          : "OpenClaw accepted the native route change."
-      });
-      await loadSummary();
+      const payload = await response.json() as {
+        error?: string;
+        pending?: boolean;
+        applyMode?: string;
+        verification?: {
+          verified?: boolean;
+          effectiveAgentId?: string | null;
+          explicitAgentId?: string | null;
+        };
+      };
+      if (!response.ok || payload.error) throw new Error(payload.error ?? "The channel could not be connected.");
+      const nextSummary = await loadSummary();
+      const verified = payload.verification?.verified === true;
+      const pending = payload.pending || payload.applyMode === "pending";
+      if (verified) {
+        toast.success(successMessage, {
+          description: "OpenClaw confirmed the native route for this agent."
+        });
+      } else if (pending) {
+        toast.warning(nextAgentId ? "Connection pending verification." : "Route removal pending verification.", {
+          description: "OpenClaw accepted the change, but the live route state has not caught up yet. Refresh to confirm it."
+        });
+      } else {
+        const effectiveAgentId = payload.verification?.effectiveAgentId ?? nextSummary?.routes.find((entry) => entry.route && channelRouteMatches(entry.route, route))?.effectiveAgentId ?? null;
+        toast.error(nextAgentId ? "Couldn’t finish connecting this route." : "Couldn’t finish removing this route.", {
+          description: effectiveAgentId
+            ? `OpenClaw still resolves this route to another agent (${effectiveAgentId}).`
+            : "OpenClaw accepted the change, but the canonical route state did not confirm it."
+        });
+      }
       if (addOpen && providerId && accountId) await readDirectory(routeKind, groupId);
+      await onRouteChanged?.();
     } catch (error) {
-      toast.error("Route change failed.", { description: error instanceof Error ? error.message : "OpenClaw route update failed." });
+      toast.error("Channel connection failed.", { description: error instanceof Error ? error.message : "The channel could not be updated." });
     } finally {
       setMutationKey(null);
     }
@@ -215,24 +286,25 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary"><MessageCircle className="h-4 w-4" /></span>
           <div className="min-w-0">
-            <p className="text-sm font-medium">OpenClaw native routes</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">This agent’s effective message routes come from OpenClaw. Workspace channel metadata is not used for runtime routing.</p>
+            <p className="text-sm font-medium">Channels</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">Connect real groups, servers, and channels to this agent. Connections are verified against the live messaging runtime.</p>
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => void loadSummary()} disabled={loadingSummary || Boolean(mutationKey)}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loadingSummary && "animate-spin")} />Refresh</Button>
-          <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={openAddRoute} disabled={Boolean(mutationKey)}><Plus className="mr-1.5 h-3.5 w-3.5" />Add route</Button>
+          {onConnectAccount ? <Button type="button" variant="secondary" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnectAccount} disabled={Boolean(mutationKey)}><KeyRound className="mr-1.5 h-3.5 w-3.5" />Connect account</Button> : null}
+          <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={openAddRoute} disabled={Boolean(mutationKey)}><Plus className="mr-1.5 h-3.5 w-3.5" />Connect channel</Button>
         </div>
       </div>
 
       {summaryError ? <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100" role="alert">{summaryError}</div> : null}
       {summary?.diagnostics?.topicConfig === "unavailable" ? <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">Telegram topic state could not be read. Group and account bindings remain visible; refresh after OpenClaw is available.</div> : null}
       {loadingSummary ? <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Reading OpenClaw route state…</div> : null}
-      {showSummaryEmpty ? <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs leading-5 text-muted-foreground">No native route currently targets this agent. Add a route to create an exact OpenClaw override, or leave it unassigned to inherit the provider/default route.</div> : null}
+      {showSummaryEmpty ? <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs leading-5 text-muted-foreground">No channels are connected yet. Connect a group or channel to send its messages to this agent.</div> : null}
 
       {summary?.routes.length ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          {summary.routes.map((route) => <RouteCard key={route.id} route={route} mutationKey={mutationKey} onRemove={() => route.route && void mutateRoute(route.route, null, "Route override removed.")} onOverride={() => route.route && void mutateRoute(route.route, agentId, "Route override added.")} />)}
+          {summary.routes.map((route) => <RouteCard key={route.id} route={route} mutationKey={mutationKey} onRemove={() => route.route && void mutateRoute(route.route, null, "Channel disconnected.")} onOverride={() => route.route && void mutateRoute(route.route, agentId, "Channel connected.")} />)}
         </div>
       ) : null}
 
@@ -240,8 +312,8 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
         <div className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Add an OpenClaw route</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">Provider accounts and route candidates are loaded only when requested.</p>
+              <p className="text-sm font-medium">Connect a channel</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose an account, then discover the real groups and channels it can receive.</p>
             </div>
             {centerLoading ? <LoaderCircle className="h-4 w-4 animate-spin text-primary" /> : null}
           </div>
@@ -249,21 +321,52 @@ export function AgentChannelsSection({ agentId, surfaceTheme = "dark" }: { agent
           {providers.length > 0 ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="space-y-1.5 text-xs font-medium"><span>Provider</span><select value={providerId} onChange={(event) => chooseProvider(event.target.value)} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="">Choose provider</option>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
-              <label className="space-y-1.5 text-xs font-medium"><span>Account</span><select value={accountId} onChange={(event) => chooseAccount(event.target.value)} disabled={!selectedProvider} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="">Choose account</option>{selectedProvider?.accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name || account.accountId}</option>)}</select></label>
-              <label className="space-y-1.5 text-xs font-medium"><span>Route type</span><select value={routeKind} onChange={(event) => { const nextKind = event.target.value as "groups" | "peers" | "topics"; setRouteKind(nextKind); setDirectoryEntries([]); setDirectoryStatus(null); setDirectoryError(null); if (nextKind === "topics" && groupId) void readDirectory(nextKind, groupId); }} disabled={!selectedAccount} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="groups">Groups and servers</option><option value="peers">Direct routes</option>{selectedProvider?.id === "telegram" && selectedProvider.capabilities?.supportsTopics ? <option value="topics">Telegram topics</option> : null}</select></label>
+              <label className="space-y-1.5 text-xs font-medium"><span>Account</span><select value={accountId} onChange={(event) => chooseAccount(event.target.value)} disabled={!selectedProvider} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="">Choose account</option>{selectedProvider?.accounts.map((account) => { const presentation = presentChannelAccountState(accountStateInput(account)); return <option key={account.accountId} value={account.accountId} disabled={!isRouteAccountSelectable(account)}>{account.name || account.accountId} · {presentation.label}</option>; })}</select></label>
+              <label className="space-y-1.5 text-xs font-medium"><span>Route type</span><select value={routeKind} onChange={(event) => { const nextKind = event.target.value as "groups" | "peers" | "topics"; setRouteKind(nextKind); setDirectoryStatus(null); setDirectoryError(null); if (nextKind === "topics" && groupId) void readDirectory(nextKind, groupId); }} disabled={!selectedAccount} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="groups">Groups and servers</option><option value="peers">Direct routes</option>{selectedProvider?.id === "telegram" && selectedProvider.capabilities?.supportsTopics ? <option value="topics">Telegram topics</option> : null}</select></label>
               {routeKind === "topics" ? <label className="space-y-1.5 text-xs font-medium"><span>Parent group</span><select value={groupId ?? ""} onChange={(event) => { setGroupId(event.target.value || null); if (event.target.value) void readDirectory("topics", event.target.value); }} disabled={groupEntries.length === 0} className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"><option value="">Choose group</option>{groupEntries.map((entry) => <option key={entry.routeId} value={entry.routeId}>{entry.title || entry.handle || "Telegram group"}</option>)}</select></label> : null}
             </div>
-          ) : centerLoading ? null : <p className="mt-4 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">OpenClaw did not report any provider accounts that can be selected.</p>}
+          ) : centerLoading ? null : <p className="mt-4 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">No usable messaging accounts are available yet. Connect an account first.</p>}
 
-          {providers.length > 0 && selectedAccount ? <Button type="button" variant="secondary" size="sm" className="mt-3 h-8 rounded-lg text-xs" onClick={() => void readDirectory(routeKind, groupId)} disabled={loadingDirectory || (routeKind === "topics" && !groupId)}>{loadingDirectory ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <GitBranch className="mr-1.5 h-3.5 w-3.5" />}Load routes</Button> : null}
+          {selectedAccount && !isRouteAccountSelectable(selectedAccount) ? <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">{presentChannelAccountState(accountStateInput(selectedAccount)).detail} Complete account setup before discovering routes.</p> : null}
+
+          {providers.length > 0 && selectedAccount ? <Button type="button" variant="secondary" size="sm" className="mt-3 h-8 rounded-lg text-xs" onClick={() => void readDirectory(routeKind, groupId)} disabled={loadingDirectory || (routeKind === "topics" && !groupId)}>{loadingDirectory ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <GitBranch className="mr-1.5 h-3.5 w-3.5" />}Find channels</Button> : null}
           {directoryError ? <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">{directoryError}</p> : null}
-          {directoryStatus === "unsupported" ? <p className="mt-3 rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">OpenClaw does not expose this directory for the selected provider. Use the OpenClaw Control UI for discovery, then return here to bind a known route.</p> : null}
-          {directoryStatus === "empty" && !loadingDirectory ? <p className="mt-3 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">OpenClaw returned no routes for this account.</p> : null}
-          {directoryEntries.length > 0 ? <div className="mt-3 space-y-2">{directoryEntries.map((entry) => <DirectoryRouteCard key={`${entry.kind}:${entry.parentRouteId ?? ""}:${entry.routeId}`} entry={entry} agentId={agentId} mutationKey={mutationKey} onRoute={() => void mutateRoute(toRouteIdentity(providerId, entry), agentId, "Route override added.")} />)}</div> : null}
+          {directoryStatus === "unsupported" ? <p className="mt-3 rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">This provider does not expose channel discovery here. Complete discovery in the OpenClaw Control UI, then return with the channel details.</p> : null}
+          {directoryStatus === "empty" && !loadingDirectory ? <p className="mt-3 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">No groups or channels were found. Add the account to a group, then refresh.</p> : null}
+          {directoryEntries.length > 0 ? <div className="mt-3 space-y-2">{directoryEntries.map((entry) => <DirectoryRouteCard key={`${entry.kind}:${entry.parentRouteId ?? ""}:${entry.routeId}`} entry={entry} agentId={agentId} mutationKey={mutationKey} onRoute={() => void mutateRoute(toRouteIdentity(providerId, entry), agentId, "Channel connected.")} />)}</div> : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+function channelRouteMatches(left: ChannelRouteIdentity, right: ChannelRouteIdentity) {
+  return left.provider === right.provider
+    && left.accountId === right.accountId
+    && left.kind === right.kind
+    && left.routeId === right.routeId
+    && left.parentRouteId === right.parentRouteId;
+}
+
+function accountStateInput(account: CenterProvider["accounts"][number]) {
+  return {
+    accountId: account.accountId,
+    configured: account.configured === true,
+    enabled: account.enabled !== false,
+    linked: account.linked === true,
+    running: account.running === true,
+    connected: account.connected === true,
+    liveStatusAvailable: account.liveStatusAvailable === true,
+    authenticationRequired: account.authenticationRequired === true,
+    lastError: account.lastError ?? null,
+    healthState: account.healthState ?? null,
+    credentialState: account.credentialState
+  };
+}
+
+function isRouteAccountSelectable(account: CenterProvider["accounts"][number]) {
+  const state = presentChannelAccountState(accountStateInput(account)).state;
+  return state === "ONLINE" || state === "READY" || state === "STOPPED";
 }
 
 function RouteCard({ route, mutationKey, onRemove, onOverride }: { route: AgentRouteProjection; mutationKey: string | null; onRemove: () => void; onOverride: () => void }) {
@@ -285,7 +388,7 @@ function DirectoryRouteCard({ entry, agentId, mutationKey, onRoute }: { entry: D
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/65 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0"><p className="truncate text-xs font-medium">{entry.title || entry.handle || routeKindLabel(entry.kind)}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{routeKindLabel(entry.kind)}{entry.bindingMatch === "inherited" ? " · inherited" : entry.bindingMatch === "fallback" ? " · OpenClaw default" : ""}</p></div>
-      <Button type="button" size="sm" variant={effectiveForAgent ? "secondary" : "default"} className="h-7 shrink-0 rounded-lg px-2.5 text-[10px]" onClick={onRoute} disabled={effectiveForAgent || !canEdit || entry.bindingEditingAmbiguous || Boolean(mutationKey)}>{effectiveForAgent ? "Current route" : canEdit ? "Route to agent" : "OpenClaw only"}</Button>
+      <Button type="button" size="sm" variant={effectiveForAgent ? "secondary" : "default"} className="h-7 shrink-0 rounded-lg px-2.5 text-[10px]" onClick={onRoute} disabled={effectiveForAgent || !canEdit || entry.bindingEditingAmbiguous || Boolean(mutationKey)}>{effectiveForAgent ? "Connected" : canEdit ? "Connect to agent" : "OpenClaw only"}</Button>
     </div>
   );
 }

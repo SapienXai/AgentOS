@@ -50,6 +50,57 @@ export type AgentChannelRouteSummary = {
   };
 };
 
+export type AgentChannelRouteBadgeSummary = {
+  providers: MissionControlSurfaceProvider[];
+  routeCount: number;
+};
+
+/**
+ * Build the small native projection needed by Mission Control cards.
+ *
+ * This intentionally excludes OpenClaw's global default agent. A default
+ * agent is useful in the Agent Profile detail, but it is not a provider
+ * connection and must not manufacture a provider badge on the canvas.
+ */
+export async function getAgentChannelRouteBadgeSummaries(input: {
+  agentIds: string[];
+  adapter?: OpenClawAdapter;
+}): Promise<Record<string, AgentChannelRouteBadgeSummary>> {
+  const agentIds = new Set(input.agentIds.map(normalizeAgentId).filter((value): value is string => Boolean(value)));
+  if (agentIds.size === 0) return {};
+
+  const adapter = input.adapter ?? getOpenClawAdapter();
+  const byAgent = new Map<string, { providers: Set<MissionControlSurfaceProvider>; routes: Set<string> }>();
+  for (const agentId of agentIds) {
+    byAgent.set(agentId, { providers: new Set(), routes: new Set() });
+  }
+
+  const bindings = await readNativeRouteBindings(adapter);
+  for (const entry of bindings.entries) {
+    const agentId = normalizeAgentId(entry.binding.agentId);
+    const provider = normalizeString(entry.binding.match.channel);
+    if (!agentId || !provider || !byAgent.has(agentId)) continue;
+
+    const route = nativeBindingToRouteIdentity(entry.binding);
+    const routeKey = route ? channelRouteKey(route) : `account:${provider}:${normalizeString(entry.binding.match.accountId) ?? "default"}`;
+    const summary = byAgent.get(agentId)!;
+    summary.providers.add(provider);
+    summary.routes.add(routeKey);
+  }
+
+  const telegramConfig = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 }).catch(() => null);
+  addTelegramTopicBadgeRoutes(telegramConfig, byAgent);
+
+  return Object.fromEntries(
+    Array.from(byAgent.entries())
+      .filter(([, summary]) => summary.routes.size > 0)
+      .map(([agentId, summary]) => [agentId, {
+        providers: Array.from(summary.providers).sort((left, right) => left.localeCompare(right)),
+        routeCount: summary.routes.size
+      } satisfies AgentChannelRouteBadgeSummary])
+  );
+}
+
 /**
  * Read-only agent projection of OpenClaw's native route bindings.
  *
@@ -384,6 +435,45 @@ function createDefaultProjection(agentId: string): AgentChannelRouteProjection {
     editingAmbiguity: false,
     shadowedBindingCount: 0
   };
+}
+
+function addTelegramTopicBadgeRoutes(
+  config: Record<string, unknown> | null,
+  byAgent: Map<string, { providers: Set<MissionControlSurfaceProvider>; routes: Set<string> }>
+) {
+  if (!isRecord(config)) return;
+
+  const addGroups = (accountId: string, groups: unknown) => {
+    if (!isRecord(groups)) return;
+    for (const [groupId, rawGroup] of Object.entries(groups)) {
+      if (!isRecord(rawGroup) || !isRecord(rawGroup.topics)) continue;
+      for (const [topicId, rawTopic] of Object.entries(rawGroup.topics)) {
+        if (!isRecord(rawTopic)) continue;
+        const agentId = normalizeAgentId(rawTopic.agentId);
+        const summary = agentId ? byAgent.get(agentId) : null;
+        if (!summary) continue;
+        const route = buildChannelRouteIdentity({
+          provider: "telegram",
+          accountId,
+          kind: "topic",
+          routeId: topicId,
+          parentRouteId: groupId,
+          metadata: { nativePeerKind: "group", nativeScope: "peer" }
+        });
+        summary.providers.add("telegram");
+        summary.routes.add(channelRouteKey(route));
+      }
+    }
+  };
+
+  const accounts = isRecord(config.accounts) ? config.accounts : null;
+  if (accounts) {
+    for (const [accountId, rawAccount] of Object.entries(accounts)) {
+      if (isRecord(rawAccount)) addGroups(accountId, rawAccount.groups);
+    }
+  } else {
+    addGroups("default", config.groups);
+  }
 }
 
 function dedupeProjections(projections: Array<AgentChannelRouteProjection | null>) {

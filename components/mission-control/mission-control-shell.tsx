@@ -9,6 +9,7 @@ import {
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
+import { AgentConnectionsDialog } from "@/components/mission-control/agent-connections-dialog";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { CommandBar } from "@/components/mission-control/command-bar";
@@ -876,9 +877,11 @@ export function MissionControlShell({
     setIsWorkspaceChannelsOpen,
     workspaceChannelsInitialAgentId,
     setWorkspaceChannelsInitialAgentId,
-    workspaceChannelsInitialSection,
-    setWorkspaceChannelsInitialSection,
-    openWorkspaceChannels,
+    isAgentConnectionsOpen,
+    setIsAgentConnectionsOpen,
+    agentConnectionsInitialAgentId,
+    setAgentConnectionsInitialAgentId,
+    openAgentConnections,
     openAccountsConnect,
     isConnectAccountDialogOpen,
     setIsConnectAccountDialogOpen,
@@ -4675,7 +4678,7 @@ export function MissionControlShell({
               await refreshSnapshot({ force: true });
             }}
             onInspectAgentDetail={handleInspectAgentDetail}
-            onOpenWorkspaceChannels={openWorkspaceChannels}
+            onOpenWorkspaceChannels={openAgentConnections}
             onOpenAccounts={openAccountsConnect}
             onOpenWorkspaceContextEngine={openWorkspaceContextEngine}
             onCreateWorkspaceAgent={(workspaceId) => {
@@ -5298,20 +5301,32 @@ export function MissionControlShell({
           accountTargets={accountTargets}
           accountAccessRules={accountAccessRules}
           initialAgentId={workspaceChannelsInitialAgentId}
-          initialSection={workspaceChannelsInitialSection}
           open={isWorkspaceChannelsOpen}
           onOpenChange={(open) => {
             setIsWorkspaceChannelsOpen(open);
             if (!open) {
               setWorkspaceChannelsInitialAgentId(null);
-              setWorkspaceChannelsInitialSection("surfaces");
             }
           }}
           onRefresh={refresh}
-          onSnapshotChange={setSnapshot}
           onAccountAccessRulesChange={setAccountAccessRules}
           onAccountTargetsChange={setAccountTargets}
           onConnectAccount={openConnectAccountDialog}
+          surfaceTheme={surfaceTheme}
+        />
+        <AgentConnectionsDialog
+          open={isAgentConnectionsOpen}
+          agentId={agentConnectionsInitialAgentId}
+          snapshot={uiSnapshot}
+          onOpenChange={(nextOpen) => {
+            setIsAgentConnectionsOpen(nextOpen);
+            if (!nextOpen) {
+              setAgentConnectionsInitialAgentId(null);
+            }
+          }}
+          onRefresh={async () => {
+            await refreshSnapshot({ force: true });
+          }}
           surfaceTheme={surfaceTheme}
         />
         <ConnectAccountWizard

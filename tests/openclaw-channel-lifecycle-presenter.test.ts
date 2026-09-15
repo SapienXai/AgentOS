@@ -7,7 +7,7 @@ import { presentChannelLifecycleResult } from "@/lib/openclaw/domains/channel-li
 const provider = "telegram";
 const accountId = "operations";
 
-test("presents a confirmed start only when live status reports running", () => {
+test("presents a confirmed start only when live status reports a usable account", () => {
   const presentation = presentChannelLifecycleResult({
     action: "start",
     provider,
@@ -18,8 +18,21 @@ test("presents a confirmed start only when live status reports running", () => {
 
   assert.deepEqual(
     { state: presentation.state, title: presentation.title, tone: presentation.tone },
-    { state: "running", title: "Running", tone: "success" }
+    { state: "running", title: "Online", tone: "success" }
   );
+});
+
+test("accepts a connected account as a usable start result even when running is omitted", () => {
+  const presentation = presentChannelLifecycleResult({
+    action: "start",
+    provider,
+    accountId,
+    result: { started: true, outcome: { status: "handed-off" } },
+    status: channelStatus({ running: false, connected: true })
+  });
+
+  assert.equal(presentation.state, "running");
+  assert.equal(presentation.tone, "success");
 });
 
 test("keeps a handed-off start neutral until live status confirms it", () => {
@@ -180,7 +193,7 @@ test("does not claim a lifecycle success when live status could not be refreshed
   assert.match(presentation.detail, /live status could not be refreshed/i);
 });
 
-function channelStatus(account: { running: boolean }): OpenClawChannelStatusPayload {
+function channelStatus(account: { running: boolean; connected?: boolean }): OpenClawChannelStatusPayload {
   return {
     ts: 1,
     channelOrder: [provider],

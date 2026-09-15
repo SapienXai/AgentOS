@@ -22,6 +22,7 @@ const snapshotResponseKeys = [
   "missionPresets",
   "mode",
   "models",
+  "nativeChannelRouteBadges",
   "nativeWork",
   "presence",
   "relationships",

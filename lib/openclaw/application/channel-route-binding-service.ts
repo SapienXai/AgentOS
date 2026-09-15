@@ -264,6 +264,9 @@ export async function clearNativeRouteBindingsForAgent(input: {
   const adapter = input.adapter ?? getOpenClawAdapter();
   const current = await readNativeRouteBindings(adapter);
   const telegramTopics = await readTelegramTopicAgentBindings(adapter, agentId);
+  if (telegramTopics.removed > 0 && !telegramTopics.baseHash) {
+    throw new Error("OpenClaw did not provide a config snapshot for safe Telegram topic cleanup. Refresh the Gateway and try again.");
+  }
   const ownedIndexes = new Set(
     current.entries
       .filter((entry) => entry.binding.agentId === agentId)
@@ -301,11 +304,12 @@ export async function clearNativeRouteBindingsForAgent(input: {
   if (telegramTopics.removed > 0 && telegramTopics.nextConfig) {
     const result = await adapter.setConfig("channels.telegram", telegramTopics.nextConfig, {
       strictJson: true,
+      ...(telegramTopics.baseHash ? { baseHash: telegramTopics.baseHash } : {}),
       replacePaths: ["channels.telegram"],
       timeoutMs: 15_000
     });
     topicMutation = readConfigMutationOutcome(result, "channels.telegram");
-    const after = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
+    const after = await readTelegramTopicConfig(adapter);
     if (countTelegramTopicAgentBindings(after, agentId) > 0) {
       throw new Error("OpenClaw accepted topic cleanup, but the deleted agent still owns a Telegram topic route.");
     }
@@ -323,13 +327,50 @@ export async function clearNativeRouteBindingsForAgent(input: {
 }
 
 async function readTelegramTopicAgentBindings(adapter: OpenClawAdapter, agentId: string) {
-  const config = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
-  if (!isRecord(config)) return { nextConfig: null, removed: 0 };
+  const snapshot = await readTelegramTopicConfigSnapshot(adapter);
+  const config = snapshot.config;
+  if (!config) return { nextConfig: null, removed: 0, baseHash: snapshot.baseHash };
   const nextConfig = cloneTelegramTopicConfigWithoutAgent(config, agentId);
   return {
     nextConfig: nextConfig.removed > 0 ? nextConfig.config : null,
-    removed: nextConfig.removed
+    removed: nextConfig.removed,
+    baseHash: snapshot.baseHash
   };
+}
+
+async function readTelegramTopicConfig(adapter: OpenClawAdapter) {
+  return (await readTelegramTopicConfigSnapshot(adapter)).config;
+}
+
+async function readTelegramTopicConfigSnapshot(adapter: OpenClawAdapter) {
+  if (adapter.getConfigSnapshot) {
+    const snapshot = await adapter.getConfigSnapshot({ timeoutMs: 10_000 });
+    const root = isRecord(snapshot.config)
+      ? snapshot.config
+      : isRecord(snapshot.resolved)
+        ? snapshot.resolved
+        : null;
+    const channels = root && isRecord(root.channels) ? root.channels : null;
+    const scoped = channels && isRecord(channels.telegram)
+      ? channels.telegram
+      : root && hasTelegramConfigShape(root)
+        ? root
+        : null;
+    return {
+      config: scoped,
+      baseHash: normalizeString(snapshot.hash ?? snapshot.configRevisionHash ?? snapshot.appliedConfigHash)
+    };
+  }
+
+  const config = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
+  return { config: isRecord(config) ? config : null, baseHash: null };
+}
+
+function hasTelegramConfigShape(value: Record<string, unknown>) {
+  return Object.prototype.hasOwnProperty.call(value, "groups")
+    || Object.prototype.hasOwnProperty.call(value, "accounts")
+    || Object.prototype.hasOwnProperty.call(value, "enabled")
+    || Object.prototype.hasOwnProperty.call(value, "token");
 }
 
 function countTelegramTopicAgentBindings(config: unknown, agentId: string) {

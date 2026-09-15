@@ -10,6 +10,7 @@ import {
   Loader2,
   LogOut,
   MessageCircle,
+  MoreHorizontal,
   Play,
   RefreshCw,
   ShieldCheck,
@@ -24,6 +25,12 @@ import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { ChannelCenterSnapshot, ChannelCenterProvider } from "@/lib/openclaw/application/channel-center-service";
+import {
+  presentChannelAccountState,
+  presentChannelLogoutResult
+} from "@/lib/openclaw/domains/channel-account-presentation";
+import { presentChannelLifecycleResult } from "@/lib/openclaw/domains/channel-lifecycle-presenter";
+import type { OpenClawChannelLifecycleResult, OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
 import {
   EmptyState,
   EntityIcon,
@@ -92,16 +99,18 @@ export function ChannelCenterPageContent({
   const [routeError, setRouteError] = useState<string | null>(null);
   const [isConnectDialogOpen, setIsConnectDialogOpen] = useState(false);
 
-  const loadCenter = useCallback(async () => {
+  const loadCenter = useCallback(async (): Promise<ChannelCenterSnapshot | null> => {
     setLoadingCenter(true);
     try {
       const response = await fetch("/api/openclaw/channels/center", { cache: "no-store" });
       const payload = await response.json() as ChannelCenterSnapshot & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Channel inventory is unavailable.");
       setCenter(payload);
+      return payload;
     } catch (error) {
       setCenter(null);
       toast.error(error instanceof Error ? error.message : "Channel inventory is unavailable.");
+      return null;
     } finally {
       setLoadingCenter(false);
     }
@@ -209,9 +218,37 @@ export function ChannelCenterPageContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, provider: selectedProvider.id, accountId: selectedAccount.accountId })
       });
-      const payload = await response.json() as { error?: string };
+      const payload = await response.json() as {
+        error?: string;
+        result?: OpenClawChannelLifecycleResult | Record<string, unknown>;
+        status?: OpenClawChannelStatusPayload | null;
+        statusError?: string;
+      };
       if (!response.ok) throw new Error(payload.error ?? `Could not ${action} the account.`);
-      toast.success(action === "logout" ? "Account logged out." : `Account ${action} request accepted.`);
+      const presentation = action === "logout"
+        ? presentChannelLogoutResult({
+            result: payload.result as Record<string, unknown> | null | undefined,
+            status: payload.status,
+            statusError: payload.statusError,
+            provider: selectedProvider.id,
+            accountId: selectedAccount.accountId
+          })
+        : presentChannelLifecycleResult({
+            action,
+            provider: selectedProvider.id,
+            accountId: selectedAccount.accountId,
+            result: payload.result as OpenClawChannelLifecycleResult | null | undefined,
+            status: payload.status,
+            statusError: payload.statusError
+          });
+      const presentationLabel = "label" in presentation ? presentation.label : presentation.title;
+      if (presentation.tone === "success") {
+        toast.success(presentationLabel, { description: presentation.detail });
+      } else if (presentation.tone === "danger") {
+        toast.error(presentationLabel, { description: presentation.detail });
+      } else {
+        toast.warning(presentationLabel, { description: presentation.detail });
+      }
       await loadCenter();
       await refresh();
     } catch (error) {
@@ -278,7 +315,7 @@ export function ChannelCenterPageContent({
     await runMutation("/api/openclaw/channels/route-binding", body, successMessage, async () => {
       await loadRoutes();
       await loadTopics();
-    });
+    }, { verifyRoute: true, expectedAgentId: body.agentId });
   };
 
   const openControlUi = async () => {
@@ -351,13 +388,37 @@ export function ChannelCenterPageContent({
                         className={cn("flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors", account.accountId === selectedAccount?.accountId ? "border-primary/40 bg-primary/10" : "border-border bg-card/50 hover:bg-accent/60")}
                       >
                         <span className="flex min-w-0 items-center gap-2.5"><EntityIcon label={selectedProvider.label} size="sm" /><span className="min-w-0"><span className="block truncate text-xs font-semibold text-foreground">{account.name}</span><span className="block truncate font-mono text-[0.62rem] text-muted-foreground">{account.accountId}</span></span></span>
-                        <StatusBadge label={accountStatus(account)} tone={accountTone(account)} />
+                        <StatusBadge label={presentChannelAccountState({
+                          accountId: account.accountId,
+                          configured: account.configured,
+                          enabled: account.enabled,
+                          linked: account.linked,
+                          running: account.running,
+                          connected: account.connected,
+                          liveStatusAvailable: account.liveStatusAvailable,
+                          authenticationRequired: account.authenticationRequired,
+                          lastError: account.lastError,
+                          healthState: account.healthState,
+                          credentialState: account.credentialState
+                        }, { statusError: center?.statusError }).label} tone={presentChannelAccountState({
+                          accountId: account.accountId,
+                          configured: account.configured,
+                          enabled: account.enabled,
+                          linked: account.linked,
+                          running: account.running,
+                          connected: account.connected,
+                          liveStatusAvailable: account.liveStatusAvailable,
+                          authenticationRequired: account.authenticationRequired,
+                          lastError: account.lastError,
+                          healthState: account.healthState,
+                          credentialState: account.credentialState
+                        }, { statusError: center?.statusError }).tone} />
                       </button>
                     ))}
                   </div>
 
                   <div className="min-w-0">
-                    {selectedAccount ? <AccountPanel provider={selectedProvider} account={selectedAccount} actionKey={actionKey} onAction={runAccountAction} onOpenControlUi={openControlUi} /> : <EmptyState title="Select an account" description="Choose an account to inspect its routes." />}
+                    {selectedAccount ? <AccountPanel provider={selectedProvider} account={selectedAccount} statusError={center?.statusError} actionKey={actionKey} onAction={runAccountAction} onOpenControlUi={openControlUi} /> : <EmptyState title="Select an account" description="Choose an account to inspect its routes." />}
                   </div>
                 </div>
               </SectionCard>
@@ -420,12 +481,38 @@ export function ChannelCenterPageContent({
     </>
   );
 
-  async function runMutation(url: string, body: Record<string, unknown>, successMessage: string, after?: () => Promise<void>) {
+  async function runMutation(
+    url: string,
+    body: Record<string, unknown>,
+    successMessage: string,
+    after?: () => Promise<void>,
+    options: { verifyRoute?: boolean; expectedAgentId?: string | null } = {}
+  ) {
     try {
       const response = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const payload = await response.json() as { error?: string; applyMode?: string; pending?: boolean };
+      const payload = await response.json() as {
+        error?: string;
+        applyMode?: string;
+        pending?: boolean;
+        verification?: {
+          verified?: boolean;
+          effectiveAgentId?: string | null;
+        };
+      };
       if (!response.ok) throw new Error(payload.error ?? "The channel change could not be saved.");
-      toast.success(successMessage, { description: describeMutationOutcome(payload.applyMode, payload.pending) });
+      if (options.verifyRoute && payload.verification?.verified !== true) {
+        const effectiveAgentId = payload.verification?.effectiveAgentId;
+        toast.warning(
+          options.expectedAgentId ? "Route connection pending verification." : "Route removal pending verification.",
+          {
+            description: effectiveAgentId
+              ? `OpenClaw accepted the change, but the route still resolves to ${effectiveAgentId}. Refresh to confirm the canonical state.`
+              : "OpenClaw accepted the change, but the canonical route state has not confirmed it yet."
+          }
+        );
+      } else {
+        toast.success(successMessage, { description: describeMutationOutcome(payload.applyMode, payload.pending) });
+      }
       await after?.();
       await refresh();
     } catch (error) {
@@ -443,16 +530,62 @@ function ProviderCard({ provider, selected, onClick }: { provider: ChannelCenter
   );
 }
 
-function AccountPanel({ provider, account, actionKey, onAction, onOpenControlUi }: { provider: ChannelCenterProvider; account: ChannelCenterProvider["accounts"][number]; actionKey: string | null; onAction: (action: "start" | "stop" | "restart" | "logout") => void; onOpenControlUi: () => void }) {
+function AccountPanel({ provider, account, statusError, actionKey, onAction, onOpenControlUi }: { provider: ChannelCenterProvider; account: ChannelCenterProvider["accounts"][number]; statusError?: string | null; actionKey: string | null; onAction: (action: "start" | "stop" | "restart" | "logout") => void; onOpenControlUi: () => void }) {
   const canStart = provider.capabilities.supportsStart;
   const canStop = provider.capabilities.supportsStop;
   const canRestart = provider.capabilities.supportsRestart;
   const canLogout = provider.capabilities.supportsLogout;
+  const presentation = presentChannelAccountState({
+    accountId: account.accountId,
+    configured: account.configured,
+    enabled: account.enabled,
+    linked: account.linked,
+    running: account.running,
+    connected: account.connected,
+    liveStatusAvailable: account.liveStatusAvailable,
+    authenticationRequired: account.authenticationRequired,
+    lastError: account.lastError,
+    healthState: account.healthState,
+    credentialState: account.credentialState
+  }, { statusError });
+  const canStartFromState = presentation.state === "READY" || presentation.state === "STOPPED";
+  const canUseAdvancedLogout = canLogout && presentation.state !== "NEEDS_SETUP" && presentation.state !== "STATUS_UNAVAILABLE";
   return (
     <div className="rounded-xl border border-border bg-card/45 p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-foreground">{account.name}</h3><StatusBadge label={accountStatus(account)} tone={accountTone(account)} /></div><p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">{account.accountId}{account.isDefault ? " · default" : ""}</p></div><div className="flex flex-wrap gap-1.5"><Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}><ExternalLink className="mr-1 h-3 w-3" />Open Control UI</Button>{account.running && canStop ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : !account.running && canStart ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}{canRestart ? <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("restart")} disabled={Boolean(actionKey)}><RefreshCw className="mr-1 h-3 w-3" />Restart</Button> : null}<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={!canLogout || Boolean(actionKey)}><LogOut className="mr-1 h-3 w-3" />Log out</Button></div></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{account.name}</h3>
+            <StatusBadge label={presentation.label} tone={presentation.tone} />
+          </div>
+          <p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">
+            {account.accountId}{account.isDefault === true ? " · default" : account.isDefault === null ? " · default not confirmed" : ""}
+          </p>
+          <p className="mt-2 max-w-xl text-xs leading-5 text-muted-foreground">{presentation.detail}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {presentation.state === "NEEDS_SETUP" || presentation.state === "NEEDS_ATTENTION" ? (
+            <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}>
+              <ExternalLink className="mr-1 h-3 w-3" />{presentation.state === "NEEDS_SETUP" ? "Complete setup" : "Fix in OpenClaw"}
+            </Button>
+          ) : null}
+          {!account.running && canStartFromState && canStart ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("start")} disabled={Boolean(actionKey)}><Play className="mr-1 h-3 w-3" />Start</Button> : null}
+          {account.running && canStop ? <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("stop")} disabled={Boolean(actionKey)}><Square className="mr-1 h-3 w-3" />Stop</Button> : null}
+          <details className="relative">
+            <summary className="flex h-8 cursor-pointer list-none items-center rounded-lg border border-border px-2 text-[0.65rem] text-muted-foreground hover:bg-accent [&::-webkit-details-marker]:hidden">
+              <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" /><span className="sr-only">More account actions</span>
+            </summary>
+            <div className="absolute right-0 top-9 z-10 min-w-[150px] rounded-xl border border-border bg-popover p-1 shadow-xl">
+              <Button variant="ghost" size="sm" className="h-8 w-full justify-start rounded-lg px-2 text-[0.65rem]" onClick={onOpenControlUi} disabled={Boolean(actionKey)}><ExternalLink className="mr-1.5 h-3 w-3" />Open Control UI</Button>
+              {canRestart && presentation.state !== "NEEDS_SETUP" && presentation.state !== "STATUS_UNAVAILABLE" ? <Button variant="ghost" size="sm" className="h-8 w-full justify-start rounded-lg px-2 text-[0.65rem]" onClick={() => onAction("restart")} disabled={Boolean(actionKey)}><RefreshCw className="mr-1.5 h-3 w-3" />Restart</Button> : null}
+              {canUseAdvancedLogout ? <Button variant="ghost" size="sm" className="h-8 w-full justify-start rounded-lg px-2 text-[0.65rem] text-destructive" onClick={() => onAction("logout")} disabled={Boolean(actionKey)}><LogOut className="mr-1.5 h-3 w-3" />Log out</Button> : null}
+            </div>
+          </details>
+        </div>
+      </div>
       {account.lastError ? <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-2 text-xs text-destructive">{account.lastError}</div> : null}
-      <div className="mt-3 grid gap-2 sm:grid-cols-3"><KeyValue label="Runtime" value={account.connected ? "Connected" : account.running ? "Running" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Authentication" value={account.authenticationRequired ? "Required" : account.linked ? "Linked" : account.configured ? "Configured" : "Unknown"} /><KeyValue label="Inventory" value={account.liveStatusAvailable ? "Gateway status" : "Config only"} /></div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3"><KeyValue label="Runtime" value={account.connected ? "Connected" : account.running ? "Starting" : account.configured ? "Stopped / ready" : "Needs setup"} /><KeyValue label="Authentication" value={account.authenticationRequired ? "Required" : account.linked ? "Linked" : account.configured ? "Credential present" : "Unknown"} /><KeyValue label="Evidence" value={account.evidence === "config-only" ? "Config only" : account.liveStatusAvailable ? "Live status" : "Unavailable"} /></div>
+      {account.evidence === "config-only" ? <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-400/[0.06] p-2 text-xs leading-5 text-muted-foreground">This is a config-only candidate. AgentOS will not remove it automatically; confirm the account in OpenClaw before using it for a route.</div> : null}
     </div>
   );
 }
@@ -590,19 +723,4 @@ function RouteIcon({ kind }: { kind: DirectoryEntry["kind"] }) {
   if (kind === "dm") return <MessageCircle className="h-3.5 w-3.5" />;
   if (kind === "group" || kind === "role") return <Users className="h-3.5 w-3.5" />;
   return <Hash className="h-3.5 w-3.5" />;
-}
-
-function accountStatus(account: ChannelCenterProvider["accounts"][number]) {
-  if (account.connected) return "Connected";
-  if (account.running) return "Running";
-  if (account.authenticationRequired) return "Needs auth";
-  if (account.configured) return account.enabled ? "Configured" : "Disabled";
-  return "Unknown";
-}
-
-function accountTone(account: ChannelCenterProvider["accounts"][number]): "success" | "info" | "warning" | "danger" | "muted" {
-  if (account.connected || account.running) return "success";
-  if (account.authenticationRequired) return "warning";
-  if (account.configured) return account.enabled ? "info" : "muted";
-  return "muted";
 }

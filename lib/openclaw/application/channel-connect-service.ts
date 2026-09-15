@@ -60,6 +60,9 @@ export type ChannelConnectProviderView = {
     connected: boolean;
     liveStatusAvailable: boolean;
     authenticationRequired: boolean;
+    healthState?: string | null;
+    credentialState?: "present" | "missing" | "unknown";
+    evidence?: "live-and-config" | "live-only" | "config-only" | "unknown";
     lastError: string | null;
   }>;
 };

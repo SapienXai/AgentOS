@@ -3,11 +3,45 @@ import test from "node:test";
 
 import {
   buildCanvasGraph,
+  buildAgentSurfaceBadges,
   filterWorkspaceTasksForCanvas,
   isActiveTaskForCanvas,
   isSystemOwnedMonitorTask
 } from "@/components/mission-control/canvas.graph";
 import type { MissionControlSnapshot, WorkItemRecord } from "@/lib/agentos/contracts";
+
+test("legacy workspace channel metadata cannot create an Agent card provider badge", () => {
+  const workspace = {
+    id: "workspace-1",
+    name: "Workspace",
+    path: "/tmp/workspace-1",
+    agentIds: ["agent-1"],
+    runtimeIds: [],
+    activeRuntimeIds: [],
+    taskIds: [],
+    status: "idle",
+    metadata: {}
+  } as unknown as MissionControlSnapshot["workspaces"][number];
+  const agent = {
+    id: "agent-1",
+    workspaceId: workspace.id,
+    name: "Support Agent"
+  } as unknown as MissionControlSnapshot["agents"][number];
+  const snapshot = {
+    nativeChannelRouteBadges: {},
+    channelRegistry: {
+      channels: [{
+        id: "telegram-main",
+        type: "telegram",
+        name: "Telegram",
+        primaryAgentId: agent.id,
+        workspaces: [{ workspaceId: workspace.id, agentIds: [agent.id], groupAssignments: [] }]
+      }]
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.deepEqual(buildAgentSurfaceBadges(snapshot, workspace, agent), []);
+});
 
 test("Active Runs keeps scheduled, running, and review tasks only", () => {
   const tasks = (["queued", "running", "stalled", "completed", "cancelled", "idle"] as const).map(
@@ -91,6 +125,12 @@ test("canvas places agent-owned tasks when task workspace id is missing", () => 
           ]
         }
       ]
+    },
+    nativeChannelRouteBadges: {
+      "agent-1": {
+        providers: ["telegram"],
+        routeCount: 1
+      }
     },
     models: [],
     relationships: [],

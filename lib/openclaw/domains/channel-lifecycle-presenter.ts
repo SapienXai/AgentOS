@@ -52,8 +52,8 @@ export function presentChannelLifecycleResult(input: {
   }
 
   const liveAccount = findLiveAccount(input.status, input.provider, input.accountId);
-  if (input.action === "start" && liveAccount?.running === true) {
-    return successPresentation("running", "Running", "OpenClaw confirms that this account is running.");
+  if (input.action === "start" && (liveAccount?.running === true || liveAccount?.connected === true)) {
+    return successPresentation("running", "Online", "OpenClaw confirms that this account is running and usable.");
   }
   if (input.action === "stop" && result?.stopped === true && liveAccount?.running === false) {
     return successPresentation("stopped", "Stopped", "The account is stopped. Its OpenClaw authentication and credentials remain saved.");
@@ -100,8 +100,8 @@ function presentRestartResult(input: {
   }
 
   const liveAccount = findLiveAccount(input.status, input.provider, input.accountId);
-  if (stop?.stopped === true && start?.started === true && liveAccount?.running === true) {
-    return successPresentation("running", "Connection restarted", "OpenClaw confirms that the account is running again.");
+  if (stop?.stopped === true && start?.started === true && (liveAccount?.running === true || liveAccount?.connected === true)) {
+    return successPresentation("running", "Connection restarted", "OpenClaw confirms that the account is running and usable again.");
   }
 
   if (start?.outcome?.status === "handed-off" || start?.started === true) {
