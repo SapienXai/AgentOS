@@ -127,10 +127,14 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building AgentOS desktop")
-        .run(|app, event| {
-            if matches!(event, RunEvent::Exit { .. }) {
-                shutdown_embedded_agentos(app);
-            }
+        .run(|app, event| match event {
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => show_main_window_if_ready(app),
+            RunEvent::Exit => shutdown_embedded_agentos(app),
+            _ => {}
         });
 }
 
@@ -232,16 +236,7 @@ fn install_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         .tooltip("AgentOS")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => {
-                if app
-                    .state::<DesktopState>()
-                    .main_ready
-                    .load(Ordering::SeqCst)
-                {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
+                show_main_window_if_ready(app);
             }
             "restart" => {
                 let state = app.state::<DesktopState>();
@@ -332,6 +327,21 @@ fn finish_reveal_main_window(window: &WebviewWindow) {
 
     if let Some(splash) = window.app_handle().get_webview_window("splash") {
         let _ = splash.close();
+    }
+}
+
+fn show_main_window_if_ready(app: &AppHandle) {
+    if !app
+        .state::<DesktopState>()
+        .main_ready
+        .load(Ordering::SeqCst)
+    {
+        return;
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
     }
 }
 

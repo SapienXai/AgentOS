@@ -4577,7 +4577,7 @@ export function MissionControlShell({
         <div
           data-tauri-drag-region="deep"
           className={cn(
-            "pointer-events-auto fixed top-0 z-40 hidden h-16 lg:block",
+            "pointer-events-auto fixed top-0 z-[60] hidden h-16 lg:block",
             isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
             "lg:right-[84px]"
           )}
@@ -4756,7 +4756,7 @@ export function MissionControlShell({
       <div
         data-tauri-drag-region="deep"
         className={cn(
-          "pointer-events-auto absolute top-0 z-40 hidden h-16 lg:block",
+          "pointer-events-auto absolute top-0 z-[60] hidden h-16 lg:block",
           isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
           !isInspectorOpen && "lg:right-[76px]"
         )}
@@ -4773,6 +4773,16 @@ export function MissionControlShell({
           onRefresh={refresh}
           {...settingsPanelProps}
         />
+      </div>
+
+      <div
+        data-tauri-drag-region="deep"
+        className={cn(
+          "pointer-events-auto absolute top-6 z-[60] hidden mission-ease-smooth transition-[left] duration-500 lg:block",
+          isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]"
+        )}
+      >
+        <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
       </div>
 
       <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspaceForDialogs?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
@@ -4820,13 +4830,6 @@ export function MissionControlShell({
           </button>
           </div>
         ) : null}
-
-        <div
-          data-tauri-drag-region="deep"
-          className="pointer-events-auto absolute left-[80px] top-6 z-10 hidden lg:block"
-        >
-          <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
-        </div>
 
         <div
           className={cn(

@@ -33,6 +33,15 @@ test("desktop startup keeps the main window hidden until the splash gate is read
   assert.match(source, /watch_main_navigation\(app\.clone\(\), window\.clone\(\)\)/);
 });
 
+test("macOS Dock activation restores the hidden main window after a native close", async () => {
+  const source = await readFile(join(repoRoot, "apps/desktop/src-tauri/src/main.rs"), "utf8");
+
+  assert.match(source, /RunEvent::Reopen\s*\{[\s\S]*has_visible_windows: false[\s\S]*\}\s*=> show_main_window_if_ready\(app\)/);
+  assert.match(source, /fn show_main_window_if_ready\(app: &AppHandle\)/);
+  assert.match(source, /api\.prevent_close\(\);\s*let _ = window\.hide\(\);/);
+  assert.match(source, /let _ = window\.show\(\);\s*let _ = window\.set_focus\(\);/);
+});
+
 test("desktop shell uses native macOS overlay titlebar without replacing traffic lights", async () => {
   const source = await readFile(join(repoRoot, "apps/desktop/src-tauri/src/main.rs"), "utf8");
   const mainWindowSource = source.slice(
@@ -57,8 +66,10 @@ test("declared drag regions stay on shell surfaces instead of the sidebar contro
   ]);
 
   assert.match(topbar, /data-tauri-drag-region="deep"/);
+  assert.match(topbar, /data-tauri-drag-region="false"/);
   assert.match(shell, /data-tauri-drag-region="deep"[\s\S]*h-16/);
   assert.match(shell, /data-tauri-drag-region="deep"/);
+  assert.match(shell, /z-\[60\][\s\S]*lg:left-\[316px\][\s\S]*lg:left-\[80px\]/);
   assert.match(onboarding, /data-tauri-drag-region="deep"/);
   assert.match(sidebar, /agentos-sidebar-surface/);
   assert.match(onboarding, /agentos-titlebar-surface/);
