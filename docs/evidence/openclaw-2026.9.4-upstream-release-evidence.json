@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-15T13:09:51.300Z",
+  "upstream": {
+    "repository": "openclaw/openclaw",
+    "releaseUrl": "https://github.com/openclaw/openclaw/releases/tag/v2026.9.4",
+    "version": "2026.9.4",
+    "tag": "v2026.9.4",
+    "signedTagObject": "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e",
+    "sourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "releaseDate": "2026-09-11"
+  },
+  "assets": [
+    {
+      "name": "openclaw-2026.9.4-release-manifest.json",
+      "sha256": "c1007fb64bcabe05eadd95f4abd24a18ed803e146b5d82ac4db83b286161622f",
+      "sha256Asset": "207435c2d97e59a6a77fac00d7b91a88e295ff1d8c4455526a60f629ea2ee8cf"
+    },
+    {
+      "name": "openclaw-2026.9.4-postpublish-evidence.json",
+      "sha256": "1cdddcdbe215b2fed7960aea99089d56e2d9691c884809f4f67af68344c2d484",
+      "sha256Asset": "d1230968213c72239116c68ce0e7797c658b581af16988445727ad3a7d91467f"
+    },
+    {
+      "name": "openclaw-2026.9.4-dependency-evidence.zip",
+      "sha256": "ad7fc668f41db2ecb8c8eafa37b08a2dbe9e4ea60331f5641452cd832966002d"
+    }
+  ],
+  "hashes": {
+    "releaseManifest": "c1007fb64bcabe05eadd95f4abd24a18ed803e146b5d82ac4db83b286161622f",
+    "postpublishEvidence": "1cdddcdbe215b2fed7960aea99089d56e2d9691c884809f4f67af68344c2d484",
+    "dependencyEvidence": "ad7fc668f41db2ecb8c8eafa37b08a2dbe9e4ea60331f5641452cd832966002d"
+  },
+  "releaseManifest": {
+    "targetSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "packageVersion": "2026.9.4",
+    "packageSha256": "4f1f656770461d4677dea755b1899cba12b912b06798c89a59e2f0c18688b761"
+  },
+  "postpublish": {
+    "releaseSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "npmIntegrityVerified": true,
+    "npmRegistrySignaturesVerified": true,
+    "npmProvenanceAttestationMatched": true,
+    "overallReleaseComplete": false,
+    "verificationScope": "GitHub publication recovery; distribution and automated closeout remain incomplete"
+  },
+  "knownExceptions": [
+    "Official post-publish evidence records overallReleaseComplete=false and incomplete distribution/automated closeout; this is upstream release evidence, not an AgentOS contract failure.",
+    "The exact local runtime has Telegram configured but not running; no live external message was claimed."
+  ]
+}

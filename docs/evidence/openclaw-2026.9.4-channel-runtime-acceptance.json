@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-15T13:09:51.300Z",
+  "agentosHead": "5a6ab6826405190d81c41dcb06eb41adec1773f0",
+  "openclawVersion": "2026.9.4",
+  "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "methodology": {
+    "runtime": "real local OpenClaw Gateway and CLI",
+    "mutationPolicy": "read-only inspection; no install, logout, credential, binding, or provider-config mutation",
+    "liveMessagePolicy": "never infer live delivery from configuration or unit tests"
+  },
+  "runtimeInventory": {
+    "gateway": {
+      "version": "2026.9.4",
+      "protocol": 4,
+      "health": "healthy",
+      "agentDefaultId": "main",
+      "agentCount": 4
+    },
+    "installedChannelPlugins": [
+      { "id": "telegram", "status": "loaded", "enabled": true, "packageName": "@openclaw/telegram" }
+    ],
+    "catalogOnlyChannelPlugins": [
+      { "id": "discord", "packageName": "@openclaw/discord", "state": "not-installed" },
+      { "id": "slack", "packageName": "@openclaw/slack", "state": "not-installed" },
+      { "id": "whatsapp", "packageName": "@openclaw/whatsapp", "state": "not-installed" }
+    ]
+  },
+  "providers": {
+    "telegram": {
+      "plugin": {
+        "installed": true,
+        "enabled": true,
+        "status": "loaded",
+        "source": "bundled"
+      },
+      "account": {
+        "configured": ["telegram-agentosbot"],
+        "configuredCount": 1,
+        "declaredCount": 3,
+        "running": false,
+        "connected": false,
+        "state": "recovering",
+        "explicitOwnerError": true,
+        "duplicateTokenAccount": "telegram-agentosbot-2",
+        "duplicateTokenConflict": true
+      },
+      "directory": {
+        "command": "openclaw directory groups list --channel telegram --account telegram-agentosbot --json",
+        "status": "supported-empty",
+        "groupCount": 0,
+        "groups": []
+      },
+      "config": {
+        "providerEnabled": true,
+        "dmPolicy": "pairing",
+        "groupPolicy": "allowlist",
+        "allowUnmentionedGroups": false,
+        "accountConfigPresent": true
+      },
+      "binding": {
+        "status": "unresolved",
+        "reason": "No usable group route was discovered and the account reports that multiple-agent routing has no explicit owner.",
+        "directGatewayProbe": "bindings.list is not exposed by OpenClaw 2026.9.4",
+        "agentosContractEvidence": "native binding precedence, ambiguity, and optimistic mutation tests"
+      },
+      "policy": {
+        "status": "observed",
+        "source": "OpenClaw channel status and config.get",
+        "requireMention": false,
+        "allowlist": true
+      },
+      "liveMessage": {
+        "status": "not-run",
+        "reason": "No running account and no discovered group made a safe end-to-end message target available."
+      },
+      "classification": "PARTIALLY VERIFIED"
+    },
+    "discord": {
+      "plugin": {
+        "installed": false,
+        "enabled": false,
+        "status": "not-installed",
+        "source": "official OpenClaw catalog",
+        "packageName": "@openclaw/discord"
+      },
+      "account": { "status": "none", "directory": "unavailable-without-plugin" },
+      "config": { "status": "not-observed" },
+      "binding": { "status": "not-observed" },
+      "policy": { "status": "contract-only" },
+      "liveMessage": { "status": "not-run", "reason": "No local Discord plugin or account is available." },
+      "classification": "CONTRACT VERIFIED"
+    },
+    "slack": {
+      "plugin": {
+        "installed": false,
+        "enabled": false,
+        "status": "not-installed",
+        "source": "official OpenClaw catalog",
+        "packageName": "@openclaw/slack"
+      },
+      "account": { "status": "none", "directory": "unavailable-without-plugin" },
+      "config": { "status": "not-observed" },
+      "binding": { "status": "not-observed" },
+      "policy": { "status": "contract-only" },
+      "liveMessage": { "status": "not-run", "reason": "No local Slack plugin or account is available." },
+      "classification": "CONTRACT VERIFIED"
+    },
+    "whatsapp": {
+      "plugin": {
+        "installed": false,
+        "enabled": false,
+        "status": "not-installed",
+        "source": "official OpenClaw catalog",
+        "packageName": "@openclaw/whatsapp"
+      },
+      "account": { "status": "none", "directory": "unavailable-without-plugin" },
+      "config": { "status": "not-observed" },
+      "binding": { "status": "not-observed" },
+      "policy": { "status": "contract-only" },
+      "liveMessage": { "status": "not-run", "reason": "No local WhatsApp plugin or account is available; no QR/logout action was attempted." },
+      "classification": "CONTRACT VERIFIED"
+    }
+  },
+  "knownExceptions": [
+    "telegram-agentosbot is configured but cannot start because multi-agent routing has no explicit owner.",
+    "telegram-agentosbot-2 has a duplicate Telegram bot token and was not mutated.",
+    "Telegram directory returned an honest empty result; no group route or live message was claimed.",
+    "Discord, Slack, and WhatsApp have official catalog contracts but no local plugin/account, so they remain contract-verified only."
+  ]
+}

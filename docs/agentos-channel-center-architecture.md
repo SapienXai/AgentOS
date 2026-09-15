@@ -219,3 +219,33 @@ concurrency boundary and preserve unknown sibling binding fields.
 | Telegram group config projection in channel service | Compatibility / AgentOS workspace projection | Must preserve unmanaged OpenClaw config and never become account/runtime authority. |
 | Telegram session-store reconciliation | Temporary compatibility | Audited separately; it is not a replacement for native OpenClaw bindings. |
 | Raw provider catalog entries | Presentation metadata | Must not claim capabilities that OpenClaw status/plugin inventory does not report. |
+
+## Production freeze boundary
+
+This subsystem is frozen as a consolidation boundary for the certified
+OpenClaw 2026.9.4 contract. Future Channel work should be limited to upstream
+contract changes, correctness fixes, security fixes, accessibility/responsive
+fixes, or evidence-backed provider support. It must not introduce a second
+router, account registry, policy engine, or plugin management surface.
+
+Integrations is a read-only capability/plugin catalog. Its runtime truth comes
+from OpenClaw `plugins.catalog.*` and plugin inventory responses. Channel
+entries route to Channels, model entries route to Models, cron/scheduling
+entries route to Operations, browser-specific entries route to Accounts, and
+unknown capabilities route to the OpenClaw Control UI when a dashboard URL is
+available. Installation, enablement, credential setup, and native lifecycle
+remain OpenClaw-owned.
+
+The remaining compatibility bridges are intentionally retained and bounded:
+
+| Bridge | Classification | Removal condition |
+| --- | --- | --- |
+| `WorkspaceChannelGroupAssignment` and `channel-registry.json` | Read/write AgentOS workspace metadata compatibility | Remove after all supported workspace records have migrated and the legacy API has a planned deprecation window. |
+| `reconcileWorkspaceSurfaceBindings` | Explicit, previewed, audited repair bridge | Remove after legacy workspace surface drift is no longer present in supported data. |
+| Config-backed Telegram topic/group projection | Read-only discovery compatibility | Remove when the certified OpenClaw directory contract exposes the same structured topic/group data. |
+| CLI directory transport | Explicit OpenClaw compatibility fallback | Remove when a stable native Gateway directory RPC exists and is certified. |
+
+None of these bridges is allowed to become runtime routing authority again.
+The current certification and runtime acceptance evidence is recorded in
+`docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json` and
+`docs/evidence/openclaw-2026.9.4-channel-runtime-acceptance.json`.

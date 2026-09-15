@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-contract-diff",
-  "generatedAt": "2026-09-14T20:45:31.542Z",
+  "generatedAt": "2026-09-15T13:14:47.709Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosHead": "7e170355af06c46b1b79b4bb2e37348d8d514871",
+    "agentosHead": "6aba4c8939f808c1b32fd98d5bee34da7d0b8b15",
     "comparison": "2026.9.3 -> 2026.9.4",
     "source": {
       "version": "2026.9.3",
@@ -46,12 +46,12 @@
       "exact": true
     },
     "artifactInputs": {
-      "sourcePackage": "package",
-      "targetPackage": "package",
-      "sourceClientPackage": "package",
-      "targetClientPackage": "package",
-      "sourceProtocolPackage": "package",
-      "targetProtocolPackage": "package",
+      "sourcePackage": "openclaw-9.3",
+      "targetPackage": "openclaw-9.4",
+      "sourceClientPackage": "client-9.3",
+      "targetClientPackage": "client-9.4",
+      "sourceProtocolPackage": "protocol-9.3",
+      "targetProtocolPackage": "protocol-9.4",
       "sourceOpenClawArchive": "openclaw-2026.9.3.tgz",
       "targetOpenClawArchive": "openclaw-2026.9.4.tgz",
       "sourceClientArchive": "openclaw-gateway-client-2026.9.3.tgz",
