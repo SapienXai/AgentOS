@@ -50,6 +50,7 @@ export function useMissionControlWorkspaceActions({
     useState<SecureBrowserCapabilityView | null>(null);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
+  const [secureBrowserAccounts, setSecureBrowserAccounts] = useState<SecureBrowserAccountView[]>([]);
 
   const openWorkspaceWizard = useCallback((mode: "basic" | "advanced" = "basic") => {
     setWorkspaceWizardEditId(null);
@@ -111,28 +112,32 @@ export function useMissionControlWorkspaceActions({
     }
   }, []);
 
-  const loadAccountSecureBrowserCapabilities = useCallback(async () => {
-    if (!activeWorkspace) {
+  const loadAccountSecureBrowserCapabilities = useCallback(async (workspaceId = activeWorkspace?.id) => {
+    if (!workspaceId) {
       setAccountSecureBrowserCapabilities(null);
+      setSecureBrowserAccounts([]);
       return;
     }
     try {
       const response = await fetch(
-        `/api/accounts/browser-accounts?workspaceId=${encodeURIComponent(activeWorkspace.id)}`,
+        `/api/accounts/browser-accounts?workspaceId=${encodeURIComponent(workspaceId)}`,
         { cache: "no-store" }
       );
       const payload = await response.json().catch(() => null) as {
+        accounts?: SecureBrowserAccountView[];
         capabilities?: SecureBrowserCapabilityView;
         error?: string;
       } | null;
       if (!response.ok) {
         throw new Error(payload?.error ?? "Unable to read Secure Browser capabilities.");
       }
+      setSecureBrowserAccounts(payload?.accounts ?? []);
       setAccountSecureBrowserCapabilities(payload?.capabilities ?? null);
     } catch {
+      setSecureBrowserAccounts([]);
       setAccountSecureBrowserCapabilities(null);
     }
-  }, [activeWorkspace]);
+  }, [activeWorkspace?.id]);
 
   useEffect(() => {
     void loadAccountSecureBrowserCapabilities();
@@ -151,7 +156,8 @@ export function useMissionControlWorkspaceActions({
     setWorkspaceChannelsInitialSection(section);
     setIsWorkspaceChannelsOpen(true);
     void loadAccountBindings();
-  }, [loadAccountBindings, openWorkspaceOnCanvas]);
+    void loadAccountSecureBrowserCapabilities(workspaceId);
+  }, [loadAccountBindings, loadAccountSecureBrowserCapabilities, openWorkspaceOnCanvas]);
 
   const openAccountsConnect = useCallback((workspaceId?: string, agentId?: string) => {
     openWorkspaceChannels(workspaceId, agentId, "accounts");
@@ -266,7 +272,10 @@ export function useMissionControlWorkspaceActions({
         body: JSON.stringify({
           action: "create",
           workspaceId: activeWorkspace.id,
+          provider: input.provider ?? "native-openclaw",
+          serviceId: input.serviceId,
           serviceName: input.serviceName,
+          identityLabel: input.identityLabel,
           primaryDomain: input.primaryDomain,
           allowedDomains: [input.primaryDomain],
           allowedAgentIds: input.allowedAgentIds
@@ -289,7 +298,7 @@ export function useMissionControlWorkspaceActions({
       toast.success("Secure Browser opened.", {
         description: "Your password and verification codes stay inside the isolated browser session."
       });
-      await loadAccountBindings();
+      await Promise.all([loadAccountBindings(), loadAccountSecureBrowserCapabilities()]);
     } catch (error) {
       popup.close();
       toast.error("Connect Browser Account did not complete.", {
@@ -299,7 +308,7 @@ export function useMissionControlWorkspaceActions({
         )
       });
     }
-  }, [activeWorkspace, loadAccountBindings]);
+  }, [activeWorkspace, loadAccountBindings, loadAccountSecureBrowserCapabilities]);
 
   return {
     isWorkspaceWizardOpen,
@@ -326,6 +335,8 @@ export function useMissionControlWorkspaceActions({
     setAccountTargets,
     accountAccessRules,
     setAccountAccessRules,
+    secureBrowserAccounts,
+    setSecureBrowserAccounts,
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,

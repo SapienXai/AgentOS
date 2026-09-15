@@ -9,11 +9,34 @@ const readOnlyActions = new Set([
   "tabs",
   "snapshot",
   "screenshot",
-  "console"
+  "console",
+  "wait"
 ]);
-const lifecycleActions = new Set(["close"]);
+const lifecycleActions = new Set(["close", "profiles", "doctor", "status", "start", "stop", "focus"]);
 const navigationActions = new Set(["open", "navigate"]);
 const interactiveActions = new Set(["act", "dialog"]);
+const interactiveKinds = new Set([
+  "click",
+  "clickcoors",
+  "click-coords",
+  "drag",
+  "fill",
+  "hover",
+  "press",
+  "scrollintoview",
+  "select",
+  "type"
+]);
+const accountAdminPattern = /\b(change|reset|update|remove|disable|enable)\b.{0,40}\b(password|passcode|mfa|2fa|two-factor|authenticator|security|recovery email|recovery phone)\b|\b(create|generate|rotate|revoke)\b.{0,40}\b(api key|access token|secret)\b|\b(change|grant|revoke|remove)\b.{0,40}\b(permission|role|admin|owner)\b|\b(delete|close)\b.{0,32}\b(account|workspace|organization)\b/i;
+const transactionPattern = /\b(purchase|buy|checkout|pay|payment|transfer money|wire transfer|place an order|subscribe|upgrade plan)\b|\b(confirm|submit)\b.{0,32}\b(order|payment|purchase|checkout)\b/i;
+const publishPattern = /\b(publish|post|tweet|reply|comment|send|email|message|submit)\b|\b(create|edit)\b.{0,32}\b(listing|release|announcement|article|issue|pull request)\b/i;
+const accountCapabilities = new Set(["read", "interact", "publish", "transact", "account_admin"]);
+const serviceRiskPatterns = {
+  github: /\b(merge|approve|open|create|edit)\b.{0,32}\b(pull request|issue|release)\b/i,
+  x: /\b(tweet|post|reply|quote|repost|direct message)\b/i,
+  producthunt: /\b(launch|comment|upvote|submit)\b/i,
+  amazon: /\b(add to cart|buy now|order|checkout|return)\b/i
+};
 
 export default definePluginEntry({
   id: "agentos-browser-policy",
@@ -40,20 +63,27 @@ export default definePluginEntry({
         const requestedProfile =
           typeof event.params.profile === "string" ? event.params.profile.trim() : "";
         const localBinding = await findBinding(ctx.sessionKey, ctx.agentId, true);
-        let binding = localBinding && isBindingCurrent(localBinding) ? localBinding : null;
-
-        if (hasPolicyHeartbeatChannel()) {
-          try {
-            binding = await heartbeatBinding(ctx.sessionKey, ctx.agentId);
-          } catch {
-            if (localBinding || managedProfilePattern.test(requestedProfile)) {
-              return {
-                block: true,
-                blockReason: "The AgentOS browser policy channel is unavailable; managed browser access is blocked."
-              };
-            }
-            return;
+        if (!hasPolicyHeartbeatChannel()) {
+          if (localBinding || managedProfilePattern.test(requestedProfile)) {
+            return {
+              block: true,
+              blockReason: "The AgentOS browser policy channel is unavailable; managed browser access is blocked."
+            };
           }
+          return;
+        }
+
+        let binding = null;
+        try {
+          binding = await heartbeatBinding(ctx.sessionKey, ctx.agentId);
+        } catch {
+          if (localBinding || managedProfilePattern.test(requestedProfile)) {
+            return {
+              block: true,
+              blockReason: "The AgentOS browser policy channel is unavailable; managed browser access is blocked."
+            };
+          }
+          return;
         }
 
         if (!binding) {
@@ -75,14 +105,7 @@ export default definePluginEntry({
           profile: binding.openClawProfileName
         };
 
-        if (
-          action === "profiles" ||
-          action === "doctor" ||
-          action === "status" ||
-          action === "start" ||
-          action === "stop" ||
-          action === "focus"
-        ) {
+        if (lifecycleActions.has(action)) {
           await appendPolicyAudit(binding, "sensitive_action_blocked");
           return {
             block: true,
@@ -115,33 +138,28 @@ export default definePluginEntry({
               blockReason: "Navigation is outside this browser account's allowed domains."
             };
           }
+          if (!hasCapability(binding, "read")) {
+            await appendPolicyAudit(binding, "sensitive_action_blocked");
+            return {
+              block: true,
+              blockReason: "Read capability is not granted for this browser account identity."
+            };
+          }
           return { params };
         }
 
         if (interactiveActions.has(action)) {
-          await appendPolicyAudit(binding, "sensitive_action_requested");
-          return {
-            params,
-            requireApproval: {
-              title: "Approve browser interaction",
-              description: `Allow ${action === "act" ? readActKind(params) : action} on ${binding.allowedDomains[0] ?? "the connected account"}?`,
-              severity: "warning",
-              allowedDecisions: ["allow-once", "deny"],
-              timeoutMs: 120_000,
-              timeoutBehavior: "deny",
-              onResolution: async (decision) => {
-                await appendPolicyAudit(
-                  binding,
-                  decision === "allow-once"
-                    ? "sensitive_action_approved"
-                    : "sensitive_action_blocked"
-                );
-              }
-            }
-          };
+          return await enforceCapabilityPolicy({ action, params, binding });
         }
 
-        if (readOnlyActions.has(action) || lifecycleActions.has(action)) {
+        if (readOnlyActions.has(action)) {
+          if (!hasCapability(binding, "read")) {
+            await appendPolicyAudit(binding, "sensitive_action_blocked");
+            return {
+              block: true,
+              blockReason: "Read capability is not granted for this browser account identity."
+            };
+          }
           return { params };
         }
 
@@ -168,6 +186,9 @@ async function findBinding(sessionKey, agentId, includeExpired = false) {
           entry?.openClawSessionKey === sessionKey &&
           entry?.agentId === agentId &&
           managedProfilePattern.test(entry?.openClawProfileName ?? "") &&
+          Array.isArray(entry?.allowedDomains) &&
+          entry.allowedDomains.length > 0 &&
+          entry.allowedDomains.every(isSafeDomain) &&
           (includeExpired || Date.parse(entry?.expiresAt ?? "") > now)
         ) ?? null
       : null;
@@ -221,7 +242,33 @@ function resolveHeartbeatUrl() {
 }
 
 function isBindingCurrent(binding) {
-  return Date.parse(binding?.expiresAt ?? "") > Date.now();
+  return (
+    Date.parse(binding?.expiresAt ?? "") > Date.now() &&
+    Number.isSafeInteger(binding?.fencingToken) &&
+    binding.fencingToken > 0 &&
+    Array.isArray(binding?.allowedDomains) &&
+    binding.allowedDomains.length > 0 &&
+    binding.allowedDomains.every(isSafeDomain) &&
+    (!Array.isArray(binding?.capabilities) || binding.capabilities.every((value) => accountCapabilities.has(value)))
+  );
+}
+
+function isSafeDomain(value) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  const hostname = normalized.startsWith("*.") ? normalized.slice(2) : normalized;
+  const labels = hostname.split(".");
+  return Boolean(
+    hostname &&
+    hostname.length <= 253 &&
+    labels.length >= 2 &&
+    !hostname.includes("..") &&
+    labels.every((label) =>
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    ) &&
+    /^[a-z]{2,63}$/.test(labels.at(-1))
+  );
 }
 
 function readNavigationUrl(params) {
@@ -243,6 +290,126 @@ function readActKind(params) {
         ? params.kind
         : "interaction";
   return kind.slice(0, 32);
+}
+
+function readActionDescription(action, params) {
+  const request = params.request && typeof params.request === "object" ? params.request : null;
+  const candidates = [
+    params.actionDescription,
+    params.description,
+    params.intent,
+    request?.actionDescription,
+    request?.description,
+    request?.intent,
+    request?.text,
+    request?.value
+  ];
+  return [action, readActKind(params), ...candidates]
+    .filter((value) => typeof value === "string" && value.trim())
+    .join(" ")
+    .slice(0, 2_000);
+}
+
+function classifyAction(action, params, binding) {
+  const description = readActionDescription(action, params);
+  if (accountAdminPattern.test(description)) return "account_admin";
+  if (transactionPattern.test(description)) return "transact";
+  if (publishPattern.test(description) || serviceRiskPatterns[binding.serviceId]?.test(description)) {
+    return "publish";
+  }
+  if (readOnlyActions.has(action) || navigationActions.has(action)) return "read";
+  const kind = readActKind(params).toLowerCase();
+  if (interactiveKinds.has(kind) || action === "dialog") return "interact";
+  return "unknown";
+}
+
+function hasCapability(binding, capability) {
+  // Older task bindings are normalized by the AgentOS heartbeat route. The
+  // fallback keeps an already-running pre-capability task bounded to its old
+  // read/interaction scope until it is released.
+  return Array.isArray(binding.capabilities)
+    ? binding.capabilities.includes(capability)
+    : capability === "read" || capability === "interact";
+}
+
+async function enforceCapabilityPolicy({ action, params, binding }) {
+  const capability = classifyAction(action, params, binding);
+  if (capability === "read") {
+    if (!hasCapability(binding, "read")) {
+      await appendPolicyAudit(binding, "sensitive_action_blocked");
+      return {
+        block: true,
+        blockReason: "Read capability is not granted for this browser account identity."
+      };
+    }
+    return { params };
+  }
+
+  if (capability === "interact") {
+    if (!hasCapability(binding, "interact")) {
+      await appendPolicyAudit(binding, "sensitive_action_blocked");
+      return {
+        block: true,
+        blockReason: "Interaction capability is not granted for this browser account identity."
+      };
+    }
+    return { params };
+  }
+
+  if (capability === "account_admin") {
+    await appendPolicyAudit(binding, "sensitive_action_blocked");
+    return {
+      block: true,
+      blockReason: "Account administration is blocked for Secure Browser Accounts."
+    };
+  }
+
+  if (capability === "transact" && !hasCapability(binding, "transact")) {
+    await appendPolicyAudit(binding, "sensitive_action_blocked");
+    return {
+      block: true,
+      blockReason: "Transaction capability is not granted for this browser account identity."
+    };
+  }
+
+  if (capability === "publish" && !hasCapability(binding, "publish")) {
+    await appendPolicyAudit(binding, "sensitive_action_blocked");
+    return {
+      block: true,
+      blockReason: "Publish capability is not granted for this browser account identity."
+    };
+  }
+
+  // Transactions always require the existing OpenClaw approval framework.
+  // Publish approval is opt-in per identity; a granted publish capability is
+  // otherwise sufficient. Unknown actions require approval because their risk
+  // cannot be established from a CSS ref or arbitrary page DOM.
+  const requiresApproval =
+    capability === "transact" ||
+    (capability === "publish" && binding.approvalPolicy === "require_approval") ||
+    capability === "unknown";
+  if (!requiresApproval) return { params };
+
+  await appendPolicyAudit(binding, "sensitive_action_requested");
+  return {
+    params,
+    requireApproval: {
+      title: capability === "transact" ? "Approve browser transaction" : "Approve sensitive browser action",
+      description: capability === "unknown"
+        ? "Allow this browser action? AgentOS could not classify it safely."
+        : `Allow ${capability} action on ${binding.allowedDomains[0] ?? "the connected account"}?`,
+      severity: capability === "transact" ? "critical" : "warning",
+      allowedDecisions: ["allow-once", "deny"],
+      timeoutMs: 120_000,
+      timeoutBehavior: "deny",
+      onResolution: async (decision) => {
+        await appendPolicyAudit(
+          binding,
+          decision === "allow-once" ? "sensitive_action_approved" : "sensitive_action_blocked"
+        );
+      }
+    }
+  };
 }
 
 function isAllowedUrl(value, allowedDomains) {
@@ -280,10 +447,10 @@ async function appendPolicyAudit(binding, type) {
     at: new Date().toISOString(),
     detail:
       type === "sensitive_action_requested"
-        ? "OpenClaw requested an interactive browser action."
+        ? "OpenClaw requested a browser action that needs policy review."
         : type === "sensitive_action_approved"
-          ? "The operator approved one interactive browser action."
-          : "An interactive browser action was denied or blocked."
+          ? "The operator approved one browser action."
+          : "A browser action was denied or blocked by policy."
   };
   const line = `${JSON.stringify(event)}\n`;
   const size = await stat(auditPath).then((entry) => entry.size).catch(() => 0);

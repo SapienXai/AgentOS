@@ -3,12 +3,23 @@
 export type SecureBrowserAccountView = {
   id: string;
   provider: string;
+  serviceId: string;
   serviceName: string;
+  identityLabel: string;
+  runtimeLocation: "cloud" | "local" | "browser-node" | "external";
   primaryDomain: string;
   ownerUserId: string;
   workspaceId: string;
   browserProfileId: string;
   allowedAgentIds: string[];
+  capabilities: Array<"read" | "interact" | "publish" | "transact" | "account_admin">;
+  approvalPolicy: "block_sensitive" | "require_approval";
+  accessGrants: Array<{
+    agentId: string;
+    capabilities: Array<"read" | "interact" | "publish" | "transact" | "account_admin">;
+    approvalPolicy: "block_sensitive" | "require_approval";
+    updatedAt: string;
+  }>;
   allowedDomains: string[];
   connectionStatus: string;
   verificationSource: string;
@@ -22,20 +33,28 @@ export type SecureBrowserAccountView = {
   } | null;
   lastVerifiedAt: string | null;
   lastUsedAt: string | null;
+  updatedAt: string;
   source: string;
 };
 
 export type SecureBrowserCapabilityView = {
   provider: string;
+  source?: string;
+  profileCreation?: "supported" | "unsupported" | "unknown";
   persistentProfiles: "supported" | "unsupported" | "unknown";
   liveView: "supported" | "unsupported" | "unknown";
   humanTakeover: "supported" | "unsupported" | "unknown";
   typedTaskDispatch: "supported" | "unsupported" | "unknown";
+  runtimeLocation?: "cloud" | "local" | "browser-node" | "external";
   reason: string | null;
+  fallbackCapabilities?: SecureBrowserCapabilityView | null;
 };
 
 export type SecureBrowserConnectInput = {
+  provider?: "native-openclaw" | "self-hosted-openclaw";
+  serviceId?: "github" | "x" | "producthunt" | "amazon" | "custom";
   serviceName: string;
+  identityLabel?: string;
   primaryDomain: string;
   allowedAgentIds: string[];
 };

@@ -12,7 +12,10 @@ import {
   NativeGatewayError,
   OpenClawGatewayClientError
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
-import { isCliGatewayClientForcedByEnv } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import {
+  isCliGatewayClientForcedByEnv,
+  resolveGatewayRequestPolicy
+} from "@/lib/openclaw/client/native-ws-gateway-policy";
 import type {
   OpenClawTaskHistoryInput,
   OpenClawTaskHistoryPayload,
@@ -376,6 +379,16 @@ export interface OpenClawAdapter {
     params?: Record<string, unknown>,
     options?: OpenClawCommandOptions
   ): Promise<TPayload>;
+  /**
+   * Native-only RPC escape hatch for experimental OpenClaw surfaces whose
+   * mutation must never be silently routed through the CLI fallback.
+   */
+  callNative?<TPayload>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: OpenClawCommandOptions,
+    policy?: NativeAdapterCallPolicy
+  ): Promise<TPayload>;
   tailLogs(input?: OpenClawLogsTailInput, options?: OpenClawCommandOptions): Promise<OpenClawLogsTailPayload>;
   listExecApprovals(
     input?: OpenClawExecApprovalListInput,
@@ -436,11 +449,16 @@ type NativeCallableOpenClawGatewayClient = OpenClawGatewayClient & {
     params?: Record<string, unknown>,
     options?: OpenClawCommandOptions,
     policy?: {
-      safety: "read";
+      safety: "read" | "mutation";
       timeoutMs?: number;
       allowCliFallback?: boolean;
     }
   ) => Promise<TPayload>;
+};
+
+type NativeAdapterCallPolicy = {
+  safety: "read" | "mutation";
+  timeoutMs?: number;
 };
 
 export class GatewayBackedOpenClawAdapter implements OpenClawAdapter, OpenClawGatewaySurfacePort {
@@ -1305,6 +1323,23 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter, OpenClawGa
 
   call<TPayload>(method: string, params: Record<string, unknown> = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().call<TPayload>(method, params, options);
+  }
+
+  callNative<TPayload>(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: OpenClawCommandOptions = {},
+    policy: NativeAdapterCallPolicy = resolveGatewayRequestPolicy(method, options)
+  ) {
+    const client = this.getClient() as NativeCallableOpenClawGatewayClient;
+    if (isCliGatewayClientForcedByEnv() || !client.callNative) {
+      return Promise.reject(nativeMethodUnavailable(method));
+    }
+
+    return client.callNative<TPayload>(method, params, options, {
+      ...policy,
+      allowCliFallback: false
+    });
   }
 
   tailLogs(input: OpenClawLogsTailInput = {}, options: OpenClawCommandOptions = {}) {

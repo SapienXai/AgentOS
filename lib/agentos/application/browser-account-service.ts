@@ -8,16 +8,26 @@ import { getBrowserProvider } from "@/lib/agentos/browser-accounts/provider-regi
 import type {
   BrowserAccountAuditEvent,
   BrowserAccountAuditEventType,
+  BrowserAccountAccessGrant,
+  BrowserAccountCapability,
   BrowserAccountLease,
   BrowserAccountProviderId,
   BrowserAccountRecord,
+  BrowserAccountRuntimeLocation,
   BrowserAuthenticationStatus,
-  BrowserLiveViewRecord
+  BrowserLiveViewRecord,
+  BrowserServiceId
 } from "@/lib/agentos/browser-accounts/types";
+import { browserAccountCapabilities } from "@/lib/agentos/browser-accounts/types";
+import {
+  getBrowserServiceDefinition,
+  inferBrowserServiceId,
+  isBrowserServiceDomain
+} from "@/lib/agentos/browser-accounts/service-registry";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
 type BrowserAccountRegistry = {
-  version: 1;
+  version: 2;
   fencingCounter: number;
   accounts: BrowserAccountRecord[];
   liveViews: BrowserLiveViewRecord[];
@@ -26,6 +36,12 @@ type BrowserAccountRegistry = {
 
 export type BrowserAccountActor = {
   userId: string;
+};
+
+export type BrowserAccountAccessGrantInput = {
+  agentId: string;
+  capabilities: BrowserAccountCapability[];
+  approvalPolicy?: BrowserAccountRecord["approvalPolicy"];
 };
 
 let registryRootOverride: string | null = null;
@@ -38,7 +54,7 @@ const maxAuditEvents = 1_000;
 const maxLiveViewRecords = 200;
 
 export async function getBrowserAccountCapabilities(
-  provider: BrowserAccountProviderId = "self-hosted-openclaw"
+  provider: BrowserAccountProviderId = "native-openclaw"
 ) {
   return getBrowserProvider(provider).getCapabilities();
 }
@@ -71,16 +87,43 @@ export async function getBrowserAccount(input: {
 export async function createBrowserAccount(input: {
   actor: BrowserAccountActor;
   workspaceId: string;
-  serviceName: string;
+  serviceName?: string;
   primaryDomain: string;
   allowedAgentIds?: string[];
   allowedDomains?: string[];
+  serviceId?: BrowserServiceId | string;
+  identityLabel?: string;
+  runtimeLocation?: BrowserAccountRuntimeLocation;
+  capabilities?: BrowserAccountCapability[];
+  accessGrants?: BrowserAccountAccessGrantInput[];
+  approvalPolicy?: BrowserAccountRecord["approvalPolicy"];
   provider?: BrowserAccountProviderId;
 }) {
   const actor = normalizeActor(input.actor);
   const workspaceId = requireId(input.workspaceId, "Workspace id");
   const primaryDomain = normalizeDomain(input.primaryDomain);
-  const providerId = input.provider ?? "self-hosted-openclaw";
+  const providerId = input.provider ?? "native-openclaw";
+  const serviceId = inferBrowserServiceId({
+    serviceId: input.serviceId,
+    serviceName: input.serviceName,
+    primaryDomain
+  });
+  if (!isBrowserServiceDomain(serviceId, primaryDomain)) {
+    throw new BrowserAccountError(
+      "The primary domain does not belong to the selected browser service.",
+      400,
+      "invalid-input"
+    );
+  }
+  const serviceDefinition = getBrowserServiceDefinition(serviceId);
+  const serviceName = normalizeLabel(
+    input.serviceName ?? serviceDefinition?.name ?? "Website",
+    "Service name"
+  );
+  const identityLabel = normalizeLabel(
+    input.identityLabel ?? serviceName,
+    "Account identity label"
+  );
   const accountId = randomUUID();
   const browserProfileId = buildBrowserProfileId({
     ownerUserId: actor.userId,
@@ -98,32 +141,64 @@ export async function createBrowserAccount(input: {
     );
   }
 
-  const profile = await provider.createProfile({ browserProfileId });
+  const runtimeLocation = normalizeRuntimeLocation(
+    input.runtimeLocation ?? capabilities.runtimeLocation ?? defaultRuntimeLocation(providerId),
+    capabilities.runtimeLocation
+  );
+  const allowedAgentIds = normalizeIds(input.allowedAgentIds);
+  const allowedDomains = normalizeDomains(
+    input.allowedDomains?.length ? input.allowedDomains : [primaryDomain]
+  );
+  if (serviceId !== "custom" && allowedDomains.some((domain) => !isBrowserServiceDomain(serviceId, domain))) {
+    throw new BrowserAccountError(
+      "Allowed domains must stay within the selected browser service.",
+      400,
+      "invalid-input"
+    );
+  }
   const now = new Date().toISOString();
+  const accountCapabilities = normalizeAccountCapabilities(
+    input.capabilities ??
+      (input.accessGrants?.length
+        ? input.accessGrants.flatMap((grant) => grant.capabilities)
+        : allowedAgentIds.length
+          ? ["read", "interact"]
+          : ["read"])
+  );
+  const accessGrants = normalizeAccessGrants(
+    input.accessGrants,
+    allowedAgentIds,
+    accountCapabilities,
+    input.approvalPolicy ?? "block_sensitive",
+    now
+  );
+
+  const profile = await provider.createProfile({ browserProfileId });
   const account: BrowserAccountRecord = {
     id: accountId,
-    provider: providerId,
+    provider: profile.provider,
     connectionType: "browser_profile",
+    serviceId,
+    identityLabel,
+    runtimeLocation,
     externalProfileId: profile.externalProfileId,
     browserProfileId: profile.browserProfileId,
     workspaceId,
     ownerUserId: actor.userId,
-    allowedAgentIds: normalizeIds(input.allowedAgentIds),
-    allowedDomains: normalizeDomains(input.allowedDomains?.length ? input.allowedDomains : [primaryDomain]),
-    connectionStatus:
-      capabilities.liveView === "supported" &&
-      capabilities.humanTakeover === "supported"
-        ? "needs_verification"
-        : "unsupported",
+    allowedAgentIds: accessGrants.map((grant) => grant.agentId),
+    capabilities: accountCapabilities,
+    accessGrants,
+    allowedDomains,
+    connectionStatus: profile.persistent ? "needs_verification" : "unsupported",
     verificationSource: "unknown",
     lastVerifiedAt: null,
     lastUsedAt: null,
     sessionState: "idle",
     concurrencyLease: null,
     secretReference: null,
-    riskLevel: "elevated",
-    approvalPolicy: "block_sensitive",
-    serviceName: normalizeLabel(input.serviceName, "Service name"),
+    riskLevel: serviceDefinition?.riskLevel ?? "elevated",
+    approvalPolicy: input.approvalPolicy ?? "block_sensitive",
+    serviceName,
     primaryDomain,
     source: profile.source === "native-openclaw"
       ? "openclaw.browser.request"
@@ -138,6 +213,9 @@ export async function createBrowserAccount(input: {
   try {
     await mutateRegistry((registry) => {
       registry.accounts.push(account);
+      appendAudit(registry, account, actor.userId, "account_created", {
+        detail: "A canonical browser account was created around a persistent OpenClaw browser identity."
+      });
       appendAudit(registry, account, actor.userId, "profile_created", {
         detail: "A dedicated browser profile was created without storing credentials."
       });
@@ -193,6 +271,8 @@ export async function confirmBrowserAccountLogin(input: {
     try {
       const verification = await getBrowserProvider(account.provider).verifyAuthentication({
         sessionId: liveView.providerSessionId,
+        browserProfileId: account.browserProfileId,
+        serviceId: account.serviceId as BrowserServiceId,
         allowedDomains: account.allowedDomains
       });
       authenticationStatus = verification.status;
@@ -227,6 +307,9 @@ export async function confirmBrowserAccountLogin(input: {
           : "The operator confirmed login; provider authentication was not independently verified."
     });
     if (authenticationStatus === "verified") {
+      appendAudit(registry, account, actor.userId, "login_verified", {
+        detail: "The provider-specific browser authentication signal matched."
+      });
       appendAudit(registry, account, actor.userId, "authentication_verified", {
         detail: "A provider-specific browser marker verified the authenticated session."
       });
@@ -239,6 +322,9 @@ export async function confirmBrowserAccountLogin(input: {
       authenticationStatus === "needs_user_action" ||
       authenticationStatus === "unknown"
     ) {
+      appendAudit(registry, account, actor.userId, "login_failed", {
+        detail: "The browser account could not be independently verified."
+      });
       appendAudit(registry, account, actor.userId, "authentication_failed", {
         detail: "The provider-specific authentication marker was not present."
       });
@@ -256,12 +342,14 @@ export async function updateBrowserAccountAccess(input: {
   actor: BrowserAccountActor;
   accountId: string;
   workspaceId: string;
-  allowedAgentIds: string[];
+  allowedAgentIds?: string[];
   allowedDomains: string[];
+  capabilities?: BrowserAccountCapability[];
+  accessGrants?: BrowserAccountAccessGrantInput[];
+  approvalPolicy?: BrowserAccountRecord["approvalPolicy"];
   now?: Date;
 }) {
   const actor = normalizeActor(input.actor);
-  const allowedAgentIds = normalizeIds(input.allowedAgentIds);
   const requestedDomains = normalizeDomains(input.allowedDomains);
   const now = input.now ?? new Date();
   let result: BrowserAccountRecord | null = null;
@@ -280,14 +368,74 @@ export async function updateBrowserAccountAccess(input: {
       );
     }
 
-    account.allowedAgentIds = allowedAgentIds;
+    if (
+      account.serviceId !== "custom" &&
+      requestedDomains.some((domain) => !isBrowserServiceDomain(account.serviceId as BrowserServiceId, domain))
+    ) {
+      throw new BrowserAccountError(
+        "Allowed domains must stay within the selected browser service.",
+        400,
+        "invalid-input"
+      );
+    }
+    const requestedAgentIds = normalizeIds(input.allowedAgentIds ?? account.allowedAgentIds);
+    const nextCapabilities = normalizeAccountCapabilities(
+      input.capabilities ??
+        (input.accessGrants?.length
+          ? input.accessGrants.flatMap((grant) => grant.capabilities)
+          : account.capabilities)
+    );
+    const previousCapabilities = account.capabilities;
+    const previousGrants = account.accessGrants;
+    const nextGrants = input.accessGrants !== undefined
+      ? normalizeAccessGrants(
+          input.accessGrants,
+          [],
+          nextCapabilities,
+          input.approvalPolicy ?? account.approvalPolicy,
+          now.toISOString()
+        )
+      : buildAccessGrantsForAgents(
+          requestedAgentIds,
+          previousGrants,
+          nextCapabilities,
+          input.approvalPolicy ?? account.approvalPolicy,
+          now.toISOString()
+        );
+    account.allowedAgentIds = nextGrants.map((grant) => grant.agentId);
+    account.capabilities = nextCapabilities;
+    account.accessGrants = nextGrants;
     account.allowedDomains = normalizeDomains([
       account.primaryDomain,
       ...requestedDomains
     ]);
+    account.approvalPolicy = input.approvalPolicy ?? account.approvalPolicy;
     account.updatedAt = now.toISOString();
+    const previousAgentIds = new Set(previousGrants.map((grant) => grant.agentId));
+    const nextAgentIds = new Set(nextGrants.map((grant) => grant.agentId));
+    for (const agentId of nextAgentIds) {
+      if (!previousAgentIds.has(agentId)) {
+        appendAudit(registry, account, actor.userId, "agent_granted", {
+          agentId,
+          detail: "An agent was granted access to this browser account identity."
+        });
+      }
+    }
+    for (const agentId of previousAgentIds) {
+      if (!nextAgentIds.has(agentId)) {
+        appendAudit(registry, account, actor.userId, "agent_revoked", {
+          agentId,
+          detail: "An agent was revoked from this browser account identity."
+        });
+      }
+    }
+    if (!sameCapabilities(previousCapabilities, nextCapabilities)) {
+      appendAudit(registry, account, actor.userId, "capability_updated", {
+        detail: "The browser account capability ceiling was updated."
+      });
+    }
     appendAudit(registry, account, actor.userId, "access_policy_updated", {
-      detail: `Browser access policy updated for ${allowedAgentIds.length} agent(s) and ${account.allowedDomains.length} domain(s).`
+      detail: `Browser access policy updated for ${nextGrants.length} agent(s) and ${account.allowedDomains.length} domain(s).`
     });
     result = account;
   });
@@ -301,15 +449,31 @@ export async function recordBrowserAuthenticationVerification(input: {
   workspaceId: string;
   status: BrowserAuthenticationStatus;
   verifiedAt: string | null;
+  leaseId?: string;
+  fencingToken?: number;
 }) {
   let result: BrowserAccountRecord | null = null;
   await mutateRegistry((registry) => {
     const account = requireOwnedAccount(registry, input);
+    assertAccountUsable(account, { allowExpired: true, allowNeedsVerification: true });
+    if (input.leaseId !== undefined || input.fencingToken !== undefined) {
+      if (!input.leaseId || input.fencingToken === undefined) {
+        throw new BrowserAccountError(
+          "The browser profile lease is no longer valid.",
+          409,
+          "lease-fenced"
+        );
+      }
+      requireMatchingLease(account, input.leaseId, input.fencingToken, new Date());
+    }
     const now = new Date().toISOString();
     if (input.status === "verified") {
       account.connectionStatus = "connected";
       account.verificationSource = "provider_verified";
       account.lastVerifiedAt = input.verifiedAt ?? now;
+      appendAudit(registry, account, input.actor.userId, "login_verified", {
+        detail: "The provider-specific browser authentication signal was revalidated before task use."
+      });
       appendAudit(registry, account, input.actor.userId, "authentication_verified", {
         detail: "The provider-specific authentication marker was revalidated before task use."
       });
@@ -317,6 +481,9 @@ export async function recordBrowserAuthenticationVerification(input: {
       account.connectionStatus = "expired";
       account.verificationSource = "unknown";
       account.lastVerifiedAt = null;
+      appendAudit(registry, account, input.actor.userId, "login_failed", {
+        detail: "The browser authentication session expired and requires reconnection."
+      });
       appendAudit(
         registry,
         account,
@@ -330,6 +497,9 @@ export async function recordBrowserAuthenticationVerification(input: {
       account.connectionStatus = "needs_verification";
       account.verificationSource = "unknown";
       account.lastVerifiedAt = null;
+      appendAudit(registry, account, input.actor.userId, "login_failed", {
+        detail: "The browser account could not be independently verified before task use."
+      });
       appendAudit(registry, account, input.actor.userId, "authentication_failed", {
         detail: "Provider authentication could not be independently verified; reconnect is required."
       });
@@ -397,12 +567,15 @@ export async function startBrowserAccountLiveView(input: {
     appendAudit(nextRegistry, account, actor.userId, "lease_acquired", {
       detail: "An exclusive operator Live View lease was acquired."
     });
+    appendAudit(nextRegistry, account, actor.userId, "login_started", {
+      detail: "The operator browser connection flow started."
+    });
   });
 
   try {
     const session = await provider.startSession({
       browserProfileId: existing.browserProfileId,
-      initialUrl: `https://${existing.primaryDomain}`
+      initialUrl: browserAccountLoginUrl(existing)
     });
     await provider.getLiveView({ sessionId: session.sessionId });
     const capabilityId = randomUUID();
@@ -507,6 +680,8 @@ export async function exchangeBrowserLiveViewCapability(input: {
       liveView.exchangedAt ||
       Date.parse(liveView.exchangeExpiresAt) <= now.getTime() ||
       Date.parse(liveView.sessionExpiresAt) <= now.getTime() ||
+      account.concurrencyLease?.leaseId !== liveView.leaseId ||
+      account.concurrencyLease?.fencingToken !== liveView.fencingToken ||
       !constantTimeHashEqual(liveView.tokenHash, hashLiveViewSecret("exchange", token))
     ) {
       throw new BrowserAccountError(
@@ -567,6 +742,8 @@ export async function authorizeBrowserLiveViewWebSocket(input: {
     liveView.revokedAt ||
     !liveView.exchangedAt ||
     Date.parse(liveView.sessionExpiresAt) <= now.getTime() ||
+    account.concurrencyLease?.leaseId !== liveView.leaseId ||
+    account.concurrencyLease?.fencingToken !== liveView.fencingToken ||
     !constantTimeHashEqual(
       liveView.credentialHash,
       hashLiveViewSecret("session", input.credential!)
@@ -716,7 +893,7 @@ export async function acquireBrowserAccountLease(input: {
   await mutateRegistry((registry) => {
     const account = requireOwnedAccount(registry, input);
     assertAccountUsable(account);
-    if (!account.allowedAgentIds.includes(agentId)) {
+    if (!resolveBrowserAccountAccessGrant(account, agentId)) {
       throw new BrowserAccountError(
         "This agent is not allowed to use the browser account.",
         403,
@@ -850,6 +1027,11 @@ export async function activateBrowserAccountTaskSession(input: {
       taskId: input.taskId,
       detail: "The browser profile was bound to one OpenClaw task session."
     });
+    appendAudit(registry, account, input.actor.userId, "task_bound", {
+      agentId: input.agentId,
+      taskId: input.taskId,
+      detail: "The canonical browser account identity was bound to the OpenClaw task."
+    });
   });
 }
 
@@ -972,6 +1154,12 @@ export async function listBrowserAccountAudit(input: {
 export function toBrowserAccountView(account: BrowserAccountRecord) {
   return {
     ...account,
+    accessGrants: account.accessGrants.map((grant) => ({
+      agentId: grant.agentId,
+      capabilities: [...grant.capabilities],
+      approvalPolicy: grant.approvalPolicy,
+      updatedAt: grant.updatedAt
+    })),
     concurrencyLease: account.concurrencyLease
       ? {
           holderTaskId: account.concurrencyLease.holderTaskId,
@@ -998,6 +1186,148 @@ export function buildBrowserProfileId(input: {
   return `acct-${digest}`;
 }
 
+/**
+ * Resolve the identity-specific grant used by task binding and policy. The
+ * allowedAgentIds fallback is deliberately retained only for records written
+ * before accessGrants existed; it maps to the old use-browser-profile scope,
+ * never to publish, transact, or account administration.
+ */
+export function resolveBrowserAccountAccessGrant(
+  account: Pick<BrowserAccountRecord, "accessGrants" | "allowedAgentIds" | "approvalPolicy">,
+  agentId: string
+) {
+  const normalizedAgentId = agentId.trim();
+  const grant = account.accessGrants?.find((entry) => entry.agentId === normalizedAgentId);
+  if (grant) return grant;
+  if (account.allowedAgentIds.includes(normalizedAgentId)) {
+    return {
+      agentId: normalizedAgentId,
+      capabilities: ["read", "interact"] as BrowserAccountCapability[],
+      approvalPolicy: account.approvalPolicy,
+      updatedAt: ""
+    } satisfies BrowserAccountAccessGrant;
+  }
+  return null;
+}
+
+function normalizeAccessGrants(
+  values: BrowserAccountAccessGrantInput[] | undefined,
+  legacyAgentIds: string[],
+  accountCapabilities: BrowserAccountCapability[],
+  defaultApprovalPolicy: BrowserAccountRecord["approvalPolicy"],
+  updatedAt: string
+) {
+  if (values !== undefined) {
+    const byAgent = new Map<string, BrowserAccountAccessGrant>();
+    for (const value of values) {
+      const agentId = requireId(value.agentId, "Agent id");
+      const capabilities = normalizeGrantCapabilities(value.capabilities, accountCapabilities);
+      byAgent.set(agentId, {
+        agentId,
+        capabilities,
+        approvalPolicy: value.approvalPolicy ?? defaultApprovalPolicy,
+        updatedAt
+      });
+    }
+    return [...byAgent.values()].sort((left, right) => left.agentId.localeCompare(right.agentId));
+  }
+
+  return buildAccessGrantsForAgents(
+    legacyAgentIds,
+    [],
+    accountCapabilities,
+    defaultApprovalPolicy,
+    updatedAt
+  );
+}
+
+function buildAccessGrantsForAgents(
+  agentIds: string[],
+  existingGrants: BrowserAccountAccessGrant[],
+  accountCapabilities: BrowserAccountCapability[],
+  defaultApprovalPolicy: BrowserAccountRecord["approvalPolicy"],
+  updatedAt: string
+) {
+  const existingByAgent = new Map(existingGrants.map((grant) => [grant.agentId, grant]));
+  return normalizeIds(agentIds).map((agentId) => {
+    const existing = existingByAgent.get(agentId);
+    return {
+      agentId,
+      capabilities: normalizeGrantCapabilities(
+        existing?.capabilities ?? defaultAgentGrantCapabilities(accountCapabilities),
+        accountCapabilities
+      ),
+      approvalPolicy: existing?.approvalPolicy ?? defaultApprovalPolicy,
+      updatedAt: existing?.updatedAt ?? updatedAt
+    } satisfies BrowserAccountAccessGrant;
+  });
+}
+
+function defaultAgentGrantCapabilities(accountCapabilities: BrowserAccountCapability[]) {
+  return accountCapabilities.filter((capability) => capability === "read" || capability === "interact");
+}
+
+function normalizeAccountCapabilities(values: BrowserAccountCapability[]) {
+  const requested = new Set(values);
+  if ([...requested].some((value) => !browserAccountCapabilities.includes(value as BrowserAccountCapability))) {
+    throw new BrowserAccountError("Browser account capabilities are invalid.", 400, "invalid-input");
+  }
+  requested.add("read");
+  return browserAccountCapabilities.filter((capability) => requested.has(capability));
+}
+
+function normalizeGrantCapabilities(
+  values: BrowserAccountCapability[],
+  accountCapabilities: BrowserAccountCapability[]
+) {
+  const allowed = new Set(accountCapabilities);
+  const capabilities = normalizeAccountCapabilities(values).filter((value) => allowed.has(value));
+  if (!capabilities.length) {
+    throw new BrowserAccountError(
+      "Each browser account grant must include a capability allowed by the account.",
+      400,
+      "invalid-input"
+    );
+  }
+  return capabilities;
+}
+
+function normalizeRuntimeLocation(
+  value: BrowserAccountRuntimeLocation,
+  providerLocation?: BrowserAccountRuntimeLocation
+) {
+  if (!isRuntimeLocation(value)) {
+    throw new BrowserAccountError("Browser runtime location is invalid.", 400, "invalid-input");
+  }
+  if (providerLocation && value !== providerLocation) {
+    throw new BrowserAccountError(
+      "The selected browser provider does not support this runtime location.",
+      409,
+      "provider-unsupported"
+    );
+  }
+  return value;
+}
+
+function defaultRuntimeLocation(provider: BrowserAccountProviderId): BrowserAccountRuntimeLocation {
+  return provider === "self-hosted-openclaw" ? "cloud" : "local";
+}
+
+function browserAccountLoginUrl(account: Pick<BrowserAccountRecord, "serviceId" | "primaryDomain">) {
+  if (account.serviceId === "amazon") {
+    return `https://${account.primaryDomain}/ap/signin`;
+  }
+  return getBrowserServiceDefinition(account.serviceId)?.loginUrl ?? `https://${account.primaryDomain}`;
+}
+
+function isRuntimeLocation(value: unknown): value is BrowserAccountRuntimeLocation {
+  return value === "cloud" || value === "local" || value === "browser-node" || value === "external";
+}
+
+function sameCapabilities(left: BrowserAccountCapability[], right: BrowserAccountCapability[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function assertAccountUsable(
   account: BrowserAccountRecord,
   options: { allowExpired?: boolean; allowNeedsVerification?: boolean } = {}
@@ -1012,6 +1342,13 @@ function assertAccountUsable(
       "browser-dispatch-unsupported"
     );
   }
+  if (account.connectionStatus === "recovery_required") {
+    throw new BrowserAccountError(
+      "Recover or revoke the browser account before starting another session.",
+      409,
+      "browser-session-recovery-required"
+    );
+  }
   if (account.connectionStatus === "needs_verification" && !options.allowNeedsVerification) {
     throw new BrowserAccountError(
       "Verify the browser account with the provider before starting an agent task.",
@@ -1019,10 +1356,7 @@ function assertAccountUsable(
       "browser-authentication-unverified"
     );
   }
-  if (
-    account.connectionStatus === "recovery_required" ||
-    account.sessionState === "recovery_required"
-  ) {
+  if (account.sessionState === "recovery_required") {
     throw new BrowserAccountError(
       "Recover or revoke the browser account before starting another session.",
       409,
@@ -1103,18 +1437,258 @@ async function readRegistry(): Promise<BrowserAccountRegistry> {
   try {
     const parsed = JSON.parse(await readFile(registryPath, "utf8")) as Partial<BrowserAccountRegistry>;
     return {
-      version: 1,
+      version: 2,
       fencingCounter: Number.isSafeInteger(parsed.fencingCounter) ? parsed.fencingCounter! : 0,
-      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
+      accounts: Array.isArray(parsed.accounts)
+        ? parsed.accounts.map(normalizePersistedBrowserAccount).filter(isBrowserAccountRecord)
+        : [],
       liveViews: Array.isArray(parsed.liveViews) ? parsed.liveViews.slice(0, maxLiveViewRecords) : [],
       audit: Array.isArray(parsed.audit) ? parsed.audit.slice(0, maxAuditEvents) : []
     };
   } catch (error) {
     if (isFileError(error, "ENOENT")) {
-      return { version: 1, fencingCounter: 0, accounts: [], liveViews: [], audit: [] };
+      return { version: 2, fencingCounter: 0, accounts: [], liveViews: [], audit: [] };
     }
     throw new Error("Browser account state could not be read.");
   }
+}
+
+function normalizePersistedBrowserAccount(value: unknown): BrowserAccountRecord | null {
+  try {
+    if (!isRecord(value)) return null;
+    const id = readRequiredIdentifier(value.id);
+    const ownerUserId = readRequiredIdentifier(value.ownerUserId);
+    const workspaceId = readRequiredIdentifier(value.workspaceId);
+    const primaryDomain = readDomain(value.primaryDomain);
+    const browserProfileId = readManagedProfileId(value.browserProfileId);
+    if (!id || !ownerUserId || !workspaceId || !primaryDomain || !browserProfileId) return null;
+
+    const provider = readProvider(value.provider);
+    const serviceId = inferBrowserServiceId({
+      serviceId: readOptionalString(value.serviceId),
+      serviceName: readOptionalString(value.serviceName),
+      primaryDomain
+    });
+    if (!isBrowserServiceDomain(serviceId, primaryDomain)) return null;
+    const serviceDefinition = getBrowserServiceDefinition(serviceId);
+    const serviceName = readOptionalString(value.serviceName) ?? serviceDefinition?.name ?? "Website";
+    const identityLabel = readOptionalString(value.identityLabel) ?? serviceName;
+    const runtimeLocation = isRuntimeLocation(value.runtimeLocation)
+      ? value.runtimeLocation
+      : defaultRuntimeLocation(provider);
+    const approvalPolicy = value.approvalPolicy === "require_approval"
+      ? "require_approval"
+      : "block_sensitive";
+    const accountCapabilities = normalizeAccountCapabilities(
+      Array.isArray(value.capabilities)
+        ? value.capabilities.filter(isBrowserAccountCapability)
+        : ["read"]
+    );
+    const legacyAgentIds = Array.isArray(value.allowedAgentIds)
+      ? value.allowedAgentIds.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    const persistedGrants = Array.isArray(value.accessGrants)
+      ? value.accessGrants.flatMap((entry) => normalizePersistedGrant(entry, accountCapabilities, approvalPolicy))
+      : [];
+    const verificationSource = value.verificationSource === "provider_verified"
+      ? "provider_verified"
+      : value.verificationSource === "user_confirmed"
+        ? "user_confirmed"
+        : "unknown";
+    const lastVerifiedAt = readIsoDate(value.lastVerifiedAt);
+    const persistedConnectionStatus = readConnectionStatus(value.connectionStatus);
+    const connectionStatus = persistedConnectionStatus === "connected" &&
+      (verificationSource !== "provider_verified" || !lastVerifiedAt)
+      ? "needs_verification"
+      : persistedConnectionStatus;
+    const accessGrants = persistedGrants.length
+      ? persistedGrants
+      : normalizeAccessGrants(undefined, normalizeIds(legacyAgentIds), accountCapabilities, approvalPolicy, readIsoDate(value.updatedAt) ?? new Date().toISOString());
+    const allowedDomains = normalizePersistedDomains(value.allowedDomains, primaryDomain);
+    if (serviceId !== "custom" && allowedDomains.some((domain) => !isBrowserServiceDomain(serviceId, domain))) {
+      return null;
+    }
+    const createdAt = readIsoDate(value.createdAt) ?? new Date().toISOString();
+    const updatedAt = readIsoDate(value.updatedAt) ?? createdAt;
+
+    return {
+      id,
+      provider,
+      connectionType: readConnectionType(value.connectionType),
+      serviceId,
+      identityLabel: identityLabel.slice(0, 120),
+      runtimeLocation,
+      externalProfileId: null,
+      browserProfileId,
+      workspaceId,
+      ownerUserId,
+      allowedAgentIds: accessGrants.map((grant) => grant.agentId),
+      capabilities: accountCapabilities,
+      accessGrants,
+      allowedDomains,
+      connectionStatus,
+      verificationSource,
+      lastVerifiedAt,
+      lastUsedAt: readIsoDate(value.lastUsedAt),
+      sessionState: readSessionState(value.sessionState),
+      concurrencyLease: normalizeLease(value.concurrencyLease),
+      secretReference: null,
+      riskLevel: readRiskLevel(value.riskLevel) ?? serviceDefinition?.riskLevel ?? "elevated",
+      approvalPolicy,
+      serviceName: serviceName.slice(0, 120),
+      primaryDomain,
+      source: readAccountSource(value.source, provider),
+      createdAt,
+      updatedAt,
+      revokedAt: readIsoDate(value.revokedAt)
+    };
+  } catch {
+    // A malformed legacy entry must not become an executable account.
+    return null;
+  }
+}
+
+function normalizePersistedGrant(
+  value: unknown,
+  accountCapabilities: BrowserAccountCapability[],
+  defaultApprovalPolicy: BrowserAccountRecord["approvalPolicy"]
+) {
+  if (!isRecord(value) || typeof value.agentId !== "string" || !Array.isArray(value.capabilities)) {
+    return [];
+  }
+  try {
+    const agentId = requireId(value.agentId, "Agent id");
+    return [{
+      agentId,
+      capabilities: normalizeGrantCapabilities(
+        value.capabilities.filter(isBrowserAccountCapability),
+        accountCapabilities
+      ),
+      approvalPolicy: value.approvalPolicy === "require_approval"
+        ? "require_approval"
+        : defaultApprovalPolicy,
+      updatedAt: readIsoDate(value.updatedAt) ?? new Date().toISOString()
+    } satisfies BrowserAccountAccessGrant];
+  } catch {
+    return [];
+  }
+}
+
+function normalizePersistedDomains(value: unknown, primaryDomain: string) {
+  const candidates = Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const domains = candidates.flatMap((entry) => {
+    try {
+      return [normalizeDomain(entry)];
+    } catch {
+      return [];
+    }
+  });
+  return normalizeDomains([primaryDomain, ...domains]);
+}
+
+function normalizeLease(value: unknown): BrowserAccountLease | null {
+  if (!isRecord(value)) return null;
+  const leaseId = readOptionalString(value.leaseId);
+  const holderTaskId = readOptionalString(value.holderTaskId);
+  const holderAgentId = readOptionalString(value.holderAgentId);
+  const acquiredAt = readIsoDate(value.acquiredAt);
+  const heartbeatAt = readIsoDate(value.heartbeatAt);
+  const expiresAt = readIsoDate(value.expiresAt);
+  const fencingToken = value.fencingToken;
+    if (!leaseId || !holderTaskId || !holderAgentId || !acquiredAt || !heartbeatAt || !expiresAt ||
+      typeof fencingToken !== "number" || !Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+    return null;
+  }
+  return { leaseId, holderTaskId, holderAgentId, acquiredAt, heartbeatAt, expiresAt, fencingToken };
+}
+
+function readProvider(value: unknown): BrowserAccountProviderId {
+  return value === "native-openclaw" || value === "self-hosted-openclaw" || value === "local-chrome" ||
+    value === "browserless" || value === "browserbase"
+    ? value
+    : "self-hosted-openclaw";
+}
+
+function readConnectionType(value: unknown): BrowserAccountRecord["connectionType"] {
+  return value === "existing_session" || value === "official_integration" ? value : "browser_profile";
+}
+
+function readConnectionStatus(value: unknown): BrowserAccountRecord["connectionStatus"] {
+  return value === "connected" || value === "expired" || value === "recovery_required" ||
+    value === "unsupported" || value === "revoked"
+    ? value
+    : "needs_verification";
+}
+
+function readSessionState(value: unknown): BrowserAccountRecord["sessionState"] {
+  return value === "starting" || value === "active" || value === "stopping" || value === "recovery_required"
+    ? value
+    : "idle";
+}
+
+function readRiskLevel(value: unknown): BrowserAccountRecord["riskLevel"] | null {
+  return value === "standard" || value === "elevated" || value === "high" ? value : null;
+}
+
+function readAccountSource(
+  value: unknown,
+  provider: BrowserAccountProviderId
+): BrowserAccountRecord["source"] {
+  if (value === "openclaw.browser.request" || value === "self-hosted-worker" || value === "agentos.browser-gateway") {
+    return value;
+  }
+  return provider === "native-openclaw" ? "openclaw.browser.request" : "self-hosted-worker";
+}
+
+function readManagedProfileId(value: unknown) {
+  const profileId = readOptionalString(value);
+  return profileId && /^acct-[a-z0-9](?:[a-z0-9-]{0,56}[a-z0-9])?$/.test(profileId.toLowerCase())
+    ? profileId.toLowerCase()
+    : null;
+}
+
+function readRequiredIdentifier(value: unknown) {
+  const candidate = readOptionalString(value);
+  if (!candidate) return null;
+  try {
+    return requireId(candidate, "Identifier");
+  } catch {
+    return null;
+  }
+}
+
+function readDomain(value: unknown) {
+  const candidate = readOptionalString(value);
+  if (!candidate) return null;
+  try {
+    return normalizeDomain(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readIsoDate(value: unknown) {
+  if (typeof value !== "string") return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function isBrowserAccountCapability(value: unknown): value is BrowserAccountCapability {
+  return typeof value === "string" && browserAccountCapabilities.includes(value as BrowserAccountCapability);
+}
+
+function isBrowserAccountRecord(value: BrowserAccountRecord | null): value is BrowserAccountRecord {
+  return value !== null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 async function mutateRegistry(mutator: (registry: BrowserAccountRegistry) => void) {
@@ -1227,7 +1801,8 @@ async function persistAndStopBrowserSession(
   }
   try {
     await provider.stopSession({
-      sessionId: input.sessionId
+      sessionId: input.sessionId,
+      browserProfileId: input.browserProfileId
     });
   } catch {
     cleanupFailed = true;
@@ -1240,8 +1815,25 @@ function normalizeIds(values: string[] | undefined) {
 }
 
 function normalizeDomain(value: string) {
-  const candidate = value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  if (!/^(?:\*\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(candidate)) {
+  const candidate = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split(/[\/?#]/, 1)[0]
+    .replace(/\.$/, "");
+  const hostname = candidate.startsWith("*.") ? candidate.slice(2) : candidate;
+  const labels = hostname.split(".");
+  if (
+    !hostname ||
+    hostname.length > 253 ||
+    labels.length < 2 ||
+    hostname.includes("..") ||
+    labels.some((label) =>
+      label.length > 63 ||
+      !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+    ) ||
+    !/^[a-z]{2,63}$/i.test(labels.at(-1) ?? "")
+  ) {
     throw new BrowserAccountError("Domain is invalid.", 400, "invalid-input");
   }
   return candidate;

@@ -114,7 +114,8 @@ async function runRailwaySupervisor() {
       AGENTOS_BROWSER_WORKER_TOKEN: browserWorkerToken,
       AGENTOS_BROWSER_CDP_RELAY_URL: `http://127.0.0.1:${publicPort}/_agentos/browser-cdp`,
       AGENTOS_BROWSER_POLICY_READY_PATH: browserPolicyReadyPath,
-      AGENTOS_BROWSER_POLICY_TOKEN: browserPolicyToken
+      AGENTOS_BROWSER_POLICY_TOKEN: browserPolicyToken,
+      AGENTOS_BROWSER_POLICY_HEARTBEAT_URL: `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/heartbeat`
     };
     agentos = spawn(process.execPath, ["/agentos/server.js"], { env: agentosEnv, stdio: "inherit" });
     const agentosExit = childExit(agentos, "AgentOS");

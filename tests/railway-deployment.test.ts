@@ -90,6 +90,7 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(supervisor, /detached: true/);
   assert.match(supervisor, /startRailwayPublicProxy/);
   assert.match(supervisor, /AGENTOS_BROWSER_POLICY_READY_PATH/);
+  assert.match(supervisor, /AGENTOS_BROWSER_POLICY_HEARTBEAT_URL/);
   assert.match(supervisor, /AGENTOS_MISSION_CONTROL_ROOT/);
   assert.match(supervisor, /HOSTNAME: "127\.0\.0\.1"/);
   assert.match(supervisorRuntime, /liveness probe failed/);

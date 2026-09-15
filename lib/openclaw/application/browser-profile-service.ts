@@ -277,7 +277,10 @@ function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | n
           ? "CDP"
           : "Not reported",
     cdpPort: readNumber(profile.cdpPort),
-    cdpUrl: readRedactedString(profile.cdpUrl),
+    // Browser profile discovery is a user-facing projection. Keep the fact
+    // that a private transport exists without returning its endpoint to the
+    // browser client; task-bound providers use the transport server-side.
+    cdpUrl: profile.cdpUrl ? "[private-browser-endpoint]" : null,
     color: readString(profile.color) || managedProfileColor,
     running,
     statusLabel: running ? "Running" : "Stopped",
@@ -353,11 +356,6 @@ function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function readRedactedString(value: unknown) {
-  const stringValue = readString(value);
-  return stringValue ? redactSecretText(stringValue) : null;
-}
-
 function readSafeUrl(value: unknown) {
   const stringValue = readString(value);
   if (!stringValue) {
@@ -370,6 +368,8 @@ function readSafeUrl(value: unknown) {
       return redactSecretText(stringValue);
     }
 
+    url.username = "";
+    url.password = "";
     url.search = "";
     url.hash = "";
     return redactSecretText(url.toString());

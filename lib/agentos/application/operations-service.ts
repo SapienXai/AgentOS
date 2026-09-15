@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { resolveAccountAccessDecision } from "@/lib/agentos/application/account-access-policy-service";
 import type { OperationAction, OperationAuditEntry, OperationJob, OperationJobInput, OperationResult, OperationRun, OperationsSnapshot, SystemOwnedMonitorKind } from "@/lib/agentos/operations/types";
 import { extractAgentChatMessagesFromSessionHistory } from "@/lib/openclaw/agent-chat-response";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -97,7 +96,7 @@ export async function createOperation(
       const agent = snapshot.agents.find((entry) => entry.id === input.agentId);
       if (!agent || agent.workspaceId !== input.workspaceId) throw new Error("Owner agent must belong to the selected workspace.");
       const safety = normalizeSafety(input.safety);
-      await assertSafety(input.agentId, input.workspaceId, safety);
+      await assertSafety(safety);
       const payload = await getOpenClawAdapter().call<Record<string, unknown>>(
         "cron.add",
         buildOpenClawCronAddParams(input),
@@ -166,6 +165,10 @@ export async function updateOperationSchedule(
       const schedule = input.trigger.kind === "at" ? { kind: "at", at: input.trigger.at }
         : input.trigger.kind === "every" ? { kind: "every", everyMs: input.trigger.everyMs }
         : { kind: "cron", expr: input.trigger.expression, ...(input.trigger.timezone ? { tz: input.trigger.timezone } : {}) };
+      const existing = (await readRegistry()).jobs[input.jobId];
+      if (existing?.safety.accountTargetId) {
+        throw new Error("Legacy account targets cannot authorize scheduled browser work. Reconnect the identity as a canonical Browser Account first.");
+      }
       await getOpenClawAdapter().call<unknown>("cron.update", { id: input.jobId, patch: { schedule } }, gatewayOptions);
       const registry = await readRegistry();
       registry.audit.unshift(audit("update", input.jobId, "accepted", "OpenClaw cron schedule updated.", requestId, requestContext));
@@ -180,15 +183,16 @@ async function requireMutationCapability() {
   if (matrix.operations?.cronWrite?.mode !== "gateway-native") throw new Error("OpenClaw Gateway does not advertise native cron mutations; AgentOS will not use an unverified scheduler fallback.");
 }
 
-async function assertSafety(agentId: string, workspaceId: string, safety: NonNullable<OperationJob["safety"]>) {
+function assertSafety(safety: NonNullable<OperationJob["safety"]>) {
   if (safety.accountTargetId) {
-    const decision = await resolveAccountAccessDecision({ agentId, workspaceId, targetId: safety.accountTargetId });
-    if (decision.approvalRequired || safety.requiresApproval) throw new Error("This operation requires approval before it can be scheduled.");
-    if (!decision.allowed) throw new Error(decision.error ?? "Selected account access is denied.");
+    throw new Error("Legacy account targets cannot authorize scheduled browser work. Reconnect the identity as a canonical Browser Account first.");
   }
   if (safety.requiresApproval) throw new Error("This operation requires an approval integration that is not available for scheduled cron execution.");
 }
 async function assertSafetyForManualRun(action: string, safety: NonNullable<OperationJob["safety"]>, jobId: string, options: OpenClawCommandOptions) {
+  if (action === "run" || action === "retry" || action === "resume") {
+    if (safety.accountTargetId) throw new Error("This scheduled job references a legacy account target and cannot run browser work. Reconnect the identity as a canonical Browser Account first.");
+  }
   if (action === "run" || action === "retry") {
     if (safety.requiresApproval) throw new Error("Run is pending approval and cannot be queued.");
     if (safety.concurrency === "forbid") {

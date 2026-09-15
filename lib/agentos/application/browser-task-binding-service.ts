@@ -9,12 +9,19 @@ import {
   acquireBrowserAccountLease,
   completeBrowserAccountTaskSession,
   getBrowserAccount,
+  resolveBrowserAccountAccessGrant,
   recordBrowserAuthenticationVerification,
   releaseBrowserAccountLease,
   renewBrowserAccountLease
 } from "@/lib/agentos/application/browser-account-service";
 import { getBrowserProvider } from "@/lib/agentos/browser-accounts/provider-registry";
-import type { BrowserTaskBindingRecord } from "@/lib/agentos/browser-accounts/types";
+import type {
+  BrowserAccountApprovalPolicy,
+  BrowserAccountCapability,
+  BrowserAccountProviderId,
+  BrowserServiceId,
+  BrowserTaskBindingRecord
+} from "@/lib/agentos/browser-accounts/types";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
@@ -36,7 +43,7 @@ export type BrowserTaskBindingRequest = {
 export class BrowserTaskBindingError extends Error {
   constructor(
     message: string,
-    readonly status: 404 | 409,
+    readonly status: 403 | 404 | 409,
     readonly code: string
   ) {
     super(message);
@@ -58,6 +65,14 @@ export async function prepareBrowserTaskBinding(input: {
     accountId: input.request.accountId,
     workspaceId: input.workspaceId
   });
+  const accessGrant = resolveBrowserAccountAccessGrant(account, input.agentId);
+  if (!accessGrant) {
+    throw new BrowserTaskBindingError(
+      "This agent is not authorized for the selected browser account identity.",
+      403,
+      "agent-access-denied"
+    );
+  }
 
   if (
     account.connectionStatus !== "connected" ||
@@ -85,16 +100,36 @@ export async function prepareBrowserTaskBinding(input: {
       initialUrl: `https://${account.primaryDomain}`
     });
     providerSessionId = session.sessionId;
-    const authentication = await provider.verifyAuthentication({
-      sessionId: session.sessionId,
-      allowedDomains: account.allowedDomains
-    });
+    let authentication: Awaited<ReturnType<typeof provider.verifyAuthentication>>;
+    try {
+      authentication = await provider.verifyAuthentication({
+        sessionId: session.sessionId,
+        browserProfileId: account.browserProfileId,
+        serviceId: account.serviceId,
+        allowedDomains: account.allowedDomains
+      });
+    } catch {
+      // A provider failure must not leave a previously connected account
+      // trusted. Record an unknown result before cleaning up the task session.
+      await recordBrowserAuthenticationVerification({
+        actor,
+        accountId: account.id,
+        workspaceId: account.workspaceId,
+        status: "unknown",
+        verifiedAt: null,
+        leaseId: lease.leaseId,
+        fencingToken: lease.fencingToken
+      });
+      throw new Error("The browser login could not be revalidated. Open Live View and sign in again.");
+    }
     await recordBrowserAuthenticationVerification({
       actor,
       accountId: account.id,
       workspaceId: account.workspaceId,
       status: authentication.status,
-      verifiedAt: authentication.verifiedAt
+      verifiedAt: authentication.verifiedAt,
+      leaseId: lease.leaseId,
+      fencingToken: lease.fencingToken
     });
     if (
       authentication.status === "expired" ||
@@ -106,19 +141,20 @@ export async function prepareBrowserTaskBinding(input: {
         "The browser login could not be revalidated. Open Live View and sign in again."
       );
     }
-    const cdpUrl = requirePrivateLoopbackCdpUrl(session.runtimeConnection?.cdpUrl);
     const profileName = account.browserProfileId;
-
-    await getOpenClawAdapter().setConfig(
-      buildQuotedConfigKeyPath("browser.profiles", profileName),
-      {
-        cdpUrl,
-        attachOnly: true,
-        color: "#7C3AED"
-      },
-      { strictJson: true, timeoutMs: 15_000 }
-    );
-    profileConfigured = true;
+    if (account.provider !== "native-openclaw") {
+      const cdpUrl = requirePrivateLoopbackCdpUrl(session.runtimeConnection?.cdpUrl);
+      await getOpenClawAdapter().setConfig(
+        buildQuotedConfigKeyPath("browser.profiles", profileName),
+        {
+          cdpUrl,
+          attachOnly: true,
+          color: "#7C3AED"
+        },
+        { strictJson: true, timeoutMs: 15_000 }
+      );
+      profileConfigured = true;
+    }
 
     const now = new Date();
     const openClawSessionId = input.openClawSessionId?.trim() || null;
@@ -136,10 +172,14 @@ export async function prepareBrowserTaskBinding(input: {
       agentId: input.agentId,
       openClawSessionId,
       openClawSessionKey,
+      provider: account.provider,
       openClawProfileName: profileName,
       providerSessionId: session.sessionId,
+      serviceId: account.serviceId,
+      identityLabel: account.identityLabel,
+      capabilities: accessGrant.capabilities,
       allowedDomains: account.allowedDomains,
-      approvalPolicy: account.approvalPolicy,
+      approvalPolicy: accessGrant.approvalPolicy,
       leaseId: lease.leaseId,
       fencingToken: lease.fencingToken,
       createdAt: now.toISOString(),
@@ -338,13 +378,15 @@ export async function expireBrowserTaskBindingsForRecovery(input: { now?: Date }
 
 async function cleanupBrowserTaskBinding(binding: BrowserTaskBindingRecord) {
   let configurationCleanupFailed = false;
-  try {
-    await getOpenClawAdapter().unsetConfig(
-      buildQuotedConfigKeyPath("browser.profiles", binding.openClawProfileName),
-      { timeoutMs: 15_000 }
-    );
-  } catch {
-    configurationCleanupFailed = true;
+  if (binding.provider !== "native-openclaw") {
+    try {
+      await getOpenClawAdapter().unsetConfig(
+        buildQuotedConfigKeyPath("browser.profiles", binding.openClawProfileName),
+        { timeoutMs: 15_000 }
+      );
+    } catch {
+      configurationCleanupFailed = true;
+    }
   }
 
   try {
@@ -425,16 +467,183 @@ async function readBindingRegistry(): Promise<BrowserTaskBindingRegistry> {
     return {
       version: 1,
       bindings: Array.isArray(parsed.bindings)
-        ? parsed.bindings.map((entry) => ({
-            ...entry,
-            heartbeatAt: entry.heartbeatAt ?? entry.createdAt
-          }))
+        ? parsed.bindings
+            .map((entry) => normalizeBindingEntry(entry))
+            .filter((entry): entry is BrowserTaskBindingRecord => entry !== null)
         : []
     };
   } catch (error) {
     if (isFileError(error, "ENOENT")) return { version: 1, bindings: [] };
     throw new Error("Browser task binding state could not be read.");
   }
+}
+
+function normalizeBindingEntry(value: unknown): BrowserTaskBindingRecord | null {
+  if (!isRecord(value)) return null;
+
+  const dispatchId = readBindingString(value.dispatchId, 256);
+  const accountId = readBindingString(value.accountId, 256);
+  const workspaceId = readBindingString(value.workspaceId, 256);
+  const ownerUserId = readBindingString(value.ownerUserId, 256);
+  const agentId = readBindingString(value.agentId, 256);
+  const openClawSessionKey = readBindingString(value.openClawSessionKey, 512);
+  const openClawProfileName = readBindingString(value.openClawProfileName, 128)?.toLowerCase();
+  const providerSessionId = readBindingString(value.providerSessionId, 256);
+  const leaseId = readBindingString(value.leaseId, 256);
+  const createdAt = readBindingDate(value.createdAt);
+  const heartbeatAt = readBindingDate(value.heartbeatAt ?? value.createdAt);
+  const expiresAt = readBindingDate(value.expiresAt);
+  const fencingToken = readBindingFencingToken(value.fencingToken);
+  const allowedDomains = normalizeBindingDomains(value.allowedDomains);
+
+  if (
+    !dispatchId ||
+    !accountId ||
+    !workspaceId ||
+    !ownerUserId ||
+    !agentId ||
+    !openClawSessionKey ||
+    !openClawProfileName ||
+    !/^acct-[a-z0-9](?:[a-z0-9-]{0,56}[a-z0-9])?$/.test(openClawProfileName) ||
+    !providerSessionId ||
+    !leaseId ||
+    !createdAt ||
+    !heartbeatAt ||
+    !expiresAt ||
+    fencingToken === null ||
+    !allowedDomains.length
+  ) {
+    return null;
+  }
+
+  const provider = isBrowserAccountProvider(value.provider)
+    ? value.provider
+    : value.provider === undefined
+      ? "self-hosted-openclaw"
+      : null;
+  const serviceId = isBrowserServiceId(value.serviceId)
+    ? value.serviceId
+    : value.serviceId === undefined
+      ? "custom"
+      : null;
+  const approvalPolicy = isApprovalPolicy(value.approvalPolicy)
+    ? value.approvalPolicy
+    : value.approvalPolicy === undefined
+      ? "block_sensitive"
+      : null;
+  if (!provider || !serviceId || !approvalPolicy) return null;
+
+  const hasPersistedCapabilities = Array.isArray(value.capabilities);
+  const capabilities = hasPersistedCapabilities
+    ? normalizeBindingCapabilities(value.capabilities)
+    : ["read", "interact"] as BrowserAccountCapability[];
+  // A capabilities array is a security declaration. If it exists but is
+  // malformed or empty, discard the binding instead of widening it to a
+  // compatibility default.
+  if (!capabilities.length) return null;
+
+  const openClawSessionId = value.openClawSessionId === null || value.openClawSessionId === undefined
+    ? null
+    : readBindingString(value.openClawSessionId, 256);
+  if (value.openClawSessionId !== null && value.openClawSessionId !== undefined && !openClawSessionId) {
+    return null;
+  }
+
+  const recoveryRequiredAt = value.recoveryRequiredAt === undefined
+    ? undefined
+    : readBindingDate(value.recoveryRequiredAt) ?? undefined;
+  if (value.recoveryRequiredAt !== undefined && !recoveryRequiredAt) return null;
+
+  return {
+    dispatchId,
+    accountId,
+    workspaceId,
+    ownerUserId,
+    agentId,
+    provider,
+    openClawSessionId,
+    openClawSessionKey,
+    openClawProfileName,
+    providerSessionId,
+    serviceId,
+    identityLabel: readBindingString(value.identityLabel, 256) ?? "Browser account",
+    capabilities,
+    allowedDomains,
+    approvalPolicy,
+    leaseId,
+    fencingToken,
+    createdAt,
+    heartbeatAt,
+    expiresAt,
+    ...(recoveryRequiredAt ? { recoveryRequiredAt } : {})
+  };
+}
+
+function normalizeBindingCapabilities(value: unknown): BrowserAccountCapability[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter(isBrowserAccountCapability))];
+}
+
+function normalizeBindingDomains(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => normalizeBindingDomain(entry)).filter((entry): entry is string => entry !== null))];
+}
+
+function normalizeBindingDomain(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  const withoutWildcard = normalized.startsWith("*.") ? normalized.slice(2) : normalized;
+  const labels = withoutWildcard.split(".");
+  if (
+    !withoutWildcard ||
+    withoutWildcard.length > 253 ||
+    labels.length < 2 ||
+    withoutWildcard.includes("..") ||
+    labels.some((label) =>
+      label.length > 63 ||
+      !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    ) ||
+    !/^[a-z]{2,63}$/.test(labels.at(-1) ?? "")
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function readBindingString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= maxLength ? normalized : null;
+}
+
+function readBindingDate(value: unknown) {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
+  return value;
+}
+
+function readBindingFencingToken(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function isBrowserAccountProvider(value: unknown): value is BrowserAccountProviderId {
+  return value === "native-openclaw" || value === "self-hosted-openclaw" || value === "local-chrome" ||
+    value === "browserless" || value === "browserbase";
+}
+
+function isBrowserServiceId(value: unknown): value is BrowserServiceId {
+  return value === "github" || value === "x" || value === "producthunt" || value === "amazon" || value === "custom";
+}
+
+function isApprovalPolicy(value: unknown): value is BrowserAccountApprovalPolicy {
+  return value === "block_sensitive" || value === "require_approval";
+}
+
+function isBrowserAccountCapability(value: unknown): value is BrowserAccountCapability {
+  return value === "read" || value === "interact" || value === "publish" || value === "transact" || value === "account_admin";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 async function mutateBindingRegistry(mutator: (registry: BrowserTaskBindingRegistry) => void) {
@@ -491,7 +700,11 @@ function toBrowserTaskPolicyView(binding: BrowserTaskBindingRecord) {
     workspaceId: binding.workspaceId,
     ownerUserId: binding.ownerUserId,
     agentId: binding.agentId,
+    provider: binding.provider,
+    serviceId: binding.serviceId,
+    identityLabel: binding.identityLabel,
     openClawProfileName: binding.openClawProfileName,
+    capabilities: binding.capabilities,
     allowedDomains: binding.allowedDomains,
     approvalPolicy: binding.approvalPolicy,
     fencingToken: binding.fencingToken,

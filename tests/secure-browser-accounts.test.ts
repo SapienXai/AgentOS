@@ -15,6 +15,7 @@ import {
   getBrowserAccountRegistryPathForTesting,
   listBrowserAccounts,
   markBrowserWorkerSessionsInterrupted,
+  recordBrowserAuthenticationVerification,
   releaseBrowserAccountLease,
   revokeBrowserAccount,
   startBrowserAccountLiveView,
@@ -292,6 +293,36 @@ test("browser account ACL updates remain owner/workspace scoped and lock during 
     taskId: "task-new-agent"
   });
   assert.equal(nextLease.holderAgentId, "agent-b");
+});
+
+test("late authentication verification cannot revive a revoked account", async () => {
+  await useTemporaryRegistry();
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
+  const created = await createBrowserAccount(baseCreateInput());
+  const account = {
+    actor: { userId: "owner-a" },
+    accountId: created.account.id,
+    workspaceId: "workspace-a"
+  };
+  await markAccountProviderVerified(created.account.id);
+  const lease = await acquireBrowserAccountLease({
+    ...account,
+    agentId: "agent-a",
+    taskId: "task-late-verification"
+  });
+
+  await revokeBrowserAccount(account);
+
+  await assert.rejects(
+    () => recordBrowserAuthenticationVerification({
+      ...account,
+      status: "verified",
+      verifiedAt: new Date().toISOString(),
+      leaseId: lease.leaseId,
+      fencingToken: lease.fencingToken
+    }),
+    (error) => error instanceof BrowserAccountError && error.code === "account-revoked"
+  );
 });
 
 test("sensitive authenticated-browser actions require approval or fail closed", () => {

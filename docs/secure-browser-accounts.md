@@ -2,30 +2,96 @@
 
 ## Status
 
-AgentOS now includes all five production-path phases of the default,
-free, self-hosted browser architecture:
+Native Browser Accounts v2 is an additive migration. `BrowserAccount` is the
+canonical AgentOS authorization wrapper around one persistent browser identity;
+AgentOS does not store the account password, OTP, raw cookie, session token, or
+profile storage. OpenClaw owns the managed Chromium profile, user-data
+directory, cookies, storage, tabs, and browser lifecycle.
 
-- an isolated headed Chromium worker with one persistent profile per browser
-  account;
-- authenticated same-origin Live View for manual password, 2FA, and CAPTCHA
-  completion;
-- one-time capability exchange, short-lived Live View credentials, exclusive
-  profile leases, revocation, bounded audit events, and crash supervision.
-- a task-bound OpenClaw plugin/adapter that keys policy to the trusted
-  `agentId + sessionKey`, forces the dedicated profile on every browser call,
-  enforces allowed-domain navigation, requests native OpenClaw approval for
-  interactive actions, and releases the session on terminal task paths.
-- durable policy heartbeat, fencing-aware stale-binding recovery, editable
-  agent/domain ACLs, and operator-visible lease/recovery state.
-- conservative provider-specific authentication verification, immediate
-  worker-crash fencing, and an executable real-Chromium persistence/restart/
-  revoke smoke test.
+The default provider is `native-openclaw` when the installed OpenClaw Gateway
+advertises the typed `browser.request` profile surface. It uses the native
+managed-profile routes for create, start, stop, list, snapshot, tab opening,
+and profile deletion. Native OpenClaw 2026.9.4 exposes a view-only screencast,
+so it does not advertise interactive Live View or human takeover. The existing
+self-hosted worker remains the explicit fallback for manual headed login and
+full Live View until an upstream interactive native surface is available.
 
-Agent task dispatch remains fail-closed unless the policy plugin has started
-inside the OpenClaw Gateway and native Gateway mission dispatch is advertised.
-AgentOS never treats a profile name added to a prompt as enforcement.
+The migration also retains the task-bound policy plugin, native Gateway
+mission dispatch, exclusive profile leases, fencing, heartbeat, audit, domain
+allowlists, crash recovery, and fail-closed behavior. A profile name supplied
+by an agent or prompt is never treated as authorization.
+
+### Native Browser Accounts v2 contract
+
+- Account metadata contains service identity, runtime location, provider,
+  opaque `acct-*` profile identity, allowed domains, agent-level capability
+  grants, verification state, lease state, and audit-relevant timestamps.
+- Capabilities are `read`, `interact`, `publish`, `transact`, and
+  `account_admin`. Read and granted ordinary interaction do not create an
+  approval prompt. Publish requires an explicit grant; transactions require
+  the existing OpenClaw approval framework; account administration is blocked
+  by default; unclassified actions fail closed or require approval when that
+  infrastructure is available.
+- Authentication is verified with bounded service strategies over normalized
+  tab URL/title/snapshot markers. It never reads or exports cookies. Unknown,
+  expired, or login-state results become `needs_verification`/`expired` and
+  block agent use until the operator reconnects.
+- The task path is `mission -> resolve account -> authorize agent and
+  capability -> acquire lease -> revalidate authentication -> bind trusted
+  OpenClaw session -> policy-enforced browser calls -> heartbeat -> release`.
+- Revoke removes authorization, prevents future binding, stops matching
+  sessions, and asks the owning provider to delete only the dedicated profile.
+  Native OpenClaw performs its own profile cleanup; the self-hosted fallback
+  keeps its existing scoped cleanup and recovery behavior.
+- Supported runtime-location values are `cloud`, `local`, `browser-node`, and
+  `external`. Only capabilities actually reported by the provider are shown
+  as selectable; browser-node and external runtimes are not fabricated by
+  this phase.
+
+### Legacy `AccountLoginTarget` compatibility
+
+`AccountLoginTarget` is no longer a canonical authenticated-account model and
+new account flows do not create it. Existing records are read through a
+compatibility resolver only when they can be matched to an owner/workspace
+scoped `BrowserAccount` with the same opaque profile or unambiguous service
+identity. A legacy target without a real Secure Browser Account backing is
+denied for agent dispatch; it cannot bypass verification, the agent grant,
+the lease, the trusted OpenClaw session key, or the policy plugin. Duplicate
+legacy cards are suppressed when they resolve to a canonical account. Revoke
+and deletion are provider/profile operations on the canonical account, not
+silent deletion of an unknown legacy record.
+
+The Operations cron compatibility field `accountTargetId` is no longer an
+authorization path for new scheduled browser work. New scheduling, and manual
+run/retry of a stored job that still references that legacy field, fails closed
+until the identity is reconnected as a canonical Browser Account. Existing
+cron jobs remain readable and can still be paused, disabled, or deleted while
+their browser authorization is migrated.
 
 ## Runtime architecture
+
+The native path is deliberately small and Gateway-backed:
+
+```text
+AgentOS account/task services
+└── OpenClaw adapter (native-only browser.request)
+    └── OpenClaw Gateway
+        └── managed browser profile acct-<opaque-id>
+            ├── Chromium user-data directory
+            ├── cookies and web storage
+            └── tabs, snapshots, and browser actions
+```
+
+AgentOS sends only the opaque managed profile name and bounded browser
+operations. The native adapter has no CLI fallback, does not accept a profile
+path or CDP endpoint from the caller, and normalizes away URL query/fragment
+data before it reaches OpenClaw. The Gateway remains the runtime and source of
+truth.
+
+### Self-hosted fallback runtime
+
+The following diagram describes the retained self-hosted fallback, not the
+native default:
 
 ```text
 Railway HTTPS domain :3000
@@ -48,7 +114,8 @@ OpenClaw Gateway 127.0.0.1:18789
     ├── renews the durable lease and binding TTL
     ├── forces browser profile acct-...
     ├── guards navigation and browser actions
-    └── uses plugin.approval for interactive actions
+    └── uses plugin.approval only for transactions, configured publish actions,
+        and actions whose risk cannot be classified safely
 ```
 
 The Railway worker exposes a token-authenticated private HTTP control endpoint.
@@ -76,9 +143,20 @@ through AgentOS HTTP.
 ## Connection flow
 
 1. The authenticated operator selects a workspace and website in Accounts.
-2. AgentOS creates an owner/workspace/account-scoped profile and acquires an
-   exclusive operator lease.
-3. The worker starts Xvfb, openbox, Chromium, and loopback-only x11vnc.
+2. AgentOS creates an owner/workspace/account-scoped `BrowserAccount` and an
+   opaque `acct-*` profile through the selected provider. Native OpenClaw
+   profiles are created through `browser.request`; the fallback uses the
+   existing worker profile lifecycle.
+3. AgentOS probes the provider before rendering actions. Because OpenClaw
+   2026.9.4's native screencast is view-only, the native provider truthfully
+   reports interactive Live View unavailable and the connection UI offers the
+   existing self-hosted Live View fallback. No native account is silently
+   converted into a different profile or given a raw CDP transport.
+
+For the self-hosted fallback only, the worker starts Xvfb, openbox, Chromium,
+and loopback-only x11vnc. The following capability-exchange steps therefore
+apply to fallback manual login:
+
 4. AgentOS returns a two-minute, one-time capability in the new window's URL
    fragment. The capability is never sent as a request URL or Referer.
 5. The Live View page removes the fragment immediately and exchanges it
@@ -109,11 +187,16 @@ through AgentOS HTTP.
    agent, verification, revocation, provider capability, and lease state.
 3. AgentOS creates the mission dispatch and uses its explicit OpenClaw session
    ID to derive the exact session key expected by the OpenClaw `2026.9.4` recommended contract.
-4. A ten-minute durable lease and fencing token are acquired. The worker starts
-   the persistent Chromium profile and returns its stable loopback Browser
-   Gateway route over the authenticated private control channel.
-5. AgentOS adds a temporary `attachOnly` OpenClaw browser profile through
-   Gateway config mutation and writes a secret-free task binding.
+4. A ten-minute durable lease and fencing token are acquired. For a native
+   account, AgentOS starts the named OpenClaw-managed profile through
+   `browser.request`; OpenClaw retains ownership of Chromium and its profile
+   storage. For a fallback account, the worker starts the persistent profile
+   and returns its stable loopback Browser Gateway route through the private
+   control channel.
+5. Native bindings do not mutate an OpenClaw profile into an `attachOnly`
+   relay. Fallback bindings add their temporary `attachOnly` profile through
+   the existing Gateway config mutation. Both paths write the same secret-free
+   task binding and are enforced by the same policy plugin.
 6. The OpenClaw plugin matches `ctx.agentId` and `ctx.sessionKey`, overwrites
    the browser tool's `profile` and `target`, then calls the AgentOS loopback
    policy endpoint with a supervisor-generated process secret. AgentOS
@@ -122,12 +205,16 @@ through AgentOS HTTP.
    never returns cookies, browser credentials, or CDP transport details.
    Unmanaged use of `acct-*` profiles and unavailable/fenced policy channels
    fail closed.
-7. Read actions are allowed. Navigation must remain on the account allowlist.
-   Arbitrary page evaluation and file transfer are blocked. Click, type, fill,
-   press, and dialog actions require a native OpenClaw one-time approval.
+7. Read actions are allowed when the grant contains `read`. Navigation must
+   remain on the account allowlist. Arbitrary page evaluation and file
+   transfer are blocked. Granted ordinary interaction does not prompt for
+   every click; publish is grant-controlled, transactions require a native
+   OpenClaw approval, and unknown actions require approval or are blocked.
 8. On completion, cancellation, dispatch failure, or reconciled terminal
-   runtime state, AgentOS removes the binding and temporary OpenClaw profile,
-   stops Chromium, persists its user-data directory, and releases the lease.
+   runtime state, AgentOS removes the binding, removes only the fallback's
+   temporary OpenClaw relay configuration, stops the selected session
+   gracefully, persists its profile state, and releases the lease. Native
+   profile identity is not tied to the task process lifetime.
 9. A crash, missing heartbeat, or incomplete cleanup expires safely and marks
    the account/task `recovery_required`; failed cleanup bindings are retained
    as expired recovery records so the operator can retry cleanup.
@@ -135,12 +222,13 @@ through AgentOS HTTP.
     sessions. The server refuses policy changes while an unexpired profile
     lease exists, and always retains the account's primary domain.
 
-`user_confirmed` is not independent provider verification. GitHub is the first
-built-in provider rule: an allowed `github.com` page must expose GitHub's
-authenticated `meta[name="user-login"]` marker; the login form marker produces
-`needs_user_action`. No cookie value, DOM text, URL path, storage value, or
-credential leaves the worker. Domains without a stable rule remain
-`unknown/user_confirmed`, never `connected`.
+`user_confirmed` is not independent provider verification. GitHub, X/Twitter,
+Product Hunt, and Amazon have registry-backed rules with bounded DOM-marker
+and URL-state strategies. For example, an allowed `github.com` page must
+expose GitHub's authenticated `meta[name="user-login"]` marker; the login form
+marker produces `needs_user_action`. No cookie value, DOM text, URL path,
+storage value, or credential leaves the browser runtime. Domains without a
+stable rule remain `unknown/user_confirmed`, never `connected`.
 
 Before an agent task uses a provider with a rule, AgentOS starts the isolated
 profile and revalidates the marker. An expired marker changes the account to
@@ -326,11 +414,41 @@ again, revokes the profile, and confirms its directory was removed. It never
 uses a real website account or credential. Run it in a disposable container or
 maintenance deployment, not while production browser sessions are active.
 
+## Native OpenClaw profile contract
+
+AgentOS was checked against the repository's exact OpenClaw `2026.9.4`
+contract. The native adapter uses the Gateway's structured `browser.request`
+surface with `target: "host"` and these managed-profile operations:
+
+| AgentOS operation | OpenClaw native request |
+| --- | --- |
+| list profiles | `GET /profiles` |
+| create profile | `POST /profiles/create` with an opaque `{ name }` body |
+| start/stop | `POST /start` and `POST /stop` with `profile` query |
+| list/open tabs | `GET /tabs` and `POST /tabs/open` with `profile` query |
+| authentication inspection | `GET /snapshot` for a selected tab |
+| revoke | `DELETE /profiles/:name` |
+
+`browser.defaultProfile` remains an OpenClaw setting, but AgentOS never relies
+on it for account authorization. The browser policy plugin overwrites the
+requested profile with the task binding's profile on every browser call.
+Native `openclaw` managed profiles persist their Chromium user-data directory;
+`existing-session` and `extension` are reported as distinct OpenClaw drivers,
+not silently adopted as dedicated account storage. OpenClaw's native profile
+mutation is host-local in this version; browser-node proxying does not expose
+native profile creation or screencast mutation, so AgentOS does not show a
+fake browser-node choice.
+
+The native `/screencast` route is a short-lived, one-time, view-only stream in
+this version. It cannot support the existing interactive login flow, and
+AgentOS therefore reports native Live View/human takeover as unsupported. It
+does not expose raw CDP or turn a view-only ticket into a client transport.
+
 ## OpenClaw compatibility
 
-The current AgentOS Railway deployment remains pinned to OpenClaw `2026.9.3`; the
-local-only 0.7.9 compatibility release certifies the recommended OpenClaw
-`2026.9.4` package without changing production infrastructure. Native OpenClaw
+The repository's AgentOS Railway image pin and exact Gateway client/protocol
+dependencies target OpenClaw `2026.9.4`; the live Railway deployment was not
+inspected or changed in this migration. Native OpenClaw
 documentation describes managed profiles, `profile` selection, `cdpUrl`,
 `attachOnly`, browser-node proxying, manual login, and the native
 `openclaw`/`existing-session`/`extension` driver boundary:

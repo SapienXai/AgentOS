@@ -1,42 +1,56 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { KeyRound, Link2, RefreshCw } from "lucide-react";
+import { KeyRound, RefreshCw } from "lucide-react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { agentHasBrowserAccess, formatLinkedAccountAgents } from "@/components/mission-control/workspace-channels-dialog.utils";
+import { agentHasBrowserAccess } from "@/components/mission-control/workspace-channels-dialog.utils";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
-import { cn } from "@/lib/utils";
+import type { SecureBrowserAccountView } from "@/components/operations/accounts/secure-browser-connect-client";
+import { inferBrowserServiceId } from "@/lib/agentos/browser-accounts/service-registry";
 
 export function AccountsSurfaceSection({
   workspaceAgents,
   selectedAgentId,
   onSelectedAgentIdChange,
+  secureBrowserAccounts,
   accountTargets,
-  accountRulesByTargetId,
   isSaving,
-  onToggleAccountAccess,
+  onToggleSecureAccountAccess,
   onRefreshAccounts,
   onConnectAccount
 }: {
   workspaceAgents: MissionControlSnapshot["agents"];
   selectedAgentId: string;
   onSelectedAgentIdChange: (agentId: string) => void;
+  secureBrowserAccounts: SecureBrowserAccountView[];
   accountTargets: AccountLoginTargetView[];
-  accountRulesByTargetId: Map<string, AccountAccessRuleView[]>;
   isSaving: boolean;
-  onToggleAccountAccess: (target: AccountLoginTargetView, linked: boolean) => void;
+  onToggleSecureAccountAccess: (account: SecureBrowserAccountView, linked: boolean) => void;
   onRefreshAccounts: () => void;
   onConnectAccount: () => void;
 }) {
   const selectedAgent = workspaceAgents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentCanUseBrowser = selectedAgent ? agentHasBrowserAccess(selectedAgent) : false;
+  const legacyTargets = accountTargets.filter((target) => !secureBrowserAccounts.some((account) =>
+    account.workspaceId === target.workspaceId &&
+    (
+      account.browserProfileId === target.browserProfileName ||
+      (
+        account.serviceId === inferBrowserServiceId({
+          serviceId: target.serviceId,
+          serviceName: target.serviceName,
+          primaryDomain: target.primaryDomain
+        }) &&
+        account.primaryDomain === target.primaryDomain
+      )
+    )
+  ));
 
   return (
     <div className="space-y-4">
@@ -46,11 +60,16 @@ export function AccountsSurfaceSection({
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-medium text-foreground dark:text-white">Accounts</p>
               <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
-                {accountTargets.length} target{accountTargets.length === 1 ? "" : "s"}
+                {secureBrowserAccounts.length} account{secureBrowserAccounts.length === 1 ? "" : "s"}
               </Badge>
+              {legacyTargets.length > 0 ? (
+                <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
+                  {legacyTargets.length} legacy
+                </Badge>
+              ) : null}
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground dark:text-slate-500">
-              Attach saved browser-profile account targets to an agent. AgentOS enforces these bindings before account-target task launch.
+              Grant an agent identity-specific access to a persistent browser account. AgentOS enforces the grant and bound profile before task launch.
             </p>
           </div>
           <div className="flex gap-2 sm:flex-wrap sm:items-center sm:justify-end">
@@ -105,7 +124,7 @@ export function AccountsSurfaceSection({
           <div className="rounded-xl border border-amber-300/35 bg-amber-50 p-3 dark:border-amber-300/15 dark:bg-amber-400/[0.06]">
             <p className="text-xs font-medium text-amber-950 dark:text-amber-50">OpenClaw limitation</p>
             <p className="mt-1 text-[11px] leading-5 text-amber-900/80 dark:text-amber-100/75">
-              OpenClaw does not expose a direct browser-profile dispatch parameter to AgentOS yet. These bindings are real AgentOS access rules and are shown on the canvas, but task launch still passes the selected profile as account context.
+              AgentOS carries the selected identity into mission context and the policy layer forces the bound profile. Agent-provided profile overrides are ignored.
             </p>
           </div>
         </div>
@@ -113,65 +132,57 @@ export function AccountsSurfaceSection({
 
       <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
         <div className="flex items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Workspace account targets</p>
+          <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Browser accounts</p>
           <Badge variant="muted" className="h-6 max-w-[52%] truncate rounded-full px-2 text-[10px]">
             {selectedAgent ? formatAgentDisplayName(selectedAgent) : "No agent"}
           </Badge>
         </div>
 
-        {accountTargets.length === 0 ? (
+        {secureBrowserAccounts.length === 0 ? (
           <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm leading-5 text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-            No account targets are connected for this workspace. Use Connect Account to open a real OpenClaw browser login target first.
+            No canonical browser accounts are connected for this workspace. Use Connect Account to create a persistent identity and sign in manually.
           </div>
         ) : (
           <div className="mt-3 space-y-2.5">
-            {accountTargets.map((target) => {
-              const targetRules = accountRulesByTargetId.get(target.id) ?? [];
-              const linked = targetRules.some(
-                (rule) => rule.agentId === selectedAgentId && rule.permission === "use_browser_profile"
-              );
-              const linkedAgents = targetRules.filter((rule) => rule.permission === "use_browser_profile");
+            {secureBrowserAccounts.map((account) => {
+              const grant = account.accessGrants.find((entry) => entry.agentId === selectedAgentId);
+              const linked = Boolean(grant);
               const disabledReason = !selectedAgent
                 ? "Select an agent before attaching this account."
                 : !selectedAgentCanUseBrowser
                   ? "Enable browser/chrome tools for this agent before attaching accounts."
-                  : "";
+                  : account.connectionStatus === "revoked"
+                    ? "This browser account has been revoked."
+                    : "";
 
               return (
                 <div
-                  key={target.id}
+                  key={account.id}
                   className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-white/8 dark:bg-white/[0.02]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <AccountIcon
-                      serviceId={target.serviceId}
-                      serviceName={target.serviceName}
-                      primaryDomain={target.primaryDomain}
+                      serviceId={account.serviceId}
+                      serviceName={account.serviceName}
+                      primaryDomain={account.primaryDomain}
                       className="h-8 w-8 shrink-0"
                     />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-foreground dark:text-white">{target.serviceName}</p>
-                        <Badge
-                          variant="muted"
-                          className={cn(
-                            "h-5 rounded-full px-2 text-[10px]",
-                            linked
-                              ? "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100"
-                              : "border-border bg-muted text-muted-foreground dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
-                          )}
-                        >
-                          {linked ? "Linked to agent" : "Not linked"}
+                        <p className="truncate text-sm font-medium text-foreground dark:text-white">{account.identityLabel}</p>
+                        <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
+                          {formatConnectionStatus(account.connectionStatus)}
+                        </Badge>
+                        <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
+                          {linked ? "Granted" : "Not granted"}
                         </Badge>
                       </div>
                       <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
-                        {target.primaryDomain} · profile {target.browserProfileName}
+                        {account.serviceName} · {account.primaryDomain}
                       </p>
-                      {linkedAgents.length > 0 ? (
-                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
-                          Linked agents: {formatLinkedAccountAgents(linkedAgents)}
-                        </p>
-                      ) : null}
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
+                        Capabilities: {formatCapabilities(grant?.capabilities ?? account.capabilities)} · {account.accessGrants.length} assigned agent{account.accessGrants.length === 1 ? "" : "s"}
+                      </p>
                     </div>
                   </div>
                   <Button
@@ -180,14 +191,11 @@ export function AccountsSurfaceSection({
                     variant={linked ? "secondary" : "default"}
                     className="h-9 w-full rounded-full px-3 text-[11px] sm:h-8 sm:w-auto sm:shrink-0"
                     disabled={isSaving || Boolean(disabledReason)}
-                    title={disabledReason || (linked ? "Remove this account from the selected agent." : "Attach this account to the selected agent.")}
-                    onClick={() => onToggleAccountAccess(target, linked)}
+                    title={disabledReason || (linked ? "Remove this account from the selected agent." : "Grant read access to this account identity.")}
+                    onClick={() => onToggleSecureAccountAccess(account, linked)}
                   >
                     {linked ? "Remove" : (
-                      <>
-                        <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                        Add to agent
-                      </>
+                      "Grant access"
                     )}
                   </Button>
                 </div>
@@ -196,8 +204,53 @@ export function AccountsSurfaceSection({
           </div>
         )}
       </section>
+
+      {legacyTargets.length > 0 ? (
+        <section className="rounded-2xl border border-amber-300/35 bg-amber-50 p-3.5 dark:border-amber-300/15 dark:bg-amber-400/[0.06]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate text-sm font-medium text-amber-950 dark:text-amber-50">Legacy login targets</p>
+            <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">Reconnect required</Badge>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/75">
+            Older target records remain visible for compatibility, but they cannot authorize agent tasks without a canonical Browser Account backing.
+          </p>
+          <div className="mt-3 space-y-2">
+            {legacyTargets.map((target) => (
+              <div key={target.id} className="flex flex-col gap-3 rounded-xl border border-amber-300/30 bg-white/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-amber-200/15 dark:bg-black/10">
+                <div className="flex min-w-0 items-center gap-3">
+                  <AccountIcon
+                    serviceId={target.serviceId}
+                    serviceName={target.serviceName}
+                    primaryDomain={target.primaryDomain}
+                    className="h-8 w-8 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-amber-950 dark:text-amber-50">{target.serviceName}</p>
+                    <p className="mt-1 truncate text-[11px] text-amber-900/70 dark:text-amber-100/65">{target.primaryDomain} · legacy record only</p>
+                  </div>
+                </div>
+                <Button type="button" size="sm" variant="secondary" className="h-9 w-full rounded-full px-3 text-[11px] sm:h-8 sm:w-auto sm:shrink-0" onClick={onConnectAccount}>
+                  Reconnect account
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function formatConnectionStatus(status: string) {
+  if (status === "connected") return "Connected";
+  if (status === "expired") return "Re-authentication required";
+  if (status === "needs_verification") return "Verification required";
+  if (status === "recovery_required") return "Recovery required";
+  return status.replaceAll("_", " ");
+}
+
+function formatCapabilities(capabilities: string[]) {
+  return capabilities.length ? capabilities.join(", ") : "read";
 }
 
 function FormField({

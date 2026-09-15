@@ -83,6 +83,7 @@ import type {
 } from "@/lib/openclaw/domains/workspace-channel-setup";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
+import type { SecureBrowserAccountView } from "@/components/operations/accounts/secure-browser-connect-client";
 import { cn } from "@/lib/utils";
 
 type ChannelMutationResult = {
@@ -166,6 +167,7 @@ export function WorkspaceChannelsDialog({
   workspaceId,
   accountTargets = [],
   accountAccessRules = [],
+  secureBrowserAccounts = [],
   initialAgentId = null,
   initialSection = "surfaces",
   open,
@@ -175,6 +177,7 @@ export function WorkspaceChannelsDialog({
   onSnapshotChange,
   onAccountAccessRulesChange,
   onAccountTargetsChange,
+  onSecureBrowserAccountsChange,
   onConnectAccount,
   surfaceTheme = "dark"
 }: {
@@ -182,6 +185,7 @@ export function WorkspaceChannelsDialog({
   workspaceId: string | null;
   accountTargets?: AccountLoginTargetView[];
   accountAccessRules?: AccountAccessRuleView[];
+  secureBrowserAccounts?: SecureBrowserAccountView[];
   initialAgentId?: string | null;
   initialSection?: WorkspaceDialogSection;
   open: boolean;
@@ -191,6 +195,7 @@ export function WorkspaceChannelsDialog({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAccountAccessRulesChange?: (rules: AccountAccessRuleView[]) => void;
   onAccountTargetsChange?: (targets: AccountLoginTargetView[]) => void;
+  onSecureBrowserAccountsChange?: (accounts: SecureBrowserAccountView[]) => void;
   onConnectAccount?: () => void;
   surfaceTheme?: "dark" | "light";
 }) {
@@ -332,11 +337,10 @@ export function WorkspaceChannelsDialog({
     [providerWorkspaceSurfaces]
   );
   const {
-    accountRulesByTargetId,
     refreshAccounts,
     selectedAccountAgentId,
     setSelectedAccountAgentId,
-    updateAgentAccountAccess,
+    updateAgentSecureBrowserAccountAccess,
     workspaceAccountTargets
   } = useWorkspaceAccountAccess({
     open,
@@ -344,11 +348,13 @@ export function WorkspaceChannelsDialog({
     workspaceAgents,
     accountTargets,
     accountAccessRules,
+    secureBrowserAccounts,
     initialAgentId,
     beginSaving,
     endSaving,
     onAccountAccessRulesChange,
-    onAccountTargetsChange
+    onAccountTargetsChange,
+    onSecureBrowserAccountsChange
   });
   const resolveAgentDisplayName = useCallback(
     (agentId: string | null | undefined, fallback = "Unset") => {
@@ -1081,7 +1087,7 @@ export function WorkspaceChannelsDialog({
                 {allAccounts.length} accounts
               </Badge>
               <Badge variant="muted" className="hidden h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)] lg:inline-flex">
-                {workspaceAccountTargets.length} account targets
+                {secureBrowserAccounts.length} browser accounts
               </Badge>
             </div>
           </div>
@@ -1344,13 +1350,13 @@ export function WorkspaceChannelsDialog({
               <div className="mt-2 hidden space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 sm:block dark:border-white/8 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-2">
                   <KeyRound className="h-3.5 w-3.5 text-amber-600 dark:text-amber-200" />
-                  <p className="text-xs font-medium text-foreground dark:text-white">Workspace accounts</p>
+                    <p className="text-xs font-medium text-foreground dark:text-white">Browser accounts</p>
                 </div>
                 <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
-                  Grant saved browser-profile account targets to workspace agents.
+                  Grant identity-specific persistent browser accounts to workspace agents.
                 </p>
                 <Badge variant="muted" className="h-5 w-fit rounded-full px-2 text-[10px]">
-                  {workspaceAccountTargets.length} available
+                  {secureBrowserAccounts.length} available
                 </Badge>
               </div>
             )}
@@ -1362,10 +1368,10 @@ export function WorkspaceChannelsDialog({
                 workspaceAgents={workspaceAgents}
                 selectedAgentId={selectedAccountAgentId}
                 onSelectedAgentIdChange={setSelectedAccountAgentId}
+                secureBrowserAccounts={secureBrowserAccounts}
                 accountTargets={workspaceAccountTargets}
-                accountRulesByTargetId={accountRulesByTargetId}
                 isSaving={isSaving}
-                onToggleAccountAccess={(target, linked) => void updateAgentAccountAccess(target, linked)}
+                onToggleSecureAccountAccess={(account, linked) => void updateAgentSecureBrowserAccountAccess(account, linked)}
                 onRefreshAccounts={() => void refreshAccounts().catch((error) => {
                   toast.error("Accounts refresh failed.", {
                     description: error instanceof Error ? error.message : "Unknown account refresh error."

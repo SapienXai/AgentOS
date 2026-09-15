@@ -27,17 +27,33 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const providerSchema = z.enum([
+  "native-openclaw",
   "self-hosted-openclaw",
   "local-chrome",
   "browserless",
   "browserbase"
 ]);
 
+const serviceSchema = z.enum(["github", "x", "producthunt", "amazon", "custom"]);
+const capabilitySchema = z.enum(["read", "interact", "publish", "transact", "account_admin"]);
+const runtimeLocationSchema = z.enum(["cloud", "local", "browser-node", "external"]);
+const accessGrantSchema = z.object({
+  agentId: z.string().min(1),
+  capabilities: z.array(capabilitySchema).min(1).max(5),
+  approvalPolicy: z.enum(["block_sensitive", "require_approval"]).optional()
+});
+
 const createSchema = z.object({
   action: z.literal("create"),
   workspaceId: z.string().min(1),
-  serviceName: z.string().min(1).max(120),
+  serviceName: z.string().min(1).max(120).optional(),
   primaryDomain: z.string().min(1).max(253),
+  serviceId: serviceSchema.optional(),
+  identityLabel: z.string().min(1).max(120).optional(),
+  runtimeLocation: runtimeLocationSchema.optional(),
+  capabilities: z.array(capabilitySchema).min(1).max(5).optional(),
+  accessGrants: z.array(accessGrantSchema).max(100).optional(),
+  approvalPolicy: z.enum(["block_sensitive", "require_approval"]).optional(),
   allowedAgentIds: z.array(z.string().min(1)).max(100).optional(),
   allowedDomains: z.array(z.string().min(1)).max(100).optional(),
   provider: providerSchema.optional()
@@ -99,7 +115,10 @@ const updateAccessSchema = z.object({
   action: z.literal("update-access"),
   accountId: z.string().min(1),
   workspaceId: z.string().min(1),
-  allowedAgentIds: z.array(z.string().min(1)).max(100),
+  allowedAgentIds: z.array(z.string().min(1)).max(100).optional(),
+  capabilities: z.array(capabilitySchema).min(1).max(5).optional(),
+  accessGrants: z.array(accessGrantSchema).max(100).optional(),
+  approvalPolicy: z.enum(["block_sensitive", "require_approval"]).optional(),
   allowedDomains: z.array(z.string().min(1)).min(1).max(100)
 });
 
@@ -129,8 +148,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const workspaceId = url.searchParams.get("workspaceId");
     const includeAudit = url.searchParams.get("audit") === "1";
-    const provider = providerSchema.catch("self-hosted-openclaw").parse(
-      url.searchParams.get("provider") ?? "self-hosted-openclaw"
+    const provider = providerSchema.catch("native-openclaw").parse(
+      url.searchParams.get("provider") ?? "native-openclaw"
     );
     const recovery = await recoverExpiredBrowserTaskBindings({
       ownerUserId: authorization.actor.userId,
@@ -144,13 +163,20 @@ export async function GET(request: Request) {
         : Promise.resolve(undefined)
     ]);
 
+    const fallbackCapabilities = provider === "native-openclaw" && capabilities.liveView !== "supported"
+      ? await getBrowserAccountCapabilities("self-hosted-openclaw").catch(() => null)
+      : null;
+
     return NextResponse.json(
       redactSecrets({
         ok: true,
         generatedAt: new Date().toISOString(),
         source: "agentos.browser-gateway",
         accounts,
-        capabilities,
+        capabilities: {
+          ...capabilities,
+          fallbackCapabilities
+        },
         recovery: {
           recoveredCount: recovery.recoveredCount,
           cleanupFailedCount: recovery.cleanupFailedCount

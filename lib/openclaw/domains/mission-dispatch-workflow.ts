@@ -37,6 +37,7 @@ import {
   finalizeBrowserTaskBinding,
   prepareBrowserTaskBinding
 } from "@/lib/agentos/application/browser-task-binding-service";
+import { getBrowserAccount } from "@/lib/agentos/application/browser-account-service";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import {
@@ -126,12 +127,19 @@ async function submitMissionDispatchOnce(
     : [];
   const setupAgentId =
     workspaceAgents.find((entry) => entry.policy.preset === "setup" && entry.id !== missionAgent?.id)?.id ?? null;
+  const browserAccount = input.browserAccount && missionWorkspace
+    ? await getBrowserAccount({
+        actor: { userId: input.browserAccount.actorUserId },
+        accountId: input.browserAccount.accountId,
+        workspaceId: missionWorkspace.id
+      })
+    : null;
   const outputPlan = missionWorkspace
     ? await prepareMissionOutputPlan(missionWorkspace.path, mission)
     : null;
   const thinking = input.thinking ?? "medium";
   const workspaceSurfacePrompt = renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot);
-  const routedMission = outputPlan
+  const composedMission = outputPlan
     ? composeMissionWithOutputRouting(
         mission,
         outputPlan,
@@ -141,6 +149,14 @@ async function submitMissionDispatchOnce(
         missionAgent ? { id: missionAgent.id, name: missionAgent.name } : null
       )
     : mission;
+  const routedMission = browserAccount
+    ? [
+        `Authorized browser account: ${browserAccount.serviceName} / ${browserAccount.identityLabel}.`,
+        `Granted browser capabilities: ${browserAccount.accessGrants.find((grant) => grant.agentId === agentId)?.capabilities.join(", ") ?? "read"}.`,
+        "Use only the task-bound authenticated browser identity. Do not request, expose, or copy passwords, OTP codes, cookies, or session tokens.",
+        composedMission
+      ].join("\n\n")
+    : composedMission;
   const readinessError = resolveMissionDispatchReadinessError(
     snapshot,
     missionAgent?.modelId === "unassigned" ? null : missionAgent?.modelId

@@ -1,8 +1,37 @@
 export type BrowserAccountProviderId =
+  | "native-openclaw"
   | "self-hosted-openclaw"
   | "local-chrome"
   | "browserless"
   | "browserbase";
+
+export type BrowserAccountRuntimeLocation =
+  | "cloud"
+  | "local"
+  | "browser-node"
+  | "external";
+
+export type BrowserAccountCapability =
+  | "read"
+  | "interact"
+  | "publish"
+  | "transact"
+  | "account_admin";
+
+export type BrowserServiceId =
+  | "github"
+  | "x"
+  | "producthunt"
+  | "amazon"
+  | "custom";
+
+export const browserAccountCapabilities = [
+  "read",
+  "interact",
+  "publish",
+  "transact",
+  "account_admin"
+] as const satisfies readonly BrowserAccountCapability[];
 
 export type BrowserAccountConnectionType =
   | "browser_profile"
@@ -26,6 +55,20 @@ export type BrowserAccountSessionState =
 
 export type BrowserAccountRiskLevel = "standard" | "elevated" | "high";
 export type BrowserAccountApprovalPolicy = "block_sensitive" | "require_approval";
+
+export type BrowserAuthenticationVerificationStrategy =
+  | "dom_marker"
+  | "known_authenticated_endpoint"
+  | "url_state"
+  | "provider_state"
+  | "manual_confirmation";
+
+export type BrowserAccountAccessGrant = {
+  agentId: string;
+  capabilities: BrowserAccountCapability[];
+  approvalPolicy: BrowserAccountApprovalPolicy;
+  updatedAt: string;
+};
 
 export type BrowserAccountLease = {
   leaseId: string;
@@ -58,11 +101,16 @@ export type BrowserAccountRecord = {
   id: string;
   provider: BrowserAccountProviderId;
   connectionType: BrowserAccountConnectionType;
+  serviceId: BrowserServiceId;
+  identityLabel: string;
+  runtimeLocation: BrowserAccountRuntimeLocation;
   externalProfileId: string | null;
   browserProfileId: string;
   workspaceId: string;
   ownerUserId: string;
   allowedAgentIds: string[];
+  capabilities: BrowserAccountCapability[];
+  accessGrants: BrowserAccountAccessGrant[];
   allowedDomains: string[];
   connectionStatus: BrowserAccountConnectionStatus;
   verificationSource: "provider_verified" | "user_confirmed" | "unknown";
@@ -82,6 +130,14 @@ export type BrowserAccountRecord = {
 };
 
 export type BrowserAccountAuditEventType =
+  | "account_created"
+  | "login_started"
+  | "login_verified"
+  | "login_failed"
+  | "agent_granted"
+  | "agent_revoked"
+  | "capability_updated"
+  | "task_bound"
   | "profile_created"
   | "live_view_issued"
   | "live_view_opened"
@@ -113,10 +169,14 @@ export type BrowserTaskBindingRecord = {
   workspaceId: string;
   ownerUserId: string;
   agentId: string;
+  provider: BrowserAccountProviderId;
   openClawSessionId: string | null;
   openClawSessionKey: string;
   openClawProfileName: string;
   providerSessionId: string;
+  serviceId: BrowserServiceId;
+  identityLabel: string;
+  capabilities: BrowserAccountCapability[];
   allowedDomains: string[];
   approvalPolicy: BrowserAccountApprovalPolicy;
   leaseId: string;
@@ -148,6 +208,7 @@ export type BrowserProviderCapabilities = {
   humanTakeover: "supported" | "unsupported" | "unknown";
   typedTaskDispatch: "supported" | "unsupported" | "unknown";
   cdpExposure: "private" | "not-applicable" | "unknown";
+  runtimeLocation?: BrowserAccountRuntimeLocation;
   reason: string | null;
 };
 

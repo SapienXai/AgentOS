@@ -13,7 +13,10 @@ import {
 } from "@/lib/agentos/browser-accounts/browser-worker-client";
 import { resolveBrowserAuthenticationRule } from "@/lib/agentos/browser-accounts/authentication-rules";
 import type { BrowserProvider } from "@/lib/agentos/browser-accounts/provider";
-import type { BrowserProviderCapabilities } from "@/lib/agentos/browser-accounts/types";
+import type {
+  BrowserProviderCapabilities,
+  BrowserServiceId
+} from "@/lib/agentos/browser-accounts/types";
 
 const defaultPolicyReadyPath = "/tmp/agentos-browser-policy.ready";
 
@@ -31,6 +34,7 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
         humanTakeover: "supported",
         typedTaskDispatch: policyReady ? "supported" : "unsupported",
         cdpExposure: "private",
+        runtimeLocation: "cloud",
         reason: policyReady
           ? "Secure manual login and task-bound OpenClaw browser policy are available through the self-hosted worker."
           : "Secure manual login is available, but the AgentOS OpenClaw browser policy plugin is not active. Agent task dispatch remains blocked."
@@ -45,6 +49,7 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
         humanTakeover: "unsupported",
         typedTaskDispatch: "unsupported",
         cdpExposure: "private",
+        runtimeLocation: "cloud",
         reason: "The private self-hosted browser worker is unavailable."
       };
     }
@@ -59,7 +64,8 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
       externalProfileId: null,
       browserProfileId,
       persistent: true,
-      source: "self-hosted-worker" as const
+      source: "self-hosted-worker" as const,
+      runtimeLocation: "cloud" as const
     };
   }
 
@@ -94,8 +100,8 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
     );
   }
 
-  async verifyAuthentication(input: { sessionId: string; allowedDomains: string[] }) {
-    const rule = resolveBrowserAuthenticationRule(input.allowedDomains);
+  async verifyAuthentication(input: { sessionId: string; allowedDomains: string[]; serviceId?: BrowserServiceId }) {
+    const rule = resolveBrowserAuthenticationRule(input.allowedDomains, input.serviceId);
     if (!rule) {
       return { status: "unknown" as const, verifiedAt: null };
     }
@@ -131,7 +137,8 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
       externalProfileId: null,
       browserProfileId,
       persistent: true,
-      source: "self-hosted-worker" as const
+      source: "self-hosted-worker" as const,
+      runtimeLocation: "cloud" as const
     };
   }
 
@@ -153,6 +160,8 @@ async function isPolicyPluginReady() {
     await access(readyPath);
     return /^[A-Za-z0-9_-]{43,128}$/.test(
       process.env.AGENTOS_BROWSER_POLICY_TOKEN?.trim() ?? ""
+    ) && /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/internal\/browser-policy\/heartbeat$/.test(
+      process.env.AGENTOS_BROWSER_POLICY_HEARTBEAT_URL?.trim() ?? ""
     );
   } catch {
     return false;

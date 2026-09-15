@@ -1,7 +1,9 @@
 import type {
   BrowserAccountProviderId,
   BrowserAuthenticationStatus,
-  BrowserProviderCapabilities
+  BrowserProviderCapabilities,
+  BrowserAccountRuntimeLocation,
+  BrowserServiceId
 } from "@/lib/agentos/browser-accounts/types";
 
 /** Runtime implementation behind a Secure Browser Account. Persisted account
@@ -19,6 +21,7 @@ export type BrowserProviderProfile = {
   browserProfileId: string;
   persistent: boolean;
   source: "native-openclaw" | "self-hosted-worker" | "optional-adapter";
+  runtimeLocation?: BrowserAccountRuntimeLocation;
 };
 
 export type BrowserProviderSession = {
@@ -63,7 +66,9 @@ export interface BrowserProvider {
   }): Promise<ScopedCdpCapability>;
   verifyAuthentication(input: {
     sessionId: string;
+    browserProfileId?: string;
     allowedDomains: string[];
+    serviceId?: BrowserServiceId;
   }): Promise<{ status: BrowserAuthenticationStatus; verifiedAt: string | null }>;
   persistProfile(input: {
     sessionId: string;
@@ -71,6 +76,7 @@ export interface BrowserProvider {
   }): Promise<BrowserProviderProfile>;
   stopSession(input: {
     sessionId: string;
+    browserProfileId?: string;
   }): Promise<void>;
   revokeProfile(input: {
     browserProfileId: string;

@@ -890,6 +890,8 @@ export function MissionControlShell({
     setAccountTargets,
     accountAccessRules,
     setAccountAccessRules,
+    secureBrowserAccounts,
+    setSecureBrowserAccounts,
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,
@@ -5297,6 +5299,7 @@ export function MissionControlShell({
           workspaceId={activeWorkspaceId ?? uiSnapshot.workspaces[0]?.id ?? null}
           accountTargets={accountTargets}
           accountAccessRules={accountAccessRules}
+          secureBrowserAccounts={secureBrowserAccounts}
           initialAgentId={workspaceChannelsInitialAgentId}
           initialSection={workspaceChannelsInitialSection}
           open={isWorkspaceChannelsOpen}
@@ -5311,6 +5314,7 @@ export function MissionControlShell({
           onSnapshotChange={setSnapshot}
           onAccountAccessRulesChange={setAccountAccessRules}
           onAccountTargetsChange={setAccountTargets}
+          onSecureBrowserAccountsChange={setSecureBrowserAccounts}
           onConnectAccount={openConnectAccountDialog}
           surfaceTheme={surfaceTheme}
         />
