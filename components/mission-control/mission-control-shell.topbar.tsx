@@ -27,6 +27,16 @@ type CanvasTopBarProps = MissionControlShellSettingsPanelProps & {
   onRefresh?: () => Promise<void> | void;
 };
 
+export function CanvasNativeTitlebar() {
+  return (
+    <div
+      aria-hidden="true"
+      data-tauri-drag-region="deep"
+      className="agentos-native-drag-strip pointer-events-auto absolute inset-x-0 top-0 z-20 hidden h-8 lg:block"
+    />
+  );
+}
+
 export function CanvasTitlePill({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   return (
     <div
@@ -106,7 +116,7 @@ export function CanvasTopBar({
   return (
     <div
       data-tauri-drag-region="deep"
-      className="pointer-events-auto flex h-16 w-full items-center px-0 pt-6"
+      className="pointer-events-auto flex h-11 w-full items-center px-0"
     >
       <div
         ref={settingsRef}

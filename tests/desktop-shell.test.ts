@@ -68,11 +68,15 @@ test("declared drag regions stay on shell surfaces instead of the sidebar contro
 
   assert.match(topbar, /data-tauri-drag-region="deep"/);
   assert.match(topbar, /data-tauri-drag-region="false"/);
-  assert.match(shell, /data-tauri-drag-region="deep"[\s\S]*h-16/);
+  assert.match(topbar, /agentos-native-drag-strip[\s\S]*z-20[\s\S]*h-8/);
+  assert.doesNotMatch(topbar, /z-\[55\]/);
+  assert.match(shell, /data-tauri-drag-region="deep"[\s\S]*h-11/);
   assert.match(shell, /data-tauri-drag-region="deep"/);
+  assert.match(shell, /const isFloatingHeaderHidden =/);
+  assert.match(shell, /!isFloatingHeaderHidden/);
   assert.match(shell, /z-\[60\][\s\S]*lg:left-\[316px\][\s\S]*lg:left-\[80px\]/);
   assert.match(onboarding, /data-tauri-drag-region="deep"/);
-  assert.match(sidebar, /agentos-sidebar-surface/);
+  assert.match(sidebar, /agentos-sidebar-surface relative flex h-full w-full flex-col overflow-hidden/);
   assert.match(onboarding, /agentos-titlebar-surface/);
   assert.doesNotMatch(sidebar, /data-tauri-drag-region/);
 });

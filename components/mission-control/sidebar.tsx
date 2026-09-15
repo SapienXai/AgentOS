@@ -649,7 +649,7 @@ export function MissionSidebar({
       ) : (
         <aside
           className={cn(
-            "relative flex h-full w-full flex-col overflow-hidden border-r border-border text-card-foreground shadow-panel",
+            "agentos-sidebar-surface relative flex h-full w-full flex-col overflow-hidden border-r border-border text-card-foreground shadow-panel",
             surfaceTheme === "light" ? "bg-[#fbf7f3] lg:bg-card" : "bg-card"
           )}
         >

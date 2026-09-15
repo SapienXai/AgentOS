@@ -178,6 +178,10 @@
       linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--background)) 100%);
   }
 
+  .agentos-native-drag-strip {
+    background: linear-gradient(180deg, hsl(var(--background) / 0.08), hsl(var(--background) / 0));
+  }
+
   html[data-agentos-desktop-platform="macos"] .agentos-titlebar-surface {
     padding-top: max(2.5rem, env(safe-area-inset-top)) !important;
   }

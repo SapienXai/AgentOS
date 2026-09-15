@@ -71,6 +71,7 @@ import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import { resolveTaskWorkspaceId } from "@/components/mission-control/canvas.graph";
 import type { OptimisticMissionTask } from "@/components/mission-control/mission-control-shell.utils";
 import {
+  CanvasNativeTitlebar as MissionControlCanvasNativeTitlebar,
   CanvasTitlePill as MissionControlCanvasTitlePill,
   CanvasTopBar as MissionControlCanvasTopBar
 } from "@/components/mission-control/mission-control-shell.topbar";
@@ -994,6 +995,22 @@ export function MissionControlShell({
   const shouldShowOnboarding =
     !isAddModelsDialogOpen &&
     (shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen);
+  const isFloatingHeaderHidden =
+    shouldShowOnboarding ||
+    isWorkspaceWizardOpen ||
+    isWorkspaceChannelsOpen ||
+    isConnectAccountDialogOpen ||
+    isAddModelsDialogOpen ||
+    isSidebarCreateAgentDialogOpen ||
+    isSidebarAgentActionModalOpen ||
+    resetDialogTarget !== null ||
+    Boolean(agentActionRequest) ||
+    Boolean(capabilityEditorRequest) ||
+    Boolean(agentModelRequest) ||
+    Boolean(taskAbortRequest) ||
+    Boolean(taskReviewRequest) ||
+    contextEngineAgentId !== null ||
+    isUpdateDialogOpen;
   const scopedTasks = uiSnapshot.tasks.filter(
     (task) => !activeWorkspaceId || resolveTaskWorkspaceId(task, uiSnapshot.agents) === activeWorkspaceId
   );
@@ -4377,6 +4394,7 @@ export function MissionControlShell({
         <div className="mission-canvas-backdrop fixed inset-0 z-0">
           <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
         </div>
+        <MissionControlCanvasNativeTitlebar />
 
         <div
           className={cn(
@@ -4477,7 +4495,7 @@ export function MissionControlShell({
           />
         ) : null}
 
-        {!isSidebarOpen ? (
+        {!isFloatingHeaderHidden && !isSidebarOpen ? (
           <div
             className={cn(
               "fixed inset-x-0 top-0 z-30 flex min-h-16 items-center gap-3 border-b px-3 backdrop-blur-xl lg:hidden",
@@ -4574,26 +4592,28 @@ export function MissionControlShell({
         </div>
 
         <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} />
-        <div
-          data-tauri-drag-region="deep"
-          className={cn(
-            "pointer-events-auto fixed top-0 z-[60] hidden h-16 lg:block",
-            isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-            "lg:right-[84px]"
-          )}
-        >
-          <MissionControlCanvasTopBar
-            settingsRef={settingsRef}
-            isSettingsOpen={isSettingsOpen}
-            onToggleTheme={() =>
-              setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
-            }
-            onToggleSettings={() => setIsSettingsOpen((current) => !current)}
-            onSnapshotChange={setSnapshot}
-            onRefresh={refresh}
-            {...settingsPanelProps}
-          />
-        </div>
+        {!isFloatingHeaderHidden ? (
+          <div
+            data-tauri-drag-region="deep"
+            className={cn(
+              "pointer-events-auto fixed top-9 z-[60] hidden h-11 lg:block",
+              isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
+              "lg:right-[84px]"
+            )}
+          >
+            <MissionControlCanvasTopBar
+              settingsRef={settingsRef}
+              isSettingsOpen={isSettingsOpen}
+              onToggleTheme={() =>
+                setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
+              }
+              onToggleSettings={() => setIsSettingsOpen((current) => !current)}
+              onSnapshotChange={setSnapshot}
+              onRefresh={refresh}
+              {...settingsPanelProps}
+            />
+          </div>
+        ) : null}
         {settingsSystemOverlays}
       </div>
     );
@@ -4753,42 +4773,48 @@ export function MissionControlShell({
         </div>
       </div>
 
-      <div
-        data-tauri-drag-region="deep"
-        className={cn(
-          "pointer-events-auto absolute top-0 z-[60] hidden h-16 lg:block",
-          isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-          !isInspectorOpen && "lg:right-[76px]"
-        )}
-        style={isInspectorOpen ? { right: `${inspectorWidth + 32}px` } : undefined}
-      >
-        <MissionControlCanvasTopBar
-          settingsRef={settingsRef}
-          isSettingsOpen={isSettingsOpen}
-          onToggleTheme={() =>
-            setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
-          }
-          onToggleSettings={() => setIsSettingsOpen((current) => !current)}
-          onSnapshotChange={setSnapshot}
-          onRefresh={refresh}
-          {...settingsPanelProps}
-        />
-      </div>
+      <MissionControlCanvasNativeTitlebar />
 
-      <div
-        data-tauri-drag-region="deep"
-        className={cn(
-          "pointer-events-auto absolute top-6 z-[60] hidden mission-ease-smooth transition-[left] duration-500 lg:block",
-          isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]"
-        )}
-      >
-        <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
-      </div>
+      {!isFloatingHeaderHidden ? (
+        <>
+          <div
+            data-tauri-drag-region="deep"
+            className={cn(
+              "pointer-events-auto absolute top-9 z-[60] hidden h-11 lg:block",
+              isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
+              !isInspectorOpen && "lg:right-[76px]"
+            )}
+            style={isInspectorOpen ? { right: `${inspectorWidth + 32}px` } : undefined}
+          >
+            <MissionControlCanvasTopBar
+              settingsRef={settingsRef}
+              isSettingsOpen={isSettingsOpen}
+              onToggleTheme={() =>
+                setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
+              }
+              onToggleSettings={() => setIsSettingsOpen((current) => !current)}
+              onSnapshotChange={setSnapshot}
+              onRefresh={refresh}
+              {...settingsPanelProps}
+            />
+          </div>
+
+          <div
+            data-tauri-drag-region="deep"
+            className={cn(
+              "pointer-events-auto absolute top-9 z-[60] hidden mission-ease-smooth transition-[left] duration-500 lg:block",
+              isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]"
+            )}
+          >
+            <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
+          </div>
+        </>
+      ) : null}
 
       <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspaceForDialogs?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
 
       <div className="relative z-20 min-h-[100dvh] pointer-events-none lg:h-screen">
-        {!isInspectorOpen ? (
+        {!isFloatingHeaderHidden && !isInspectorOpen ? (
           <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex items-center justify-between px-3 lg:hidden">
           {!isSidebarOpen ? (
             <button
