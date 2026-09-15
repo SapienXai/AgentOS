@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-channel-browser-acceptance",
-  "generatedAt": "2026-09-15T19:56:59Z",
-  "agentosHead": "44b7353b47e2633f2061eb65b989995321effab2",
+  "generatedAt": "2026-09-15T20:22:39Z",
+  "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
   "openclawVersion": "2026.9.4",
   "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
   "methodology": {
@@ -72,7 +72,13 @@
     "channelCenterAgrees": true,
     "threadInheritanceVerified": true,
     "directThreadBindingControl": false,
-    "removalVerified": true
+    "removalVerified": true,
+    "canonicalRereadReflectedRemoval": true,
+    "badgeRemovalVerified": true,
+    "channelCenterRemovalVerified": true,
+    "postRemovalThreadResolutionVerified": true,
+    "postRemovalThreadBindingMatch": "none",
+    "directThreadBindingMutations": 0
   },
   "badgeAcceptance": {
     "passed": true,

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-contract-diff",
-  "generatedAt": "2026-09-15T19:56:48.388Z",
+  "generatedAt": "2026-09-15T20:22:26.959Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosHead": "44b7353b47e2633f2061eb65b989995321effab2",
+    "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
     "comparison": "2026.9.3 -> 2026.9.4",
     "source": {
       "version": "2026.9.3",

@@ -1,6 +1,6 @@
 {
   "report": {
-    "generatedAt": "2026-09-15T19:55:51.683Z",
+    "generatedAt": "2026-09-15T20:21:46.677Z",
     "target": {
       "name": "real-local",
       "kind": "real",
@@ -2559,7 +2559,7 @@
         "responseShapeValid": null,
         "status": "degraded",
         "reason": "Native plugin discovery catalog could not be observed because the OpenClaw Gateway is unreachable.",
-        "suggestedRecovery": "Update OpenClaw for native Native plugin discovery catalog support.",
+        "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
         "epistemicStatus": "unreachable",
         "fallbackStatus": "not-allowed",
         "fallbackUsed": false,
@@ -3276,7 +3276,7 @@
         "responseShapeValid": null,
         "status": "degraded",
         "reason": "Browser profiles could not be observed because the OpenClaw Gateway is unreachable.",
-        "suggestedRecovery": "Update OpenClaw for native Browser profiles support.",
+        "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
         "epistemicStatus": "unreachable",
         "fallbackStatus": "not-allowed",
         "fallbackUsed": false,
