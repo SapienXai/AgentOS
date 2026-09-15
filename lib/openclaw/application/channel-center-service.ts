@@ -256,8 +256,11 @@ export function inferProviderCapabilities(
     supportsStop: supportsLifecycle("stop"),
     supportsRestart: supportsLifecycle("restart"),
     supportsLogout: supportsLifecycle("logout"),
-    supportsQrLogin: hasDeclared("supportsQrLogin") || setupMode === "qr",
-    supportsTokenSetup: hasDeclared("supportsTokenSetup") || setupMode === "bot-token" || setupMode === "app-tokens",
+    // Setup mode is presentation guidance only. It becomes an actionable
+    // capability after OpenClaw reports the provider or explicitly declares
+    // the operation.
+    supportsQrLogin: hasDeclared("supportsQrLogin") || runtimeReported && setupMode === "qr",
+    supportsTokenSetup: hasDeclared("supportsTokenSetup") || runtimeReported && (setupMode === "bot-token" || setupMode === "app-tokens"),
     supportsDirectoryPeers: hasDeclared("supportsDirectoryPeers") || directEvidence || (runtimeReported && supportsAccounts),
     supportsDirectoryGroups: hasDeclared("supportsDirectoryGroups") || directoryEvidence,
     supportsDirectoryMembers: hasDeclared("supportsDirectoryMembers") || runtimeReported && (hasSchemaProperty("users") || hasSchemaProperty("roles")),
@@ -339,11 +342,6 @@ function schemaContainsProperty(value: unknown, propertyName: string, seen = new
   const properties = isRecord(record.properties);
   if (properties && Object.prototype.hasOwnProperty.call(properties, propertyName)) return true;
   return Object.values(record).some((entry) => schemaContainsProperty(entry, propertyName, seen));
-}
-
-function hasTelegramGroups(config: Record<string, unknown> | null) {
-  if (!config) return false;
-  return isRecord(config.groups) || isRecord(config.accounts);
 }
 
 function hasTelegramTopics(config: Record<string, unknown> | null) {

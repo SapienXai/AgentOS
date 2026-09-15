@@ -328,9 +328,10 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
 
   assert.match(agentConfigSource, /const OPENCLAW_AGENT_CONFIG_PATH = "agents\.entries"/);
   assert.match(agentConfigSource, /getOpenClawAdapter\(\)\.getConfig<unknown>\(OPENCLAW_AGENT_CONFIG_PATH, options\)/);
-  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<DiscordGuildConfig>\("channels\.discord\.guilds"\)/);
-  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getChannelLogs/);
   assert.match(channelsSource, /listChannelGroups/);
+  assert.match(channelsSource, /serializeRouteToOpenClawBindingMatch/);
+  assert.doesNotMatch(channelsSource, /getChannelLogs/);
+  assert.doesNotMatch(channelsSource, /DiscordGuildConfig/);
   assert.match(directorySource, /getOpenClawAdapter\(\)\.getConfig<Record<string, unknown>>\("channels\.telegram"/);
   assert.doesNotMatch(agentConfigSource, /runOpenClawJson/);
   assert.doesNotMatch(channelsSource, /runOpenClawJson/);

@@ -118,9 +118,9 @@ export function ProtectedLogin() {
 
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-6 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
-          <div className="mb-4 -translate-y-4 text-center text-white [text-shadow:0_2px_28px_rgba(2,6,23,.48)] lg:mb-4 lg:translate-y-0">
-            <h1 id="protected-title" className="whitespace-nowrap font-display text-[clamp(1.4rem,5vw,1.8rem)] font-medium leading-tight tracking-[-0.04em] sm:text-[2rem] lg:text-[2.15rem]">Control plane locked</h1>
-            <p className="mx-auto mt-1 max-w-[430px] whitespace-nowrap text-[11px] leading-5 text-white/65 sm:text-xs">Unlock to continue.</p>
+          <div className="mb-6 -translate-y-4 text-left text-white lg:mb-6 lg:translate-y-0">
+            <h1 id="protected-title" className="whitespace-nowrap font-sans text-[clamp(1.75rem,8vw,2rem)] font-medium leading-[1.05] tracking-[-0.03em] sm:text-[2.25rem] lg:text-[2.35rem]">Control plane locked</h1>
+            <p className="mt-2 whitespace-nowrap text-[13px] font-normal leading-5 text-white/60 sm:text-sm">Authenticate to unlock this instance.</p>
           </div>
 
           <Card className="lock-glass-card relative mt-12 rounded-[26px] p-5 pt-16 text-card-foreground lg:mt-0 lg:pt-5">
@@ -131,24 +131,24 @@ export function ProtectedLogin() {
               </div>
             </div>
             <CardHeader className="lock-glass-divider mb-4 flex-row items-center justify-between gap-4 border-b p-0 pb-3">
-              <div><p className="text-sm font-semibold">Operator access</p><p className="mt-0.5 text-[11px] text-muted-foreground">Authenticate to unlock this session.</p></div>
+              <div><p className="font-sans text-[15px] font-medium leading-5 tracking-[-0.02em]">Operator access</p><p className="mt-1 text-xs leading-4 text-muted-foreground">Authenticate to unlock this session.</p></div>
               <span className="lock-glass-control flex size-9 items-center justify-center rounded-xl border text-muted-foreground"><KeyRound className="size-4" /></span>
             </CardHeader>
 
             <CardContent className="p-0">
               <form className="flex flex-col gap-3.5" onSubmit={submit}>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="instance-username" className="text-[11px] font-medium text-muted-foreground">Username</Label>
+                  <Label htmlFor="instance-username" className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground">Username</Label>
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10" />
+                    <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10 text-[15px]" />
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="instance-password" className="text-[11px] font-medium text-muted-foreground">Password</Label>
+                  <Label htmlFor="instance-password" className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground">Password</Label>
                   <div className="relative">
                     <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="instance-password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10 pr-12" />
+                    <Input id="instance-password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10 pr-12 text-[15px]" />
                     <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>

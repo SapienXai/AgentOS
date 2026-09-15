@@ -47,11 +47,12 @@ export async function GET(request: Request) {
         : query.kind === "members"
           ? await listChannelGroupMembers({ ...query, groupId: query.groupId! })
           : await listTelegramTopics({
-              accountId: query.accountId,
-              groupId: query.groupId!,
-              query: query.query,
-              limit: query.limit
-            });
+          accountId: query.accountId,
+          groupId: query.groupId!,
+          query: query.query,
+          limit: query.limit,
+          resolveBindings: true
+        });
 
     return NextResponse.json(redactSecrets(result), {
       status: result.status === "failed" ? 503 : 200,

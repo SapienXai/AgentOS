@@ -12,7 +12,11 @@ import {
   setOpenClawAdapterForTesting,
   type OpenClawAdapter
 } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { buildChannelRouteIdentity, routeBindingToLegacyAssignment } from "@/lib/openclaw/domains/channel-center";
+import {
+  buildChannelRouteIdentity,
+  routeBindingToLegacyAssignment,
+  serializeRouteToOpenClawBindingMatch
+} from "@/lib/openclaw/domains/channel-center";
 import type { ChannelRegistry } from "@/lib/openclaw/types";
 
 afterEach(() => setOpenClawAdapterForTesting(null));
@@ -85,7 +89,7 @@ test("native bindings are account-scoped and preserve unrelated binding fields",
   ]);
 });
 
-test("native routing wins over compatibility state and duplicate matches are explicit conflicts", () => {
+test("native routing wins over compatibility state and duplicate matches follow OpenClaw config order", () => {
   const compatibility = {
     route: groupRoute,
     agentId: "compat-agent",
@@ -105,9 +109,12 @@ test("native routing wins over compatibility state and duplicate matches are exp
     { index: 0, binding: buildNativeRouteBinding(groupRoute, "agent-a") },
     { index: 1, binding: buildNativeRouteBinding(groupRoute, "agent-b") }
   ], compatibility);
-  assert.equal(conflict.agentId, null);
-  assert.equal(conflict.match, "conflict");
-  assert.deepEqual(conflict.conflict?.agentIds, ["agent-a", "agent-b"]);
+  assert.equal(conflict.agentId, "agent-a");
+  assert.equal(conflict.match, "shadowed");
+  assert.equal(conflict.effectiveMatch, "exact");
+  assert.equal(conflict.editingAmbiguity, true);
+  assert.deepEqual(conflict.shadowedBindings.map((binding) => binding.agentId), ["agent-b"]);
+  assert.equal(conflict.conflict, null);
 });
 
 test("compatibility is used only when native routing has no effective match", () => {
@@ -232,5 +239,156 @@ test("compatibility projection keeps access state independent from agent binding
     agentId: "agent-a",
     title: "Operations",
     enabled: false
+  });
+});
+
+test("thread routes inherit the parent peer and never serialize peer.kind=thread", () => {
+  const thread = buildChannelRouteIdentity({
+    provider: "discord",
+    accountId: "main",
+    kind: "thread",
+    routeId: "thread-1",
+    parentRouteId: "channel-1",
+    metadata: { guildId: "guild-1", parentPeerKind: "channel" }
+  });
+  assert.equal(serializeRouteToOpenClawBindingMatch(thread), null);
+  assert.throws(() => buildNativeRouteBinding(thread, "thread-agent"), /cannot be represented/i);
+
+  const resolved = resolveChannelRouteBinding(thread, [
+    {
+      index: 0,
+      binding: {
+        agentId: "channel-agent",
+        match: {
+          channel: "discord",
+          accountId: "main",
+          guildId: "guild-1",
+          peer: { kind: "channel", id: "channel-1" }
+        }
+      }
+    }
+  ]);
+  assert.equal(resolved.agentId, "channel-agent");
+  assert.equal(resolved.effectiveMatch, "inherited");
+  assert.equal(resolved.matchedBy, "binding.peer.parent");
+  assert.equal(resolved.inheritedFrom?.routeId, "channel-1");
+});
+
+test("binding precedence keeps all match fields conjunctive and uses group/channel compatibility", () => {
+  const route = buildChannelRouteIdentity({
+    provider: "discord",
+    accountId: "main",
+    kind: "channel",
+    routeId: "channel-1",
+    parentRouteId: "guild-1",
+    metadata: { guildId: "guild-1", nativePeerKind: "channel" }
+  });
+  const resolved = resolveChannelRouteBinding(route, [
+    {
+      index: 0,
+      binding: { agentId: "wrong-guild", match: { channel: "discord", accountId: "main", guildId: "guild-2", peer: { kind: "group", id: "channel-1" } } }
+    },
+    {
+      index: 1,
+      binding: { agentId: "right-peer", match: { channel: "discord", accountId: "main", guildId: "guild-1", peer: { kind: "group", id: "channel-1" } } }
+    },
+    {
+      index: 2,
+      binding: { agentId: "account-fallback", match: { channel: "discord", accountId: "main" } }
+    }
+  ]);
+  assert.equal(resolved.agentId, "right-peer");
+  assert.equal(resolved.effectiveMatch, "exact");
+  assert.equal(resolved.matchedBy, "binding.peer");
+});
+
+test("default account omission and channel-wide wildcard remain distinct", () => {
+  const defaultRoute = buildChannelRouteIdentity({ provider: "telegram", accountId: "default", kind: "group", routeId: "-1001" });
+  const namedRoute = buildChannelRouteIdentity({ provider: "telegram", accountId: "support", kind: "group", routeId: "-1001" });
+  const bindings = [
+    { index: 0, binding: { agentId: "default-agent", match: { channel: "telegram", peer: { kind: "group", id: "*" } } } },
+    { index: 1, binding: { agentId: "all-accounts", match: { channel: "telegram", accountId: "*" } } }
+  ];
+  assert.equal(resolveChannelRouteBinding(defaultRoute, bindings).agentId, "default-agent");
+  assert.equal(resolveChannelRouteBinding(namedRoute, bindings).agentId, "all-accounts");
+});
+
+test("uses OpenClaw's configured default agent only after all binding tiers", () => {
+  const resolved = resolveChannelRouteBinding(groupRoute, [], null, "default-agent");
+
+  assert.equal(resolved.agentId, "default-agent");
+  assert.equal(resolved.source, "openclaw");
+  assert.equal(resolved.match, "fallback");
+  assert.equal(resolved.effectiveMatch, "fallback");
+  assert.equal(resolved.matchedBy, "default");
+  assert.equal(resolved.explicitAgentId, null);
+});
+
+test("provider route kinds translate to native peers, scopes, and selectors", () => {
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "telegram",
+    accountId: "main",
+    kind: "group",
+    routeId: "-1001"
+  })), {
+    channel: "telegram",
+    accountId: "main",
+    peer: { kind: "group", id: "-1001" }
+  });
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "discord",
+    accountId: "main",
+    kind: "group",
+    routeId: "guild-1"
+  })), {
+    channel: "discord",
+    accountId: "main",
+    guildId: "guild-1"
+  });
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "discord",
+    accountId: "main",
+    kind: "channel",
+    routeId: "channel-1",
+    parentRouteId: "guild-1"
+  })), {
+    channel: "discord",
+    accountId: "main",
+    peer: { kind: "channel", id: "channel-1" },
+    guildId: "guild-1"
+  });
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "discord",
+    accountId: "main",
+    kind: "role",
+    routeId: "role-1",
+    parentRouteId: "guild-1"
+  })), {
+    channel: "discord",
+    accountId: "main",
+    guildId: "guild-1",
+    roles: ["role-1"]
+  });
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "slack",
+    accountId: "main",
+    kind: "channel",
+    routeId: "channel-1",
+    parentRouteId: "team-1"
+  })), {
+    channel: "slack",
+    accountId: "main",
+    peer: { kind: "channel", id: "channel-1" },
+    teamId: "team-1"
+  });
+  assert.deepEqual(serializeRouteToOpenClawBindingMatch(buildChannelRouteIdentity({
+    provider: "whatsapp",
+    accountId: "support",
+    kind: "dm",
+    routeId: "peer-1"
+  })), {
+    channel: "whatsapp",
+    accountId: "support",
+    peer: { kind: "direct", id: "peer-1" }
   });
 });

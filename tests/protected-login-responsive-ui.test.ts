@@ -15,11 +15,15 @@ test("protected login keeps mobile status quiet and content comfortably inset", 
 test("protected login title scales down fluidly on small screens", async () => {
   const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
 
-  assert.match(source, /text-\[clamp\(1\.4rem,5vw,1\.8rem\)\]/);
-  assert.match(source, /sm:text-\[2rem\]/);
-  assert.match(source, /lg:text-\[2\.15rem\]/);
+  assert.match(source, /text-\[clamp\(1\.75rem,8vw,2rem\)\]/);
+  assert.match(source, /sm:text-\[2\.25rem\]/);
+  assert.match(source, /lg:text-\[2\.35rem\]/);
+  assert.match(source, /font-sans text-\[clamp/);
+  assert.match(source, /leading-\[1\.05\]/);
+  assert.match(source, /tracking-\[-0\.03em\]/);
+  assert.match(source, /text-left text-white/);
   assert.match(source, />Control plane locked<\/h1>/);
-  assert.match(source, />Unlock to continue\.<\/p>/);
+  assert.match(source, />Authenticate to unlock this instance\.<\/p>/);
   assert.match(source, /Need a reset\? Run[\s\S]*agentos auth reset[\s\S]*<\/p>/);
 });
 
@@ -47,6 +51,9 @@ test("protected login composes a theme-aware glass access card", async () => {
   assert.match(styles, /backdrop-filter: blur\(20px\) saturate\(1\.52\)/);
   assert.match(source, /className="lock-glass-chip/);
   assert.match(styles, /\.lock-glass-chip \{/);
+  assert.match(source, /font-sans text-\[15px\] font-medium leading-5 tracking-\[-0\.02em\]">Operator access/);
+  assert.equal(source.match(/text-\[10px\] font-medium tracking-\[0\.16em\] text-muted-foreground/g)?.length, 2);
+  assert.equal(source.match(/lock-glass-input h-11 rounded-xl[^\"]*text-\[15px\]/g)?.length, 2);
 });
 
 test("celestial moon renders as a complete luminous sphere", async () => {

@@ -33,6 +33,60 @@ needs a distinct native concept. Access policy and agent binding are separate:
 an allowed route may have no AgentOS workspace binding, and a binding must not
 implicitly grant access.
 
+### Route translation
+
+`ChannelRouteIdentity` is deliberately more expressive than an OpenClaw
+binding. The serializer is the only place that translates the AgentOS route
+model into `match` data:
+
+| AgentOS route | Native OpenClaw representation |
+| --- | --- |
+| direct message | `peer.kind: "direct"` |
+| Telegram/WhatsApp group | `peer.kind: "group"` |
+| Discord channel | `peer.kind: "channel"`, optionally constrained by `guildId` |
+| Discord guild | `guildId` scope |
+| Slack channel | `peer.kind: "channel"`, optionally constrained by `teamId` |
+| Discord role selector | `guildId` plus `roles` |
+| Telegram topic | native Telegram topic config, not a binding peer |
+| Discord/Slack thread | parent peer inheritance; no `peer.kind: "thread"` |
+
+OpenClaw currently accepts `direct`, `group`, and `channel` peers. It treats
+`group` and `channel` as compatible during matching. AgentOS therefore never
+serializes its conceptual `thread`, `topic`, or generic `peer` kinds as an
+invented native peer kind. A route that has no native binding primitive is
+shown as inherited or provider-native instead.
+
+### Native binding precedence
+
+The resolver follows OpenClaw 2026.9.4's ordered tiers. A binding is eligible
+for the route only when its channel and account scope match: an omitted
+`accountId` means the default account, while `accountId: "*"` is explicitly
+cross-account. Within a tier, the first matching entry in the `bindings`
+array wins, and every supplied field is conjunctive.
+
+1. exact peer
+2. parent peer (thread inheritance)
+3. peer wildcard
+4. guild plus roles
+5. guild
+6. team
+7. account
+8. channel-wide `accountId: "*"`
+9. configured/default owner
+
+AgentOS reports the selected entry as the effective route. Later entries in
+the same winning tier are `shadowed` and are surfaced as editing ambiguity;
+they are not reported as a runtime conflict because OpenClaw resolves them
+deterministically. An explicit route override replaces only the exact native
+binding it can identify. Creating an override adds a more-specific binding;
+clearing it removes only that owned exact entry and reveals the inherited
+result. If an exact target cannot be identified, the mutation is refused.
+
+Threads follow the parent peer in this release. Telegram topics first use an
+explicit native topic `agentId`, then the parent group's binding. This keeps
+the UI honest about inheritance and avoids creating unsupported runtime
+objects.
+
 The old `WorkspaceChannelGroupAssignment` is a compatibility projection of a
 route binding. Existing records are read and normalized; new directory reads
 use the canonical route contract and never infer an account from a route ID.
@@ -77,7 +131,11 @@ this contract.
 
 Channels is the canonical management surface for provider, account, routes,
 access, lifecycle, and diagnostics. Existing connect and workspace dialogs are
-compatibility entry points and must call the same application services. Raw
+compatibility entry points for workspace metadata and legacy association state;
+they must not become native routing authorities. Routine registry writes do not
+rewrite OpenClaw bindings or provider config. Native route mutations belong to
+Channel Center, while the explicit surface-reconcile action is an audited,
+previewed compatibility repair bridge for legacy records. Raw
 bindings, config paths, peer IDs, Gateway internals, and reconciliation details
 belong only in an advanced/diagnostics view.
 
@@ -93,14 +151,61 @@ route management belongs to Channels.
    account ID already attached to the channel record.
 3. Read new routes from OpenClaw directory/config services and merge only the
    AgentOS-owned workspace metadata required for presentation.
-4. Keep legacy log/config readers only where a provider has no supported
-   directory capability; mark their source and keep them out of Telegram's
-   normal path.
+4. Keep structured config fallback only where a provider has no supported
+   directory capability; mark its source and never treat it as runtime routing
+   authority.
 5. Do not rewrite or delete user configuration as part of a read migration.
+6. Keep workspace registry changes metadata-only. Run the explicit surface
+   reconciliation bridge only through its dry-run, preview, audit, and
+   optimistic-concurrency boundary.
 
 The compatibility boundary is intentionally observable: every directory result
 has a source and fallback reason, and unavailable/unsupported results are
 reported as degraded rather than presented as a successful empty directory.
+
+## Provider capabilities and state
+
+Capability evidence and current state are separate fields. A provider can
+support multiple accounts even when the current runtime has zero or one
+configured account. Capabilities are derived from OpenClaw status/plugin
+declarations, provider schema, and provider config evidence; unsupported or
+unknown features stay false rather than being inferred from the presentation
+catalog.
+
+State reports installation, enablement, configuration, connection, running
+status, account count, account IDs, source, and an honest availability value
+(`ready`, `not-installed`, `not-configured`, `degraded`, or `unknown`). A static
+catalog can describe how setup works, but it cannot claim that a plugin is
+installed or connected.
+
+## Provider route surfaces
+
+- Telegram: account -> group -> topic. Group/topic mention and access policy
+  controls use native Telegram config. Topic `agentId` is provider-native.
+- Discord: account -> guild -> channel -> thread. Guild, channel, and role
+  entries retain hierarchy metadata. Threads inherit the parent channel;
+  roles are selectors and are not flattened into conversations.
+- Slack: account -> team context -> channel -> thread. Channel bindings keep
+  `teamId` when OpenClaw supplies it, and threads inherit the parent channel.
+- WhatsApp: account -> direct conversation or group. QR/login, logout, and
+  session ownership stay with OpenClaw; AgentOS does not recreate auth state.
+
+Directory reads are bounded and account-scoped. The application first tries
+the structured OpenClaw directory transport, then a structured provider config
+projection when directory support is unavailable. Config fallback is a
+read-only discovery bridge, not a second routing engine. Discord log scraping
+was removed from the canonical and compatibility paths because it cannot
+provide an authoritative hierarchy or account scope.
+
+## Safe mutations
+
+Route policy updates read one provider snapshot, select the exact native route
+scope, copy that scope, change only requested supported fields, and issue one
+native config mutation with one `baseHash` and one `replacePaths` entry. Unknown
+provider-owned siblings remain intact. A stale snapshot is returned as a
+conflict so the UI can refresh instead of silently retrying or partially
+applying a multi-field action. Route binding updates use the same optimistic
+concurrency boundary and preserve unknown sibling binding fields.
 
 ## Custom Telegram audit
 
@@ -108,7 +213,9 @@ reported as degraded rather than presented as a successful empty directory.
 | --- | --- | --- |
 | `telegram-coordination.ts` | Required AgentOS value | Workspace-facing prompt/context projection; it does not own runtime routing. |
 | `surface-coordination.ts` | Required AgentOS value | Generic workspace coordination projection; provider semantics remain OpenClaw-owned. |
-| Telegram log parsing in `domains/channels.ts` | Removed from normal path | No longer used for Telegram directory discovery; Discord log parsing remains a separate compatibility path. |
+| Log parsing in `domains/channels.ts` | Removed | Directory discovery is structured OpenClaw data only; log output is not an authoritative route inventory. |
+| Workspace channel registry mutation | Compatibility / AgentOS workspace metadata | Associates workspaces and legacy labels only; it does not write native bindings or provider routing config. |
+| `reconcileWorkspaceSurfaceBindings` | Explicit compatibility repair | Previewed/audited bridge for legacy surface drift; never an automatic side effect of registry CRUD. |
 | Telegram group config projection in channel service | Compatibility / AgentOS workspace projection | Must preserve unmanaged OpenClaw config and never become account/runtime authority. |
 | Telegram session-store reconciliation | Temporary compatibility | Audited separately; it is not a replacement for native OpenClaw bindings. |
 | Raw provider catalog entries | Presentation metadata | Must not claim capabilities that OpenClaw status/plugin inventory does not report. |

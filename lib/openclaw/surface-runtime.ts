@@ -2,6 +2,10 @@ import "server-only";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
+import {
+  buildChannelRouteIdentity,
+  serializeRouteToOpenClawBindingMatch
+} from "@/lib/openclaw/domains/channel-center";
 import { parseDiscordRouteId } from "@/lib/openclaw/domains/discord-route";
 import { getSurfaceCatalogEntry } from "@/lib/openclaw/surface-catalog";
 import type { SnapshotLoadProfile } from "@/lib/openclaw/state/snapshot-cache";
@@ -777,32 +781,36 @@ function buildDiscordBinding(accountId: string, assignment: WorkspaceChannelGrou
     return null;
   }
 
-  if (parsed.kind === "role") {
-    if (!parsed.guildId) {
-      return null;
-    }
+  // Discord threads are represented as AgentOS routes for navigation and
+  // inheritance, but OpenClaw has no native `peer.kind: "thread"`.
+  if (parsed.kind === "thread") {
+    return null;
+  }
 
-    return {
-      agentId: assignment.agentId,
-      match: {
-        channel: "discord",
-        accountId,
-        guildId: parsed.guildId,
-        roles: [parsed.targetId]
-      }
-    };
+  const route = buildChannelRouteIdentity({
+    provider: "discord",
+    accountId,
+    kind: parsed.kind === "role" ? "role" : "channel",
+    routeId: parsed.targetId,
+    parentRouteId: parsed.guildId,
+    metadata: parsed.guildId
+      ? {
+          guildId: parsed.guildId,
+          nativePeerKind: "channel"
+        }
+      : undefined
+  });
+  const match = serializeRouteToOpenClawBindingMatch(route);
+  if (!match) {
+    return null;
   }
 
   return {
     agentId: assignment.agentId,
     match: {
+      ...match,
       channel: "discord",
-      accountId,
-      ...(parsed.guildId ? { guildId: parsed.guildId } : {}),
-      peer: {
-        kind: parsed.kind,
-        id: parsed.targetId
-      }
+      accountId
     }
   };
 }

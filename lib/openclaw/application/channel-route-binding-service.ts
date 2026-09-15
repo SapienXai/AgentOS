@@ -10,7 +10,6 @@ import {
   buildChannelRouteIdentity,
   channelRouteKey,
   nativePeerKindsMatch,
-  routeNativePeerKind,
   serializeRouteToOpenClawBindingMatch,
   type ChannelAgentBinding,
   type ChannelRouteIdentity
@@ -114,16 +113,20 @@ export async function getChannelRouteBinding(
   options: {
     adapter?: OpenClawAdapter;
     compatibilityBinding?: ChannelAgentBinding | null;
+    defaultAgentId?: string | null;
   } = {}
 ): Promise<ChannelRouteBindingResolution> {
   const adapter = options.adapter ?? getOpenClawAdapter();
+  const defaultAgentId = options.defaultAgentId === undefined
+    ? await readOpenClawDefaultAgentId(adapter)
+    : normalizeAgentId(options.defaultAgentId);
 
   if (route.kind === "topic") {
-    return resolveTelegramTopicBinding(route, adapter, options.compatibilityBinding);
+    return resolveTelegramTopicBinding(route, adapter, options.compatibilityBinding, defaultAgentId);
   }
 
   const bindings = await readNativeRouteBindings(adapter);
-  return resolveChannelRouteBinding(route, bindings, options.compatibilityBinding);
+  return resolveChannelRouteBinding(route, bindings, options.compatibilityBinding, defaultAgentId);
 }
 
 export async function setChannelRouteBinding(input: {
@@ -408,7 +411,8 @@ export async function readNativeRouteBindings(adapter: OpenClawAdapter = getOpen
 export function resolveChannelRouteBinding(
   route: ChannelRouteIdentity,
   bindings: { entries: NormalizedNativeRouteBinding[] } | NormalizedNativeRouteBinding[],
-  compatibilityBinding?: ChannelAgentBinding | null
+  compatibilityBinding?: ChannelAgentBinding | null,
+  defaultAgentId?: string | null
 ): ChannelRouteBindingResolution {
   const entries = Array.isArray(bindings) ? bindings : bindings.entries;
   const resolution = resolveNativeRouteCandidate(route, entries);
@@ -436,6 +440,24 @@ export function resolveChannelRouteBinding(
       inheritedFrom: effectiveMatch === "inherited" ? inheritedRoute(route, resolution.context.parentPeer) : null,
       shadowedBindings,
       editingAmbiguity: shadowedBindings.length > 0,
+      conflict: null
+    };
+  }
+
+  const fallbackAgentId = normalizeAgentId(defaultAgentId);
+  if (fallbackAgentId) {
+    return {
+      route,
+      agentId: fallbackAgentId,
+      explicitAgentId: null,
+      source: "openclaw",
+      match: "fallback",
+      effectiveMatch: "fallback",
+      matchedBy: "default",
+      sourceBinding: null,
+      inheritedFrom: null,
+      shadowedBindings: [],
+      editingAmbiguity: false,
       conflict: null
     };
   }
@@ -486,7 +508,8 @@ export function buildNativeRouteBinding(route: ChannelRouteIdentity, agentId: st
 async function resolveTelegramTopicBinding(
   route: ChannelRouteIdentity,
   adapter: OpenClawAdapter,
-  compatibilityBinding?: ChannelAgentBinding | null
+  compatibilityBinding?: ChannelAgentBinding | null,
+  defaultAgentId?: string | null
 ): Promise<ChannelRouteBindingResolution> {
   if (route.provider !== "telegram") {
     throw new Error("Native topic agent routing is currently supported only for Telegram.");
@@ -525,7 +548,7 @@ async function resolveTelegramTopicBinding(
     routeId: groupId
   });
   const parentBindings = await readNativeRouteBindings(adapter);
-  const parentResolution = resolveChannelRouteBinding(parentRoute, parentBindings);
+  const parentResolution = resolveChannelRouteBinding(parentRoute, parentBindings, null, defaultAgentId);
   if (parentResolution.agentId) {
     return {
       ...parentResolution,
@@ -570,6 +593,20 @@ async function resolveTelegramTopicBinding(
   };
 }
 
+export async function readOpenClawDefaultAgentId(adapter: OpenClawAdapter = getOpenClawAdapter()) {
+  if (typeof adapter.listAgents !== "function") {
+    return null;
+  }
+
+  try {
+    const payload = await adapter.listAgents({ timeoutMs: 10_000 });
+    return normalizeAgentId(payload.defaultId)
+      ?? (payload.agents.length === 1 ? normalizeAgentId(payload.agents[0]?.id) : null);
+  } catch {
+    return null;
+  }
+}
+
 function findExactNativeBindings(route: ChannelRouteIdentity, snapshot: { entries: NormalizedNativeRouteBinding[] }) {
   return snapshot.entries.filter((entry) => isExactNativeRouteMatch(route, entry));
 }
@@ -612,6 +649,9 @@ function resolveNativeRouteCandidate(
   entries: NormalizedNativeRouteBinding[]
 ): NativeRouteCandidate | null {
   const context = buildNativeRouteContext(route);
+  const eligibleEntries = [...entries]
+    .sort((left, right) => left.index - right.index)
+    .filter((entry) => bindingAccountMatchesRoute(entry, route.accountId));
   const tiers: Array<{
     matchedBy: Exclude<ChannelRouteBindingMatchedBy, "default">;
     enabled: boolean;
@@ -661,7 +701,7 @@ function resolveNativeRouteCandidate(
 
   for (const tier of tiers) {
     if (!tier.enabled) continue;
-    const matches = entries.filter(tier.matches);
+    const matches = eligibleEntries.filter(tier.matches);
     const selected = matches[0];
     if (selected) {
       return { selected, matches, matchedBy: tier.matchedBy, context };
@@ -694,6 +734,7 @@ function buildNativeRouteContext(route: ChannelRouteIdentity): NativeRouteContex
 }
 
 function isRouteCandidate(route: ChannelRouteIdentity, entry: NormalizedNativeRouteBinding) {
+  if (!bindingAccountMatchesRoute(entry, route.accountId)) return false;
   const context = buildNativeRouteContext(route);
   return [
     matchesPeerTier(entry, context.peer, context),
@@ -705,6 +746,11 @@ function isRouteCandidate(route: ChannelRouteIdentity, entry: NormalizedNativeRo
     matchesAccountTier(entry, route.accountId, context),
     matchesChannelTier(entry, context)
   ].some(Boolean);
+}
+
+function bindingAccountMatchesRoute(entry: NormalizedNativeRouteBinding, accountId: string) {
+  const bindingAccount = normalizeAccountPattern(entry.binding.match.accountId);
+  return bindingAccount === "*" || bindingAccount === normalizeAccountPattern(accountId);
 }
 
 function matchesPeerTier(entry: NormalizedNativeRouteBinding, peer: NativePeer | null, context: NativeRouteContext) {
@@ -853,6 +899,11 @@ function normalizeNativeRouteBinding(value: unknown, index: number): NormalizedN
     return null;
   }
 
+  if (Object.prototype.hasOwnProperty.call(value.match, "peer")
+    && value.match.peer !== undefined
+    && !isRecord(value.match.peer)) {
+    return null;
+  }
   if (isRecord(value.match.peer) && !normalizeNativePeerKind(value.match.peer.kind)) {
     return null;
   }
@@ -943,7 +994,7 @@ function createNoopMutation(route: ChannelRouteIdentity, agentId: string | null)
 }
 
 function formatBindingConflict(conflict: ChannelRouteBindingConflict) {
-  return `OpenClaw has conflicting native bindings for ${conflict.route.provider}/${conflict.route.accountId}/${conflict.route.routeId}. Resolve the binding in the OpenClaw Control UI before editing it.`;
+  return `OpenClaw has multiple native bindings that can target ${conflict.route.provider}/${conflict.route.accountId}/${conflict.route.routeId}. OpenClaw uses the first matching config entry; resolve the editing ambiguity in the OpenClaw Control UI before editing it.`;
 }
 
 function normalizeAgentId(value: unknown) {

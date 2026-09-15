@@ -121,6 +121,19 @@ test("unsupported directory is explicit for providers without compatibility data
   assert.match(result.error ?? "", /unsupported/i);
 });
 
+test("production CLI directory lookup skips providers absent from the active plugin inventory", async () => {
+  setOpenClawAdapterForTesting({
+    listPlugins: async () => ({ plugins: [] }),
+    getConfig: async () => ({})
+  } as unknown as OpenClawAdapter);
+
+  const result = await listChannelGroups({ provider: "discord", accountId: "default" });
+
+  assert.equal(result.source, "openclaw-config");
+  assert.equal(result.status, "empty");
+  assert.match(result.fallbackReason ?? "", /implicit plugin install/i);
+});
+
 test("malformed directory payload is not presented as a successful empty list", async () => {
   setChannelDirectoryTransportForTesting({
     source: "openclaw-cli",
@@ -175,6 +188,37 @@ test("Telegram config topics stay child routes and expose native policy/binding 
   assert.equal(result.entries[0]?.accessPolicy?.requireMention, true);
 });
 
+test("Telegram topic directory entries expose inherited parent routing", async () => {
+  setOpenClawAdapterForTesting({
+    getConfig: async () => ({
+      accounts: {
+        main: {
+          groups: {
+            "-1001": { topics: { "42": { name: "Reservations" } } }
+          }
+        }
+      }
+    }),
+    getConfigSnapshot: async () => ({
+      hash: "hash-1",
+      config: {
+        bindings: [{
+          agentId: "group-agent",
+          match: { channel: "telegram", accountId: "main", peer: { kind: "group", id: "-1001" } }
+        }]
+      }
+    }),
+    listAgents: async () => ({ defaultId: "default-agent", agents: [{ id: "default-agent" }] })
+  } as unknown as OpenClawAdapter);
+
+  const result = await listTelegramTopics({ accountId: "main", groupId: "-1001", resolveBindings: true });
+
+  assert.equal(result.entries[0]?.agentId, "group-agent");
+  assert.equal(result.entries[0]?.bindingSource, "openclaw");
+  assert.equal(result.entries[0]?.bindingMatch, "inherited");
+  assert.equal(result.entries[0]?.inheritedFrom?.routeId, "-1001");
+});
+
 test("Telegram unsupported directory falls back only to account-scoped OpenClaw config", async () => {
   setChannelDirectoryTransportForTesting({
     source: "openclaw-cli",
@@ -199,6 +243,64 @@ test("Telegram unsupported directory falls back only to account-scoped OpenClaw 
   assert.deepEqual(main.entries.map((entry) => entry.routeId), ["-100-main"]);
   assert.equal(support.status, "empty");
   assert.deepEqual(support.entries, []);
+});
+
+test("Discord config fallback preserves guild and channel hierarchy per account", async () => {
+  setChannelDirectoryTransportForTesting({
+    source: "openclaw-cli",
+    listPeers: async () => ({ ok: false, error: { type: "unsupported", message: "Directory unsupported" } }),
+    listGroups: async () => ({ ok: false, error: { type: "unsupported", message: "Directory unsupported" } }),
+    listGroupMembers: async () => []
+  });
+  setOpenClawAdapterForTesting({
+    getConfig: async () => ({
+      accounts: {
+        main: {
+          guilds: {
+            "guild-1": {
+              name: "Operations",
+              channels: { "channel-1": { name: "support", requireMention: true } },
+              roles: ["role-1"]
+            }
+          }
+        },
+        support: { guilds: { "guild-2": { name: "Other" } } }
+      }
+    })
+  } as unknown as OpenClawAdapter);
+
+  const result = await listChannelGroups({ provider: "discord", accountId: "main" });
+
+  assert.equal(result.source, "openclaw-config");
+  assert.deepEqual(result.entries.map((entry) => [entry.kind, entry.routeId, entry.parentRouteId]), [
+    ["group", "guild-1", null],
+    ["channel", "channel-1", "guild-1"],
+    ["role", "role-1", "guild-1"]
+  ]);
+  assert.equal(result.entries.find((entry) => entry.routeId === "channel-1")?.metadata.guildId, "guild-1");
+});
+
+test("Slack and WhatsApp config fallback keeps native team/direct route metadata", async () => {
+  setChannelDirectoryTransportForTesting({
+    source: "openclaw-cli",
+    listPeers: async () => ({ ok: false, error: { type: "unsupported", message: "Directory unsupported" } }),
+    listGroups: async () => ({ ok: false, error: { type: "unsupported", message: "Directory unsupported" } }),
+    listGroupMembers: async () => []
+  });
+  setOpenClawAdapterForTesting({
+    getConfig: async (path: string) => path.endsWith("slack")
+      ? { accounts: { main: { channels: { "C1": { name: "support", teamId: "T1" } } } } }
+      : { accounts: { main: { groups: { "G1": { name: "Family" } }, direct: { "D1": { name: "Alex" } } } } }
+  } as unknown as OpenClawAdapter);
+
+  const slack = await listChannelGroups({ provider: "slack", accountId: "main" });
+  const whatsapp = await listChannelPeers({ provider: "whatsapp", accountId: "main" });
+
+  assert.equal(slack.entries[0]?.kind, "channel");
+  assert.equal(slack.entries[0]?.parentRouteId, "T1");
+  assert.equal(slack.entries[0]?.metadata.teamId, "T1");
+  assert.equal(whatsapp.entries[0]?.kind, "dm");
+  assert.equal(whatsapp.entries[0]?.metadata.nativePeerKind, "direct");
 });
 
 test("an authored empty native binding list does not resurrect a legacy assignment", async () => {

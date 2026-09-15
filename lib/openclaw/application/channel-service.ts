@@ -22,7 +22,6 @@ import {
   discoverSurfaceRoutes,
   discoverTelegramGroups,
   getChannelRegistry,
-  parseDiscordRouteId,
   readChannelAccounts,
   readChannelRegistry
 } from "@/lib/openclaw/domains/channels";
@@ -166,7 +165,7 @@ export async function upsertWorkspaceChannel(input: {
           workspaces: workspaceBindings
         }
       ];
-    }, {}, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -209,7 +208,7 @@ export async function disconnectWorkspaceChannel(input: {
           };
         })
         .filter((channel) => channel.workspaces.length > 0 || channel.primaryAgentId);
-    }, {}, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -231,13 +230,6 @@ export async function deleteWorkspaceChannelEverywhere(input: {
     throw new Error("Channel was not found.");
   }
 
-  const removedGroupIds = uniqueStrings(
-    channel.workspaces.flatMap((workspace) =>
-      workspace.groupAssignments
-        .filter((assignment) => Boolean(assignment.chatId))
-        .map((assignment) => assignment.chatId)
-    )
-  );
   const workspacePaths = uniqueStrings(channel.workspaces.map((workspace) => workspace.workspacePath));
 
   if (isPlannerChannelTypeValue(channel.type) && channel.type !== "internal") {
@@ -259,10 +251,6 @@ export async function deleteWorkspaceChannelEverywhere(input: {
     mutateChannelRegistry(
       (nextRegistry) => {
         nextRegistry.channels = nextRegistry.channels.filter((entry) => entry.id !== channelId);
-      },
-      {
-        removedAccountIds: [channelId],
-        removedGroupIds
       },
       timings
     )
@@ -384,12 +372,6 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
     await measureTiming(timings, "surface-reconcile.telegram-settings-side-effects", () =>
       reconcileManagedTelegramSettingsSideEffects(telegramChannels, telegramPatchPlan.defaultAccountId, timings)
     );
-    await measureTiming(timings, "surface-reconcile.discord-settings", () =>
-      syncManagedDiscordSettings(
-        managedChannels.filter((channel) => channel.type === "discord"),
-        timings
-      )
-    );
   }
 
   const configuredAccounts = await measureTiming(timings, "surface-reconcile.accounts-read", () => readChannelAccounts());
@@ -453,7 +435,7 @@ export async function setWorkspaceChannelPrimary(input: {
       }
 
       channel.primaryAgentId = normalizeOptionalValue(input.primaryAgentId) ?? null;
-    }, {}, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -470,8 +452,6 @@ export async function setWorkspaceChannelGroups(input: {
     throw new Error("Channel id is required.");
   }
 
-  const removedGroupIds: string[] = [];
-
   await measureTiming(timings, "channel.groups-update", () =>
     mutateChannelRegistry((registry) => {
       const channel = registry.channels.find((entry) => entry.id === channelId);
@@ -483,12 +463,6 @@ export async function setWorkspaceChannelGroups(input: {
       if (!workspace) {
         throw new Error("Workspace binding was not found for this channel.");
       }
-
-      const previousGroupIds = new Set(
-        workspace.groupAssignments
-          .filter((assignment) => assignment.enabled !== false && Boolean(assignment.chatId))
-          .map((assignment) => assignment.chatId)
-      );
 
       workspace.groupAssignments = uniqueByChatId(
         input.groupAssignments.map((assignment) => ({
@@ -505,18 +479,7 @@ export async function setWorkspaceChannelGroups(input: {
           .map((assignment) => assignment.agentId as string)
       ]);
 
-      const nextGroupIds = new Set(
-        workspace.groupAssignments
-          .filter((assignment) => assignment.enabled !== false && Boolean(assignment.chatId))
-          .map((assignment) => assignment.chatId)
-      );
-
-      for (const chatId of previousGroupIds) {
-        if (!nextGroupIds.has(chatId)) {
-          removedGroupIds.push(chatId);
-        }
-      }
-    }, { removedGroupIds }, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -562,7 +525,7 @@ export async function bindWorkspaceChannelAgent(input: {
       if (!channel.primaryAgentId) {
         channel.primaryAgentId = agentId;
       }
-    }, {}, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -618,7 +581,7 @@ export async function unbindWorkspaceChannelAgent(input: {
           groupAssignments: workspace.groupAssignments
         }
       ];
-    }, {}, timings)
+    }, timings)
   );
 
   invalidateSnapshotCache();
@@ -1020,10 +983,6 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function configValuesEqual(left: unknown, right: unknown) {
-  return JSON.stringify(sortConfigComparable(left ?? null)) === JSON.stringify(sortConfigComparable(right ?? null));
-}
-
 function mergeConfigPatches(...patches: Array<OpenClawConfigPatch | null | undefined>): OpenClawConfigPatch | null {
   let merged: OpenClawConfigPatch | null = null;
 
@@ -1369,22 +1328,6 @@ function readConfigMutationAppliedVia(value: unknown): SurfaceConfigRepairMutati
     : "cli";
 }
 
-function sortConfigComparable(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sortConfigComparable);
-  }
-
-  if (!isObjectRecord(value) || Array.isArray(value)) {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-      .map(([key, entry]) => [key, sortConfigComparable(entry)])
-  );
-}
-
 async function buildManagedSurfaceAccountId(
   provider: MissionControlSurfaceProvider,
   name: string,
@@ -1581,88 +1524,6 @@ function cloneChannelRegistry(registry: ChannelRegistry): ChannelRegistry {
 
 async function saveChannelRegistry(registry: ChannelRegistry) {
   await writeChannelRegistry(normalizeChannelRegistry(registry));
-}
-
-type ManagedTelegramRoutingCleanup = {
-  removedAccountIds?: string[];
-  removedGroupIds?: string[];
-};
-
-type DiscordGuildConfig = Record<
-  string,
-  {
-    requireMention?: boolean;
-    roles?: unknown;
-    channels?: Record<string, unknown>;
-    name?: string;
-  }
->;
-
-async function updateManagedSurfaceRouting(
-  registry: ChannelRegistry,
-  cleanup: ManagedTelegramRoutingCleanup = {},
-  timings?: TimingCollector
-) {
-  const currentBindings = await measureTiming(timings, "routing.read-bindings", () =>
-    getOpenClawAdapter().getConfig<unknown[]>("bindings").then((value) => value ?? [])
-  );
-
-  const managedChannels = registry.channels.filter(
-    (channel) => isPlannerChannelTypeValue(channel.type) && channel.type !== "internal"
-  );
-  const removedAccountIds = new Set(cleanup.removedAccountIds ?? []);
-  const removedGroupIds = new Set(cleanup.removedGroupIds ?? []);
-  const managedTelegramChannels = managedChannels.filter((channel) => channel.type === "telegram");
-  const managedDiscordChannels = managedChannels.filter((channel) => channel.type === "discord");
-  const nextBindings = mergeManagedOpenClawBindings({
-    registry,
-    currentBindings,
-    scope: "all"
-  }).filter((entry) => {
-    if (!isObjectRecord(entry)) {
-      return true;
-    }
-
-    const match = isObjectRecord(entry.match) ? entry.match : null;
-    if (!match || typeof match.channel !== "string") {
-      return true;
-    }
-
-    if (match.channel !== "telegram" && typeof match.accountId === "string" && removedAccountIds.has(match.accountId)) {
-      return false;
-    }
-
-    if (
-      match.channel !== "telegram" &&
-      isObjectRecord(match.peer) &&
-      typeof match.peer.id === "string" &&
-      removedGroupIds.has(match.peer.id)
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const telegramPatchPlan = await measureTiming(timings, "routing.plan-telegram-settings", () =>
-    buildManagedTelegramSettingsPatch(managedTelegramChannels, timings)
-  );
-  const routingPatch = mergeConfigPatches(
-    !configValuesEqual(currentBindings, nextBindings) ? { bindings: nextBindings } : null,
-    telegramPatchPlan.patch
-  );
-
-  if (routingPatch) {
-    await measureTiming(timings, "routing.write-openclaw-config", () =>
-      applySurfaceConfigRepairPatch(routingPatch, timings)
-    );
-  }
-  await measureTiming(timings, "routing.reconcile-telegram-session-stores", () =>
-    reconcileManagedTelegramSettingsSideEffects(managedTelegramChannels, telegramPatchPlan.defaultAccountId, timings)
-  );
-  await measureTiming(timings, "routing.sync-discord-settings", () =>
-    syncManagedDiscordSettings(managedDiscordChannels, timings)
-  );
 }
 
 // Compatibility projection only: native OpenClaw channel config and Gateway status remain runtime authority.
@@ -1905,88 +1766,6 @@ async function resolveManagedTelegramDefaultAccountId(
   return managedChannels.find((channel) => Boolean(channel.primaryAgentId))?.id ?? managedChannels[0]?.id ?? null;
 }
 
-async function syncManagedDiscordSettings(managedChannels: WorkspaceChannelSummary[], timings?: TimingCollector) {
-  if (managedChannels.length === 0) {
-    return;
-  }
-
-  const currentGuilds = await measureTiming(timings, "discord-settings.read-guilds", () =>
-    getOpenClawAdapter().getConfig<DiscordGuildConfig>("channels.discord.guilds").then((value) => value ?? {})
-  );
-  const nextGuilds: Record<string, Record<string, unknown>> = {};
-
-  for (const [guildId, rawGuild] of Object.entries(currentGuilds ?? {})) {
-    nextGuilds[guildId] = isObjectRecord(rawGuild) ? { ...(rawGuild as Record<string, unknown>) } : {};
-  }
-
-  let didChange = false;
-
-  for (const channel of managedChannels) {
-    for (const workspace of channel.workspaces) {
-      for (const assignment of workspace.groupAssignments.filter((entry) => entry.enabled !== false)) {
-        const parsed = parseDiscordRouteId(assignment.chatId);
-        if (!parsed?.guildId) {
-          continue;
-        }
-
-        const guild = nextGuilds[parsed.guildId] ?? {};
-        const roles = Array.isArray(guild.roles)
-          ? guild.roles
-              .filter((entry) => typeof entry === "string" || typeof entry === "number")
-              .map((entry) => String(entry))
-              .map((entry) => entry.trim())
-              .filter(Boolean)
-          : [];
-        const channels = isObjectRecord(guild.channels) ? { ...(guild.channels as Record<string, unknown>) } : {};
-
-        if (guild.requireMention === undefined) {
-          guild.requireMention = true;
-          didChange = true;
-        }
-
-        if (parsed.kind === "role") {
-          if (!roles.includes(parsed.targetId)) {
-            roles.push(parsed.targetId);
-            didChange = true;
-          }
-          guild.roles = roles;
-        } else {
-          const allowedChannelIds = uniqueStrings(
-            [parsed.targetId, parsed.kind === "thread" ? parsed.parentId ?? "" : ""].filter(Boolean)
-          );
-
-          for (const allowedChannelId of allowedChannelIds) {
-            const existing = isObjectRecord(channels[allowedChannelId])
-              ? (channels[allowedChannelId] as Record<string, unknown>)
-              : {};
-            if (existing.allow !== true) {
-              existing.allow = true;
-              didChange = true;
-            }
-            if (existing.requireMention === undefined) {
-              existing.requireMention = true;
-              didChange = true;
-            }
-            channels[allowedChannelId] = existing;
-          }
-
-          guild.channels = channels;
-        }
-
-        nextGuilds[parsed.guildId] = guild;
-      }
-    }
-  }
-
-  if (!didChange) {
-    return;
-  }
-
-  await measureTiming(timings, "discord-settings.write-guilds", () =>
-    getOpenClawAdapter().setConfig("channels.discord.guilds", nextGuilds, { strictJson: true })
-  );
-}
-
 function collectTelegramChannelAgentIds(channel: WorkspaceChannelSummary | null | undefined) {
   if (!channel) {
     return [] as string[];
@@ -2166,16 +1945,12 @@ async function syncTelegramCoordinationSkills(
 
 async function mutateChannelRegistry(
   mutate: (registry: ChannelRegistry) => void | Promise<void>,
-  cleanup: ManagedTelegramRoutingCleanup = {},
   timings?: TimingCollector
 ) {
   const registry = cloneChannelRegistry(await measureTiming(timings, "channel-registry.read", () => readChannelRegistry()));
   const previousRegistry = cloneChannelRegistry(registry);
   await measureTiming(timings, "channel-registry.mutate", () => mutate(registry));
   await measureTiming(timings, "channel-registry.save", () => saveChannelRegistry(registry));
-  await measureTiming(timings, "channel-registry.update-routing", () =>
-    updateManagedSurfaceRouting(registry, cleanup, timings)
-  );
   invalidateSnapshotCache();
   await measureTiming(timings, "channel-registry.sync-telegram-coordination", () =>
     syncTelegramCoordinationSkills(previousRegistry, registry, timings)

@@ -60,7 +60,7 @@ test("Telegram capability projection uses runtime operations and native topic co
   assert.equal(capabilities.supportsNativeBindings, true);
 });
 
-test("a discovered provider does not inherit token or lifecycle actions from a static catalog", () => {
+test("a discovered provider does not inherit capabilities from a static catalog", () => {
   const capabilities = inferProviderCapabilities(
     statusFor("future-chat", []),
     "future-chat",
@@ -73,7 +73,7 @@ test("a discovered provider does not inherit token or lifecycle actions from a s
     "external-cli"
   );
 
-  assert.equal(capabilities.supportsAccounts, true);
+  assert.equal(capabilities.supportsAccounts, false);
   assert.equal(capabilities.supportsStart, false);
   assert.equal(capabilities.supportsStop, false);
   assert.equal(capabilities.supportsRestart, false);
@@ -118,6 +118,19 @@ test("presentation-only providers do not inherit runtime lifecycle or binding ac
   assert.equal(capabilities.supportsStop, false);
   assert.equal(capabilities.supportsRestart, false);
   assert.equal(capabilities.supportsLogout, false);
-  assert.equal(capabilities.supportsTokenSetup, true);
+  assert.equal(capabilities.supportsTokenSetup, false);
   assert.equal(capabilities.supportsNativeBindings, false);
+});
+
+test("multi-account capability stays true when runtime currently has one account", () => {
+  const capabilities = inferProviderCapabilities(
+    statusFor("telegram", ["main"]),
+    "telegram",
+    [{ id: "telegram", channelIds: ["telegram"], enabled: true }],
+    runtime(),
+    "bot-token"
+  );
+
+  assert.equal(capabilities.supportsAccounts, true);
+  assert.equal(capabilities.supportsMultiAccount, true);
 });

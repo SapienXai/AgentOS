@@ -4,6 +4,7 @@ import { runOpenClawJson } from "@/lib/openclaw/cli";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   readNativeRouteBindings,
+  readOpenClawDefaultAgentId,
   resolveChannelRouteBinding
 } from "@/lib/openclaw/application/channel-route-binding-service";
 import {
@@ -132,7 +133,7 @@ export async function listChannelGroupMembers(
 }
 
 export async function listTelegramTopics(
-  input: { accountId: string; groupId: string; query?: string | null; limit?: number | null },
+  input: { accountId: string; groupId: string; query?: string | null; limit?: number | null; resolveBindings?: boolean },
   options: { timings?: TimingCollector } = {}
 ): Promise<ChannelDirectoryResult> {
   const accountId = normalizeAccountId(input.accountId);
@@ -153,7 +154,7 @@ export async function listTelegramTopics(
       .filter((entry) => matchesQuery(entry, input.query))
       .slice(0, normalizeLimit(input.limit));
 
-    return createResult(
+    const result = createResult(
       "telegram",
       accountId,
       entries,
@@ -162,6 +163,9 @@ export async function listTelegramTopics(
       null,
       null
     );
+    return input.resolveBindings
+      ? enrichRouteBindings(result, { ...input, provider: "telegram", accountId, resolveBindings: true })
+      : result;
   } catch (error) {
     return createResult(
       "telegram",
@@ -185,6 +189,21 @@ async function listDirectoryEntries(
 
   if (!provider) {
     return createResult(provider, accountId, [], directoryTransport.source, "failed", null, "A channel provider is required.");
+  }
+
+  if (directoryTransport === cliDirectoryTransport) {
+    const availability = await readCliDirectoryProviderAvailability(provider);
+    if (!availability.available) {
+      return createResult(
+        provider,
+        accountId,
+        [],
+        directoryTransport.source,
+        "unsupported",
+        null,
+        availability.reason
+      );
+    }
   }
 
   try {
@@ -256,6 +275,37 @@ async function listDirectoryEntries(
   }
 }
 
+async function readCliDirectoryProviderAvailability(provider: string) {
+  try {
+    const payload = await getOpenClawAdapter().listPlugins({ timeoutMs: 10_000 });
+    const plugin = payload.plugins.find(
+      (candidate) => candidate.id === provider || candidate.channelIds?.includes(provider)
+    );
+
+    if (!plugin) {
+      return {
+        available: false,
+        reason: `OpenClaw provider ${provider} is not installed; directory lookup was skipped to avoid an implicit plugin install.`
+      } as const;
+    }
+
+    const active = plugin.enabled === true || plugin.status === "loaded" || plugin.status === "enabled";
+    if (!active) {
+      return {
+        available: false,
+        reason: `OpenClaw provider ${provider} is installed but not enabled; directory lookup was skipped to avoid an implicit plugin activation.`
+      } as const;
+    }
+
+    return { available: true, reason: null } as const;
+  } catch (error) {
+    return {
+      available: false,
+      reason: redactErrorMessage(error, `OpenClaw plugin inventory is unavailable; ${provider} directory lookup was skipped.`)
+    } as const;
+  }
+}
+
 async function readConfiguredRoutesFromConfig(
   input: ChannelDirectoryListInput,
   collection: "peers" | "groups",
@@ -267,7 +317,7 @@ async function readConfiguredRoutesFromConfig(
   }
 
   try {
-    const config = await measureTiming(timings, "telegram-directory.read-group-config", () =>
+    const config = await measureTiming(timings, "channel-directory.read-config", () =>
       getOpenClawAdapter().getConfig<Record<string, unknown>>(`channels.${input.provider}`, { timeoutMs: 10_000 })
     );
     if (!isRecord(config)) {
@@ -371,7 +421,7 @@ function configuredRouteValues(
   accountId: string,
   collection: "peers" | "groups"
 ): ConfiguredRouteCandidate[] {
-  const root = resolveConfiguredAccountRoot(config, accountId);
+  const root = resolveConfiguredAccountRoot(config, provider, accountId, collection);
   const entries: ConfiguredRouteCandidate[] = [];
 
   if (provider === "discord") {
@@ -396,8 +446,10 @@ function configuredRouteValues(
             metadata: { nativePeerKind: "channel", guildId }
           });
         }
-        const roles = isRecord(guild.roles) ? guild.roles : {};
-        for (const [roleId, rawRole] of Object.entries(roles)) {
+        const roles = Array.isArray(guild.roles)
+          ? guild.roles.map((roleId) => [String(roleId), { name: String(roleId) }] as const)
+          : Object.entries(isRecord(guild.roles) ? guild.roles : {});
+        for (const [roleId, rawRole] of roles) {
           entries.push({
             value: rawRole,
             routeId: roleId,
@@ -461,10 +513,25 @@ function configuredRouteValues(
   return entries;
 }
 
-function resolveConfiguredAccountRoot(config: Record<string, unknown>, accountId: string) {
+function resolveConfiguredAccountRoot(
+  config: Record<string, unknown>,
+  provider: MissionControlSurfaceProvider,
+  accountId: string,
+  collection: "peers" | "groups"
+) {
   const accounts = isRecord(config.accounts) ? config.accounts : {};
   const account = isRecord(accounts[accountId]) ? accounts[accountId] : null;
-  return account ?? config;
+  if (!account) return config;
+
+  const routeKeys = provider === "discord"
+    ? ["guilds"]
+    : provider === "slack"
+      ? ["channels"]
+      : provider === "whatsapp"
+        ? collection === "groups" ? ["groups"] : ["direct"]
+        : collection === "groups" ? ["groups"] : ["dms", "direct"];
+  const hasExplicitRouteMap = routeKeys.some((key) => Object.prototype.hasOwnProperty.call(account, key));
+  return hasExplicitRouteMap ? account : { ...config, ...account };
 }
 
 function normalizeDirectoryRouteKind(value: unknown, fallback: ChannelRouteKind): ChannelRouteKind {
@@ -612,7 +679,10 @@ function normalizeTopicEntry(topicId: string, value: unknown, accountId: string,
   };
 }
 
-async function enrichRouteBindings(result: ChannelDirectoryResult, input: ChannelDirectoryListInput) {
+async function enrichRouteBindings(
+  result: ChannelDirectoryResult,
+  input: ChannelDirectoryListInput
+): Promise<ChannelDirectoryResult> {
   if (!input.accountId || result.entries.length === 0) {
     return result;
   }
@@ -621,10 +691,10 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
   try {
     snapshot = await readNativeRouteBindings(getOpenClawAdapter());
   } catch {
-    // Compatibility assignment is only a migration bridge. If no bridge was supplied,
-    // keep the directory data useful without inventing a runtime binding.
-    if (!input.compatibilityAssignments?.length) return result;
+    // Keep the directory data useful even when the bindings path is unavailable;
+    // the default-agent fallback can still be observed independently.
   }
+  const defaultAgentId = await readOpenClawDefaultAgentId(getOpenClawAdapter());
 
   const compatibilityByRouteId = new Map(
     (input.compatibilityAssignments ?? [])
@@ -643,19 +713,58 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
         parentRouteId: entry.parentRouteId,
         metadata: entry.metadata
       });
+      if (entry.kind === "topic" && result.provider === "telegram" && entry.agentId) {
+        return {
+          ...entry,
+          bindingSource: "openclaw" as const,
+          bindingMatch: "exact" as const,
+          bindingConflict: false,
+          bindingEditingAmbiguous: false,
+          inheritedFrom: null,
+          shadowedBindingCount: 0
+        };
+      }
+
       const legacyAssignment = snapshot.available ? undefined : compatibilityByRouteId.get(entry.routeId);
-      const resolution = resolveChannelRouteBinding(
-        route,
-        snapshot,
-        legacyAssignment
+      const compatibilityBinding = legacyAssignment
+        ? {
+            route,
+            agentId: legacyAssignment.agentId,
+            workspaceId: null,
+            source: "agentos-compatibility" as const
+          }
+        : null;
+      let resolution = resolveChannelRouteBinding(route, snapshot, compatibilityBinding, defaultAgentId);
+
+      if (entry.kind === "topic" && result.provider === "telegram" && entry.parentRouteId) {
+        const parentRoute = buildChannelRouteIdentity({
+          provider: "telegram",
+          accountId: entry.accountId,
+          kind: "group",
+          routeId: entry.parentRouteId,
+          metadata: { nativePeerKind: "group" }
+        });
+        const parentAssignment = snapshot.available ? undefined : compatibilityByRouteId.get(entry.parentRouteId);
+        const parentCompatibility = parentAssignment
           ? {
-              route,
-              agentId: legacyAssignment.agentId,
+              route: parentRoute,
+              agentId: parentAssignment.agentId,
               workspaceId: null,
-              source: "agentos-compatibility"
+              source: "agentos-compatibility" as const
             }
-          : null
-      );
+          : null;
+        const parentResolution = resolveChannelRouteBinding(parentRoute, snapshot, parentCompatibility, defaultAgentId);
+        if (parentResolution.agentId) {
+          resolution = {
+            ...parentResolution,
+            route,
+            explicitAgentId: null,
+            match: parentResolution.match === "shadowed" ? "shadowed" : "inherited",
+            effectiveMatch: "inherited",
+            inheritedFrom: parentRoute
+          };
+        }
+      }
 
       return {
         ...entry,
