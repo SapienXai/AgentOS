@@ -165,8 +165,11 @@ export function useMissionControlWorkspaceActions({
 
     setWorkspaceAccountsInitialAgentId(agentId ?? null);
     setIsWorkspaceAccountsOpen(true);
-    void loadAccountBindings();
-  }, [loadAccountBindings, openWorkspaceOnCanvas]);
+    void Promise.all([
+      loadAccountBindings(),
+      loadAccountSecureBrowserCapabilities(workspaceId)
+    ]);
+  }, [loadAccountBindings, loadAccountSecureBrowserCapabilities, openWorkspaceOnCanvas]);
 
   const openConnectAccountDialog = useCallback(() => {
     setIsConnectAccountDialogOpen(true);

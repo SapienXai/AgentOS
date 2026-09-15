@@ -433,6 +433,10 @@ test("Agent routing surfaces do not use workspace metadata as a runtime binding 
     path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"),
     "utf8"
   );
+  const missionControlShellSource = readFileSync(
+    path.join(rootDir, "components/mission-control/mission-control-shell.tsx"),
+    "utf8"
+  );
   const workspaceChannelsRouteSource = readFileSync(
     path.join(rootDir, "app/api/workspaces/[workspaceId]/channels/route.ts"),
     "utf8"
@@ -446,6 +450,7 @@ test("Agent routing surfaces do not use workspace metadata as a runtime binding 
   assert.match(workspaceAccountsSource, /Workspace accounts/);
   assert.match(workspaceAccountsSource, /Channel connections are managed from the selected Agent/);
   assert.match(workspaceAccountsSource, /AccountsSurfaceSection/);
+  assert.match(missionControlShellSource, /secureBrowserAccounts=\{secureBrowserAccounts\}/);
   assert.doesNotMatch(workspaceAccountsSource, /LEGACY_SURFACE_MANAGEMENT_ENABLED|Metadata only|does not assign messages to an agent/);
   assert.doesNotMatch(workspaceAccountsSource, /Owner agent|Assistant agent|Route owner|bind-agent|unbind-agent/);
   assert.doesNotMatch(workspaceChannelsRouteSource, /bind-agent|unbind-agent|setWorkspaceChannelPrimary|setWorkspaceChannelGroups/);

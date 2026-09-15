@@ -5303,6 +5303,7 @@ export function MissionControlShell({
           snapshot={uiSnapshot}
           workspaceId={activeWorkspaceId ?? uiSnapshot.workspaces[0]?.id ?? null}
           accountTargets={accountTargets}
+          secureBrowserAccounts={secureBrowserAccounts}
           accountAccessRules={accountAccessRules}
           initialAgentId={workspaceAccountsInitialAgentId}
           open={isWorkspaceAccountsOpen}
