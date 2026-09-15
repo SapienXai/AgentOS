@@ -267,9 +267,16 @@ export function buildOpenClawFinalCertificationReport(input: {
   }
   const completeTestAssessment = reportFailures.length === 0 && exactPackageMatchesTarget && passedArtifactCount > 0 && passedArtifactCount === Object.keys(input.matrix).length && failedArtifactCount === 0 && unknownOutcomeCount === 0 && !statuses.includes("FAIL") && !statuses.includes("UNKNOWN");
   const resolvedAgentosHead = resolvedCertifiedCodeHead ?? input.certifiedCodeHead;
+  const compatibilitySummary = asRecord(asRecord(input.compatibilityReport?.report).summary);
   const knownExceptions = Array.from(new Set([
     ...readStringArray(input.upstreamEvidence?.knownExceptions),
-    ...readStringArray(input.channelRuntimeAcceptance?.knownExceptions)
+    ...readStringArray(input.channelRuntimeAcceptance?.knownExceptions),
+    ...(readStringArray(compatibilitySummary.degradedSurfaces).length > 0
+      ? [`Compatibility degraded optional surfaces: ${readStringArray(compatibilitySummary.degradedSurfaces).join(", ")}.`]
+      : []),
+    ...(readStringArray(compatibilitySummary.unsupportedSurfaces).length > 0
+      ? [`Compatibility unsupported optional surfaces: ${readStringArray(compatibilitySummary.unsupportedSurfaces).join(", ")}.`]
+      : [])
   ]));
 
   return {

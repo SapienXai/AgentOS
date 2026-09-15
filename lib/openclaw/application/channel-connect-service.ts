@@ -7,7 +7,7 @@ import {
   resolveChannelPluginActivation
 } from "@/lib/openclaw/application/channel-plugin-compat";
 import { resolveOpenClawVersion, runOpenClaw, runOpenClawJson } from "@/lib/openclaw/cli";
-import type { OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
+import type { OpenClawChannelStatusPayload, OpenClawPluginListPayload } from "@/lib/openclaw/client/types";
 import { normalizeChannelConnectAccounts } from "@/lib/openclaw/domains/channel-connect-status";
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { redactErrorMessage } from "@/lib/security/redaction";
@@ -153,7 +153,16 @@ const PROVIDERS: ProviderDefinition[] = [
   }
 ];
 
-export async function getChannelConnectOverview(): Promise<ChannelConnectOverview> {
+export type ChannelConnectRuntimeEvidence = {
+  version: string | null;
+  status: OpenClawChannelStatusPayload | null;
+  statusError: string | null;
+  plugins: OpenClawPluginListPayload["plugins"];
+  pluginDiscoveryError: string | null;
+  configAccounts: Awaited<ReturnType<typeof readChannelAccounts>>;
+};
+
+export async function getChannelConnectRuntimeEvidence(): Promise<ChannelConnectRuntimeEvidence> {
   const adapter = getOpenClawAdapter();
   const [version, statusResult, pluginsResult, configAccounts] = await Promise.all([
     resolveOpenClawVersion(),
@@ -168,8 +177,19 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
     readChannelAccounts()
   ]);
 
-  const status = statusResult.value;
-  const plugins = pluginsResult.value?.plugins ?? [];
+  return {
+    version,
+    status: statusResult.value,
+    statusError: statusResult.error,
+    plugins: pluginsResult.value?.plugins ?? [],
+    pluginDiscoveryError: pluginsResult.error,
+    configAccounts
+  };
+}
+
+export async function getChannelConnectOverview(runtimeEvidence?: ChannelConnectRuntimeEvidence): Promise<ChannelConnectOverview> {
+  const runtime = runtimeEvidence ?? await getChannelConnectRuntimeEvidence();
+  const { version, status, plugins, statusError, pluginDiscoveryError, configAccounts } = runtime;
   const bundledPluginInspections = new Map<ChannelConnectProviderId, BundledPluginInspection>();
   const bundledProvidersMissingFromGateway = PROVIDERS.filter(
     (definition) => definition.implemented
@@ -188,8 +208,8 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
     recommendedOpenClawVersion: OPENCLAW_RECOMMENDED_VERSION,
     supportedBaselineVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
     gatewayAvailable: Boolean(status),
-    statusError: statusResult.error,
-    pluginDiscoveryError: pluginsResult.error,
+    statusError,
+    pluginDiscoveryError,
     providers: PROVIDERS.map((definition) => {
       const plugin = plugins.find(
         (candidate) => candidate.id === definition.id || candidate.channelIds?.includes(definition.id)

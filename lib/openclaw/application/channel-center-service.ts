@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   getChannelConnectOverview,
+  getChannelConnectRuntimeEvidence,
   type ChannelConnectProviderView,
   type ChannelConnectOverview
 } from "@/lib/openclaw/application/channel-connect-service";
@@ -10,7 +11,6 @@ import { normalizeChannelConnectAccounts } from "@/lib/openclaw/domains/channel-
 import { readChannelAccounts } from "@/lib/openclaw/domains/channels";
 import { getSurfaceKind } from "@/lib/openclaw/surface-catalog";
 import type { OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
-import { redactErrorMessage } from "@/lib/security/redaction";
 
 export type ChannelProviderCapabilities = {
   supportsAccounts: boolean;
@@ -69,7 +69,8 @@ export type ChannelCenterSnapshot = Omit<ChannelConnectOverview, "providers"> & 
 };
 
 export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot> {
-  const overview = await getChannelConnectOverview();
+  const runtimeEvidence = await getChannelConnectRuntimeEvidence();
+  const overview = await getChannelConnectOverview(runtimeEvidence);
   const adapter = getOpenClawAdapter();
   const providerIds = Array.from(new Set([
     "telegram",
@@ -78,21 +79,19 @@ export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot>
     "whatsapp",
     ...overview.providers.map((provider) => provider.id)
   ]));
-  const [statusResult, pluginsResult, configAccounts, bindingsResult, bindingsSchemaResult, providerEvidence] = await Promise.all([
-    adapter.getChannelStatus({ probe: false, timeoutMs: 8_000 }, { timeoutMs: 12_000 }).then(
-      (value) => ({ value, error: null }),
-      (error) => ({ value: null, error: redactErrorMessage(error, "OpenClaw channel inventory is unavailable.") })
-    ),
-    adapter.listPlugins({ timeoutMs: 15_000 }).then(
-      (value) => ({ value, error: null }),
-      () => ({ value: null, error: null })
-    ),
-    readChannelAccounts(),
+  const activeProviderIds = providerIds.filter((provider) => (
+    runtimeEvidence.status?.channelOrder?.includes(provider)
+      || runtimeEvidence.status?.channelAccounts?.[provider] !== undefined
+      || runtimeEvidence.status?.channels?.[provider] !== undefined
+      || runtimeEvidence.configAccounts.some((account) => account.type === provider)
+      || runtimeEvidence.plugins.some((plugin) => plugin.id === provider || plugin.channelIds?.includes(provider))
+  ));
+  const [bindingsResult, bindingsSchemaResult, providerEvidence] = await Promise.all([
     adapter.getConfig<unknown[]>("bindings", { timeoutMs: 10_000 }).catch(() => null),
     adapter.lookupConfigSchema
       ? adapter.lookupConfigSchema({ path: "bindings" }, { timeoutMs: 10_000 }).catch(() => null)
       : Promise.resolve(null),
-    Promise.all(providerIds.map(async (provider) => {
+    Promise.all(activeProviderIds.map(async (provider) => {
       const [config, schema] = await Promise.all([
         adapter.getConfig<Record<string, unknown>>(`channels.${provider}`, { timeoutMs: 10_000 }).catch(() => null),
         adapter.lookupConfigSchema
@@ -103,8 +102,9 @@ export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot>
     }))
   ]);
 
-  const status = statusResult.value;
-  const plugins = pluginsResult.value?.plugins ?? [];
+  const status = runtimeEvidence.status;
+  const plugins = runtimeEvidence.plugins;
+  const configAccounts = runtimeEvidence.configAccounts;
   const providers = buildProviderInventory(overview, status, plugins, configAccounts, {
     adapter,
     nativeBindingsAvailable: Array.isArray(bindingsResult) || hasNativeBindingSchema(bindingsSchemaResult),
@@ -115,7 +115,7 @@ export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot>
 
   return {
     ...overview,
-    statusError: overview.statusError ?? statusResult.error,
+    statusError: overview.statusError ?? runtimeEvidence.statusError,
     providers,
     plugins: plugins.map((plugin) => ({
       id: plugin.id,
