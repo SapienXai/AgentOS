@@ -1611,8 +1611,10 @@ export interface MissionControlSnapshot {
   channelRegistry: ChannelRegistry;
   /** Small native route projection used by Agent cards; default-only routing is excluded. */
   nativeChannelRouteBadges?: Record<string, {
-    providers: MissionControlSurfaceProvider[];
-    routeCount: number;
+    providers: Array<{
+      provider: MissionControlSurfaceProvider;
+      routeCount: number;
+    }>;
   }>;
   surfaceRuntime: SurfaceRuntimeSnapshot;
   surfaceDrift: SurfaceDriftSnapshot;

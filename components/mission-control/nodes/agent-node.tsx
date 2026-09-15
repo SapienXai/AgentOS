@@ -934,7 +934,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                       aria-label={`Open ${surfaceBadge.label} connections for ${agentLabel}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
+                        data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id, surfaceBadge.provider);
                       }}
                       onPointerDown={(event) => event.stopPropagation()}
                     >

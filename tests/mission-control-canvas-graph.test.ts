@@ -128,8 +128,7 @@ test("canvas places agent-owned tasks when task workspace id is missing", () => 
     },
     nativeChannelRouteBadges: {
       "agent-1": {
-        providers: ["telegram"],
-        routeCount: 1
+        providers: [{ provider: "telegram", routeCount: 1 }]
       }
     },
     models: [],

@@ -361,7 +361,7 @@ test("surface reconcile dry-run skips OpenClaw config writes and provider side e
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
   const surfaceRuntime = readFileSync(path.join(rootDir, "lib/openclaw/surface-runtime.ts"), "utf8");
   const route = readFileSync(path.join(rootDir, "app/api/workspaces/[workspaceId]/surfaces/reconcile/route.ts"), "utf8");
-  const dialog = readFileSync(path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"), "utf8");
+  const dialog = readFileSync(path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"), "utf8");
 
   assert.match(source, /const dryRun = input\.dryRun === true/);
   assert.match(source, /readSurfaceReconcilePreviewAudit\(confirmedPreviewAuditId\)/);
@@ -1205,7 +1205,7 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
     "utf8"
   );
   const channelsDialogSource = readFileSync(
-    path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
+    path.join(rootDir, "components/mission-control/workspace-accounts-dialog.tsx"),
     "utf8"
   );
   const agentConnectionsSource = readFileSync(
@@ -1240,7 +1240,8 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
   assert.match(dialogShellSource, /h-dvh max-h-dvh w-screen max-w-none/);
   assert.match(dialogShellSource, /safe-area-inset-top/);
   assert.match(agentConnectionsSource, /<AgentChannelsSection/);
-  assert.match(agentConnectionsSource, /<ChannelCenterAddAccountDialog/);
+  assert.doesNotMatch(agentConnectionsSource, /<ChannelCenterAddAccountDialog/);
+  assert.match(agentConnectionsSource, /workspacePath/);
   assert.match(agentConnectionsSource, /Open Channel Center/);
   assert.match(channelsDialogSource, /OpenClaw binding diagnostics/);
   assert.match(channelsDialogSource, /Apply OpenClaw binding repair/);

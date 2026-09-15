@@ -51,8 +51,10 @@ export type AgentChannelRouteSummary = {
 };
 
 export type AgentChannelRouteBadgeSummary = {
-  providers: MissionControlSurfaceProvider[];
-  routeCount: number;
+  providers: Array<{
+    provider: MissionControlSurfaceProvider;
+    routeCount: number;
+  }>;
 };
 
 /**
@@ -70,9 +72,9 @@ export async function getAgentChannelRouteBadgeSummaries(input: {
   if (agentIds.size === 0) return {};
 
   const adapter = input.adapter ?? getOpenClawAdapter();
-  const byAgent = new Map<string, { providers: Set<MissionControlSurfaceProvider>; routes: Set<string> }>();
+  const byAgent = new Map<string, Map<MissionControlSurfaceProvider, Set<string>>>();
   for (const agentId of agentIds) {
-    byAgent.set(agentId, { providers: new Set(), routes: new Set() });
+    byAgent.set(agentId, new Map());
   }
 
   const bindings = await readNativeRouteBindings(adapter);
@@ -83,9 +85,10 @@ export async function getAgentChannelRouteBadgeSummaries(input: {
 
     const route = nativeBindingToRouteIdentity(entry.binding);
     const routeKey = route ? channelRouteKey(route) : `account:${provider}:${normalizeString(entry.binding.match.accountId) ?? "default"}`;
-    const summary = byAgent.get(agentId)!;
-    summary.providers.add(provider);
-    summary.routes.add(routeKey);
+    const providerRoutes = byAgent.get(agentId)!;
+    const routes = providerRoutes.get(provider) ?? new Set<string>();
+    routes.add(routeKey);
+    providerRoutes.set(provider, routes);
   }
 
   const telegramConfig = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 }).catch(() => null);
@@ -93,10 +96,12 @@ export async function getAgentChannelRouteBadgeSummaries(input: {
 
   return Object.fromEntries(
     Array.from(byAgent.entries())
-      .filter(([, summary]) => summary.routes.size > 0)
+      .filter(([, summary]) => summary.size > 0)
       .map(([agentId, summary]) => [agentId, {
-        providers: Array.from(summary.providers).sort((left, right) => left.localeCompare(right)),
-        routeCount: summary.routes.size
+        providers: Array.from(summary.entries())
+          .filter(([, routes]) => routes.size > 0)
+          .map(([provider, routes]) => ({ provider, routeCount: routes.size }))
+          .sort((left, right) => left.provider.localeCompare(right.provider))
       } satisfies AgentChannelRouteBadgeSummary])
   );
 }
@@ -439,7 +444,7 @@ function createDefaultProjection(agentId: string): AgentChannelRouteProjection {
 
 function addTelegramTopicBadgeRoutes(
   config: Record<string, unknown> | null,
-  byAgent: Map<string, { providers: Set<MissionControlSurfaceProvider>; routes: Set<string> }>
+  byAgent: Map<string, Map<MissionControlSurfaceProvider, Set<string>>>
 ) {
   if (!isRecord(config)) return;
 
@@ -460,8 +465,9 @@ function addTelegramTopicBadgeRoutes(
           parentRouteId: groupId,
           metadata: { nativePeerKind: "group", nativeScope: "peer" }
         });
-        summary.providers.add("telegram");
-        summary.routes.add(channelRouteKey(route));
+        const routes = summary.get("telegram") ?? new Set<string>();
+        routes.add(channelRouteKey(route));
+        summary.set("telegram", routes);
       }
     }
   };

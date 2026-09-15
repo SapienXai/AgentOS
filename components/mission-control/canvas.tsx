@@ -136,7 +136,7 @@ export function MissionCanvas({
   onOpenAgentContextEngine?: (agentId: string) => void;
   onRefresh?: () => Promise<void> | void;
   onInspectAgentDetail?: (agentId: string, focus: AgentDetailFocus) => void;
-  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
+  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string, provider?: string) => void;
   onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
   onOpenWorkspaceContextEngine?: (workspaceId: string) => void;
   onCreateWorkspaceAgent?: (workspaceId: string) => void;

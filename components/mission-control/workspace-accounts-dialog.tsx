@@ -25,7 +25,7 @@ import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-
  * Channel connections intentionally live in AgentConnectionsDialog instead of
  * keeping a disabled workspace routing surface alive here.
  */
-export function WorkspaceChannelsDialog({
+export function WorkspaceAccountsDialog({
   snapshot,
   workspaceId,
   accountTargets = [],

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   mergeAccountAccessRules,
   mergeAccountTargets
-} from "@/components/mission-control/workspace-channels-dialog.utils";
+} from "@/components/mission-control/workspace-account-access.utils";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type {

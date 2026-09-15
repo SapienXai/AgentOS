@@ -38,10 +38,11 @@ export function useMissionControlWorkspaceActions({
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
-  const [isWorkspaceChannelsOpen, setIsWorkspaceChannelsOpen] = useState(false);
-  const [workspaceChannelsInitialAgentId, setWorkspaceChannelsInitialAgentId] = useState<string | null>(null);
+  const [isWorkspaceAccountsOpen, setIsWorkspaceAccountsOpen] = useState(false);
+  const [workspaceAccountsInitialAgentId, setWorkspaceAccountsInitialAgentId] = useState<string | null>(null);
   const [isAgentConnectionsOpen, setIsAgentConnectionsOpen] = useState(false);
   const [agentConnectionsInitialAgentId, setAgentConnectionsInitialAgentId] = useState<string | null>(null);
+  const [agentConnectionsInitialProviderId, setAgentConnectionsInitialProviderId] = useState<string | null>(null);
   const [isConnectAccountDialogOpen, setIsConnectAccountDialogOpen] = useState(false);
   const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
   const [accountBrowserProfilesError, setAccountBrowserProfilesError] = useState<string | null>(null);
@@ -142,12 +143,13 @@ export function useMissionControlWorkspaceActions({
     void loadAccountBindings();
   }, [loadAccountBindings]);
 
-  const openAgentConnections = useCallback((workspaceId?: string, agentId?: string) => {
+  const openAgentConnections = useCallback((workspaceId?: string, agentId?: string, provider?: string) => {
     if (workspaceId) {
       openWorkspaceOnCanvas(workspaceId);
     }
 
     setAgentConnectionsInitialAgentId(agentId ?? null);
+    setAgentConnectionsInitialProviderId(provider ?? null);
     setIsAgentConnectionsOpen(true);
   }, [openWorkspaceOnCanvas]);
 
@@ -156,8 +158,8 @@ export function useMissionControlWorkspaceActions({
       openWorkspaceOnCanvas(workspaceId);
     }
 
-    setWorkspaceChannelsInitialAgentId(agentId ?? null);
-    setIsWorkspaceChannelsOpen(true);
+    setWorkspaceAccountsInitialAgentId(agentId ?? null);
+    setIsWorkspaceAccountsOpen(true);
     void loadAccountBindings();
   }, [loadAccountBindings, openWorkspaceOnCanvas]);
 
@@ -312,14 +314,16 @@ export function useMissionControlWorkspaceActions({
     openWorkspaceWizard,
     openWorkspaceWizardForEdit,
     handleWorkspaceWizardOpenChange,
-    isWorkspaceChannelsOpen,
-    setIsWorkspaceChannelsOpen,
-    workspaceChannelsInitialAgentId,
-    setWorkspaceChannelsInitialAgentId,
+    isWorkspaceAccountsOpen,
+    setIsWorkspaceAccountsOpen,
+    workspaceAccountsInitialAgentId,
+    setWorkspaceAccountsInitialAgentId,
     isAgentConnectionsOpen,
     setIsAgentConnectionsOpen,
     agentConnectionsInitialAgentId,
     setAgentConnectionsInitialAgentId,
+    agentConnectionsInitialProviderId,
+    setAgentConnectionsInitialProviderId,
     openAgentConnections,
     openAccountsConnect,
     isConnectAccountDialogOpen,

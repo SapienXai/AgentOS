@@ -187,7 +187,7 @@ test("Agent card route badges come only from native provider bindings, never def
     adapter
   });
 
-  assert.deepEqual(badges["agent-explicit"], { providers: ["telegram"], routeCount: 1 });
+  assert.deepEqual(badges["agent-explicit"], { providers: [{ provider: "telegram", routeCount: 1 }] });
   assert.equal(badges["agent-default"], undefined);
 });
 
@@ -211,7 +211,49 @@ test("Telegram topic native overrides add their provider to Agent card badges", 
   } as unknown as OpenClawAdapter;
 
   const badges = await getAgentChannelRouteBadgeSummaries({ agentIds: ["agent-topic"], adapter });
-  assert.deepEqual(badges["agent-topic"], { providers: ["telegram"], routeCount: 1 });
+  assert.deepEqual(badges["agent-topic"], { providers: [{ provider: "telegram", routeCount: 1 }] });
+});
+
+test("Agent card badge counts stay specific to each native provider", async () => {
+  const routes = [
+    buildChannelRouteIdentity({ provider: "telegram", accountId: "telegram-main", kind: "group", routeId: "support" }),
+    buildChannelRouteIdentity({ provider: "telegram", accountId: "telegram-main", kind: "group", routeId: "sales" }),
+    buildChannelRouteIdentity({ provider: "discord", accountId: "discord-main", kind: "channel", routeId: "alerts", parentRouteId: "guild-1" })
+  ];
+  const adapter = {
+    getConfig: async (path: string) => path === "bindings" ? routes.map((route) => buildNativeRouteBinding(route, "agent-a")) : {},
+    listAgents: async () => ({ defaultId: null, agents: [{ id: "agent-a" }] })
+  } as unknown as OpenClawAdapter;
+
+  const badges = await getAgentChannelRouteBadgeSummaries({ agentIds: ["agent-a"], adapter });
+
+  assert.deepEqual(badges["agent-a"], {
+    providers: [
+      { provider: "discord", routeCount: 1 },
+      { provider: "telegram", routeCount: 2 }
+    ]
+  });
+});
+
+test("removing the last native route removes the provider badge", async () => {
+  const route = buildChannelRouteIdentity({
+    provider: "telegram",
+    accountId: "telegram-main",
+    kind: "group",
+    routeId: "support"
+  });
+  let bindings: unknown[] = [buildNativeRouteBinding(route, "agent-a")];
+  const adapter = {
+    getConfig: async (path: string) => path === "bindings" ? bindings : {},
+    listAgents: async () => ({ defaultId: null, agents: [{ id: "agent-a" }] })
+  } as unknown as OpenClawAdapter;
+
+  const connected = await getAgentChannelRouteBadgeSummaries({ agentIds: ["agent-a"], adapter });
+  assert.equal(connected["agent-a"]?.providers[0]?.routeCount, 1);
+
+  bindings = [];
+  const disconnected = await getAgentChannelRouteBadgeSummaries({ agentIds: ["agent-a"], adapter });
+  assert.equal(disconnected["agent-a"], undefined);
 });
 
 test("Channel Center and Agent Profile share native mutation state and restore inheritance after override removal", async () => {

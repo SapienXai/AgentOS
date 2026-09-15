@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { ExternalLink, MessageCircle } from "lucide-react";
 import Link from "next/link";
 
 import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
-import { ChannelCenterAddAccountDialog } from "@/components/operations/channels/channel-center-add-account-dialog";
 import { MissionControlDialogShell, missionControlDialogButtonClassName } from "@/components/mission-control/mission-control-dialog-shell";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
@@ -14,6 +12,7 @@ type AgentConnectionsDialogProps = {
   open: boolean;
   agentId: string | null;
   snapshot: MissionControlSnapshot;
+  initialProviderId?: string | null;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void>;
   surfaceTheme?: "dark" | "light";
@@ -23,6 +22,7 @@ export function AgentConnectionsDialog({
   open,
   agentId,
   snapshot,
+  initialProviderId,
   onOpenChange,
   onRefresh,
   surfaceTheme = "dark"
@@ -36,7 +36,8 @@ export function AgentConnectionsDialog({
     open={open}
     agent={agent}
     workspaceId={workspace.id}
-    snapshot={snapshot}
+    workspacePath={workspace.path}
+    initialProviderId={initialProviderId}
     onOpenChange={onOpenChange}
     onRefresh={onRefresh}
     surfaceTheme={surfaceTheme}
@@ -47,7 +48,8 @@ function AgentConnectionsDialogContent({
   open,
   agent,
   workspaceId,
-  snapshot,
+  workspacePath,
+  initialProviderId,
   onOpenChange,
   onRefresh,
   surfaceTheme
@@ -55,22 +57,14 @@ function AgentConnectionsDialogContent({
   open: boolean;
   agent: MissionControlSnapshot["agents"][number];
   workspaceId: string;
-  snapshot: MissionControlSnapshot;
+  workspacePath: string;
+  initialProviderId?: string | null;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void>;
   surfaceTheme: "dark" | "light";
 }) {
-  const [accountRefreshKey, setAccountRefreshKey] = useState(0);
-  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
-
-  const refreshAfterAccountChange = async () => {
-    await onRefresh();
-    setAccountRefreshKey((current) => current + 1);
-  };
-
   return (
-    <>
-      <MissionControlDialogShell
+    <MissionControlDialogShell
         open={open}
         onOpenChange={onOpenChange}
         surfaceTheme={surfaceTheme}
@@ -98,21 +92,14 @@ function AgentConnectionsDialogContent({
           <span className="font-medium text-foreground">Current agent:</span> {formatAgentDisplayName(agent)}. Choose a real channel below; the connection is verified before it appears on the Agent card.
         </div>
         <AgentChannelsSection
-          key={`${agent.id}:${accountRefreshKey}`}
           agentId={agent.id}
+          agentLabel={formatAgentDisplayName(agent)}
+          workspaceId={workspaceId}
+          workspacePath={workspacePath}
+          initialProviderId={initialProviderId}
           surfaceTheme={surfaceTheme}
-          onConnectAccount={() => setAccountDialogOpen(true)}
           onRouteChanged={onRefresh}
         />
       </MissionControlDialogShell>
-
-      <ChannelCenterAddAccountDialog
-        open={accountDialogOpen}
-        onOpenChange={setAccountDialogOpen}
-        snapshot={snapshot}
-        activeWorkspaceId={workspaceId}
-        onRefresh={refreshAfterAccountChange}
-      />
-    </>
   );
 }

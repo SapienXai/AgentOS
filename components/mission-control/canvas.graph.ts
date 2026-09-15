@@ -82,7 +82,7 @@ export function buildCanvasGraph(
   onRefresh: (() => Promise<void> | void) | undefined,
   onAgentConnectionMenuOpenChange: ((agentId: string, open: boolean) => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
-  onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
+  onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string, provider?: string) => void) | undefined,
   onOpenAccounts: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenWorkspaceContextEngine: ((workspaceId: string) => void) | undefined,
   onReplyTask: (task: WorkItemRecord) => void,
@@ -297,7 +297,7 @@ export function buildCanvasGraph(
             roleLabel: surfaceBadge.roleLabel,
             roleTone: surfaceBadge.roleTone ?? "primary",
             accentColor: surfaceBadge.accentColor ?? null,
-            onClick: () => onOpenWorkspaceChannels?.(workspace.id, agent.id)
+            onClick: () => onOpenWorkspaceChannels?.(workspace.id, agent.id, surfaceBadge.provider)
           }
         });
       });
@@ -727,14 +727,14 @@ export function buildAgentSurfaceBadges(
   if (!summary) return [];
 
   return summary.providers
-    .map((provider) => {
+    .map(({ provider, routeCount }) => {
       const catalogEntry = getSurfaceCatalogEntry(provider);
-      const roleLabel = `Owns ${summary.routeCount} native ${summary.routeCount === 1 ? "route" : "routes"}`;
+      const roleLabel = `${catalogEntry.label} · ${routeCount} ${routeCount === 1 ? "route" : "routes"}`;
 
       return {
         provider,
         label: catalogEntry.label,
-        count: summary.routeCount,
+        count: routeCount,
         roleLabel,
         roleTone: "owner" as const,
         accentColor: catalogEntry.accentColor ?? null,

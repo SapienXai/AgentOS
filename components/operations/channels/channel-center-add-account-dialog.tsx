@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Link2, Loader2, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ChannelCenterSnapshot } from "@/lib/openclaw/application/channel-center-service";
 import { presentChannelAccountState } from "@/lib/openclaw/domains/channel-account-presentation";
+import { pollChannelAccount } from "@/lib/openclaw/domains/channel-account-polling";
 
 type AddAccountDialogProps = {
   open: boolean;
@@ -52,6 +53,7 @@ export function ChannelCenterAddAccountDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const setupControllerRef = useRef<AbortController | null>(null);
 
   const workspace = snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null;
   const providers = center?.providers ?? [];
@@ -67,16 +69,17 @@ export function ChannelCenterAddAccountDialog({
       && (selectedProvider.setupMode === "app-tokens" ? botToken.trim() && appToken.trim() : token.trim())
   );
 
-  const loadCenter = useCallback(async (): Promise<ChannelCenterSnapshot | null> => {
+  const loadCenter = useCallback(async (signal?: AbortSignal): Promise<ChannelCenterSnapshot | null> => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/openclaw/channels/center", { cache: "no-store" });
+      const response = await fetch("/api/openclaw/channels/center", { cache: "no-store", signal });
       const payload = await response.json() as ChannelCenterResponse;
       if (!response.ok) throw new Error(payload.error ?? "OpenClaw channel inventory is unavailable.");
       setCenter(payload);
       return payload;
     } catch (loadError) {
+      if (loadError instanceof Error && loadError.name === "AbortError") return null;
       setCenter(null);
       setError(loadError instanceof Error ? loadError.message : "OpenClaw channel inventory is unavailable.");
       return null;
@@ -97,6 +100,10 @@ export function ChannelCenterAddAccountDialog({
     setError(null);
     void loadCenter();
   }, [activeWorkspaceId, loadCenter, open, snapshot.workspaces]);
+
+  useEffect(() => {
+    return () => setupControllerRef.current?.abort();
+  }, []);
 
   const selectedProviderId = selectedProvider?.id;
   useEffect(() => {
@@ -134,11 +141,15 @@ export function ChannelCenterAddAccountDialog({
 
     setSaving(true);
     setError(null);
+    setupControllerRef.current?.abort();
+    const controller = new AbortController();
+    setupControllerRef.current = controller;
     try {
       const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/channels`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: controller.signal
       });
       const payload = await response.json() as {
         error?: string;
@@ -150,18 +161,45 @@ export function ChannelCenterAddAccountDialog({
         || payload.account?.id?.trim()
         || (typeof body.channelId === "string" ? body.channelId.trim() : null)
         || null;
-      const verifiedCenter = await loadCenter();
-      const verifiedProvider = verifiedCenter?.providers.find((provider) => provider.id === selectedProvider.id) ?? null;
-      const verifiedAccount = verifiedProvider?.accounts.find((account) =>
-        (accountId && account.accountId === accountId)
-          || account.name === (payload.account?.name ?? body.name)
-      ) ?? null;
+      const accountName = payload.account?.name ?? body.name;
+      const verified = await pollChannelAccount({
+        signal: controller.signal,
+        read: async () => {
+          const refreshedCenter = await loadCenter(controller.signal);
+          const refreshedProvider = refreshedCenter?.providers.find((provider) => provider.id === selectedProvider.id) ?? null;
+          const refreshedAccount = refreshedProvider?.accounts.find((candidate) =>
+            (accountId && candidate.accountId === accountId) || candidate.name === accountName
+          ) ?? null;
+          return {
+            center: refreshedCenter,
+            provider: refreshedProvider,
+            account: refreshedAccount,
+            presentation: refreshedAccount ? presentChannelAccountState({
+              accountId: refreshedAccount.accountId,
+              configured: refreshedAccount.configured,
+              enabled: refreshedAccount.enabled,
+              linked: refreshedAccount.linked,
+              running: refreshedAccount.running,
+              connected: refreshedAccount.connected,
+              liveStatusAvailable: refreshedAccount.liveStatusAvailable,
+              authenticationRequired: refreshedAccount.authenticationRequired,
+              lastError: refreshedAccount.lastError,
+              healthState: refreshedAccount.healthState,
+              credentialState: refreshedAccount.credentialState
+            }, { statusError: refreshedCenter?.statusError }) : null
+          };
+        },
+        isTerminal: (value) => Boolean(value.account && value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+      });
+      const verifiedCenter = verified.center;
+      const verifiedProvider = verified.provider;
+      const verifiedAccount = verified.account;
 
       if (!verifiedProvider || !verifiedAccount) {
         throw new Error(`${selectedProvider.label} was saved, but OpenClaw did not return a verifiable account state.`);
       }
 
-      let presentation = presentChannelAccountState({
+      let presentation = verified.presentation ?? presentChannelAccountState({
         accountId: verifiedAccount.accountId,
         configured: verifiedAccount.configured,
         enabled: verifiedAccount.enabled,
@@ -179,33 +217,43 @@ export function ChannelCenterAddAccountDialog({
         const startResponse = await fetch("/api/openclaw/channels/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "start", provider: selectedProvider.id, accountId: verifiedAccount.accountId })
+          body: JSON.stringify({ action: "start", provider: selectedProvider.id, accountId: verifiedAccount.accountId }),
+          signal: controller.signal
         });
         const startPayload = await startResponse.json().catch(() => null) as { error?: string } | null;
         if (!startResponse.ok) {
           throw new Error(startPayload?.error ?? `${selectedProvider.label} was saved, but OpenClaw could not start the account.`);
         }
 
-        for (let attempt = 0; attempt < 4; attempt += 1) {
-          if (attempt > 0) await wait(700);
-          const refreshedCenter = await loadCenter();
-          const refreshedProvider = refreshedCenter?.providers.find((provider) => provider.id === selectedProvider.id) ?? null;
-          const refreshedAccount = refreshedProvider?.accounts.find((account) => account.accountId === verifiedAccount.accountId) ?? null;
-          if (!refreshedAccount) continue;
-          presentation = presentChannelAccountState({
-            accountId: refreshedAccount.accountId,
-            configured: refreshedAccount.configured,
-            enabled: refreshedAccount.enabled,
-            linked: refreshedAccount.linked,
-            running: refreshedAccount.running,
-            connected: refreshedAccount.connected,
-            liveStatusAvailable: refreshedAccount.liveStatusAvailable,
-            authenticationRequired: refreshedAccount.authenticationRequired,
-            lastError: refreshedAccount.lastError,
-            healthState: refreshedAccount.healthState,
-            credentialState: refreshedAccount.credentialState
-          }, { statusError: refreshedCenter?.statusError });
-          if (presentation.state === "ONLINE") break;
+        const polled = await pollChannelAccount({
+          signal: controller.signal,
+          read: async () => {
+            const refreshedCenter = await loadCenter(controller.signal);
+            const refreshedProvider = refreshedCenter?.providers.find((provider) => provider.id === selectedProvider.id) ?? null;
+            const refreshedAccount = refreshedProvider?.accounts.find((account) => account.accountId === verifiedAccount.accountId) ?? null;
+            if (!refreshedAccount) return { center: refreshedCenter, account: null, presentation: null };
+            return {
+              center: refreshedCenter,
+              account: refreshedAccount,
+              presentation: presentChannelAccountState({
+                accountId: refreshedAccount.accountId,
+                configured: refreshedAccount.configured,
+                enabled: refreshedAccount.enabled,
+                linked: refreshedAccount.linked,
+                running: refreshedAccount.running,
+                connected: refreshedAccount.connected,
+                liveStatusAvailable: refreshedAccount.liveStatusAvailable,
+                authenticationRequired: refreshedAccount.authenticationRequired,
+                lastError: refreshedAccount.lastError,
+                healthState: refreshedAccount.healthState,
+                credentialState: refreshedAccount.credentialState
+              }, { statusError: refreshedCenter?.statusError })
+            };
+          },
+          isTerminal: (value) => Boolean(value.presentation && ["ONLINE", "READY", "STOPPED", "NEEDS_SETUP", "NEEDS_ATTENTION", "STATUS_UNAVAILABLE"].includes(value.presentation.state))
+        });
+        if (polled.presentation) {
+          presentation = polled.presentation;
         }
       }
 
@@ -222,15 +270,15 @@ export function ChannelCenterAddAccountDialog({
       await onRefresh();
       onOpenChange(false);
     } catch (saveError) {
+      if (saveError instanceof Error && saveError.name === "AbortError") return;
       const message = saveError instanceof Error ? saveError.message : "The account could not be added.";
       setError(message);
       toast.error("Account setup failed.", { description: message });
     } finally {
+      if (setupControllerRef.current === controller) setupControllerRef.current = null;
       setSaving(false);
     }
   }
-
-  const wait = (durationMs: number) => new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 
   const openControlUi = async () => {
     try {

@@ -91,7 +91,7 @@ export type AgentNodeData = Record<string, unknown> & {
   onRefresh?: () => Promise<void> | void;
   onConnectionMenuOpenChange?: (agentId: string, open: boolean) => void;
   onInspect?: (agentId: string, focus: AgentDetailFocus) => void;
-  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
+  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string, provider?: string) => void;
   onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
 };
 
