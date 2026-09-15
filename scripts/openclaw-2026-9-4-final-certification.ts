@@ -28,6 +28,9 @@ const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
 const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE?.trim();
 const GATEWAY_CLIENT_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE?.trim();
 const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE?.trim();
+const UPSTREAM_EVIDENCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_UPSTREAM_EVIDENCE?.trim() || null;
+const COMPATIBILITY_REPORT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_COMPATIBILITY_REPORT?.trim() || null;
+const CHANNEL_RUNTIME_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_RUNTIME_ACCEPTANCE?.trim() || null;
 const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
 const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
 const FINAL_CERTIFICATION_FILENAME = getOpenClawFinalCertificationFilename(TARGET_VERSION);
@@ -74,6 +77,15 @@ export type OpenClawFinalCertificationReport = {
   artifactType: typeof FINAL_CERTIFICATION_ARTIFACT_TYPE;
   phase: typeof OPENCLAW_FINAL_CERTIFICATION_PHASE;
   generatedAt: string;
+  certifiedAt: string;
+  agentosHead: string;
+  openclawVersion: string;
+  openclawSourceSha: string;
+  upstreamEvidenceHashes: JsonRecord;
+  contractAudit: JsonRecord | null;
+  compatibility: JsonRecord | null;
+  runtimeAcceptance: JsonRecord | null;
+  knownExceptions: string[];
   provenance: {
     repository: string;
     certifiedCodeHead: string;
@@ -123,6 +135,9 @@ async function main() {
     failures.push(`cannot inspect exact OpenClaw package: ${safeError(error)}`);
     return null;
   }) : null;
+  const upstreamEvidence = await readOptionalJson(UPSTREAM_EVIDENCE_INPUT, "upstream evidence", failures);
+  const compatibilityReport = await readOptionalJson(COMPATIBILITY_REPORT_INPUT, "compatibility report", failures);
+  const channelRuntimeAcceptance = await readOptionalJson(CHANNEL_RUNTIME_ACCEPTANCE_INPUT, "channel runtime acceptance", failures);
   if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE is not set");
   if (!GATEWAY_CLIENT_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE is not set");
   if (!GATEWAY_PROTOCOL_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE is not set");
@@ -177,6 +192,9 @@ async function main() {
     artifacts,
     matrix,
     deploymentPin,
+    upstreamEvidence,
+    compatibilityReport,
+    channelRuntimeAcceptance,
     failures,
     repositoryPath: process.cwd()
   });
@@ -197,6 +215,9 @@ export function buildOpenClawFinalCertificationReport(input: {
   artifacts: Record<string, JsonRecord>;
   matrix: Record<string, Record<string, unknown>>;
   deploymentPin: RepositoryDeploymentPin;
+  upstreamEvidence?: JsonRecord | null;
+  compatibilityReport?: JsonRecord | null;
+  channelRuntimeAcceptance?: JsonRecord | null;
   failures: string[];
   repositoryPath?: string;
 }): OpenClawFinalCertificationReport {
@@ -245,15 +266,29 @@ export function buildOpenClawFinalCertificationReport(input: {
     reportFailures.push("The exact OpenClaw source identity is malformed or does not match the verified release commit.");
   }
   const completeTestAssessment = reportFailures.length === 0 && exactPackageMatchesTarget && passedArtifactCount > 0 && passedArtifactCount === Object.keys(input.matrix).length && failedArtifactCount === 0 && unknownOutcomeCount === 0 && !statuses.includes("FAIL") && !statuses.includes("UNKNOWN");
+  const resolvedAgentosHead = resolvedCertifiedCodeHead ?? input.certifiedCodeHead;
+  const knownExceptions = Array.from(new Set([
+    ...readStringArray(input.upstreamEvidence?.knownExceptions),
+    ...readStringArray(input.channelRuntimeAcceptance?.knownExceptions)
+  ]));
 
   return {
     schemaVersion: 2,
     artifactType: FINAL_CERTIFICATION_ARTIFACT_TYPE,
     phase: OPENCLAW_FINAL_CERTIFICATION_PHASE,
     generatedAt: input.generatedAt,
+    certifiedAt: input.generatedAt,
+    agentosHead: resolvedAgentosHead,
+    openclawVersion: TARGET_VERSION,
+    openclawSourceSha: TARGET_COMMIT,
+    upstreamEvidenceHashes: asRecord(input.upstreamEvidence?.hashes),
+    contractAudit: input.artifacts["contract-diff"] ?? null,
+    compatibility: input.compatibilityReport ?? null,
+    runtimeAcceptance: input.channelRuntimeAcceptance ?? null,
+    knownExceptions,
     provenance: {
       repository: "SapienXai/AgentOS",
-      certifiedCodeHead: resolvedCertifiedCodeHead ?? input.certifiedCodeHead,
+      certifiedCodeHead: resolvedAgentosHead,
       evidenceCommit: resolvedEvidenceCommit ?? input.evidenceCommit,
       branch: input.branch,
       node: process.version,
@@ -459,6 +494,7 @@ function assessArtifact(name: string, artifact: JsonRecord) {
 function collectStatusValues(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStatusValues); if (!value || typeof value !== "object") return []; const record = value as JsonRecord; const current = Object.entries(record).filter(([key, entry]) => ["status", "result", "outcome"].includes(key) && typeof entry === "string").map(([, entry]) => entry as string); return [...current, ...Object.values(record).flatMap(collectStatusValues)]; }
 function collectStrings(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStrings); if (typeof value === "string") return [value]; if (!value || typeof value !== "object") return []; return Object.values(value as JsonRecord).flatMap(collectStrings); }
 function asRecord(value: unknown): JsonRecord { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {}; }
+function readStringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim()) : []; }
 function readString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function isGitCommit(value: string | null | undefined): value is string { return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim()); }
 function resolveRepositoryCommit(value: string | null | undefined, repositoryPath = process.cwd()): string | null { if (!isGitCommit(value)) return null; const candidate = value.trim().toLowerCase(); try { const resolved = execFileSync("git", ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().toLowerCase(); return isGitCommit(resolved) && resolved === candidate ? resolved : null; } catch { return null; } }
@@ -492,6 +528,19 @@ async function readExactPackageVersion(packageRoot: string, expectedName: string
 }
 async function gitOutput(args: string[]) { const { execFile } = await import("node:child_process"); return await new Promise<string>((resolve) => execFile("git", args, { cwd: process.cwd(), encoding: "utf8" }, (_error, stdout) => resolve(stdout.trim()))); }
 function safeError(error: unknown) { return error instanceof Error ? error.message : String(error); }
+
+async function readOptionalJson(input: string | null, label: string, failures: string[]) {
+  if (!input) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(await readFile(path.resolve(input), "utf8")) as JsonRecord;
+  } catch (error) {
+    failures.push(`cannot inspect ${label}: ${safeError(error)}`);
+    return null;
+  }
+}
 
 if (process.argv[1]?.endsWith("openclaw-2026-9-4-final-certification.ts")) {
   void main();

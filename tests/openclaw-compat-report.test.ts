@@ -42,6 +42,28 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
 });
 
+test("compatibility report scopes usage cost probes across configured agents", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ]);
+  let usageCostParams: Record<string, unknown> | undefined;
+  gateway.route("usage.cost", (frame, context) => {
+    usageCostParams = frame.params;
+    context.respond({ total: 0, currency: "USD" });
+  });
+
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway),
+    includeLiveShapeChecks: true
+  });
+
+  const usageCost = report.contracts.find((check) => check.operation === "usageCost");
+  assert.deepEqual(usageCostParams, { agentScope: "all" });
+  assert.equal(usageCost?.responseShapeStatus, "valid");
+  assert.equal(usageCost?.status, "ok");
+});
+
 test("compatibility report accepts the OpenClaw 2026.9.1 system-presence array", async () => {
   const gateway = createCompatibilityGateway([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,

@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, CircleCheck, Clock3, Gauge, Import, Layers3, MessageCircle, Plus, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
+import { BellRing, CircleCheck, Clock3, ExternalLink, Gauge, Layers3, LoaderCircle, MessageCircle, PackageOpen, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
 
-import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import { cn } from "@/lib/utils";
 import { buildIntegrationViews, integrationStatusIcons, type IntegrationStatus, type IntegrationView } from "@/components/operations/operations-data";
 import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
@@ -16,17 +15,13 @@ import { formatIntegrationSortLabel, formatIntegrationStatusFilterLabel, formatI
 
 export function IntegrationsPageContent({
   snapshot,
-  rootSnapshot,
   activeWorkspaceId,
   surfaceTheme,
-  refresh,
   setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
-  rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
-  refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const router = useRouter();
@@ -47,10 +42,53 @@ export function IntegrationsPageContent({
       return () => window.cancelAnimationFrame(frame);
     }
   }, []);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
-  const [initialModelProvider, setInitialModelProvider] = useState<AddModelsProviderId | null>(null);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogProjection | null>(null);
+  const [pluginCatalogLoading, setPluginCatalogLoading] = useState(true);
+  const [pluginCatalogError, setPluginCatalogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPluginCatalogLoading(true);
+    setPluginCatalogError(null);
+
+    const query = new URLSearchParams({ pageSize: "100" });
+    if (activeWorkspaceId) {
+      query.set("workspaceId", activeWorkspaceId);
+    }
+    const contextAgentId = snapshot.agents.find((agent) => !activeWorkspaceId || agent.workspaceId === activeWorkspaceId)?.id;
+    if (contextAgentId) {
+      query.set("agentId", contextAgentId);
+    }
+
+    void fetch(`/api/openclaw/capabilities?${query.toString()}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as { pluginCatalog?: PluginCatalogProjection; error?: string } | null;
+        if (!response.ok || !payload?.pluginCatalog) {
+          throw new Error(payload?.error || "The native OpenClaw plugin catalog is unavailable.");
+        }
+        return payload.pluginCatalog;
+      })
+      .then((catalog) => {
+        if (!cancelled) {
+          setPluginCatalog(catalog);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setPluginCatalog(null);
+          setPluginCatalogError(readClientError(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPluginCatalogLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, snapshot.agents]);
   const integrations = useMemo(
     () =>
       baseIntegrations.map((integration) => {
@@ -135,8 +173,8 @@ export function IntegrationsPageContent({
   };
 
   const openModelSetup = (provider: AddModelsProviderId | null = null) => {
-    setInitialModelProvider(provider);
-    setIsAddModelsDialogOpen(true);
+    void provider;
+    router.push("/models");
   };
 
   const handleConfigureIntegration = (integration: IntegrationView) => {
@@ -160,6 +198,24 @@ export function IntegrationsPageContent({
     toast.message("No setup flow is wired for this integration.", {
       description: integration.actionSupport.configure.reason
     });
+  };
+
+  const handleOpenPluginSurface = (entry: PluginCatalogProjection["items"][number]) => {
+    const destination = resolvePluginCatalogDestination(entry);
+    if (destination.href) {
+      router.push(destination.href);
+      return;
+    }
+
+    const controlUiUrl = snapshot.diagnostics.dashboardUrl?.trim();
+    if (!controlUiUrl) {
+      toast.message("OpenClaw Control UI is unavailable.", {
+        description: "OpenClaw did not report a dashboard URL for this capability."
+      });
+      return;
+    }
+
+    window.open(controlUiUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleReconnectIntegration = async (integration: IntegrationView) => {
@@ -304,70 +360,6 @@ export function IntegrationsPageContent({
     }
   };
 
-  const handleDisableIntegration = async (integration: IntegrationView) => {
-    if (!integration.actionSupport.disable.supported) {
-      toast.message("Disable is not available.", {
-        description: integration.actionSupport.disable.reason
-      });
-      return;
-    }
-
-    if (!activeWorkspaceId) {
-      toast.error("Select a workspace before disabling an integration.", {
-        description: "All Workspaces cannot safely remove a workspace-specific binding."
-      });
-      return;
-    }
-
-    if (integration.channelIds.length === 0) {
-      toast.message("No workspace binding found.", {
-        description: "There is no AgentOS workspace integration binding to disconnect."
-      });
-      return;
-    }
-
-    const actionKey = `${integration.id}:disable`;
-    setRunningAction(actionKey);
-
-    try {
-      for (const channelId of integration.channelIds) {
-        const response = await fetch(`/api/workspaces/${encodeURIComponent(activeWorkspaceId)}/channels`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channelId, scope: "workspace" })
-        });
-        const result = await response.json().catch(() => null) as { error?: string } | null;
-
-        if (!response.ok) {
-          throw new Error(result?.error || `Unable to disconnect ${channelId}.`);
-        }
-      }
-
-      await refresh();
-      setRuntimeOverrides((current) => ({
-        ...current,
-        [integration.id]: {
-          status: "disabled",
-          statusLabel: "Disabled",
-          statusTone: "muted",
-          connectionHealth: {
-            label: "Disconnected from workspace",
-            detail: "The workspace integration binding was removed through the channels API."
-          },
-          lastSyncLabel: "Updated just now",
-          sourceMethods: ["/api/workspaces/[workspaceId]/channels DELETE"]
-        }
-      }));
-      toast.success(`${integration.name} disconnected from this workspace.`);
-    } catch (error) {
-      toast.error("Disable failed.", {
-        description: readClientError(error)
-      });
-    } finally {
-      setRunningAction(null);
-    }
-  };
-
   return (
     <>
       <OperationsPageLayout
@@ -376,17 +368,17 @@ export function IntegrationsPageContent({
             <PageHeader
               surfaceTheme={surfaceTheme}
               title="Integrations"
-              subtitle="Connect channels, tools, and external systems to extend AgentOS capabilities and power automations."
+              subtitle="Inspect the native OpenClaw capability catalog, then continue in the canonical surface that owns each capability."
               actions={
                 <>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/channels")}>
                     <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Channels
                   </Button>
-                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => setIsImportDialogOpen(true)}>
-                    <Import className="mr-1.5 h-3.5 w-3.5" /> Import
+                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/models")}>
+                    <Gauge className="mr-1.5 h-3.5 w-3.5" /> Models
                   </Button>
-                  <Button size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => setIsAddDialogOpen(true)}>
-                    <Plus className="mr-1.5 h-3.5 w-3.5" /> Add integration
+                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/accounts")}>
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Accounts
                   </Button>
                 </>
               }
@@ -411,6 +403,13 @@ export function IntegrationsPageContent({
               <StatCard label="Failed" value={String(failedCount)} detail="Real errors only" icon={X} tone="danger" />
               <StatCard label="Automations Using" value="-" detail="Metrics unavailable from snapshot" icon={Workflow} tone="purple" />
             </StatGrid>
+
+            <PluginCatalogPanel
+              catalog={pluginCatalog}
+              loading={pluginCatalogLoading}
+              error={pluginCatalogError}
+              onOpenSurface={handleOpenPluginSurface}
+            />
 
             {filteredIntegrations.length === 0 ? (
               <EmptyState
@@ -453,41 +452,10 @@ export function IntegrationsPageContent({
           <IntegrationInspector
             integration={selectedIntegration}
             actionBusy={runningAction?.startsWith(`${selectedIntegration.id}:`) ?? false}
-            activeWorkspaceId={activeWorkspaceId}
             onConfigure={() => handleConfigureIntegration(selectedIntegration)}
             onReconnect={() => void handleReconnectIntegration(selectedIntegration)}
-            onDisable={() => void handleDisableIntegration(selectedIntegration)}
           />
         ) : null}
-      />
-      <IntegrationAddDialog
-        open={isAddDialogOpen}
-        integrations={integrations}
-        onOpenChange={setIsAddDialogOpen}
-        onSelect={(integration) => {
-          setIsAddDialogOpen(false);
-          handleConfigureIntegration(integration);
-        }}
-      />
-      <IntegrationImportDialog
-        open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
-        onOpenSurfaceSetup={() => {
-          setIsImportDialogOpen(false);
-          openSurfaceSetup(null);
-        }}
-        onOpenModelSetup={() => {
-          setIsImportDialogOpen(false);
-          openModelSetup(null);
-        }}
-      />
-      <AddModelsDialog
-        open={isAddModelsDialogOpen}
-        onOpenChange={setIsAddModelsDialogOpen}
-        snapshot={rootSnapshot}
-        initialProvider={initialModelProvider}
-        onSnapshotChange={setSnapshot}
-        surfaceTheme={surfaceTheme}
       />
     </>
   );
@@ -550,6 +518,7 @@ function IntegrationCard({
                 className="h-7 rounded-[8px] px-2"
                 disabled={actionBusy || !integration.actionSupport.configure.supported}
                 title={integration.actionSupport.configure.reason}
+                aria-label={integration.modelProvider ? `Open ${integration.name} model setup` : `Open ${integration.name} setup`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onConfigure();
@@ -563,6 +532,7 @@ function IntegrationCard({
                 className="h-7 rounded-[8px] px-2"
                 disabled={actionBusy || !integration.actionSupport.reconnect.supported}
                 title={integration.actionSupport.reconnect.reason}
+                aria-label={`Refresh ${integration.name} status`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onReconnect();
@@ -582,22 +552,15 @@ function IntegrationCard({
 function IntegrationInspector({
   integration,
   actionBusy,
-  activeWorkspaceId,
   onConfigure,
-  onReconnect,
-  onDisable
+  onReconnect
 }: {
   integration: IntegrationView;
   actionBusy: boolean;
-  activeWorkspaceId: string | null;
   onConfigure: () => void;
   onReconnect: () => void;
-  onDisable: () => void;
 }) {
   const StatusIcon = integrationStatusIcons[integration.status];
-  const disableReason = activeWorkspaceId
-    ? integration.actionSupport.disable.reason
-    : "Select a workspace before disabling workspace-specific integration bindings.";
   return (
     <InspectorPanelFrame>
       <div className="flex items-start gap-3">
@@ -614,7 +577,7 @@ function IntegrationInspector({
           <p className="mt-2.5 text-xs leading-5 text-foreground/80">{integration.description}</p>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <Button
           variant="secondary"
           size="sm"
@@ -634,16 +597,6 @@ function IntegrationInspector({
           onClick={onConfigure}
         >
           Configure
-        </Button>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="h-8 rounded-[9px] px-2 text-xs"
-          disabled={actionBusy || !integration.actionSupport.disable.supported || !activeWorkspaceId}
-          title={disableReason}
-          onClick={onDisable}
-        >
-          Disable
         </Button>
       </div>
       <SectionCard title="Connection Health" className="mt-3">
@@ -700,7 +653,7 @@ function IntegrationInspector({
           <div className="rounded-[9px] border border-border bg-muted/35 p-2 text-muted-foreground">
             <p>Configure: {integration.actionSupport.configure.reason}</p>
             <p>Reconnect: {integration.actionSupport.reconnect.reason}</p>
-            <p>Disable: {integration.actionSupport.disable.reason}</p>
+            <p>Lifecycle: {integration.surfaceProvider ? "Manage channels in Channels." : integration.modelProvider ? "Manage providers in Models." : "Use the native OpenClaw surface."}</p>
           </div>
         </div>
       </SectionCard>
@@ -746,89 +699,141 @@ function AutomationImpactSummary({ integrations }: { integrations: IntegrationVi
   );
 }
 
-function IntegrationAddDialog({
-  open,
-  integrations,
-  onOpenChange,
-  onSelect
-}: {
-  open: boolean;
-  integrations: IntegrationView[];
-  onOpenChange: (open: boolean) => void;
-  onSelect: (integration: IntegrationView) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl rounded-[18px] p-4">
-        <DialogHeader>
-          <DialogTitle>Add Integration</DialogTitle>
-          <DialogDescription>
-            Choose a real AgentOS/OpenClaw setup path. Unsupported connectors are shown with their blocking reason.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid max-h-[62vh] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-          {integrations.map((integration) => (
-            <button
-              key={integration.id}
-              type="button"
-              onClick={() => onSelect(integration)}
-              className={cn(
-                "rounded-[12px] border p-3 text-left transition hover:bg-muted/60",
-                pageSurface,
-                !integration.actionSupport.configure.supported && "opacity-70"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="truncate text-sm font-semibold text-foreground">{integration.name}</h3>
-                    <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{integration.description}</p>
-                  <p className="mt-2 text-[0.68rem] text-muted-foreground">{integration.actionSupport.configure.reason}</p>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+type PluginCatalogDestination = {
+  label: string;
+  href: "/channels" | "/models" | "/accounts" | "/operations" | null;
+};
+
+export function resolvePluginCatalogDestination(
+  entry: PluginCatalogProjection["items"][number]
+): PluginCatalogDestination {
+  const categories = new Set(entry.catalog.categories.map((category) => category.toLowerCase()));
+  const entryText = [entry.id, entry.catalog.name, entry.catalog.packageName].filter(Boolean).join(" ").toLowerCase();
+
+  if (categories.has("channels") || categories.has("channel") || /telegram|discord|slack|whatsapp|signal|matrix/.test(entryText)) {
+    return { label: "Open Channels", href: "/channels" };
+  }
+
+  if (categories.has("models") || categories.has("model") || categories.has("providers") || /model|ollama|openai|anthropic|gemini/.test(entryText)) {
+    return { label: "Open Models", href: "/models" };
+  }
+
+  if (categories.has("browser") || /browser|playwright|puppeteer/.test(entryText)) {
+    return { label: "Open Browser Accounts", href: "/accounts" };
+  }
+
+  if (categories.has("automations") || categories.has("automation") || categories.has("tasks") || categories.has("cron") || /automation|cron|schedule|task/.test(entryText)) {
+    return { label: "Open Automations", href: "/operations" };
+  }
+
+  return { label: "Open Control UI", href: null };
 }
 
-function IntegrationImportDialog({
-  open,
-  onOpenChange,
-  onOpenSurfaceSetup,
-  onOpenModelSetup
+function pluginCatalogStateTone(state: PluginCatalogProjection["items"][number]["local"]["state"]): "success" | "warning" | "danger" | "muted" {
+  if (state === "enabled") {
+    return "success";
+  }
+
+  if (state === "needs-setup") {
+    return "warning";
+  }
+
+  if (state === "error") {
+    return "danger";
+  }
+
+  return "muted";
+}
+
+function pluginCatalogStateLabel(state: PluginCatalogProjection["items"][number]["local"]["state"]) {
+  return state === "not-installed" ? "Available" : state.replace(/-/g, " ");
+}
+
+function PluginCatalogPanel({
+  catalog,
+  loading,
+  error,
+  onOpenSurface
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onOpenSurfaceSetup: () => void;
-  onOpenModelSetup: () => void;
+  catalog: PluginCatalogProjection | null;
+  loading: boolean;
+  error: string | null;
+  onOpenSurface: (entry: PluginCatalogProjection["items"][number]) => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-[18px] p-4">
-        <DialogHeader>
-          <DialogTitle>Import Integration</DialogTitle>
-          <DialogDescription>
-            Secure bulk import is not available because this codebase does not expose a credential import contract or secret store handoff.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="rounded-[12px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
-          Importing tokens, OAuth secrets, bot credentials, or webhook secrets from the browser would expose sensitive values. Use the existing setup flows so OpenClaw handles credentials through its supported config paths.
+    <SectionCard title="Native OpenClaw capability catalog">
+      <div className="space-y-3 p-3">
+        <p className="text-xs text-muted-foreground">Live catalog metadata and local plugin state. Installation and credential changes stay in OpenClaw.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-border bg-muted/25 p-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <PackageOpen className="h-4 w-4 shrink-0 text-primary" />
+            <p className="text-xs text-foreground/80">Channels, models, automations, browser, and other OpenClaw-owned capabilities.</p>
+          </div>
+          {catalog ? <StatusBadge label={catalog.state} tone={catalog.state === "ready" ? "success" : catalog.state === "degraded" ? "warning" : "danger"} /> : null}
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button className="h-9 rounded-[9px] bg-primary text-white hover:bg-primary/90" onClick={onOpenSurfaceSetup}>
-            Open Integration Setup
-          </Button>
-          <Button variant="secondary" className="h-9 rounded-[9px]" onClick={onOpenModelSetup}>
-            Open Model Setup
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+
+        {loading && !catalog ? (
+          <div className="flex items-center gap-2 rounded-[10px] border border-border bg-muted/25 p-3 text-xs text-muted-foreground">
+            <LoaderCircle className="h-4 w-4 animate-spin" /> Loading the native OpenClaw catalog…
+          </div>
+        ) : null}
+
+        {error && !catalog ? (
+          <div className="rounded-[10px] border border-[hsl(var(--status-danger)/0.24)] bg-[hsl(var(--status-danger)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-danger-foreground))]">
+            <p className="font-medium">Native catalog unavailable</p>
+            <p className="mt-1">{error}</p>
+            <p className="mt-1 text-[hsl(var(--status-danger-foreground)/0.78)]">Refresh this page after checking OpenClaw Gateway diagnostics.</p>
+          </div>
+        ) : null}
+
+        {catalog ? (
+          <>
+            {catalog.remoteError ? (
+              <div className="rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
+                Remote catalog metadata is unavailable; local OpenClaw facts remain visible. {catalog.remoteError}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-1.5">
+              {catalog.categories.slice(0, 8).map((category) => <MiniBadge key={category.slug}>{category.label}</MiniBadge>)}
+              {catalog.categories.length > 8 ? <MiniBadge>+{catalog.categories.length - 8} more categories</MiniBadge> : null}
+            </div>
+            {catalog.items.length > 0 ? (
+              <div className="grid gap-2.5 lg:grid-cols-2">
+                {catalog.items.map((entry) => {
+                  const destination = resolvePluginCatalogDestination(entry);
+                  return (
+                    <div key={entry.id} className="rounded-[10px] border border-border bg-muted/20 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold text-foreground">{entry.catalog.name}</h3>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{entry.catalog.summary || "No summary was provided by OpenClaw."}</p>
+                        </div>
+                        <StatusBadge label={pluginCatalogStateLabel(entry.local.state)} tone={pluginCatalogStateTone(entry.local.state)} />
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {entry.catalog.categories.slice(0, 3).map((category) => <MiniBadge key={`${entry.id}:${category}`}>{category}</MiniBadge>)}
+                        {entry.catalog.official ? <MiniBadge>Official</MiniBadge> : null}
+                      </div>
+                      <p className="mt-2 truncate text-[0.66rem] text-muted-foreground" title={entry.catalog.packageName}>{entry.catalog.packageName || entry.id}</p>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-[0.66rem] text-muted-foreground">{entry.local.present ? "Present locally" : "Catalog only"}</span>
+                        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2.5 text-xs" onClick={() => onOpenSurface(entry)}>
+                          <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> {destination.label}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState title="No catalog entries returned" description="OpenClaw did not return any capability entries for this context." />
+            )}
+            {catalog.failures.length > 0 ? (
+              <p className="text-xs text-muted-foreground">Some catalog operations degraded: {catalog.failures.map((failure) => failure.message).join(" ")}</p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </SectionCard>
   );
 }

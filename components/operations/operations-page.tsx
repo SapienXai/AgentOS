@@ -126,10 +126,8 @@ export function OperationsPage({
         return (
           <IntegrationsPageContent
             snapshot={context.snapshot}
-            rootSnapshot={context.rootSnapshot}
             activeWorkspaceId={context.activeWorkspaceId}
             surfaceTheme={context.surfaceTheme}
-            refresh={context.refresh}
             setSnapshot={context.setSnapshot}
           />
         );

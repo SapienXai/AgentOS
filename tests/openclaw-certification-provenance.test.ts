@@ -67,6 +67,15 @@ test("final certification keeps code, evidence, package, runtime, and production
   assert.equal(report.schemaVersion, 2);
   assert.equal(report.artifactType, "openclaw-2026.9.4-pre-merge-final-certification");
   assert.equal(report.phase, "pre-merge-final-certification");
+  assert.equal(report.certifiedAt, "2026-09-13T10:00:00.000Z");
+  assert.equal(report.agentosHead, repositoryHead);
+  assert.equal(report.openclawVersion, "2026.9.4");
+  assert.equal(report.openclawSourceSha, "3a9d69db306cd7f081e06254cb89c4bcc14a7107");
+  assert.deepEqual(report.upstreamEvidenceHashes, {});
+  assert.equal(report.contractAudit, null);
+  assert.equal(report.compatibility, null);
+  assert.equal(report.runtimeAcceptance, null);
+  assert.deepEqual(report.knownExceptions, []);
   assert.equal(report.provenance.certifiedCodeHead, repositoryHead);
   assert.equal(report.provenance.evidenceCommit, repositoryParent);
   assert.notEqual(report.provenance.certifiedCodeHead, report.provenance.evidenceCommit);

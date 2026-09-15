@@ -148,7 +148,10 @@ const methodProbes: Record<string, ContractProbe> = {
     validate: isObjectRecord
   },
   "usage.cost": {
-    params: {},
+    // OpenClaw 2026.9.4 requires an explicit agent selector when multiple
+    // agents are configured. The aggregate selector is read-only and keeps
+    // this compatibility probe valid for both single- and multi-agent hosts.
+    params: { agentScope: "all" },
     validate: isObjectRecord
   },
   "sessions.usage": {
@@ -168,7 +171,7 @@ const methodProbes: Record<string, ContractProbe> = {
     validate: isObjectRecord
   },
   "memory.search": {
-    params: { query: "__agentos_contract_probe__", maxResults: 1 },
+    params: { agentId: "main", query: "__agentos_contract_probe__", maxResults: 1 },
     validate: (payload) => Array.isArray(readObject(payload)?.results)
   },
   "diagnostics.stability": {
@@ -199,16 +202,12 @@ const methodProbes: Record<string, ContractProbe> = {
     params: { taskId: "__agentos_contract_probe__" },
     validate: isObjectRecord
   },
-  "tasks.history": {
-    params: { taskId: "__agentos_contract_probe__", limit: 1 },
-    validate: (payload) => Array.isArray(readObject(payload)?.messages)
-  },
   "commands.list": {
-    params: {},
+    params: { agentId: "main" },
     validate: (payload) => Array.isArray(readObject(payload)?.commands) || isObjectRecord(payload)
   },
   "tools.catalog": {
-    params: {},
+    params: { agentId: "main" },
     validate: (payload) => {
       const record = readObject(payload);
       return Array.isArray(record?.tools) || Array.isArray(record?.groups);
