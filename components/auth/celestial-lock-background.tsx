@@ -197,42 +197,6 @@ export function CelestialLockBackground() {
       <div className="absolute inset-x-0 bottom-0 h-[32%] bg-[linear-gradient(to_top,rgba(3,7,18,.46),transparent)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_28%,rgba(2,6,18,.18)_72%,rgba(2,6,18,.42)_100%)]" />
       <div aria-hidden="true" className="lockscreen-crt-overlay absolute inset-0" />
-      <motion.div
-        aria-hidden="true"
-        className="lockscreen-crt-sphere absolute h-[clamp(62px,8vw,120px)] w-[clamp(62px,8vw,120px)]"
-        style={{ left: "-8%", top: "18%" }}
-        animate={reduceMotion ? undefined : {
-          left: ["-8%", "24%", "68%", "40%", "-8%"],
-          top: ["18%", "4%", "28%", "72%", "18%"],
-          opacity: [0.08, 0.5, 0.16, 0.38, 0.08],
-          scale: [0.65, 1.1, 0.78, 1, 0.65]
-        }}
-        transition={{ duration: 25, ease: "easeInOut", repeat: Infinity }}
-      />
-      <motion.div
-        aria-hidden="true"
-        className="lockscreen-crt-sphere absolute h-[clamp(96px,12vw,180px)] w-[clamp(96px,12vw,180px)]"
-        style={{ left: "70%", top: "10%" }}
-        animate={reduceMotion ? undefined : {
-          left: ["70%", "46%", "-6%", "28%", "70%"],
-          top: ["10%", "58%", "36%", "-8%", "10%"],
-          opacity: [0.06, 0.34, 0.12, 0.46, 0.06],
-          scale: [0.72, 1.08, 0.82, 1.12, 0.72]
-        }}
-        transition={{ duration: 32, ease: "easeInOut", repeat: Infinity }}
-      />
-      <motion.div
-        aria-hidden="true"
-        className="lockscreen-crt-sphere absolute h-[clamp(140px,18vw,260px)] w-[clamp(140px,18vw,260px)]"
-        style={{ left: "44%", top: "60%" }}
-        animate={reduceMotion ? undefined : {
-          left: ["44%", "76%", "22%", "-10%", "44%"],
-          top: ["60%", "28%", "-10%", "46%", "60%"],
-          opacity: [0.05, 0.26, 0.1, 0.34, 0.05],
-          scale: [0.62, 0.96, 0.74, 1.04, 0.62]
-        }}
-        transition={{ duration: 41, ease: "easeInOut", repeat: Infinity }}
-      />
     </div>
   );
 }

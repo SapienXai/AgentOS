@@ -15,9 +15,12 @@ test("protected login keeps mobile status quiet and content comfortably inset", 
 test("protected login title scales down fluidly on small screens", async () => {
   const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
 
-  assert.match(source, /text-\[clamp\(1\.85rem,8\.5vw,2\.1rem\)\]/);
-  assert.match(source, /sm:text-\[2\.5rem\]/);
-  assert.match(source, /lg:text-\[2\.75rem\]/);
+  assert.match(source, /text-\[clamp\(1\.4rem,5vw,1\.8rem\)\]/);
+  assert.match(source, /sm:text-\[2rem\]/);
+  assert.match(source, /lg:text-\[2\.15rem\]/);
+  assert.match(source, />Control plane locked<\/h1>/);
+  assert.match(source, />Unlock to continue\.<\/p>/);
+  assert.match(source, /Need a reset\? Run[\s\S]*agentos auth reset[\s\S]*<\/p>/);
 });
 
 test("protected login uses Piko while checking instance protection", async () => {
@@ -80,14 +83,11 @@ test("celestial background layers the dark splash video beneath its sky effects"
   assert.match(styles, /filter: brightness\(0\.64\) saturate\(0\.94\)/);
   assert.match(styles, /\.lockscreen-video-wash \{/);
   assert.match(source, /lockscreen-crt-overlay/);
-  assert.match(source, /lockscreen-crt-sphere/);
-  assert.ok((source.match(/className="lockscreen-crt-sphere/g) ?? []).length >= 3);
   assert.match(styles, /\.lockscreen-crt-overlay \{/);
+  assert.match(styles, /\.lockscreen-crt-overlay::before \{/);
   assert.match(styles, /repeating-linear-gradient\(0deg/);
-  assert.match(styles, /\.lockscreen-crt-sphere \{/);
-  assert.match(styles, /mask-image: radial-gradient\(circle at center/);
-  assert.match(styles, /-webkit-mask-image: radial-gradient\(circle at center/);
-  assert.match(source, /opacity: \[0\.08, 0\.5/);
+  assert.match(styles, /animation: lockscreen-crt-scanline 7\.5s linear infinite/);
+  assert.match(styles, /@keyframes lockscreen-crt-scanline/);
 
   const skyGradientIndex = source.indexOf("opacity-[0.22]");
   const videoIndex = source.indexOf("data-lockscreen-splash-video");

@@ -118,9 +118,9 @@ export function ProtectedLogin() {
 
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-6 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
-          <div className="mb-5 -translate-y-5 text-center text-white [text-shadow:0_2px_28px_rgba(2,6,23,.48)] lg:mb-4 lg:translate-y-0">
-            <h1 id="protected-title" className="whitespace-nowrap font-display text-[clamp(1.85rem,8.5vw,2.1rem)] font-semibold leading-none tracking-[-0.06em] sm:text-[2.5rem] lg:text-[2.75rem]">AgentOS is Protected</h1>
-            <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-white/70 sm:text-sm">Unlock the control plane to access AgentOS.</p>
+          <div className="mb-4 -translate-y-4 text-center text-white [text-shadow:0_2px_28px_rgba(2,6,23,.48)] lg:mb-4 lg:translate-y-0">
+            <h1 id="protected-title" className="whitespace-nowrap font-display text-[clamp(1.4rem,5vw,1.8rem)] font-medium leading-tight tracking-[-0.04em] sm:text-[2rem] lg:text-[2.15rem]">Control plane locked</h1>
+            <p className="mx-auto mt-1 max-w-[430px] whitespace-nowrap text-[11px] leading-5 text-white/65 sm:text-xs">Unlock to continue.</p>
           </div>
 
           <Card className="lock-glass-card relative mt-12 rounded-[26px] p-5 pt-16 text-card-foreground lg:mt-0 lg:pt-5">
@@ -173,8 +173,8 @@ export function ProtectedLogin() {
             </CardFooter>
           </Card>
 
-          <div className="mt-3 px-1 text-center text-[10px] leading-4 text-white/70 [text-shadow:0_1px_12px_rgba(2,6,23,.55)]">
-            <p className="lg:whitespace-nowrap">Forgot your credentials? Run <code className="rounded-md border border-white/20 bg-slate-950/20 px-1.5 py-0.5 text-white">agentos auth reset</code> on the machine running AgentOS.</p>
+          <div className="mt-2 px-1 text-center text-[9px] leading-4 text-white/55 [text-shadow:0_1px_12px_rgba(2,6,23,.55)]">
+            <p className="lg:whitespace-nowrap">Need a reset? Run <code className="rounded-md border border-white/20 bg-slate-950/20 px-1.5 py-0.5 text-white/85">agentos auth reset</code>.</p>
           </div>
         </motion.section>
 

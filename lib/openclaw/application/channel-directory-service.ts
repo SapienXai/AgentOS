@@ -10,8 +10,11 @@ import {
   buildChannelRouteIdentity,
   normalizeChannelRouteKind,
   type ChannelRouteAccessPolicy,
-  type ChannelRouteKind
+  type ChannelRouteKind,
+  type ChannelRouteMetadata,
+  type ChannelRouteIdentity
 } from "@/lib/openclaw/domains/channel-center";
+import type { ChannelRouteBindingMatch } from "@/lib/openclaw/application/channel-route-binding-service";
 import type { MissionControlSurfaceProvider, WorkspaceChannelGroupAssignment } from "@/lib/openclaw/types";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
 import { redactErrorMessage } from "@/lib/security/redaction";
@@ -29,10 +32,14 @@ export type ChannelDirectoryEntry = {
   avatarUrl: string | null;
   memberCount: number | null;
   rank: number | null;
+  metadata: ChannelRouteMetadata;
   agentId: string | null;
   bindingSource: "openclaw" | "agentos-compatibility" | null;
-  bindingMatch: "exact" | "fallback" | "none" | "conflict" | null;
+  bindingMatch: ChannelRouteBindingMatch | null;
   bindingConflict: boolean;
+  bindingEditingAmbiguous: boolean;
+  inheritedFrom: ChannelRouteIdentity | null;
+  shadowedBindingCount: number;
   accessPolicy: ChannelRouteAccessPolicy | null;
 };
 
@@ -85,6 +92,13 @@ export async function listChannelPeers(
   options: { timings?: TimingCollector } = {}
 ): Promise<ChannelDirectoryResult> {
   const result = await listDirectoryEntries("peers", input, options);
+  if (result.status === "unsupported") {
+    const configured = await readConfiguredRoutesFromConfig(input, "peers", options.timings);
+    if (configured.status === "ok" || configured.status === "empty") {
+      const resolved = { ...configured, fallbackReason: result.error ?? "OpenClaw directory peers are unsupported for this installed provider." };
+      return input.resolveBindings ? enrichRouteBindings(resolved, input) : resolved;
+    }
+  }
   return input.resolveBindings ? enrichRouteBindings(result, input) : result;
 }
 
@@ -94,17 +108,12 @@ export async function listChannelGroups(
 ): Promise<ChannelDirectoryResult> {
   const result = await listDirectoryEntries("groups", input, options);
 
-  if (result.status !== "unsupported" || input.provider !== "telegram") {
-    return input.resolveBindings ? enrichRouteBindings(result, input) : result;
-  }
-
-  const compatibility = await readTelegramGroupsFromConfig(input, options.timings);
-  if (compatibility.entries.length > 0 || compatibility.status === "empty") {
-    const resolved = {
-      ...compatibility,
-      fallbackReason: result.error ?? "OpenClaw directory groups are unsupported for this installed provider."
-    };
-    return input.resolveBindings ? enrichRouteBindings(resolved, input) : resolved;
+  if (result.status === "unsupported") {
+    const configured = await readConfiguredRoutesFromConfig(input, "groups", options.timings);
+    if (configured.status === "ok" || configured.status === "empty") {
+      const resolved = { ...configured, fallbackReason: result.error ?? "OpenClaw directory groups are unsupported for this installed provider." };
+      return input.resolveBindings ? enrichRouteBindings(resolved, input) : resolved;
+    }
   }
 
   return input.resolveBindings ? enrichRouteBindings(result, input) : result;
@@ -247,39 +256,48 @@ async function listDirectoryEntries(
   }
 }
 
-async function readTelegramGroupsFromConfig(input: ChannelDirectoryListInput, timings?: TimingCollector): Promise<ChannelDirectoryResult> {
+async function readConfiguredRoutesFromConfig(
+  input: ChannelDirectoryListInput,
+  collection: "peers" | "groups",
+  timings?: TimingCollector
+): Promise<ChannelDirectoryResult> {
   const accountId = normalizeAccountId(input.accountId);
   if (!accountId) {
-    return createResult("telegram", null, [], "openclaw-config", "failed", null, "A Telegram account is required to list groups.");
+    return createResult(input.provider, null, [], "openclaw-config", "failed", null, "A channel account is required to list routes.");
   }
 
   try {
     const config = await measureTiming(timings, "telegram-directory.read-group-config", () =>
-      getOpenClawAdapter().getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 })
+      getOpenClawAdapter().getConfig<Record<string, unknown>>(`channels.${input.provider}`, { timeoutMs: 10_000 })
     );
-    const groups = resolveTelegramAccountGroups(config, accountId);
-    const entries = Object.entries(groups)
-      .map(([groupId, rawGroup], index) => normalizeDirectoryEntry(rawGroup, {
-        provider: "telegram",
+    if (!isRecord(config)) {
+      return createResult(input.provider, accountId, [], "openclaw-config", "unsupported", null, null);
+    }
+
+    const entries = configuredRouteValues(config, input.provider, accountId, collection)
+      .map((candidate, index) => normalizeDirectoryEntry(candidate.value, {
+        provider: input.provider,
         accountId,
-        kind: "group",
-        routeId: groupId,
+        kind: candidate.kind,
+        routeId: candidate.routeId,
+        parentRouteId: candidate.parentRouteId,
+        metadata: candidate.metadata,
         rank: index
       }))
       .filter((entry): entry is ChannelDirectoryEntry => Boolean(entry))
       .filter((entry) => matchesQuery(entry, input.query))
       .slice(0, normalizeLimit(input.limit));
 
-    return createResult("telegram", accountId, entries, "openclaw-config", entries.length > 0 ? "ok" : "empty", null, null);
+    return createResult(input.provider, accountId, entries, "openclaw-config", entries.length > 0 ? "ok" : "empty", null, null);
   } catch (error) {
     return createResult(
-      "telegram",
+      input.provider,
       accountId,
       [],
       "openclaw-config",
       "failed",
       null,
-      redactErrorMessage(error, "OpenClaw Telegram group configuration is unavailable.")
+      redactErrorMessage(error, "OpenClaw channel route configuration is unavailable.")
     );
   }
 }
@@ -339,6 +357,180 @@ function extractList(payload: unknown): { items: unknown[]; malformed: boolean }
   return { items: [], malformed: true };
 }
 
+type ConfiguredRouteCandidate = {
+  value: unknown;
+  routeId: string;
+  kind: ChannelRouteKind;
+  parentRouteId: string | null;
+  metadata?: ChannelRouteMetadata;
+};
+
+function configuredRouteValues(
+  config: Record<string, unknown>,
+  provider: MissionControlSurfaceProvider,
+  accountId: string,
+  collection: "peers" | "groups"
+): ConfiguredRouteCandidate[] {
+  const root = resolveConfiguredAccountRoot(config, accountId);
+  const entries: ConfiguredRouteCandidate[] = [];
+
+  if (provider === "discord") {
+    const guilds = isRecord(root.guilds) ? root.guilds : {};
+    for (const [guildId, rawGuild] of Object.entries(guilds)) {
+      if (collection !== "peers") {
+        entries.push({
+          value: rawGuild,
+          routeId: guildId,
+          kind: "group",
+          parentRouteId: null,
+          metadata: { nativeScope: "guild", guildId }
+        });
+        const guild = isRecord(rawGuild) ? rawGuild : {};
+        const channels = isRecord(guild.channels) ? guild.channels : {};
+        for (const [channelId, rawChannel] of Object.entries(channels)) {
+          entries.push({
+            value: rawChannel,
+            routeId: channelId,
+            kind: "channel",
+            parentRouteId: guildId,
+            metadata: { nativePeerKind: "channel", guildId }
+          });
+        }
+        const roles = isRecord(guild.roles) ? guild.roles : {};
+        for (const [roleId, rawRole] of Object.entries(roles)) {
+          entries.push({
+            value: rawRole,
+            routeId: roleId,
+            kind: "role",
+            parentRouteId: guildId,
+            metadata: { nativeScope: "role", guildId }
+          });
+        }
+      }
+    }
+    return entries;
+  }
+
+  if (provider === "slack") {
+    const channels = isRecord(root.channels) ? root.channels : {};
+    if (collection === "groups") {
+      for (const [channelId, rawChannel] of Object.entries(channels)) {
+        const channel = isRecord(rawChannel) ? rawChannel : {};
+        const teamId = normalizeString(channel.teamId);
+        entries.push({
+          value: rawChannel,
+          routeId: channelId,
+          kind: "channel",
+          parentRouteId: teamId,
+          metadata: { nativePeerKind: "channel", ...(teamId ? { teamId } : {}) }
+        });
+      }
+    }
+    return entries;
+  }
+
+  if (provider === "whatsapp") {
+    if (collection === "groups") {
+      const groups = isRecord(root.groups) ? root.groups : {};
+      for (const [groupId, rawGroup] of Object.entries(groups)) {
+        entries.push({ value: rawGroup, routeId: groupId, kind: "group", parentRouteId: null });
+      }
+    } else {
+      const direct = isRecord(root.direct) ? root.direct : {};
+      for (const [peerId, rawPeer] of Object.entries(direct)) {
+        entries.push({ value: rawPeer, routeId: peerId, kind: "dm", parentRouteId: null, metadata: { nativePeerKind: "direct" } });
+      }
+    }
+    return entries;
+  }
+
+  if (provider === "telegram") {
+    if (collection === "groups") {
+      const groups = isRecord(root.groups) ? root.groups : {};
+      for (const [groupId, rawGroup] of Object.entries(groups)) {
+        entries.push({ value: rawGroup, routeId: groupId, kind: "group", parentRouteId: null, metadata: { nativePeerKind: "group" } });
+      }
+    } else {
+      const direct = isRecord(root.dms) ? root.dms : isRecord(root.direct) ? root.direct : {};
+      for (const [peerId, rawPeer] of Object.entries(direct)) {
+        entries.push({ value: rawPeer, routeId: peerId, kind: "dm", parentRouteId: null, metadata: { nativePeerKind: "direct" } });
+      }
+    }
+  }
+
+  return entries;
+}
+
+function resolveConfiguredAccountRoot(config: Record<string, unknown>, accountId: string) {
+  const accounts = isRecord(config.accounts) ? config.accounts : {};
+  const account = isRecord(accounts[accountId]) ? accounts[accountId] : null;
+  return account ?? config;
+}
+
+function normalizeDirectoryRouteKind(value: unknown, fallback: ChannelRouteKind): ChannelRouteKind {
+  const raw = typeof value === "string" ? value.trim().toLowerCase().replace(/[-_ ]+/g, "") : "";
+  if (raw === "guild" || raw === "server" || raw === "workspace" || raw === "team") return "group";
+  if (raw === "textchannel" || raw === "voicechannel" || raw === "forum" || raw === "room") return "channel";
+  if (raw === "direct" || raw === "dm" || raw === "conversation") return "dm";
+  if (raw === "thread" || raw === "topic" || raw === "role" || raw === "channel" || raw === "group" || raw === "peer") {
+    return normalizeChannelRouteKind(raw);
+  }
+  return fallback;
+}
+
+function readEntryMetadata(
+  value: unknown,
+  provider: MissionControlSurfaceProvider,
+  kind: ChannelRouteKind,
+  parentRouteId?: string | null
+): ChannelRouteMetadata {
+  if (!isRecord(value)) return {};
+  const guildId = normalizeString(value.guildId ?? value.guild ?? value.serverId);
+  const teamId = normalizeString(value.teamId ?? value.team ?? value.workspaceId);
+  const peer = isRecord(value.peer) ? value.peer : null;
+  const nativePeerKind = normalizeNativePeerKind(peer?.kind ?? value.nativePeerKind);
+  const roleValues = Array.isArray(value.roleIds)
+    ? value.roleIds
+    : Array.isArray(value.roles)
+      ? value.roles
+      : [];
+  const memberRoleIds = roleValues
+    .map((role) => isRecord(role) ? role.id : role)
+    .map(normalizeString)
+    .filter((role): role is string => Boolean(role));
+  return {
+    ...(nativePeerKind ? { nativePeerKind } : {}),
+    ...(guildId ? { guildId } : {}),
+    ...(teamId ? { teamId } : {}),
+    ...(kind === "thread" ? { parentPeerKind: nativePeerKind ?? (provider === "discord" || provider === "slack" ? "channel" : "group") } : {}),
+    ...(kind === "role" ? { nativeScope: "role" as const } : {}),
+    ...(memberRoleIds.length > 0 ? { memberRoleIds } : {}),
+    ...(parentRouteId && provider === "discord" && kind === "channel" && !guildId ? { guildId: parentRouteId } : {}),
+    ...(parentRouteId && provider === "slack" && kind === "channel" && !teamId ? { teamId: parentRouteId } : {})
+  };
+}
+
+function mergeRouteMetadata(left: ChannelRouteMetadata | undefined, right: ChannelRouteMetadata) {
+  return { ...(left ?? {}), ...right };
+}
+
+function normalizeNativePeerKind(value: unknown): "direct" | "group" | "channel" | null {
+  if (value === "dm") return "direct";
+  return value === "direct" || value === "group" || value === "channel" ? value : null;
+}
+
+function inferParentRouteId(
+  value: unknown,
+  provider: MissionControlSurfaceProvider,
+  kind: ChannelRouteKind
+) {
+  if (!isRecord(value)) return null;
+  if (kind === "thread") return normalizeString(value.parentRouteId ?? value.parentId ?? value.channelId);
+  if (kind === "channel" && provider === "discord") return normalizeString(value.parentRouteId ?? value.parentId ?? value.guildId ?? value.serverId);
+  if (kind === "channel" && provider === "slack") return normalizeString(value.parentRouteId ?? value.parentId ?? value.teamId ?? value.workspaceId);
+  return normalizeString(value.parentRouteId ?? value.parentId);
+}
+
 function normalizeDirectoryEntry(
   value: unknown,
   input: {
@@ -347,6 +539,7 @@ function normalizeDirectoryEntry(
     kind: ChannelRouteKind;
     parentRouteId?: string | null;
     routeId?: string;
+    metadata?: ChannelRouteMetadata;
     rank: number;
   }
 ): ChannelDirectoryEntry | null {
@@ -358,12 +551,16 @@ function normalizeDirectoryEntry(
     return null;
   }
 
+  const kind = normalizeDirectoryRouteKind(value, input.kind);
+  const metadata = mergeRouteMetadata(input.metadata, readEntryMetadata(value, input.provider, kind, input.parentRouteId));
+  const parentRouteId = input.parentRouteId ?? inferParentRouteId(value, input.provider, kind);
   const identity = buildChannelRouteIdentity({
     provider: input.provider,
     accountId: input.accountId,
-    kind: normalizeChannelRouteKind(value.kind ?? value.type ?? input.kind),
+    kind,
     routeId,
-    parentRouteId: input.parentRouteId
+    parentRouteId,
+    metadata
   });
 
   return {
@@ -376,10 +573,14 @@ function normalizeDirectoryEntry(
     avatarUrl: normalizeString(value.avatarUrl ?? value.avatar ?? value.imageUrl),
     memberCount: normalizeNumber(value.memberCount ?? value.membersCount ?? value.member_count),
     rank: input.rank,
+    metadata: identity.metadata ?? {},
     agentId: normalizeString(value.agentId ?? value.agent),
     bindingSource: null,
     bindingMatch: null,
     bindingConflict: false,
+    bindingEditingAmbiguous: false,
+    inheritedFrom: null,
+    shadowedBindingCount: 0,
     accessPolicy: normalizeAccessPolicy(value)
   };
 }
@@ -391,6 +592,7 @@ function normalizeTopicEntry(topicId: string, value: unknown, accountId: string,
     kind: "topic",
     routeId: topicId,
     parentRouteId: groupId,
+    metadata: { nativePeerKind: "group", nativeScope: "peer" },
     rank: 0
   });
   if (!normalized) {
@@ -403,6 +605,9 @@ function normalizeTopicEntry(topicId: string, value: unknown, accountId: string,
     bindingSource: normalized.agentId ? "openclaw" : null,
     bindingMatch: normalized.agentId ? "exact" : null,
     bindingConflict: false,
+    bindingEditingAmbiguous: false,
+    inheritedFrom: null,
+    shadowedBindingCount: 0,
     accessPolicy: isRecord(value) ? normalizeAccessPolicy(value) : normalized.accessPolicy
   };
 }
@@ -435,7 +640,8 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
         accountId: entry.accountId,
         kind: entry.kind,
         routeId: entry.routeId,
-        parentRouteId: entry.parentRouteId
+        parentRouteId: entry.parentRouteId,
+        metadata: entry.metadata
       });
       const legacyAssignment = snapshot.available ? undefined : compatibilityByRouteId.get(entry.routeId);
       const resolution = resolveChannelRouteBinding(
@@ -453,10 +659,13 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
 
       return {
         ...entry,
-        agentId: resolution.match === "conflict" ? null : resolution.agentId ?? entry.agentId,
+        agentId: resolution.agentId ?? entry.agentId,
         bindingSource: resolution.source === "unknown" ? (entry.agentId ? "openclaw" : null) : resolution.source,
         bindingMatch: resolution.match,
-        bindingConflict: Boolean(resolution.conflict)
+        bindingConflict: Boolean(resolution.conflict),
+        bindingEditingAmbiguous: resolution.editingAmbiguity,
+        inheritedFrom: resolution.inheritedFrom,
+        shadowedBindingCount: resolution.shadowedBindings.length
       };
     })
   };

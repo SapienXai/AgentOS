@@ -197,7 +197,10 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
       const bundledInspection = bundledPluginInspections.get(definition.id);
       const inspectedPlugin = bundledInspection?.plugin ?? null;
       const accounts = normalizeChannelConnectAccounts(status, definition.id, configAccounts);
-      const pluginInstalled = Boolean(plugin || inspectedPlugin || definition.bundledPluginId) || accounts.length > 0;
+      // A bundled package id is presentation metadata, not proof that the
+      // runtime plugin is installed. OpenClaw status/plugin inventory or an
+      // existing configured account is the only positive installation signal.
+      const pluginInstalled = Boolean(plugin || inspectedPlugin) || accounts.length > 0;
       const pluginEnabled = Boolean(
         accounts.length > 0
           || plugin?.enabled

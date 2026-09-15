@@ -24,6 +24,10 @@ export type ChannelProviderCapabilities = {
   supportsDirectoryPeers: boolean;
   supportsDirectoryGroups: boolean;
   supportsDirectoryMembers: boolean;
+  supportsDirectoryHierarchy: boolean;
+  supportsThreads: boolean;
+  supportsRoles: boolean;
+  supportsDirectMessages: boolean;
   supportsTopics: boolean;
   supportsGroupPolicy: boolean;
   supportsMentionPolicy: boolean;
@@ -33,10 +37,24 @@ export type ChannelProviderCapabilities = {
   supportsPluginReload: boolean;
 };
 
+export type ChannelProviderState = {
+  availability: "ready" | "not-installed" | "not-configured" | "degraded" | "unknown";
+  pluginInstalled: boolean;
+  pluginEnabled: boolean;
+  configured: boolean;
+  connected: boolean;
+  running: boolean;
+  accountCount: number;
+  accountIds: string[];
+  source: "openclaw-status" | "openclaw-plugin" | "agentos-presentation";
+  error: string | null;
+};
+
 export type ChannelCenterProvider = Omit<ChannelConnectProviderView, "id"> & {
   id: string;
   inventorySource: "openclaw-status" | "openclaw-plugin" | "agentos-presentation";
   capabilities: ChannelProviderCapabilities;
+  state: ChannelProviderState;
 };
 
 export type ChannelCenterSnapshot = Omit<ChannelConnectOverview, "providers"> & {
@@ -53,7 +71,14 @@ export type ChannelCenterSnapshot = Omit<ChannelConnectOverview, "providers"> & 
 export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot> {
   const overview = await getChannelConnectOverview();
   const adapter = getOpenClawAdapter();
-  const [statusResult, pluginsResult, configAccounts, bindingsResult, bindingsSchemaResult, telegramConfigResult] = await Promise.all([
+  const providerIds = Array.from(new Set([
+    "telegram",
+    "discord",
+    "slack",
+    "whatsapp",
+    ...overview.providers.map((provider) => provider.id)
+  ]));
+  const [statusResult, pluginsResult, configAccounts, bindingsResult, bindingsSchemaResult, providerEvidence] = await Promise.all([
     adapter.getChannelStatus({ probe: false, timeoutMs: 8_000 }, { timeoutMs: 12_000 }).then(
       (value) => ({ value, error: null }),
       (error) => ({ value: null, error: redactErrorMessage(error, "OpenClaw channel inventory is unavailable.") })
@@ -67,7 +92,15 @@ export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot>
     adapter.lookupConfigSchema
       ? adapter.lookupConfigSchema({ path: "bindings" }, { timeoutMs: 10_000 }).catch(() => null)
       : Promise.resolve(null),
-    adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 }).catch(() => null)
+    Promise.all(providerIds.map(async (provider) => {
+      const [config, schema] = await Promise.all([
+        adapter.getConfig<Record<string, unknown>>(`channels.${provider}`, { timeoutMs: 10_000 }).catch(() => null),
+        adapter.lookupConfigSchema
+          ? adapter.lookupConfigSchema({ path: `channels.${provider}` }, { timeoutMs: 10_000 }).catch(() => null)
+          : Promise.resolve(null)
+      ]);
+      return [provider, { config, schema }] as const;
+    }))
   ]);
 
   const status = statusResult.value;
@@ -75,7 +108,9 @@ export async function getChannelCenterSnapshot(): Promise<ChannelCenterSnapshot>
   const providers = buildProviderInventory(overview, status, plugins, configAccounts, {
     adapter,
     nativeBindingsAvailable: Array.isArray(bindingsResult) || hasNativeBindingSchema(bindingsSchemaResult),
-    telegramConfig: telegramConfigResult
+    telegramConfig: providerEvidence.find(([provider]) => provider === "telegram")?.[1].config ?? null,
+    providerConfigs: Object.fromEntries(providerEvidence.map(([provider, evidence]) => [provider, evidence.config])),
+    providerSchemas: Object.fromEntries(providerEvidence.map(([provider, evidence]) => [provider, evidence.schema]))
   });
 
   return {
@@ -101,6 +136,8 @@ function buildProviderInventory(
     adapter: ReturnType<typeof getOpenClawAdapter>;
     nativeBindingsAvailable: boolean;
     telegramConfig: Record<string, unknown> | null;
+    providerConfigs?: Record<string, Record<string, unknown> | null>;
+    providerSchemas?: Record<string, unknown>;
   }
 ) {
   const known = new Map<string, ChannelConnectProviderView>(overview.providers.map((provider) => [provider.id, provider]));
@@ -123,7 +160,8 @@ function buildProviderInventory(
           : plugins.some((plugin) => plugin.id === id || plugin.channelIds?.includes(id))
             ? "openclaw-plugin" as const
             : "agentos-presentation" as const,
-        capabilities: inferProviderCapabilities(status, id, plugins, runtime, existing.setupMode)
+        capabilities: inferProviderCapabilities(status, id, plugins, runtime, existing.setupMode),
+        state: buildProviderState(existing, id, status, plugins, configAccounts, runtime)
       };
     }
 
@@ -150,7 +188,15 @@ function buildProviderInventory(
       address: null,
       accounts,
       inventorySource: status?.channelOrder?.includes(id) ? "openclaw-status" as const : "openclaw-plugin" as const,
-      capabilities: inferProviderCapabilities(status, id, plugins, runtime, "external-cli")
+      capabilities: inferProviderCapabilities(status, id, plugins, runtime, "external-cli"),
+      state: buildProviderState({
+        pluginInstalled,
+        pluginEnabled,
+        configured: accounts.some((account) => account.configured),
+        connected: accounts.some((account) => account.connected),
+        running: accounts.some((account) => account.running),
+        pluginStateError: null
+      }, id, status, plugins, configAccounts, runtime)
     };
   }).sort((left, right) => left.label.localeCompare(right.label));
 }
@@ -163,6 +209,8 @@ export function inferProviderCapabilities(
     adapter: ReturnType<typeof getOpenClawAdapter>;
     nativeBindingsAvailable: boolean;
     telegramConfig: Record<string, unknown> | null;
+    providerConfigs?: Record<string, Record<string, unknown> | null>;
+    providerSchemas?: Record<string, unknown>;
   },
   setupMode: ChannelConnectProviderView["setupMode"] = "external-cli"
 ): ChannelProviderCapabilities {
@@ -179,6 +227,10 @@ export function inferProviderCapabilities(
     ...accounts.flatMap((account) => readCapabilityTokens(account))
   ].map(normalizeCapabilityToken));
   const hasDeclared = (name: string) => declared.has(normalizeCapabilityToken(name)) || declared.has(normalizeCapabilityToken(name.replace(/^supports/, "")));
+  const providerConfig = runtime.providerConfigs?.[provider] ?? (provider === "telegram" ? runtime.telegramConfig : null);
+  const providerSchema = runtime.providerSchemas?.[provider] ?? null;
+  const hasSchemaProperty = (name: string) => schemaContainsProperty(providerSchema, name);
+  const hasConfigProperty = (name: string) => isRecord(providerConfig) && Object.prototype.hasOwnProperty.call(providerConfig, name);
   const supportsLifecycle = (operation: "start" | "stop" | "restart" | "logout") => {
     const declaredValue = hasDeclared(`supports${operation[0]!.toUpperCase()}${operation.slice(1)}`);
     if (declaredValue) return true;
@@ -188,24 +240,34 @@ export function inferProviderCapabilities(
     if (operation === "restart") return typeof runtime.adapter.startChannel === "function" && typeof runtime.adapter.stopChannel === "function";
     return typeof runtime.adapter.logoutChannel === "function";
   };
-  const supportsAccounts = accounts.length > 0 || status?.channelAccounts?.[provider] !== undefined;
-  const telegramGroupsConfigured = provider === "telegram" && hasTelegramGroups(runtime.telegramConfig);
+  const runtimeAccountsReported = status?.channelAccounts?.[provider] !== undefined;
+  const telegramRouteEvidence = provider === "telegram" && (hasConfigProperty("groups") || hasConfigProperty("accounts"));
+  const supportsAccounts = hasDeclared("supportsAccounts")
+    || hasSchemaProperty("accounts")
+    || hasConfigProperty("accounts")
+    || (runtimeAccountsReported && (accounts.length > 0 || declared.size > 0));
+  const directoryEvidence = runtimeReported && (hasDeclared("supportsDirectoryGroups") || hasSchemaProperty("groups") || hasSchemaProperty("guilds") || hasSchemaProperty("channels") || telegramRouteEvidence);
+  const directEvidence = runtimeReported && (hasDeclared("supportsDirectMessages") || hasSchemaProperty("direct") || hasSchemaProperty("dm") || hasSchemaProperty("dms"));
 
   return {
     supportsAccounts,
-    supportsMultiAccount: accounts.length > 1,
+    supportsMultiAccount: hasDeclared("supportsMultiAccount") || hasSchemaProperty("accounts") || hasConfigProperty("accounts") || accounts.length > 1,
     supportsStart: supportsLifecycle("start"),
     supportsStop: supportsLifecycle("stop"),
     supportsRestart: supportsLifecycle("restart"),
     supportsLogout: supportsLifecycle("logout"),
     supportsQrLogin: hasDeclared("supportsQrLogin") || setupMode === "qr",
     supportsTokenSetup: hasDeclared("supportsTokenSetup") || setupMode === "bot-token" || setupMode === "app-tokens",
-    supportsDirectoryPeers: hasDeclared("supportsDirectoryPeers") || supportsAccounts,
-    supportsDirectoryGroups: hasDeclared("supportsDirectoryGroups") || telegramGroupsConfigured,
-    supportsDirectoryMembers: hasDeclared("supportsDirectoryMembers") || telegramGroupsConfigured,
-    supportsTopics: hasDeclared("supportsTopics") || telegramGroupsConfigured && hasTelegramTopics(runtime.telegramConfig),
-    supportsGroupPolicy: hasDeclared("supportsGroupPolicy") || telegramGroupsConfigured,
-    supportsMentionPolicy: hasDeclared("supportsMentionPolicy") || telegramGroupsConfigured,
+    supportsDirectoryPeers: hasDeclared("supportsDirectoryPeers") || directEvidence || (runtimeReported && supportsAccounts),
+    supportsDirectoryGroups: hasDeclared("supportsDirectoryGroups") || directoryEvidence,
+    supportsDirectoryMembers: hasDeclared("supportsDirectoryMembers") || runtimeReported && (hasSchemaProperty("users") || hasSchemaProperty("roles")),
+    supportsDirectoryHierarchy: hasDeclared("supportsDirectoryHierarchy") || runtimeReported && (hasSchemaProperty("guilds") || hasSchemaProperty("channels") || hasSchemaProperty("groups")),
+    supportsThreads: hasDeclared("supportsThreads") || runtimeReported && (hasSchemaProperty("thread") || hasSchemaProperty("threadBindings") || hasDeclared("threads")),
+    supportsRoles: hasDeclared("supportsRoles") || provider === "discord" && runtimeReported && hasSchemaProperty("roles"),
+    supportsDirectMessages: hasDeclared("supportsDirectMessages") || directEvidence,
+    supportsTopics: hasDeclared("supportsTopics") || provider === "telegram" && runtimeReported && (schemaContainsProperty(providerSchema, "topics") || hasTelegramTopics(providerConfig)),
+    supportsGroupPolicy: hasDeclared("supportsGroupPolicy") || runtimeReported && (hasSchemaProperty("groupPolicy") || telegramRouteEvidence),
+    supportsMentionPolicy: hasDeclared("supportsMentionPolicy") || runtimeReported && (hasSchemaProperty("requireMention") || telegramRouteEvidence),
     supportsNativeBindings: hasDeclared("supportsNativeBindings") || runtimeReported && runtime.nativeBindingsAvailable,
     supportsPluginInstall: Boolean(plugin?.dependencyStatus?.installed === false),
     supportsPluginDisable: Boolean(plugin),
@@ -223,6 +285,60 @@ function readCapabilityTokens(value: unknown) {
 
 function normalizeCapabilityToken(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function buildProviderState(
+  provider: Pick<ChannelConnectProviderView, "pluginInstalled" | "pluginEnabled" | "configured" | "connected" | "running" | "pluginStateError">,
+  id: string,
+  status: OpenClawChannelStatusPayload | null,
+  plugins: Array<{ id: string; channelIds?: string[] }>,
+  configAccounts: Awaited<ReturnType<typeof readChannelAccounts>>,
+  runtime: { providerConfigs?: Record<string, Record<string, unknown> | null> }
+): ChannelProviderState {
+  const accounts = normalizeChannelConnectAccounts(status, id, configAccounts);
+  const inventorySource = status?.channelOrder?.includes(id) || status?.channelAccounts?.[id] !== undefined
+    ? "openclaw-status" as const
+    : plugins.some((plugin) => plugin.id === id || plugin.channelIds?.includes(id))
+      ? "openclaw-plugin" as const
+      : "agentos-presentation" as const;
+  const configured = provider.configured || accounts.some((account) => account.configured);
+  const connected = provider.connected || accounts.some((account) => account.connected);
+  const running = provider.running || accounts.some((account) => account.running);
+  const availability: ChannelProviderState["availability"] = provider.pluginStateError
+    ? "degraded"
+    : !provider.pluginInstalled
+      ? "not-installed"
+      : !configured
+        ? "not-configured"
+        : status || provider.pluginEnabled
+          ? "ready"
+          : "unknown";
+  const accountIds = accounts.map((account) => account.accountId);
+  if (accountIds.length === 0 && isRecord(runtime.providerConfigs?.[id]?.accounts)) {
+    accountIds.push(...Object.keys(runtime.providerConfigs[id]!.accounts as Record<string, unknown>));
+  }
+  return {
+    availability,
+    pluginInstalled: provider.pluginInstalled,
+    pluginEnabled: provider.pluginEnabled,
+    configured,
+    connected,
+    running,
+    accountCount: accountIds.length,
+    accountIds,
+    source: inventorySource,
+    error: provider.pluginStateError ?? null
+  };
+}
+
+function schemaContainsProperty(value: unknown, propertyName: string, seen = new Set<unknown>()): boolean {
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((entry) => schemaContainsProperty(entry, propertyName, seen));
+  const record = value as Record<string, unknown>;
+  const properties = isRecord(record.properties);
+  if (properties && Object.prototype.hasOwnProperty.call(properties, propertyName)) return true;
+  return Object.values(record).some((entry) => schemaContainsProperty(entry, propertyName, seen));
 }
 
 function hasTelegramGroups(config: Record<string, unknown> | null) {

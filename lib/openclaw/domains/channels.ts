@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { listChannelGroups } from "@/lib/openclaw/application/channel-directory-service";
 import { parseDiscordRouteId, type DiscordRouteId } from "@/lib/openclaw/domains/discord-route";
+import { buildChannelRouteIdentity, serializeRouteToOpenClawBindingMatch } from "@/lib/openclaw/domains/channel-center";
 import { readOpenClawSurfaceAccounts } from "@/lib/openclaw/surface-adapters";
 import { getSurfaceKind } from "@/lib/openclaw/surface-catalog";
-import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
+import type { TimingCollector } from "@/lib/openclaw/timing";
 import { normalizeChannelRegistry, parseWorkspaceChannelSummary } from "@/lib/openclaw/domains/workspace-manifest";
 import type {
   ChannelAccountRecord,
@@ -26,16 +26,9 @@ export function resolveChannelAccountId(account: Pick<ChannelAccountRecord, "id"
 const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
 
-type DiscordGuildConfig = Record<
-  string,
-  {
-    requireMention?: boolean;
-    roles?: unknown;
-    channels?: Record<string, unknown>;
-    name?: string;
-  }
->;
-
+// Legacy parser shape retained only for compatibility diagnostics. It is not
+// used by discoverDiscordRoutes; structured OpenClaw directory/config data is
+// the canonical discovery path.
 type DiscordRouteContext = {
   accountId: string | null;
   guildId: string | null;
@@ -46,29 +39,13 @@ type DiscordRouteContext = {
   threadName: string | null;
 };
 
-export type ManagedDiscordBinding =
-  | {
-      agentId: string;
-      match: {
-        channel: "discord";
-        accountId: string;
-        guildId: string;
-        roles: string[];
-      };
-    }
-  | {
-      agentId: string;
-      match: {
-        channel: "discord";
-        accountId: string;
-        guildId?: string;
-        peer: {
-          kind: "channel" | "thread";
-          id: string;
-        };
-      };
-    }
-  | null;
+export type ManagedDiscordBinding = {
+  agentId: string;
+  match: Record<string, unknown> & {
+    channel: "discord";
+    accountId: string;
+  };
+} | null;
 
 function normalizeOptionalValue(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -221,148 +198,20 @@ export async function discoverTelegramGroups(
 }
 
 export async function discoverDiscordRoutes(accountId?: string | null, timings?: TimingCollector) {
-  const payload = await measureTiming(timings, "discord-discovery.read-channel-logs", () =>
-    readOpenClawChannelLogs("discord", 300)
+  const result = await listChannelGroups(
+    { provider: "discord", accountId, resolveBindings: true },
+    { timings }
   );
-
-  const discovered = new Map<string, DiscoveredSurfaceRoute>();
-
-  const rememberRoute = (route: DiscoveredSurfaceRoute) => {
-    const existing = discovered.get(route.routeId);
-    if (!existing) {
-      discovered.set(route.routeId, route);
-      return;
-    }
-
-    discovered.set(route.routeId, {
-      ...existing,
-      title: route.title ?? existing.title,
-      subtitle: route.subtitle ?? existing.subtitle,
-      lastSeen: selectLatestIsoTimestamp(existing.lastSeen, route.lastSeen),
-      guildId: route.guildId ?? existing.guildId,
-      parentId: route.parentId ?? existing.parentId
-    });
-  };
-
-  for (const route of await readDiscordConfiguredRoutes(timings)) {
-    rememberRoute(route);
-  }
-
-  for (const line of payload?.lines ?? []) {
-    const lineTime = typeof line?.time === "string" ? line.time : null;
-
-    for (const route of extractDiscordRoutesFromUnknown(line, lineTime, accountId)) {
-      rememberRoute(route);
-    }
-
-    if (typeof line?.raw === "string") {
-      try {
-        const parsed = JSON.parse(line.raw);
-        for (const route of extractDiscordRoutesFromUnknown(parsed, lineTime, accountId)) {
-          rememberRoute(route);
-        }
-      } catch {
-        for (const route of extractDiscordRoutesFromText(line.raw, lineTime, accountId)) {
-          rememberRoute(route);
-        }
-      }
-    }
-
-    if (typeof line?.message === "string") {
-      for (const route of extractDiscordRoutesFromText(line.message, lineTime, accountId)) {
-        rememberRoute(route);
-      }
-    }
-  }
-
-  return Array.from(discovered.values()).sort((left, right) => {
-    const leftLabel = left.title ?? left.routeId;
-    const rightLabel = right.title ?? right.routeId;
-    return leftLabel.localeCompare(rightLabel);
-  });
-}
-
-async function readDiscordConfiguredRoutes(timings?: TimingCollector) {
-  try {
-    const guilds = await measureTiming(timings, "discord-discovery.read-config", () =>
-      getOpenClawAdapter().getConfig<DiscordGuildConfig>("channels.discord.guilds")
-    );
-    const routes: DiscoveredSurfaceRoute[] = [];
-
-    for (const [guildId, rawGuild] of Object.entries(guilds ?? {})) {
-      if (!normalizeDiscordId(guildId) || !isObjectRecord(rawGuild)) {
-        continue;
-      }
-
-      const guild = rawGuild as Record<string, unknown>;
-      const guildLabel = normalizeOptionalValue(guild.name as string | null | undefined) ?? guildId;
-      const roleIds = Array.isArray(guild.roles)
-        ? guild.roles
-            .filter((entry) => typeof entry === "string" || typeof entry === "number")
-            .map((entry) => String(entry).trim())
-            .filter((entry) => Boolean(normalizeDiscordId(entry)))
-        : [];
-
-      for (const roleId of roleIds) {
-        routes.push({
-          routeId: encodeDiscordRouteId({
-            kind: "role",
-            guildId,
-            targetId: roleId
-          }),
-          provider: "discord",
-          kind: "role",
-          title: `@${roleId}`,
-          subtitle: guildLabel,
-          lastSeen: null,
-          guildId
-        });
-      }
-
-      const channels = isObjectRecord(guild.channels) ? (guild.channels as Record<string, unknown>) : {};
-      for (const [channelKey, rawChannel] of Object.entries(channels)) {
-        const channelRecord = isObjectRecord(rawChannel) ? (rawChannel as Record<string, unknown>) : {};
-        const channelId =
-          normalizeDiscordId(channelKey) ??
-          normalizeDiscordId(channelRecord.id as string | number | null | undefined);
-
-        if (!channelId) {
-          continue;
-        }
-
-        const label =
-          normalizeOptionalValue(channelRecord.name as string | null | undefined) ??
-          normalizeOptionalValue(channelRecord.label as string | null | undefined) ??
-          `#${channelId}`;
-
-        routes.push({
-          routeId: encodeDiscordRouteId({
-            kind: "channel",
-            guildId,
-            targetId: channelId
-          }),
-          provider: "discord",
-          kind: "channel",
-          title: label,
-          subtitle: guildLabel,
-          lastSeen: null,
-          guildId
-        });
-      }
-    }
-
-    return routes;
-  } catch {
-    return [] as DiscoveredSurfaceRoute[];
-  }
-}
-
-async function readOpenClawChannelLogs(channel: "discord", lines: number) {
-  try {
-    return await getOpenClawAdapter().getChannelLogs({ channel, lines });
-  } catch {
-    return null;
-  }
+  return result.entries.map((entry) => ({
+    routeId: entry.routeId,
+    provider: "discord" as const,
+    kind: entry.kind === "dm" ? "channel" as const : entry.kind,
+    title: entry.title,
+    subtitle: entry.handle,
+    lastSeen: null,
+    guildId: normalizeOptionalValue(entry.metadata.guildId as string | null | undefined),
+    parentId: entry.parentRouteId
+  })).sort((left, right) => (left.title ?? left.routeId).localeCompare(right.title ?? right.routeId));
 }
 
 function isTelegramDiscoveryInput(
@@ -380,33 +229,25 @@ export function buildManagedDiscordBinding(
     return null;
   }
 
-  if (parsed.kind === "role") {
-    if (!parsed.guildId) {
-      return null;
-    }
+  // Compatibility projection only. Thread routes are intentionally not
+  // serialized as peer.kind=thread; OpenClaw resolves them through the parent
+  // channel binding.
+  if (parsed.kind === "thread") return null;
 
-    return {
-      agentId: assignment.agentId,
-      match: {
-        channel: "discord",
-        accountId,
-        guildId: parsed.guildId,
-        roles: [parsed.targetId]
-      }
-    };
-  }
+  const route = buildChannelRouteIdentity({
+    provider: "discord",
+    accountId,
+    kind: parsed.kind === "role" ? "role" : "channel",
+    routeId: parsed.targetId,
+    parentRouteId: parsed.guildId,
+    metadata: parsed.guildId ? { guildId: parsed.guildId, nativePeerKind: "channel" } : undefined
+  });
+  const match = serializeRouteToOpenClawBindingMatch(route);
+  if (!match) return null;
 
   return {
     agentId: assignment.agentId,
-    match: {
-      channel: "discord",
-      accountId,
-      ...(parsed.guildId ? { guildId: parsed.guildId } : {}),
-      peer: {
-        kind: parsed.kind,
-        id: parsed.targetId
-      }
-    }
+    match: { ...match, channel: "discord" as const, accountId }
   };
 }
 

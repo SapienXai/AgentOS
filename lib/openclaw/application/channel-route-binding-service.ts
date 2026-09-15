@@ -9,6 +9,9 @@ import { updateTelegramRoutePolicy } from "@/lib/openclaw/application/channel-ro
 import {
   buildChannelRouteIdentity,
   channelRouteKey,
+  nativePeerKindsMatch,
+  routeNativePeerKind,
+  serializeRouteToOpenClawBindingMatch,
   type ChannelAgentBinding,
   type ChannelRouteIdentity
 } from "@/lib/openclaw/domains/channel-center";
@@ -21,7 +24,30 @@ export type OpenClawNativeRouteBinding = {
   [key: string]: unknown;
 };
 
-export type ChannelRouteBindingMatch = "exact" | "fallback" | "none" | "conflict";
+export type ChannelRouteBindingMatch =
+  | "exact"
+  | "inherited"
+  | "fallback"
+  | "shadowed"
+  | "overlapping"
+  | "ambiguous-edit"
+  | "none"
+  // Kept for compatibility with older API consumers. New effective routing
+  // diagnostics use shadowed/ambiguous-edit instead of runtime conflict.
+  | "conflict";
+
+export type ChannelRouteBindingEffectiveMatch = "exact" | "inherited" | "fallback" | "none";
+
+export type ChannelRouteBindingMatchedBy =
+  | "binding.peer"
+  | "binding.peer.parent"
+  | "binding.peer.wildcard"
+  | "binding.guild+roles"
+  | "binding.guild"
+  | "binding.team"
+  | "binding.account"
+  | "binding.channel"
+  | "default";
 
 export type ChannelRouteBindingConflict = {
   reason: "duplicate-native-binding" | "native-vs-compatibility" | "ambiguous-compatibility";
@@ -35,6 +61,12 @@ export type ChannelRouteBindingResolution = {
   explicitAgentId: string | null;
   source: "openclaw" | "agentos-compatibility" | "unknown";
   match: ChannelRouteBindingMatch;
+  effectiveMatch: ChannelRouteBindingEffectiveMatch;
+  matchedBy: ChannelRouteBindingMatchedBy | null;
+  sourceBinding: OpenClawNativeRouteBinding | null;
+  inheritedFrom: ChannelRouteIdentity | null;
+  shadowedBindings: OpenClawNativeRouteBinding[];
+  editingAmbiguity: boolean;
   conflict: ChannelRouteBindingConflict | null;
 };
 
@@ -111,7 +143,8 @@ export async function setChannelRouteBinding(input: {
       accountId: input.route.accountId,
       groupId: requireParentRouteId(input.route),
       topicId: input.route.routeId,
-      patch: { agentId }
+      patch: { agentId },
+      adapter
     });
 
     return {
@@ -129,6 +162,15 @@ export async function setChannelRouteBinding(input: {
       baseHash: result.baseHash,
       changedPaths: result.changedPaths
     };
+  }
+
+  if (input.route.kind === "thread") {
+    if (agentId === null) {
+      return createNoopMutation(input.route, null);
+    }
+    throw new Error(
+      "OpenClaw routes thread messages through the parent peer binding in this release; direct thread overrides are not supported."
+    );
   }
 
   const currentBindings = await readNativeRouteBindings(adapter);
@@ -226,9 +268,9 @@ export async function migrateLegacyChannelRouteBindings(input: {
     }
 
     const effectiveNative = resolveChannelRouteBinding(candidate.route, currentBindings);
-    if (effectiveNative.match === "conflict") {
+    if (effectiveNative.editingAmbiguity) {
       const nativeAgentIds = currentBindings.entries
-        .filter((entry) => scoreNativeBinding(candidate.route, entry) !== null)
+        .filter((entry) => isRouteCandidate(candidate.route, entry))
         .map((entry) => entry.binding.agentId);
       conflicts.push({
         reason: "duplicate-native-binding",
@@ -369,38 +411,31 @@ export function resolveChannelRouteBinding(
   compatibilityBinding?: ChannelAgentBinding | null
 ): ChannelRouteBindingResolution {
   const entries = Array.isArray(bindings) ? bindings : bindings.entries;
-  const candidates = entries
-    .map((entry) => ({ entry, score: scoreNativeBinding(route, entry) }))
-    .filter((candidate): candidate is { entry: NormalizedNativeRouteBinding; score: number } => candidate.score !== null)
-    .sort((left, right) => right.score - left.score);
+  const resolution = resolveNativeRouteCandidate(route, entries);
 
-  const topScore = candidates[0]?.score ?? null;
-  const top = topScore === null ? [] : candidates.filter((candidate) => candidate.score === topScore).map((candidate) => candidate.entry);
-  const explicit = top.filter((entry) => isExactNativeRouteMatch(route, entry));
+  if (resolution) {
+    const shadowedBindings = resolution.matches
+      .slice(1)
+      .map((candidate) => candidate.binding);
+    const effectiveMatch = resolution.matchedBy === "binding.peer"
+      ? "exact"
+      : resolution.matchedBy === "binding.peer.parent"
+        ? "inherited"
+        : "fallback";
+    const exact = effectiveMatch === "exact";
 
-  if (top.length > 1) {
     return {
       route,
-      agentId: null,
-      explicitAgentId: explicit.length === 1 ? explicit[0]!.binding.agentId : null,
-      source: "unknown",
-      match: "conflict",
-      conflict: {
-        reason: "duplicate-native-binding",
-        route,
-        agentIds: Array.from(new Set(top.map((entry) => entry.binding.agentId)))
-      }
-    };
-  }
-
-  if (top.length === 1) {
-    const selected = top[0]!;
-    return {
-      route,
-      agentId: selected.binding.agentId,
-      explicitAgentId: isExactNativeRouteMatch(route, selected) ? selected.binding.agentId : null,
+      agentId: resolution.selected.binding.agentId,
+      explicitAgentId: exact ? resolution.selected.binding.agentId : null,
       source: "openclaw",
-      match: isExactNativeRouteMatch(route, selected) ? "exact" : "fallback",
+      match: shadowedBindings.length > 0 ? "shadowed" : effectiveMatch,
+      effectiveMatch,
+      matchedBy: resolution.matchedBy,
+      sourceBinding: resolution.selected.binding,
+      inheritedFrom: effectiveMatch === "inherited" ? inheritedRoute(route, resolution.context.parentPeer) : null,
+      shadowedBindings,
+      editingAmbiguity: shadowedBindings.length > 0,
       conflict: null
     };
   }
@@ -412,6 +447,12 @@ export function resolveChannelRouteBinding(
       explicitAgentId: compatibilityBinding.agentId,
       source: "agentos-compatibility",
       match: "exact",
+      effectiveMatch: "exact",
+      matchedBy: null,
+      sourceBinding: null,
+      inheritedFrom: null,
+      shadowedBindings: [],
+      editingAmbiguity: false,
       conflict: null
     };
   }
@@ -422,33 +463,27 @@ export function resolveChannelRouteBinding(
     explicitAgentId: null,
     source: "unknown",
     match: "none",
+    effectiveMatch: "none",
+    matchedBy: null,
+    sourceBinding: null,
+    inheritedFrom: null,
+    shadowedBindings: [],
+    editingAmbiguity: false,
     conflict: null
   };
 }
 
 export function buildNativeRouteBinding(route: ChannelRouteIdentity, agentId: string): OpenClawNativeRouteBinding {
-  const match: Record<string, unknown> = {
-    channel: route.provider,
-    accountId: route.accountId
-  };
-
-  if (route.kind === "role") {
-    match.roles = [route.routeId];
-    if (route.parentRouteId) match.guildId = route.parentRouteId;
-  } else {
-    match.peer = {
-      kind: nativePeerKind(route),
-      id: route.routeId
-    };
-    if (route.parentRouteId && (route.kind === "channel" || route.kind === "thread")) {
-      match.guildId = route.parentRouteId;
-    }
+  const match = serializeRouteToOpenClawBindingMatch(route);
+  if (!match) {
+    throw new Error(
+      `The ${route.provider} ${route.kind} route cannot be represented by an OpenClaw native binding. It follows provider-native inheritance instead.`
+    );
   }
-
   return { agentId, match };
 }
 
-function resolveTelegramTopicBinding(
+async function resolveTelegramTopicBinding(
   route: ChannelRouteIdentity,
   adapter: OpenClawAdapter,
   compatibilityBinding?: ChannelAgentBinding | null
@@ -457,45 +492,82 @@ function resolveTelegramTopicBinding(
     throw new Error("Native topic agent routing is currently supported only for Telegram.");
   }
 
-  return adapter
-    .getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 })
-    .then((config) => {
-      const group = resolveTelegramGroup(config, route.accountId, requireParentRouteId(route));
-      const topics = isRecord(group?.topics) ? group.topics : {};
-      const topic = topics[route.routeId];
-      const agentId = isRecord(topic) ? normalizeAgentId(topic.agentId) : null;
+  const config = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
+  const groupId = requireParentRouteId(route);
+  const group = resolveTelegramGroup(config, route.accountId, groupId);
+  const topics = isRecord(group?.topics) ? group.topics : {};
+  const topic = topics[route.routeId];
+  const agentId = isRecord(topic) ? normalizeAgentId(topic.agentId) : null;
 
-      if (agentId) {
-        return {
-          route,
-          agentId,
-          explicitAgentId: agentId,
-          source: "openclaw" as const,
-          match: "exact" as const,
-          conflict: null
-        };
-      }
+  if (agentId) {
+    return {
+      route,
+      agentId,
+      explicitAgentId: agentId,
+      source: "openclaw",
+      match: "exact",
+      effectiveMatch: "exact",
+      matchedBy: null,
+      sourceBinding: null,
+      inheritedFrom: null,
+      shadowedBindings: [],
+      editingAmbiguity: false,
+      conflict: null
+    };
+  }
 
-      if (compatibilityBinding?.agentId) {
-        return {
-          route,
-          agentId: compatibilityBinding.agentId,
-          explicitAgentId: compatibilityBinding.agentId,
-          source: "agentos-compatibility" as const,
-          match: "exact" as const,
-          conflict: null
-        };
-      }
+  // Telegram topics are provider-native child config. When a topic has no
+  // explicit agentId, the parent group's native binding is still effective.
+  const parentRoute = buildChannelRouteIdentity({
+    provider: route.provider,
+    accountId: route.accountId,
+    kind: "group",
+    routeId: groupId
+  });
+  const parentBindings = await readNativeRouteBindings(adapter);
+  const parentResolution = resolveChannelRouteBinding(parentRoute, parentBindings);
+  if (parentResolution.agentId) {
+    return {
+      ...parentResolution,
+      route,
+      effectiveMatch: "inherited",
+      match: parentResolution.match === "shadowed" ? "shadowed" : "inherited",
+      explicitAgentId: null,
+      inheritedFrom: parentRoute
+    };
+  }
 
-      return {
-        route,
-        agentId: null,
-        explicitAgentId: null,
-        source: "unknown" as const,
-        match: "none" as const,
-        conflict: null
-      };
-    });
+  if (compatibilityBinding?.agentId) {
+    return {
+      route,
+      agentId: compatibilityBinding.agentId,
+      explicitAgentId: compatibilityBinding.agentId,
+      source: "agentos-compatibility",
+      match: "exact",
+      effectiveMatch: "exact",
+      matchedBy: null,
+      sourceBinding: null,
+      inheritedFrom: null,
+      shadowedBindings: [],
+      editingAmbiguity: false,
+      conflict: null
+    };
+  }
+
+  return {
+    route,
+    agentId: null,
+    explicitAgentId: null,
+    source: "unknown",
+    match: "none",
+    effectiveMatch: "none",
+    matchedBy: null,
+    sourceBinding: null,
+    inheritedFrom: null,
+    shadowedBindings: [],
+    editingAmbiguity: false,
+    conflict: null
+  };
 }
 
 function findExactNativeBindings(route: ChannelRouteIdentity, snapshot: { entries: NormalizedNativeRouteBinding[] }) {
@@ -503,54 +575,11 @@ function findExactNativeBindings(route: ChannelRouteIdentity, snapshot: { entrie
 }
 
 function isExactNativeRouteMatch(route: ChannelRouteIdentity, entry: NormalizedNativeRouteBinding) {
-  const score = scoreNativeBinding(route, entry);
-  return score !== null && score >= 120;
-}
-
-function scoreNativeBinding(route: ChannelRouteIdentity, entry: NormalizedNativeRouteBinding) {
-  const match = entry.binding.match;
-  if (normalizeString(match.channel)?.toLowerCase() !== route.provider.toLowerCase()) {
-    return null;
+  const target = serializeRouteToOpenClawBindingMatch(route);
+  if (!target || !bindingMatchIsExact(entry.binding.match, target, route.accountId)) {
+    return false;
   }
-
-  const accountScore = scoreAccountMatch(route.accountId, normalizeString(match.accountId));
-  if (accountScore === null) {
-    return null;
-  }
-
-  if (route.kind === "role") {
-    const roles = normalizeStringArray(match.roles);
-    if (!roles.includes(route.routeId)) {
-      return matchHasNoRoute(match) ? accountScore : null;
-    }
-    if (route.parentRouteId && normalizeString(match.guildId) && normalizeString(match.guildId) !== route.parentRouteId) {
-      return null;
-    }
-    return 120 + accountScore;
-  }
-
-  const peer = isRecord(match.peer) ? match.peer : null;
-  if (peer) {
-    if (normalizeString(peer.kind) !== nativePeerKind(route) || normalizeString(peer.id) !== route.routeId) {
-      return null;
-    }
-    if (route.parentRouteId && normalizeString(match.guildId) && normalizeString(match.guildId) !== route.parentRouteId) {
-      return null;
-    }
-    return 120 + accountScore;
-  }
-
-  return matchHasNoRoute(match) ? accountScore : null;
-}
-
-function matchHasNoRoute(match: Record<string, unknown>) {
-  return !match.peer && !Array.isArray(match.roles);
-}
-
-function scoreAccountMatch(routeAccountId: string, bindingAccountId: string | null) {
-  if (bindingAccountId === "*") return 10;
-  if (bindingAccountId) return bindingAccountId === routeAccountId ? 20 : null;
-  return routeAccountId === "default" ? 10 : null;
+  return true;
 }
 
 type NormalizedNativeRouteBinding = {
@@ -558,8 +587,273 @@ type NormalizedNativeRouteBinding = {
   binding: OpenClawNativeRouteBinding;
 };
 
+type NativePeer = {
+  kind: "direct" | "group" | "channel";
+  id: string;
+};
+
+type NativeRouteContext = {
+  peer: NativePeer | null;
+  parentPeer: NativePeer | null;
+  guildId: string | null;
+  teamId: string | null;
+  memberRoleIds: string[];
+};
+
+type NativeRouteCandidate = {
+  selected: NormalizedNativeRouteBinding;
+  matches: NormalizedNativeRouteBinding[];
+  matchedBy: ChannelRouteBindingMatchedBy;
+  context: NativeRouteContext;
+};
+
+function resolveNativeRouteCandidate(
+  route: ChannelRouteIdentity,
+  entries: NormalizedNativeRouteBinding[]
+): NativeRouteCandidate | null {
+  const context = buildNativeRouteContext(route);
+  const tiers: Array<{
+    matchedBy: Exclude<ChannelRouteBindingMatchedBy, "default">;
+    enabled: boolean;
+    matches: (entry: NormalizedNativeRouteBinding) => boolean;
+  }> = [
+    {
+      matchedBy: "binding.peer",
+      enabled: Boolean(context.peer),
+      matches: (entry) => matchesPeerTier(entry, context.peer, context)
+    },
+    {
+      matchedBy: "binding.peer.parent",
+      enabled: Boolean(context.parentPeer),
+      matches: (entry) => matchesPeerTier(entry, context.parentPeer, context)
+    },
+    {
+      matchedBy: "binding.peer.wildcard",
+      enabled: Boolean(context.peer),
+      matches: (entry) => matchesWildcardPeerTier(entry, context.peer, context)
+    },
+    {
+      matchedBy: "binding.guild+roles",
+      enabled: Boolean(context.guildId && context.memberRoleIds.length > 0),
+      matches: (entry) => matchesGuildRoleTier(entry, context)
+    },
+    {
+      matchedBy: "binding.guild",
+      enabled: Boolean(context.guildId),
+      matches: (entry) => matchesGuildTier(entry, context)
+    },
+    {
+      matchedBy: "binding.team",
+      enabled: Boolean(context.teamId),
+      matches: (entry) => matchesTeamTier(entry, context)
+    },
+    {
+      matchedBy: "binding.account",
+      enabled: true,
+      matches: (entry) => matchesAccountTier(entry, route.accountId, context)
+    },
+    {
+      matchedBy: "binding.channel",
+      enabled: true,
+      matches: (entry) => matchesChannelTier(entry, context)
+    }
+  ];
+
+  for (const tier of tiers) {
+    if (!tier.enabled) continue;
+    const matches = entries.filter(tier.matches);
+    const selected = matches[0];
+    if (selected) {
+      return { selected, matches, matchedBy: tier.matchedBy, context };
+    }
+  }
+
+  return null;
+}
+
+function buildNativeRouteContext(route: ChannelRouteIdentity): NativeRouteContext {
+  const metadata = route.metadata ?? {};
+  const serialized = serializeRouteToOpenClawBindingMatch(route);
+  const peer = readNativePeer(serialized?.peer);
+  const provider = route.provider.toLowerCase();
+  const parentPeer = route.kind === "thread" && route.parentRouteId
+    ? {
+        kind: metadata.parentPeerKind ?? (provider === "discord" || provider === "slack" ? "channel" : "group"),
+        id: route.parentRouteId
+      }
+    : null;
+
+  const guildId = normalizeString(serialized?.guildId) ?? normalizeString(metadata.guildId);
+  const teamId = normalizeString(serialized?.teamId) ?? normalizeString(metadata.teamId);
+  const memberRoleIds = Array.from(new Set([
+    ...(Array.isArray(metadata.memberRoleIds) ? normalizeStringArray(metadata.memberRoleIds) : []),
+    ...(route.kind === "role" ? [route.routeId] : [])
+  ]));
+
+  return { peer, parentPeer, guildId, teamId, memberRoleIds };
+}
+
+function isRouteCandidate(route: ChannelRouteIdentity, entry: NormalizedNativeRouteBinding) {
+  const context = buildNativeRouteContext(route);
+  return [
+    matchesPeerTier(entry, context.peer, context),
+    matchesPeerTier(entry, context.parentPeer, context),
+    matchesWildcardPeerTier(entry, context.peer, context),
+    matchesGuildRoleTier(entry, context),
+    matchesGuildTier(entry, context),
+    matchesTeamTier(entry, context),
+    matchesAccountTier(entry, route.accountId, context),
+    matchesChannelTier(entry, context)
+  ].some(Boolean);
+}
+
+function matchesPeerTier(entry: NormalizedNativeRouteBinding, peer: NativePeer | null, context: NativeRouteContext) {
+  const bindingPeer = readNativePeer(entry.binding.match.peer);
+  if (!peer || !bindingPeer || !nativePeerKindsMatch(bindingPeer.kind, peer.kind) || bindingPeer.id !== peer.id) {
+    return false;
+  }
+  return matchesBindingScope(entry, context, peer);
+}
+
+function matchesWildcardPeerTier(entry: NormalizedNativeRouteBinding, peer: NativePeer | null, context: NativeRouteContext) {
+  const rawPeer = isRecord(entry.binding.match.peer) ? entry.binding.match.peer : null;
+  const kind = rawPeer ? normalizeNativePeerKind(rawPeer.kind) : null;
+  const id = rawPeer ? normalizeString(rawPeer.id) : null;
+  if (!peer || !kind || id !== "*" || !nativePeerKindsMatch(kind, peer.kind)) return false;
+  return matchesBindingScope(entry, context, peer);
+}
+
+function matchesGuildRoleTier(entry: NormalizedNativeRouteBinding, context: NativeRouteContext) {
+  const guildId = normalizeString(entry.binding.match.guildId);
+  const roles = normalizeStringArray(entry.binding.match.roles);
+  if (!context.guildId || !guildId || guildId !== context.guildId || roles.length === 0) return false;
+  return matchesBindingScope(entry, context, context.peer);
+}
+
+function matchesGuildTier(entry: NormalizedNativeRouteBinding, context: NativeRouteContext) {
+  const guildId = normalizeString(entry.binding.match.guildId);
+  if (!context.guildId || !guildId || guildId !== context.guildId || normalizeStringArray(entry.binding.match.roles).length > 0) {
+    return false;
+  }
+  return matchesBindingScope(entry, context, context.peer);
+}
+
+function matchesTeamTier(entry: NormalizedNativeRouteBinding, context: NativeRouteContext) {
+  const teamId = normalizeString(entry.binding.match.teamId);
+  if (!context.teamId || !teamId || teamId !== context.teamId) return false;
+  return matchesBindingScope(entry, context, context.peer);
+}
+
+function matchesAccountTier(entry: NormalizedNativeRouteBinding, accountId: string, context: NativeRouteContext) {
+  const bindingAccount = normalizeAccountPattern(entry.binding.match.accountId);
+  if (bindingAccount === "*") return false;
+  if (bindingAccount !== normalizeAccountPattern(accountId)) return false;
+  return matchesBindingScope(entry, context, context.peer);
+}
+
+function matchesChannelTier(entry: NormalizedNativeRouteBinding, context: NativeRouteContext) {
+  if (normalizeAccountPattern(entry.binding.match.accountId) !== "*") return false;
+  return matchesBindingScope(entry, context, context.peer);
+}
+
+function matchesBindingScope(
+  entry: NormalizedNativeRouteBinding,
+  context: NativeRouteContext,
+  scopePeer: NativePeer | null
+) {
+  const bindingPeer = readNativePeer(entry.binding.match.peer);
+  const rawPeer = isRecord(entry.binding.match.peer) ? entry.binding.match.peer : null;
+  const wildcardKind = rawPeer ? normalizeNativePeerKind(rawPeer.kind) : null;
+  const rawPeerId = rawPeer ? normalizeString(rawPeer.id) : null;
+
+  if (bindingPeer && (!scopePeer || !nativePeerKindsMatch(bindingPeer.kind, scopePeer.kind) || bindingPeer.id !== scopePeer.id)) {
+    return false;
+  }
+  if (rawPeerId === "*" && (!scopePeer || !wildcardKind || !nativePeerKindsMatch(wildcardKind, scopePeer.kind))) {
+    return false;
+  }
+  if (normalizeString(entry.binding.match.guildId) && normalizeString(entry.binding.match.guildId) !== context.guildId) {
+    return false;
+  }
+  if (normalizeString(entry.binding.match.teamId) && normalizeString(entry.binding.match.teamId) !== context.teamId) {
+    return false;
+  }
+  const roles = normalizeStringArray(entry.binding.match.roles);
+  if (roles.length > 0 && !roles.some((role) => context.memberRoleIds.includes(role))) {
+    return false;
+  }
+  return true;
+}
+
+function inheritedRoute(route: ChannelRouteIdentity, parentPeer: NativePeer | null) {
+  if (!parentPeer) return null;
+  const provider = route.provider.toLowerCase();
+  return buildChannelRouteIdentity({
+    provider: route.provider,
+    accountId: route.accountId,
+    kind: parentPeer.kind === "channel" ? "channel" : "group",
+    routeId: parentPeer.id,
+    parentRouteId: provider === "discord"
+      ? route.metadata?.guildId ?? null
+      : provider === "slack"
+        ? route.metadata?.teamId ?? null
+        : null,
+    metadata: {
+      nativePeerKind: parentPeer.kind,
+      ...(route.metadata?.guildId ? { guildId: route.metadata.guildId } : {}),
+      ...(route.metadata?.teamId ? { teamId: route.metadata.teamId } : {})
+    }
+  });
+}
+
+function bindingMatchIsExact(
+  binding: Record<string, unknown>,
+  target: Record<string, unknown>,
+  accountId: string
+) {
+  const supportedKeys = new Set(["channel", "accountId", "peer", "guildId", "teamId", "roles"]);
+  if (Object.keys(binding).some((key) => !supportedKeys.has(key))) return false;
+  if (normalizeString(binding.channel)?.toLowerCase() !== normalizeString(target.channel)?.toLowerCase()) return false;
+  const bindingAccount = normalizeAccountPattern(binding.accountId);
+  if (bindingAccount === "*" || bindingAccount !== normalizeAccountPattern(accountId)) return false;
+
+  const targetPeer = readNativePeer(target.peer);
+  const bindingPeer = readNativePeer(binding.peer);
+  if (Boolean(targetPeer) !== Boolean(bindingPeer)) return false;
+  if (targetPeer && bindingPeer && (!nativePeerKindsMatch(targetPeer.kind, bindingPeer.kind) || targetPeer.id !== bindingPeer.id)) return false;
+
+  for (const field of ["guildId", "teamId"] as const) {
+    if (normalizeString(binding[field]) !== normalizeString(target[field])) return false;
+  }
+
+  const targetRoles = normalizeStringArray(target.roles);
+  const bindingRoles = normalizeStringArray(binding.roles);
+  if (targetRoles.length !== bindingRoles.length || targetRoles.some((role) => !bindingRoles.includes(role))) return false;
+  return true;
+}
+
+function readNativePeer(value: unknown): NativePeer | null {
+  if (!isRecord(value)) return null;
+  const kind = normalizeNativePeerKind(value.kind);
+  const id = normalizeString(value.id);
+  return kind && id && id !== "*" ? { kind, id } : null;
+}
+
+function normalizeNativePeerKind(value: unknown): "direct" | "group" | "channel" | null {
+  if (value === "dm") return "direct";
+  return value === "direct" || value === "group" || value === "channel" ? value : null;
+}
+
+function normalizeAccountPattern(value: unknown) {
+  return (normalizeString(value) ?? "default").toLowerCase();
+}
+
 function normalizeNativeRouteBinding(value: unknown, index: number): NormalizedNativeRouteBinding | null {
   if (!isRecord(value) || value.type === "acp" || !isRecord(value.match)) {
+    return null;
+  }
+
+  if (isRecord(value.match.peer) && !normalizeNativePeerKind(value.match.peer.kind)) {
     return null;
   }
 
@@ -628,10 +922,6 @@ function requireParentRouteId(route: ChannelRouteIdentity) {
   const parent = route.parentRouteId?.trim();
   if (!parent) throw new Error("A Telegram topic requires its parent group route.");
   return parent;
-}
-
-function nativePeerKind(route: ChannelRouteIdentity) {
-  return route.kind === "dm" ? "direct" : route.kind;
 }
 
 function createNoopMutation(route: ChannelRouteIdentity, agentId: string | null): ChannelRouteBindingMutation {

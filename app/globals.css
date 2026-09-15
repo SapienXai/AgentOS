@@ -236,6 +236,27 @@
   opacity: 0.28;
 }
 
+.lockscreen-crt-overlay::before {
+  position: absolute;
+  top: -18%;
+  right: 0;
+  left: 0;
+  height: 18%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.018) 30%,
+    rgb(255 255 255 / 0.11) 50%,
+    rgb(255 255 255 / 0.018) 70%,
+    transparent 100%
+  );
+  content: "";
+  mix-blend-mode: screen;
+  animation: lockscreen-crt-scanline 7.5s linear infinite;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
 .lockscreen-crt-overlay::after {
   position: absolute;
   inset: -3%;
@@ -247,23 +268,24 @@
   pointer-events: none;
 }
 
-.lockscreen-crt-sphere {
-  border-radius: 50%;
-  background-image:
-    radial-gradient(circle, rgb(255 255 255 / 0.96) 0 0.75px, transparent 1.3px),
-    radial-gradient(circle at 29% 24%, rgb(255 255 255 / 0.74) 0%, rgb(255 255 255 / 0.32) 17%, rgb(205 205 205 / 0.16) 42%, rgb(72 72 72 / 0.2) 68%, rgb(8 8 8 / 0.52) 87%, transparent 100%);
-  background-size: 4.5px 4.5px, 100% 100%;
-  background-blend-mode: screen, normal;
-  box-shadow:
-    inset 10px 10px 16px rgb(255 255 255 / 0.18),
-    inset -18px -20px 30px rgb(0 0 0 / 0.46),
-    0 0 24px rgb(255 255 255 / 0.18);
-  filter: blur(0.2px);
-  mask-image: radial-gradient(circle at center, white 0 50%, transparent 72%);
-  -webkit-mask-image: radial-gradient(circle at center, white 0 50%, transparent 72%);
-  mix-blend-mode: screen;
-  opacity: 0.22;
-  pointer-events: none;
+@keyframes lockscreen-crt-scanline {
+  0% {
+    opacity: 0.16;
+    transform: translate3d(0, 0, 0);
+  }
+
+  8% {
+    opacity: 0.72;
+  }
+
+  52% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 0.16;
+    transform: translate3d(0, 700%, 0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -271,8 +293,10 @@
     transform: none;
   }
 
-  .lockscreen-crt-sphere {
-    opacity: 0.16;
+  .lockscreen-crt-overlay::before {
+    animation: none;
+    opacity: 0.12;
+    transform: none;
   }
 }
 

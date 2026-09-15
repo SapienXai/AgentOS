@@ -1,27 +1,35 @@
 import "server-only";
 
-import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
-  combineConfigMutationOutcomes,
   readConfigMutationOutcome,
   type OpenClawConfigMutationOutcome
 } from "@/lib/openclaw/application/config-mutation-result";
+import {
+  buildChannelRouteIdentity,
+  type ChannelRouteIdentity
+} from "@/lib/openclaw/domains/channel-center";
+import type { MissionControlSurfaceProvider } from "@/lib/openclaw/types";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
-export type TelegramRoutePolicyPatch = {
+export type ChannelRoutePolicyPatch = {
   enabled?: boolean | null;
   requireMention?: boolean | null;
   groupPolicy?: "open" | "allowlist" | "disabled" | null;
   allowFrom?: string[] | null;
+  /** Telegram topic agent routing is native topic config, not a binding. */
   agentId?: string | null;
 };
 
-export type TelegramRoutePolicyMutation = {
-  provider: "telegram";
+export type TelegramRoutePolicyPatch = ChannelRoutePolicyPatch;
+
+export type ChannelRoutePolicyMutation = {
+  provider: MissionControlSurfaceProvider;
   accountId: string;
-  groupId: string;
+  route: ChannelRouteIdentity;
+  groupId: string | null;
   topicId: string | null;
-  /** The effective route scope. Individual fields are mutated below this path. */
+  /** The exact native route-scope object that was read and mutated. */
   configPath: string;
   changedFields: string[];
   mutations: OpenClawConfigMutationOutcome[];
@@ -35,142 +43,284 @@ export type TelegramRoutePolicyMutation = {
   changedPaths: string[];
 };
 
+export type TelegramRoutePolicyMutation = ChannelRoutePolicyMutation & {
+  provider: "telegram";
+  groupId: string;
+};
+
+export async function updateChannelRoutePolicy(input: {
+  route: ChannelRouteIdentity;
+  patch: ChannelRoutePolicyPatch;
+  adapter?: OpenClawAdapter;
+}): Promise<ChannelRoutePolicyMutation> {
+  const route = input.route;
+  const accountId = normalizeRequired(route.accountId, "A channel account is required.");
+  const adapter = input.adapter ?? getOpenClawAdapter();
+
+  validateAccountId(accountId);
+  if (route.kind === "thread") {
+    throw new Error(
+      "This route inherits its parent OpenClaw route. Thread-specific policy is not supported by the native channel schema."
+    );
+  }
+  if (route.kind === "role") {
+    throw new Error("Role selectors are routing constraints, not independent route policy scopes.");
+  }
+  if (input.patch.agentId !== undefined && !(route.provider === "telegram" && route.kind === "topic")) {
+    throw new Error("Agent routing is managed through native OpenClaw bindings for this route.");
+  }
+
+  const snapshot = await readProviderConfig(adapter, route.provider);
+  const scope = resolveRoutePolicyScope(snapshot.config, {
+    ...route,
+    accountId
+  });
+  const nextScope = { ...scope.current };
+  const changedFields: string[] = [];
+
+  for (const field of ["enabled", "requireMention", "groupPolicy", "allowFrom", "agentId"] as const) {
+    const requested = input.patch[field];
+    if (requested === undefined) continue;
+
+    const configField = resolveConfigField(field, scope.current);
+    if (!isPolicyFieldSupported(route, field, scope.current)) {
+      throw new Error(`${route.provider} does not expose ${field} for this route scope.`);
+    }
+
+    const normalized = normalizePolicyValue(field, requested);
+    const current = scope.current[configField];
+    if (normalized === null) {
+      if (Object.prototype.hasOwnProperty.call(scope.current, configField)) {
+        delete nextScope[configField];
+        changedFields.push(field);
+      }
+      continue;
+    }
+    if (!sameValue(current, normalized)) {
+      nextScope[configField] = normalized;
+      changedFields.push(field);
+    }
+  }
+
+  if (changedFields.length === 0) {
+    return createNoopMutation(route, scope.configPath);
+  }
+
+  // The native adapter reads the same current path, emits one merge patch,
+  // and checks baseHash before applying. The copied object preserves unknown
+  // provider-owned siblings without rewriting the provider or account.
+  const result = await adapter.setConfig(scope.configPath, nextScope, {
+    strictJson: true,
+    ...(snapshot.baseHash ? { baseHash: snapshot.baseHash } : {}),
+    replacePaths: [scope.configPath],
+    timeoutMs: 15_000
+  });
+  const mutation = readConfigMutationOutcome(result, scope.configPath);
+
+  return {
+    provider: route.provider,
+    accountId,
+    route,
+    groupId: route.kind === "topic" ? route.parentRouteId : route.kind === "group" ? route.routeId : null,
+    topicId: route.kind === "topic" ? route.routeId : null,
+    configPath: scope.configPath,
+    changedFields,
+    mutations: [mutation],
+    applyMode: mutation.applyMode,
+    reloadKind: mutation.reloadKind,
+    restartRequired: mutation.restartRequired,
+    hotReloaded: mutation.hotReloaded,
+    appliedVia: mutation.appliedVia,
+    pending: mutation.pending,
+    baseHash: mutation.baseHash ?? snapshot.baseHash,
+    changedPaths: mutation.changedPaths
+  };
+}
+
 export async function updateTelegramRoutePolicy(input: {
   accountId: string;
   groupId: string;
   topicId?: string | null;
   patch: TelegramRoutePolicyPatch;
+  adapter?: OpenClawAdapter;
 }): Promise<TelegramRoutePolicyMutation> {
   const accountId = normalizeRequired(input.accountId, "A Telegram account is required.");
   const groupId = normalizeRequired(input.groupId, "A Telegram group is required.");
   const topicId = normalizeOptional(input.topicId);
-  validateAccountId(accountId);
-
-  if (!topicId && input.patch.agentId !== undefined) {
-    throw new Error("Telegram group agent routing is managed through native OpenClaw bindings.");
-  }
-
-  const adapter = getOpenClawAdapter();
-  const config = await adapter.getConfig<Record<string, unknown>>("channels.telegram", { timeoutMs: 10_000 });
-  const scope = resolveTelegramGroupsScope(config, accountId);
-  const currentGroup = isRecord(scope.groups[groupId]) ? scope.groups[groupId] : {};
-  const writes: PlannedConfigWrite[] = [];
-
-  if (topicId) {
-    const topics = isRecord(currentGroup.topics) ? currentGroup.topics : {};
-    const currentTopic = isRecord(topics[topicId]) ? topics[topicId] : {};
-    planTopicPatch(currentTopic, input.patch, appendConfigKeyPath(appendConfigKeyPath(scope.configPath, groupId), topicId), writes);
-  } else {
-    planGroupPatch(currentGroup, input.patch, appendConfigKeyPath(scope.configPath, groupId), writes);
-  }
-
-  if (writes.length === 0) {
-    return createNoopMutation({ accountId, groupId, topicId, configPath: scope.configPath });
-  }
-
-  const mutations: OpenClawConfigMutationOutcome[] = [];
-  for (const write of writes) {
-    const result = await adapter.setConfig(write.path, write.value, {
-      strictJson: true,
-      ...(Array.isArray(write.value) ? { replacePaths: [write.path] } : {}),
-      timeoutMs: 15_000
-    });
-    mutations.push(readConfigMutationOutcome(result, write.path));
-  }
-
-  const outcome = combineConfigMutationOutcomes(mutations, scope.configPath);
-  return {
+  const route = buildChannelRouteIdentity({
     provider: "telegram",
     accountId,
+    kind: topicId ? "topic" : "group",
+    routeId: topicId ?? groupId,
+    ...(topicId ? { parentRouteId: groupId } : {})
+  });
+  const result = await updateChannelRoutePolicy({ route, patch: input.patch, adapter: input.adapter });
+  return {
+    ...result,
+    provider: "telegram",
     groupId,
-    topicId,
-    configPath: scope.configPath,
-    changedFields: writes.map((write) => write.field),
-    mutations,
-    ...outcome
+    topicId
   };
 }
 
-type PlannedConfigWrite = {
-  field: string;
-  path: string;
-  value: unknown;
+type ProviderConfigSnapshot = {
+  config: Record<string, unknown>;
+  baseHash: string | null;
 };
 
-function planGroupPatch(
-  current: Record<string, unknown>,
-  patch: TelegramRoutePolicyPatch,
-  groupPath: string,
-  writes: PlannedConfigWrite[]
-) {
-  planValue(current, "enabled", patch.enabled, appendConfigKeyPath(groupPath, "enabled"), writes);
-  planValue(current, "requireMention", patch.requireMention, appendConfigKeyPath(groupPath, "requireMention"), writes);
-  planValue(current, "groupPolicy", patch.groupPolicy, appendConfigKeyPath(groupPath, "groupPolicy"), writes);
-  planValue(current, "groupAllowFrom", patch.allowFrom, appendConfigKeyPath(groupPath, "groupAllowFrom"), writes);
-}
-
-function planTopicPatch(
-  current: Record<string, unknown>,
-  patch: TelegramRoutePolicyPatch,
-  topicPath: string,
-  writes: PlannedConfigWrite[]
-) {
-  planValue(current, "enabled", patch.enabled, appendConfigKeyPath(topicPath, "enabled"), writes);
-  planValue(current, "requireMention", patch.requireMention, appendConfigKeyPath(topicPath, "requireMention"), writes);
-  planValue(current, "groupPolicy", patch.groupPolicy, appendConfigKeyPath(topicPath, "groupPolicy"), writes);
-  planValue(current, "allowFrom", patch.allowFrom, appendConfigKeyPath(topicPath, "allowFrom"), writes);
-  planValue(current, "agentId", patch.agentId, appendConfigKeyPath(topicPath, "agentId"), writes);
-}
-
-function planValue(
-  current: Record<string, unknown>,
-  field: string,
-  value: unknown,
-  path: string,
-  writes: PlannedConfigWrite[]
-) {
-  if (value === undefined) return;
-
-  if (value === null) {
-    if (Object.prototype.hasOwnProperty.call(current, field)) {
-      writes.push({ field, path, value: null });
-    }
-    return;
-  }
-
-  const nextValue = Array.isArray(value)
-    ? value.map((entry) => String(entry).trim()).filter(Boolean)
-    : value;
-  if (!sameValue(current[field], nextValue)) {
-    writes.push({ field, path, value: nextValue });
-  }
-}
-
-function resolveTelegramGroupsScope(config: Record<string, unknown> | null, accountId: string) {
-  const root = isRecord(config) ? config : {};
-  const accounts = isRecord(root.accounts) ? root.accounts : {};
-  const accountConfig = isRecord(accounts[accountId]) ? accounts[accountId] : null;
-  const accountHasGroups = Boolean(accountConfig && Object.prototype.hasOwnProperty.call(accountConfig, "groups"));
-  const shouldWriteAccountScope = accountHasGroups || Boolean(accountConfig && accountId !== "default");
-  const groups = accountHasGroups ? accountConfig?.groups : root.groups;
-
-  return {
-    groups: isRecord(groups) ? groups : {},
-    configPath: shouldWriteAccountScope
-      ? `channels.telegram.accounts[${JSON.stringify(accountId)}].groups`
-      : "channels.telegram.groups"
-  };
-}
-
-function createNoopMutation(input: {
-  accountId: string;
-  groupId: string;
-  topicId: string | null;
+type RoutePolicyScope = {
   configPath: string;
-}): TelegramRoutePolicyMutation {
+  current: Record<string, unknown>;
+};
+
+async function readProviderConfig(
+  adapter: OpenClawAdapter,
+  provider: MissionControlSurfaceProvider
+): Promise<ProviderConfigSnapshot> {
+  if (adapter.getConfigSnapshot) {
+    try {
+      const snapshot = await adapter.getConfigSnapshot({ timeoutMs: 10_000 });
+      const root = isRecord(snapshot.config) ? snapshot.config : {};
+      const channels = isRecord(root.channels) ? root.channels : null;
+      const providerConfig = channels && isRecord(channels[provider])
+        ? channels[provider]
+        : isProviderConfigShape(root)
+          ? root
+          : {};
+      return {
+        config: providerConfig,
+        baseHash: normalizeString(snapshot.hash ?? snapshot.configRevisionHash ?? snapshot.appliedConfigHash)
+      };
+    } catch {
+      // Older/CLI adapters may not expose config.get snapshots. Use their
+      // provider-scoped read without pretending it has an optimistic hash.
+    }
+  }
+
+  const config = await adapter.getConfig<Record<string, unknown>>(`channels.${provider}`, { timeoutMs: 10_000 });
+  return { config: isRecord(config) ? config : {}, baseHash: null };
+}
+
+function resolveRoutePolicyScope(
+  providerConfig: Record<string, unknown>,
+  route: ChannelRouteIdentity
+): RoutePolicyScope {
+  const provider = route.provider.toLowerCase();
+  const accountId = route.accountId;
+  const routeMapKey = provider === "discord"
+    ? "guilds"
+    : provider === "slack"
+      ? "channels"
+      : route.kind === "dm"
+        ? "direct"
+        : "groups";
+  const accounts = isRecord(providerConfig.accounts) ? providerConfig.accounts : {};
+  const accountConfig = isRecord(accounts[accountId]) ? accounts[accountId] : null;
+  const useAccountScope = Boolean(accountConfig && (
+    accountId !== "default"
+      || Object.prototype.hasOwnProperty.call(accountConfig, routeMapKey)
+  ));
+  const root = useAccountScope ? accountConfig ?? {} : providerConfig;
+  const basePath = useAccountScope
+    ? `channels.${provider}.accounts[${JSON.stringify(accountId)}]`
+    : `channels.${provider}`;
+
+  if (route.kind === "topic") {
+    if (provider !== "telegram" || !route.parentRouteId) {
+      throw new Error("Only Telegram topics have a native child policy scope.");
+    }
+    const groupPath = appendConfigKeyPath(appendConfigKeyPath(`${basePath}.groups`, route.parentRouteId), "topics");
+    const topics = nestedRecord(root, ["groups", route.parentRouteId, "topics"]);
+    return {
+      configPath: appendConfigKeyPath(groupPath, route.routeId),
+      current: asRecord(topics[route.routeId])
+    };
+  }
+
+  if (provider === "discord") {
+    if (route.kind === "group") {
+      const path = appendConfigKeyPath(`${basePath}.guilds`, route.routeId);
+      return { configPath: path, current: asRecord(nestedRecord(root, ["guilds"])[route.routeId]) };
+    }
+    if (route.kind === "channel" && route.parentRouteId) {
+      const path = appendConfigKeyPath(
+        appendConfigKeyPath(`${basePath}.guilds`, route.parentRouteId),
+        "channels"
+      );
+      const channelMap = nestedRecord(root, ["guilds", route.parentRouteId, "channels"]);
+      return { configPath: appendConfigKeyPath(path, route.routeId), current: asRecord(channelMap[route.routeId]) };
+    }
+  }
+
+  if (provider === "slack" && route.kind === "channel") {
+    const path = appendConfigKeyPath(`${basePath}.channels`, route.routeId);
+    return { configPath: path, current: asRecord(nestedRecord(root, ["channels"])[route.routeId]) };
+  }
+
+  if ((provider === "telegram" || provider === "whatsapp") && route.kind === "group") {
+    const path = appendConfigKeyPath(`${basePath}.groups`, route.routeId);
+    return { configPath: path, current: asRecord(nestedRecord(root, ["groups"])[route.routeId]) };
+  }
+
+  throw new Error(`${route.provider} does not expose an editable native policy scope for this route.`);
+}
+
+function isPolicyFieldSupported(
+  route: ChannelRouteIdentity,
+  field: keyof ChannelRoutePolicyPatch,
+  current: Record<string, unknown>
+) {
+  const provider = route.provider.toLowerCase();
+  const configField = resolveConfigField(field, current);
+  if (Object.prototype.hasOwnProperty.call(current, configField)) return true;
+  if (field === "agentId") return provider === "telegram" && route.kind === "topic";
+  if (field === "groupPolicy" || field === "allowFrom") {
+    return provider === "telegram" && (route.kind === "group" || route.kind === "topic");
+  }
+  if (field === "requireMention") {
+    return (provider === "telegram" || provider === "whatsapp") && route.kind === "group"
+      || (provider === "discord" && (route.kind === "group" || route.kind === "channel"))
+      || (provider === "slack" && route.kind === "channel")
+      || (provider === "telegram" && route.kind === "topic");
+  }
+  if (field === "enabled") {
+    return (provider === "telegram" && (route.kind === "group" || route.kind === "topic"))
+      || ((provider === "discord" || provider === "slack") && route.kind === "channel");
+  }
+  return false;
+}
+
+function resolveConfigField(
+  field: keyof ChannelRoutePolicyPatch,
+  current: Record<string, unknown>
+) {
+  if (field === "allowFrom" && Object.prototype.hasOwnProperty.call(current, "groupAllowFrom")) {
+    return "groupAllowFrom";
+  }
+  return field;
+}
+
+function normalizePolicyValue(field: keyof ChannelRoutePolicyPatch, value: unknown) {
+  if (value === null) return null;
+  if (field === "allowFrom") {
+    return Array.isArray(value)
+      ? value.map((entry) => String(entry).trim()).filter(Boolean)
+      : [];
+  }
+  if (field === "agentId") {
+    return typeof value === "string" ? value.trim() || null : null;
+  }
+  return value;
+}
+
+function createNoopMutation(route: ChannelRouteIdentity, configPath: string): ChannelRoutePolicyMutation {
   return {
-    provider: "telegram",
-    ...input,
+    provider: route.provider,
+    accountId: route.accountId,
+    route,
+    groupId: route.kind === "group" ? route.routeId : route.parentRouteId,
+    topicId: route.kind === "topic" ? route.routeId : null,
+    configPath,
     changedFields: [],
     mutations: [],
     applyMode: "live",
@@ -182,6 +332,22 @@ function createNoopMutation(input: {
     baseHash: null,
     changedPaths: []
   };
+}
+
+function nestedRecord(root: Record<string, unknown>, keys: string[]) {
+  let value: unknown = root;
+  for (const key of keys) {
+    value = isRecord(value) ? value[key] : null;
+  }
+  return isRecord(value) ? value : {};
+}
+
+function asRecord(value: unknown) {
+  return isRecord(value) ? value : {};
+}
+
+function isProviderConfigShape(value: Record<string, unknown>) {
+  return ["accounts", "groups", "guilds", "channels", "direct", "enabled", "groupPolicy"].some((key) => key in value);
 }
 
 function appendConfigKeyPath(parent: string, key: string) {
@@ -205,12 +371,20 @@ function normalizeOptional(value: string | null | undefined) {
 
 function validateAccountId(accountId: string) {
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(accountId)) {
-    throw new Error("The Telegram account identifier is invalid.");
+    throw new Error("The channel account identifier is invalid.");
   }
 }
 
+function normalizeString(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() || null : null;
+}
+
+export function formatChannelRoutePolicyError(error: unknown) {
+  return redactErrorMessage(error, "OpenClaw channel route policy could not be updated.");
+}
+
 export function formatTelegramRoutePolicyError(error: unknown) {
-  return redactErrorMessage(error, "OpenClaw Telegram route policy could not be updated.");
+  return formatChannelRoutePolicyError(error);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
