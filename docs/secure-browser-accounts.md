@@ -289,8 +289,21 @@ encrypted browser worker for stricter enterprise requirements.
 - Xvfb disables TCP listening. CDP and x11vnc bind to loopback and use
   ephemeral ports.
 - Worker health reveals only readiness.
-- Provider verification uses a bounded private CDP evaluation containing only
-  versioned CSS selectors. Results are reduced to marker state and hostname.
+- Provider verification uses bounded OpenClaw browser snapshots and normalized
+  URL/title/accessibility markers for the native provider. The self-hosted
+  fallback returns only bounded marker state and hostname. AgentOS never reads
+  cookies, storage, credentials, or raw CDP data.
+- Browser action authorization does not trust `actionDescription`, `intent`,
+  prompt text, or model-generated target names. After a successful task-bound
+  snapshot, the policy plugin keeps only sanitized ref metadata in a short-lived
+  process-local observation cache. Before a mutating `act`, submit-like key
+  press/type, or dialog confirmation, it uses OpenClaw's in-process
+  `runtime.gateway.request` to ask the bound profile for a fresh `/snapshot`.
+  The current target id, URL, ref metadata, and page/dialog signals must match
+  the observed snapshot. Missing, changed, stale, or unknown refs fail closed
+  or require the existing approval flow; they are never silently downgraded to
+  ordinary interaction. OpenClaw JavaScript wait predicates, `evaluate`, and
+  browser lifecycle mutations are blocked for account-bound tasks as well.
 - Logs and audits omit URLs, passwords, cookies, tokens, process arguments,
   profile paths, CDP endpoints, and VNC endpoints.
 - Authenticated web content is untrusted and cannot expand account scope,
@@ -460,9 +473,11 @@ documentation describes managed profiles, `profile` selection, `cdpUrl`,
 
 The self-hosted worker is an adapter beside OpenClaw, not a core patch. The
 AgentOS policy plugin is loaded through `plugins.load.paths`; it uses the
-documented `before_tool_call`, `gateway_start`, and `gateway_stop` hooks and
-does not modify OpenClaw core. OpenClaw's built-in browser tool remains the
-execution engine.
+documented `before_tool_call`, `after_tool_call`, `gateway_start`, and
+`gateway_stop` hooks plus the OpenClaw in-process
+`runtime.gateway.request("browser.request", ...)` surface for fresh,
+task-bound snapshot context. It does not modify OpenClaw core. OpenClaw's
+built-in browser tool remains the execution engine.
 
 - [Tool plugins](https://docs.openclaw.ai/plugins/tool-plugins)
 - [Plugin hooks](https://docs.openclaw.ai/plugins/hooks)

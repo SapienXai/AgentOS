@@ -593,7 +593,7 @@ export function AccountsPageContent({
                 <div>
                   <p className="font-semibold text-foreground">Current boundary</p>
                   <p className="mt-1 text-muted-foreground">
-                    Website identity verification remains user-confirmed unless a provider-specific check exists. Agent task dispatch is enabled only when the OpenClaw policy plugin and native Gateway mission dispatch are both available.
+                    GitHub, X, Product Hunt, and Amazon use conservative provider-specific snapshot checks when an authenticated signal is observed. Unknown sites remain pending verification; confirmation alone is not treated as provider verification. Agent task dispatch is enabled only when the OpenClaw policy plugin and native Gateway mission dispatch are both available.
                   </p>
                 </div>
               </div>

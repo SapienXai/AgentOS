@@ -182,7 +182,11 @@ On a new volume, AgentOS creates only the durable OpenClaw Gateway baseline (`ga
   never requests the website password.
 - Secure Browser Account dispatch is enabled only when the AgentOS Browser Policy plugin has started inside OpenClaw, its supervisor-generated loopback heartbeat token is available, and native Gateway mission dispatch is advertised. The adapter binds the trusted task session key, forces the temporary `attachOnly` profile, renews the durable lease through the private AgentOS policy endpoint, enforces domain/action policy, and releases the browser session on terminal paths. CLI fallback and prompt-only profile selection remain blocked.
 - A browser worker crash is reported through the same authenticated loopback policy channel. AgentOS immediately fences active profile leases, expires task bindings, revokes Live View credentials, and shows `recovery_required` instead of waiting for TTL expiry.
-- Stable provider authentication rules are conservative. GitHub currently supports independent marker verification; other websites remain explicitly user-confirmed until a reviewed rule exists.
+- Stable provider authentication rules are conservative. GitHub, X, Product
+  Hunt, and Amazon use registry-backed URL and snapshot markers when the
+  required authenticated signal is actually observed. Unknown or custom sites
+  remain `needs_verification`; user confirmation alone is never promoted to
+  provider verification.
 - The health endpoint intentionally reveals no version, token, path, account, or Gateway detail.
 
 ## Persistence and operations
