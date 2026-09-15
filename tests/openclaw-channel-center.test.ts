@@ -104,3 +104,20 @@ test("runtime-declared capabilities can enable setup without an AgentOS provider
   assert.equal(capabilities.supportsDirectoryGroups, true);
   assert.equal(capabilities.supportsAccounts, true);
 });
+
+test("presentation-only providers do not inherit runtime lifecycle or binding actions", () => {
+  const capabilities = inferProviderCapabilities(
+    null,
+    "telegram",
+    [],
+    runtime(),
+    "bot-token"
+  );
+
+  assert.equal(capabilities.supportsStart, false);
+  assert.equal(capabilities.supportsStop, false);
+  assert.equal(capabilities.supportsRestart, false);
+  assert.equal(capabilities.supportsLogout, false);
+  assert.equal(capabilities.supportsTokenSetup, true);
+  assert.equal(capabilities.supportsNativeBindings, false);
+});

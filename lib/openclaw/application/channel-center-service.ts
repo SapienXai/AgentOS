@@ -168,6 +168,12 @@ export function inferProviderCapabilities(
 ): ChannelProviderCapabilities {
   const accounts = status?.channelAccounts?.[provider] ?? [];
   const plugin = plugins.find((candidate) => candidate.id === provider || candidate.channelIds?.includes(provider));
+  const runtimeReported = Boolean(
+    status?.channelOrder?.includes(provider)
+      || status?.channelAccounts?.[provider] !== undefined
+      || status?.channels?.[provider] !== undefined
+      || plugin
+  );
   const declared = new Set([
     ...readCapabilityTokens(status?.channels?.[provider]),
     ...accounts.flatMap((account) => readCapabilityTokens(account))
@@ -176,6 +182,7 @@ export function inferProviderCapabilities(
   const supportsLifecycle = (operation: "start" | "stop" | "restart" | "logout") => {
     const declaredValue = hasDeclared(`supports${operation[0]!.toUpperCase()}${operation.slice(1)}`);
     if (declaredValue) return true;
+    if (!runtimeReported) return false;
     if (operation === "start") return typeof runtime.adapter.startChannel === "function";
     if (operation === "stop") return typeof runtime.adapter.stopChannel === "function";
     if (operation === "restart") return typeof runtime.adapter.startChannel === "function" && typeof runtime.adapter.stopChannel === "function";
@@ -199,7 +206,7 @@ export function inferProviderCapabilities(
     supportsTopics: hasDeclared("supportsTopics") || telegramGroupsConfigured && hasTelegramTopics(runtime.telegramConfig),
     supportsGroupPolicy: hasDeclared("supportsGroupPolicy") || telegramGroupsConfigured,
     supportsMentionPolicy: hasDeclared("supportsMentionPolicy") || telegramGroupsConfigured,
-    supportsNativeBindings: hasDeclared("supportsNativeBindings") || runtime.nativeBindingsAvailable,
+    supportsNativeBindings: hasDeclared("supportsNativeBindings") || runtimeReported && runtime.nativeBindingsAvailable,
     supportsPluginInstall: Boolean(plugin?.dependencyStatus?.installed === false),
     supportsPluginDisable: Boolean(plugin),
     supportsPluginReload: Boolean(plugin)

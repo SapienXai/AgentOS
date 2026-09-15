@@ -412,7 +412,7 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
     return result;
   }
 
-  let snapshot: Awaited<ReturnType<typeof readNativeRouteBindings>> = { raw: [], entries: [], baseHash: null };
+  let snapshot: Awaited<ReturnType<typeof readNativeRouteBindings>> = { raw: [], entries: [], baseHash: null, available: false };
   try {
     snapshot = await readNativeRouteBindings(getOpenClawAdapter());
   } catch {
@@ -437,7 +437,7 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
         routeId: entry.routeId,
         parentRouteId: entry.parentRouteId
       });
-      const legacyAssignment = compatibilityByRouteId.get(entry.routeId);
+      const legacyAssignment = snapshot.available ? undefined : compatibilityByRouteId.get(entry.routeId);
       const resolution = resolveChannelRouteBinding(
         route,
         snapshot,

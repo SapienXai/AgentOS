@@ -331,21 +331,28 @@ export async function migrateLegacyChannelRouteBindings(input: {
 export async function readNativeRouteBindings(adapter: OpenClawAdapter = getOpenClawAdapter()) {
   let value: unknown = null;
   let baseHash: string | null = null;
+  let available = false;
 
   if (adapter.getConfigSnapshot) {
     try {
       const snapshot = await adapter.getConfigSnapshot({ timeoutMs: 10_000 });
       const config = isRecord(snapshot.config) ? snapshot.config : {};
       const resolved = isRecord(snapshot.resolved) ? snapshot.resolved : {};
-      value = Object.prototype.hasOwnProperty.call(config, "bindings")
-        ? config.bindings
-        : resolved.bindings;
+      if (Object.prototype.hasOwnProperty.call(config, "bindings")) {
+        value = config.bindings;
+        available = true;
+      } else if (Object.prototype.hasOwnProperty.call(resolved, "bindings")) {
+        value = resolved.bindings;
+        available = true;
+      }
       baseHash = normalizeString(snapshot.hash ?? snapshot.configRevisionHash ?? snapshot.appliedConfigHash);
     } catch {
       value = await adapter.getConfig<unknown>("bindings", { timeoutMs: 10_000 });
+      available = value !== null && value !== undefined;
     }
   } else {
     value = await adapter.getConfig<unknown>("bindings", { timeoutMs: 10_000 });
+    available = value !== null && value !== undefined;
   }
 
   const raw = Array.isArray(value) ? value : [];
@@ -353,7 +360,7 @@ export async function readNativeRouteBindings(adapter: OpenClawAdapter = getOpen
     .map((entry, index) => normalizeNativeRouteBinding(entry, index))
     .filter((entry): entry is NormalizedNativeRouteBinding => Boolean(entry));
 
-  return { raw, entries, baseHash };
+  return { raw, entries, baseHash, available };
 }
 
 export function resolveChannelRouteBinding(

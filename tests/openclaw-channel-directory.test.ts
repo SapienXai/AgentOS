@@ -200,3 +200,26 @@ test("Telegram unsupported directory falls back only to account-scoped OpenClaw 
   assert.equal(support.status, "empty");
   assert.deepEqual(support.entries, []);
 });
+
+test("an authored empty native binding list does not resurrect a legacy assignment", async () => {
+  setChannelDirectoryTransportForTesting({
+    source: "openclaw-cli",
+    listPeers: async () => [],
+    listGroups: async () => [{ id: "-1001", name: "Main" }],
+    listGroupMembers: async () => []
+  });
+  setOpenClawAdapterForTesting({
+    getConfigSnapshot: async () => ({ hash: "hash-1", config: { bindings: [] } })
+  } as unknown as OpenClawAdapter);
+
+  const result = await listChannelGroups({
+    provider: "telegram",
+    accountId: "main",
+    resolveBindings: true,
+    compatibilityAssignments: [{ chatId: "-1001", agentId: "legacy-agent", enabled: true }]
+  });
+
+  assert.equal(result.entries[0]?.agentId, null);
+  assert.equal(result.entries[0]?.bindingSource, null);
+  assert.equal(result.entries[0]?.bindingMatch, "none");
+});

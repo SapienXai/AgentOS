@@ -66,7 +66,7 @@ export async function PATCH(request: Request) {
     const message = error instanceof z.ZodError
       ? "The channel route binding request is invalid."
       : formatChannelRouteBindingError(error);
-    const status = error instanceof z.ZodError ? 400 : error instanceof Error && error.name === "ChannelRouteBindingConflictError" ? 409 : 400;
+    const status = error instanceof z.ZodError ? 400 : error instanceof Error && error.name === "ChannelRouteBindingConflictError" ? 409 : 503;
     return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     const message = error instanceof z.ZodError
       ? "The channel route migration request is invalid."
       : formatChannelRouteBindingError(error);
-    return NextResponse.json({ error: message }, { status: error instanceof z.ZodError ? 400 : 400, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: message }, { status: error instanceof z.ZodError ? 400 : 503, headers: { "Cache-Control": "no-store" } });
   }
 }
 
