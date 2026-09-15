@@ -124,19 +124,39 @@ export class NativeOpenClawBrowserProvider implements BrowserProvider {
       return { status: "unknown" as const, verifiedAt: null };
     }
 
-    const tabs = await this.browser.listTabs(profileName);
-    const tab = tabs.find((candidate) => candidate.targetId && isAllowedUrl(candidate.url, input.allowedDomains));
-    if (!tab?.targetId) {
+    const tabs = (await this.browser.listTabs(profileName)).filter((candidate) =>
+      candidate.targetId && isAllowedUrl(candidate.url, input.allowedDomains)
+    );
+    if (tabs.length === 0) {
       return { status: "unknown" as const, verifiedAt: null };
     }
 
-    const snapshot = await this.browser.snapshot(profileName, tab.targetId);
-    const snapshotText = safeSnapshotText(snapshot);
-    const urlText = `${tab.url ?? ""} ${tab.title ?? ""}`;
-    if (hasLoginMarker(rule, `${urlText}\n${snapshotText}`)) {
+    const observations = [];
+    for (const tab of tabs) {
+      try {
+        const snapshot = await this.browser.snapshot(profileName, tab.targetId!);
+        observations.push({
+          tab,
+          snapshotText: safeSnapshotText(snapshot)
+        });
+      } catch {
+        // A failed snapshot is not authentication evidence. Continue so a
+        // second allowed tab can still provide a bounded provider signal.
+      }
+    }
+    if (observations.length === 0) {
+      return { status: "unknown" as const, verifiedAt: null };
+    }
+
+    // Login evidence wins across the whole profile. This avoids selecting an
+    // arbitrary first tab and accidentally reporting an authenticated marker
+    // from one tab while another tab is visibly on a login flow.
+    if (observations.some(({ tab, snapshotText }) =>
+      hasLoginMarker(rule, `${tab.url ?? ""} ${tab.title ?? ""}\n${snapshotText}`)
+    )) {
       return { status: "needs_user_action" as const, verifiedAt: null };
     }
-    if (hasAuthenticatedMarker(rule, snapshotText)) {
+    if (observations.some(({ snapshotText }) => hasAuthenticatedMarker(rule, snapshotText))) {
       return {
         status: "verified" as const,
         verifiedAt: new Date().toISOString()
@@ -221,12 +241,34 @@ function hasLoginMarker(rule: BrowserAuthenticationRule, value: string) {
 }
 
 function safeSnapshotText(value: unknown) {
-  try {
-    const serialized = JSON.stringify(value);
-    return typeof serialized === "string" ? serialized.slice(0, 256_000) : "";
-  } catch {
-    return "";
+  const parts: string[] = [];
+  if (isRecord(value) && typeof value.snapshot === "string") {
+    parts.push(value.snapshot);
   }
+  if (isRecord(value) && isRecord(value.refs)) {
+    for (const [ref, metadata] of Object.entries(value.refs)) {
+      if (!isRecord(metadata)) continue;
+      parts.push(ref, ...readEvidenceFields(metadata));
+    }
+  }
+  if (isRecord(value) && Array.isArray(value.nodes)) {
+    for (const node of value.nodes) {
+      if (!isRecord(node)) continue;
+      parts.push(...readEvidenceFields(node));
+    }
+  }
+  return parts.filter(Boolean).join("\n").slice(0, 256_000);
+}
+
+function readEvidenceFields(value: Record<string, unknown>) {
+  return ["role", "name", "value", "description", "text"]
+    .map((key) => value[key])
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .map((entry) => entry.slice(0, 2_000));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function isAllowedUrl(value: string | null, allowedDomains: string[]) {

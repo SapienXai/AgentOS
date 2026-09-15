@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { evaluateBrowserActionPolicy } from "@/lib/agentos/browser-accounts/action-policy";
+import {
+  evaluateBrowserActionPolicy,
+  type TrustedBrowserActionContext
+} from "@/lib/agentos/browser-accounts/action-policy";
 import { resolveBrowserAuthenticationRule } from "@/lib/agentos/browser-accounts/authentication-rules";
 import { NativeOpenClawBrowserProvider } from "@/lib/agentos/browser-accounts/native-openclaw-provider";
-import {
-  listBrowserServiceDefinitions
-} from "@/lib/agentos/browser-accounts/service-registry";
+import { listBrowserServiceDefinitions } from "@/lib/agentos/browser-accounts/service-registry";
 import type {
   NativeBrowserRequest,
   NativeBrowserRequestPort,
@@ -109,7 +110,13 @@ test("native OpenClaw profiles persist through graceful stop/start without crede
     initialUrl: "https://github.com/dashboard?token=synthetic-secret#otp=synthetic-secret"
   });
   assert.equal(port.profiles.get("acct-github-a1b2c3")?.tabs[0]?.url, "https://github.com/dashboard");
-  port.profiles.get("acct-github-a1b2c3")!.snapshot = { "user-login": "synthetic-user" };
+  port.profiles.get("acct-github-a1b2c3")!.snapshot = {
+    format: "ai",
+    targetId: "target-acct-github-a1b2c3-1",
+    url: "https://github.com/dashboard",
+    snapshot: '- generic "user-login" [ref=e1]',
+    refs: { e1: { role: "generic", name: "user-login" } }
+  };
 
   await provider.stopSession({
     sessionId: firstSession.sessionId,
@@ -129,7 +136,7 @@ test("native OpenClaw profiles persist through graceful stop/start without crede
   assert.equal(verification.status, "verified");
   assert.equal(port.profiles.get("acct-github-a1b2c3")?.running, true);
   const persistedSnapshot = port.profiles.get("acct-github-a1b2c3")?.snapshot as Record<string, unknown>;
-  assert.equal(persistedSnapshot["user-login"], "synthetic-user");
+  assert.equal((persistedSnapshot.refs as Record<string, Record<string, string>>).e1.name, "user-login");
 
   const serializedCalls = JSON.stringify(port.calls);
   assert.doesNotMatch(serializedCalls, /password|cookie|cdpUrl|userDataDir|token=synthetic-secret|otp=synthetic-secret/i);
@@ -192,7 +199,13 @@ test("native authentication does not treat an Amazon sign-in marker as connected
   const provider = new NativeOpenClawBrowserProvider(new NativeOpenClawBrowserService(port));
   await provider.createProfile({ browserProfileId: "acct-amazon-login-check" });
   await provider.startSession({ browserProfileId: "acct-amazon-login-check", initialUrl: "https://www.amazon.com/" });
-  port.profiles.get("acct-amazon-login-check")!.snapshot = { "nav-ya-signin": "Sign in" };
+  port.profiles.get("acct-amazon-login-check")!.snapshot = {
+    format: "ai",
+    targetId: "target-acct-amazon-login-check-1",
+    url: "https://www.amazon.com/",
+    snapshot: '- link "Sign in" [ref=e1]',
+    refs: { e1: { role: "link", name: "Sign in" } }
+  };
 
   const verification = await provider.verifyAuthentication({
     sessionId: "synthetic-session",
@@ -209,6 +222,16 @@ test("capability policy allows ordinary work but fails closed for sensitive and 
     approvalPolicy: "block_sensitive" as const,
     approvalInfrastructureAvailable: true
   };
+  const context = (name: string): TrustedBrowserActionContext => ({
+    targetId: "target-x",
+    url: "https://x.com/home",
+    refs: {
+      e42: { role: "button", name }
+    },
+    pageSignals: [`button ${name}`],
+    dialogMessages: [],
+    semanticSnapshotGeneration: "snapshot-1"
+  });
   assert.equal(evaluateBrowserActionPolicy({
     ...base,
     actionDescription: "Read recent notifications",
@@ -219,30 +242,50 @@ test("capability policy allows ordinary work but fails closed for sensitive and 
     ...base,
     actionDescription: "Click the notifications filter",
     actionKind: "click",
+    action: "act",
+    actionRef: "e42",
+    trustedContext: context("Notifications filter"),
+    observedContext: context("Notifications filter"),
     grantedCapabilities: ["read", "interact"]
   }).decision, "allow");
   assert.equal(evaluateBrowserActionPolicy({
     ...base,
     actionDescription: "Publish this prepared post",
     actionKind: "click",
+    action: "act",
+    actionRef: "e42",
+    trustedContext: context("Post"),
+    observedContext: context("Post"),
     grantedCapabilities: ["read", "interact"]
   }).decision, "block");
   assert.equal(evaluateBrowserActionPolicy({
     ...base,
     actionDescription: "Publish this prepared post",
     actionKind: "click",
+    action: "act",
+    actionRef: "e42",
+    trustedContext: context("Post"),
+    observedContext: context("Post"),
     grantedCapabilities: ["read", "interact", "publish"]
   }).decision, "allow");
   assert.equal(evaluateBrowserActionPolicy({
     ...base,
     actionDescription: "Purchase the selected item",
     actionKind: "click",
+    action: "act",
+    actionRef: "e42",
+    trustedContext: context("Buy now"),
+    observedContext: context("Buy now"),
     grantedCapabilities: ["read", "interact", "transact"]
   }).decision, "require_approval");
   assert.equal(evaluateBrowserActionPolicy({
     ...base,
     actionDescription: "Change the account password",
     actionKind: "click",
+    action: "act",
+    actionRef: "e42",
+    trustedContext: context("Change password"),
+    observedContext: context("Change password"),
     grantedCapabilities: ["read", "interact", "account_admin"]
   }).decision, "block");
   assert.equal(evaluateBrowserActionPolicy({
