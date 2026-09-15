@@ -80,8 +80,14 @@ test("celestial background layers the dark splash video beneath its sky effects"
   assert.match(styles, /filter: brightness\(0\.64\) saturate\(0\.94\)/);
   assert.match(styles, /\.lockscreen-video-wash \{/);
   assert.match(source, /lockscreen-crt-overlay/);
+  assert.match(source, /lockscreen-crt-sphere/);
+  assert.ok((source.match(/className="lockscreen-crt-sphere/g) ?? []).length >= 3);
   assert.match(styles, /\.lockscreen-crt-overlay \{/);
   assert.match(styles, /repeating-linear-gradient\(0deg/);
+  assert.match(styles, /\.lockscreen-crt-sphere \{/);
+  assert.match(styles, /mask-image: radial-gradient\(circle at center/);
+  assert.match(styles, /-webkit-mask-image: radial-gradient\(circle at center/);
+  assert.match(source, /opacity: \[0\.08, 0\.5/);
 
   const skyGradientIndex = source.indexOf("opacity-[0.22]");
   const videoIndex = source.indexOf("data-lockscreen-splash-video");
