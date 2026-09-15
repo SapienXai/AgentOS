@@ -697,6 +697,10 @@ function resolveContractRecovery(
     return `Repair local OpenClaw device access so AgentOS has ${formatScopeList(missingScopes)}, then rerun compatibility checks.`;
   }
 
+  if (epistemicStatus === "unreachable") {
+    return "Restore the OpenClaw Gateway connection and retry.";
+  }
+
   if (epistemicStatus === "certified-version-expectation" || epistemicStatus === "optional-absence" || epistemicStatus === "unknown") {
     return cliFallbackAvailable
       ? `Refresh compatibility against a live Gateway; CLI fallback remains an explicit recovery path for ${label}.`

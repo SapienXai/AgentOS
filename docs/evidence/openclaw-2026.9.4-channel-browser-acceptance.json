@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-channel-browser-acceptance",
+  "generatedAt": "2026-09-15T20:22:39Z",
+  "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
+  "openclawVersion": "2026.9.4",
+  "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "methodology": {
+    "browser": "Playwright Chromium via @playwright/test 1.63.0",
+    "command": "pnpm test:channels:browser",
+    "runtimeBoundary": "page.route test-only HTTP/SSE boundary for AgentOS API responses; real AgentOS pages, components, navigation, polling, route projection, and refresh behavior",
+    "fixtureScope": "telegram-online, telegram-stopped, telegram-setup, discord, and seeded badge-regression scenarios",
+    "productionProvidersMocked": false,
+    "productionFixtureBranch": false,
+    "productionAuthBypass": false,
+    "credentialMutation": false,
+    "realHumanFlow": true,
+    "statefulMutationFixture": true
+  },
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26,
+    "steps": [
+      { "step": 1, "status": "PASS", "result": "Mission Control opened with Key 2 Lab visible" },
+      { "step": 2, "status": "PASS", "result": "Key 2 Lead Agent visible" },
+      { "step": 3, "status": "PASS", "result": "Agent connection menu opened" },
+      { "step": 4, "status": "PASS", "result": "Channels entry selected" },
+      { "step": 5, "status": "PASS", "result": "Agent Connections opened directly" },
+      { "step": 6, "status": "PASS", "result": "Connect channel action visible" },
+      { "step": 7, "status": "PASS", "result": "Telegram selected" },
+      { "step": 8, "status": "PASS", "result": "Existing Telegram account selected" },
+      { "step": 9, "status": "PASS", "result": "Online account state shown" },
+      { "step": 10, "status": "PASS", "result": "Directory loaded automatically" },
+      { "step": 11, "status": "PASS", "result": "Support Group and Reservations Group appeared" },
+      { "step": 12, "status": "PASS", "result": "Connect to Key 2 Lead action visible" },
+      { "step": 13, "status": "PASS", "result": "Support Group selected for Key 2 Lead" },
+      { "step": 14, "status": "PASS", "result": "Native route mutation observed" },
+      { "step": 15, "status": "PASS", "result": "Canonical route verification succeeded" },
+      { "step": 16, "status": "PASS", "result": "Connected state shown" },
+      { "step": 17, "status": "PASS", "result": "Agent Connections closed" },
+      { "step": 18, "status": "PASS", "result": "Telegram badge appeared on Key 2 Lead" },
+      { "step": 19, "status": "PASS", "result": "Telegram badge reopened Agent Connections" },
+      { "step": 20, "status": "PASS", "result": "Telegram context reopened with Support Group" },
+      { "step": 21, "status": "PASS", "result": "Support Group remained connected" },
+      { "step": 22, "status": "PASS", "result": "Channel Center opened" },
+      { "step": 23, "status": "PASS", "result": "Channel Center showed the same Key 2 Lead route" },
+      { "step": 24, "status": "PASS", "result": "Agent flow reopened with the same route" },
+      { "step": 25, "status": "PASS", "result": "Exact native route removed" },
+      { "step": 26, "status": "PASS", "result": "Directory, routes, snapshot, and Telegram badge all reflected removal" }
+    ],
+    "supportingScenarios": {
+      "stoppedRecovery": {
+        "passed": true,
+        "startRequests": 1,
+        "observedStates": ["STOPPED", "STOPPED", "STARTING", "ONLINE"]
+      },
+      "tokenSetup": {
+        "passed": true,
+        "accountSaved": true,
+        "startRequests": 1,
+        "observedStates": ["READY", "STARTING", "ONLINE"],
+        "credentialProjected": false
+      }
+    }
+  },
+  "discordBrowserAcceptance": {
+    "passed": true,
+    "accountState": "ONLINE",
+    "hierarchy": "SapienX Server > #support > #sales",
+    "routeVerified": true,
+    "channelCenterAgrees": true,
+    "threadInheritanceVerified": true,
+    "directThreadBindingControl": false,
+    "removalVerified": true,
+    "canonicalRereadReflectedRemoval": true,
+    "badgeRemovalVerified": true,
+    "channelCenterRemovalVerified": true,
+    "postRemovalThreadResolutionVerified": true,
+    "postRemovalThreadBindingMatch": "none",
+    "directThreadBindingMutations": 0
+  },
+  "badgeAcceptance": {
+    "passed": true,
+    "telegramRoutesForKey2Lead": 2,
+    "discordRoutesForKey2Lead": 1,
+    "defaultAgentOnlyTelegramBadge": false,
+    "providerScopedCounts": true
+  },
+  "crossSurfaceConsistency": {
+    "passed": true,
+    "surfaces": ["Agent Connections", "Channel Center", "Mission Control Agent card"],
+    "mutationPropagation": "PATCH route binding changed the stateful fixture; subsequent directory, agent-routes, Channel Center, snapshot, and badge reads reflected the same state",
+    "removalPropagation": "PATCH agentId=null removed the exact binding from all subsequent reads"
+  },
+  "secretHandling": {
+    "passed": true,
+    "credentialStoredOnlyAtFixtureInput": true,
+    "browserConsoleRedacted": true,
+    "apiResponsesRedacted": true,
+    "visibleBodyRedacted": true,
+    "missionControlSnapshotRedacted": true,
+    "routeProjectionRedacted": true
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "statusCommand": "openclaw channels status --channel telegram --json",
+    "observedState": "configured=false, running=false, lastError=logged out, tokenSource=none",
+    "reason": "No safe Telegram credential or real group target was available. No credential, provider, binding, logout, or live-message mutation was attempted."
+  }
+}

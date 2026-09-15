@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.9.4-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-09-15T13:27:45.268Z",
-  "certifiedAt": "2026-09-15T13:27:45.268Z",
-  "agentosHead": "d6baafe08594b2f108e01e9ee9c9da18fc7a75b2",
+  "generatedAt": "2026-09-15T20:24:21.527Z",
+  "certifiedAt": "2026-09-15T20:24:21.527Z",
+  "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
   "openclawVersion": "2026.9.4",
   "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
   "upstreamEvidenceHashes": {
@@ -15,10 +15,10 @@
   "contractAudit": {
     "schemaVersion": 1,
     "artifactType": "openclaw-contract-diff",
-    "generatedAt": "2026-09-15T13:24:20.054Z",
+    "generatedAt": "2026-09-15T20:22:26.959Z",
     "provenance": {
       "repository": "SapienXai/AgentOS",
-      "agentosHead": "d6baafe08594b2f108e01e9ee9c9da18fc7a75b2",
+      "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
       "comparison": "2026.9.3 -> 2026.9.4",
       "source": {
         "version": "2026.9.3",
@@ -60,12 +60,12 @@
         "exact": true
       },
       "artifactInputs": {
-        "sourcePackage": "openclaw-9.3",
-        "targetPackage": "openclaw-9.4",
-        "sourceClientPackage": "client-9.3",
-        "targetClientPackage": "client-9.4",
-        "sourceProtocolPackage": "protocol-9.3",
-        "targetProtocolPackage": "protocol-9.4",
+        "sourcePackage": "source-package",
+        "targetPackage": "target-package",
+        "sourceClientPackage": "source-client",
+        "targetClientPackage": "target-client",
+        "sourceProtocolPackage": "source-protocol",
+        "targetProtocolPackage": "target-protocol",
         "sourceOpenClawArchive": "openclaw-2026.9.3.tgz",
         "targetOpenClawArchive": "openclaw-2026.9.4.tgz",
         "sourceClientArchive": "openclaw-gateway-client-2026.9.3.tgz",
@@ -1380,7 +1380,7 @@
   },
   "compatibility": {
     "report": {
-      "generatedAt": "2026-09-15T13:26:50.393Z",
+      "generatedAt": "2026-09-15T20:21:46.677Z",
       "target": {
         "name": "real-local",
         "kind": "real",
@@ -3933,14 +3933,14 @@
             "operator.read"
           ],
           "missingScopes": [],
-          "nativeGatewaySupported": true,
+          "nativeGatewaySupported": false,
           "cliFallbackAvailable": false,
-          "responseShapeStatus": "valid",
-          "responseShapeValid": true,
-          "status": "ok",
-          "reason": "Native plugin discovery catalog is native through plugins.catalog.browse and the response shape matched AgentOS' contract.",
-          "suggestedRecovery": "No recovery action required.",
-          "epistemicStatus": "observed-native-success",
+          "responseShapeStatus": "not-checked",
+          "responseShapeValid": null,
+          "status": "degraded",
+          "reason": "Native plugin discovery catalog could not be observed because the OpenClaw Gateway is unreachable.",
+          "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
+          "epistemicStatus": "unreachable",
           "fallbackStatus": "not-allowed",
           "fallbackUsed": false,
           "expectedMethod": "plugins.catalog.browse",
@@ -4656,7 +4656,7 @@
           "responseShapeValid": null,
           "status": "degraded",
           "reason": "Browser profiles could not be observed because the OpenClaw Gateway is unreachable.",
-          "suggestedRecovery": "Update OpenClaw for native Browser profiles support.",
+          "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
           "epistemicStatus": "unreachable",
           "fallbackStatus": "not-allowed",
           "fallbackUsed": false,
@@ -5100,9 +5100,9 @@
         }
       ],
       "summary": {
-        "nativeGatewayCoveragePercent": 89,
-        "nativeGatewayCoverageLabel": "78/88 operations",
-        "cliFallbackOperationCount": 9,
+        "nativeGatewayCoveragePercent": 88,
+        "nativeGatewayCoverageLabel": "77/88 operations",
+        "cliFallbackOperationCount": 10,
         "activeCliFallbackCount": 0,
         "degradedSurfaces": [
           "Agent identity sync",
@@ -5113,6 +5113,7 @@
           "Gmail webhook setup",
           "Model auth order",
           "Model scan",
+          "Native plugin discovery catalog",
           "Session usage"
         ],
         "unsupportedSurfaces": [
@@ -5125,7 +5126,7 @@
           "2026.9.4"
         ],
         "unsupportedOperationCount": 1,
-        "degradedOperationCount": 9,
+        "degradedOperationCount": 10,
         "failedOperationCount": 0,
         "targetName": "real-local",
         "targetKind": "real",
@@ -5139,8 +5140,8 @@
       "targetKind": "real",
       "isRealRuntime": true,
       "isSimulatedRuntime": false,
-      "nativeGatewayCoveragePercent": 89,
-      "cliFallbackCount": 9,
+      "nativeGatewayCoveragePercent": 88,
+      "cliFallbackCount": 10,
       "degradedSurfaces": [
         "Agent identity sync",
         "Browser profiles",
@@ -5150,6 +5151,7 @@
         "Gmail webhook setup",
         "Model auth order",
         "Model scan",
+        "Native plugin discovery catalog",
         "Session usage"
       ],
       "unsupportedSurfaces": [
@@ -5348,6 +5350,188 @@
       "Discord, Slack, and WhatsApp have official catalog contracts but no local plugin/account, so they remain contract-verified only."
     ]
   },
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26,
+    "steps": [
+      {
+        "step": 1,
+        "status": "PASS",
+        "result": "Mission Control opened with Key 2 Lab visible"
+      },
+      {
+        "step": 2,
+        "status": "PASS",
+        "result": "Key 2 Lead Agent visible"
+      },
+      {
+        "step": 3,
+        "status": "PASS",
+        "result": "Agent connection menu opened"
+      },
+      {
+        "step": 4,
+        "status": "PASS",
+        "result": "Channels entry selected"
+      },
+      {
+        "step": 5,
+        "status": "PASS",
+        "result": "Agent Connections opened directly"
+      },
+      {
+        "step": 6,
+        "status": "PASS",
+        "result": "Connect channel action visible"
+      },
+      {
+        "step": 7,
+        "status": "PASS",
+        "result": "Telegram selected"
+      },
+      {
+        "step": 8,
+        "status": "PASS",
+        "result": "Existing Telegram account selected"
+      },
+      {
+        "step": 9,
+        "status": "PASS",
+        "result": "Online account state shown"
+      },
+      {
+        "step": 10,
+        "status": "PASS",
+        "result": "Directory loaded automatically"
+      },
+      {
+        "step": 11,
+        "status": "PASS",
+        "result": "Support Group and Reservations Group appeared"
+      },
+      {
+        "step": 12,
+        "status": "PASS",
+        "result": "Connect to Key 2 Lead action visible"
+      },
+      {
+        "step": 13,
+        "status": "PASS",
+        "result": "Support Group selected for Key 2 Lead"
+      },
+      {
+        "step": 14,
+        "status": "PASS",
+        "result": "Native route mutation observed"
+      },
+      {
+        "step": 15,
+        "status": "PASS",
+        "result": "Canonical route verification succeeded"
+      },
+      {
+        "step": 16,
+        "status": "PASS",
+        "result": "Connected state shown"
+      },
+      {
+        "step": 17,
+        "status": "PASS",
+        "result": "Agent Connections closed"
+      },
+      {
+        "step": 18,
+        "status": "PASS",
+        "result": "Telegram badge appeared on Key 2 Lead"
+      },
+      {
+        "step": 19,
+        "status": "PASS",
+        "result": "Telegram badge reopened Agent Connections"
+      },
+      {
+        "step": 20,
+        "status": "PASS",
+        "result": "Telegram context reopened with Support Group"
+      },
+      {
+        "step": 21,
+        "status": "PASS",
+        "result": "Support Group remained connected"
+      },
+      {
+        "step": 22,
+        "status": "PASS",
+        "result": "Channel Center opened"
+      },
+      {
+        "step": 23,
+        "status": "PASS",
+        "result": "Channel Center showed the same Key 2 Lead route"
+      },
+      {
+        "step": 24,
+        "status": "PASS",
+        "result": "Agent flow reopened with the same route"
+      },
+      {
+        "step": 25,
+        "status": "PASS",
+        "result": "Exact native route removed"
+      },
+      {
+        "step": 26,
+        "status": "PASS",
+        "result": "Directory, routes, snapshot, and Telegram badge all reflected removal"
+      }
+    ],
+    "supportingScenarios": {
+      "stoppedRecovery": {
+        "passed": true,
+        "startRequests": 1,
+        "observedStates": [
+          "STOPPED",
+          "STOPPED",
+          "STARTING",
+          "ONLINE"
+        ]
+      },
+      "tokenSetup": {
+        "passed": true,
+        "accountSaved": true,
+        "startRequests": 1,
+        "observedStates": [
+          "READY",
+          "STARTING",
+          "ONLINE"
+        ],
+        "credentialProjected": false
+      }
+    }
+  },
+  "discordBrowserAcceptance": {
+    "passed": true,
+    "accountState": "ONLINE",
+    "hierarchy": "SapienX Server > #support > #sales",
+    "routeVerified": true,
+    "channelCenterAgrees": true,
+    "threadInheritanceVerified": true,
+    "directThreadBindingControl": false,
+    "removalVerified": true,
+    "canonicalRereadReflectedRemoval": true,
+    "badgeRemovalVerified": true,
+    "channelCenterRemovalVerified": true,
+    "postRemovalThreadResolutionVerified": true,
+    "postRemovalThreadBindingMatch": "none",
+    "directThreadBindingMutations": 0
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "statusCommand": "openclaw channels status --channel telegram --json",
+    "observedState": "configured=false, running=false, lastError=logged out, tokenSource=none",
+    "reason": "No safe Telegram credential or real group target was available. No credential, provider, binding, logout, or live-message mutation was attempted."
+  },
   "knownExceptions": [
     "Official post-publish evidence records overallReleaseComplete=false and incomplete distribution/automated closeout; this is upstream release evidence, not an AgentOS contract failure.",
     "The exact local runtime has Telegram configured but not running; no live external message was claimed.",
@@ -5355,13 +5539,13 @@
     "telegram-agentosbot is logged out and unconfigured; no account or credential mutation was attempted.",
     "Telegram directory returned an honest empty result; no group route or live message was claimed.",
     "Discord, Slack, and WhatsApp have official catalog contracts but no local plugin/account, so they remain contract-verified only.",
-    "Compatibility degraded optional surfaces: Agent identity sync, Browser profiles, Channel logs, Channel provisioning, Channel removal, Gmail webhook setup, Model auth order, Model scan, Session usage.",
+    "Compatibility degraded optional surfaces: Agent identity sync, Browser profiles, Channel logs, Channel provisioning, Channel removal, Gmail webhook setup, Model auth order, Model scan, Native plugin discovery catalog, Session usage.",
     "Compatibility unsupported optional surfaces: Task assignment."
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "d6baafe08594b2f108e01e9ee9c9da18fc7a75b2",
-    "evidenceCommit": "b019523db9ccd5c23c81964505446261261df1df",
+    "certifiedCodeHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
+    "evidenceCommit": "a127b50d9f144eab65cc95a5c4325b11b52d8870",
     "branch": "main",
     "node": "v24.20.0",
     "openClaw": {

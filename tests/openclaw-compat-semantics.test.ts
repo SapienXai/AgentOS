@@ -146,6 +146,7 @@ test("unreachable and protocol-mismatched Gateway evidence cannot pass a require
   assert.equal(unreachableModels?.epistemicStatus, "unreachable");
   assert.equal(unreachableModels?.nativeGatewaySupported, false);
   assert.equal(unreachableModels?.status, "degraded");
+  assert.equal(unreachableModels?.suggestedRecovery, "Restore the OpenClaw Gateway connection and retry.");
 
   const protocolMismatch = await checkOpenClawCompatibilityContracts({
     effectiveMethods: ["models.list"],
