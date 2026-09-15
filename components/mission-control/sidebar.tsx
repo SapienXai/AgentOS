@@ -25,6 +25,7 @@ import {
   LockKeyhole,
   Loader2,
   LogOut,
+  MessageCircle,
   Moon,
   Pencil,
   Plug,
@@ -204,6 +205,7 @@ const sidebarItems: SidebarItem[] = [
   { label: "Files", href: "/files", icon: FileText, section: "operations" },
   { label: "Accounts", href: "/accounts", icon: KeyRound, section: "operations" },
   { label: "Models", href: "/models", icon: Cpu, section: "operations" },
+  { label: "Channels", href: "/channels", icon: MessageCircle, section: "operations" },
   { label: "Integrations", href: "/integrations", icon: Plug, section: "operations" },
   { label: "Updates", href: "/updates", icon: Download, section: "system" },
   { label: "Settings", href: "/settings", icon: Settings2, section: "system" },
@@ -211,7 +213,7 @@ const sidebarItems: SidebarItem[] = [
 
 const collapsedSidebarItems = sidebarItems.slice(
   0,
-  sidebarItems.findIndex((item) => item.label === "Accounts") + 1
+  sidebarItems.findIndex((item) => item.label === "Channels") + 1
 );
 const collapsedSidebarItemsWithUpdates = sidebarItems.filter(
   (item) => collapsedSidebarItems.includes(item) || item.label === "Updates"

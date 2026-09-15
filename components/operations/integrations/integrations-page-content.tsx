@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { BellRing, CircleCheck, Clock3, Gauge, Import, Layers3, Plus, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BellRing, CircleCheck, Clock3, Gauge, Import, Layers3, MessageCircle, Plus, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
-import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
@@ -29,6 +29,7 @@ export function IntegrationsPageContent({
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
+  const router = useRouter();
   const baseIntegrations = useMemo(() => buildIntegrationViews(snapshot), [snapshot]);
   const [runtimeOverrides, setRuntimeOverrides] = useState<Record<string, IntegrationRuntimeOverride>>({});
   const [search, setSearch] = useState("");
@@ -48,10 +49,8 @@ export function IntegrationsPageContent({
   }, []);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isChannelsDialogOpen, setIsChannelsDialogOpen] = useState(false);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
   const [initialModelProvider, setInitialModelProvider] = useState<AddModelsProviderId | null>(null);
-  const [initialSurfaceProvider, setInitialSurfaceProvider] = useState<IntegrationView["surfaceProvider"] | null>(null);
   const integrations = useMemo(
     () =>
       baseIntegrations.map((integration) => {
@@ -131,15 +130,8 @@ export function IntegrationsPageContent({
   const visibleIntegrations = showAllMobileIntegrations ? filteredIntegrations : filteredIntegrations.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
-    if (!activeWorkspaceId) {
-      toast.error("Select a workspace before configuring workspace integrations.", {
-        description: "All Workspaces is read-only for integration setup. Pick a workspace from the sidebar first."
-      });
-      return;
-    }
-
-    setInitialSurfaceProvider(surfaceProvider);
-    setIsChannelsDialogOpen(true);
+    void surfaceProvider;
+    router.push("/channels");
   };
 
   const openModelSetup = (provider: AddModelsProviderId | null = null) => {
@@ -385,8 +377,19 @@ export function IntegrationsPageContent({
               surfaceTheme={surfaceTheme}
               title="Integrations"
               subtitle="Connect channels, tools, and external systems to extend AgentOS capabilities and power automations."
-              secondaryAction={{ label: "Import Integration", icon: Import, onClick: () => setIsImportDialogOpen(true) }}
-              primaryAction={{ label: "Add Integration", icon: Plus, onClick: () => setIsAddDialogOpen(true) }}
+              actions={
+                <>
+                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/channels")}>
+                    <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Channels
+                  </Button>
+                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => setIsImportDialogOpen(true)}>
+                    <Import className="mr-1.5 h-3.5 w-3.5" /> Import
+                  </Button>
+                  <Button size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => setIsAddDialogOpen(true)}>
+                    <Plus className="mr-1.5 h-3.5 w-3.5" /> Add integration
+                  </Button>
+                </>
+              }
             />
 
             <SearchToolbar
@@ -477,16 +480,6 @@ export function IntegrationsPageContent({
           setIsImportDialogOpen(false);
           openModelSetup(null);
         }}
-      />
-      <WorkspaceChannelsDialog
-        snapshot={rootSnapshot}
-        workspaceId={activeWorkspaceId}
-        open={isChannelsDialogOpen}
-        initialProvider={initialSurfaceProvider}
-        onOpenChange={setIsChannelsDialogOpen}
-        onRefresh={refresh}
-        onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
-        surfaceTheme={surfaceTheme}
       />
       <AddModelsDialog
         open={isAddModelsDialogOpen}

@@ -1673,6 +1673,8 @@ async function updateManagedSurfaceRouting(
   );
 }
 
+// Compatibility projection only: native OpenClaw channel config and Gateway status remain runtime authority.
+// Keep this path for existing workspace/channel records until the canonical Channel Center migration is complete.
 async function buildManagedTelegramSettingsPatch(
   managedChannels: WorkspaceChannelSummary[],
   timings?: TimingCollector
@@ -1846,6 +1848,7 @@ async function reconcileTelegramSessionStoreFile(
   }
 }
 
+// Compatibility reconciliation for legacy AgentOS workspace bindings; this is not Telegram directory discovery.
 async function reconcileManagedTelegramSessionStores(
   managedChannels: WorkspaceChannelSummary[],
   preferredAccountId: string,

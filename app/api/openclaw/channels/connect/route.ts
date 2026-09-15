@@ -15,6 +15,7 @@ import {
 } from "@/lib/openclaw/application/channel-connect-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 
 export const runtime = "nodejs";
@@ -63,7 +64,10 @@ const actionSchema = z.discriminatedUnion("action", [
   })
 ]);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
+
   try {
     return NextResponse.json(redactSecrets(await getChannelConnectOverview()), {
       headers: { "Cache-Control": "no-store" }

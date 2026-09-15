@@ -5,6 +5,7 @@ import { AgentsPageContent } from "@/components/operations/agents/agents-page-co
 import { DashboardPageContent } from "@/components/operations/dashboard/dashboard-page-content";
 import { FilesPageContent } from "@/components/operations/files/files-page-content";
 import { IntegrationsPageContent } from "@/components/operations/integrations/integrations-page-content";
+import { ChannelCenterPageContent } from "@/components/operations/channels/channel-center-page-content";
 import { ModelsPageContent } from "@/components/operations/models/models-page-content";
 import { OperationsShell } from "@/components/operations/operations-shell";
 import { TasksPageContent } from "@/components/operations/tasks/tasks-page-content";
@@ -12,7 +13,7 @@ import { UpdatesPageContent } from "@/components/operations/updates/updates-page
 import { OperationsJobsPageContent } from "@/components/operations/operations/operations-jobs-page-content";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 
-export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "accounts" | "models" | "integrations" | "updates" | "operations";
+export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "accounts" | "models" | "channels" | "integrations" | "updates" | "operations";
 
 export function OperationsPage({
   initialSnapshot,
@@ -108,6 +109,17 @@ export function OperationsPage({
               rootSnapshot={context.rootSnapshot}
               refresh={context.refresh}
               setSnapshot={context.setSnapshot}
+            />
+          );
+        }
+
+        if (page === "channels") {
+          return (
+            <ChannelCenterPageContent
+              snapshot={context.snapshot}
+              rootSnapshot={context.rootSnapshot}
+              activeWorkspaceId={context.activeWorkspaceId}
+              refresh={context.refresh}
             />
           );
         }

@@ -408,85 +408,6 @@ export function WorkspaceChannelsDialog({
           ...current,
           [surfaceId]: result.supported === false || !Array.isArray(result.routes) ? [] : result.routes
         }));
-        if (provider === "telegram" && Array.isArray(result.routes) && result.routes.length > 0) {
-          const surface = workspaceSurfaces.find((entry) => entry.id === surfaceId) ?? null;
-          const workspaceBinding = surface?.workspaces.find((entry) => entry.workspaceId === workspace.id) ?? null;
-
-          if (surface && workspaceBinding) {
-            const currentAssignments = (workspaceBinding.groupAssignments ?? []).filter(
-              (assignment) => assignment.enabled !== false
-            );
-            const currentRouteIds = new Set(currentAssignments.map((assignment) => assignment.chatId));
-            const missingRoutes = result.routes.filter((route) => route.routeId && !currentRouteIds.has(route.routeId));
-            const routeTitlesById = new Map(
-              result.routes
-                .filter((route) => route.routeId && route.title?.trim())
-                .map((route) => [route.routeId, route.title?.trim() ?? null] as const)
-            );
-            const titledAssignments = currentAssignments.map((assignment) => {
-              const discoveredTitle = routeTitlesById.get(assignment.chatId);
-
-              if (!discoveredTitle || assignment.title === discoveredTitle) {
-                return assignment;
-              }
-
-              return {
-                ...assignment,
-                title: discoveredTitle
-              };
-            });
-            const titleChanged = titledAssignments.some(
-              (assignment, index) => assignment.title !== currentAssignments[index]?.title
-            );
-
-            if (missingRoutes.length > 0 || titleChanged) {
-              try {
-                const syncResponse = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/channels`, {
-                  method: "PATCH",
-                  headers: {
-                    "Content-Type": "application/json"
-                  },
-                  body: JSON.stringify({
-                    action: "groups",
-                    channelId: surfaceId,
-                    groupAssignments: [
-                      ...titledAssignments,
-                      ...missingRoutes.map((route) => ({
-                        chatId: route.routeId,
-                        title: route.title ?? null,
-                        agentId: null,
-                        enabled: true
-                      }))
-                    ]
-                  })
-                });
-                const syncResult = (await syncResponse.json()) as ChannelMutationResult;
-
-                if (!syncResponse.ok || syncResult.error) {
-                  throw new Error(syncResult.error || "Discovered groups could not be enabled.");
-                }
-
-                if (syncResult.registry && onSnapshotChange) {
-                  onSnapshotChange((current) => replaceSnapshotChannelRegistry(current, syncResult.registry!));
-                }
-
-                toast.success("Telegram routes enabled.", {
-                  description:
-                    missingRoutes.length === 1
-                      ? `${missingRoutes[0].title ?? missingRoutes[0].routeId} now falls back to the primary agent.`
-                      : missingRoutes.length > 1
-                        ? `${missingRoutes.length} discovered groups now fall back to the primary agent.`
-                        : "Discovered group names were synced."
-                });
-                void onRefresh().catch(() => {});
-              } catch (error) {
-                toast.error("Telegram route sync failed.", {
-                  description: error instanceof Error ? error.message : "Discovered groups could not be enabled."
-                });
-              }
-            }
-          }
-        }
       } catch (error) {
         setRouteErrorsBySurfaceId((current) => ({
           ...current,
@@ -497,7 +418,7 @@ export function WorkspaceChannelsDialog({
         setLoadingRoutesBySurfaceId((current) => ({ ...current, [surfaceId]: false }));
       }
     },
-    [onRefresh, onSnapshotChange, workspace, workspaceSurfaces]
+    [workspace]
   );
 
   useEffect(() => {

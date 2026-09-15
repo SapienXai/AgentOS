@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { discoverSurfaceRoutes } from "@/lib/agentos/control-plane";
 import { createTimingCollector, formatTimingSummary, measureTiming } from "@/lib/openclaw/timing";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
 
   try {
     await context.params;
+    const permission = await requireAgentOsProductPermission(request, "runtime.use");
+    if ("response" in permission) return permission.response;
 
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider")?.trim() ?? "";

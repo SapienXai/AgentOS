@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { listChannelGroups } from "@/lib/openclaw/application/channel-directory-service";
 import { parseDiscordRouteId, type DiscordRouteId } from "@/lib/openclaw/domains/discord-route";
 import { readOpenClawSurfaceAccounts } from "@/lib/openclaw/surface-adapters";
 import { getSurfaceKind } from "@/lib/openclaw/surface-catalog";
@@ -24,13 +25,6 @@ export function resolveChannelAccountId(account: Pick<ChannelAccountRecord, "id"
 
 const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
-
-type TelegramAllowlistConfig = Record<
-  string,
-  {
-    requireMention?: boolean;
-  }
->;
 
 type DiscordGuildConfig = Record<
   string,
@@ -191,7 +185,7 @@ export async function discoverSurfaceRoutes(input: {
 }, timings?: TimingCollector) {
   switch (input.provider) {
     case "telegram":
-      return discoverTelegramGroups(timings);
+      return discoverTelegramGroups(input, timings);
     case "discord":
       return discoverDiscordRoutes(input.accountId, timings);
     default:
@@ -199,71 +193,31 @@ export async function discoverSurfaceRoutes(input: {
   }
 }
 
-export async function discoverTelegramGroups(timings?: TimingCollector) {
-  const payload = await measureTiming(timings, "telegram-discovery.read-channel-logs", () =>
-    readOpenClawChannelLogs("telegram", 200)
+export async function discoverTelegramGroups(
+  inputOrTimings?: { accountId?: string | null; query?: string | null; limit?: number | null } | TimingCollector,
+  maybeTimings?: TimingCollector
+) {
+  const input = isTelegramDiscoveryInput(inputOrTimings) ? inputOrTimings : {};
+  const timings = isTelegramDiscoveryInput(inputOrTimings) ? maybeTimings : inputOrTimings;
+  const result = await listChannelGroups(
+    {
+      provider: "telegram",
+      accountId: input.accountId,
+      query: input.query,
+      limit: input.limit
+    },
+    { timings }
   );
 
-  if (!payload?.lines?.length) {
-    return await readTelegramAllowlistGroups(timings);
-  }
-
-  const discovered = new Map<string, DiscoveredSurfaceRoute>();
-
-  const rememberGroup = (group: DiscoveredSurfaceRoute) => {
-    const existing = discovered.get(group.routeId);
-    if (!existing) {
-      discovered.set(group.routeId, group);
-      return;
-    }
-
-    discovered.set(group.routeId, {
-      routeId: group.routeId,
-      provider: "telegram",
-      kind: "group",
-      title: group.title ?? existing.title,
-      lastSeen: selectLatestIsoTimestamp(existing.lastSeen, group.lastSeen)
-    });
-  };
-
-  for (const line of payload.lines) {
-    const lineTime = typeof line?.time === "string" ? line.time : null;
-
-    for (const group of extractTelegramGroupsFromUnknown(line, lineTime)) {
-      rememberGroup(group);
-    }
-
-    if (typeof line?.raw === "string") {
-      try {
-        const parsed = JSON.parse(line.raw);
-        for (const group of extractTelegramGroupsFromUnknown(parsed, lineTime)) {
-          rememberGroup(group);
-        }
-      } catch {
-        for (const group of extractTelegramGroupsFromText(line.raw, lineTime)) {
-          rememberGroup(group);
-        }
-      }
-    }
-
-    if (typeof line?.message === "string") {
-      for (const group of extractTelegramGroupsFromText(line.message, lineTime)) {
-        rememberGroup(group);
-      }
-    }
-  }
-
-  for (const group of await readTelegramAllowlistGroups(timings)) {
-    if (!discovered.has(group.routeId)) {
-      discovered.set(group.routeId, group);
-    }
-  }
-
-  return Array.from(discovered.values()).sort((left, right) => {
-    const leftLabel = left.title ?? left.routeId;
-    const rightLabel = right.title ?? right.routeId;
-    return leftLabel.localeCompare(rightLabel);
-  });
+  return result.entries
+    .map((entry) => ({
+      routeId: entry.routeId,
+      provider: "telegram" as const,
+      kind: "group" as const,
+      title: entry.title,
+      lastSeen: null
+    }))
+    .sort((left, right) => (left.title ?? left.routeId).localeCompare(right.title ?? right.routeId));
 }
 
 export async function discoverDiscordRoutes(accountId?: string | null, timings?: TimingCollector) {
@@ -326,26 +280,6 @@ export async function discoverDiscordRoutes(accountId?: string | null, timings?:
     const rightLabel = right.title ?? right.routeId;
     return leftLabel.localeCompare(rightLabel);
   });
-}
-
-async function readTelegramAllowlistGroups(timings?: TimingCollector) {
-  try {
-    const groups = await measureTiming(timings, "telegram-discovery.read-allowlist-config", () =>
-      getOpenClawAdapter().getConfig<TelegramAllowlistConfig>("channels.telegram.groups")
-    );
-
-    return Object.keys(groups ?? {})
-      .map((chatId) => ({
-        routeId: chatId,
-        provider: "telegram" as const,
-        kind: "group" as const,
-        title: null,
-        lastSeen: null
-      }))
-      .sort((left, right) => left.routeId.localeCompare(right.routeId));
-  } catch {
-    return [] as DiscoveredSurfaceRoute[];
-  }
 }
 
 async function readDiscordConfiguredRoutes(timings?: TimingCollector) {
@@ -423,12 +357,18 @@ async function readDiscordConfiguredRoutes(timings?: TimingCollector) {
   }
 }
 
-async function readOpenClawChannelLogs(channel: "telegram" | "discord", lines: number) {
+async function readOpenClawChannelLogs(channel: "discord", lines: number) {
   try {
     return await getOpenClawAdapter().getChannelLogs({ channel, lines });
   } catch {
     return null;
   }
+}
+
+function isTelegramDiscoveryInput(
+  value: { accountId?: string | null; query?: string | null; limit?: number | null } | TimingCollector | undefined
+): value is { accountId?: string | null; query?: string | null; limit?: number | null } {
+  return isObjectRecord(value) && ("accountId" in value || "query" in value || "limit" in value);
 }
 
 export function buildManagedDiscordBinding(
@@ -563,100 +503,6 @@ async function reconcileTelegramRegistryAccounts(registry: ChannelRegistry) {
     version: 1,
     channels: nextChannels
   });
-}
-
-function extractTelegramGroupsFromUnknown(value: unknown, lineTime: string | null): DiscoveredSurfaceRoute[] {
-  const discovered = new Map<string, DiscoveredSurfaceRoute>();
-  const queue: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
-  const seen = new Set<unknown>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || current.depth > 6) {
-      continue;
-    }
-
-    const candidate = current.value;
-    if (candidate === null || candidate === undefined) {
-      continue;
-    }
-
-    if (typeof candidate !== "object") {
-      continue;
-    }
-
-    if (seen.has(candidate)) {
-      continue;
-    }
-    seen.add(candidate);
-
-    if (Array.isArray(candidate)) {
-      for (const item of candidate) {
-        queue.push({ value: item, depth: current.depth + 1 });
-      }
-      continue;
-    }
-
-    if (!isObjectRecord(candidate)) {
-      continue;
-    }
-
-    const chatId = normalizeTelegramGroupChatId(candidate.chatId);
-    if (chatId) {
-      const title =
-        normalizeOptionalValue(candidate.title as string | null | undefined) ??
-        normalizeOptionalValue(candidate.chatTitle as string | null | undefined) ??
-        null;
-      discovered.set(chatId, {
-        routeId: chatId,
-        provider: "telegram",
-        kind: "group",
-        title,
-        lastSeen: lineTime
-      });
-    }
-
-    for (const nested of Object.values(candidate)) {
-      queue.push({ value: nested, depth: current.depth + 1 });
-    }
-  }
-
-  return Array.from(discovered.values());
-}
-
-function extractTelegramGroupsFromText(text: string, lineTime: string | null): DiscoveredSurfaceRoute[] {
-  const discovered = new Map<string, DiscoveredSurfaceRoute>();
-  const objectPattern = /\{[^{}]*"chatId"\s*:\s*-?\d+[^{}]*\}/g;
-
-  for (const match of text.matchAll(objectPattern)) {
-    const fragment = match[0];
-    try {
-      const parsed = JSON.parse(fragment);
-      for (const group of extractTelegramGroupsFromUnknown(parsed, lineTime)) {
-        discovered.set(group.routeId, group);
-      }
-      continue;
-    } catch {
-      // Fall through to regex extraction below.
-    }
-
-    const chatIdMatch = fragment.match(/"chatId"\s*:\s*(-?\d+)/);
-    const chatId = normalizeTelegramGroupChatId(chatIdMatch?.[1] ?? null);
-    if (!chatId) {
-      continue;
-    }
-
-    const titleMatch = fragment.match(/"title"\s*:\s*"([^"]+)"/);
-    discovered.set(chatId, {
-      routeId: chatId,
-      provider: "telegram",
-      kind: "group",
-      title: titleMatch?.[1] ?? null,
-      lastSeen: lineTime
-    });
-  }
-
-  return Array.from(discovered.values());
 }
 
 function extractDiscordRoutesFromUnknown(
@@ -1014,19 +860,6 @@ function normalizeDiscordId(value: unknown) {
 
   const trimmed = value.trim();
   return /^\d{5,}$/.test(trimmed) ? trimmed : null;
-}
-
-function normalizeTelegramGroupChatId(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value) && value < 0) {
-    return String(value);
-  }
-
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return /^-\d+$/.test(trimmed) ? trimmed : null;
 }
 
 function selectLatestIsoTimestamp(current: string | null, candidate: string | null) {
