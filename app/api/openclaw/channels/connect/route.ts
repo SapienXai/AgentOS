@@ -2,15 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  CHANNEL_CONNECT_PROVIDERS,
   approveChannelPairing,
   getChannelConnectOverview,
   installChannelPlugin,
-  logoutConnectedChannel,
-  restartChannelAccount,
+  runChannelAccountAction,
   startChannelWebLogin,
-  startChannelAccount,
-  stopChannelAccount,
   waitForChannelWebLogin
 } from "@/lib/openclaw/application/channel-connect-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -21,7 +17,7 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const providerSchema = z.enum(CHANNEL_CONNECT_PROVIDERS);
+const providerSchema = z.string().trim().min(1).max(80);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("install-plugin"), provider: providerSchema }),
   z.object({
@@ -120,13 +116,9 @@ export async function POST(request: Request) {
           ? await waitForChannelWebLogin(input, authorization.commandOptions)
           : input.action === "approve-pairing"
             ? await approveChannelPairing(input, authorization.commandOptions)
-            : input.action === "start"
-              ? await startChannelAccount(input, authorization.commandOptions)
-              : input.action === "stop"
-                ? await stopChannelAccount(input, authorization.commandOptions)
-                : input.action === "restart"
-                  ? await restartChannelAccount(input, authorization.commandOptions)
-                  : await logoutConnectedChannel(input, authorization.commandOptions);
+            : input.action === "start" || input.action === "stop" || input.action === "restart" || input.action === "logout"
+              ? await runChannelAccountAction(input, authorization.commandOptions)
+              : await Promise.reject(new Error("Unsupported OpenClaw channel action."));
 
     const shouldRefreshStatus = input.action === "start" || input.action === "stop" || input.action === "restart" || input.action === "logout";
     const statusResult = shouldRefreshStatus

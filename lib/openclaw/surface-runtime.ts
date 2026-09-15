@@ -286,6 +286,11 @@ export function buildManagedOpenClawBindings(
   const bindings: ManagedOpenClawBinding[] = [];
 
   for (const channel of registry.channels.filter(isManagedChatChannel)) {
+    // Telegram route bindings are now owned by the canonical Channel Center
+    // service. Legacy registry reconciliation must not replace native routes.
+    if (channel.type === "telegram") {
+      continue;
+    }
     const workspaces = workspaceId
       ? channel.workspaces.filter((workspace) => workspace.workspaceId === workspaceId)
       : channel.workspaces;
@@ -302,31 +307,6 @@ export function buildManagedOpenClawBindings(
           accountId: channel.id
         }
       });
-    }
-
-    if (channel.type === "telegram") {
-      for (const workspace of workspaces) {
-        for (const assignment of workspace.groupAssignments.filter(hasEnabledAssignedRoute)) {
-          bindings.push({
-            agentId: assignment.agentId,
-            match: {
-              channel: "telegram",
-              accountId: channel.id
-            }
-          });
-          bindings.push({
-            agentId: assignment.agentId,
-            match: {
-              channel: "telegram",
-              accountId: channel.id,
-              peer: {
-                kind: "group",
-                id: assignment.chatId
-              }
-            }
-          });
-        }
-      }
     }
 
     if (channel.type === "discord") {
@@ -367,6 +347,7 @@ export function buildSurfaceDriftSnapshot(input: {
     .filter((binding): binding is NormalizedBinding => Boolean(binding));
   const managedChannels = input.registry.channels.filter((channel) =>
     isManagedChatChannel(channel) &&
+    channel.type !== "telegram" &&
     (!input.workspaceId || channel.workspaces.some((workspace) => workspace.workspaceId === input.workspaceId))
   );
   const managedAccountKeys = new Set(managedChannels.map((channel) => buildSurfaceAccountKey(channel.type, channel.id)));
@@ -599,6 +580,7 @@ export function mergeManagedOpenClawBindings(input: {
     input.registry.channels
       .filter((channel) =>
         isManagedChatChannel(channel) &&
+        channel.type !== "telegram" &&
         (input.scope === "all" ||
           channel.workspaces.some((workspace) => workspace.workspaceId === input.workspaceId))
       )

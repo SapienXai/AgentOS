@@ -3308,7 +3308,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         .catch(() => null);
       const reloadKind = readConfigReloadKindFromSchemaLookup(schemaLookupPayload);
 
-      const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : undefined;
+      const snapshotHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : undefined;
+      if (options.baseHash && options.baseHash !== snapshotHash) {
+        throw new OpenClawGatewayClientError(
+          "OpenClaw configuration changed since the route was read. Refresh the route and try again.",
+          "conflict"
+        );
+      }
+      const baseHash = options.baseHash ?? snapshotHash;
       // config.patch uses JSON Merge Patch semantics. A missing object member
       // means "preserve", while setConfig(path, object) promises replacement
       // semantics. Emit null tombstones for removed members so invalid legacy

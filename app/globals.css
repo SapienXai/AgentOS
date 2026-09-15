@@ -212,6 +212,47 @@
   backdrop-filter: blur(20px) saturate(1.52) brightness(var(--lock-glass-backdrop-brightness));
 }
 
+.lockscreen-splash-video {
+  opacity: 0.92;
+  filter: brightness(0.64) saturate(0.94) contrast(1.04);
+  transform: scale(1.03);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.lockscreen-video-wash {
+  background:
+    radial-gradient(circle at 50% 38%, rgb(2 6 23 / 0.03), rgb(2 6 23 / 0.22) 72%),
+    linear-gradient(180deg, rgb(2 6 23 / 0.08) 0%, rgb(2 6 23 / 0.24) 54%, rgb(1 4 14 / 0.56) 100%);
+}
+
+.lockscreen-crt-overlay {
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.34) 0 0.75px, transparent 1.25px),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.075) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, transparent 0 3px, rgb(255 255 255 / 0.018) 3px 4px);
+  background-size: 4.5px 4.5px, 100% 4px, 4px 100%;
+  mix-blend-mode: screen;
+  opacity: 0.28;
+}
+
+.lockscreen-crt-overlay::after {
+  position: absolute;
+  inset: -3%;
+  background:
+    radial-gradient(ellipse at center, transparent 52%, rgb(0 0 0 / 0.14) 74%, rgb(0 0 0 / 0.44) 100%),
+    linear-gradient(90deg, rgb(255 54 93 / 0.04), transparent 17% 83%, rgb(49 210 255 / 0.05));
+  content: "";
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lockscreen-splash-video {
+    transform: none;
+  }
+}
+
 .lock-glass-card::before {
   position: absolute;
   z-index: -1;

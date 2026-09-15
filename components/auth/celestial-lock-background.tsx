@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getCelestialSky, getCelestialSkyAtMinute } from "@/lib/agentos/celestial-sky";
 
@@ -31,6 +31,7 @@ const FINE_STAR_POSITIONS = "12px 19px, 71px 43px, 31px 97px, 119px 67px";
 
 export function CelestialLockBackground() {
   const reduceMotion = useReducedMotion();
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [sky, setSky] = useState(() => getCelestialSkyAtMinute(750));
 
   useEffect(() => {
@@ -44,12 +45,40 @@ export function CelestialLockBackground() {
     };
   }, []);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (reduceMotion) {
+      video.pause();
+      return;
+    }
+
+    void video.play().catch(() => {
+      // Autoplay may be unavailable in a browser profile; the poster remains a valid fallback.
+    });
+  }, [reduceMotion]);
+
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" data-sky-phase={sky.label}>
       <div
-        className="absolute inset-0 transition-[background] [transition-duration:4000ms] ease-linear motion-reduce:transition-none"
+        className="absolute inset-0 opacity-[0.22] transition-[background] [transition-duration:4000ms] ease-linear motion-reduce:transition-none"
         style={{ background: `linear-gradient(180deg, ${sky.top} 0%, ${sky.middle} 46%, ${sky.bottom} 76%, ${sky.horizon} 100%)` }}
       />
+      <video
+        ref={videoRef}
+        className="lockscreen-splash-video absolute inset-0 h-full w-full object-cover"
+        src="/assets/agentos-splash.mp4"
+        poster="/assets/agentos-splash-poster.jpg"
+        autoPlay={reduceMotion !== true}
+        muted
+        loop
+        playsInline
+        preload="auto"
+        tabIndex={-1}
+        data-lockscreen-splash-video
+      />
+      <div aria-hidden="true" className="lockscreen-video-wash absolute inset-0" />
 
       <motion.div
         className="absolute -inset-x-[20%] -top-[18%] h-[62%] rotate-[-7deg] rounded-[50%] blur-[80px]"
@@ -167,7 +196,7 @@ export function CelestialLockBackground() {
       />
       <div className="absolute inset-x-0 bottom-0 h-[32%] bg-[linear-gradient(to_top,rgba(3,7,18,.46),transparent)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_28%,rgba(2,6,18,.18)_72%,rgba(2,6,18,.42)_100%)]" />
-      <div className="absolute inset-0 opacity-[0.055] [background-image:radial-gradient(rgba(255,255,255,.9)_0.55px,transparent_0.7px)] [background-size:4px_4px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
+      <div aria-hidden="true" className="lockscreen-crt-overlay absolute inset-0" />
     </div>
   );
 }

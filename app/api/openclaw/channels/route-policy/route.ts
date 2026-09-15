@@ -62,16 +62,12 @@ export async function PATCH(request: Request) {
       groupId: result.groupId,
       topicId: result.topicId,
       changedFields: result.changedFields,
-      configPath: result.configPath,
       applyMode: result.applyMode,
       reloadKind: result.reloadKind,
       restartRequired: result.restartRequired,
       hotReloaded: result.hotReloaded,
       appliedVia: result.appliedVia,
-      pending: result.pending,
-      baseHash: result.baseHash,
-      changedPaths: result.changedPaths,
-      mutations: result.mutations
+      pending: result.pending
     }));
   } catch (error) {
     const message = error instanceof z.ZodError

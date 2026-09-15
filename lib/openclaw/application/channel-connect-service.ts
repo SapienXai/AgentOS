@@ -29,7 +29,8 @@ export const CHANNEL_CONNECT_PROVIDERS = [
   "signal"
 ] as const;
 
-export type ChannelConnectProviderId = (typeof CHANNEL_CONNECT_PROVIDERS)[number];
+/** Static catalog ids are setup/presentation hints; runtime providers may be discovered by OpenClaw. */
+export type ChannelConnectProviderId = string;
 export type ChannelConnectSetupMode = "qr" | "bot-token" | "app-tokens" | "cloud" | "local-mac" | "external-cli";
 
 export type ChannelConnectProviderView = {
@@ -414,6 +415,38 @@ export async function restartChannelAccount(
 ) {
   const stop = await stopChannelAccount(input, options);
   const start = await startChannelAccount(input, options);
+  return { stop, start };
+}
+
+export async function runChannelAccountAction(
+  input: { action: "start" | "stop" | "restart" | "logout"; provider: string; accountId?: string },
+  options: OpenClawCommandOptions = {}
+) {
+  const provider = input.provider.trim();
+  if (!provider) throw new Error("An OpenClaw channel provider is required.");
+  const adapter = getOpenClawAdapter();
+  const accountId = normalizeAccountId(input.accountId);
+
+  if (input.action === "logout") {
+    if (!adapter.logoutChannel) throw new Error("OpenClaw does not expose native channel logout for this runtime.");
+    return adapter.logoutChannel({ channel: provider, accountId }, { ...options, timeoutMs: 30_000 });
+  }
+
+  if (input.action === "start") {
+    if (!adapter.startChannel) throw new Error("OpenClaw does not expose native channel start for this runtime.");
+    return adapter.startChannel({ channel: provider, accountId }, { ...options, timeoutMs: 30_000 });
+  }
+
+  if (input.action === "stop") {
+    if (!adapter.stopChannel) throw new Error("OpenClaw does not expose native channel stop for this runtime.");
+    return adapter.stopChannel({ channel: provider, accountId }, { ...options, timeoutMs: 30_000 });
+  }
+
+  if (!adapter.stopChannel || !adapter.startChannel) {
+    throw new Error("OpenClaw does not expose native channel restart for this runtime.");
+  }
+  const stop = await adapter.stopChannel({ channel: provider, accountId }, { ...options, timeoutMs: 30_000 });
+  const start = await adapter.startChannel({ channel: provider, accountId }, { ...options, timeoutMs: 30_000 });
   return { stop, start };
 }
 

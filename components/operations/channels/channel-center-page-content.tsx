@@ -17,7 +17,7 @@ import {
   Users
 } from "lucide-react";
 
-import { ConnectChannelsDialog } from "@/components/mission-control/connect-channels-dialog";
+import { ChannelCenterAddAccountDialog } from "@/components/operations/channels/channel-center-add-account-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
@@ -124,6 +124,13 @@ export function ChannelCenterPageContent({
   }, [providers, selectedProviderId]);
 
   useEffect(() => {
+    const requestedProvider = new URLSearchParams(window.location.search).get("provider");
+    if (requestedProvider && providers.some((provider) => provider.id === requestedProvider)) {
+      setSelectedProviderId(requestedProvider);
+    }
+  }, [providers]);
+
+  useEffect(() => {
     setSelectedAccountId(selectedProvider?.accounts[0]?.accountId ?? null);
     setSelectedRouteId(null);
     setSelectedTopicId(null);
@@ -162,7 +169,7 @@ export function ChannelCenterPageContent({
   }, [loadRoutes]);
 
   const loadTopics = useCallback(async () => {
-    if (selectedProvider?.id !== "telegram" || !selectedAccount || !selectedGroup) {
+    if (!selectedProvider?.capabilities.supportsTopics || selectedProvider.id !== "telegram" || !selectedAccount || !selectedGroup) {
       setTopics([]);
       return;
     }
@@ -176,7 +183,7 @@ export function ChannelCenterPageContent({
     } finally {
       setLoadingTopics(false);
     }
-  }, [activeWorkspaceId, selectedAccount, selectedGroup, selectedProvider?.id]);
+  }, [activeWorkspaceId, selectedAccount, selectedGroup, selectedProvider?.capabilities.supportsTopics, selectedProvider?.id]);
 
   useEffect(() => {
     void loadTopics();
@@ -238,7 +245,7 @@ export function ChannelCenterPageContent({
     groupId = selectedGroup?.routeId,
     topicId = selectedTopic?.routeId ?? null
   ) => {
-    if (!selectedAccount || !groupId) return;
+    if (!selectedAccount || !groupId || selectedProvider?.id !== "telegram") return;
     await runMutation("/api/openclaw/channels/route-policy", {
       provider: "telegram",
       accountId: selectedAccount.accountId,
@@ -358,7 +365,7 @@ export function ChannelCenterPageContent({
                   {groups.map((route) => (
                     <button key={route.routeId} type="button" onClick={() => { setSelectedRouteId(route.routeId); setSelectedTopicId(null); setMembers([]); }} className={cn("flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/50", selectedGroup?.routeId === route.routeId && !selectedTopic ? "bg-primary/10" : "")}>
                       <span className="flex min-w-0 items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/60 text-muted-foreground"><Hash className="h-3.5 w-3.5" /></span><span className="min-w-0"><span className="block truncate text-xs font-semibold text-foreground">{route.title ?? route.routeId}</span><span className="block truncate font-mono text-[0.62rem] text-muted-foreground">{route.routeId}</span></span></span>
-                      <span className="flex items-center gap-2">{route.accessPolicy?.requireMention === false ? <StatusBadge label="Always" tone="info" /> : route.accessPolicy?.requireMention === true ? <StatusBadge label="Mention" tone="muted" /> : null}{route.agentId ? <StatusBadge label={route.agentId} tone="success" /> : null}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span>
+                      <span className="flex items-center gap-2">{route.accessPolicy?.requireMention === false ? <StatusBadge label="Always" tone="info" /> : route.accessPolicy?.requireMention === true ? <StatusBadge label="Mention" tone="muted" /> : null}{route.bindingConflict ? <StatusBadge label="Binding conflict" tone="danger" /> : route.agentId ? <StatusBadge label={route.agentId} tone="success" /> : null}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span>
                     </button>
                   ))}
                 </div>
@@ -378,6 +385,7 @@ export function ChannelCenterPageContent({
                 loadingMembers={loadingMembers}
                 currentAgentId={currentAgentId}
                 agents={rootSnapshot.agents}
+                canEditPolicy={selectedProvider.id === "telegram" && (selectedProvider.capabilities.supportsGroupPolicy || selectedProvider.capabilities.supportsMentionPolicy)}
                 onTopicSelect={(topicId) => { setSelectedTopicId(topicId); setMembers([]); }}
                 onAgentChange={(agentId) => selectedTopic ? void updateTopicAgent(agentId) : void updateGroupAgent(agentId)}
                 onPolicyChange={(patch) => void runPolicyMutation(patch, "Route policy updated.")}
@@ -393,7 +401,7 @@ export function ChannelCenterPageContent({
         inspector={null}
       />
 
-      <ConnectChannelsDialog
+      <ChannelCenterAddAccountDialog
         open={isConnectDialogOpen}
         onOpenChange={setIsConnectDialogOpen}
         snapshot={rootSnapshot}
@@ -440,7 +448,7 @@ function AccountPanel({ provider, account, actionKey, onAction, onOpenControlUi 
   );
 }
 
-function RouteDetail({ provider, accountId, group, topic, topics, loadingTopics, members, loadingMembers, currentAgentId, agents, onTopicSelect, onAgentChange, onPolicyChange, onLoadMembers }: { provider: ChannelCenterProvider; accountId: string; group: DirectoryEntry | null; topic: DirectoryEntry | null; topics: DirectoryEntry[]; loadingTopics: boolean; members: DirectoryEntry[]; loadingMembers: boolean; currentAgentId: string | null; agents: MissionControlSnapshot["agents"]; onTopicSelect: (topicId: string | null) => void; onAgentChange: (agentId: string | null) => void; onPolicyChange: (patch: Record<string, unknown>) => void; onLoadMembers: () => void }) {
+function RouteDetail({ provider, accountId, group, topic, topics, loadingTopics, members, loadingMembers, currentAgentId, agents, canEditPolicy, onTopicSelect, onAgentChange, onPolicyChange, onLoadMembers }: { provider: ChannelCenterProvider; accountId: string; group: DirectoryEntry | null; topic: DirectoryEntry | null; topics: DirectoryEntry[]; loadingTopics: boolean; members: DirectoryEntry[]; loadingMembers: boolean; currentAgentId: string | null; agents: MissionControlSnapshot["agents"]; canEditPolicy: boolean; onTopicSelect: (topicId: string | null) => void; onAgentChange: (agentId: string | null) => void; onPolicyChange: (patch: Record<string, unknown>) => void; onLoadMembers: () => void }) {
   const route = topic ?? group;
   const policy = route?.accessPolicy;
   const [allowFrom, setAllowFrom] = useState(() => policy?.allowFrom.join(", ") ?? "");
@@ -455,7 +463,8 @@ function RouteDetail({ provider, accountId, group, topic, topics, loadingTopics,
       <div className="grid gap-4 p-3 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-4">
           <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-muted/60 text-muted-foreground">{topic ? <MessageCircle className="h-5 w-5" /> : <Hash className="h-5 w-5" />}</span><div className="min-w-0"><h3 className="text-sm font-semibold text-foreground">{route.title ?? route.routeId}</h3><p className="font-mono text-[0.65rem] text-muted-foreground">{accountId} · {route.routeId}</p></div></div>
-          <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-border p-3"><div className="flex items-center gap-2 text-xs font-semibold text-foreground"><ShieldCheck className="h-4 w-4 text-primary" />Respond</div><div className="mt-2 flex gap-2"><button type="button" onClick={() => onPolicyChange({ requireMention: true })} className={cn("flex-1 rounded-lg border px-2 py-2 text-[0.68rem]", mention ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Only when mentioned</button><button type="button" onClick={() => onPolicyChange({ requireMention: false })} className={cn("flex-1 rounded-lg border px-2 py-2 text-[0.68rem]", !mention ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Always</button></div></div><div className="rounded-xl border border-border p-3"><div className="flex items-center gap-2 text-xs font-semibold text-foreground"><Users className="h-4 w-4 text-primary" />Access</div><select value={access} onChange={(event) => onPolicyChange({ groupPolicy: event.target.value })} className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-2 text-xs text-foreground"><option value="open">Allowed</option><option value="allowlist">Approved members only</option><option value="disabled">Disabled</option></select><Input value={allowFrom} onChange={(event) => setAllowFrom(event.target.value)} onBlur={() => onPolicyChange({ allowFrom: allowFrom.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="Approved member IDs" className="mt-2 h-9 text-xs" /></div></div>
+          {route.bindingConflict ? <div className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-xs leading-5 text-destructive"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />OpenClaw reports overlapping native bindings for this route. AgentOS will not guess an agent; resolve the conflict in OpenClaw before editing this route.</div> : null}
+          {canEditPolicy ? <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-border p-3"><div className="flex items-center gap-2 text-xs font-semibold text-foreground"><ShieldCheck className="h-4 w-4 text-primary" />Respond</div><div className="mt-2 flex gap-2"><button type="button" onClick={() => onPolicyChange({ requireMention: true })} className={cn("flex-1 rounded-lg border px-2 py-2 text-[0.68rem]", mention ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Only when mentioned</button><button type="button" onClick={() => onPolicyChange({ requireMention: false })} className={cn("flex-1 rounded-lg border px-2 py-2 text-[0.68rem]", !mention ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}>Always</button></div></div><div className="rounded-xl border border-border p-3"><div className="flex items-center gap-2 text-xs font-semibold text-foreground"><Users className="h-4 w-4 text-primary" />Access</div><select value={access} onChange={(event) => onPolicyChange({ groupPolicy: event.target.value })} className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-2 text-xs text-foreground"><option value="open">Allowed</option><option value="allowlist">Approved members only</option><option value="disabled">Disabled</option></select><Input value={allowFrom} onChange={(event) => setAllowFrom(event.target.value)} onBlur={() => onPolicyChange({ allowFrom: allowFrom.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="Approved member IDs" className="mt-2 h-9 text-xs" /></div></div> : <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">OpenClaw did not report route policy editing for this provider. Use the OpenClaw Control UI for provider-native access settings.</div>}
           {!isTopic ? <div className="rounded-xl border border-border p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Topics</span><span className="text-[0.65rem] text-muted-foreground">{loadingTopics ? "Loading…" : `${topics.length}`}</span></div>{topics.length === 0 && !loadingTopics ? <p className="mt-2 text-xs text-muted-foreground">No configured forum topics were reported by OpenClaw.</p> : <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{topics.map((entry) => <button key={entry.routeId} type="button" onClick={() => onTopicSelect(entry.routeId)} className="flex items-center justify-between rounded-lg border border-border px-2.5 py-2 text-left text-xs hover:bg-accent/60"><span className="truncate">{entry.title ?? entry.routeId}</span><span className="ml-2 text-[0.62rem] text-muted-foreground">{entry.agentId ?? "Default"}</span></button>)}</div>}</div> : <button type="button" onClick={() => onTopicSelect(null)} className="text-xs text-primary hover:underline">Back to group</button>}
           {!isTopic && group ? <div className="rounded-xl border border-border p-3"><div className="flex items-center justify-between"><span className="text-xs font-semibold text-foreground">Members</span><Button variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.65rem]" onClick={onLoadMembers} disabled={loadingMembers}>{loadingMembers ? <Loader2 className="h-3 w-3 animate-spin" /> : <Users className="mr-1 h-3 w-3" />}Load members</Button></div>{members.length > 0 ? <div className="mt-2 space-y-1">{members.map((member) => <div key={member.routeId} className="flex justify-between text-[0.68rem]"><span>{member.title ?? member.handle ?? member.routeId}</span><span className="font-mono text-muted-foreground">{member.routeId}</span></div>)}</div> : <p className="mt-2 text-xs text-muted-foreground">Members load only when requested.</p>}</div> : null}
         </div>

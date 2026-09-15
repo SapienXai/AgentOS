@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 async function readLegacyAssignments(provider: string, accountId: string, workspaceId: string) {
   const registry = await readChannelRegistry();
   const channel = registry.channels.find((entry) =>
-    entry.type === provider && (entry.accountId?.trim() || entry.id) === accountId
+    entry.type === provider && entry.id === accountId
   );
   return channel?.workspaces.find((binding) => binding.workspaceId === workspaceId)?.groupAssignments ?? [];
 }

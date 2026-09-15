@@ -65,3 +65,26 @@ test("celestial stars twinkle in independent reduced-motion-aware layers", async
   assert.match(source, /duration: 11\.5/);
   assert.match(source, /duration: 14/);
 });
+
+test("celestial background layers the dark splash video beneath its sky effects", async () => {
+  const source = await readFile(path.join(rootDir, "components/auth/celestial-lock-background.tsx"), "utf8");
+  const styles = await readFile(path.join(rootDir, "app/globals.css"), "utf8");
+
+  assert.match(source, /data-lockscreen-splash-video/);
+  assert.match(source, /src="\/assets\/agentos-splash\.mp4"/);
+  assert.match(source, /poster="\/assets\/agentos-splash-poster\.jpg"/);
+  assert.match(source, /autoPlay=\{reduceMotion !== true\}/);
+  assert.match(source, /video\.pause\(\)/);
+  assert.match(styles, /\.lockscreen-splash-video \{/);
+  assert.match(styles, /opacity: 0\.92/);
+  assert.match(styles, /filter: brightness\(0\.64\) saturate\(0\.94\)/);
+  assert.match(styles, /\.lockscreen-video-wash \{/);
+  assert.match(source, /lockscreen-crt-overlay/);
+  assert.match(styles, /\.lockscreen-crt-overlay \{/);
+  assert.match(styles, /repeating-linear-gradient\(0deg/);
+
+  const skyGradientIndex = source.indexOf("opacity-[0.22]");
+  const videoIndex = source.indexOf("data-lockscreen-splash-video");
+  const moonIndex = source.indexOf('data-celestial-body="moon"');
+  assert.ok(skyGradientIndex >= 0 && skyGradientIndex < videoIndex && videoIndex < moonIndex);
+});

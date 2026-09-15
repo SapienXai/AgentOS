@@ -15,6 +15,8 @@ export interface OpenClawCommandOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   forceCli?: boolean;
+  /** Expected config snapshot hash for a server-side optimistic mutation. */
+  baseHash?: string;
   /** Exact array paths whose removal is intentional for a native config mutation. */
   replacePaths?: string[];
   /** Server-created native handshake proof required for mutation CLI fallback. */

@@ -61,7 +61,7 @@ export async function PATCH(request: Request) {
       result: "succeeded"
     }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(result), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(redactSecrets(presentBindingMutation(result)), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof z.ZodError
       ? "The channel route binding request is invalid."
@@ -102,11 +102,46 @@ export async function POST(request: Request) {
       result: result.conflicts.length > 0 ? "partial" : "succeeded"
     }).catch(() => {});
 
-    return NextResponse.json(redactSecrets(result), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(redactSecrets(presentMigrationResult(result)), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof z.ZodError
       ? "The channel route migration request is invalid."
       : formatChannelRouteBindingError(error);
     return NextResponse.json({ error: message }, { status: error instanceof z.ZodError ? 400 : 400, headers: { "Cache-Control": "no-store" } });
   }
+}
+
+function presentBindingMutation(result: Awaited<ReturnType<typeof setChannelRouteBinding>>) {
+  return {
+    route: result.route,
+    agentId: result.agentId,
+    changed: result.changed,
+    source: result.source,
+    applyMode: result.applyMode,
+    reloadKind: result.reloadKind,
+    restartRequired: result.restartRequired,
+    hotReloaded: result.hotReloaded,
+    appliedVia: result.appliedVia,
+    pending: result.pending
+  };
+}
+
+function presentMigrationResult(result: Awaited<ReturnType<typeof migrateLegacyChannelRouteBindings>>) {
+  return {
+    changed: result.changed,
+    migrated: result.migrated,
+    skipped: result.skipped,
+    conflicts: result.conflicts,
+    mutation: result.mutation
+      ? {
+          changed: result.mutation.changed,
+          applyMode: result.mutation.applyMode,
+          reloadKind: result.mutation.reloadKind,
+          restartRequired: result.mutation.restartRequired,
+          hotReloaded: result.mutation.hotReloaded,
+          appliedVia: result.mutation.appliedVia,
+          pending: result.mutation.pending
+        }
+      : null
+  };
 }

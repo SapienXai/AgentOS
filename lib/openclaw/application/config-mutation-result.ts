@@ -20,7 +20,7 @@ export function readConfigMutationOutcome(result: CommandResult, fallbackPath: s
   const metadata = isRecord(result.metadata?.openClawConfig) ? result.metadata.openClawConfig : null;
   const mutation = isRecord(parsed?.configMutation) ? parsed.configMutation : null;
   const source = mutation ?? metadata;
-  const pending = result.metadata?.pending === true || parsed?.pending === true;
+  const pending = result.metadata?.pending === true || parsed?.pending === true || source?.pending === true;
   const reloadKind = normalizeReloadKind(source?.reloadKind);
   const appliedVia = normalizeAppliedVia(source?.appliedVia);
 
@@ -38,13 +38,21 @@ export function readConfigMutationOutcome(result: CommandResult, fallbackPath: s
 }
 
 export function combineConfigMutationOutcomes(outcomes: OpenClawConfigMutationOutcome[], fallbackPath: string) {
-  const applyMode = outcomes.reduce<OpenClawConfigApplyMode>((current, outcome) => {
-    return rankApplyMode(outcome.applyMode) > rankApplyMode(current) ? outcome.applyMode : current;
-  }, "live");
+  const applyMode = outcomes.length === 0
+    ? "live"
+    : outcomes.some((outcome) => outcome.applyMode === "pending")
+      ? "pending"
+      : outcomes.some((outcome) => outcome.applyMode === "restart")
+        ? "restart"
+        : outcomes.some((outcome) => outcome.applyMode === "unknown")
+          ? "unknown"
+          : outcomes.some((outcome) => outcome.applyMode === "reload")
+            ? "reload"
+            : "live";
 
   return {
     path: fallbackPath,
-    applyMode: outcomes.length === 0 ? "live" : applyMode,
+    applyMode,
     reloadKind: outcomes.some((outcome) => outcome.reloadKind === "restart")
       ? "restart"
       : outcomes.some((outcome) => outcome.reloadKind === "hot")
@@ -71,21 +79,6 @@ function resolveApplyMode(reloadKind: OpenClawConfigReloadKind): OpenClawConfigA
       return "restart";
     default:
       return "unknown";
-  }
-}
-
-function rankApplyMode(mode: OpenClawConfigApplyMode) {
-  switch (mode) {
-    case "pending":
-      return 4;
-    case "restart":
-      return 3;
-    case "reload":
-      return 2;
-    case "unknown":
-      return 1;
-    case "live":
-      return 0;
   }
 }
 

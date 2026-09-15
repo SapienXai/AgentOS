@@ -131,6 +131,9 @@ type WorkspaceChannelSetupResponse = WorkspaceChannelSetupProjection & {
 };
 
 const SURFACE_KIND_ORDER: MissionControlSurfaceKind[] = ["chat", "inbox", "trigger"];
+// Workspace-specific channel management is intentionally routed to Channel Center.
+// Keep the old surface code only as a compatibility shell until its callers are removed.
+const LEGACY_SURFACE_MANAGEMENT_ENABLED = false;
 export type WorkspaceDialogSection = "surfaces" | "accounts";
 type WorkspaceDialogThemeStyle = CSSProperties & Record<`--wi-${string}`, string>;
 
@@ -450,7 +453,7 @@ export function WorkspaceChannelsDialog({
   }, [currentCatalogEntry, initialAgentId, newPrimaryAgentId, open, workspaceAgents]);
 
   useEffect(() => {
-    if (!open || !workspace?.id) {
+    if (!LEGACY_SURFACE_MANAGEMENT_ENABLED || !open || !workspace?.id) {
       return;
     }
 
@@ -468,7 +471,7 @@ export function WorkspaceChannelsDialog({
   }, [activeProvider, providerOptions]);
 
   useEffect(() => {
-    if (!open || !workspace?.id || !currentCatalogEntry.supportsRouteDiscovery) {
+    if (!LEGACY_SURFACE_MANAGEMENT_ENABLED || !open || !workspace?.id || !currentCatalogEntry.supportsRouteDiscovery) {
       return;
     }
 
@@ -1360,7 +1363,7 @@ export function WorkspaceChannelsDialog({
           </div>
         ) : null}
 
-        {surfaceGatewayAccess.blocked ? (
+        {LEGACY_SURFACE_MANAGEMENT_ENABLED && surfaceGatewayAccess.blocked ? (
           <div className="mx-4 mt-4 rounded-2xl border border-amber-300/40 bg-amber-50 px-3 py-3 sm:mx-6 dark:border-amber-300/25 dark:bg-amber-400/[0.08]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 gap-3">
@@ -1404,7 +1407,7 @@ export function WorkspaceChannelsDialog({
           </div>
         ) : null}
 
-        {workspaceSetupError ? (
+        {LEGACY_SURFACE_MANAGEMENT_ENABLED && workspaceSetupError ? (
           <div className="mx-4 mt-4 rounded-2xl border border-rose-300/40 bg-rose-50 px-3 py-3 sm:mx-6 dark:border-rose-300/25 dark:bg-rose-400/[0.08]">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" />
@@ -1416,7 +1419,7 @@ export function WorkspaceChannelsDialog({
           </div>
         ) : null}
 
-        {workspaceSetup?.items.length ? (
+        {LEGACY_SURFACE_MANAGEMENT_ENABLED && workspaceSetup?.items.length ? (
           <section className="mx-4 mt-4 rounded-2xl border border-violet-300/35 bg-violet-50/70 p-3.5 sm:mx-6 dark:border-violet-300/20 dark:bg-violet-400/[0.06]">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -1530,7 +1533,8 @@ export function WorkspaceChannelsDialog({
             </div>
 
             {activeSection === "surfaces" ? (
-              <>
+              LEGACY_SURFACE_MANAGEMENT_ENABLED ? (
+                <>
                 <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2">
                   <TabsList className="flex h-9 w-full gap-1 overflow-x-auto rounded-[10px] border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-1">
                     {availableKinds.map((kind) => (
@@ -1580,7 +1584,29 @@ export function WorkspaceChannelsDialog({
                 );
                   })}
                 </div>
-              </>
+                </>
+              ) : (
+                <div className="mt-2 space-y-3 rounded-xl border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-3">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-3.5 w-3.5 text-[var(--wi-accent)]" />
+                    <p className="text-xs font-medium text-[var(--wi-text-strong)]">Channel Center</p>
+                  </div>
+                  <p className="text-[11px] leading-4 text-[var(--wi-text-muted)]">
+                    OpenClaw-backed channel accounts, routes, policies, and agent bindings are managed there.
+                  </p>
+                  <Label htmlFor="workspace-channel-provider" className="text-[10px] uppercase tracking-[0.14em] text-[var(--wi-text-muted)]">
+                    Provider context
+                  </Label>
+                  <select
+                    id="workspace-channel-provider"
+                    value={activeProvider}
+                    onChange={(event) => setActiveProvider(event.target.value as MissionControlSurfaceProvider)}
+                    className="h-9 w-full rounded-lg border border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-xs text-[var(--wi-text-strong)]"
+                  >
+                    {surfaceCatalogEntries.map((entry) => <option key={entry.provider} value={entry.provider}>{entry.label}</option>)}
+                  </select>
+                </div>
+              )
             ) : (
               <div className="mt-2 hidden space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 sm:block dark:border-white/8 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-2">
@@ -1614,7 +1640,7 @@ export function WorkspaceChannelsDialog({
                 })}
                 onConnectAccount={() => onConnectAccount?.()}
               />
-            ) : (
+            ) : LEGACY_SURFACE_MANAGEMENT_ENABLED ? (
               <>
             {workspaceDriftIssues.length > 0 ? (
               <section className="rounded-2xl border border-amber-300/35 bg-amber-50 p-3.5 dark:border-amber-300/20 dark:bg-amber-400/[0.06]">
@@ -2247,6 +2273,12 @@ export function WorkspaceChannelsDialog({
               </div>
             </section>
               </>
+            ) : (
+              <WorkspaceChannelCenterHandoff
+                workspaceId={workspace?.id ?? workspaceId}
+                provider={activeProvider}
+                onClose={() => onOpenChange(false)}
+              />
             )}
           </div>
         </div>
@@ -2411,6 +2443,47 @@ function FormField({
       </Label>
       {children}
     </div>
+  );
+}
+
+function WorkspaceChannelCenterHandoff({
+  workspaceId,
+  provider,
+  onClose
+}: {
+  workspaceId: string | null;
+  provider: MissionControlSurfaceProvider;
+  onClose: () => void;
+}) {
+  const openChannelCenter = () => {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set("workspaceId", workspaceId);
+    if (provider) params.set("provider", provider);
+    window.location.assign(`/channels${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.025]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Link2 className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">Channel Center owns channel management</h3>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Provider status, account lifecycle, route discovery, access policy, and agent bindings now come from the OpenClaw-backed Channel Center.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button type="button" size="sm" className="h-9 rounded-full px-3 text-xs" onClick={openChannelCenter}>
+          Open Channel Center
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="h-9 rounded-full px-3 text-xs" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </section>
   );
 }
 

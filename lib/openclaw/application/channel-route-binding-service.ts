@@ -2,7 +2,6 @@ import "server-only";
 
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
-  combineConfigMutationOutcomes,
   type OpenClawConfigMutationOutcome,
   readConfigMutationOutcome
 } from "@/lib/openclaw/application/config-mutation-result";
@@ -14,6 +13,7 @@ import {
   type ChannelRouteIdentity
 } from "@/lib/openclaw/domains/channel-center";
 import type { ChannelRegistry } from "@/lib/openclaw/types";
+import { redactErrorMessage } from "@/lib/security/redaction";
 
 export type OpenClawNativeRouteBinding = {
   agentId: string;
@@ -168,6 +168,7 @@ export async function setChannelRouteBinding(input: {
 
   const result = await adapter.setConfig("bindings", nextBindings, {
     strictJson: true,
+    ...(currentBindings.baseHash ? { baseHash: currentBindings.baseHash } : {}),
     replacePaths: ["bindings"],
     timeoutMs: 15_000
   });
@@ -178,7 +179,15 @@ export async function setChannelRouteBinding(input: {
     agentId,
     changed: true,
     source: "openclaw",
-    ...mutation
+    configPath: mutation.path,
+    applyMode: mutation.applyMode,
+    reloadKind: mutation.reloadKind,
+    restartRequired: mutation.restartRequired,
+    hotReloaded: mutation.hotReloaded,
+    appliedVia: mutation.appliedVia,
+    pending: mutation.pending,
+    baseHash: mutation.baseHash,
+    changedPaths: mutation.changedPaths
   };
 }
 
@@ -216,6 +225,22 @@ export async function migrateLegacyChannelRouteBindings(input: {
       continue;
     }
 
+    const effectiveNative = resolveChannelRouteBinding(candidate.route, currentBindings);
+    if (effectiveNative.match === "conflict") {
+      const nativeAgentIds = currentBindings.entries
+        .filter((entry) => scoreNativeBinding(candidate.route, entry) !== null)
+        .map((entry) => entry.binding.agentId);
+      conflicts.push({
+        reason: "duplicate-native-binding",
+        route: candidate.route,
+        agentIds: Array.from(new Set([...nativeAgentIds, ...candidate.agentIds])),
+        compatibilityAgentIds: candidate.agentIds,
+        nativeAgentIds: Array.from(new Set(nativeAgentIds))
+      });
+      skipped += 1;
+      continue;
+    }
+
     if (exact.length === 1) {
       const nativeAgentId = exact[0]!.binding.agentId;
       if (candidate.agentIds.length !== 1 || candidate.agentIds[0] !== nativeAgentId) {
@@ -225,6 +250,21 @@ export async function migrateLegacyChannelRouteBindings(input: {
           agentIds: Array.from(new Set([nativeAgentId, ...candidate.agentIds])),
           compatibilityAgentIds: candidate.agentIds,
           nativeAgentIds: [nativeAgentId]
+        });
+      } else {
+        skipped += 1;
+      }
+      continue;
+    }
+
+    if (effectiveNative.source === "openclaw" && effectiveNative.agentId) {
+      if (candidate.agentIds.length !== 1 || candidate.agentIds[0] !== effectiveNative.agentId) {
+        conflicts.push({
+          reason: "native-vs-compatibility",
+          route: candidate.route,
+          agentIds: Array.from(new Set([effectiveNative.agentId, ...candidate.agentIds])),
+          compatibilityAgentIds: candidate.agentIds,
+          nativeAgentIds: [effectiveNative.agentId]
         });
       } else {
         skipped += 1;
@@ -254,6 +294,7 @@ export async function migrateLegacyChannelRouteBindings(input: {
 
   const result = await adapter.setConfig("bindings", nextBindings, {
     strictJson: true,
+    ...(currentBindings.baseHash ? { baseHash: currentBindings.baseHash } : {}),
     replacePaths: ["bindings"],
     timeoutMs: 15_000
   });
@@ -274,15 +315,37 @@ export async function migrateLegacyChannelRouteBindings(input: {
       agentId: null,
       changed: true,
       source: "openclaw",
-      ...mutation
+      configPath: mutation.path,
+      applyMode: mutation.applyMode,
+      reloadKind: mutation.reloadKind,
+      restartRequired: mutation.restartRequired,
+      hotReloaded: mutation.hotReloaded,
+      appliedVia: mutation.appliedVia,
+      pending: mutation.pending,
+      baseHash: mutation.baseHash,
+      changedPaths: mutation.changedPaths
     }
   };
 }
 
 export async function readNativeRouteBindings(adapter: OpenClawAdapter = getOpenClawAdapter()) {
-  const value = await adapter.getConfig<unknown>("bindings", { timeoutMs: 10_000 });
-  if (value === null || value === undefined) {
-    throw new Error("OpenClaw native channel bindings are unavailable on this Gateway.");
+  let value: unknown = null;
+  let baseHash: string | null = null;
+
+  if (adapter.getConfigSnapshot) {
+    try {
+      const snapshot = await adapter.getConfigSnapshot({ timeoutMs: 10_000 });
+      const config = isRecord(snapshot.config) ? snapshot.config : {};
+      const resolved = isRecord(snapshot.resolved) ? snapshot.resolved : {};
+      value = Object.prototype.hasOwnProperty.call(config, "bindings")
+        ? config.bindings
+        : resolved.bindings;
+      baseHash = normalizeString(snapshot.hash ?? snapshot.configRevisionHash ?? snapshot.appliedConfigHash);
+    } catch {
+      value = await adapter.getConfig<unknown>("bindings", { timeoutMs: 10_000 });
+    }
+  } else {
+    value = await adapter.getConfig<unknown>("bindings", { timeoutMs: 10_000 });
   }
 
   const raw = Array.isArray(value) ? value : [];
@@ -290,7 +353,7 @@ export async function readNativeRouteBindings(adapter: OpenClawAdapter = getOpen
     .map((entry, index) => normalizeNativeRouteBinding(entry, index))
     .filter((entry): entry is NormalizedNativeRouteBinding => Boolean(entry));
 
-  return { raw, entries };
+  return { raw, entries, baseHash };
 }
 
 export function resolveChannelRouteBinding(
@@ -513,7 +576,7 @@ function collectLegacyTelegramAssignments(registry: ChannelRegistry, workspaceId
   const byRoute = new Map<string, { route: ChannelRouteIdentity; agentIds: string[] }>();
 
   for (const channel of registry.channels.filter((entry) => entry.type === "telegram")) {
-    const accountId = channel.accountId?.trim() || channel.id;
+    const accountId = channel.id;
     const workspaces = workspaceId
       ? channel.workspaces.filter((workspace) => workspace.workspaceId === workspaceId)
       : channel.workspaces;
@@ -603,5 +666,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function formatChannelRouteBindingError(error: unknown) {
-  return error instanceof Error ? error.message : "OpenClaw channel route binding could not be updated.";
+  return redactErrorMessage(error, "OpenClaw channel route binding could not be updated.");
 }

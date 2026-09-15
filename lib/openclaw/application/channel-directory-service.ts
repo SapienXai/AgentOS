@@ -412,12 +412,13 @@ async function enrichRouteBindings(result: ChannelDirectoryResult, input: Channe
     return result;
   }
 
-  let snapshot: Awaited<ReturnType<typeof readNativeRouteBindings>>;
+  let snapshot: Awaited<ReturnType<typeof readNativeRouteBindings>> = { raw: [], entries: [], baseHash: null };
   try {
     snapshot = await readNativeRouteBindings(getOpenClawAdapter());
   } catch {
-    // Directory data remains useful when the optional native binding projection is unavailable.
-    return result;
+    // Compatibility assignment is only a migration bridge. If no bridge was supplied,
+    // keep the directory data useful without inventing a runtime binding.
+    if (!input.compatibilityAssignments?.length) return result;
   }
 
   const compatibilityByRouteId = new Map(

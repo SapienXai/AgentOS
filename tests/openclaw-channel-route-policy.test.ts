@@ -10,15 +10,18 @@ import { updateTelegramRoutePolicy } from "@/lib/openclaw/application/channel-ro
 afterEach(() => setOpenClawAdapterForTesting(null));
 
 test("Telegram account policy writes stay inside the named account scope", async () => {
-  const writes: Array<{ path: string; value: unknown }> = [];
+  const writes: Array<{ path: string; value: unknown; options: Record<string, unknown> }> = [];
   setOpenClawAdapterForTesting({
     getConfig: async () => ({
-      groups: { "-100-root": { requireMention: true } },
-      accounts: { support: { token: "redacted", groups: { "-100-support": { requireMention: true } } } }
+      groups: { "-100-root": { requireMention: true, unknownFuture: { keep: true } } },
+      accounts: { support: { token: "redacted", groups: { "-100-support": { requireMention: true, unknownFuture: { keep: true } } } } }
     }),
-    setConfig: async (path: string, value: unknown) => {
-      writes.push({ path, value });
-      return { stdout: "", stderr: "" };
+    setConfig: async (path: string, value: unknown, options: Record<string, unknown>) => {
+      writes.push({ path, value, options });
+      return {
+        stdout: JSON.stringify({ configMutation: { path, reloadKind: "hot", hotReloaded: true, appliedVia: "config.patch", baseHash: "hash-support", changedPaths: [path] } }),
+        stderr: ""
+      };
     }
   } as unknown as OpenClawAdapter);
 
@@ -28,14 +31,19 @@ test("Telegram account policy writes stay inside the named account scope", async
     patch: { requireMention: false, allowFrom: ["user-1"] }
   });
 
-  assert.equal(result.restartRequired, true);
-  assert.equal(writes[0]?.path, 'channels.telegram.accounts["support"].groups');
-  assert.deepEqual(writes[0]?.value, {
-    "-100-support": { requireMention: false, groupAllowFrom: ["user-1"] }
-  });
+  assert.equal(result.restartRequired, false);
+  assert.equal(result.applyMode, "reload");
+  assert.equal(result.baseHash, null, "multiple leaf mutations are reported as an aggregate without a single hash");
+  assert.deepEqual(writes.map((write) => write.path), [
+    'channels.telegram.accounts["support"].groups["-100-support"]["requireMention"]',
+    'channels.telegram.accounts["support"].groups["-100-support"]["groupAllowFrom"]'
+  ]);
+  assert.deepEqual(writes[1]?.options.replacePaths, [writes[1]?.path]);
+  assert.deepEqual(writes[0]?.value, false);
+  assert.deepEqual(writes[1]?.value, ["user-1"]);
 });
 
-test("Telegram topic policy preserves sibling topics and supports native agentId", async () => {
+test("Telegram topic policy mutates only selected fields and preserves sibling topics", async () => {
   const writes: Array<{ path: string; value: unknown }> = [];
   setOpenClawAdapterForTesting({
     getConfig: async () => ({
@@ -44,6 +52,7 @@ test("Telegram topic policy preserves sibling topics and supports native agentId
           groups: {
             "-1001": {
               name: "Operations",
+              tools: { allowed: ["message"] },
               topics: {
                 "1": { name: "General" },
                 "2": { name: "Reservations", agentId: "old" }
@@ -55,7 +64,7 @@ test("Telegram topic policy preserves sibling topics and supports native agentId
     }),
     setConfig: async (path: string, value: unknown) => {
       writes.push({ path, value });
-      return { stdout: "", stderr: "" };
+      return { stdout: JSON.stringify({ configMutation: { path, reloadKind: "none", appliedVia: "config.patch" } }), stderr: "" };
     }
   } as unknown as OpenClawAdapter);
 
@@ -66,16 +75,11 @@ test("Telegram topic policy preserves sibling topics and supports native agentId
     patch: { agentId: "reservations", requireMention: true }
   });
 
-  assert.equal(writes[0]?.path, 'channels.telegram.accounts["main"].groups');
-  assert.deepEqual(writes[0]?.value, {
-    "-1001": {
-      name: "Operations",
-      topics: {
-        "1": { name: "General" },
-        "2": { name: "Reservations", agentId: "reservations", requireMention: true }
-      }
-    }
-  });
+  assert.deepEqual(writes.map((write) => write.path), [
+    'channels.telegram.accounts["main"].groups["-1001"]["2"]["requireMention"]',
+    'channels.telegram.accounts["main"].groups["-1001"]["2"]["agentId"]'
+  ]);
+  assert.deepEqual(writes.map((write) => write.value), [true, "reservations"]);
 });
 
 test("no-op route policy changes do not write OpenClaw config", async () => {
@@ -95,5 +99,14 @@ test("no-op route policy changes do not write OpenClaw config", async () => {
   });
 
   assert.equal(result.changedFields.length, 0);
+  assert.equal(result.applyMode, "live");
   assert.equal(writeCount, 0);
+});
+
+test("group agent fields are rejected by the policy service", async () => {
+  setOpenClawAdapterForTesting({ getConfig: async () => ({}) } as unknown as OpenClawAdapter);
+  await assert.rejects(
+    updateTelegramRoutePolicy({ accountId: "main", groupId: "-1001", patch: { agentId: "agent-a" } }),
+    /native OpenClaw bindings/i
+  );
 });

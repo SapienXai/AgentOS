@@ -223,11 +223,10 @@ export function OperationsShell({
       ...snapshot.workspaces.map((workspace) => workspace.id),
       ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
     ]));
-    const resolvedWorkspaceId = resolveWorkspaceSelection(
-      selectableWorkspaceIds,
-      storedWorkspaceId,
-      activeWorkspaceId
-    );
+    const requestedWorkspaceId = new URLSearchParams(window.location.search).get("workspaceId");
+    const resolvedWorkspaceId = requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
+      ? requestedWorkspaceId
+      : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, activeWorkspaceId);
 
     queueMicrotask(() => {
       if (resolvedWorkspaceId !== activeWorkspaceId) {

@@ -1020,14 +1020,6 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isEmptyObject(value: unknown) {
-  if (value === null || value === undefined) {
-    return true;
-  }
-
-  return isObjectRecord(value) && !Array.isArray(value) && Object.keys(value).length === 0;
-}
-
 function configValuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(sortConfigComparable(left ?? null)) === JSON.stringify(sortConfigComparable(right ?? null));
 }
@@ -1636,12 +1628,12 @@ async function updateManagedSurfaceRouting(
       return true;
     }
 
-    if (typeof match.accountId === "string" && removedAccountIds.has(match.accountId)) {
+    if (match.channel !== "telegram" && typeof match.accountId === "string" && removedAccountIds.has(match.accountId)) {
       return false;
     }
 
     if (
-      match.channel === "telegram" &&
+      match.channel !== "telegram" &&
       isObjectRecord(match.peer) &&
       typeof match.peer.id === "string" &&
       removedGroupIds.has(match.peer.id)
@@ -1700,25 +1692,6 @@ async function buildManagedTelegramSettingsPatch(
     telegramPatch.defaultAccount = defaultAccountId;
   } else if (!defaultAccountId && currentDefaultAccountId !== null) {
     telegramPatch.defaultAccount = null;
-  }
-
-  const nextGroupsConfig = Object.fromEntries(
-    managedChannels.flatMap((channel) =>
-      channel.workspaces.flatMap((workspace) =>
-        workspace.groupAssignments
-          .filter((assignment) => assignment.enabled !== false)
-          .map((assignment) => [assignment.chatId, { requireMention: true }] as const)
-      )
-    )
-  );
-  const currentGroupsConfig = await measureTiming(timings, "telegram-settings.read-groups", () =>
-    getOpenClawAdapter().getConfig<Record<string, unknown>>("channels.telegram.groups")
-  );
-
-  if (!isEmptyObject(nextGroupsConfig) || !isEmptyObject(currentGroupsConfig)) {
-    if (!configValuesEqual(currentGroupsConfig ?? {}, nextGroupsConfig)) {
-      telegramPatch.groups = nextGroupsConfig;
-    }
   }
 
   return {

@@ -227,36 +227,11 @@ test("includes dynamic OpenClaw providers without enabling guessed provisioning"
   assert.equal(matrix?.provisionFields.length, 0);
 });
 
-test("builds expected OpenClaw bindings for primary, Telegram route, and Discord routes", () => {
+test("builds managed non-Telegram bindings while leaving Telegram to Channel Center", () => {
   const registry = createRegistry();
   const bindings = buildManagedOpenClawBindings(registry);
 
   assert.deepEqual(bindings, [
-    {
-      agentId: "agent-primary",
-      match: {
-        channel: "telegram",
-        accountId: "tg-main"
-      }
-    },
-    {
-      agentId: "agent-group",
-      match: {
-        channel: "telegram",
-        accountId: "tg-main"
-      }
-    },
-    {
-      agentId: "agent-group",
-      match: {
-        channel: "telegram",
-        accountId: "tg-main",
-        peer: {
-          kind: "group",
-          id: "-1001"
-        }
-      }
-    },
     {
       agentId: "agent-discord",
       match: {
@@ -340,10 +315,10 @@ test("detects missing, extra, mismatched, missing account, and disabled provider
   });
 
   assert.equal(drift.checked, true);
-  assert.equal(drift.summary.agentMismatch, 2);
-  assert.equal(drift.summary.missingBindings, 3);
+  assert.equal(drift.summary.agentMismatch, 0);
+  assert.equal(drift.summary.missingBindings, 2);
   assert.equal(drift.summary.extraBindings, 1);
-  assert.equal(drift.summary.providerDisabled, 1);
+  assert.equal(drift.summary.providerDisabled, 0);
   assert.equal(drift.summary.accountMissing, 0);
   assert.ok(drift.issues.every((issue) => issue.workspaceId === "workspace-1"));
 });
@@ -404,7 +379,7 @@ test("repairs managed bindings without returning binding secrets", () => {
   });
 
   assert.equal(result.changed, true);
-  assert.equal(result.expectedBindingCount, 5);
+  assert.equal(result.expectedBindingCount, 2);
   assert.deepEqual(result.configMutations, [{
     path: "bindings",
     appliedVia: "config.patch",
@@ -413,6 +388,9 @@ test("repairs managed bindings without returning binding secrets", () => {
   }]);
   assert.equal(JSON.stringify(result).includes("do-not-return"), false);
   assert.equal(JSON.stringify(nextBindings).includes("thread-extra"), false);
+  assert.equal(nextBindings.some((binding) =>
+    (binding as { match?: { channel?: string } }).match?.channel === "telegram"
+  ), true);
 });
 
 test("surface binding repair result carries dry-run audit and restore metadata without config mutations", () => {
