@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.9.4-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-09-15T20:00:54.936Z",
-  "certifiedAt": "2026-09-15T20:00:54.936Z",
-  "agentosHead": "44b7353b47e2633f2061eb65b989995321effab2",
+  "generatedAt": "2026-09-15T20:24:21.527Z",
+  "certifiedAt": "2026-09-15T20:24:21.527Z",
+  "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
   "openclawVersion": "2026.9.4",
   "openclawSourceSha": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
   "upstreamEvidenceHashes": {
@@ -15,10 +15,10 @@
   "contractAudit": {
     "schemaVersion": 1,
     "artifactType": "openclaw-contract-diff",
-    "generatedAt": "2026-09-15T19:56:48.388Z",
+    "generatedAt": "2026-09-15T20:22:26.959Z",
     "provenance": {
       "repository": "SapienXai/AgentOS",
-      "agentosHead": "44b7353b47e2633f2061eb65b989995321effab2",
+      "agentosHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
       "comparison": "2026.9.3 -> 2026.9.4",
       "source": {
         "version": "2026.9.3",
@@ -1380,7 +1380,7 @@
   },
   "compatibility": {
     "report": {
-      "generatedAt": "2026-09-15T19:55:51.683Z",
+      "generatedAt": "2026-09-15T20:21:46.677Z",
       "target": {
         "name": "real-local",
         "kind": "real",
@@ -3939,7 +3939,7 @@
           "responseShapeValid": null,
           "status": "degraded",
           "reason": "Native plugin discovery catalog could not be observed because the OpenClaw Gateway is unreachable.",
-          "suggestedRecovery": "Update OpenClaw for native Native plugin discovery catalog support.",
+          "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
           "epistemicStatus": "unreachable",
           "fallbackStatus": "not-allowed",
           "fallbackUsed": false,
@@ -4656,7 +4656,7 @@
           "responseShapeValid": null,
           "status": "degraded",
           "reason": "Browser profiles could not be observed because the OpenClaw Gateway is unreachable.",
-          "suggestedRecovery": "Update OpenClaw for native Browser profiles support.",
+          "suggestedRecovery": "Restore the OpenClaw Gateway connection and retry.",
           "epistemicStatus": "unreachable",
           "fallbackStatus": "not-allowed",
           "fallbackUsed": false,
@@ -5518,7 +5518,13 @@
     "channelCenterAgrees": true,
     "threadInheritanceVerified": true,
     "directThreadBindingControl": false,
-    "removalVerified": true
+    "removalVerified": true,
+    "canonicalRereadReflectedRemoval": true,
+    "badgeRemovalVerified": true,
+    "channelCenterRemovalVerified": true,
+    "postRemovalThreadResolutionVerified": true,
+    "postRemovalThreadBindingMatch": "none",
+    "directThreadBindingMutations": 0
   },
   "liveTelegram": {
     "classification": "BLOCKED_BY_ENVIRONMENT",
@@ -5538,8 +5544,8 @@
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "44b7353b47e2633f2061eb65b989995321effab2",
-    "evidenceCommit": "a89d8a9545d6d0638277c6df6a14501859091db4",
+    "certifiedCodeHead": "3c768825a2623172cc51239b48e0ab9506f20b6e",
+    "evidenceCommit": "a127b50d9f144eab65cc95a5c4325b11b52d8870",
     "branch": "main",
     "node": "v24.20.0",
     "openClaw": {
