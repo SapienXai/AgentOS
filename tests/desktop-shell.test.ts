@@ -25,6 +25,7 @@ test("desktop startup keeps the main window hidden until the splash gate is read
 
   assert.match(source, /\.visible\(cfg!\(debug_assertions\)\)/);
   assert.match(source, /WebviewWindowBuilder::new\(app, "splash", WebviewUrl::App\("index\.html"\.into\(\)\)\)/);
+  assert.match(source, /\.inner_size\(1040\.0, 576\.0\)/);
   assert.match(source, /\.decorations\(false\)/);
   assert.match(source, /\.center\(\)/);
   assert.match(source, /\.prevent_overflow_with_margin\(LogicalSize::new\(24\.0, 24\.0\)\)/);
