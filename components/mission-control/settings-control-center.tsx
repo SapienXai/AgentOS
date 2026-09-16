@@ -131,6 +131,7 @@ type SettingsSectionId =
   | "general"
   | "ai-tools"
   | "runtime"
+  | "security"
   | "advanced"
   | "developer"
   | "overview"
@@ -154,6 +155,7 @@ type SettingsSection = {
 const settingsSections: SettingsSection[] = [
   { id: "general", label: "General", icon: Wrench, group: "Core" },
   { id: "ai-tools", label: "AI & Tools", icon: Bot, group: "Core" },
+  { id: "security", label: "Security", icon: ShieldCheck, group: "Core" },
   { id: "workspace", label: "Workspace", icon: Folder, group: "Workspace" },
   { id: "runtime", label: "Runtime", icon: Activity, group: "OpenClaw" },
   { id: "advanced", label: "Advanced", icon: Settings2, group: "System" }
@@ -175,6 +177,7 @@ const settingsSectionGroups = ["Core", "OpenClaw", "Workspace", "System"] as con
 
 const relatedSettingsSections: Partial<Record<SettingsSectionId, SettingsSectionId[]>> = {
   general: ["ai-tools", "runtime"],
+  security: ["general", "advanced"],
   "ai-tools": ["general", "runtime"],
   workspace: ["general", "runtime"],
   runtime: ["workspace", "advanced"],
@@ -1276,6 +1279,7 @@ export function SettingsControlCenter(
     renderedActiveSection === "ai-tools" ||
     renderedActiveSection === "workspace" ||
     renderedActiveSection === "runtime" ||
+    renderedActiveSection === "security" ||
     renderedActiveSection === "advanced";
 
   if (isSimplifiedSettingsSection) {
@@ -6250,6 +6254,8 @@ function resolveHashSettingsSection(): SettingsSectionId {
   switch (window.location.hash.replace(/^#/, "")) {
     case "runtime":
       return "runtime";
+    case "security":
+      return "security";
     case "gateway":
       return "gateway";
     case "general":

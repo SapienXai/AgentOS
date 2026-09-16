@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, LoaderCircle, PackageX, RotateCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, LoaderCircle, PackageX, RotateCcw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +65,7 @@ export function ResetDialog({
     target === "full-uninstall" ? "FULL UNINSTALL" : "RESET MISSION CONTROL";
   const isExecuting = runState === "running";
   const hasFinished = runState === "success" || runState === "error";
+  const isFullUninstall = target === "full-uninstall";
   const nativePlanReady = target !== "full-uninstall" || preview?.nativeOpenClaw?.status === "ready";
   const canExecute =
     target !== null &&
@@ -76,10 +77,9 @@ export function ResetDialog({
     confirmText.trim() === expectedConfirmation;
   const title =
     target === "full-uninstall" ? "Full Uninstall" : "Reset AgentOS";
-  const description =
-    target === "full-uninstall"
-      ? "Run OpenClaw's native service, state, and macOS app teardown first, then remove AgentOS-owned state. Configured user workspace folders stay protected; the final result is sent before AgentOS exits and detected package removal may finish afterward."
-      : "Remove AgentOS-managed workspaces, attached agents, task history, planner state, and browser state.";
+  const description = isFullUninstall
+    ? "Remove AgentOS from this machine. OpenClaw native teardown runs first; protected workspace folders stay preserved."
+    : "Clear AgentOS-managed state while preserving OpenClaw and protected workspace data.";
   const dangerButtonClassName =
     surfaceTheme === "light"
       ? "border-rose-400/80 bg-rose-600 text-white hover:bg-rose-700"
@@ -98,7 +98,7 @@ export function ResetDialog({
     >
       <DialogContent
         className={cn(
-          "max-h-[88vh] w-[min(92vw,56rem)] max-w-[92vw] min-w-0 overflow-x-hidden overflow-y-auto sm:max-w-3xl",
+          "max-h-[88vh] w-[min(92vw,520px)] max-w-[92vw] min-w-0 overflow-x-hidden overflow-y-auto",
           surfaceTheme === "light"
             ? "border-[#dcc8bb] bg-[rgba(252,247,241,0.98)] text-[#402f24]"
             : "border-white/12 bg-[rgba(7,12,22,0.96)] text-slate-100"
@@ -142,27 +142,19 @@ export function ResetDialog({
 
         {preview ? (
           <>
-            <div className="grid gap-3 md:grid-cols-4">
-              <MetricCard
-                label="Delete folders"
-                value={String(preview.summary.deleteFolderCount)}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ImpactCard
+                label="Will remove"
+                value={`${preview.summary.deleteFolderCount} folder${preview.summary.deleteFolderCount === 1 ? "" : "s"}`}
+                detail={`${preview.summary.agentCount} agent${preview.summary.agentCount === 1 ? "" : "s"} and ${preview.summary.activeRuntimeCount} active run${preview.summary.activeRuntimeCount === 1 ? "" : "s"}`}
                 surfaceTheme={surfaceTheme}
+                danger
               />
-              <MetricCard
-                label="Keep folders"
-                value={String(preview.summary.metadataOnlyCount)}
+              <ImpactCard
+                label="Will preserve"
+                value={`${preview.summary.metadataOnlyCount} folder${preview.summary.metadataOnlyCount === 1 ? "" : "s"}`}
+                detail={`${preview.summary.liveAgentCount} live agent${preview.summary.liveAgentCount === 1 ? "" : "s"} remain protected`}
                 surfaceTheme={surfaceTheme}
-              />
-              <MetricCard
-                label="Agents"
-                value={String(preview.summary.agentCount)}
-                surfaceTheme={surfaceTheme}
-              />
-              <MetricCard
-                label="Live agents"
-                value={String(preview.summary.liveAgentCount)}
-                surfaceTheme={surfaceTheme}
-                danger={preview.summary.liveAgentCount > 0}
               />
             </div>
 
@@ -186,6 +178,12 @@ export function ResetDialog({
               </div>
             ) : null}
 
+            <details className="group rounded-2xl border border-border/70 bg-background/20 px-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+                <span>Review details</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="pb-3">
             <div
               className={cn(
                 "mt-3 rounded-[16px] border px-4 py-4",
@@ -372,6 +370,8 @@ export function ResetDialog({
                 </div>
               </div>
             ) : null}
+              </div>
+            </details>
 
             <div
               className={cn(
@@ -423,25 +423,26 @@ export function ResetDialog({
                     : "border-white/10 bg-white/[0.03] text-slate-100"
             )}
           >
-            <p className="text-sm font-medium">
-              {statusMessage || resultMessage || "Reset status"}
-            </p>
+            <p className="text-sm font-medium">{runState === "running" ? "Working on your request" : runState === "error" ? "Action needs attention" : resultMessage?.startsWith("Uninstall finishing") ? "Uninstall finishing" : "Action complete"}</p>
             {resultMessage ? <p className="mt-1 text-sm">{resultMessage}</p> : null}
-            {backgroundLogPath ? (
-              <p className="mt-2 break-all font-mono text-[11px]">
-                Background cleanup log: {backgroundLogPath}
-              </p>
-            ) : null}
-            <pre
-              className={cn(
-                "mt-3 max-h-56 w-full max-w-full overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words rounded-[14px] border px-3 py-3 text-[11px] leading-relaxed",
-                surfaceTheme === "light"
-                  ? "border-[#e6d6ca] bg-[#fffaf6] text-[#5f4a3d]"
-                  : "border-white/10 bg-slate-950/45 text-slate-300"
-              )}
-            >
-              {log || "Waiting for command output..."}
-            </pre>
+            <ResetProgress runState={runState} statusMessage={statusMessage} target={target} surfaceTheme={surfaceTheme} />
+            <details className="mt-3 rounded-xl border border-current/10 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/50">View details</summary>
+              <div className="mt-2 space-y-2">
+                {backgroundLogPath ? <p className="break-all font-mono text-[11px]">Background cleanup log: {backgroundLogPath}</p> : null}
+                {statusMessage ? <p className="text-xs opacity-80">Current operation: {statusMessage}</p> : null}
+                <pre
+                  className={cn(
+                    "max-h-56 w-full max-w-full overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words rounded-[14px] border px-3 py-3 text-[11px] leading-relaxed",
+                    surfaceTheme === "light"
+                      ? "border-[#e6d6ca] bg-[#fffaf6] text-[#5f4a3d]"
+                      : "border-white/10 bg-slate-950/45 text-slate-300"
+                  )}
+                >
+                  {log || "Waiting for command output..."}
+                </pre>
+              </div>
+            </details>
           </div>
         ) : null}
 
@@ -498,21 +499,23 @@ export function ResetDialog({
   );
 }
 
-function MetricCard({
+function ImpactCard({
   label,
   value,
+  detail,
   surfaceTheme,
   danger = false
 }: {
   label: string;
   value: string;
+  detail: string;
   surfaceTheme: SurfaceTheme;
   danger?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3",
+        "rounded-2xl border px-3.5 py-3",
         danger
           ? surfaceTheme === "light"
             ? "border-rose-200 bg-rose-50"
@@ -522,14 +525,55 @@ function MetricCard({
             : "border-white/10 bg-white/[0.03]"
       )}
     >
-      <p className={cn("text-[11px] uppercase tracking-[0.16em]", surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500")}>
+      <p className={cn("text-[10px] uppercase tracking-[0.16em]", surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500")}>
         {label}
       </p>
-      <p className={cn("mt-1 font-display text-lg", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-white")}>
+      <p className={cn("mt-1 font-display text-base", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-white")}>
         {value}
       </p>
+      <p className={cn("mt-1 text-[11px] leading-4", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>{detail}</p>
     </div>
   );
+}
+
+function ResetProgress({
+  runState,
+  statusMessage,
+  target,
+  surfaceTheme
+}: {
+  runState: RunState;
+  statusMessage: string | null;
+  target: ResetTarget | null;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const steps = ["Preparing", "OpenClaw", "AgentOS", "Finishing"];
+  const activeIndex = resolveResetProgressIndex(statusMessage, runState, target);
+  return (
+    <div className="mt-4" aria-label="Reset progress">
+      <div className="grid grid-cols-4 gap-1.5">
+        {steps.map((step, index) => {
+          const complete = runState === "success" || index < activeIndex;
+          const active = runState === "running" && index === activeIndex;
+          return (
+            <div key={step} className="min-w-0">
+              <div className={cn("h-1 rounded-full", complete || active ? "bg-primary" : surfaceTheme === "light" ? "bg-black/10" : "bg-white/10")} />
+              <p className={cn("mt-1 truncate text-[10px]", active || complete ? "text-foreground" : "text-muted-foreground")}>{step}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function resolveResetProgressIndex(statusMessage: string | null, runState: RunState, target: ResetTarget | null) {
+  if (runState === "success") return 4;
+  const message = statusMessage?.toLowerCase() ?? "";
+  if (message.includes("openclaw") || message.includes("native")) return 1;
+  if (message.includes("package") || message.includes("refresh") || message.includes("finish")) return 3;
+  if (message.includes("agentos") || message.includes("workspace") || message.includes("runtime") || message.includes("snapshot")) return 2;
+  return target === "mission-control" ? 0 : 0;
 }
 
 function PathPanel({

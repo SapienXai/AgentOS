@@ -37,6 +37,8 @@ export type InstanceProtectionState = {
   sessionSecret: string;
   sessionVersion: number;
   updatedAt: string;
+  lockedActorId: string | null;
+  lockedAt: string | null;
 };
 
 export type InstanceProtectionStatus = {
@@ -44,6 +46,7 @@ export type InstanceProtectionStatus = {
   authenticated: boolean;
   username: string | null;
   credentialConfigured: boolean;
+  locked: boolean;
   actorId?: string | null;
   role?: "owner" | "member" | null;
 };
@@ -96,7 +99,9 @@ export async function readInstanceProtectionState(
         passwordHash: parsed.passwordHash,
         sessionSecret: parsed.sessionSecret,
         sessionVersion: parsed.sessionVersion as number,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        lockedActorId: null,
+        lockedAt: null
       };
       await writeInstanceProtectionState(migratedState, env);
       return migratedState;
@@ -106,7 +111,13 @@ export async function readInstanceProtectionState(
       throw new Error("Instance Protection state is invalid.");
     }
 
-    return parsed as InstanceProtectionState;
+    const lockedActorId = parsed.lockedActorId === undefined || parsed.lockedActorId === null ? null : parsed.lockedActorId;
+    const lockedAt = parsed.lockedAt === undefined || parsed.lockedAt === null ? null : parsed.lockedAt;
+    if ((lockedActorId !== null && !isStableActorId(lockedActorId)) || (lockedAt !== null && typeof lockedAt !== "string")) {
+      throw new Error("Instance Protection state is invalid.");
+    }
+
+    return { ...parsed, lockedActorId, lockedAt } as InstanceProtectionState;
   } catch (error) {
     if (error instanceof Error && error.message === "Instance Protection state is invalid.") throw error;
     throw new Error("Instance Protection state is invalid.");
@@ -123,17 +134,22 @@ export async function getInstanceProtectionStatus(
       protectionEnabled: false,
       authenticated: true,
       username: null,
-      credentialConfigured: false
+      credentialConfigured: false,
+      locked: false
     };
   }
 
   const activeSession = await resolveActiveInstanceSession(cookieValue, state, env);
+  const lockedUser = state.lockedActorId
+    ? (await readAgentOsUserStore(env))?.users.find((user) => user.actorId === state.lockedActorId) ?? null
+    : null;
 
   return {
     protectionEnabled: true,
     authenticated: Boolean(activeSession),
-    username: activeSession?.user.username ?? state.username,
+    username: activeSession?.user.username ?? lockedUser?.username ?? state.username,
     credentialConfigured: true,
+    locked: Boolean(state.lockedActorId),
     actorId: activeSession?.user.actorId ?? null,
     role: activeSession?.user.role ?? null
   };
@@ -169,7 +185,9 @@ export async function enableInstanceProtection(
       passwordHash,
       sessionSecret: randomBytes(32).toString("base64url"),
       sessionVersion: 1,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      lockedActorId: null,
+      lockedAt: null
     };
 
     await writeInstanceProtectionState(state, env);
@@ -191,6 +209,9 @@ export async function loginToInstance(
   env: NodeJS.ProcessEnv = process.env
 ) {
   const state = await readInstanceProtectionState(env);
+  if (state?.lockedActorId) {
+    throw new InstanceProtectionError("AgentOS is locked. Unlock the current account to continue.", 401, "instance-locked");
+  }
   const attemptKey = input.username.trim().toLocaleLowerCase("en-US") || "<empty>";
   assertLoginAllowed(attemptKey);
 
@@ -211,6 +232,60 @@ export async function loginToInstance(
 
   loginAttempts.delete(attemptKey);
   const session = createInstanceSession(state, user.actorId, user.sessionVersion);
+  return { status: await getInstanceProtectionStatus(session, env), session };
+}
+
+export async function lockInstance(
+  cookieValue: string | null,
+  env: NodeJS.ProcessEnv = process.env
+) {
+  return withProtectionMutation(env, async () => {
+    const state = await requireState(env);
+    const activeSession = await resolveActiveInstanceSession(cookieValue, state, env);
+    if (!activeSession) {
+      throw new InstanceProtectionError("Unlock AgentOS before locking it.", 401, "instance-auth-required");
+    }
+
+    await writeInstanceProtectionState({
+      ...state,
+      lockedActorId: activeSession.user.actorId,
+      lockedAt: new Date().toISOString()
+    }, env);
+  });
+}
+
+export async function unlockLockedInstance(
+  input: { username: string; password: string; rateKey: string },
+  env: NodeJS.ProcessEnv = process.env
+) {
+  const state = await readInstanceProtectionState(env);
+  if (!state?.lockedActorId) {
+    throw new InstanceProtectionError("AgentOS is not locked.", 409, "not-locked");
+  }
+
+  const attemptKey = input.username.trim().toLocaleLowerCase("en-US") || "<empty>";
+  assertLoginAllowed(attemptKey);
+  const user = (await readAgentOsUserStore(env))?.users.find((entry) => entry.actorId === state.lockedActorId) ?? null;
+  const passwordMatches = await verifyPasswordOrDummy(input.password, user?.passwordSalt, user?.passwordHash);
+  const usernameMatches = Boolean(user && constantTimeTextEqual(attemptKey, user.username));
+
+  if (!user || user.status !== "active" || !usernameMatches || !passwordMatches) {
+    recordLoginFailure(attemptKey);
+    throw new InstanceProtectionError("Invalid username or password.", 401, "invalid-credentials");
+  }
+
+  const nextState = await withProtectionMutation(env, async () => {
+    const currentState = await requireState(env);
+    if (currentState.lockedActorId !== user.actorId) {
+      throw new InstanceProtectionError("AgentOS lock state changed. Try again.", 409, "lock-state-changed");
+    }
+    const unlockedState = { ...currentState, lockedActorId: null, lockedAt: null };
+    await writeInstanceProtectionState(unlockedState, env);
+    return unlockedState;
+  });
+
+  loginAttempts.delete(attemptKey);
+  const session = createInstanceSession(nextState, user.actorId, user.sessionVersion);
   return { status: await getInstanceProtectionStatus(session, env), session };
 }
 
@@ -338,7 +413,7 @@ export async function resetInstanceProtection(env: NodeJS.ProcessEnv = process.e
 }
 
 export function verifyInstanceSession(cookieValue: string | null, state: InstanceProtectionState) {
-  return Boolean(readInstanceSessionIdentity(cookieValue, state));
+  return !state.lockedActorId && Boolean(readInstanceSessionIdentity(cookieValue, state));
 }
 
 /**
@@ -351,6 +426,7 @@ export async function resolveActiveInstanceSession(
   state: InstanceProtectionState,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<{ identity: { actorId: string; sessionVersion: number }; user: AgentOsUser } | null> {
+  if (state.lockedActorId) return null;
   const identity = readInstanceSessionIdentity(cookieValue, state);
   if (!identity) return null;
 

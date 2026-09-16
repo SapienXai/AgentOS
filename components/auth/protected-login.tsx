@@ -63,14 +63,14 @@ export function ProtectedLogin() {
     setSubmitting(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(status?.locked ? "/api/auth/unlock" : "/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
       });
       const payload = (await response.json()) as typeof status & { error?: string; retryAfterSeconds?: number };
       if (!response.ok || payload.error) {
-        throw new Error(response.status === 429 ? "Too many login attempts. Try again later." : "Invalid username or password.");
+        throw new Error(response.status === 429 ? "Too many attempts. Try again later." : payload.error || "Invalid username or password.");
       }
       applyStatus(payload);
       broadcastAuthChange();
@@ -120,7 +120,7 @@ export function ProtectedLogin() {
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
           <div className="mb-6 -translate-y-4 text-center text-white lg:mb-6 lg:translate-y-0">
             <h1 id="protected-title" className="whitespace-nowrap font-sans text-[clamp(1.75rem,7.5vw,1.95rem)] font-semibold leading-[1.05] tracking-[-0.03em] [text-shadow:0_3px_18px_rgba(0,0,0,.55)] sm:text-[2rem] lg:text-[2.15rem]">AgentOS is Locked</h1>
-            <p className="mt-2 whitespace-nowrap text-[13px] font-normal leading-5 text-white/60 sm:text-sm">Authenticate to unlock this instance.</p>
+            <p className="mt-2 whitespace-nowrap text-[13px] font-normal leading-5 text-white/60 sm:text-sm">{status.locked ? "Re-authenticate the current account to continue." : "Authenticate to unlock this instance."}</p>
           </div>
 
           <Card className="lock-glass-card relative mt-12 rounded-[26px] p-5 pt-16 text-card-foreground lg:mt-0 lg:pt-5">
@@ -131,17 +131,17 @@ export function ProtectedLogin() {
               </div>
             </div>
             <CardHeader className="lock-glass-divider mb-4 flex-row items-center justify-between gap-4 border-b p-0 pb-3">
-              <div><p className="font-sans text-[15px] font-medium leading-5 tracking-[-0.02em]">Operator access</p><p className="mt-1 text-xs leading-4 text-muted-foreground">Authenticate to unlock this session.</p></div>
+              <div><p className="font-sans text-[15px] font-medium leading-5 tracking-[-0.02em]">{status.locked ? "Unlock this session" : "Operator access"}</p><p className="mt-1 text-xs leading-4 text-muted-foreground">{status.locked ? "Only the account that locked AgentOS can unlock it." : "Authenticate to unlock this session."}</p></div>
               <span className="lock-glass-control flex size-9 items-center justify-center rounded-xl border text-muted-foreground"><KeyRound className="size-4" /></span>
             </CardHeader>
 
             <CardContent className="p-0">
               <form className="flex flex-col gap-3.5" onSubmit={submit}>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="instance-username" className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground">Username</Label>
+                  <Label htmlFor="instance-username" className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground">{status.locked ? "Locked account" : "Username"}</Label>
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10 text-[15px]" />
+                    <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting || status.locked} className="lock-glass-input h-11 rounded-xl pl-10 text-[15px]" />
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5">

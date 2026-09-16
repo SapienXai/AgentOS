@@ -6,7 +6,9 @@ import { getInstanceProtectionStatus, readInstanceSessionCookie } from "@/lib/se
 const publicInstanceApiPaths = new Set([
   "/api/auth/status",
   "/api/auth/login",
+  "/api/auth/lock",
   "/api/auth/logout",
+  "/api/auth/unlock",
   "/api/health",
   "/api/accounts/browser-live/authorize",
   "/api/internal/browser-policy/heartbeat",

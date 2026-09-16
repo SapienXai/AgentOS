@@ -8,14 +8,18 @@ import { test } from "node:test";
 import { NextRequest } from "next/server";
 
 import { POST as loginRoute } from "@/app/api/auth/login/route";
+import { createManagedAgentOsUser } from "@/lib/agentos/application/agentos-account-service";
+import { resolveAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { bootstrapInitialInstanceProtection } from "@/lib/security/initial-instance-bootstrap";
 import {
   disableInstanceProtection,
   enableInstanceProtection,
   getInstanceProtectionStatus,
+  lockInstance,
   loginToInstance,
   resetInstanceProtection,
   resolveInstanceProtectionPath,
+  unlockLockedInstance,
   updateInstanceCredentials
 } from "@/lib/security/instance-protection";
 import { proxy } from "@/proxy";
@@ -60,7 +64,8 @@ test("instance protection lifecycle hashes credentials and invalidates old sessi
     protectionEnabled: false,
     authenticated: true,
     username: null,
-    credentialConfigured: false
+    credentialConfigured: false,
+    locked: false
   });
 
   const enabled = await enableInstanceProtection({ username: "operator", password: "correct horse" }, env);
@@ -107,6 +112,36 @@ test("repeated login failures are rate limited without identifying the wrong fie
     loginToInstance({ username: "rate-owner", password: "secure password", rateKey: "new-spoof" }, env),
     /Too many login attempts/
   );
+});
+
+test("lock preserves the current account and blocks other login or API access until that account unlocks", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-instance-lock-"));
+  const env = { ...process.env, AGENTOS_RUNTIME_DIR: runtimeDir, NODE_ENV: "production" as const };
+  const enabled = await enableInstanceProtection({ username: "operator", password: "secure password" }, env);
+  await createManagedAgentOsUser({ username: "member", password: "member password" }, env);
+
+  await lockInstance(enabled.session, env);
+  const locked = await getInstanceProtectionStatus(enabled.session, env);
+  assert.deepEqual(
+    { authenticated: locked.authenticated, locked: locked.locked, username: locked.username },
+    { authenticated: false, locked: true, username: "operator" }
+  );
+  assert.equal(await resolveAgentOsActorContext(new Request("https://agentos.example.com/api/snapshot", {
+    headers: { cookie: `agentos_instance_session=${enabled.session}` }
+  }), env), null);
+
+  await assert.rejects(
+    loginToInstance({ username: "member", password: "member password", rateKey: "member" }, env),
+    /AgentOS is locked/
+  );
+  await assert.rejects(
+    unlockLockedInstance({ username: "member", password: "member password", rateKey: "member-unlock" }, env),
+    /Invalid username or password/
+  );
+  const unlocked = await unlockLockedInstance({ username: "operator", password: "secure password", rateKey: "operator-unlock" }, env);
+  assert.equal(unlocked.status.authenticated, true);
+  assert.equal(unlocked.status.locked, false);
+  assert.equal((await getInstanceProtectionStatus(unlocked.session, env)).username, "operator");
 });
 
 test("expired signed sessions are rejected", async () => {

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 type FieldErrors = Partial<Record<"username" | "password" | "confirmPassword" | "currentPassword", string>>;
 
 export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { status, loading, applyStatus, lock } = useInstanceProtection();
+  const { status, loading, applyStatus } = useInstanceProtection();
   const [enabledSwitch, setEnabledSwitch] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -110,7 +110,7 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"><LockKeyhole className="h-4 w-4" /></div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <DialogTitle className="text-base tracking-[-0.02em]">Login &amp; Protection</DialogTitle>
+                    <DialogTitle className="text-base tracking-[-0.02em]">AgentOS security</DialogTitle>
                     {status?.protectionEnabled ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300"><ShieldCheck className="h-3 w-3" />Protected</span> : null}
                   </div>
                   <DialogDescription className="mt-0.5 text-xs">Secure access to this AgentOS instance.</DialogDescription>
@@ -155,7 +155,6 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
                   <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/25 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500"><ShieldCheck className="h-4 w-4" /></span><div><p className="text-xs font-semibold">Protection active</p><p className="text-[10px] text-muted-foreground">Signed session required</p></div></div>
                     <div className="flex gap-2">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void lock()}><LockKeyhole className="mr-1.5 h-3.5 w-3.5" />Lock now</Button>
                       <Button type="button" size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDisablePassword(""); setDisableError(null); setDisableOpen(true); }}><ShieldOff className="mr-1.5 h-3.5 w-3.5" />Disable</Button>
                     </div>
                   </div>

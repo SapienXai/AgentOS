@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
     await disableInstanceProtection(input.currentPassword);
     return NextResponse.json(
-      { protectionEnabled: false, authenticated: true, username: null, credentialConfigured: false },
+      { protectionEnabled: false, authenticated: true, username: null, credentialConfigured: false, locked: false },
       { headers: { "Cache-Control": "no-store", "Set-Cookie": buildExpiredInstanceSessionCookie(isSecureRequest(request)) } }
     );
   } catch (error) {

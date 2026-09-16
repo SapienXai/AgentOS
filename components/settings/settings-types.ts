@@ -1,7 +1,7 @@
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
 import type { GatewayActionGuidance } from "@/components/mission-control/settings-control-center.utils";
 
-export type SettingsArea = "general" | "ai-tools" | "workspace" | "runtime" | "advanced";
+export type SettingsArea = "general" | "ai-tools" | "workspace" | "runtime" | "security" | "advanced";
 export type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
 export type ToolSettingId = "browser" | "web-fetch" | "web-search";
 

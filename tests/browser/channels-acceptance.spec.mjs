@@ -144,6 +144,37 @@ test("Telegram STOPPED start is issued once and progresses to ONLINE", async ({ 
   expect(fixture.startSequences.get(`telegram:${ids.telegramAccountId}`).states).toEqual(["STOPPED", "STOPPED", "STARTING", "ONLINE"]);
 });
 
+test("Telegram group permissions use native policy presets and reload from OpenClaw state", async ({ page }) => {
+  const fixture = new ChannelAcceptanceFixture({ scenario: "telegram-online" });
+  await openMissionControl(page, fixture);
+  const connections = await openAgentConnections(page, "telegram");
+  await selectAccount(connections, ids.telegramAccountId);
+
+  await connections.getByRole("button", { name: "Open permissions for Support Group" }).click();
+  const permissions = page.getByRole("dialog").last();
+  await expect(permissions).toContainText("Who can trigger this agent?");
+  await expect(permissions).toContainText("Capabilities in this group");
+  await expect(permissions.getByRole("radio", { name: /Agent defaults/ })).toBeChecked();
+
+  await permissions.getByRole("radio", { name: /Chat only/ }).check();
+  await permissions.getByRole("radio", { name: /Selected people/ }).check();
+  await permissions.getByRole("textbox", { name: "Telegram sender ID" }).fill("24680");
+  await permissions.getByRole("button", { name: "Add" }).click();
+  await permissions.getByRole("button", { name: "Save permissions" }).click();
+  await expect.poll(() => fixture.permissionMutations.length).toBe(1);
+  expect(fixture.permissionMutations[0].patch).toMatchObject({
+    access: { mode: "selected", senderIds: ["24680"] },
+    capabilities: { preset: "chat-only" }
+  });
+
+  await connections.getByRole("button", { name: "Open permissions for Support Group" }).click();
+  const reloaded = page.getByRole("dialog").last();
+  await expect(reloaded.getByRole("radio", { name: /Selected people/ })).toBeChecked();
+  await expect(reloaded.getByRole("button", { name: "Remove sender 24680" })).toBeVisible();
+  await expect(reloaded.getByRole("radio", { name: /Chat only/ })).toBeChecked();
+  await expect(reloaded).toContainText("Agent-level OpenClaw restrictions still apply");
+});
+
 test("Telegram token setup never projects the credential and continues to the directory", async ({ page }) => {
   const fixture = new ChannelAcceptanceFixture({ scenario: "telegram-setup" });
   const consoleMessages = [];

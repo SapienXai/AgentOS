@@ -631,7 +631,7 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
 
   assert.match(source, /<div className="shrink-0">[\s\S]*?<SidebarBrand[\s\S]*?<WorkspaceSwitcher[\s\S]*?<SidebarCreateAgentAction/);
   assert.match(source, /<nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">/);
-  assert.match(source, /<SidebarUserMenu[\s\S]*?snapshot=\{snapshot\}[\s\S]*?activeWorkspaceId=\{activeWorkspaceId\}/);
+  assert.match(source, /<SidebarUserMenu[\s\S]*?operatorProfile=\{operatorProfile\}/);
   assert.match(source, /function SidebarUserMenu\(\{/);
   assert.match(source, /aria-haspopup="menu"/);
   assert.match(source, /aria-label="User menu"/);
@@ -648,10 +648,11 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
   assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
   assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
   assert.match(source, /onProfileSaved=\{onProfileSaved\}/);
-  assert.match(source, /<SidebarThemeMenuAction surfaceTheme=\{surfaceTheme\} onToggle=\{onToggleTheme\} \/>/);
-  assert.match(source, /role="menuitemcheckbox"/);
-  assert.match(source, /aria-checked=\{isDark\}/);
-  assert.match(source, /<span>Appearance<\/span>/);
+  assert.match(source, /label="Team"/);
+  assert.match(source, /label="Lock AgentOS"/);
+  assert.match(source, /label="Sign out"/);
+  assert.doesNotMatch(source, /label="Login & Protection"/);
+  assert.doesNotMatch(source, /function SidebarThemeMenuAction/);
 });
 
 test("settings shell no longer hardcodes a light-only wrapper", () => {

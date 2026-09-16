@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import { Activity, Bot, Folder, Settings2, Wrench } from "lucide-react";
+import { Activity, Bot, Folder, LockKeyhole, Settings2, Wrench } from "lucide-react";
 
 import type { SettingsArea } from "@/components/settings/settings-types";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ const sections: Array<{ id: SettingsArea; label: string; icon: typeof Settings2 
   { id: "ai-tools", label: "AI & Tools", icon: Bot },
   { id: "workspace", label: "Workspace", icon: Folder },
   { id: "runtime", label: "Runtime", icon: Activity },
+  { id: "security", label: "Security", icon: LockKeyhole },
   { id: "advanced", label: "Advanced", icon: Wrench }
 ];
 

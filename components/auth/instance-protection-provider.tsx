@@ -7,6 +7,7 @@ import { PikoLoader } from "@/components/ui/piko-loader";
 export type InstanceProtectionStatus = {
   protectionEnabled: boolean;
   authenticated: boolean;
+  locked: boolean;
   username: string | null;
   credentialConfigured: boolean;
 };
@@ -17,6 +18,7 @@ type InstanceProtectionContextValue = {
   refresh: () => Promise<InstanceProtectionStatus>;
   applyStatus: (status: InstanceProtectionStatus) => void;
   lock: () => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const InstanceProtectionContext = createContext<InstanceProtectionContextValue | null>(null);
@@ -61,7 +63,7 @@ export function InstanceProtectionProvider({ children, initialStatus }: { childr
   const lock = useCallback(async () => {
     setShielded(true);
     try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
+      const response = await fetch("/api/auth/lock", { method: "POST" });
       if (!response.ok) throw new Error("AgentOS could not be locked.");
       broadcastAuthChange();
       redirectToLogin();
@@ -71,13 +73,26 @@ export function InstanceProtectionProvider({ children, initialStatus }: { childr
     }
   }, []);
 
-  const value = useMemo(() => ({ status, loading, refresh, applyStatus: setStatus, lock }), [status, loading, refresh, lock]);
+  const signOut = useCallback(async () => {
+    setShielded(true);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error("AgentOS could not sign out.");
+      broadcastAuthChange();
+      redirectToLogin();
+    } catch (error) {
+      setShielded(false);
+      throw error;
+    }
+  }, []);
+
+  const value = useMemo(() => ({ status, loading, refresh, applyStatus: setStatus, lock, signOut }), [status, loading, refresh, lock, signOut]);
   return <InstanceProtectionContext.Provider value={value}>
     {children}
     <PikoLoader
       open={shielded}
-      title="Locking AgentOS"
-      description="Securing this session before the lock screen opens."
+      title="Securing AgentOS"
+      description="Finishing the session change before the access screen opens."
     />
     {shielded ? <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background text-sm text-muted-foreground" role="status">Locking AgentOS…</div> : null}
   </InstanceProtectionContext.Provider>;

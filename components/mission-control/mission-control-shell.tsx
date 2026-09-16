@@ -3957,6 +3957,8 @@ export function MissionControlShell({
     setResetResultMessage(null);
     setResetBackgroundLogPath(null);
     setResetLog("");
+    let sawDone = false;
+    let completedSuccessfully = false;
 
     try {
       const response = await fetch("/api/reset", {
@@ -3984,8 +3986,6 @@ export function MissionControlShell({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let sawDone = false;
-
       while (true) {
         const { value, done } = await reader.read();
 
@@ -4011,6 +4011,7 @@ export function MissionControlShell({
               appendResetLog(`${event.text}\n`);
             } else {
               sawDone = true;
+              completedSuccessfully = event.ok;
               setResetStatusMessage(null);
               setResetResultMessage(event.message);
               setResetBackgroundLogPath(event.backgroundLogPath ?? null);
@@ -4063,6 +4064,7 @@ export function MissionControlShell({
 
         if (event.type === "done") {
           sawDone = true;
+          completedSuccessfully = event.ok;
           setResetStatusMessage(null);
           setResetResultMessage(event.message);
           setResetBackgroundLogPath(event.backgroundLogPath ?? null);
@@ -4088,6 +4090,12 @@ export function MissionControlShell({
         throw new Error("Reset stream ended unexpectedly.");
       }
     } catch (error) {
+      if (isFullUninstall && sawDone && completedSuccessfully && isExpectedRuntimeShutdownError(error)) {
+        setResetRunState("success");
+        setResetStatusMessage(null);
+        setResetResultMessage("Uninstall finishing. AgentOS is closing; package cleanup may continue.");
+        return;
+      }
       if (isFullUninstall) {
         setRequiresFreshInstallSystemSetup(false);
       }
@@ -4444,7 +4452,6 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4551,7 +4558,6 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4903,7 +4909,6 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4982,7 +4987,6 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -5601,6 +5605,11 @@ export function MissionControlShell({
 function normalizeUpdateVersion(value: string | null | undefined) {
   const normalized = value?.trim().replace(/^v/i, "");
   return normalized || null;
+}
+
+function isExpectedRuntimeShutdownError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /abort|network|terminated|connection (?:closed|reset)|fetch failed/i.test(message);
 }
 
 function resolveLatestVersionFromUpdateInfo(value: string | null | undefined) {

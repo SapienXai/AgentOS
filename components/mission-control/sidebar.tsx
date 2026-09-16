@@ -21,25 +21,20 @@ import {
   Home,
   Inbox,
   KeyRound,
-  LifeBuoy,
   LockKeyhole,
   Loader2,
   LogOut,
   MessageCircle,
-  Moon,
   Pencil,
   Plug,
   Plus,
   Settings2,
-  ShieldCheck,
   ShieldAlert,
-  SunMedium,
   Trash2,
   UserRound,
   Users
 } from "lucide-react";
 
-import { InstanceProtectionDialog } from "@/components/auth/instance-protection-dialog";
 import { useInstanceProtection } from "@/components/auth/instance-protection-provider";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import {
@@ -274,6 +269,7 @@ export function MissionSidebar({
   onAgentActionModalOpenChange,
   onAgentActionRequestDismiss
 }: MissionSidebarProps) {
+  void onToggleTheme;
   const pathname = usePathname();
   const hasUpdateNotice = hasDiscoverableOpenClawUpdate(snapshot);
   const [activeHash, setActiveHash] = useState("");
@@ -402,7 +398,7 @@ export function MissionSidebar({
     setIsEditAgentAdvancedOpen(false);
     onAgentActionModalOpenChange?.(true);
     setIsEditAgentOpen(true);
-  }, [onAgentActionModalOpenChange, snapshot]);
+  }, [onAgentActionModalOpenChange]);
 
   const openDeleteAgent = useCallback((agent: MissionControlSnapshot["agents"][number]) => {
     setAgentDeleteTarget(agent);
@@ -691,12 +687,8 @@ export function MissionSidebar({
             </nav>
 
             <SidebarUserMenu
-              snapshot={snapshot}
-              activeWorkspaceId={activeWorkspaceId}
-              surfaceTheme={surfaceTheme}
               operatorProfile={operatorProfile}
               onProfileSaved={setOperatorProfile}
-              onToggleTheme={onToggleTheme}
             />
           </div>
         </aside>
@@ -2468,25 +2460,16 @@ function SidebarNavItem({
 }
 
 function SidebarUserMenu({
-  snapshot,
-  activeWorkspaceId,
-  surfaceTheme,
   operatorProfile,
-  onProfileSaved,
-  onToggleTheme
+  onProfileSaved
 }: {
-  snapshot: MissionControlSnapshot;
-  activeWorkspaceId: string | null;
-  surfaceTheme: "dark" | "light";
   operatorProfile: OperatorProfileSummary;
   onProfileSaved: (profile: OperatorProfileSummary) => void;
-  onToggleTheme: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [protectionOpen, setProtectionOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
-  const { status: protectionStatus, lock } = useInstanceProtection();
+  const { status: protectionStatus, lock, signOut } = useInstanceProtection();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const displayName = resolveOperatorDisplayName(operatorProfile);
   const displayDetail = resolveOperatorDisplayDetail(operatorProfile);
@@ -2526,27 +2509,20 @@ function SidebarUserMenu({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full overflow-hidden rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-[0_20px_50px_hsl(var(--foreground)/0.16)]"
+            className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[min(296px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-[0_20px_50px_hsl(var(--foreground)/0.16)]"
             role="menu"
             aria-label="User menu"
           >
-            <div className="flex items-center gap-3 px-2.5 py-2.5">
+            <div className="flex items-center gap-3 px-2.5 py-2">
               <UserAvatar profile={operatorProfile} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
                 <p className="truncate text-xs text-muted-foreground">{displayDetail}</p>
               </div>
+              {operatorProfile.role ? <span className="shrink-0 text-[10px] font-medium capitalize text-muted-foreground">{operatorProfile.role}</span> : null}
             </div>
 
             <div className="my-1.5 h-px bg-border" />
-            <SidebarUserMenuAction
-              icon={Plug}
-              label="Connect"
-              onSelect={() => {
-                setOpen(false);
-                window.location.assign("/channels");
-              }}
-            />
             <SidebarUserMenuAction
               icon={UserRound}
               label="Profile"
@@ -2558,7 +2534,7 @@ function SidebarUserMenu({
             {operatorProfile.role === "owner" ? (
               <SidebarUserMenuAction
                 icon={Users}
-                label="Manage users"
+                label="Team"
                 onSelect={() => {
                   setOpen(false);
                   setUserManagementOpen(true);
@@ -2566,15 +2542,6 @@ function SidebarUserMenu({
               />
             ) : null}
             <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
-            <SidebarThemeMenuAction surfaceTheme={surfaceTheme} onToggle={onToggleTheme} />
-            <SidebarUserMenuAction
-              icon={ShieldCheck}
-              label="Login & Protection"
-              onSelect={() => {
-                setOpen(false);
-                setProtectionOpen(true);
-              }}
-            />
             {protectionStatus?.protectionEnabled ? (
               <SidebarUserMenuAction
                 icon={LockKeyhole}
@@ -2586,19 +2553,14 @@ function SidebarUserMenu({
               />
             ) : null}
             <div className="my-1.5 h-px bg-border" />
-            <SidebarUserMenuDisabled icon={LifeBuoy} label="Help" reason="Help center is coming soon" />
-            {protectionStatus?.protectionEnabled ? (
-              <SidebarUserMenuAction
-                icon={LogOut}
-                label="Log out"
-                onSelect={() => {
-                  setOpen(false);
-                  void lock().catch(() => toast.error("AgentOS could not be locked."));
-                }}
-              />
-            ) : (
-              <SidebarUserMenuDisabled icon={LogOut} label="Log out" reason="Authentication is not configured" />
-            )}
+            <SidebarUserMenuAction
+              icon={LogOut}
+              label="Sign out"
+              onSelect={() => {
+                setOpen(false);
+                void signOut().catch(() => toast.error("AgentOS could not sign out."));
+              }}
+            />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -2626,53 +2588,10 @@ function SidebarUserMenu({
       <UserProfileDialog
         open={profileOpen}
         onOpenChange={setProfileOpen}
-        snapshot={snapshot}
-        activeWorkspaceId={activeWorkspaceId}
         onProfileSaved={onProfileSaved}
       />
-      <InstanceProtectionDialog open={protectionOpen} onOpenChange={setProtectionOpen} />
       <UserManagementDialog open={userManagementOpen} onOpenChange={setUserManagementOpen} />
     </>
-  );
-}
-
-function SidebarThemeMenuAction({
-  surfaceTheme,
-  onToggle
-}: {
-  surfaceTheme: "dark" | "light";
-  onToggle: () => void;
-}) {
-  const isDark = surfaceTheme === "dark";
-  const Icon = isDark ? Moon : SunMedium;
-
-  return (
-    <button
-      type="button"
-      role="menuitemcheckbox"
-      aria-checked={isDark}
-      aria-label={`Appearance: ${isDark ? "dark" : "light"} theme. Switch to ${isDark ? "light" : "dark"} theme`}
-      onClick={onToggle}
-      className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
-      <span>Appearance</span>
-      <span className="ml-auto text-xs font-medium text-muted-foreground">{isDark ? "Dark" : "Light"}</span>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
-          isDark ? "border-primary/40 bg-primary/80" : "border-border bg-muted"
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform",
-            isDark ? "translate-x-[17px]" : "translate-x-0.5"
-          )}
-        />
-      </span>
-    </button>
   );
 }
 
@@ -2728,7 +2647,7 @@ function SidebarUserMenuLink({
       href={href}
       role="menuitem"
       onClick={onNavigate}
-      className="flex h-10 items-center gap-3 rounded-lg px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
       <span>{label}</span>
@@ -2750,34 +2669,10 @@ function SidebarUserMenuAction({
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
       <span>{label}</span>
-    </button>
-  );
-}
-
-function SidebarUserMenuDisabled({
-  icon: Icon,
-  label,
-  reason
-}: {
-  icon: LucideIcon;
-  label: string;
-  reason: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled
-      title={reason}
-      className="flex h-10 w-full cursor-not-allowed items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-muted-foreground opacity-55"
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span>{label}</span>
-      <span className="ml-auto text-[0.6rem] uppercase tracking-[0.12em]">Soon</span>
     </button>
   );
 }

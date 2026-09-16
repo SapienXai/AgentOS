@@ -31,6 +31,8 @@ export class ChannelAcceptanceFixture {
     this.revision = 1;
     this.startRequests = [];
     this.routeMutations = [];
+    this.permissionMutations = [];
+    this.telegramPermissions = new Map();
     this.accountCreates = [];
     this.bindings = new Map();
     this.startSequences = new Map();
@@ -90,6 +92,16 @@ export class ChannelAcceptanceFixture {
 
     if (url.pathname === "/api/openclaw/channels/telegram-groups" && method === "POST") {
       await this.json(route, this.telegramGroup(request));
+      return;
+    }
+
+    if (url.pathname === "/api/openclaw/channels/telegram-group-permissions" && method === "GET") {
+      await this.json(route, this.telegramGroupPermissions(url.searchParams));
+      return;
+    }
+
+    if (url.pathname === "/api/openclaw/channels/telegram-group-permissions" && method === "PATCH") {
+      await this.json(route, this.updateTelegramGroupPermissions(request));
       return;
     }
 
@@ -438,6 +450,58 @@ export class ChannelAcceptanceFixture {
     this.routeMutations.push({ route, agentId });
     this.revision += 1;
     return { ok: true, groupId, agentId, route };
+  }
+
+  telegramGroupPermissions(searchParams) {
+    const accountId = searchParams.get("accountId") ?? "";
+    const groupId = searchParams.get("groupId") ?? "";
+    const key = `${accountId}:${groupId}`;
+    return this.telegramPermissions.get(key) ?? {
+      accountId,
+      groupId,
+      agentId: searchParams.get("agentId") ?? CHANNEL_FIXTURE_IDS.agentId,
+      access: { mode: "anyone", senderIds: [] },
+      response: { requireMention: true },
+      capabilities: { preset: "agent-defaults", selectedToolIds: [] },
+      memberOverrides: [],
+      skills: { selected: [] },
+      instructions: { text: "" },
+      topics: [],
+      inheritance: { groupScope: "root", groupConfig: "direct", configPath: "channels.telegram.groups", groupPath: `channels.telegram.groups[${JSON.stringify(groupId)}]` },
+      toolCatalog: {
+        source: "openclaw-gateway",
+        groups: [{
+          id: "web",
+          label: "Web",
+          tools: [
+            { id: "web_search", label: "web_search", description: "Search the web" },
+            { id: "web_fetch", label: "web_fetch", description: "Fetch web content" }
+          ]
+        }]
+      },
+      skillsCatalog: { source: "openclaw-gateway", skills: [{ name: "research" }], error: null },
+      agent: { id: searchParams.get("agentId") ?? CHANNEL_FIXTURE_IDS.agentId, label: "Key 2 Lead" },
+      warnings: []
+    };
+  }
+
+  async updateTelegramGroupPermissions(request) {
+    const body = parseRequestJson(request);
+    const accountId = String(body.accountId ?? "");
+    const groupId = String(body.groupId ?? "");
+    const key = `${accountId}:${groupId}`;
+    const current = this.telegramGroupPermissions(new URLSearchParams({ accountId, groupId, agentId: String(body.agentId ?? CHANNEL_FIXTURE_IDS.agentId) }));
+    const patch = body.patch ?? {};
+    const next = structuredClone(current);
+    if (patch.access) next.access = { mode: patch.access.mode, senderIds: patch.access.senderIds ?? [] };
+    if (typeof patch.requireMention === "boolean") next.response.requireMention = patch.requireMention;
+    if (patch.capabilities) next.capabilities = { preset: patch.capabilities.preset, selectedToolIds: patch.capabilities.toolIds ?? [] };
+    if (Array.isArray(patch.skills)) next.skills = { selected: patch.skills };
+    if (typeof patch.systemPrompt === "string") next.instructions = { text: patch.systemPrompt };
+    this.telegramPermissions.set(key, next);
+    this.permissionMutations.push({ accountId, groupId, agentId: String(body.agentId ?? ""), patch });
+    this.revision += 1;
+    return { ok: true, accountId, groupId, changedFields: Object.keys(patch), permissions: next, mutation: { applyMode: "live", pending: false } };
   }
 
   telegramRouteIdForChatId(chatId) {

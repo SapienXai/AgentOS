@@ -4,6 +4,7 @@ import { SettingsNavigation } from "@/components/settings/settings-navigation";
 import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import { RuntimeSettings } from "@/components/settings/runtime-settings";
+import { SecuritySettings } from "@/components/settings/security-settings";
 import { ToolsSettings } from "@/components/settings/tools-settings";
 import { WorkspaceSettings } from "@/components/settings/workspace-settings";
 import { PikoLoader } from "@/components/ui/piko-loader";
@@ -42,6 +43,7 @@ export function SettingsPage({
                 {activeSection === "ai-tools" ? <ToolsSettings {...props} surfaceTheme={surfaceTheme} /> : null}
                 {activeSection === "workspace" ? <WorkspaceSettings {...props} surfaceTheme={surfaceTheme} /> : null}
                 {activeSection === "runtime" ? <RuntimeSettings {...props} surfaceTheme={surfaceTheme} /> : null}
+                {activeSection === "security" ? <SecuritySettings /> : null}
                 {activeSection === "advanced" ? <AdvancedSettings surfaceTheme={surfaceTheme} onOpenAdvancedSection={onOpenAdvancedSection} /> : null}
               </div>
             </div>

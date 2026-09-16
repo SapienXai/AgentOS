@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, ChevronDown, Clock3, LoaderCircle, Search, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronRight, Clock3, LoaderCircle, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
+import { TelegramGroupPermissionsDialog } from "@/components/operations/agents/telegram-group-permissions-dialog";
 
 type TelegramKnownGroup = {
   accountId: string;
@@ -33,6 +34,12 @@ type KnownGroupsResponse = {
     error: string | null;
   };
   error?: string;
+};
+
+type TelegramGroupPermissionSummary = {
+  access: { mode: "anyone" | "selected" | "nobody" };
+  response: { requireMention: boolean };
+  capabilities: { preset: "agent-defaults" | "chat-only" | "research" | "selected-tools" | "custom" };
 };
 
 type AccountState = "ONLINE" | "READY" | "STOPPED" | "STARTING" | "NEEDS_SETUP" | "NEEDS_ATTENTION" | "STATUS_UNAVAILABLE" | string;
@@ -71,6 +78,8 @@ export function TelegramKnownGroupsPanel({
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<TelegramKnownGroup[]>([]);
+  const [permissionsGroup, setPermissionsGroup] = useState<TelegramKnownGroup | null>(null);
+  const [permissionSummaries, setPermissionSummaries] = useState<Record<string, TelegramGroupPermissionSummary>>({});
   const detectionControllerRef = useRef<AbortController | null>(null);
 
   const readKnownGroups = useCallback(async (signal?: AbortSignal) => {
@@ -93,6 +102,22 @@ export function TelegramKnownGroupsPanel({
       const payload = await readKnownGroups(signal);
       setGroups(payload.groups ?? []);
       setObservation(payload.observation ?? null);
+      void Promise.all((payload.groups ?? []).map(async (group) => {
+        try {
+          const response = await fetch(`/api/openclaw/channels/telegram-group-permissions?${new URLSearchParams({ accountId: group.accountId, groupId: group.chatId, agentId }).toString()}`, { cache: "no-store", signal });
+          if (!response.ok) return null;
+          return [groupKey(group), await response.json() as TelegramGroupPermissionSummary] as const;
+        } catch (nextError) {
+          if (isAbortError(nextError)) throw nextError;
+          return null;
+        }
+      })).then((summaries) => {
+        if (!signal?.aborted) {
+          setPermissionSummaries(Object.fromEntries(summaries.filter((summary): summary is readonly [string, TelegramGroupPermissionSummary] => Boolean(summary))));
+        }
+      }).catch(() => {
+        // Group discovery remains useful when the optional permissions summary is unavailable.
+      });
       return payload;
     } catch (nextError) {
       if (isAbortError(nextError)) return null;
@@ -102,7 +127,7 @@ export function TelegramKnownGroupsPanel({
     } finally {
       setLoading(false);
     }
-  }, [readKnownGroups]);
+  }, [agentId, readKnownGroups]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -240,7 +265,7 @@ export function TelegramKnownGroupsPanel({
       {!loading && visibleGroups.length > 0 ? (
         <div className="divide-y divide-border rounded-lg border border-border">
           {findOpen && candidates.length > 0 ? <div className="flex items-center justify-between gap-2 bg-primary/5 px-3 py-2.5"><p className="text-xs font-medium">Detected groups</p><Button type="button" variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[11px]" onClick={cancelDetection}>Close</Button></div> : null}
-          {visibleGroups.map((group) => <KnownGroupRow key={groupKey(group)} group={group} currentAgentId={agentId} actionKey={actionKey} onConnect={() => void connectGroup(group)} />)}
+          {visibleGroups.map((group) => <KnownGroupRow key={groupKey(group)} group={group} summary={permissionSummaries[groupKey(group)]} currentAgentId={agentId} actionKey={actionKey} onConnect={() => void connectGroup(group)} onOpenPermissions={() => setPermissionsGroup(group)} />)}
         </div>
       ) : null}
 
@@ -268,20 +293,37 @@ export function TelegramKnownGroupsPanel({
           </div>
         ) : null}
       </div>
+
+      <TelegramGroupPermissionsDialog
+        open={Boolean(permissionsGroup)}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setPermissionsGroup(null); }}
+        group={permissionsGroup}
+        agentId={agentId}
+        agentLabel={agentLabel}
+        surfaceTheme={surfaceTheme}
+        onSaved={async () => {
+          await loadGroups();
+          await onConnected?.();
+        }}
+      />
     </div>
   );
 }
 
 function KnownGroupRow({
   group,
+  summary,
   currentAgentId,
   actionKey,
-  onConnect
+  onConnect,
+  onOpenPermissions
 }: {
   group: TelegramKnownGroup;
+  summary?: TelegramGroupPermissionSummary;
   currentAgentId: string;
   actionKey: string | null;
   onConnect: () => void;
+  onOpenPermissions: () => void;
 }) {
   const key = groupKey(group);
   const currentAgent = group.connectedAgentId === currentAgentId;
@@ -290,14 +332,15 @@ function KnownGroupRow({
 
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-3">
-      <div className="min-w-0">
-        <p className="truncate text-xs font-semibold" title={group.title}>{group.title}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+      <button type="button" className="min-w-0 flex-1 rounded-lg text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onOpenPermissions} aria-label={`Open permissions for ${group.title}`}>
+        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold" title={group.title}>{group.title}</span><ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></span>
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
           <span className="font-mono">{group.chatId}</span>
           {group.historical ? <span>Previously used</span> : null}
           {group.lastObservedAt ? <span>Observed by OpenClaw</span> : null}
-        </div>
-      </div>
+          <span>{summary ? `${accessLabel(summary.access.mode)} · ${summary.response.requireMention ? "Mention required" : "Mentions optional"} · ${capabilityLabel(summary.capabilities.preset)}` : "Permissions"}</span>
+        </span>
+      </button>
       <div className="flex shrink-0 items-center gap-2">
         {group.bindingConflict ? <Badge variant="warning" className="h-6 rounded-md px-2 text-[10px]">Binding conflict</Badge> : null}
         {!group.bindingConflict && currentAgent ? <Badge variant="success" className="h-6 rounded-md px-2 text-[10px]">Connected</Badge> : null}
@@ -310,6 +353,14 @@ function KnownGroupRow({
 
 function groupKey(group: Pick<TelegramKnownGroup, "accountId" | "chatId">) {
   return `${group.accountId}:${group.chatId}`;
+}
+
+function accessLabel(mode: TelegramGroupPermissionSummary["access"]["mode"]) {
+  return mode === "anyone" ? "Anyone" : mode === "selected" ? "Selected people" : "Nobody";
+}
+
+function capabilityLabel(preset: TelegramGroupPermissionSummary["capabilities"]["preset"]) {
+  return preset === "agent-defaults" ? "Agent defaults" : preset === "chat-only" ? "Chat only" : preset === "selected-tools" ? "Selected tools" : preset === "research" ? "Research" : "Custom";
 }
 
 function isAbortError(error: unknown) {
