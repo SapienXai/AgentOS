@@ -71,7 +71,7 @@ function AgentConnectionsDialogContent({
         variant="worker-profile"
         icon={MessageCircle}
         title={`${formatAgentDisplayName(agent)} connections`}
-        description="Connect an account, choose a real group or channel, and send it to this agent."
+        description="Add or connect a configured group or channel through OpenClaw to this agent."
         chips={<span className="text-[10px] text-muted-foreground">Channel connection</span>}
         footer={
           <div className="flex w-full items-center justify-between gap-3">
@@ -88,9 +88,6 @@ function AgentConnectionsDialogContent({
         }
         bodyClassName="space-y-3"
       >
-        <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
-          <span className="font-medium text-foreground">Current agent:</span> {formatAgentDisplayName(agent)}. Choose a real channel below; the connection is verified before it appears on the Agent card.
-        </div>
         <AgentChannelsSection
           agentId={agent.id}
           agentLabel={formatAgentDisplayName(agent)}

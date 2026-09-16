@@ -327,11 +327,11 @@ export function buildSurfaceRouteOptions(
 
 export function getEmptyRouteDiscoveryCopy(provider: MissionControlSurfaceProvider) {
   if (provider === "telegram") {
-    return "No Telegram groups found yet. Send one message in the target group, then refresh integration discovery.";
+    return "No groups configured. Add a Telegram group to connect it to this workspace.";
   }
 
   if (provider === "discord") {
-    return "No Discord integrations were discovered yet. Send one message in the target server, then refresh integration discovery.";
+    return "No Discord routes configured for this account.";
   }
 
   return "No integrations were discovered yet for this provider.";

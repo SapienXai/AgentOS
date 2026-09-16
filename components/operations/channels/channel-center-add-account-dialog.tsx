@@ -277,7 +277,7 @@ export function ChannelCenterAddAccountDialog({
       }
 
       toast.success(`${selectedProvider.label} account is online.`, {
-        description: created ? "OpenClaw confirmed the account. Choose a real group or channel next." : successMessage
+        description: created ? "OpenClaw confirmed the account. Choose a configured group or channel next." : successMessage
       });
       setToken("");
       setBotToken("");
@@ -321,7 +321,7 @@ export function ChannelCenterAddAccountDialog({
             <div>
               <DialogTitle>Connect account</DialogTitle>
               <DialogDescription className="mt-1">
-                Choose an existing account or connect a new one. After it is online, choose a real group or channel for the selected Agent.
+                Choose an existing account or connect a new one. After it is online, choose a configured group or channel for the selected Agent.
               </DialogDescription>
             </div>
           </div>

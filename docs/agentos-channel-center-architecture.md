@@ -133,8 +133,10 @@ Channels is the canonical management surface for provider, account, routes,
 access, lifecycle, and diagnostics. Existing connect and workspace dialogs are
 compatibility entry points for workspace metadata and legacy association state;
 they must not become native routing authorities. Routine registry writes do not
-rewrite OpenClaw bindings or provider config. Native route mutations belong to
-Channel Center, while the explicit surface-reconcile action is an audited,
+rewrite OpenClaw bindings or provider config. Native route mutations use the
+shared OpenClaw application boundary; Channel Center remains the canonical
+management surface, while Agent Profile exposes the narrow Telegram
+add-and-connect flow. The explicit surface-reconcile action is an audited,
 previewed compatibility repair bridge for legacy records. Raw
 bindings, config paths, peer IDs, Gateway internals, and reconciliation details
 belong only in an advanced/diagnostics view.
@@ -158,8 +160,12 @@ supported mutations.
 - Both surfaces use `/api/openclaw/channels/route-binding` for route changes,
   preserving the existing permission, OpenClaw preflight, audit, optimistic
   concurrency, and secret-redaction boundaries.
+- Agent Profile's Telegram add-and-connect action uses the same OpenClaw
+  preflight and native config/binding services; it does not create a local
+  group registry or call the Telegram Bot API.
 - Agent Profile loads the current route summary when opened and loads provider,
-  account, and directory candidates only when the operator starts Add route.
+  account, and directory candidates only when the operator starts the add
+  flow.
   Directory entries are normalized through the canonical resolver so explicit,
   inherited, and default states remain distinguishable.
 - Threads remain inherited from their parent route when OpenClaw does not
@@ -240,6 +246,18 @@ conflict so the UI can refresh instead of silently retrying or partially
 applying a multi-field action. Route binding updates use the same optimistic
 concurrency boundary and preserve unknown sibling binding fields.
 
+Telegram group registration is deliberately config-backed rather than a Bot API
+membership enumeration. The Agent Profile flow accepts a numeric group ID and
+uses the native OpenClaw config mutation boundary to add only the requested
+`groups[<id>]` entry with `requireMention: true`. If the selected account has
+an authored `groups` map, the entry is written under that account; otherwise it
+is written to the root map so named accounts that inherit root groups keep
+their inheritance. An authored empty account map remains an explicit override.
+The mutation preserves wildcard entries, access policy, topics, unknown
+provider fields, and unrelated groups, then verifies the canonical OpenClaw
+config readback before adding the native agent binding. Existing bindings owned
+by another agent are surfaced as a conflict and are never silently replaced.
+
 ## Custom Telegram audit
 
 | Area | Classification | Boundary |
@@ -250,6 +268,7 @@ concurrency boundary and preserve unknown sibling binding fields.
 | Workspace channel registry mutation | Compatibility / AgentOS workspace metadata | Associates workspaces and legacy labels only; it does not write native bindings or provider routing config. |
 | `reconcileWorkspaceSurfaceBindings` | Explicit compatibility repair | Previewed/audited bridge for legacy surface drift; never an automatic side effect of registry CRUD. |
 | Telegram group config projection in channel service | Compatibility / AgentOS workspace projection | Must preserve unmanaged OpenClaw config and never become account/runtime authority. |
+| Telegram group registration in `telegram-group-service.ts` | OpenClaw-owned native mutation | Exact config path plus canonical readback; no direct Telegram Bot API, membership enumeration, or AgentOS-owned group registry. |
 | Telegram session-store reconciliation | Temporary compatibility | Audited separately; it is not a replacement for native OpenClaw bindings. |
 | Raw provider catalog entries | Presentation metadata | Must not claim capabilities that OpenClaw status/plugin inventory does not report. |
 

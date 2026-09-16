@@ -470,7 +470,7 @@ test("Agent card connections use the Agent-scoped channel flow and verify native
   );
 
   assert.match(agentConnectionsSource, /AgentChannelsSection/);
-  assert.match(agentConnectionsSource, /choose a real group or channel/);
+  assert.match(agentConnectionsSource, /configured group or channel/);
   assert.match(agentConnectionsSource, /workspaceId/);
   assert.match(agentConnectionsSource, /workspacePath/);
   assert.doesNotMatch(agentConnectionsSource, /ChannelCenterAddAccountDialog|onConnectAccount/);
@@ -481,7 +481,7 @@ test("Agent card connections use the Agent-scoped channel flow and verify native
   assert.match(agentChannelsSource, /Start and continue/);
   assert.match(agentChannelsSource, /Connect account and continue/);
   assert.match(agentChannelsSource, /initialProviderId/);
-  assert.match(agentChannelsSource, /No groups found/);
+  assert.match(agentChannelsSource, /No groups configured/);
   assert.match(agentChannelsSource, /verification\?\.verified/);
   assert.match(agentChannelsSource, /Connect to \$\{agentLabel\}/);
   assert.match(agentNodeSource, /data\.onOpenWorkspaceChannels\?\.\(data\.agent\.workspaceId, data\.agent\.id, surfaceBadge\.provider\)/);
