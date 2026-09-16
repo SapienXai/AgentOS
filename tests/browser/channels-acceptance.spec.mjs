@@ -209,7 +209,7 @@ test("Discord hierarchy keeps thread routing inherited from #support", async ({ 
   await expect(page.getByText("Key 2 Lead", { exact: true }).first()).toBeVisible();
   const reopened = await openAgentConnections(page, "discord");
   await selectAccount(reopened, ids.discordAccountId);
-  await expect(reopened.getByText("#support", { exact: true })).toBeVisible();
+  await expect(reopened.getByText("#support", { exact: true }).first()).toBeVisible();
   await expect(reopened.getByRole("button", { name: "Remove override" })).toHaveCount(1);
   await reopened.getByRole("button", { name: "Remove override" }).click();
   await expect.poll(() => fixture.routeMutations.length).toBe(2);
