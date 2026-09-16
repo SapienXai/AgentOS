@@ -2,7 +2,7 @@ import "server-only";
 
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -31,8 +31,7 @@ import type {
   ResetPreviewPackageAction,
   ResetPreviewWorkspace,
   ResetStreamEvent,
-  ResetTarget,
-  ResetWorkspaceAction
+  ResetTarget
 } from "@/lib/agentos/contracts";
 
 const execFileAsync = promisify(execFile);
@@ -79,6 +78,7 @@ export type ResetExecutionDependencies = {
   resetOpenClawBinCache?: typeof resetOpenClawBinCache;
   removeAgentOsRuntimeState?: typeof removeAgentOsRuntimeState;
   runAgentOsCleanup?: (preview: ResetPreview, emit: ResetEventEmitter, env: NodeJS.ProcessEnv) => Promise<void>;
+  detectPackageActions?: typeof detectPackageActions;
   schedulePackageRemoval?: typeof scheduleBackgroundPackageRemoval;
 };
 
@@ -124,7 +124,9 @@ export async function getResetPreview(
   });
   const workspaces = await buildResetPreviewWorkspaces(snapshot, target, env);
   const workspaceIds = new Set(workspaces.map((workspace) => workspace.workspaceId));
-  const packageActions = target === "full-uninstall" ? await detectPackageActions(snapshot, env) : [];
+  const packageActions = target === "full-uninstall"
+    ? await (dependencies.detectPackageActions ?? detectPackageActions)(snapshot, env)
+    : [];
   const nativeOpenClaw = target === "full-uninstall"
     ? await buildNativeOpenClawPlan(dependencies.runOpenClaw ?? runOpenClaw, env)
     : null;
@@ -509,7 +511,13 @@ async function runAgentOsCleanup(preview: ResetPreview, emit: ResetEventEmitter,
       for (const agent of agents) {
         try {
           await emit({ type: "log", text: `Deleting AgentOS-managed agent ${agent.id} from ${workspace.name}.` });
-          await deleteAgent({ agentId: agent.id });
+          const result = await deleteAgent({ agentId: agent.id });
+          if (result.outcome && result.outcome !== "ready") {
+            throw new ResetOperationFailure(
+              `OpenClaw did not confirm deletion of agent ${agent.id}.`,
+              "partial"
+            );
+          }
         } catch (error) {
           if (isProtectedAgentDeleteError(error)) {
             await emit({ type: "log", text: `Preserved protected agent ${agent.id} in ${workspace.name}.` });
@@ -602,7 +610,7 @@ function assertSafeManagedWorkspaceDeletionTarget(workspacePath: string, env: No
   }
 }
 
-async function removeWorkspaceIntegrationArtifacts(workspace: ResetPreviewWorkspace, emit: ResetEventEmitter) {
+export async function removeWorkspaceIntegrationArtifacts(workspace: ResetPreviewWorkspace, emit: ResetEventEmitter) {
   const markerPath = path.resolve(workspace.path, WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH);
   if (!workspace.integrationPaths.includes(markerPath)) {
     await emit({ type: "log", text: `No explicit AgentOS integration marker found for ${workspace.name}; preserved the folder.` });
@@ -822,7 +830,7 @@ async function detectPackageActions(snapshot: MissionControlSnapshot, env: NodeJ
 }
 
 async function detectAgentOsCleanupAction(preferredManagers: string[], env: NodeJS.ProcessEnv) {
-  const globalPackageAction = await detectGlobalPackageAction("@sapienx/agentos", preferredManagers, false);
+  const globalPackageAction = await detectGlobalPackageAction("@sapienx/agentos", preferredManagers, true);
   if (globalPackageAction) return globalPackageAction;
 
   const releaseAction = await detectAgentOsReleaseAction(env);
@@ -1081,11 +1089,11 @@ await rm(${JSON.stringify(scriptPath)}, { force: true }).catch(() => undefined);
 `;
 }
 
-function buildDeferredCleanupEnvironment() {
+function buildDeferredCleanupEnvironment(): NodeJS.ProcessEnv {
   const allowedKeys = ["PATH", "HOME", "USER", "TMPDIR", "AGENTOS_RUNTIME_DIR", "AGENTOS_INSTALL_ROOT"];
   return Object.fromEntries(allowedKeys
     .map((key) => [key, process.env[key]])
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")) as NodeJS.ProcessEnv;
 }
 
 function formatStructuredCommand(command: string, args: string[]) {

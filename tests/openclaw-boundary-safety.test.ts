@@ -535,19 +535,21 @@ test("generated Telegram delegation helper uses configured OpenClaw binary and t
   assert.doesNotMatch(source, /execFileAsync\("openclaw", args/);
 });
 
-test("full uninstall reset avoids OpenClaw-dependent workspace cleanup", () => {
+test("full uninstall reset is OpenClaw-first and fail-closed", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/reset.ts"), "utf8");
 
-  assert.match(
-    source,
-    /if \(fullUninstall\) \{\s*await removeWorkspaceFolderDirectly\(workspace, emit\);\s*continue;\s*\}\s*await deleteWorkspaceProject/
-  );
-  assert.match(
-    source,
-    /if \(fullUninstall\) \{\s*await removeWorkspaceIntegrationDirectory\(workspace, emit\);\s*continue;\s*\}\s*const snapshot = await getMissionControlSnapshot/
-  );
-  assert.match(source, /OpenClaw uninstall command failed\. AgentOS will continue with local state cleanup/);
-  assert.match(source, /Snapshot refresh skipped after full uninstall/);
+  assert.match(source, /const openClawNativeUninstallArgs = \[/);
+  assert.match(source, /"--service"/);
+  assert.match(source, /"--state"/);
+  assert.match(source, /runOpenClawNativeTeardown/);
+  assert.match(source, /preview\.nativeOpenClaw/);
+  assert.doesNotMatch(source, /removeOpenClawLocalState/);
+  assert.doesNotMatch(source, /continue with local state cleanup/);
+  assert.doesNotMatch(source, /"--all"/);
+
+  const nativeIndex = source.indexOf("runOpenClawNativeTeardown");
+  const agentOsIndex = source.indexOf("runAgentOsCleanup");
+  assert.equal(nativeIndex >= 0 && agentOsIndex > nativeIndex, true);
 });
 
 test("AgentOS does not seed legacy openai-codex model refs in production code", () => {
@@ -966,9 +968,18 @@ test("full uninstall reset reopens onboarding at system setup", () => {
   assert.match(source, /systemSetupRequired=\{requiresFreshInstallSystemSetup\}/);
 
   const runResetIndex = source.indexOf("const runReset = async () => {");
-  const pendingIndex = source.indexOf("setRequiresFreshInstallSystemSetup(true);", runResetIndex);
+  const successIndex = source.indexOf("if (event.ok)", runResetIndex);
+  const onboardingResetIndex = source.indexOf("resetFreshInstallOnboardingState();", successIndex);
+  const directPendingIndex = source.indexOf("setRequiresFreshInstallSystemSetup(true);", runResetIndex);
   const runningIndex = source.indexOf('setResetRunState("running");', runResetIndex);
-  assert.equal(runResetIndex >= 0 && pendingIndex > runResetIndex && pendingIndex < runningIndex, true);
+  assert.equal(
+    runResetIndex >= 0 &&
+      runningIndex > runResetIndex &&
+      successIndex > runningIndex &&
+      onboardingResetIndex > successIndex &&
+      (directPendingIndex === -1 || directPendingIndex > successIndex),
+    true
+  );
 });
 
 test("system setup starts Gateway before requesting a full readiness snapshot", () => {

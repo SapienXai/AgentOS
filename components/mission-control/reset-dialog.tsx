@@ -27,6 +27,8 @@ export function ResetDialog({
   previewState,
   preview,
   previewError,
+  confirmationExpiresAt,
+  hasConfirmationPlan,
   runState,
   statusMessage,
   resultMessage,
@@ -45,6 +47,8 @@ export function ResetDialog({
   previewState: PreviewState;
   preview: ResetPreview | null;
   previewError: string | null;
+  confirmationExpiresAt: string | null;
+  hasConfirmationPlan: boolean;
   runState: RunState;
   statusMessage: string | null;
   resultMessage: string | null;
@@ -64,6 +68,7 @@ export function ResetDialog({
   const canExecute =
     target !== null &&
     previewState === "ready" &&
+    hasConfirmationPlan &&
     !isExecuting &&
     !hasFinished &&
     confirmText.trim() === expectedConfirmation;
@@ -71,7 +76,7 @@ export function ResetDialog({
     target === "full-uninstall" ? "Full Uninstall" : "Reset AgentOS";
   const description =
     target === "full-uninstall"
-      ? "Remove AgentOS state, task history, OpenClaw service and local state, then attempt to remove detected OpenClaw and AgentOS CLI installs."
+      ? "Run OpenClaw's native service and state teardown first, then remove AgentOS-owned state. Configured user workspace folders stay protected; detected package removal may finish after AgentOS exits."
       : "Remove AgentOS-managed workspaces, attached agents, task history, planner state, and browser state.";
   const dangerButtonClassName =
     surfaceTheme === "light"
@@ -191,7 +196,7 @@ export function ResetDialog({
                     Workspace impact
                   </p>
                   <p className={cn("mt-1 text-sm", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
-                    `Delete folder` removes the workspace directory. `Keep folder` only removes OpenClaw and AgentOS integration from that location.
+                    Delete folder is limited to a durable AgentOS ownership proof. Preserve folder keeps user and OpenClaw data and removes only the explicitly listed AgentOS integration marker, if present.
                   </p>
                 </div>
                 <Button
@@ -239,11 +244,14 @@ export function ResetDialog({
                               : "border-amber-300/25 bg-amber-300/10 text-amber-200"
                         )}
                       >
-                        {workspace.action === "delete-folder" ? "Delete folder" : "Keep folder"}
+                        {workspace.action === "delete-folder" ? "Delete AgentOS folder" : "Preserve folder"}
                       </span>
                     </div>
                     <p className={cn("mt-2 text-xs", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
                       {workspace.agentCount} agents, {workspace.runtimeCount} tracked runs, {workspace.liveAgentCount} live agents.
+                    </p>
+                    <p className={cn("mt-1 text-[11px] uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500")}>
+                      Ownership: {workspace.ownership.replaceAll("_", " ")}
                     </p>
                     <div className="mt-2 space-y-1">
                       {workspace.reasons.map((reason) => (
@@ -266,6 +274,13 @@ export function ResetDialog({
                 items={preview.missionControlPaths}
                 surfaceTheme={surfaceTheme}
               />
+              {preview.agentOsRuntimePaths.length > 0 ? (
+                <PathPanel
+                  title="AgentOS runtime state"
+                  items={preview.agentOsRuntimePaths}
+                  surfaceTheme={surfaceTheme}
+                />
+              ) : null}
               <PathPanel
                 title="Browser state"
                 items={preview.browserStorageKeys}
@@ -276,10 +291,30 @@ export function ResetDialog({
             {target === "full-uninstall" ? (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <PathPanel
-                  title="OpenClaw state"
+                  title="OpenClaw native state scope"
                   items={preview.openClawPaths}
                   surfaceTheme={surfaceTheme}
                 />
+                {preview.nativeOpenClaw ? (
+                  <div
+                    className={cn(
+                      "rounded-[16px] border px-4 py-4",
+                      surfaceTheme === "light" ? "border-[#e6d6ca] bg-white" : "border-white/10 bg-white/[0.03]"
+                    )}
+                  >
+                    <p className={cn("text-xs uppercase tracking-[0.18em]", surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500")}>
+                      Native OpenClaw teardown
+                    </p>
+                    <p className={cn("mt-2 text-sm", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
+                      {preview.nativeOpenClaw.status === "ready"
+                        ? "Ready: service and state scopes are planned, while configured workspace folders remain protected."
+                        : preview.nativeOpenClaw.reason || "The native OpenClaw preflight is blocked."}
+                    </p>
+                    <p className={cn("mt-2 break-all font-mono text-[11px]", surfaceTheme === "light" ? "text-[#7e6555]" : "text-slate-500")}>
+                      {preview.nativeOpenClaw.preflightCommand}
+                    </p>
+                  </div>
+                ) : null}
                 <div
                   className={cn(
                     "rounded-[16px] border px-4 py-4",
@@ -314,7 +349,7 @@ export function ResetDialog({
                                   : "border-white/10 bg-white/[0.05] text-slate-300"
                             )}
                           >
-                            {action.detected ? "Scheduled" : "Manual"}
+                            {action.detected ? "Detected" : action.required ? "Manual" : "Not present"}
                           </span>
                         </div>
                         <p className={cn("mt-1 break-words text-xs", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
@@ -341,6 +376,11 @@ export function ResetDialog({
               <Label htmlFor="reset-confirm" className="text-sm font-medium text-inherit">
                 Type {expectedConfirmation} to continue
               </Label>
+              {confirmationExpiresAt ? (
+                <p className="mt-1 text-xs text-inherit/75">
+                  This preview is valid until {new Date(confirmationExpiresAt).toLocaleTimeString()}.
+                </p>
+              ) : null}
               <Input
                 id="reset-confirm"
                 value={confirmText}
