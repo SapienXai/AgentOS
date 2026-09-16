@@ -58,6 +58,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node -r ./tests/register-paths.cjs -r jiti/register.js --test",
     "test:channels:browser": "playwright test tests/browser/channels-acceptance.spec.mjs",
+    "test:browser:accounts": "playwright test tests/browser/browser-accounts-acceptance.spec.mjs",
     "publish:agentos": "pnpm check:release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"
   },
   "dependencies": {
