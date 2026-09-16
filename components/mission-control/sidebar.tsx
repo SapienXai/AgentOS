@@ -154,7 +154,7 @@ type MissionSidebarProps = {
   };
   onExpandCollapsed?: () => void;
   onToggleCollapsed: () => void;
-  onToggleTheme: () => void;
+  onToggleTheme?: () => void;
   onSelectWorkspace: (workspaceId: string | null) => void;
   onRefresh: () => Promise<void>;
   onForceRefresh?: () => Promise<MissionControlSnapshot>;

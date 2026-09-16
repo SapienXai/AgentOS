@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Check, LoaderCircle, Plus } from "lucide-react";
+import { Check, LoaderCircle, Moon, Plus, Sun } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SettingsList, SettingsRow, SettingsSection } from "@/components/settings/settings-section";
@@ -13,8 +13,9 @@ export function GeneralSettings({
   onSelectedModelIdChange,
   modelOnboardingRunState,
   onRunModelSetDefault,
-  onOpenAddModels
-}: Pick<SettingsPageProps, "snapshot" | "surfaceTheme" | "selectedModelId" | "onSelectedModelIdChange" | "modelOnboardingRunState" | "onRunModelSetDefault" | "onOpenAddModels">) {
+  onOpenAddModels,
+  onToggleTheme
+}: Pick<SettingsPageProps, "snapshot" | "surfaceTheme" | "selectedModelId" | "onSelectedModelIdChange" | "modelOnboardingRunState" | "onRunModelSetDefault" | "onOpenAddModels" | "onToggleTheme">) {
   const defaultModel = snapshot.diagnostics.modelReadiness.resolvedDefaultModel || snapshot.diagnostics.modelReadiness.defaultModel || "";
   const selectedModel = selectedModelId || defaultModel;
   const hasModels = snapshot.models.length > 0;
@@ -22,6 +23,17 @@ export function GeneralSettings({
   return (
     <SettingsSection title="General" description="A small set of product preferences for your AgentOS workspace." surfaceTheme={surfaceTheme}>
       <SettingsList surfaceTheme={surfaceTheme}>
+        <SettingsRow
+          label="Appearance"
+          description="Choose the light or dark AgentOS workspace theme."
+          surfaceTheme={surfaceTheme}
+          action={
+            <Button type="button" size="sm" variant="secondary" onClick={onToggleTheme} className="min-h-10 rounded-md text-xs sm:min-h-9">
+              {surfaceTheme === "dark" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+              {surfaceTheme === "dark" ? "Dark" : "Light"}
+            </Button>
+          }
+        />
         <SettingsRow
           label="Default model"
           description="The model used when a task does not specify one."

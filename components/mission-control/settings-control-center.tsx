@@ -193,7 +193,7 @@ const relatedSettingsSections: Partial<Record<SettingsSectionId, SettingsSection
 };
 
 export function SettingsControlCenter(
-  props: MissionControlShellSettingsPanelProps & { sidebarOpen?: boolean }
+  props: MissionControlShellSettingsPanelProps & { sidebarOpen?: boolean; onToggleTheme: () => void }
 ) {
   const {
     snapshot,
@@ -231,7 +231,8 @@ export function SettingsControlCenter(
     onOpenClawBinarySelectionPathChange,
     onSaveOpenClawBinarySettings,
     installSummary,
-    sidebarOpen = false
+    sidebarOpen = false,
+    onToggleTheme
   } = props;
   const [gatewayAuthStatus, setGatewayAuthStatus] = useState<GatewayNativeAuthStatus | null>(null);
   const [gatewayAuthError, setGatewayAuthError] = useState<string | null>(null);
@@ -1296,6 +1297,7 @@ export function SettingsControlCenter(
           }
           scrollSettingsToTop();
         }}
+        onToggleTheme={onToggleTheme}
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}
         workspaceRootDraft={workspaceRootDraft}

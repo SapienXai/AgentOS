@@ -4608,7 +4608,7 @@ export function MissionControlShell({
           />
         </div>
 
-        <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} />
+        <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))} />
         {!isFloatingHeaderHidden ? (
           <div
             data-tauri-drag-region="deep"
