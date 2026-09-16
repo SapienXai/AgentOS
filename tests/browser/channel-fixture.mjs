@@ -6,6 +6,8 @@ export const CHANNEL_FIXTURE_IDS = {
   defaultAgentId: "main",
   telegramAccountId: "telegram-support-bot",
   discordAccountId: "discord-support-bot",
+  telegramSupportChatId: "-1001234567890",
+  telegramReservationsChatId: "-1009988776655",
   telegramSupportRouteId: "telegram-support-group",
   telegramReservationsRouteId: "telegram-reservations-group",
   discordServerRouteId: "discord-sapienx-server",
@@ -78,6 +80,16 @@ export class ChannelAcceptanceFixture {
 
     if (url.pathname === "/api/openclaw/channels/directory" && method === "GET") {
       await this.json(route, this.directory(url.searchParams));
+      return;
+    }
+
+    if (url.pathname === "/api/openclaw/channels/telegram-known-groups" && method === "GET") {
+      await this.json(route, this.telegramKnownGroups(url.searchParams));
+      return;
+    }
+
+    if (url.pathname === "/api/openclaw/channels/telegram-groups" && method === "POST") {
+      await this.json(route, this.telegramGroup(request));
       return;
     }
 
@@ -357,6 +369,81 @@ export class ChannelAcceptanceFixture {
     }
     const entries = provider === "discord" ? this.discordEntries(accountId) : this.telegramEntries(accountId);
     return { entries, status: entries.length > 0 ? "ok" : "empty", source: "openclaw", fallbackReason: null, error: null };
+  }
+
+  telegramKnownGroups(searchParams) {
+    const accountId = searchParams.get("accountId") ?? "";
+    const account = this.providerAccounts("telegram").find((entry) => entry.accountId === accountId);
+    const accountStateName = account ? this.accountState(account) : "STATUS_UNAVAILABLE";
+    if (accountStateName !== "ONLINE") {
+      return {
+        provider: "telegram",
+        accountId,
+        groups: [],
+        observation: {
+          supported: true,
+          available: false,
+          source: "openclaw-gateway-sessions",
+          error: "Telegram account is not online."
+        }
+      };
+    }
+
+    return {
+      provider: "telegram",
+      accountId,
+      groups: [
+        this.knownTelegramGroup(accountId, CHANNEL_FIXTURE_IDS.telegramSupportChatId, "Support Group", CHANNEL_FIXTURE_IDS.telegramSupportRouteId),
+        this.knownTelegramGroup(accountId, CHANNEL_FIXTURE_IDS.telegramReservationsChatId, "Reservations Group", CHANNEL_FIXTURE_IDS.telegramReservationsRouteId)
+      ],
+      observation: {
+        supported: true,
+        available: true,
+        source: "openclaw-gateway-sessions",
+        error: null
+      }
+    };
+  }
+
+  knownTelegramGroup(accountId, chatId, title, routeId) {
+    const connectedAgentId = this.bindings.get(bindingKey({ provider: "telegram", accountId, kind: "group", routeId, parentRouteId: null })) ?? null;
+    return {
+      accountId,
+      chatId,
+      title,
+      titleSource: "observed",
+      configured: true,
+      connectedAgentId,
+      historicalAgentId: null,
+      source: "openclaw-config",
+      sources: ["openclaw-config"],
+      connectable: !connectedAgentId,
+      historical: false,
+      bindingConflict: false,
+      lastObservedAt: null
+    };
+  }
+
+  telegramGroup(request) {
+    const body = parseRequestJson(request);
+    const accountId = String(body.accountId ?? "");
+    const groupId = String(body.groupId ?? "");
+    const agentId = body.agentId ? String(body.agentId) : null;
+    const routeId = this.telegramRouteIdForChatId(groupId);
+    if (!routeId) return { error: "Fixture Telegram group not found." };
+
+    const route = { provider: "telegram", accountId, kind: "group", routeId, parentRouteId: null };
+    if (agentId) this.bindings.set(bindingKey(route), agentId);
+    else this.bindings.delete(bindingKey(route));
+    this.routeMutations.push({ route, agentId });
+    this.revision += 1;
+    return { ok: true, groupId, agentId, route };
+  }
+
+  telegramRouteIdForChatId(chatId) {
+    if (chatId === CHANNEL_FIXTURE_IDS.telegramSupportChatId) return CHANNEL_FIXTURE_IDS.telegramSupportRouteId;
+    if (chatId === CHANNEL_FIXTURE_IDS.telegramReservationsChatId) return CHANNEL_FIXTURE_IDS.telegramReservationsRouteId;
+    return null;
   }
 
   telegramEntries(accountId) {

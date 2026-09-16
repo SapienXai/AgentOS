@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import type { ChannelCenterSnapshot } from "@/lib/openclaw/application/channel-center-service";
 import type { ChannelRouteKind, ChannelRouteIdentity } from "@/lib/openclaw/domains/channel-center";
+import { TelegramKnownGroupsPanel } from "@/components/operations/agents/telegram-known-groups-panel";
 import { presentChannelAccountState } from "@/lib/openclaw/domains/channel-account-presentation";
 import {
   classifyChannelAccountPollState,
@@ -126,8 +127,6 @@ export function AgentChannelsSection({
   const [groupDirectoryEntries, setGroupDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [peerDirectoryEntries, setPeerDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [topicDirectoryEntries, setTopicDirectoryEntries] = useState<DirectoryEntry[]>([]);
-  const [telegramGroupId, setTelegramGroupId] = useState("");
-  const [telegramGroupAction, setTelegramGroupAction] = useState(false);
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryResponse["status"] | null>(null);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
@@ -154,7 +153,10 @@ export function AgentChannelsSection({
     ? presentChannelAccountState(accountStateInput(selectedAccount))
     : null;
   const selectableProviders = useMemo(
-    () => providers.filter((provider) => provider.accounts.some(isRouteAccountSelectable)),
+    () => providers.filter((provider) => (
+      provider.accounts.some(isRouteAccountSelectable)
+        || provider.capabilities?.supportsTokenSetup === true
+    )),
     [providers]
   );
   const selectableAccounts = useMemo(
@@ -278,7 +280,6 @@ export function AgentChannelsSection({
         setProviderId(focusedProvider.id);
         setAccountId(focusedProvider.accounts.find((account) => isRouteAccountSelectable(account))?.accountId ?? focusedProvider.accounts[0]?.accountId ?? "");
         setGroupId(null);
-        setTelegramGroupId("");
         setGroupDirectoryEntries([]);
         setPeerDirectoryEntries([]);
         setTopicDirectoryEntries([]);
@@ -300,7 +301,6 @@ export function AgentChannelsSection({
     setAccountId(nextProvider?.accounts.find((account) => isRouteAccountSelectable(account))?.accountId ?? nextProvider?.accounts[0]?.accountId ?? "");
     setRouteKind("groups");
     setGroupId(null);
-    setTelegramGroupId("");
     setAccountName("");
     setToken("");
     setBotToken("");
@@ -315,7 +315,6 @@ export function AgentChannelsSection({
   const chooseAccount = (nextAccountId: string) => {
     setAccountId(nextAccountId);
     setGroupId(null);
-    setTelegramGroupId("");
     setDirectoryStatus(null);
     setDirectoryError(null);
     setGroupDirectoryEntries([]);
@@ -539,47 +538,6 @@ export function AgentChannelsSection({
     }
   };
 
-  const addTelegramGroupAndConnect = useCallback(async () => {
-    const nextGroupId = telegramGroupId.trim();
-    if (!accountId || !nextGroupId || selectedProvider?.id !== "telegram") return;
-
-    const key = `telegram:${accountId}:group:${nextGroupId}`;
-    setMutationKey(key);
-    setTelegramGroupAction(true);
-    setDirectoryError(null);
-    try {
-      const response = await fetch("/api/openclaw/channels/telegram-groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, groupId: nextGroupId, agentId })
-      });
-      const payload = await response.json() as {
-        error?: string;
-        binding?: { verification?: { verified?: boolean } };
-        group?: { verification?: { verified?: boolean } };
-      };
-      if (!response.ok || payload.error) throw new Error(payload.error ?? "The Telegram group could not be connected.");
-
-      setTelegramGroupId("");
-      setDirectoryStatus(null);
-      await Promise.all([
-        loadSummary(),
-        readDirectory("groups", null, "telegram", accountId),
-        onRouteChanged?.()
-      ]);
-      toast.success("Telegram group connected.", {
-        description: `The group is now connected to ${agentLabel}.`
-      });
-    } catch (error) {
-      toast.error("Telegram group connection failed.", {
-        description: error instanceof Error ? error.message : "OpenClaw could not confirm the group connection."
-      });
-    } finally {
-      setTelegramGroupAction(false);
-      setMutationKey(null);
-    }
-  }, [accountId, agentId, agentLabel, loadSummary, onRouteChanged, readDirectory, selectedProvider?.id, telegramGroupId]);
-
   const showSummaryEmpty = !loadingSummary && !summaryError && (summary?.routes.length ?? 0) === 0;
 
   return (
@@ -610,14 +568,14 @@ export function AgentChannelsSection({
       ) : null}
 
       {addOpen ? (
-        <div className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
-          <div className="flex items-start justify-between gap-3">
+        <div className={isTelegramFlow ? "space-y-4 border-t border-border pt-4" : "rounded-xl border border-primary/15 bg-primary/[0.02] p-3"}>
+          {!isTelegramFlow ? <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-medium">Connect a channel</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">Add a configured OpenClaw route, then connect it to this agent.</p>
             </div>
             {centerLoading ? <LoaderCircle className="h-4 w-4 animate-spin text-primary" /> : null}
-          </div>
+          </div> : null}
 
           {providers.length > 0 ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -629,7 +587,7 @@ export function AgentChannelsSection({
           ) : centerLoading ? null : <p className="mt-4 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">No usable messaging accounts are available yet. Choose a provider below to continue setup.</p>}
 
           {selectedProvider && selectedAccount && selectedAccountPresentation ? (
-            <div className="mt-4 rounded-xl border border-border bg-background/70 p-3">
+            <div className={cn("mt-4", isTelegramFlow ? "border-b border-border pb-3" : "rounded-xl border border-border bg-background/70 p-3")}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-medium">{selectedProvider.label} · {selectedAccount.name}</p><Badge variant="muted" className="h-5 rounded-full px-2 text-[9px]">{selectedAccountPresentation.label}</Badge></div>
@@ -644,32 +602,27 @@ export function AgentChannelsSection({
             </div>
           ) : selectedProvider?.capabilities?.supportsTokenSetup ? <InlineAccountSetup provider={selectedProvider} accountName={accountName} token={token} botToken={botToken} appToken={appToken} onAccountNameChange={setAccountName} onTokenChange={setToken} onBotTokenChange={setBotToken} onAppTokenChange={setAppToken} onSubmit={() => void createAccountAndContinue()} saving={accountAction === "setup"} canSubmit={canCreateTokenAccount} /> : selectedProvider?.setupMode === "qr" ? <div className="mt-3 rounded-xl border border-border bg-background/70 p-3"><p className="text-xs leading-5 text-muted-foreground">OpenClaw will show the native QR flow for this provider. Return here after the account is linked so route discovery can continue.</p><Button type="button" variant="secondary" size="sm" className="mt-3 h-8 rounded-lg px-3 text-xs" onClick={() => void openControlUi()}><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Start QR setup in OpenClaw</Button></div> : selectedProvider ? <div className="mt-3 rounded-xl border border-border bg-background/70 p-3"><p className="text-xs leading-5 text-muted-foreground">This provider needs an external OpenClaw setup before its account can be used here.</p><Button type="button" variant="secondary" size="sm" className="mt-3 h-8 rounded-lg px-3 text-xs" onClick={() => void openControlUi()}><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Complete setup in OpenClaw</Button></div> : null}
 
-          {isTelegramFlow ? (
-            <div className="mt-3 rounded-xl border border-primary/15 bg-background/70 p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">Add Telegram group</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Telegram doesn&apos;t expose a full list of groups your bot belongs to.</p>
-                </div>
-                {selectedAccountPresentation ? <Badge variant="muted" className="h-5 w-fit rounded-full px-2 text-[9px]">{selectedAccountPresentation.label}</Badge> : null}
-              </div>
-              {selectedAccountPresentation?.state === "ONLINE" ? <>
-                <label className="mt-3 block space-y-1.5 text-xs font-medium"><span>Group ID</span><Input value={telegramGroupId} onChange={(event) => setTelegramGroupId(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addTelegramGroupAndConnect(); }} placeholder="-1001234567890" inputMode="numeric" autoComplete="off" disabled={telegramGroupAction} /></label>
-                <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Add the bot to the group, then copy the group ID.</p>
-                <Button type="button" size="sm" className="mt-3 h-8 rounded-lg px-3 text-xs" onClick={() => void addTelegramGroupAndConnect()} disabled={!telegramGroupId.trim() || telegramGroupAction || loadingDirectory}><Plus className="mr-1.5 h-3.5 w-3.5" />{telegramGroupAction ? "Adding…" : "Add & connect"}</Button>
-              </> : <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">Telegram is offline. Start the account in OpenClaw, then try again.</p>}
-              {loadingDirectory ? <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Reading configured groups from OpenClaw…</p> : null}
-              {directoryError ? <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">{directoryError}</p> : null}
-              {directoryStatus === "empty" && !loadingDirectory ? <p className="mt-3 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">No groups configured</span><br />Add a Telegram group to connect it to this agent.</p> : null}
-              {groupDirectoryEntries.length > 0 ? <div className="mt-3 space-y-2">{groupDirectoryEntries.map((entry) => <DirectoryRouteCard key={`${entry.kind}:${entry.parentRouteId ?? ""}:${entry.routeId}`} entry={entry} agentId={agentId} agentLabel={agentLabel} mutationKey={mutationKey} onRoute={() => void mutateRoute(toRouteIdentity("telegram", entry), agentId, `${entry.title || entry.routeId} now sends messages to ${agentLabel}.`)} />)}</div> : null}
-            </div>
-          ) : <>
+          {isTelegramFlow && selectedAccount && selectedAccountPresentation ? <TelegramKnownGroupsPanel
+            accountId={selectedAccount.accountId}
+            workspaceId={workspaceId}
+            agentId={agentId}
+            agentLabel={agentLabel}
+            accountState={selectedAccountPresentation.state}
+            accountDetail={selectedAccountPresentation.detail}
+            surfaceTheme={surfaceTheme}
+            onConnected={async () => {
+              await loadSummary();
+              await onRouteChanged?.();
+            }}
+          /> : null}
+
+          {!isTelegramFlow ? <>
             {providers.length > 0 && selectedAccount && isRouteAccountSelectable(selectedAccount) ? <Button type="button" variant="ghost" size="sm" className="mt-3 h-8 rounded-lg px-2.5 text-xs" onClick={() => void readDirectory(routeKind, groupId)} disabled={loadingDirectory || Boolean(accountAction) || (routeKind === "topics" && !groupId)}>{loadingDirectory ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}Refresh routes</Button> : null}
             {directoryError ? <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">{directoryError}</p> : null}
             {directoryStatus === "unsupported" ? <p className="mt-3 rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">This provider does not expose channel discovery here. Complete discovery in the OpenClaw Control UI, then return with the channel details.</p> : null}
             {directoryStatus === "empty" && !loadingDirectory ? <p className="mt-3 rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted-foreground">{emptyDirectoryMessage(selectedProvider?.id, routeKind)}</p> : null}
             {directoryEntries.length > 0 ? <div className="mt-3 space-y-2">{directoryEntries.map((entry) => <DirectoryRouteCard key={`${entry.kind}:${entry.parentRouteId ?? ""}:${entry.routeId}`} entry={entry} agentId={agentId} agentLabel={agentLabel} mutationKey={mutationKey} onRoute={() => void mutateRoute(toRouteIdentity(providerId, entry), agentId, `${entry.title || entry.routeId} now sends messages to ${agentLabel}.`)} />)}</div> : null}
-          </>}
+          </> : null}
         </div>
       ) : null}
     </div>

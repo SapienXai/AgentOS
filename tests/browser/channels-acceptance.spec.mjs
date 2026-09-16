@@ -21,15 +21,24 @@ async function openAgentConnections(page, provider = null) {
   await expect(dialog).toContainText("Key 2 Lead connections");
   if (provider) {
     if (await dialog.locator("select").count() === 0) {
-      await dialog.getByRole("button", { name: "Connect channel", exact: true }).click();
+      await dialog.getByRole("button", { name: /^(Connect channel|Add group)$/ }).click();
     }
-    await dialog.locator("select").first().selectOption(provider);
+    const providerSelect = dialog.locator("select").first();
+    await expect(providerSelect.locator(`option[value="${provider}"]`)).toBeAttached();
+    await providerSelect.selectOption(provider);
   }
   return dialog;
 }
 
 async function selectAccount(dialog, accountId) {
-  await dialog.locator("select").nth(1).selectOption(accountId);
+  const selectors = dialog.locator("select");
+  for (let index = 0; index < await selectors.count(); index += 1) {
+    const selector = selectors.nth(index);
+    if (await selector.locator(`option[value="${accountId}"]`).count() > 0) {
+      await selector.selectOption(accountId);
+      return;
+    }
+  }
 }
 
 async function closeDialog(page) {
@@ -69,10 +78,10 @@ test("Telegram online human acceptance completes all 26 steps", async ({ page })
   await step(9, async () => expect(dialog).toContainText("Online"));
   await step(10, async () => expect(dialog.getByText("Support Group", { exact: true })).toBeVisible());
   await step(11, async () => expect(dialog.getByText("Reservations Group", { exact: true })).toBeVisible());
-  await step(12, async () => expect(dialog.getByRole("button", { name: /Connect to Key 2 Lead/ }).first()).toBeVisible());
-  await step(13, async () => await dialog.getByRole("button", { name: "Connect to Key 2 Lead" }).first().click());
+  await step(12, async () => expect(dialog.getByRole("button", { name: "Connect", exact: true }).first()).toBeVisible());
+  await step(13, async () => await dialog.getByRole("button", { name: "Connect", exact: true }).first().click());
   await step(14, async () => await expect.poll(() => fixture.routeMutations.length).toBe(1));
-  await step(15, async () => expect(page.getByText("OpenClaw confirmed the native route for this agent.", { exact: true })).toBeVisible());
+  await step(15, async () => expect(page.getByText("OpenClaw confirmed the group for Key 2 Lead.", { exact: true })).toBeVisible());
   await step(16, async () => expect(dialog).toContainText("Connected"));
   await step(17, async () => await closeDialog(page));
   await step(18, async () => expect(page.getByRole("button", { name: "Open Telegram connections for Key 2 Lead" })).toBeVisible());
@@ -80,7 +89,7 @@ test("Telegram online human acceptance completes all 26 steps", async ({ page })
   await step(20, async () => {
     const reopened = page.getByRole("dialog");
     await expect(reopened).toContainText("Support Group");
-    await reopened.getByRole("button", { name: "Connect channel", exact: true }).click();
+    await reopened.getByRole("button", { name: /^(Connect channel|Add group)$/ }).click();
     await expect(reopened.locator("select").first()).toHaveValue("telegram");
   });
   await step(21, async () => expect(page.getByRole("dialog")).toContainText("Support Group"));

@@ -120,6 +120,19 @@ export async function listChannelGroups(
   return input.resolveBindings ? enrichRouteBindings(result, input) : result;
 }
 
+/**
+ * Reads the provider's configured route map without relying on the optional
+ * directory command. This is intentionally a projection helper for surfaces
+ * that need to distinguish configured routes from observed runtime routes.
+ */
+export async function listConfiguredChannelGroups(
+  input: ChannelDirectoryListInput,
+  options: { timings?: TimingCollector } = {}
+): Promise<ChannelDirectoryResult> {
+  const configured = await readConfiguredRoutesFromConfig(input, "groups", options.timings);
+  return input.resolveBindings ? enrichRouteBindings(configured, input) : configured;
+}
+
 export async function listChannelGroupMembers(
   input: ChannelDirectoryMembersInput,
   options: { timings?: TimingCollector } = {}

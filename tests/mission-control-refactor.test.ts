@@ -460,6 +460,14 @@ test("Agent card connections use the Agent-scoped channel flow and verify native
     path.join(rootDir, "components/operations/agents/agent-channels-section.tsx"),
     "utf8"
   );
+  const telegramKnownGroupsSource = readFileSync(
+    path.join(rootDir, "components/operations/agents/telegram-known-groups-panel.tsx"),
+    "utf8"
+  );
+  const telegramKnownGroupsApiSource = readFileSync(
+    path.join(rootDir, "app/api/openclaw/channels/telegram-known-groups/route.ts"),
+    "utf8"
+  );
   const agentNodeSource = readFileSync(
     path.join(rootDir, "components/mission-control/nodes/agent-node.tsx"),
     "utf8"
@@ -481,7 +489,13 @@ test("Agent card connections use the Agent-scoped channel flow and verify native
   assert.match(agentChannelsSource, /Start and continue/);
   assert.match(agentChannelsSource, /Connect account and continue/);
   assert.match(agentChannelsSource, /initialProviderId/);
-  assert.match(agentChannelsSource, /No groups configured/);
+  assert.match(agentChannelsSource, /TelegramKnownGroupsPanel/);
+  assert.match(telegramKnownGroupsSource, /Known groups/);
+  assert.match(telegramKnownGroupsSource, /Find group/);
+  assert.match(telegramKnownGroupsSource, /Enter group ID manually/);
+  assert.match(telegramKnownGroupsSource, /sources\.includes\("openclaw-session"\)/);
+  assert.doesNotMatch(telegramKnownGroupsSource, /getUpdates|botToken|api\.telegram\.org/);
+  assert.match(telegramKnownGroupsApiSource, /runtime\.use/);
   assert.match(agentChannelsSource, /verification\?\.verified/);
   assert.match(agentChannelsSource, /Connect to \$\{agentLabel\}/);
   assert.match(agentNodeSource, /data\.onOpenWorkspaceChannels\?\.\(data\.agent\.workspaceId, data\.agent\.id, surfaceBadge\.provider\)/);
