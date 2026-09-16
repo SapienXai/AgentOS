@@ -17,8 +17,10 @@ import {
   getInstanceProtectionStatus,
   lockInstance,
   loginToInstance,
+  readInstanceProtectionState,
   resetInstanceProtection,
   resolveInstanceProtectionPath,
+  signOutFromInstance,
   unlockLockedInstance,
   updateInstanceCredentials
 } from "@/lib/security/instance-protection";
@@ -147,6 +149,22 @@ test("lock preserves the current account and blocks other login or API access un
   assert.equal(unlocked.status.authenticated, true);
   assert.equal(unlocked.status.locked, false);
   assert.equal((await getInstanceProtectionStatus(unlocked.session, env)).username, "operator");
+});
+
+test("sign out invalidates the current AgentOS account sessions without touching OpenClaw state", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-instance-signout-"));
+  const env = { ...process.env, AGENTOS_RUNTIME_DIR: runtimeDir };
+  const enabled = await enableInstanceProtection({ username: "operator", password: "secure password" }, env);
+  const before = await readInstanceProtectionState(env);
+
+  await signOutFromInstance(enabled.session, env);
+
+  assert.equal((await getInstanceProtectionStatus(enabled.session, env)).authenticated, false);
+  assert.equal((await readInstanceProtectionState(env))?.actorId, before?.actorId);
+  assert.equal(
+    (await loginToInstance({ username: "operator", password: "secure password", rateKey: "signout-login" }, env)).status.authenticated,
+    true
+  );
 });
 
 test("expired signed sessions are rejected", async () => {

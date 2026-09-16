@@ -11,6 +11,7 @@ import {
 } from "@/lib/security/password-hashing";
 import {
   createOwnerUserFromInstanceState,
+  invalidateAgentOsUserSessions,
   normalizeAgentOsUsername,
   readAgentOsUserStore,
   resolveAgentOsUserStorePath,
@@ -251,6 +252,21 @@ export async function lockInstance(
       lockedActorId: activeSession.user.actorId,
       lockedAt: new Date().toISOString()
     }, env);
+  });
+}
+
+export async function signOutFromInstance(
+  cookieValue: string | null,
+  env: NodeJS.ProcessEnv = process.env
+) {
+  return withProtectionMutation(env, async () => {
+    const state = await readInstanceProtectionState(env);
+    if (!state || state.lockedActorId) return;
+
+    const activeSession = await resolveActiveInstanceSession(cookieValue, state, env);
+    if (activeSession) {
+      await invalidateAgentOsUserSessions(activeSession.user.actorId, env);
+    }
   });
 }
 

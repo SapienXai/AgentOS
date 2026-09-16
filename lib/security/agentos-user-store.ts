@@ -303,6 +303,15 @@ export async function setAgentOsUserPassword(actorId: string, password: string, 
   });
 }
 
+export async function invalidateAgentOsUserSessions(actorId: string, env: NodeJS.ProcessEnv = process.env) {
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, actorId);
+    user.sessionVersion += 1;
+    user.updatedAt = new Date().toISOString();
+    return user;
+  });
+}
+
 export async function updateAgentOsUserProfile(actorId: string, profile: AgentOsUserProfile, env: NodeJS.ProcessEnv = process.env) {
   return mutateAgentOsUserStore(env, (store) => {
     const user = findUserOrThrow(store, actorId);
