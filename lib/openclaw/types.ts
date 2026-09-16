@@ -2720,8 +2720,6 @@ export interface ResetNativeOpenClawPlan {
   args: string[];
   preflightCommand: string;
   preflightArgs: string[];
-  verificationCommand: string;
-  verificationArgs: string[];
   statePaths: string[];
   preservesConfiguredWorkspaces: boolean;
   reason: string | null;

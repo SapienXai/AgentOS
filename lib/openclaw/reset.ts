@@ -21,6 +21,7 @@ import {
 } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
+import { AGENTOS_LAUNCHER_PID_ENV } from "@/lib/agentos/runtime-shutdown";
 import { redactSecretText } from "@/lib/security/redaction";
 import type {
   MissionControlSnapshot,
@@ -63,6 +64,7 @@ const openClawNativeUninstallArgs = [
   "uninstall",
   "--service",
   "--state",
+  "--app",
   "--yes",
   "--non-interactive"
 ] as const;
@@ -100,6 +102,7 @@ export type ResetExecutionResult = {
   failureClass?: ResetFailureClass;
   snapshot?: MissionControlSnapshot;
   backgroundLogPath?: string;
+  runtimeShutdownEligible?: boolean;
 };
 
 class ResetOperationFailure extends Error {
@@ -217,6 +220,7 @@ export async function executeReset(
   let operationStatus: ResetOperationStatus = "succeeded";
   let failureClass: ResetFailureClass | undefined;
   let backgroundLogPath: string | undefined;
+  let runtimeShutdownEligible = false;
 
   if (target === "full-uninstall") {
     try {
@@ -235,6 +239,8 @@ export async function executeReset(
       });
     }
 
+    runtimeShutdownEligible = true;
+
     await emit({
       type: "status",
       phase: "package-removal",
@@ -248,7 +254,9 @@ export async function executeReset(
 
     if (detectedActions.length > 0) {
       try {
-        backgroundLogPath = await (dependencies.schedulePackageRemoval ?? scheduleBackgroundPackageRemoval)(detectedActions);
+        backgroundLogPath = await (dependencies.schedulePackageRemoval ?? scheduleBackgroundPackageRemoval)(detectedActions, {
+          waitForPids: resolveAgentOsRuntimeProcessIds(env)
+        });
         await emit({
           type: "log",
           text: `Package removal scheduled after AgentOS exits. Log: ${backgroundLogPath}`
@@ -333,7 +341,8 @@ export async function executeReset(
     ...(failureClass ? { failureClass } : {}),
     message,
     snapshot,
-    ...(backgroundLogPath ? { backgroundLogPath } : {})
+    ...(backgroundLogPath ? { backgroundLogPath } : {}),
+    ...(runtimeShutdownEligible ? { runtimeShutdownEligible: true } : {})
   };
 }
 
@@ -710,7 +719,7 @@ async function runOpenClawNativeTeardown(
   await emit({
     type: "status",
     phase: "openclaw-preflight",
-    message: "Verifying the native OpenClaw service and state teardown plan..."
+    message: "Checking the native OpenClaw service, state, and macOS app teardown plan..."
   });
   try {
     const preflight = await runner(plan.preflightArgs, { timeoutMs: nativeOpenClawPreflightTimeoutMs });
@@ -723,25 +732,12 @@ async function runOpenClawNativeTeardown(
   await emit({
     type: "status",
     phase: "openclaw-uninstall",
-    message: "Running OpenClaw's native service and state teardown..."
+    message: "Running OpenClaw's native service, state, and macOS app teardown..."
   });
   try {
     const result = await runner(plan.args, { timeoutMs: nativeOpenClawTimeoutMs });
     await emitCommandOutput(result.stdout, emit);
     await emitCommandOutput(result.stderr, emit);
-  } catch (error) {
-    return nativeFailure(error);
-  }
-
-  await emit({
-    type: "status",
-    phase: "openclaw-preflight",
-    message: "Verifying the native OpenClaw teardown result..."
-  });
-  try {
-    const verification = await runner(plan.verificationArgs, { timeoutMs: nativeOpenClawPreflightTimeoutMs });
-    await emitCommandOutput(verification.stdout, emit);
-    await emitCommandOutput(verification.stderr, emit);
     return { ok: true as const };
   } catch (error) {
     return nativeFailure(error);
@@ -782,11 +778,9 @@ async function buildNativeOpenClawPlan(runner: typeof runOpenClaw, env: NodeJS.P
       args,
       preflightCommand: formatOpenClawCommand(command, preflightArgs),
       preflightArgs,
-      verificationCommand: formatOpenClawCommand(command, preflightArgs),
-      verificationArgs: preflightArgs,
       statePaths,
       preservesConfiguredWorkspaces: true,
-      reason: "Native OpenClaw dry-run passed for service and state teardown; configured workspace folders are preserved."
+      reason: "Native OpenClaw dry-run passed for service, state, and macOS app teardown; configured workspace folders are preserved."
     };
   } catch (error) {
     const failureClass = classifyOpenClawUninstallFailure(error);
@@ -797,8 +791,6 @@ async function buildNativeOpenClawPlan(runner: typeof runOpenClaw, env: NodeJS.P
       args,
       preflightCommand: formatOpenClawCommand(command, preflightArgs),
       preflightArgs,
-      verificationCommand: formatOpenClawCommand(command, preflightArgs),
-      verificationArgs: preflightArgs,
       statePaths,
       preservesConfiguredWorkspaces: true,
       reason: `Native OpenClaw preflight is blocked (${failureClass}). ${safeErrorDetail(error)}`
@@ -1077,7 +1069,13 @@ function inferAgentOsReleaseScriptPath(launcherContents: string | null) {
 
 export async function scheduleBackgroundPackageRemoval(
   actions: ResetPreviewPackageAction[],
-  options: { waitForPid?: number | null; tempDir?: string } = {}
+  options: {
+    waitForPid?: number | null;
+    waitForPids?: Array<number | null>;
+    tempDir?: string;
+    waitTimeoutMs?: number;
+    packageTimeoutMs?: number;
+  } = {}
 ) {
   const safeActions = actions.filter((action) => {
     return isSafePackageRemovalAction(action);
@@ -1096,14 +1094,22 @@ export async function scheduleBackgroundPackageRemoval(
   const scriptPath = path.join(directory, `agentos-full-uninstall-${timestamp}-${suffix}.mjs`);
   const specPath = path.join(directory, `agentos-full-uninstall-${timestamp}-${suffix}.json`);
   const logPath = path.join(directory, `agentos-full-uninstall-${timestamp}-${suffix}.log`);
+  const waitForPids = options.waitForPids !== undefined
+    ? normalizeProcessIds(options.waitForPids)
+    : options.waitForPid === undefined
+      ? [process.pid]
+      : normalizeProcessIds([options.waitForPid]);
   const spec = {
     actions: safeActions,
     logPath,
-    waitForPid: options.waitForPid === undefined ? process.pid : options.waitForPid
+    waitForPids,
+    waitTimeoutMs: normalizeTimeout(options.waitTimeoutMs, 120_000),
+    packageTimeoutMs: normalizeTimeout(options.packageTimeoutMs, 120_000)
   };
 
   await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await writeFile(scriptPath, buildPackageRemovalWorkerSource(specPath, scriptPath), { encoding: "utf8", mode: 0o700 });
+  await writeFile(logPath, "", { encoding: "utf8", mode: 0o600 });
 
   const child = spawn(process.execPath, [scriptPath], {
     detached: true,
@@ -1156,40 +1162,79 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const spec = JSON.parse(await readFile(${JSON.stringify(specPath)}, "utf8"));
 const log = async (line) => appendFile(spec.logPath, line + "\\n", "utf8");
+const waitForPids = Array.isArray(spec.waitForPids) ? spec.waitForPids.filter((pid) => Number.isInteger(pid) && pid > 0) : [];
+const waitTimeoutMs = Number.isFinite(spec.waitTimeoutMs) && spec.waitTimeoutMs > 0 ? spec.waitTimeoutMs : 120000;
+const packageTimeoutMs = Number.isFinite(spec.packageTimeoutMs) && spec.packageTimeoutMs > 0 ? spec.packageTimeoutMs : 120000;
 
 const isRunning = (pid) => {
   try { process.kill(pid, 0); return true; }
   catch (error) { return error && error.code === "EPERM"; }
 };
 
-if (spec.waitForPid) {
-  const deadline = Date.now() + 120000;
-  while (isRunning(spec.waitForPid) && Date.now() < deadline) {
+await log("AgentOS package finalizer started.");
+
+let timedOutPids = [];
+if (waitForPids.length > 0) {
+  await log("Waiting for AgentOS runtime exit (PIDs: " + waitForPids.join(", ") + "; timeout: " + waitTimeoutMs + "ms).");
+  const deadline = Date.now() + waitTimeoutMs;
+  while (waitForPids.some(isRunning) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  if (isRunning(spec.waitForPid)) {
-    await log("Deferred package removal did not start because AgentOS did not exit within 120 seconds.");
+  timedOutPids = waitForPids.filter(isRunning);
+  if (timedOutPids.length > 0) {
+    await log("Finalizer timed out waiting for AgentOS runtime PID(s): " + timedOutPids.join(", ") + " after " + waitTimeoutMs + "ms.");
+    await log("Finalizer result: timed-out; package cleanup skipped.");
     process.exitCode = 75;
+  } else {
+    await log("AgentOS runtime exited; package cleanup starting.");
   }
 }
 
 if (!process.exitCode) {
+  let failedCount = 0;
   for (const action of spec.actions) {
     await log("Running package cleanup: " + action.packageName);
     try {
-      await execFileAsync(action.executable, action.args, { timeout: 120000, maxBuffer: 1048576 });
+      await execFileAsync(action.executable, action.args, { timeout: packageTimeoutMs, maxBuffer: 1048576 });
       await log("Completed package cleanup: " + action.packageName);
     } catch (error) {
       const code = error && typeof error.code !== "undefined" ? String(error.code) : "unknown";
       await log("Failed package cleanup: " + action.packageName + " (" + code + ")");
+      failedCount += 1;
       process.exitCode = 1;
     }
   }
+  await log(failedCount > 0
+    ? "Finalizer result: failed; " + failedCount + " package cleanup(s) failed."
+    : "Finalizer result: succeeded; " + spec.actions.length + " package cleanup(s) completed.");
 }
 
 await rm(${JSON.stringify(specPath)}, { force: true }).catch(() => undefined);
 await rm(${JSON.stringify(scriptPath)}, { force: true }).catch(() => undefined);
 `;
+}
+
+export function resolveAgentOsRuntimeProcessIds(
+  env: NodeJS.ProcessEnv = process.env,
+  currentPid = process.pid
+) {
+  return normalizeProcessIds([currentPid, parsePositiveProcessId(env[AGENTOS_LAUNCHER_PID_ENV])]);
+}
+
+function normalizeProcessIds(values: Array<number | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is number => {
+    return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+  })));
+}
+
+function parsePositiveProcessId(value: string | undefined) {
+  if (!value || !/^\d+$/.test(value.trim())) return null;
+  const pid = Number(value);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
+function normalizeTimeout(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 function buildDeferredCleanupEnvironment(): NodeJS.ProcessEnv {

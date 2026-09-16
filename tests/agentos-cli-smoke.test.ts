@@ -202,6 +202,7 @@ test("agentos start and stop maintain runtime state without real OpenClaw", asyn
     assert.equal(state.port, port);
     assert.equal(state.host, "127.0.0.1");
     assert.equal(typeof state.pid, "number");
+    assert.equal(state.launcherPid, startProcess.pid);
     await waitFor(() => new RegExp(`Starting AgentOS ${escapeRegExp(packageJson.version)} on http://localhost:${port}`).test(output()) ? true : null, 2_000);
 
     const stopResult = runCli(fixture.cliPath, ["stop", "--port", String(port)], { env });
@@ -214,6 +215,38 @@ test("agentos start and stop maintain runtime state without real OpenClaw", asyn
     if (startProcess && startProcess.exitCode === null && startProcess.signalCode === null) {
       startProcess.kill("SIGTERM");
       await waitForProcessExit(startProcess).catch(() => undefined);
+    }
+  }
+});
+
+test("agentos launcher exits after the bundled server requests Full Uninstall shutdown", async () => {
+  const fixture = await createCliFixture();
+  const port = allocateSmokePort();
+  const env = {
+    ...createSmokeEnv(fixture.installRoot, { port }),
+    AGENTOS_CLI_TEST_SHUTDOWN_REQUEST: "1"
+  };
+  const statePath = path.join(fixture.installRoot, "run", `agentos-${port}.json`);
+  const launcher = spawn(process.execPath, [
+    fixture.cliPath,
+    "start",
+    "--port",
+    String(port),
+    "--host",
+    "127.0.0.1",
+    "--no-open"
+  ], { env });
+  const output = collectProcessOutput(launcher);
+
+  try {
+    await waitForProcessExit(launcher);
+    assert.equal(launcher.exitCode, 0, output());
+    assert.match(output(), /Stopping AgentOS after Full Uninstall/);
+    assert.equal(existsSync(statePath), false);
+  } finally {
+    if (launcher.exitCode === null && launcher.signalCode === null) {
+      launcher.kill("SIGKILL");
+      await waitForProcessExit(launcher).catch(() => undefined);
     }
   }
 });
@@ -512,6 +545,9 @@ function renderStubServer() {
     '  console.log("Ready in 1ms");',
     '  console.log(`Package runtime: ${process.env.AGENTOS_PACKAGE_RUNTIME || ""}`);',
     '  console.log(`Runtime dir: ${process.env.AGENTOS_RUNTIME_DIR || ""}`);',
+    '  if (process.env.AGENTOS_CLI_TEST_SHUTDOWN_REQUEST === "1") {',
+    '    setTimeout(() => { if (typeof process.send === "function") process.send({ type: "agentos:full-uninstall-shutdown" }); }, 100);',
+    '  }',
     '  setInterval(() => {}, 1000);',
     '  process.on("SIGTERM", () => process.exit(0));',
     '  process.on("SIGINT", () => process.exit(0));',
@@ -650,8 +686,8 @@ async function waitForRuntimeState(statePath: string) {
       return null;
     }
 
-    const state = JSON.parse(raw) as { pid?: unknown; port?: unknown; host?: unknown };
-    return typeof state.pid === "number" ? state as { pid: number; port: number; host: string } : null;
+    const state = JSON.parse(raw) as { pid?: unknown; launcherPid?: unknown; port?: unknown; host?: unknown };
+    return typeof state.pid === "number" ? state as { pid: number; launcherPid?: number; port: number; host: string } : null;
   }, 5_000);
 }
 

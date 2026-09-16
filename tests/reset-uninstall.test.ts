@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +23,7 @@ import {
   ResetConfirmationError
 } from "@/lib/agentos/reset-confirmation";
 import { removeAgentOsRuntimeState } from "@/lib/agentos/runtime-cleanup";
+import { requestAgentOsRuntimeShutdown } from "@/lib/agentos/runtime-shutdown";
 import type { AgentOsActorContext } from "@/lib/security/agentos-actor";
 import type { MissionControlSnapshot, ResetPreview, ResetPreviewWorkspace } from "@/lib/agentos/contracts";
 import type { WorkspaceFilesystemOwnershipRecord } from "@/lib/openclaw/domains/workspace-filesystem-ownership";
@@ -70,11 +72,9 @@ function resetPreview(overrides: Partial<ResetPreview> = {}): ResetPreview {
     nativeOpenClaw: {
       status: "ready",
       command: "openclaw",
-      args: ["uninstall", "--service", "--state", "--yes", "--non-interactive"],
-      preflightCommand: "openclaw uninstall --service --state --yes --non-interactive --dry-run",
-      preflightArgs: ["uninstall", "--service", "--state", "--yes", "--non-interactive", "--dry-run"],
-      verificationCommand: "openclaw uninstall --service --state --yes --non-interactive --dry-run",
-      verificationArgs: ["uninstall", "--service", "--state", "--yes", "--non-interactive", "--dry-run"],
+      args: ["uninstall", "--service", "--state", "--app", "--yes", "--non-interactive"],
+      preflightCommand: "openclaw uninstall --service --state --app --yes --non-interactive --dry-run",
+      preflightArgs: ["uninstall", "--service", "--state", "--app", "--yes", "--non-interactive", "--dry-run"],
       statePaths: [],
       preservesConfiguredWorkspaces: true,
       reason: "ready"
@@ -200,7 +200,7 @@ test("integration cleanup removes only the explicit AgentOS marker", async () =>
   }
 });
 
-test("preview excludes dynamic OpenClaw state paths and plans native service/state scopes", async () => {
+test("preview excludes dynamic OpenClaw state paths and plans native service/state/app scopes", async () => {
   const stateRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-state-"));
   const attachedPath = await mkdtemp(path.join(os.tmpdir(), "agentos-attached-"));
   const calls: string[][] = [];
@@ -227,8 +227,11 @@ test("preview excludes dynamic OpenClaw state paths and plans native service/sta
 
     assert.deepEqual(preview.workspaces.map((workspace) => workspace.workspaceId), ["attached-workspace"]);
     assert.equal(preview.nativeOpenClaw?.status, "ready");
-    assert.deepEqual(preview.nativeOpenClaw?.args, ["uninstall", "--service", "--state", "--yes", "--non-interactive"]);
+    assert.deepEqual(preview.nativeOpenClaw?.args, ["uninstall", "--service", "--state", "--app", "--yes", "--non-interactive"]);
+    assert.equal(preview.nativeOpenClaw?.args.includes("--workspace"), false);
     assert.equal(preview.nativeOpenClaw?.args.includes("--all"), false);
+    assert.equal(preview.nativeOpenClaw?.preflightArgs.includes("--workspace"), false);
+    assert.equal(preview.nativeOpenClaw?.preflightArgs.includes("--all"), false);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].includes("--dry-run"), true);
     assert.equal(preview.openClawPaths.includes(stateRoot), true);
@@ -238,9 +241,10 @@ test("preview excludes dynamic OpenClaw state paths and plans native service/sta
   }
 });
 
-test("full uninstall runs native preflight, teardown, verification, AgentOS cleanup, runtime cleanup, then package scheduling", async () => {
+test("full uninstall runs native preflight and teardown, then AgentOS cleanup, runtime cleanup, and package scheduling", async () => {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), "agentos-reset-order-"));
   const calls: string[] = [];
+  let scheduledPids: Array<number | null> = [];
   const currentSnapshot = snapshot();
   const preview = resetPreview({
     packageActions: [{
@@ -269,8 +273,9 @@ test("full uninstall runs native preflight, teardown, verification, AgentOS clea
       calls.push("runtime");
       return [];
     },
-    schedulePackageRemoval: async () => {
+    schedulePackageRemoval: async (_actions, options) => {
       calls.push("package");
+      scheduledPids = options?.waitForPids ?? [];
       return path.join(rootPath, "cleanup.log");
     },
     clearMissionControlCaches: () => calls.push("cache"),
@@ -282,7 +287,11 @@ test("full uninstall runs native preflight, teardown, verification, AgentOS clea
     const result = await executeReset("full-uninstall", {
       preview,
       dependencies,
-      env: { ...process.env, AGENTOS_RUNTIME_DIR: path.join(rootPath, "runtime") },
+      env: {
+        ...process.env,
+        AGENTOS_LAUNCHER_PID: String(process.pid + 1),
+        AGENTOS_RUNTIME_DIR: path.join(rootPath, "runtime")
+      },
       onEvent: async (event) => {
         if (event.type === "status") calls.push(`phase:${event.phase}`);
       }
@@ -293,14 +302,20 @@ test("full uninstall runs native preflight, teardown, verification, AgentOS clea
     assert.deepEqual(calls.slice(0, 4), [
       "phase:planning",
       "phase:openclaw-preflight",
-      "openclaw:uninstall --service --state --yes --non-interactive --dry-run",
+      "openclaw:uninstall --service --state --app --yes --non-interactive --dry-run",
       "phase:openclaw-uninstall"
     ]);
-    assert.equal(calls.indexOf("openclaw:uninstall --service --state --yes --non-interactive") > calls.indexOf("openclaw:uninstall --service --state --yes --non-interactive --dry-run"), true);
-    assert.equal(calls.indexOf("agentos-workspaces") > calls.indexOf("openclaw:uninstall --service --state --yes --non-interactive"), true);
+    const nativeCalls = calls.filter((entry) => entry.startsWith("openclaw:"));
+    assert.deepEqual(nativeCalls, [
+      "openclaw:uninstall --service --state --app --yes --non-interactive --dry-run",
+      "openclaw:uninstall --service --state --app --yes --non-interactive"
+    ]);
+    assert.equal(calls.indexOf("agentos-workspaces") > calls.indexOf("openclaw:uninstall --service --state --app --yes --non-interactive"), true);
     assert.equal(calls.indexOf("runtime") > calls.indexOf("agentos-state"), true);
     assert.equal(calls.indexOf("package") > calls.indexOf("runtime"), true);
     assert.equal(calls.indexOf("phase:refreshing") > calls.indexOf("package"), true);
+    assert.equal(result.runtimeShutdownEligible, true);
+    assert.deepEqual(scheduledPids, [process.pid, process.pid + 1]);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }
@@ -434,6 +449,7 @@ test("native OpenClaw failure stops all AgentOS and package cleanup", async () =
   assert.equal(result.ok, false);
   assert.equal(result.status, "failed");
   assert.equal(result.failureClass, "permission-denied");
+  assert.equal(result.runtimeShutdownEligible, undefined);
   assert.deepEqual(calls, ["native"]);
 });
 
@@ -640,11 +656,15 @@ test("runtime cleanup preserves unknown reset-plan files", async () => {
   }
 });
 
-test("deferred package cleanup uses structured executable arguments and waits for the current pid", async () => {
+test("deferred package cleanup waits for every AgentOS runtime pid before executing", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "agentos-package-scheduler-"));
   const releaseScriptPath = path.join(tempDir, "package", "bin", "agentos.js");
   await mkdir(path.dirname(releaseScriptPath), { recursive: true });
   await writeFile(releaseScriptPath, "process.exit(0);\n");
+  const runtimeProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const launcherProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  assert.ok(runtimeProcess.pid);
+  assert.ok(launcherProcess.pid);
   const action = {
     packageName: "test-package",
     manager: null,
@@ -658,13 +678,109 @@ test("deferred package cleanup uses structured executable arguments and waits fo
   };
 
   try {
-    const logPath = await scheduleBackgroundPackageRemoval([action], { tempDir, waitForPid: null });
+    const logPath = await scheduleBackgroundPackageRemoval([action], {
+      tempDir,
+      waitForPids: [runtimeProcess.pid, launcherProcess.pid]
+    });
     assert.match(logPath, /agentos-full-uninstall-.*\.log$/);
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await waitForFileMatch(logPath, /Waiting for AgentOS runtime exit/);
+    assert.doesNotMatch(await readFile(logPath, "utf8"), /Completed package cleanup: test-package/);
+    runtimeProcess.kill("SIGTERM");
+    await waitForChildExit(runtimeProcess);
+    assert.doesNotMatch(await readFile(logPath, "utf8"), /Completed package cleanup: test-package/);
+    launcherProcess.kill("SIGTERM");
+    await waitForChildExit(launcherProcess);
+    await waitForFileMatch(logPath, /Completed package cleanup: test-package/);
     assert.match(await readFile(logPath, "utf8"), /Completed package cleanup: test-package/);
+    assert.match(await readFile(logPath, "utf8"), /Finalizer result: succeeded; 1 package cleanup\(s\) completed\./);
   } finally {
+    if (runtimeProcess.exitCode === null && runtimeProcess.signalCode === null) {
+      runtimeProcess.kill("SIGKILL");
+      await waitForChildExit(runtimeProcess).catch(() => undefined);
+    }
+    if (launcherProcess.exitCode === null && launcherProcess.signalCode === null) {
+      launcherProcess.kill("SIGKILL");
+      await waitForChildExit(launcherProcess).catch(() => undefined);
+    }
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("deferred package cleanup records an explicit timeout and skips package execution", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "agentos-package-timeout-"));
+  const releaseScriptPath = path.join(tempDir, "package", "bin", "agentos.js");
+  await mkdir(path.dirname(releaseScriptPath), { recursive: true });
+  await writeFile(releaseScriptPath, "process.exit(0);\n");
+  const runtimeProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  assert.ok(runtimeProcess.pid);
+  const action = {
+    packageName: "timeout-package",
+    manager: null,
+    command: `${process.execPath} ${releaseScriptPath} uninstall --yes`,
+    executable: process.execPath,
+    args: [releaseScriptPath, "uninstall", "--yes"],
+    removalMode: "agentos-release" as const,
+    required: true,
+    detected: true,
+    reason: "test"
+  };
+
+  try {
+    const logPath = await scheduleBackgroundPackageRemoval([action], {
+      tempDir,
+      waitForPids: [runtimeProcess.pid],
+      waitTimeoutMs: 150
+    });
+    await waitForFileMatch(logPath, /Finalizer result: timed-out; package cleanup skipped\./, 3_000);
+    const log = await readFile(logPath, "utf8");
+    assert.match(log, /after 150ms/);
+    assert.doesNotMatch(log, /Running package cleanup: timeout-package/);
+  } finally {
+    if (runtimeProcess.exitCode === null && runtimeProcess.signalCode === null) {
+      runtimeProcess.kill("SIGKILL");
+      await waitForChildExit(runtimeProcess).catch(() => undefined);
+    }
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runtime shutdown uses the launcher handoff only after the response flush turn", async () => {
+  const calls: string[] = [];
+  const result = await requestAgentOsRuntimeShutdown({
+    env: { ...process.env, AGENTOS_LAUNCHER_PID: "902" },
+    pid: 903,
+    waitForResponseFlush: async () => {
+      calls.push("response-flush");
+    },
+    send: (_message, callback) => {
+      calls.push("launcher-ipc");
+      callback?.();
+      return true;
+    },
+    kill: () => {
+      calls.push("self-signal");
+    }
+  });
+
+  assert.deepEqual(calls, ["response-flush", "launcher-ipc"]);
+  assert.deepEqual(result, { requested: true, mode: "launcher-ipc", launcherPid: 902 });
+});
+
+test("source runtime shutdown self-signals only after the response flush turn", async () => {
+  const calls: string[] = [];
+  const result = await requestAgentOsRuntimeShutdown({
+    env: { ...process.env },
+    pid: 903,
+    waitForResponseFlush: async () => {
+      calls.push("response-flush");
+    },
+    kill: (pid, signal) => {
+      calls.push(`${pid}:${signal}`);
+    }
+  });
+
+  assert.deepEqual(calls, ["response-flush", "903:SIGTERM"]);
+  assert.deepEqual(result, { requested: true, mode: "self-signal", launcherPid: null });
 });
 
 test("preview workspace construction remains executable with attached and managed records", async () => {
@@ -684,3 +800,26 @@ test("preview workspace construction remains executable with attached and manage
     await rm(attachedPath, { recursive: true, force: true });
   }
 });
+
+async function waitForChildExit(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve, reject) => {
+    child.once("exit", () => resolve());
+    child.once("error", reject);
+  });
+}
+
+async function waitForFileMatch(filePath: string, pattern: RegExp, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const contents = await readFile(filePath, "utf8");
+      if (pattern.test(contents)) return contents;
+    } catch {
+      // The worker may not have created the log yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`Timed out waiting for ${filePath} to match ${pattern}.`);
+}

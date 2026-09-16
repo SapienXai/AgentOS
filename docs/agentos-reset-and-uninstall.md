@@ -19,13 +19,15 @@ That order made OpenClaw cleanup non-authoritative and allowed a failed native u
 Full Uninstall is now planned and executed as:
 
 1. Preview the current snapshot, ownership evidence, native OpenClaw dry-run, runtime allowlist, and supported install modes.
-2. Verify the native OpenClaw preflight.
-3. Run OpenClaw's native service and state uninstall.
-4. Verify the native result with a second native dry-run.
+2. Run the native OpenClaw dry-run as a preflight only.
+3. Run OpenClaw's native service, state, and macOS app uninstall.
+4. Treat the native command's exit result as authoritative; a non-zero result stops the operation.
 5. Remove AgentOS-owned workspace folders and exact AgentOS integration markers.
 6. Remove AgentOS Mission Control state and the allowlisted AgentOS runtime state.
-7. Schedule supported package removal after the current AgentOS process exits.
-8. Refresh what can still be read and report `succeeded`, `scheduled`, `partial`, or `failed` truthfully.
+7. Schedule supported package removal with the server and launcher PIDs as wait targets.
+8. Refresh what can still be read, emit the final result, and close the response stream.
+9. Request the narrow runtime shutdown boundary only after the final response is closed.
+10. Let the detached finalizer run after every tracked AgentOS process exits; its durable log reports per-package `succeeded`/`failed` results or an explicit `timed-out` result.
 
 If native OpenClaw teardown fails, the operation stops. AgentOS does not recursively delete OpenClaw state and does not continue into local OpenClaw cleanup.
 
@@ -33,7 +35,7 @@ If native OpenClaw teardown fails, the operation stops. AgentOS does not recursi
 
 `Reset AgentOS` removes AgentOS Mission Control settings, planner/dispatch state, browser projection state, AgentOS-managed agents, and folders whose durable filesystem record proves that AgentOS created them. It does not uninstall OpenClaw or remove OpenClaw state. Existing, imported, and unknown folders remain on disk.
 
-`Full Uninstall` includes Reset's AgentOS-specific cleanup, but first delegates OpenClaw service and state teardown to the pinned native CLI. Configured workspace directories are intentionally preserved by the native state scope so AgentOS can apply its ownership policy. Package removal can be deferred until the running process exits.
+`Full Uninstall` includes Reset's AgentOS-specific cleanup, but first delegates OpenClaw service, state, and app teardown to the pinned native CLI. Configured workspace directories are intentionally preserved by the native state scope so AgentOS can apply its ownership policy. Package removal can be deferred until the running server and launcher processes exit.
 
 ## Ownership policy
 
@@ -51,12 +53,14 @@ The preview and execution share the same ownership model. Execution also re-chec
 AgentOS currently supports OpenClaw contract version `2026.9.4`. The native plan uses:
 
 ```text
-openclaw uninstall --service --state --yes --non-interactive
+openclaw uninstall --service --state --app --yes --non-interactive
 ```
 
-The `--service` and `--state` scopes avoid the `--all` workspace scope, which would be unsafe for attached user folders. The official CLI dry-run is used for preview and post-operation verification. There is no direct `rm -rf ~/.openclaw` fallback.
+The `--service`, `--state`, and `--app` scopes intentionally omit `--workspace` and `--all`, preserving configured user workspace folders while allowing OpenClaw to remove its Gateway service, state, and macOS app when applicable. The official CLI dry-run is used for preview only; the uninstall command's exit result is the authoritative cleanup result. There is no direct `rm -rf ~/.openclaw` fallback.
 
-Package cleanup is allowlisted to `pnpm`, `npm`, and `yarn` global installs, plus the AgentOS release launcher. Development/source checkouts are reported as preserved manual follow-ups, making the result partial rather than guessing or deleting a repository. Package actions use `execFile` argument arrays; the deferred worker waits for the current AgentOS PID and writes a status-only log.
+Package cleanup is allowlisted to `pnpm`, `npm`, and `yarn` global installs, plus the AgentOS release launcher. Development/source checkouts are reported as preserved manual follow-ups, making the result partial rather than guessing or deleting a repository. Package actions use `execFile` argument arrays; the detached finalizer waits for both the bundled server and its package launcher when both exist, applies an explicit timeout, and keeps a status-only log with per-package results.
+
+Packaged and release installations run a parent launcher plus a bundled server child. After the response stream closes, the server sends a Full Uninstall shutdown request over the launcher IPC channel; the launcher stops the child and exits after the child terminates. A source/development server without a launcher IPC channel self-signals only for Full Uninstall. Reset AgentOS never requests this shutdown.
 
 The confirmation plan is short-lived, opaque, one-use, and bound to the authenticated actor, request session, target, and stored preview. Raw credentials are never persisted in the plan.
 

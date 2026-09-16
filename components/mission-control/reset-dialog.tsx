@@ -78,7 +78,7 @@ export function ResetDialog({
     target === "full-uninstall" ? "Full Uninstall" : "Reset AgentOS";
   const description =
     target === "full-uninstall"
-      ? "Run OpenClaw's native service and state teardown first, then remove AgentOS-owned state. Configured user workspace folders stay protected; detected package removal may finish after AgentOS exits."
+      ? "Run OpenClaw's native service, state, and macOS app teardown first, then remove AgentOS-owned state. Configured user workspace folders stay protected; the final result is sent before AgentOS exits and detected package removal may finish afterward."
       : "Remove AgentOS-managed workspaces, attached agents, task history, planner state, and browser state.";
   const dangerButtonClassName =
     surfaceTheme === "light"
@@ -309,7 +309,7 @@ export function ResetDialog({
                     </p>
                     <p className={cn("mt-2 text-sm", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
                       {preview.nativeOpenClaw.status === "ready"
-                        ? "Ready: service and state scopes are planned, while configured workspace folders remain protected."
+                        ? "Ready: service, state, and macOS app scopes are planned, while configured workspace folders remain protected."
                         : preview.nativeOpenClaw.reason || "The native OpenClaw preflight is blocked."}
                     </p>
                     <p className={cn("mt-2 break-all font-mono text-[11px]", surfaceTheme === "light" ? "text-[#7e6555]" : "text-slate-500")}>

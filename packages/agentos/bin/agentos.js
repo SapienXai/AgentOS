@@ -36,6 +36,7 @@ const updateWarningCooldownMs = 24 * 60 * 60 * 1000;
 const updateRequestTimeoutMs = 5_000;
 const openClawGatewayProbeTimeoutMs = 3_000;
 const cliSmokeTestMode = process.env.AGENTOS_CLI_TEST === "1";
+const runtimeShutdownMessage = "agentos:full-uninstall-shutdown";
 const requiredOpenClawGatewayProtocolVersion = 4;
 const requiredOpenClawGatewayMethods = [
   "health",
@@ -241,12 +242,13 @@ async function startServer(rawArgs) {
 
   const child = spawn(process.execPath, [bundledServerPath], {
     cwd: bundleDir,
-    stdio: ["inherit", "pipe", "pipe"],
+    stdio: ["inherit", "pipe", "pipe", "ipc"],
     env: {
       ...process.env,
       PORT: String(options.port),
       HOSTNAME: options.host,
       AGENTOS_PACKAGE_RUNTIME: "1",
+      AGENTOS_LAUNCHER_PID: String(process.pid),
       AGENTOS_RUNTIME_DIR: runtimeInstallRoot,
       AGENTOS_API_TOKEN: apiToken,
       AGENTOS_BUNDLE_DIR: bundleDir
@@ -261,6 +263,7 @@ async function startServer(rawArgs) {
   try {
     writeRuntimeState(runtimeStatePath, {
       pid: child.pid,
+      launcherPid: process.pid,
       port: options.port,
       host: options.host,
       startedAt: new Date().toISOString()
@@ -317,8 +320,31 @@ async function startServer(rawArgs) {
   let cleanedUp = false;
   const shutdownState = {
     forceTimer: null,
-    parentSignal: null
+    parentSignal: null,
+    requestedByFullUninstall: false
   };
+  const handleChildMessage = (message) => {
+    if (!message || typeof message !== "object" || message.type !== runtimeShutdownMessage) {
+      return;
+    }
+
+    if (shutdownState.requestedByFullUninstall) {
+      return;
+    }
+
+    shutdownState.requestedByFullUninstall = true;
+    boot.stop({ clear: true });
+    flushBufferedStartupLogs(startupState);
+    console.log("Stopping AgentOS after Full Uninstall...");
+    sendSignalToChild(child, "SIGTERM");
+    shutdownState.forceTimer = setTimeout(() => {
+      if (sendSignalToChild(child, "SIGKILL")) {
+        console.warn("AgentOS did not stop in time. Sending SIGKILL...");
+      }
+    }, stopTimeoutMs);
+    shutdownState.forceTimer.unref?.();
+  };
+  child.on("message", handleChildMessage);
   const cleanup = () => {
     if (cleanedUp) {
       return;
@@ -331,6 +357,7 @@ async function startServer(rawArgs) {
     process.off("SIGINT", forwardSignal);
     process.off("SIGTERM", forwardSignal);
     process.off("SIGQUIT", forwardSignal);
+    child.off("message", handleChildMessage);
     clearRuntimeState(runtimeStatePath, child.pid);
   };
 
@@ -385,6 +412,11 @@ async function startServer(rawArgs) {
 
     if (shutdownState.parentSignal) {
       process.kill(process.pid, shutdownState.parentSignal);
+      return;
+    }
+
+    if (shutdownState.requestedByFullUninstall) {
+      process.exit(code ?? 0);
       return;
     }
 

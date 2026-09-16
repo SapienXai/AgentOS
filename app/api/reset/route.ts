@@ -8,6 +8,7 @@ import {
   ResetConfirmationError
 } from "@/lib/agentos/reset-confirmation";
 import { executeReset, getResetPreview } from "@/lib/agentos/reset";
+import { requestAgentOsRuntimeShutdown } from "@/lib/agentos/runtime-shutdown";
 import type { ResetStreamEvent } from "@/lib/agentos/contracts";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
   let writeChain = Promise.resolve();
+  let resetResult: Awaited<ReturnType<typeof executeReset>> | null = null;
 
   const send = (event: ResetStreamEvent) => {
     const safeEvent = redactSecrets(event);
@@ -115,20 +117,20 @@ export async function POST(request: Request) {
 
   void (async () => {
     try {
-      const result = await executeReset(executeParse.data.target, {
+      resetResult = await executeReset(executeParse.data.target, {
         onEvent: send,
         preview: confirmation.preview
       });
 
       await send({
         type: "done",
-        ok: result.ok,
+        ok: resetResult.ok,
         target: executeParse.data.target,
-        status: result.status,
-        ...(result.failureClass ? { failureClass: result.failureClass } : {}),
-        message: result.message,
-        snapshot: result.snapshot,
-        backgroundLogPath: result.backgroundLogPath
+        status: resetResult.status,
+        ...(resetResult.failureClass ? { failureClass: resetResult.failureClass } : {}),
+        message: resetResult.message,
+        snapshot: resetResult.snapshot,
+        backgroundLogPath: resetResult.backgroundLogPath
       });
     } catch (error) {
       await send({
@@ -142,7 +144,14 @@ export async function POST(request: Request) {
     } finally {
       await releaseResetConfirmation(confirmation).catch(() => {});
       await writeChain;
-      await writer.close();
+      await writer.close().catch(() => {});
+      if (resetResult?.runtimeShutdownEligible) {
+        try {
+          await requestAgentOsRuntimeShutdown();
+        } catch {
+          console.error("Full Uninstall completed its cleanup, but AgentOS runtime shutdown could not be requested.");
+        }
+      }
     }
   })();
 
