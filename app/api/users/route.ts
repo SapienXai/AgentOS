@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   createManagedAgentOsUser,
+  deleteManagedAgentOsUser,
   listAgentOsUsers,
   resetManagedAgentOsUserPassword,
   updateManagedAgentOsUserRole,
@@ -29,6 +30,8 @@ const updateUserSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("status"), actorId: z.string().uuid(), status: z.enum(["active", "disabled"]) }),
   z.object({ operation: z.literal("password"), actorId: z.string().uuid(), password: z.string().max(1024) })
 ]);
+
+const deleteUserSchema = z.object({ actorId: z.string().uuid() });
 
 export async function GET(request: Request) {
   const authorization = await requireAgentOsProductPermission(request, "users.manage");
@@ -81,6 +84,30 @@ export async function PATCH(request: Request) {
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: `users.${input.operation}`,
+      targetKind: "agentos-user",
+      targetId: user.actorId,
+      result: "succeeded"
+    }).catch(() => {});
+    return NextResponse.json({ user: sanitizeUser(user) });
+  } catch (error) {
+    return userErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const blocked = requireSameOriginMutation(request);
+  if (blocked) return blocked;
+  const authorization = await requireAgentOsProductPermission(request, "users.manage");
+  if ("response" in authorization) return authorization.response;
+  try {
+    const input = deleteUserSchema.parse(await request.json());
+    if (input.actorId === authorization.actor.actorId) {
+      throw new AgentOsUserStoreError("You cannot delete the account you are currently using.", 409, "current-user");
+    }
+    const user = await deleteManagedAgentOsUser(input.actorId);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "users.delete",
       targetKind: "agentos-user",
       targetId: user.actorId,
       result: "succeeded"

@@ -61,7 +61,9 @@ type UserStoreErrorCode =
   | "invalid-credentials"
   | "rate-limited"
   | "orphaned-security-state"
-  | "linkage-conflict";
+  | "linkage-conflict"
+  | "protected-owner"
+  | "current-user";
 
 export class AgentOsUserStoreError extends Error {
   constructor(
@@ -287,6 +289,21 @@ export async function setAgentOsUserStatus(actorId: string, status: AgentOsUserS
       user.sessionVersion += 1;
       user.updatedAt = new Date().toISOString();
     }
+    return user;
+  });
+}
+
+export async function deleteAgentOsUser(actorId: string, env: NodeJS.ProcessEnv = process.env) {
+  return mutateAgentOsUserStore(env, (store) => {
+    const index = store.users.findIndex((user) => user.actorId === actorId);
+    if (index === -1) throw new AgentOsUserStoreError("User was not found.", 404, "not-found");
+
+    const user = store.users[index]!;
+    if (user.role === "owner" && user.status === "active" && countActiveOwners(store) <= 1) {
+      throw new AgentOsUserStoreError("At least one active owner is required.", 409, "last-owner");
+    }
+
+    store.users.splice(index, 1);
     return user;
   });
 }

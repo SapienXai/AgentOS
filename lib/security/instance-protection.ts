@@ -407,7 +407,7 @@ export async function disableInstanceProtection(
     }
     if (store.users.length > 1) {
       throw new InstanceProtectionError(
-        "Instance Protection cannot be disabled while multiple AgentOS accounts exist.",
+        "Instance Protection must remain enabled while multiple AgentOS accounts exist. Remove additional accounts from Team, then disable protection.",
         409,
         "multi-user-protection-required"
       );

@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import {
   createManagedAgentOsUser,
+  deleteManagedAgentOsUser,
   ensureAgentOsUserStore,
   getCurrentAgentOsUser,
   listAgentOsUsers,
@@ -58,6 +59,31 @@ test("migrates the Phase 4A owner and isolates two human sessions", async () => 
   assert.equal((await resolveAgentOsActorContext(new Request("https://agentos.test/api/profile", { headers: { cookie: `agentos_instance_session=${memberLogin.session}` } }), env)), null);
   await assert.rejects(loginToInstance({ username: "member", password: "member password two", rateKey: "member-browser-3" }, env), /Invalid username or password/);
   assert.equal((await resolveAgentOsActorContext(new Request("https://agentos.test/api/profile", { headers: { cookie: `agentos_instance_session=${ownerLogin.session}` } }), env))?.actorId, ownerState.actorId);
+});
+
+test("deletes a non-protected account while preserving the protected owner", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-users-delete-"));
+  const env = { ...process.env, AGENTOS_RUNTIME_DIR: runtimeDir, NODE_ENV: "production" as const };
+  const ownerLogin = await enableInstanceProtection({ username: "owner", password: "owner password" }, env);
+  const ownerState = await readInstanceProtectionState(env);
+  assert.ok(ownerState);
+  const member = await createManagedAgentOsUser({ username: "member", password: "member password" }, env);
+  const memberLogin = await loginToInstance({ username: "member", password: "member password", rateKey: "delete-member" }, env);
+
+  await assert.rejects(
+    deleteManagedAgentOsUser(ownerState.actorId, env),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "protected-owner"
+  );
+
+  await deleteManagedAgentOsUser(member.actorId, env);
+  assert.equal((await listAgentOsUsers(env)).length, 1);
+  assert.equal(await resolveAgentOsActorContext(new Request("https://agentos.test/api/profile", { headers: { cookie: `agentos_instance_session=${memberLogin.session}` } }), env), null);
+  await assert.rejects(
+    loginToInstance({ username: "member", password: "member password", rateKey: "deleted-member" }, env),
+    /Invalid username or password/
+  );
+  assert.equal((await getCurrentAgentOsUser(ownerState.actorId, env))?.actorId, ownerState.actorId);
+  assert.equal((await getCurrentAgentOsUser(ownerState.actorId, env))?.actorId, (await resolveAgentOsActorContext(new Request("https://agentos.test/api/profile", { headers: { cookie: `agentos_instance_session=${ownerLogin.session}` } }), env))?.actorId);
 });
 
 test("preserves the final active owner and migrates a v1 state without a new actor", async () => {

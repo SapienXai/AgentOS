@@ -167,7 +167,7 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
 
       <Dialog open={disableOpen} onOpenChange={(next) => !submitting && setDisableOpen(next)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Disable Instance Protection?</DialogTitle><DialogDescription>This removes the stored credential and invalidates every active session. Workspace, agent, task, integration, and OpenClaw data remain unchanged.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Disable Instance Protection?</DialogTitle><DialogDescription>This removes the stored credential and invalidates every active session. Workspace, agent, task, integration, and OpenClaw data remain unchanged. When multiple AgentOS accounts exist, remove the additional accounts from Team first.</DialogDescription></DialogHeader>
           <Field label="Current password" htmlFor="disable-protection-password" error={disableError ?? undefined}>
             <Input id="disable-protection-password" type="password" autoComplete="current-password" value={disablePassword} onChange={(event) => setDisablePassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && disablePassword) void disable(); }} />
           </Field>

@@ -28,12 +28,34 @@ test("profile remains a human identity surface", async () => {
 test("security is a first-class settings section and lock uses a distinct route", async () => {
   const navigation = await readFile(path.join(rootDir, "components/settings/settings-navigation.tsx"), "utf8");
   const settings = await readFile(path.join(rootDir, "components/settings/security-settings.tsx"), "utf8");
+  const protectionDialog = await readFile(path.join(rootDir, "components/auth/instance-protection-dialog.tsx"), "utf8");
   const provider = await readFile(path.join(rootDir, "components/auth/instance-protection-provider.tsx"), "utf8");
 
   assert.match(navigation, /id: "security", label: "Security"/);
   assert.match(settings, /AgentOS account security/);
+  assert.match(settings, /remove additional accounts from Team before disabling protection/);
+  assert.match(protectionDialog, /remove the additional accounts from Team first/);
   assert.match(provider, /fetch\("\/api\/auth\/lock"/);
   assert.match(provider, /fetch\("\/api\/auth\/logout"/);
+});
+
+test("team management exposes a safe AgentOS-only account deletion path", async () => {
+  const dialog = await readFile(path.join(rootDir, "components/mission-control/user-management-dialog.tsx"), "utf8");
+  const route = await readFile(path.join(rootDir, "app/api/users/route.ts"), "utf8");
+  const accountService = await readFile(path.join(rootDir, "lib/agentos/application/agentos-account-service.ts"), "utf8");
+
+  assert.match(dialog, /method: "DELETE"/);
+  assert.match(dialog, /Delete AgentOS account\?/);
+  assert.match(dialog, /OpenClaw identities, workspaces, agents, and runtime data remain unchanged/);
+  assert.match(route, /export async function DELETE/);
+  assert.match(route, /users\.delete/);
+  assert.match(accountService, /protected AgentOS owner account cannot be deleted/);
+});
+
+test("multi-account protection errors include the recovery path", async () => {
+  const source = await readFile(path.join(rootDir, "lib/security/instance-protection.ts"), "utf8");
+
+  assert.match(source, /Remove additional accounts from Team, then disable protection/);
 });
 
 test("destructive reset surfaces keep impact visible and technical detail collapsed", async () => {

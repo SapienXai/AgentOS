@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import {
   createManagedAgentOsUser,
+  deleteManagedAgentOsUser,
   ensureAgentOsUserStore,
   listAgentOsUsers,
   resetManagedAgentOsUserPassword,
@@ -50,7 +51,7 @@ test("reproduces the old disable/re-enable divergence and enforces safe lifecycl
   await enableInstanceProtection({ username: "old-owner", password: "old password" }, env);
   const oldState = await readInstanceProtectionState(env);
   assert.ok(oldState);
-  await createManagedAgentOsUser({ username: "member", password: "member password" }, env);
+  const member = await createManagedAgentOsUser({ username: "member", password: "member password" }, env);
 
   await assert.rejects(
     disableInstanceProtection("old password", env),
@@ -58,6 +59,11 @@ test("reproduces the old disable/re-enable divergence and enforces safe lifecycl
   );
   assert.equal((await readInstanceProtectionState(env))?.actorId, oldState.actorId);
   assert.equal((await listAgentOsUsers(env)).length, 2);
+
+  await deleteManagedAgentOsUser(member.actorId, env);
+  await disableInstanceProtection("old password", env);
+  assert.equal(await readInstanceProtectionState(env), null);
+  assert.equal(await readAgentOsUserStore(env), null);
 
   const singleUserEnv = await environment("agentos-consistency-single-owner-");
   await enableInstanceProtection({ username: "single-owner", password: "single password" }, singleUserEnv);

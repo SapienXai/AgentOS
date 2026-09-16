@@ -8,6 +8,7 @@ import {
 import {
   createAgentOsUser,
   createOwnerUserFromInstanceState,
+  deleteAgentOsUser,
   AgentOsUserStoreError,
   getAgentOsUserByActorId,
   readAgentOsUserStore,
@@ -79,6 +80,18 @@ export async function updateManagedAgentOsUserRole(actorId: string, role: AgentO
 
 export async function updateManagedAgentOsUserStatus(actorId: string, status: AgentOsUserStatus, env: NodeJS.ProcessEnv = process.env) {
   return setAgentOsUserStatus(actorId, status, env);
+}
+
+export async function deleteManagedAgentOsUser(actorId: string, env: NodeJS.ProcessEnv = process.env) {
+  const state = await readInstanceProtectionState(env);
+  if (state?.actorId === actorId) {
+    throw new AgentOsUserStoreError(
+      "The protected AgentOS owner account cannot be deleted.",
+      409,
+      "protected-owner"
+    );
+  }
+  return deleteAgentOsUser(actorId, env);
 }
 
 export async function resetManagedAgentOsUserPassword(actorId: string, password: string, env: NodeJS.ProcessEnv = process.env) {

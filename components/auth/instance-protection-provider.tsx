@@ -10,6 +10,7 @@ export type InstanceProtectionStatus = {
   locked: boolean;
   username: string | null;
   credentialConfigured: boolean;
+  actorId?: string | null;
 };
 
 type InstanceProtectionContextValue = {

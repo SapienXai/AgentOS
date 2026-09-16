@@ -49,6 +49,11 @@ export function SecuritySettings() {
         <LockKeyhole className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Locking keeps the current account context and requires that same account to unlock. Sign out ends the session and allows another account to sign in.
       </p>
+      {isProtected ? (
+        <p className="px-1 text-[11px] leading-4 text-muted-foreground">
+          If multiple AgentOS accounts exist, remove additional accounts from Team before disabling protection.
+        </p>
+      ) : null}
 
       <InstanceProtectionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
