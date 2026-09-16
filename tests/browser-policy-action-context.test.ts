@@ -36,8 +36,11 @@ function snapshot(
   };
 }
 
-function context(raw: ReturnType<typeof snapshot>): TrustedBrowserActionContext {
-  const result = buildTrustedBrowserActionContext(raw, { allowedDomains: ["x.com"] });
+function context(
+  raw: ReturnType<typeof snapshot>,
+  allowedDomains = ["x.com"]
+): TrustedBrowserActionContext {
+  const result = buildTrustedBrowserActionContext(raw, { allowedDomains });
   assert.ok(result);
   return result;
 }
@@ -208,4 +211,68 @@ test("OpenClaw wait predicates and act lifecycle mutations do not become reads",
     grantedCapabilities: ["read", "interact"],
     approvalInfrastructureAvailable: true
   }).decision, "block");
+});
+
+test("the plugin classifier aligns account-admin, Amazon transaction, and generic dialog boundaries", () => {
+  const adminRaw = snapshot({ e54: { role: "button", name: "Account settings" } });
+  const adminContext = context(adminRaw);
+  assert.equal(classifyBrowserAction({
+    action: "act",
+    params: { request: { kind: "click", ref: "e54" } },
+    binding,
+    trustedContext: adminContext,
+    observedContext: adminContext
+  }).capability, "account_admin");
+
+  const amazonRaw = snapshot(
+    { e55: { role: "button", name: "Submit your order" } },
+    { url: "https://www.amazon.com/checkout" }
+  );
+  const amazonContext = context(amazonRaw, ["amazon.com"]);
+  assert.equal(classifyBrowserAction({
+    action: "act",
+    params: { request: { kind: "click", ref: "e55" } },
+    binding: { ...binding, serviceId: "amazon" },
+    trustedContext: amazonContext,
+    observedContext: amazonContext
+  }).capability, "transact");
+
+  const dialogRaw = snapshot(
+    { e56: { role: "button", name: "Confirm" } },
+    { dialogMessage: "Are you sure?" }
+  );
+  const dialogContext = context(dialogRaw);
+  assert.equal(classifyBrowserAction({
+    action: "dialog",
+    params: { accept: true },
+    binding,
+    trustedContext: dialogContext,
+    observedContext: dialogContext
+  }).capability, "unknown");
+  assert.equal(evaluate(dialogContext, dialogContext, {
+    action: "dialog",
+    kind: "dialog",
+    capabilities: ["read", "interact"]
+  }).decision, "require_approval");
+});
+
+test("OpenClaw page text remains a read action while model prose cannot elevate a trusted target", () => {
+  assert.equal(classifyBrowserAction({
+    action: "text",
+    params: {},
+    binding
+  }).capability, "read");
+
+  const raw = snapshot({ e57: { role: "button", name: "Notifications filter" } });
+  const current = context(raw);
+  assert.equal(classifyBrowserAction({
+    action: "act",
+    params: {
+      request: { kind: "click", ref: "e57" },
+      actionDescription: "Buy now and complete the order"
+    },
+    binding,
+    trustedContext: current,
+    observedContext: current
+  }).capability, "interact");
 });

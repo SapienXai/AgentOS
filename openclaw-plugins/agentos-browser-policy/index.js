@@ -19,6 +19,7 @@ const readOnlyActions = new Set([
   "snapshot",
   "screenshot",
   "console",
+  "text",
   "wait"
 ]);
 const lifecycleActions = new Set(["close", "profiles", "doctor", "status", "start", "stop", "focus"]);

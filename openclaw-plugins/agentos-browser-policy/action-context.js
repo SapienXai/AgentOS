@@ -1,7 +1,7 @@
 const browserRefPattern = /^(?:f\d+)?e\d+$|^ax\d+$|^\d{1,9}$/i;
 
 const adminPattern =
-  /\b(password|passcode|mfa|2fa|two-factor|authenticator|security settings?|recovery|api (?:key|token)|access token|secret|permission|role|owner|delete account|close account|merge)\b/i;
+  /\b(?:password|passcode|mfa|2fa|two-factor|authenticator|security settings?|recovery|api (?:key|token)|access token|secret|permission|role|owner|delete account|close account|merge|(?:account|privacy|identity|profile) settings?)\b/i;
 const transactionPattern =
   /\b(buy now|proceed to checkout|checkout|place (?:your )?order|purchase|pay(?:ment)?|subscribe|transfer(?: money)?|confirm (?:order|purchase|payment))\b/i;
 const publishPattern =
@@ -19,7 +19,7 @@ const serviceRiskPatterns = {
     publish: /\b(launch|comment|upvote|submit)\b/i
   },
   amazon: {
-    transact: /\b(buy now|proceed to checkout|checkout|place (?:your )?order|purchase|pay|payment|subscribe)\b/i
+    transact: /\b(buy now|proceed to checkout|checkout|place (?:your )?order|submit (?:your )?order|purchase|pay|payment|subscribe)\b/i
   }
 };
 
@@ -203,7 +203,7 @@ export function classifyBrowserAction({
   if (normalizedAction === "wait" && readWaitPredicate(params)) {
     return result("account_admin", "JavaScript wait predicates are disabled for account-bound tasks.");
   }
-  if (["tabs", "snapshot", "screenshot", "console", "wait"].includes(normalizedAction)) {
+  if (["tabs", "snapshot", "screenshot", "console", "text", "wait"].includes(normalizedAction)) {
     return result("read", "The browser action is read-only.");
   }
   if (["open", "navigate"].includes(normalizedAction)) {
@@ -260,6 +260,9 @@ export function classifyBrowserAction({
       if (observation.semanticChanged) {
         return result("unknown", "The submitting browser context is stale and must be re-snapshotted.", { staleReference: true });
       }
+      if (normalizedAction === "dialog" && params?.accept === true && pageRisk === "interact") {
+        return result("unknown", "An accepted browser dialog has no trusted high-risk classification.");
+      }
       return pageRisk === "unknown"
         ? result("unknown", "The submitting browser action could not be classified from trusted page state.")
         : result(pageRisk, "The submitting browser action is classified from trusted page or target state.");
@@ -274,6 +277,9 @@ export function classifyBrowserAction({
     ]);
     if (observation.semanticChanged) {
       return result("unknown", "The submitting browser context is stale and must be re-snapshotted.", { staleReference: true });
+    }
+    if (normalizedAction === "dialog" && params?.accept === true && pageRisk === "interact") {
+      return result("unknown", "An accepted browser dialog has no trusted high-risk classification.");
     }
     return pageRisk === "unknown"
       ? result("unknown", "The submitting browser action could not be classified from trusted page state.")

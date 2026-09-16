@@ -78,7 +78,7 @@ export function classifyBrowserAction(input: {
   const action = input.action?.trim().toLowerCase() ?? "";
   const kind = input.actionKind?.trim().toLowerCase() ?? "";
   if (action === "wait" && input.waitPredicate?.trim()) return "account_admin";
-  if (["tabs", "snapshot", "screenshot", "console", "wait"].includes(action || kind)) return "read";
+  if (["tabs", "snapshot", "screenshot", "console", "text", "wait"].includes(action || kind)) return "read";
   if (["open", "navigate"].includes(action || kind)) return "read";
   if (kind === "evaluate" || (action === "act" && kind === "close")) return "account_admin";
   if (action === "dialog" && input.dialogAccepted === false) return "interact";
@@ -107,21 +107,27 @@ export function classifyBrowserAction(input: {
     }
     if (submitLike) {
       if (trusted.semanticSnapshotGeneration !== observed.semanticSnapshotGeneration) return "unknown";
-      return highestRisk([
+      const pageRisk = highestRisk([
         targetRisk,
         ...(trusted.pageSignals ?? []).map((value) => classifyTargetRisk(value, input.serviceId)),
         ...(trusted.dialogMessages ?? []).map((value) => classifyTargetRisk(value, input.serviceId))
       ]);
+      return action === "dialog" && input.dialogAccepted === true && pageRisk === "interact"
+        ? "unknown"
+        : pageRisk;
     }
     return targetRisk;
   }
 
   if (submitLike) {
     if (trusted.semanticSnapshotGeneration !== observed.semanticSnapshotGeneration) return "unknown";
-    return highestRisk([
+    const pageRisk = highestRisk([
       ...(trusted.pageSignals ?? []).map((value) => classifyTargetRisk(value, input.serviceId)),
       ...(trusted.dialogMessages ?? []).map((value) => classifyTargetRisk(value, input.serviceId))
     ]);
+    return action === "dialog" && input.dialogAccepted === true && pageRisk === "interact"
+      ? "unknown"
+      : pageRisk;
   }
 
   if (["click", "clickcoords", "click-coords", "drag", "fill", "press", "select", "type"].includes(kind)) {
