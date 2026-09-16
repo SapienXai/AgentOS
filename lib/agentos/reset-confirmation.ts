@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
@@ -88,8 +88,9 @@ export async function createResetConfirmation(input: {
 }
 
 /**
- * Atomically consumes a plan. Renaming the plan before returning it prevents
- * a second request from replaying the same destructive operation.
+ * Atomically consumes a plan. Linking to an exclusive active path before
+ * removing the pending path prevents a second request from replaying the same
+ * destructive operation.
  */
 export async function consumeResetConfirmation(input: {
   planId: string;
@@ -107,9 +108,10 @@ export async function consumeResetConfirmation(input: {
 
   const activePath = resolveActiveResetPlanPath(planId, env);
   try {
-    await rename(planPath, activePath);
+    await link(planPath, activePath);
+    await rm(planPath, { force: true });
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) {
+    if (isNodeError(error, "ENOENT") || isNodeError(error, "EEXIST")) {
       throw new ResetConfirmationError(
         "This reset preview is already being used. Refresh the preview before retrying.",
         409,
@@ -143,6 +145,7 @@ export async function releaseResetConfirmation(
   env: NodeJS.ProcessEnv = process.env
 ) {
   await rm(confirmation.activePath, { force: true });
+  await rm(confirmation.activePath.replace(/\.active$/, ".json"), { force: true });
   await removeDirectoryIfEmpty(path.dirname(confirmation.activePath));
   await removeDirectoryIfEmpty(resolveAgentOsRuntimeDir(env));
 }

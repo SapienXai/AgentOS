@@ -2,7 +2,19 @@ import "server-only";
 
 export {
   executeReset,
-  getResetPreview
+  getResetPreview,
+  buildResetPreviewWorkspaces,
+  classifyOpenClawUninstallFailure,
+  classifyResetWorkspaceOwnership,
+  removeWorkspaceIntegrationArtifacts,
+  scheduleBackgroundPackageRemoval
+} from "@/lib/openclaw/reset";
+
+export type {
+  ResetExecutionDependencies,
+  ResetExecutionOptions,
+  ResetExecutionResult,
+  ResetPreviewOptions
 } from "@/lib/openclaw/reset";
 
 export type {
@@ -12,4 +24,3 @@ export type {
   ResetStreamEvent,
   ResetTarget
 } from "@/lib/agentos/contracts";
-

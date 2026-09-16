@@ -548,7 +548,7 @@ test("full uninstall reset is OpenClaw-first and fail-closed", () => {
   assert.doesNotMatch(source, /"--all"/);
 
   const nativeIndex = source.indexOf("runOpenClawNativeTeardown");
-  const agentOsIndex = source.indexOf("runAgentOsCleanup");
+  const agentOsIndex = source.indexOf("await (dependencies.runAgentOsCleanup", nativeIndex);
   assert.equal(nativeIndex >= 0 && agentOsIndex > nativeIndex, true);
 });
 

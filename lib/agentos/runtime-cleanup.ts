@@ -54,7 +54,7 @@ export async function removeAgentOsRuntimeState(env: NodeJS.ProcessEnv = process
 
   const resetPlansRoot = path.join(root, "reset-plans");
   for (const entry of await readdir(resetPlansRoot).catch(() => [] as string[])) {
-    if (!/^[0-9a-f-]{36}\.(?:json|active)$/.test(entry)) continue;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:json|active)$/i.test(entry)) continue;
     const targetPath = path.join(resetPlansRoot, entry);
     if (await removeFile(targetPath)) removedPaths.push(targetPath);
   }

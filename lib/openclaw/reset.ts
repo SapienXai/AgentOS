@@ -2,7 +2,7 @@ import "server-only";
 
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -55,7 +55,7 @@ const browserStorageKeys = [
   "mission-control-active-workspace-id:*",
   "mission-control-composer-draft:*",
   "mission-control-agent-chat:v1:*",
-  "mission-control-agent-chat-seen:v1:"
+  "mission-control-agent-chat-seen:v1:*"
 ] as const;
 const liveAgentStatuses = new Set(["engaged", "monitoring", "ready"]);
 const supportedPackageManagers = new Set(["pnpm", "npm", "yarn"]);
@@ -242,7 +242,9 @@ export async function executeReset(
     });
 
     const detectedActions = preview.packageActions.filter((action) => action.detected && action.executable && action.args);
-    const manualActions = preview.packageActions.filter((action) => action.required && !action.detected);
+    const manualActions = preview.packageActions.filter((action) => {
+      return action.required && ((action.removalMode ?? "none") === "none" || !action.detected);
+    });
 
     if (detectedActions.length > 0) {
       try {
@@ -315,6 +317,11 @@ export async function executeReset(
         ? "Uninstall finishing. Native OpenClaw and AgentOS state cleanup completed; package removal is scheduled after AgentOS exits."
         : "Full uninstall completed for AgentOS and OpenClaw state.";
 
+  await emit({
+    type: "status",
+    phase: "done",
+    message
+  });
   await emit({
     type: "log",
     text: message
@@ -472,7 +479,7 @@ function buildResetWarnings(
     warnings.push("OpenClaw native teardown is planned with service and state scopes; configured workspace folders are preserved for AgentOS ownership checks.");
   }
 
-  if (target === "full-uninstall" && packageActions.some((action) => action.required && !action.detected)) {
+  if (target === "full-uninstall" && packageActions.some((action) => action.required && ((action.removalMode ?? "none") === "none" || !action.detected))) {
     warnings.push("Some detected installation modes require manual package cleanup because a safe supported command was not available.");
   }
 
@@ -632,6 +639,11 @@ export async function removeWorkspaceIntegrationArtifacts(workspace: ResetPrevie
     );
   }
 
+  if (!(await isOwnedAgentOsProvisioningMarker(markerPath))) {
+    await emit({ type: "log", text: `The AgentOS integration marker at ${markerPath} was not verified; preserved the file and folder.` });
+    return;
+  }
+
   await rm(markerPath, { force: true });
   await emit({ type: "log", text: `Removed explicit AgentOS integration marker: ${markerPath}` });
 }
@@ -640,10 +652,29 @@ async function findExplicitIntegrationPaths(workspacePath: string) {
   const markerPath = path.resolve(workspacePath, WORKSPACE_PROVISIONING_MANIFEST_RELATIVE_PATH);
   try {
     const markerStat = await lstat(markerPath);
-    return markerStat.isFile() && !markerStat.isSymbolicLink() ? [markerPath] : [];
+    return markerStat.isFile() && !markerStat.isSymbolicLink() && await isOwnedAgentOsProvisioningMarker(markerPath)
+      ? [markerPath]
+      : [];
   } catch (error) {
     if (isNodeError(error, "ENOENT")) return [];
     throw error;
+  }
+}
+
+async function isOwnedAgentOsProvisioningMarker(markerPath: string) {
+  try {
+    const parsed = JSON.parse(await readFile(markerPath, "utf8")) as unknown;
+    if (!isRecord(parsed) || parsed.manifestVersion !== 1 || !isRecord(parsed.agentosProvisioning)) return false;
+    const provisioning = parsed.agentosProvisioning;
+    return (
+      provisioning.manifestVersion === 1 &&
+      typeof provisioning.runId === "string" &&
+      provisioning.runId.trim().length > 0 &&
+      typeof provisioning.blueprintFingerprint === "string" &&
+      provisioning.blueprintFingerprint.trim().length > 0
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -671,7 +702,7 @@ async function runOpenClawNativeTeardown(
   if (!plan || plan.status !== "ready") {
     return {
       ok: false as const,
-      failureClass: "unsupported" as const,
+      failureClass: plan?.failureClass ?? "unsupported",
       detail: plan?.reason ?? "The native OpenClaw uninstall preflight did not produce an executable plan."
     };
   }
@@ -761,6 +792,7 @@ async function buildNativeOpenClawPlan(runner: typeof runOpenClaw, env: NodeJS.P
     const failureClass = classifyOpenClawUninstallFailure(error);
     return {
       status: "blocked",
+      failureClass,
       command,
       args,
       preflightCommand: formatOpenClawCommand(command, preflightArgs),
@@ -817,6 +849,12 @@ async function detectPackageActions(snapshot: MissionControlSnapshot, env: NodeJ
       snapshot.diagnostics.updatePackageManager ?? null,
       "OpenClaw reports a package installation, but its package manager is not in AgentOS's supported allowlist."
     ));
+  } else if (["source", "git", "repo"].includes(openClawInstallKind ?? "")) {
+    actions.push(createPreservedInstallAction(
+      openClawPackageName,
+      snapshot.diagnostics.updatePackageManager ?? null,
+      "OpenClaw is running from a source or repository checkout; AgentOS will not remove that user-owned checkout."
+    ));
   } else {
     actions.push(createAbsentPackageAction(
       openClawPackageName,
@@ -835,6 +873,14 @@ async function detectAgentOsCleanupAction(preferredManagers: string[], env: Node
 
   const releaseAction = await detectAgentOsReleaseAction(env);
   if (releaseAction) return releaseAction;
+
+  if (await isAgentOsSourceCheckout(env)) {
+    return createPreservedInstallAction(
+      "@sapienx/agentos",
+      null,
+      "AgentOS is running from a development/source checkout; the repository is preserved for manual removal."
+    );
+  }
 
   return createAbsentPackageAction("@sapienx/agentos", null, "No supported AgentOS global package or release installation was detected.");
 }
@@ -873,9 +919,15 @@ async function detectGlobalPackageAction(
 }
 
 async function detectAgentOsReleaseAction(env: NodeJS.ProcessEnv): Promise<ResetPreviewPackageAction | null> {
-  const defaultScriptPath = path.join(resolveAgentOsRuntimeDir(env), "package", "bin", "agentos.js");
-  if (await pathExists(defaultScriptPath)) {
-    return createReleasePackageAction(defaultScriptPath, `Detected AgentOS release install at ${path.dirname(path.dirname(defaultScriptPath))}.`);
+  const installRoots = uniqueStrings([
+    resolveAgentOsRuntimeDir(env),
+    env.AGENTOS_INSTALL_ROOT?.trim() ? path.resolve(env.AGENTOS_INSTALL_ROOT) : ""
+  ].filter(Boolean));
+  for (const installRoot of installRoots) {
+    const defaultScriptPath = path.join(installRoot, "package", "bin", "agentos.js");
+    if (await pathExists(defaultScriptPath)) {
+      return createReleasePackageAction(defaultScriptPath, `Detected AgentOS release install at ${path.dirname(path.dirname(defaultScriptPath))}.`);
+    }
   }
 
   const commandPath = await resolveCommandPath("agentos");
@@ -929,6 +981,20 @@ function createManualPackageAction(packageName: string, manager: string | null, 
   };
 }
 
+function createPreservedInstallAction(packageName: string, manager: string | null, reason: string): ResetPreviewPackageAction {
+  return {
+    packageName,
+    manager,
+    command: null,
+    executable: null,
+    args: [],
+    removalMode: "none",
+    required: true,
+    detected: true,
+    reason
+  };
+}
+
 function inferOpenClawPackageName(snapshot: MissionControlSnapshot) {
   const candidate = snapshot.diagnostics.updateRoot?.trim() ? path.basename(snapshot.diagnostics.updateRoot.trim()) : "openclaw";
   return isSafePackageName(candidate) && candidate.toLowerCase().includes("openclaw") ? candidate : "openclaw";
@@ -978,6 +1044,14 @@ async function resolveCommandPath(command: string) {
   }
 }
 
+async function isAgentOsSourceCheckout(env: NodeJS.ProcessEnv) {
+  if (env.AGENTOS_PACKAGE_RUNTIME === "1") return false;
+  return (
+    await pathExists(path.join(process.cwd(), "packages", "agentos", "package.json")) &&
+    await pathExists(path.join(process.cwd(), "packages", "agentos", "bin", "agentos.js"))
+  );
+}
+
 async function readTextFileIfExists(targetPath: string) {
   try {
     return await BunlessReadFile(targetPath);
@@ -1006,7 +1080,7 @@ export async function scheduleBackgroundPackageRemoval(
   options: { waitForPid?: number | null; tempDir?: string } = {}
 ) {
   const safeActions = actions.filter((action) => {
-    return action.detected && Boolean(action.executable) && Array.isArray(action.args) && action.args.length >= 0;
+    return isSafePackageRemovalAction(action);
   }).map((action) => ({
     packageName: action.packageName,
     executable: action.executable!,
@@ -1043,6 +1117,35 @@ export async function scheduleBackgroundPackageRemoval(
   }
   child.unref();
   return logPath;
+}
+
+function isSafePackageRemovalAction(action: ResetPreviewPackageAction) {
+  if (!action.detected || !action.executable || !Array.isArray(action.args)) return false;
+
+  if (action.removalMode === "package-manager") {
+    const manager = normalizePackageManager(action.manager);
+    return Boolean(
+      manager &&
+        action.executable === manager &&
+        JSON.stringify(action.args) === JSON.stringify(buildPackageRemovalArgs(manager, action.packageName))
+    );
+  }
+
+  if (action.removalMode === "agentos-release") {
+    const scriptPath = action.args[0];
+    return (
+      action.executable === process.execPath &&
+      typeof scriptPath === "string" &&
+      path.basename(scriptPath) === "agentos.js" &&
+      scriptPath.includes(`${path.sep}package${path.sep}bin${path.sep}`) &&
+      !scriptPath.includes(`${path.sep}node_modules${path.sep}`) &&
+      !scriptPath.includes(`${path.sep}.pnpm${path.sep}`) &&
+      action.args[1] === "uninstall" &&
+      action.args[2] === "--yes"
+    );
+  }
+
+  return false;
 }
 
 function buildPackageRemovalWorkerSource(specPath: string, scriptPath: string) {
@@ -1155,6 +1258,10 @@ function isNodeError(error: unknown, code: string) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === code);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function safeErrorDetail(error: unknown) {
   const detail = stringifyCommandFailure(error).trim() || (error instanceof Error ? error.message : "Unknown error.");
   return redactSecretText(detail.replace(/\s+/g, " ").slice(0, 360));
@@ -1168,9 +1275,13 @@ function finishResetFailure(input: {
   emit: ResetEventEmitter;
 }) {
   return input.emit({
+    type: "status",
+    phase: "done",
+    message: input.message
+  }).then(() => input.emit({
     type: "log",
     text: input.message
-  }).then(() => ({
+  })).then(() => ({
     ok: false,
     status: input.status,
     failureClass: input.failureClass,

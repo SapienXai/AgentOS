@@ -2715,6 +2715,7 @@ export type ResetNativeOpenClawPlanStatus = "not-required" | "ready" | "blocked"
 
 export interface ResetNativeOpenClawPlan {
   status: ResetNativeOpenClawPlanStatus;
+  failureClass?: ResetFailureClass;
   command: string;
   args: string[];
   preflightCommand: string;

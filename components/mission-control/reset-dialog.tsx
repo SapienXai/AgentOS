@@ -65,10 +65,12 @@ export function ResetDialog({
     target === "full-uninstall" ? "FULL UNINSTALL" : "RESET MISSION CONTROL";
   const isExecuting = runState === "running";
   const hasFinished = runState === "success" || runState === "error";
+  const nativePlanReady = target !== "full-uninstall" || preview?.nativeOpenClaw?.status === "ready";
   const canExecute =
     target !== null &&
     previewState === "ready" &&
     hasConfirmationPlan &&
+    nativePlanReady &&
     !isExecuting &&
     !hasFinished &&
     confirmText.trim() === expectedConfirmation;
@@ -340,7 +342,11 @@ export function ResetDialog({
                           <span
                             className={cn(
                               "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]",
-                              action.detected
+                              isManualPackageAction(action)
+                                ? surfaceTheme === "light"
+                                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                                  : "border-amber-300/25 bg-amber-300/10 text-amber-200"
+                                : action.detected
                                 ? surfaceTheme === "light"
                                   ? "border-rose-300 bg-rose-50 text-rose-700"
                                   : "border-rose-400/25 bg-rose-500/10 text-rose-200"
@@ -349,14 +355,16 @@ export function ResetDialog({
                                   : "border-white/10 bg-white/[0.05] text-slate-300"
                             )}
                           >
-                            {action.detected ? "Detected" : action.required ? "Manual" : "Not present"}
+                            {isManualPackageAction(action) ? "Manual" : action.detected ? "Detected" : "Not present"}
                           </span>
                         </div>
                         <p className={cn("mt-1 break-words text-xs", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-400")}>
                           {action.reason || "No extra detail."}
                         </p>
                         <p className={cn("mt-1 whitespace-pre-wrap break-all font-mono text-[11px]", surfaceTheme === "light" ? "text-[#7e6555]" : "text-slate-500")}>
-                          {action.command || "Automatic cleanup is not available."}
+                          {action.command || (isManualPackageAction(action) && action.detected
+                            ? "Preserved; remove this source checkout manually if needed."
+                            : "Automatic cleanup is not available.")}
                         </p>
                       </div>
                     ))}
@@ -560,4 +568,8 @@ function PathPanel({
       </div>
     </div>
   );
+}
+
+function isManualPackageAction(action: ResetPreview["packageActions"][number]) {
+  return action.required && ((action.removalMode ?? "none") === "none" || !action.detected);
 }

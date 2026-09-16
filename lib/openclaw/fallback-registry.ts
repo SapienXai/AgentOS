@@ -454,7 +454,7 @@ const fallbackRegistryEntries = [
     id: "reset.uninstall",
     operation: "reset.uninstall",
     sourcePath: "lib/openclaw/reset.ts",
-    sourceAnchors: ["runOpenClaw([\n      \"uninstall\",", "runOpenClawFullUninstall"],
+    sourceAnchors: ["const openClawNativeUninstallArgs = [", "runOpenClawNativeTeardown"],
     nativeMethodCandidate: null,
     classification: "setup-recovery",
     reason: "Explicit reset/uninstall delegates destructive runtime ownership to OpenClaw and reports failure before local cleanup.",
