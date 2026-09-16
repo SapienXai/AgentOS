@@ -417,6 +417,10 @@ export function MissionControlShell({
   const {
     resetDialogTarget,
     setResetDialogTarget,
+    resetPlanId,
+    setResetPlanId,
+    resetConfirmationExpiresAt,
+    setResetConfirmationExpiresAt,
     resetPreviewState,
     setResetPreviewState,
     resetPreview,
@@ -3897,6 +3901,8 @@ export function MissionControlShell({
     setResetPreviewState("loading");
     setResetPreview(null);
     setResetPreviewError(null);
+    setResetPlanId(null);
+    setResetConfirmationExpiresAt(null);
 
     try {
       const response = await fetch("/api/reset", {
@@ -3911,14 +3917,16 @@ export function MissionControlShell({
       });
 
       const result = (await response.json().catch(() => null)) as
-        | { preview?: ResetPreview; error?: string }
+        | { preview?: ResetPreview; confirmation?: { planId: string; expiresAt: string }; error?: string }
         | null;
 
-      if (!response.ok || !result?.preview) {
+      if (!response.ok || !result?.preview || !result.confirmation?.planId) {
         throw new Error(result?.error || "Reset preview could not be loaded.");
       }
 
       setResetPreview(result.preview);
+      setResetPlanId(result.confirmation.planId);
+      setResetConfirmationExpiresAt(result.confirmation.expiresAt);
       setResetPreviewState("ready");
     } catch (error) {
       setResetPreviewState("error");
@@ -3934,15 +3942,11 @@ export function MissionControlShell({
   };
 
   const runReset = async () => {
-    if (!resetDialogTarget) {
+    if (!resetDialogTarget || !resetPlanId) {
       return;
     }
 
     const isFullUninstall = resetDialogTarget === "full-uninstall";
-    if (isFullUninstall) {
-      setRequiresFreshInstallSystemSetup(true);
-      setOnboardingStage("system");
-    }
 
     setResetRunState("running");
     setResetStatusMessage(
@@ -3963,6 +3967,7 @@ export function MissionControlShell({
         body: JSON.stringify({
           intent: "execute",
           target: resetDialogTarget,
+          planId: resetPlanId,
           confirmed: true
         })
       });
@@ -4023,7 +4028,9 @@ export function MissionControlShell({
                 clearMissionControlBrowserState();
                 toast.success(
                   resetDialogTarget === "full-uninstall"
-                    ? "Full uninstall started."
+                    ? event.status === "scheduled"
+                      ? "Full uninstall finishing."
+                      : "Full uninstall completed."
                     : "AgentOS reset completed.",
                   {
                     description: event.message
@@ -4314,6 +4321,8 @@ export function MissionControlShell({
         previewState={resetPreviewState}
         preview={resetPreview}
         previewError={resetPreviewError}
+        confirmationExpiresAt={resetConfirmationExpiresAt}
+        hasConfirmationPlan={Boolean(resetPlanId)}
         runState={resetRunState}
         statusMessage={resetStatusMessage}
         resultMessage={resetResultMessage}
@@ -5512,6 +5521,8 @@ export function MissionControlShell({
           previewState={resetPreviewState}
           preview={resetPreview}
           previewError={resetPreviewError}
+          confirmationExpiresAt={resetConfirmationExpiresAt}
+          hasConfirmationPlan={Boolean(resetPlanId)}
           runState={resetRunState}
           statusMessage={resetStatusMessage}
           resultMessage={resetResultMessage}

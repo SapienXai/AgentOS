@@ -2679,6 +2679,8 @@ export interface AgentDeleteInput {
 
 export type ResetTarget = "mission-control" | "full-uninstall";
 
+export type ResetOwnershipClass = "AGENTOS_OWNED" | "OPENCLAW_OWNED" | "USER_OWNED" | "UNKNOWN";
+
 export type ResetWorkspaceAction = "delete-folder" | "clean-integration";
 
 export interface ResetPreviewWorkspace {
@@ -2686,18 +2688,41 @@ export interface ResetPreviewWorkspace {
   name: string;
   path: string;
   sourceMode: WorkspaceSourceMode | null;
+  ownership: ResetOwnershipClass;
   action: ResetWorkspaceAction;
+  integrationPaths: string[];
   agentCount: number;
   runtimeCount: number;
   liveAgentCount: number;
   reasons: string[];
 }
 
+export type ResetPackageRemovalMode = "package-manager" | "agentos-release" | "none";
+
 export interface ResetPreviewPackageAction {
   packageName: string;
   manager: string | null;
   command: string | null;
+  executable?: string | null;
+  args?: string[];
+  removalMode?: ResetPackageRemovalMode;
+  required: boolean;
   detected: boolean;
+  reason: string | null;
+}
+
+export type ResetNativeOpenClawPlanStatus = "not-required" | "ready" | "blocked";
+
+export interface ResetNativeOpenClawPlan {
+  status: ResetNativeOpenClawPlanStatus;
+  command: string;
+  args: string[];
+  preflightCommand: string;
+  preflightArgs: string[];
+  verificationCommand: string;
+  verificationArgs: string[];
+  statePaths: string[];
+  preservesConfiguredWorkspaces: boolean;
   reason: string | null;
 }
 
@@ -2713,20 +2738,35 @@ export interface ResetPreview {
   };
   workspaces: ResetPreviewWorkspace[];
   missionControlPaths: string[];
+  agentOsRuntimePaths: string[];
   browserStorageKeys: string[];
   openClawPaths: string[];
+  nativeOpenClaw: ResetNativeOpenClawPlan | null;
   packageActions: ResetPreviewPackageAction[];
   warnings: string[];
 }
 
+export type ResetOperationStatus = "succeeded" | "scheduled" | "partial" | "failed";
+
+export type ResetFailureClass =
+  | "cli-unavailable"
+  | "unsupported"
+  | "service-teardown-failed"
+  | "ownership-safety-failed"
+  | "permission-denied"
+  | "timeout"
+  | "partial"
+  | "unknown";
+
 export type ResetStreamPhase =
   | "planning"
-  | "agents"
-  | "workspaces"
-  | "mission-control-state"
-  | "openclaw-state"
+  | "openclaw-preflight"
+  | "openclaw-uninstall"
+  | "agentos-workspaces"
+  | "agentos-state"
   | "package-removal"
-  | "refreshing";
+  | "refreshing"
+  | "done";
 
 export type ResetStreamEvent =
   | {
@@ -2742,6 +2782,8 @@ export type ResetStreamEvent =
       type: "done";
       ok: boolean;
       target: ResetTarget;
+      status: ResetOperationStatus;
+      failureClass?: ResetFailureClass;
       message: string;
       snapshot?: MissionControlSnapshot;
       backgroundLogPath?: string;

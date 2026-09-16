@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  consumeResetConfirmation,
+  createResetConfirmation,
+  releaseResetConfirmation,
+  ResetConfirmationError
+} from "@/lib/agentos/reset-confirmation";
 import { executeReset, getResetPreview } from "@/lib/agentos/reset";
 import type { ResetStreamEvent } from "@/lib/agentos/contracts";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -19,6 +25,7 @@ const previewRequestSchema = z.object({
 const executeRequestSchema = z.object({
   intent: z.literal("execute"),
   target: resetTargetSchema,
+  planId: z.string().uuid(),
   confirmed: z.literal(true)
 });
 
@@ -43,8 +50,14 @@ export async function POST(request: Request) {
   if (previewParse.success) {
     try {
       const preview = await getResetPreview(previewParse.data.target);
+      const confirmation = await createResetConfirmation({
+        preview,
+        actor: permission.actor,
+        request
+      });
       return NextResponse.json(redactSecrets({
-        preview
+        preview,
+        confirmation
       }));
     } catch (error) {
       return NextResponse.json(
@@ -67,6 +80,25 @@ export async function POST(request: Request) {
     );
   }
 
+  let confirmation;
+  try {
+    confirmation = await consumeResetConfirmation({
+      planId: executeParse.data.planId,
+      target: executeParse.data.target,
+      actor: permission.actor,
+      request
+    });
+  } catch (error) {
+    const status = error instanceof ResetConfirmationError ? error.status : 500;
+    return NextResponse.json(
+      {
+        error: redactErrorMessage(error, "The reset preview could not be confirmed."),
+        ...(error instanceof ResetConfirmationError ? { code: error.code } : {})
+      },
+      { status }
+    );
+  }
+
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
@@ -84,13 +116,16 @@ export async function POST(request: Request) {
   void (async () => {
     try {
       const result = await executeReset(executeParse.data.target, {
-        onEvent: send
+        onEvent: send,
+        preview: confirmation.preview
       });
 
       await send({
         type: "done",
-        ok: true,
+        ok: result.ok,
         target: executeParse.data.target,
+        status: result.status,
+        ...(result.failureClass ? { failureClass: result.failureClass } : {}),
         message: result.message,
         snapshot: result.snapshot,
         backgroundLogPath: result.backgroundLogPath
@@ -100,9 +135,12 @@ export async function POST(request: Request) {
         type: "done",
         ok: false,
         target: executeParse.data.target,
+        status: "failed",
+        failureClass: "unknown",
         message: redactErrorMessage(error, "Reset operation failed.")
       });
     } finally {
+      await releaseResetConfirmation(confirmation).catch(() => {});
       await writeChain;
       await writer.close();
     }

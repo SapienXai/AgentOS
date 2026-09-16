@@ -9,6 +9,8 @@ export type MissionControlResetPreviewState = "idle" | "loading" | "ready" | "er
 
 export function useMissionControlResetState() {
   const [resetDialogTarget, setResetDialogTarget] = useState<ResetTarget | null>(null);
+  const [resetPlanId, setResetPlanId] = useState<string | null>(null);
+  const [resetConfirmationExpiresAt, setResetConfirmationExpiresAt] = useState<string | null>(null);
   const [resetPreviewState, setResetPreviewState] = useState<MissionControlResetPreviewState>("idle");
   const [resetPreview, setResetPreview] = useState<ResetPreview | null>(null);
   const [resetPreviewError, setResetPreviewError] = useState<string | null>(null);
@@ -20,6 +22,8 @@ export function useMissionControlResetState() {
   const [resetConfirmText, setResetConfirmText] = useState("");
 
   const resetResetDialogState = useCallback(() => {
+    setResetPlanId(null);
+    setResetConfirmationExpiresAt(null);
     setResetPreviewState("idle");
     setResetPreview(null);
     setResetPreviewError(null);
@@ -34,6 +38,10 @@ export function useMissionControlResetState() {
   return {
     resetDialogTarget,
     setResetDialogTarget,
+    resetPlanId,
+    setResetPlanId,
+    resetConfirmationExpiresAt,
+    setResetConfirmationExpiresAt,
     resetPreviewState,
     setResetPreviewState,
     resetPreview,
