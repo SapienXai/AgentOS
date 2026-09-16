@@ -140,6 +140,7 @@ import type {
   OpenClawThinkingLevel,
   OperationProgressSnapshot,
   ResetPreview,
+  ResetFailureClass,
   ResetStreamEvent,
   ResetTarget,
   OpenClawUpdateStreamEvent,
@@ -4038,15 +4039,18 @@ export function MissionControlShell({
                   }
                 );
               } else {
+                const userMessage = describeResetFailure(event.failureClass);
                 if (isFullUninstall) {
                   setRequiresFreshInstallSystemSetup(false);
                 }
+                setResetResultMessage(userMessage);
+                appendResetLog(`\n> ${event.message}\n`);
                 toast.error(
                   resetDialogTarget === "full-uninstall"
                     ? "Full uninstall failed."
                     : "AgentOS reset failed.",
                   {
-                    description: event.message
+                    description: userMessage
                   }
                 );
               }
@@ -4066,9 +4070,10 @@ export function MissionControlShell({
           sawDone = true;
           completedSuccessfully = event.ok;
           setResetStatusMessage(null);
-          setResetResultMessage(event.message);
+          setResetResultMessage(event.ok ? event.message : describeResetFailure(event.failureClass));
           setResetBackgroundLogPath(event.backgroundLogPath ?? null);
           setResetRunState(event.ok ? "success" : "error");
+          if (!event.ok) appendResetLog(`\n> ${event.message}\n`);
 
           if (event.snapshot) {
             setSnapshot(event.snapshot);
@@ -4101,13 +4106,15 @@ export function MissionControlShell({
       }
       setResetRunState("error");
       setResetStatusMessage(null);
-      setResetResultMessage(error instanceof Error ? error.message : "Reset failed.");
+      const userMessage = "AgentOS could not complete this operation safely. Review details and try again.";
+      appendResetLog(`\n> ${error instanceof Error ? error.message : "Unknown reset error."}\n`);
+      setResetResultMessage(userMessage);
       toast.error(
         resetDialogTarget === "full-uninstall"
           ? "Full uninstall failed."
           : "AgentOS reset failed.",
         {
-          description: error instanceof Error ? error.message : "Unknown reset error."
+          description: userMessage
         }
       );
     }
@@ -5610,6 +5617,27 @@ function normalizeUpdateVersion(value: string | null | undefined) {
 function isExpectedRuntimeShutdownError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /abort|network|terminated|connection (?:closed|reset)|fetch failed/i.test(message);
+}
+
+function describeResetFailure(failureClass: ResetFailureClass | undefined) {
+  switch (failureClass) {
+    case "cli-unavailable":
+      return "OpenClaw could not be found.";
+    case "permission-denied":
+      return "AgentOS does not have permission to complete this operation.";
+    case "service-teardown-failed":
+      return "OpenClaw could not be stopped safely.";
+    case "ownership-safety-failed":
+      return "A folder could not be safely verified and was preserved.";
+    case "timeout":
+      return "The operation took too long and was stopped safely.";
+    case "unsupported":
+      return "This OpenClaw installation does not support the required operation.";
+    case "partial":
+      return "Some cleanup steps need attention.";
+    default:
+      return "The operation could not be completed safely.";
+  }
 }
 
 function resolveLatestVersionFromUpdateInfo(value: string | null | undefined) {

@@ -62,7 +62,7 @@ export function ResetDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const expectedConfirmation =
-    target === "full-uninstall" ? "FULL UNINSTALL" : "RESET MISSION CONTROL";
+    target === "full-uninstall" ? "UNINSTALL" : "RESET";
   const isExecuting = runState === "running";
   const hasFinished = runState === "success" || runState === "error";
   const isFullUninstall = target === "full-uninstall";

@@ -43,9 +43,12 @@ test("destructive reset surfaces keep impact visible and technical detail collap
   assert.match(dialog, /label="Will remove"/);
   assert.match(dialog, /label="Will preserve"/);
   assert.match(dialog, /<span>Review details<\/span>/);
+  assert.match(dialog, /target === "full-uninstall" \? "UNINSTALL" : "RESET"/);
   assert.match(dialog, /Type \{expectedConfirmation\} to continue/);
   assert.match(dialog, /<details className="mt-3 rounded-xl border border-current\/10/);
   assert.match(dialog, /function ResetProgress/);
   assert.match(shell, /isExpectedRuntimeShutdownError/);
   assert.match(shell, /Uninstall finishing\. AgentOS is closing/);
+  assert.match(shell, /OpenClaw could not be found\./);
+  assert.match(shell, /A folder could not be safely verified and was preserved\./);
 });
