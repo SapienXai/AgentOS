@@ -58,6 +58,7 @@ type MissionDispatchCommandPayloadLike = {
 
 export type MissionDispatchPayload = {
   clientRequestId: string | null;
+  browserAccountId?: string | null;
   agentId: string;
   mission: string;
   routedMission: string;
@@ -101,6 +102,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
   return {
     id: dispatchId,
     clientRequestId: payload.clientRequestId,
+    browserAccountId: payload.browserAccountId ?? null,
     status: "queued",
     agentId: payload.agentId,
     // OpenClaw owns session identity. A dispatch record starts without a
@@ -991,9 +993,15 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
 
     const status = normalizeMissionDispatchStatus(parsed.status);
 
+    const browserBinding = normalizePersistedBrowserBinding(parsed.browserBinding);
+
     return {
       id: parsed.id,
       clientRequestId: typeof parsed.clientRequestId === "string" ? parsed.clientRequestId : null,
+      browserAccountId:
+        typeof parsed.browserAccountId === "string" && parsed.browserAccountId.trim()
+          ? parsed.browserAccountId.trim()
+          : browserBinding?.accountId ?? null,
       status,
       agentId: parsed.agentId,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,
@@ -1021,11 +1029,40 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
         observedAt: typeof parsed.observation?.observedAt === "string" ? parsed.observation.observedAt : null
       },
       result: isMissionCommandPayload(parsed.result) ? parsed.result : null,
-      error: typeof parsed.error === "string" ? parsed.error : null
+      error: typeof parsed.error === "string" ? parsed.error : null,
+      browserBinding
     } satisfies MissionDispatchRecord;
   } catch {
     return null;
   }
+}
+
+function normalizePersistedBrowserBinding(value: unknown): MissionDispatchRecordLike["browserBinding"] {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const status = candidate.status;
+  if (
+    typeof candidate.accountId !== "string" ||
+    !candidate.accountId.trim() ||
+    typeof candidate.profileName !== "string" ||
+    !candidate.profileName.trim() ||
+    (status !== "active" && status !== "released" && status !== "recovery_required") ||
+    typeof candidate.expiresAt !== "string" ||
+    !candidate.expiresAt.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    accountId: candidate.accountId.trim(),
+    profileName: candidate.profileName.trim(),
+    status,
+    expiresAt: candidate.expiresAt,
+    releasedAt: typeof candidate.releasedAt === "string" ? candidate.releasedAt : null
+  };
 }
 
 export function isMissionDispatchTerminalStatus(status: string) {

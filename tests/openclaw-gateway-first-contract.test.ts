@@ -23,9 +23,11 @@ import {
   OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS
 } from "@/lib/openclaw/client/gateway-compatibility";
 import {
-  abortMissionDispatchTask,
-  submitMissionDispatch
-} from "@/lib/openclaw/domains/mission-dispatch-workflow";
+  createMissionDispatchRecord,
+  readMissionDispatchRecordById,
+  writeMissionDispatchRecord,
+} from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
+import { abortMissionDispatchTask, submitMissionDispatch } from "@/lib/openclaw/domains/mission-dispatch-workflow";
 import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
@@ -350,6 +352,62 @@ test("mission dispatch converges duplicate client request identities", async () 
   assert.equal(calls, 1);
   assert.equal(replay.dispatchId, first.dispatchId);
   assert.equal(replay.meta?.idempotentReplay, true);
+});
+
+test("browser dispatch identity and binding survive durable reload and cannot be replayed for another account", async () => {
+  const record = createMissionDispatchRecord({
+    clientRequestId: "browser-request",
+    browserAccountId: "browser-account-1",
+    agentId: "agent-1",
+    mission: "Read notifications",
+    routedMission: "Read notifications",
+    thinking: "medium",
+    requestedModelId: null,
+    workspaceId: "workspace-1",
+    workspacePath: "/tmp/workspace-1",
+    outputDir: null,
+    outputDirRelative: null,
+    notesDirRelative: null
+  });
+  trackMissionDispatch(record.id);
+  await writeMissionDispatchRecord({
+    ...record,
+    browserBinding: {
+      accountId: "browser-account-1",
+      profileName: "acct-profile-1",
+      status: "active",
+      expiresAt: "2026-09-16T12:10:00.000Z",
+      releasedAt: null
+    }
+  });
+
+  const restored = await readMissionDispatchRecordById(record.id);
+  assert.equal(restored?.browserAccountId, "browser-account-1");
+  assert.deepEqual(restored?.browserBinding, {
+    accountId: "browser-account-1",
+    profileName: "acct-profile-1",
+    status: "active",
+    expiresAt: "2026-09-16T12:10:00.000Z",
+    releasedAt: null
+  });
+
+  const deps = {
+    getMissionControlSnapshot: async () => createSnapshot(),
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  };
+  await assert.rejects(
+    () => submitMissionDispatch({
+      mission: "Read notifications",
+      workspaceId: "workspace-1",
+      requestId: "browser-request",
+      browserAccount: {
+        accountId: "browser-account-2",
+        actorUserId: "actor-1"
+      }
+    }, deps),
+    /mission request identity is already in use/i
+  );
 });
 
 test("mission dispatch still attempts Gateway-first path when capabilities are unknown", async () => {

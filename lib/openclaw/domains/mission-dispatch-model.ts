@@ -25,6 +25,8 @@ type MissionCommandPayloadLike = {
 export type MissionDispatchRecordLike = {
   id: string;
   clientRequestId?: string | null;
+  /** The canonical browser account selected for this dispatch, when present. */
+  browserAccountId?: string | null;
   status: MissionDispatchStatus | string;
   agentId: string;
   sessionId: string | null;

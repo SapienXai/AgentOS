@@ -81,12 +81,20 @@ async function submitMissionDispatchOnce(
   if (requestId) {
     const existing = (await readMissionDispatchRecords()).find((record) => record.clientRequestId === requestId) ?? null;
     if (existing) {
+      const requestedBrowserAccountId = input.browserAccount?.accountId ?? null;
+      const existingBrowserAccountId = existing.browserAccountId ?? existing.browserBinding?.accountId ?? null;
       const visibleSnapshot = await deps.getMissionControlSnapshot({ includeHidden: false });
       const visible = Boolean(
         visibleSnapshot.agents.some((agent) => agent.id === existing.agentId) ||
         (existing.workspaceId && visibleSnapshot.workspaces.some((workspace) => workspace.id === existing.workspaceId))
       );
-      if (!visible || (input.workspaceId && input.workspaceId !== existing.workspaceId) || (input.agentId && input.agentId !== existing.agentId) || existing.mission !== mission) {
+      if (
+        !visible ||
+        (input.workspaceId && input.workspaceId !== existing.workspaceId) ||
+        (input.agentId && input.agentId !== existing.agentId) ||
+        existing.mission !== mission ||
+        existingBrowserAccountId !== requestedBrowserAccountId
+      ) {
         throw new Error("This mission request identity is already in use.");
       }
       return missionResponseFromDispatchRecord(existing);
@@ -164,6 +172,7 @@ async function submitMissionDispatchOnce(
 
   let dispatchRecord = createMissionDispatchRecord({
     clientRequestId: requestId,
+    browserAccountId: input.browserAccount?.accountId ?? null,
     agentId,
     mission,
     routedMission,
