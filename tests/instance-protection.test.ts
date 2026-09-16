@@ -138,6 +138,11 @@ test("lock preserves the current account and blocks other login or API access un
     unlockLockedInstance({ username: "member", password: "member password", rateKey: "member-unlock" }, env),
     /Invalid username or password/
   );
+  await assert.rejects(
+    unlockLockedInstance({ username: "operator", password: "definitely-not-the-password", rateKey: "operator-wrong-unlock" }, env),
+    /Invalid username or password/
+  );
+  assert.equal((await getInstanceProtectionStatus(null, env)).locked, true);
   const unlocked = await unlockLockedInstance({ username: "operator", password: "secure password", rateKey: "operator-unlock" }, env);
   assert.equal(unlocked.status.authenticated, true);
   assert.equal(unlocked.status.locked, false);

@@ -25,7 +25,7 @@ test("protected login title scales down fluidly on small screens", async () => {
   assert.match(source, /text-center text-white/);
   assert.match(source, /text-shadow:0_3px_18px_rgba\(0,0,0,\.55\)/);
   assert.match(source, />AgentOS is Locked<\/h1>/);
-  assert.match(source, />Authenticate to unlock this instance\.<\/p>/);
+  assert.match(source, /status\.locked \? "Re-authenticate the current account to continue\." : "Authenticate to unlock this instance\."/);
   assert.match(source, /Need a reset\? Run[\s\S]*agentos auth reset[\s\S]*<\/p>/);
 });
 
@@ -53,7 +53,7 @@ test("protected login composes a theme-aware glass access card", async () => {
   assert.match(styles, /backdrop-filter: blur\(4px\) saturate\(1\.2\)/);
   assert.match(source, /className="lock-glass-chip/);
   assert.match(styles, /\.lock-glass-chip \{/);
-  assert.match(source, /font-sans text-\[15px\] font-medium leading-5 tracking-\[-0\.02em\]">Operator access/);
+  assert.match(source, /status\.locked \? "Unlock this session" : "Operator access"/);
   assert.equal(source.match(/text-\[10px\] font-medium tracking-\[0\.16em\] text-muted-foreground/g)?.length, 2);
   assert.equal(source.match(/lock-glass-input h-11 rounded-xl[^\"]*text-\[15px\]/g)?.length, 2);
 });

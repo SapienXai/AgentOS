@@ -662,7 +662,7 @@ test("settings shell no longer hardcodes a light-only wrapper", () => {
     source,
     /className=\{cn\([\s\S]*?"mission-shell relative min-h-screen overflow-hidden"[\s\S]*?surfaceTheme === "light" && "mission-shell--light"/
   );
-  assert.match(source, /<SettingsControlCenter \{\.\.\.settingsPanelProps\} sidebarOpen=\{isSidebarOpen\} \/>/);
+  assert.match(source, /<SettingsControlCenter \{\.\.\.settingsPanelProps\} sidebarOpen=\{isSidebarOpen\} onToggleTheme=\{\(\) => setSurfaceTheme/);
   assert.match(source, /collapsed=\{!isSidebarOpen\}[\s\S]*?settingsMode/);
   assert.match(source, /isSidebarOpen \? "lg:left-\[316px\]" : "lg:left-\[80px\]"/);
 });
