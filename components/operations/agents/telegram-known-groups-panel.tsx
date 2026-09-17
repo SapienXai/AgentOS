@@ -38,11 +38,36 @@ type KnownGroupsResponse = {
   error?: string;
 };
 
+type AgentOption = {
+  id: string;
+  name?: string;
+  identityName?: string;
+  identity?: { name?: string };
+};
+
+type AgentsResponse = {
+  agents?: AgentOption[];
+};
+
 type TelegramGroupPermissionSummary = {
   access: { mode: "anyone" | "selected" | "nobody" };
   response: { requireMention: boolean };
   capabilities: { preset: "agent-defaults" | "chat-only" | "research" | "selected-tools" | "custom" };
 };
+
+type TelegramGroupBroadcast = {
+  agentIds: string[];
+  strategy: "parallel" | "sequential";
+  mentionGating: boolean;
+  maxRounds: number;
+  maxTurns: number | null;
+};
+
+type BroadcastResponse = {
+  broadcast: TelegramGroupBroadcast | null;
+};
+
+type BroadcastDraft = TelegramGroupBroadcast & { enabled: boolean };
 
 type AccountState = "ONLINE" | "READY" | "STOPPED" | "STARTING" | "NEEDS_SETUP" | "NEEDS_ATTENTION" | "STATUS_UNAVAILABLE" | string;
 
@@ -82,6 +107,10 @@ export function TelegramKnownGroupsPanel({
   const [candidates, setCandidates] = useState<TelegramKnownGroup[]>([]);
   const [permissionsGroup, setPermissionsGroup] = useState<TelegramKnownGroup | null>(null);
   const [permissionSummaries, setPermissionSummaries] = useState<Record<string, TelegramGroupPermissionSummary>>({});
+  const [broadcasts, setBroadcasts] = useState<Record<string, TelegramGroupBroadcast | null>>({});
+  const [broadcastDrafts, setBroadcastDrafts] = useState<Record<string, BroadcastDraft>>({});
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [routeDrafts, setRouteDrafts] = useState<Record<string, string>>({});
   const detectionControllerRef = useRef<AbortController | null>(null);
 
   const readKnownGroups = useCallback(async (signal?: AbortSignal) => {
@@ -104,18 +133,42 @@ export function TelegramKnownGroupsPanel({
       const payload = await readKnownGroups(signal);
       setGroups(payload.groups ?? []);
       setObservation(payload.observation ?? null);
+      setRouteDrafts((current) => {
+        const next = { ...current };
+        for (const group of payload.groups ?? []) {
+          const key = groupKey(group);
+          if (group.bindingMatch === "exact" && group.connectedAgentId) {
+            next[key] = group.connectedAgentId;
+          } else if (!group.configured && !next[key]) {
+            next[key] = agentId;
+          } else if (!(key in next)) {
+            next[key] = "";
+          }
+        }
+        return next;
+      });
       void Promise.all((payload.groups ?? []).map(async (group) => {
         try {
-          const response = await fetch(`/api/openclaw/channels/telegram-group-permissions?${new URLSearchParams({ accountId: group.accountId, groupId: group.chatId, agentId }).toString()}`, { cache: "no-store", signal });
-          if (!response.ok) return null;
-          return [groupKey(group), await response.json() as TelegramGroupPermissionSummary] as const;
+          const params = new URLSearchParams({ accountId: group.accountId, groupId: group.chatId });
+          const [permissionResponse, broadcastResponse] = await Promise.all([
+            fetch(`/api/openclaw/channels/telegram-group-permissions?${new URLSearchParams({ accountId: group.accountId, groupId: group.chatId, agentId }).toString()}`, { cache: "no-store", signal }),
+            fetch(`/api/openclaw/channels/telegram-group-broadcast?${params.toString()}`, { cache: "no-store", signal })
+          ]);
+          const permission = permissionResponse.ok ? await permissionResponse.json() as TelegramGroupPermissionSummary : null;
+          const broadcast = broadcastResponse.ok ? (await broadcastResponse.json() as BroadcastResponse).broadcast : null;
+          return [groupKey(group), { permission, broadcast }] as const;
         } catch (nextError) {
           if (isAbortError(nextError)) throw nextError;
           return null;
         }
       })).then((summaries) => {
         if (!signal?.aborted) {
-          setPermissionSummaries(Object.fromEntries(summaries.filter((summary): summary is readonly [string, TelegramGroupPermissionSummary] => Boolean(summary))));
+          const entries = summaries.filter((summary): summary is readonly [string, { permission: TelegramGroupPermissionSummary | null; broadcast: TelegramGroupBroadcast | null }] => Boolean(summary));
+          setPermissionSummaries(Object.fromEntries(entries.filter(([, value]) => Boolean(value.permission)).map(([key, value]) => [key, value.permission as TelegramGroupPermissionSummary])));
+          setBroadcasts(Object.fromEntries(entries.map(([key, value]) => [key, value.broadcast])));
+          setBroadcastDrafts(Object.fromEntries(entries.map(([key, value]) => [key, value.broadcast
+            ? { ...value.broadcast, enabled: true }
+            : defaultBroadcastDraft(agentId)])));
         }
       }).catch(() => {
         // Group discovery remains useful when the optional permissions summary is unavailable.
@@ -130,6 +183,23 @@ export function TelegramKnownGroupsPanel({
       setLoading(false);
     }
   }, [agentId, readKnownGroups]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/agents", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return await response.json() as AgentsResponse;
+      })
+      .then((payload) => {
+        if (!payload || controller.signal.aborted) return;
+        setAgents(payload.agents ?? []);
+      })
+      .catch(() => {
+        // The current agent remains available if the optional agent directory is unavailable.
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -148,18 +218,18 @@ export function TelegramKnownGroupsPanel({
     setFindOpen(false);
   }, []);
 
-  const connectGroup = useCallback(async (group: Pick<TelegramKnownGroup, "chatId">) => {
+  const connectGroup = useCallback(async (group: Pick<TelegramKnownGroup, "accountId" | "chatId">, targetAgentId = agentId) => {
     const nextGroupId = group.chatId.trim();
-    if (!nextGroupId || !accountId || !agentId) return;
+    if (!nextGroupId || !group.accountId || !targetAgentId) return;
 
-    const key = `${accountId}:${nextGroupId}`;
+    const key = `${group.accountId}:${nextGroupId}`;
     setActionKey(key);
     setError(null);
     try {
       const response = await fetch("/api/openclaw/channels/telegram-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, groupId: nextGroupId, agentId })
+        body: JSON.stringify({ accountId: group.accountId, groupId: nextGroupId, agentId: targetAgentId })
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok || payload.error) throw new Error(payload.error ?? "The Telegram group could not be connected.");
@@ -169,7 +239,7 @@ export function TelegramKnownGroupsPanel({
       setAdvancedOpen(false);
       setCandidates((current) => current.filter((candidate) => candidate.chatId !== nextGroupId));
       toast.success("Telegram group connected.", {
-        description: `OpenClaw confirmed the group for ${agentLabel}.`
+        description: `OpenClaw confirmed the group for ${agentName(targetAgentId, agents, targetAgentId === agentId ? agentLabel : targetAgentId)}.`
       });
     } catch (nextError) {
       toast.error("Telegram group connection failed.", {
@@ -178,7 +248,98 @@ export function TelegramKnownGroupsPanel({
     } finally {
       setActionKey(null);
     }
-  }, [accountId, agentId, agentLabel, loadGroups, onConnected]);
+  }, [agentId, agentLabel, agents, loadGroups, onConnected]);
+
+  const updateGroupRoute = useCallback(async (group: TelegramKnownGroup) => {
+    const key = groupKey(group);
+    const targetAgentId = routeDrafts[key] || null;
+    if (group.configured === false) {
+      if (!targetAgentId) return;
+      await connectGroup(group, targetAgentId);
+      return;
+    }
+
+    setActionKey(key);
+    setError(null);
+    try {
+      const response = await fetch("/api/openclaw/channels/route-binding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "telegram",
+          accountId: group.accountId,
+          kind: "group",
+          routeId: group.chatId,
+          parentRouteId: null,
+          metadata: { nativePeerKind: "group" },
+          agentId: targetAgentId
+        })
+      });
+      const payload = await response.json() as {
+        error?: string;
+        pending?: boolean;
+        verification?: { verified?: boolean; effectiveAgentId?: string | null };
+      };
+      if (!response.ok || payload.error) throw new Error(payload.error ?? "The Telegram route could not be updated.");
+
+      await Promise.all([loadGroups(), onConnected?.()]);
+      if (payload.verification?.verified) {
+        toast.success(targetAgentId ? "Telegram route updated." : "Telegram route removed.", {
+          description: targetAgentId
+            ? `${group.title} now sends inbound messages to ${agentName(targetAgentId, agents, targetAgentId)}.`
+            : `${group.title} now follows its OpenClaw account/default route.`
+        });
+      } else {
+        toast.warning("Telegram route change is pending verification.", {
+          description: payload.pending
+            ? "OpenClaw accepted the change, but the live route has not caught up yet."
+            : "Refresh the group list to confirm the effective route."
+        });
+      }
+    } catch (nextError) {
+      toast.error("Telegram route update failed.", {
+        description: nextError instanceof Error ? nextError.message : "OpenClaw could not update this group route."
+      });
+    } finally {
+      setActionKey(null);
+    }
+  }, [agents, connectGroup, loadGroups, onConnected, routeDrafts]);
+
+  const updateGroupBroadcast = useCallback(async (group: TelegramKnownGroup) => {
+    const key = groupKey(group);
+    const draft = broadcastDrafts[key] ?? defaultBroadcastDraft(agentId);
+    setActionKey(key);
+    setError(null);
+    try {
+      const response = await fetch("/api/openclaw/channels/telegram-group-broadcast", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: group.accountId,
+          groupId: group.chatId,
+          agentIds: draft.enabled ? draft.agentIds : [],
+          strategy: draft.strategy,
+          mentionGating: draft.mentionGating,
+          maxRounds: draft.maxRounds,
+          maxTurns: draft.maxTurns
+        })
+      });
+      const payload = await response.json() as { error?: string; broadcast?: TelegramGroupBroadcast | null };
+      if (!response.ok || payload.error) throw new Error(payload.error ?? "The Telegram broadcast group could not be updated.");
+      await Promise.all([loadGroups(), onConnected?.()]);
+      toast.success(draft.enabled ? "Broadcast team saved." : "Broadcast team removed.", {
+        description: draft.enabled
+          ? `${group.title} will fan out to ${draft.agentIds.length} selected agents.`
+          : `${group.title} now uses its single-agent route.`
+      });
+    } catch (nextError) {
+      toast.error("Broadcast team update failed.", {
+        description: nextError instanceof Error ? nextError.message : "OpenClaw could not update this broadcast group."
+      });
+    } finally {
+      setActionKey(null);
+    }
+  }, [agentId, broadcastDrafts, loadGroups, onConnected]);
 
   const startDetection = useCallback(() => {
     if (accountState !== "ONLINE") {
@@ -235,7 +396,7 @@ export function TelegramKnownGroupsPanel({
 
   const manualConnect = () => {
     if (!manualGroupId.trim()) return;
-    void connectGroup({ chatId: manualGroupId });
+    void connectGroup({ accountId, chatId: manualGroupId });
   };
 
   const online = accountState === "ONLINE";
@@ -246,10 +407,14 @@ export function TelegramKnownGroupsPanel({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">Groups</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">Known groups from OpenClaw configuration, routing, history, and observed sessions.</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Each group has one inbound OpenClaw route. See the effective agent, then assign, reassign, or remove that route here.</p>
         </div>
-        <Badge variant="muted" className="h-5 shrink-0 rounded-full px-2 text-[9px]">Known groups</Badge>
+        <Badge variant="muted" className="h-5 shrink-0 rounded-full px-2 text-[9px]">One agent per group</Badge>
       </div>
+
+      {!loading && !error && visibleGroups.length > 0 ? <div className="rounded-lg border border-primary/15 bg-primary/[0.04] px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
+        <span className="font-medium text-foreground">How routing works:</span> an explicit group route wins over the account/default route. Removing it does not block the group; it returns the group to OpenClaw&apos;s inherited/default route.
+      </div> : null}
 
       {loading ? <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-xs text-muted-foreground" role="status"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Reading OpenClaw group state…</div> : null}
       {error ? <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100" role="alert"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</div> : null}
@@ -267,7 +432,23 @@ export function TelegramKnownGroupsPanel({
       {!loading && visibleGroups.length > 0 ? (
         <div className="divide-y divide-border rounded-lg border border-border">
           {findOpen && candidates.length > 0 ? <div className="flex items-center justify-between gap-2 bg-primary/5 px-3 py-2.5"><p className="text-xs font-medium">Detected groups</p><Button type="button" variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[11px]" onClick={cancelDetection}>Close</Button></div> : null}
-          {visibleGroups.map((group) => <KnownGroupRow key={groupKey(group)} group={group} summary={permissionSummaries[groupKey(group)]} currentAgentId={agentId} actionKey={actionKey} onConnect={() => void connectGroup(group)} onOpenPermissions={() => setPermissionsGroup(group)} />)}
+          {visibleGroups.map((group) => <KnownGroupRow
+            key={groupKey(group)}
+            group={group}
+            summary={permissionSummaries[groupKey(group)]}
+            broadcast={broadcasts[groupKey(group)] ?? null}
+            broadcastDraft={broadcastDrafts[groupKey(group)] ?? defaultBroadcastDraft(agentId)}
+            currentAgentId={agentId}
+            agents={agents}
+            routeDraft={routeDrafts[groupKey(group)] ?? ""}
+            actionKey={actionKey}
+            onRouteDraftChange={(nextAgentId) => setRouteDrafts((current) => ({ ...current, [groupKey(group)]: nextAgentId }))}
+            onSaveRoute={() => void updateGroupRoute(group)}
+            onBroadcastDraftChange={(nextDraft) => setBroadcastDrafts((current) => ({ ...current, [groupKey(group)]: nextDraft }))}
+            onSaveBroadcast={() => void updateGroupBroadcast(group)}
+            onConnect={() => void connectGroup(group)}
+            onOpenPermissions={() => setPermissionsGroup(group)}
+          />)}
         </div>
       ) : null}
 
@@ -315,15 +496,31 @@ export function TelegramKnownGroupsPanel({
 function KnownGroupRow({
   group,
   summary,
+  broadcast,
+  broadcastDraft,
   currentAgentId,
+  agents,
+  routeDraft,
   actionKey,
+  onRouteDraftChange,
+  onSaveRoute,
+  onBroadcastDraftChange,
+  onSaveBroadcast,
   onConnect,
   onOpenPermissions
 }: {
   group: TelegramKnownGroup;
   summary?: TelegramGroupPermissionSummary;
+  broadcast: TelegramGroupBroadcast | null;
+  broadcastDraft: BroadcastDraft;
   currentAgentId: string;
+  agents: AgentOption[];
+  routeDraft: string;
   actionKey: string | null;
+  onRouteDraftChange: (agentId: string) => void;
+  onSaveRoute: () => void;
+  onBroadcastDraftChange: (draft: BroadcastDraft) => void;
+  onSaveBroadcast: () => void;
   onConnect: () => void;
   onOpenPermissions: () => void;
 }) {
@@ -331,29 +528,99 @@ function KnownGroupRow({
   const explicitBinding = group.bindingMatch === "exact";
   const inheritedBinding = group.bindingMatch === "inherited" || group.bindingMatch === "fallback";
   const currentAgent = explicitBinding && group.connectedAgentId === currentAgentId;
-  const inheritedToCurrentAgent = inheritedBinding && group.connectedAgentId === currentAgentId;
-  const otherAgent = explicitBinding && Boolean(group.connectedAgentId && !currentAgent);
-  const actionLabel = group.historical || !group.configured ? "Add & connect" : "Connect";
+  const effectiveAgent = group.connectedAgentId ? agentName(group.connectedAgentId, agents, group.connectedAgentId) : "OpenClaw default";
+  const broadcastChanged = broadcastDraft.enabled !== Boolean(broadcast)
+    || (broadcastDraft.enabled && !broadcastDraftsEqual(broadcastDraft, broadcast));
+  const draftChanged = explicitBinding
+    ? routeDraft !== (group.connectedAgentId ?? "")
+    : Boolean(routeDraft);
+  const hasConfiguredRoute = Boolean(group.configured);
+  const saveLabel = !hasConfiguredRoute
+    ? "Add & connect"
+    : routeDraft
+      ? explicitBinding ? "Save assignment" : "Assign agent"
+      : explicitBinding ? "Remove route" : "Keep inherited";
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-3">
-      <button type="button" className="min-w-0 flex-1 rounded-lg text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onOpenPermissions} aria-label={`Open permissions for ${group.title}`}>
-        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold" title={group.title}>{group.title}</span><ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></span>
-        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-          <span className="font-mono">{group.chatId}</span>
-          {group.historical ? <span>Previously used</span> : null}
-          {group.lastObservedAt ? <span>Observed by OpenClaw</span> : null}
-          {inheritedBinding ? <span>Inherited from {group.connectedAgentId ?? "OpenClaw default"}</span> : null}
-          <span>{summary ? `${accessLabel(summary.access.mode)} · ${summary.response.requireMention ? "Mention required" : "Mentions optional"} · ${capabilityLabel(summary.capabilities.preset)}` : "Permissions"}</span>
-        </span>
-      </button>
-      <div className="flex shrink-0 items-center gap-2">
-        {group.bindingConflict ? <Badge variant="warning" className="h-6 rounded-md px-2 text-[10px]">Binding conflict</Badge> : null}
-        {!group.bindingConflict && currentAgent ? <Badge variant="success" className="h-6 rounded-md px-2 text-[10px]">Connected</Badge> : null}
-        {!group.bindingConflict && inheritedToCurrentAgent ? <Badge variant="muted" className="h-6 rounded-md px-2 text-[10px]">Inherited</Badge> : null}
-        {!group.bindingConflict && otherAgent ? <span className="max-w-[150px] truncate text-right text-[10px] text-muted-foreground" title={group.connectedAgentId ?? undefined}>Connected to {group.connectedAgentId}</span> : null}
-        {!group.bindingConflict && inheritedBinding ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : inheritedToCurrentAgent ? "Make explicit" : actionLabel}</Button> : null}
-        {!group.bindingConflict && !group.connectedAgentId && !inheritedBinding ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : actionLabel}</Button> : null}
+    <div className="space-y-3 px-3 py-3">
+      <div className="flex items-start gap-3">
+        <button type="button" className="min-w-0 flex-1 rounded-lg text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onOpenPermissions} aria-label={`Open permissions for ${group.title}`}>
+          <span className="flex items-center gap-1.5"><span className="truncate text-xs font-semibold" title={group.title}>{group.title}</span><ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></span>
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+            <span className="font-mono">{group.chatId}</span>
+            {group.historical ? <span>Previously used</span> : null}
+            {group.lastObservedAt ? <span>Observed by OpenClaw</span> : null}
+            <span>{summary ? `${accessLabel(summary.access.mode)} · ${summary.response.requireMention ? "Mention required" : "Mentions optional"} · ${capabilityLabel(summary.capabilities.preset)}` : "Open permissions"}</span>
+          </span>
+        </button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          {group.bindingConflict ? <Badge variant="warning" className="h-6 rounded-md px-2 text-[10px]">Binding conflict</Badge> : null}
+          {!group.bindingConflict && broadcast ? <Badge variant="success" className="h-6 rounded-md px-2 text-[10px]">Broadcast · {broadcast.agentIds.length}</Badge> : null}
+          {!group.bindingConflict && !broadcast && explicitBinding ? <Badge variant={currentAgent ? "success" : "muted"} className="h-6 rounded-md px-2 text-[10px]">Explicit route</Badge> : null}
+          {!group.bindingConflict && !broadcast && inheritedBinding ? <Badge variant="muted" className="h-6 rounded-md px-2 text-[10px]">Inherited</Badge> : null}
+          {!group.bindingConflict && !broadcast && !explicitBinding && !inheritedBinding ? <Badge variant="muted" className="h-6 rounded-md px-2 text-[10px]">Unassigned</Badge> : null}
+        </div>
+      </div>
+
+      <div className="grid gap-2 rounded-lg border border-border bg-muted/[0.08] p-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <label className="min-w-0 space-y-1.5 text-[10px] font-medium text-muted-foreground" htmlFor={`telegram-agent-${key}`}>
+          <span className="flex flex-wrap items-center gap-1.5"><span>{broadcastDraft.enabled ? "Fallback route" : "Inbound agent"}</span><span className="font-normal">{broadcastDraft.enabled ? "Broadcast takes precedence" : <>Effective now: <span className="text-foreground">{effectiveAgent}</span>{inheritedBinding ? " · inherited/default" : ""}</>}</span></span>
+          <select
+            id={`telegram-agent-${key}`}
+            value={routeDraft}
+            onChange={(event) => onRouteDraftChange(event.target.value)}
+            disabled={Boolean(group.bindingConflict) || actionKey === key}
+            className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs font-normal text-foreground"
+          >
+            {inheritedBinding ? <option value="">No explicit override · uses {effectiveAgent}</option> : <option value="">No explicit route</option>}
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agentName(agent.id, agents, agent.id)}{agent.id === currentAgentId ? " · current agent" : ""}</option>)}
+            {!agents.some((agent) => agent.id === currentAgentId) ? <option value={currentAgentId}>{currentAgentId} · current agent</option> : null}
+          </select>
+        </label>
+        <div className="flex items-center justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-[11px]" onClick={onOpenPermissions}>Permissions</Button>
+          {group.bindingConflict ? null : !hasConfiguredRoute && !routeDraft ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-[11px]" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : "Add & connect"}</Button> : <Button type="button" size="sm" variant={routeDraft ? "default" : "destructive"} className="h-8 rounded-lg px-2.5 text-[11px]" onClick={onSaveRoute} disabled={!draftChanged || actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Saving…" : saveLabel}</Button>}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-border bg-background/60 p-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <label className="min-w-0 space-y-1.5 text-[10px] font-medium text-muted-foreground" htmlFor={`telegram-delivery-${key}`}>
+            <span>Delivery mode</span>
+            <select
+              id={`telegram-delivery-${key}`}
+              value={broadcastDraft.enabled ? "broadcast" : "single"}
+              onChange={(event) => onBroadcastDraftChange({
+                ...broadcastDraft,
+                enabled: event.target.value === "broadcast",
+                agentIds: event.target.value === "broadcast" && broadcastDraft.agentIds.length === 0 ? [currentAgentId] : broadcastDraft.agentIds
+              })}
+              disabled={Boolean(group.bindingConflict) || actionKey === key}
+              className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs font-normal text-foreground sm:w-[260px]"
+            >
+              <option value="single">Single agent route</option>
+              <option value="broadcast">Broadcast to an agent team</option>
+            </select>
+          </label>
+          <Button type="button" size="sm" variant={broadcastDraft.enabled ? "default" : "secondary"} className="h-8 rounded-lg px-2.5 text-[11px]" onClick={onSaveBroadcast} disabled={Boolean(group.bindingConflict) || !broadcastChanged || (broadcastDraft.enabled && broadcastDraft.agentIds.length === 0) || actionKey === key}>
+            {actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            {actionKey === key ? "Saving…" : broadcastDraft.enabled ? "Save broadcast team" : "Remove broadcast"}
+          </Button>
+        </div>
+        {broadcastDraft.enabled ? <>
+          <p className="text-[10px] leading-4 text-muted-foreground">OpenClaw runs the selected agents for the same Telegram message. The ordinary route above remains the fallback/admission route.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {agents.map((agent) => <label key={agent.id} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs", broadcastDraft.agentIds.includes(agent.id) ? "border-primary bg-primary/5" : "border-border bg-muted/10")}>
+              <input type="checkbox" checked={broadcastDraft.agentIds.includes(agent.id)} onChange={() => onBroadcastDraftChange({ ...broadcastDraft, agentIds: broadcastDraft.agentIds.includes(agent.id) ? broadcastDraft.agentIds.filter((id) => id !== agent.id) : [...broadcastDraft.agentIds, agent.id] })} className="accent-[hsl(var(--primary))]" />
+              <span className="min-w-0 truncate">{agentName(agent.id, agents, agent.id)}{agent.id === currentAgentId ? <span className="ml-1 text-[10px] text-muted-foreground">(current)</span> : null}</span>
+            </label>)}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground"><span>Processing (all broadcast groups)</span><select value={broadcastDraft.strategy} onChange={(event) => onBroadcastDraftChange({ ...broadcastDraft, strategy: event.target.value as TelegramGroupBroadcast["strategy"] })} className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"><option value="parallel">Parallel</option><option value="sequential">Sequential</option></select></label>
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground"><input type="checkbox" checked={broadcastDraft.mentionGating} onChange={(event) => onBroadcastDraftChange({ ...broadcastDraft, mentionGating: event.target.checked })} className="accent-[hsl(var(--primary))]" />Only mentioned agents when named</label>
+          </div>
+          {agents.length === 0 ? <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-200">The agent directory is unavailable. Refresh after OpenClaw exposes the configured agents.</p> : null}
+        </> : <p className="text-[10px] leading-4 text-muted-foreground">One agent receives this group through the route above. Choose Broadcast to let multiple configured agents respond.</p>}
       </div>
     </div>
   );
@@ -369,6 +636,32 @@ function accessLabel(mode: TelegramGroupPermissionSummary["access"]["mode"]) {
 
 function capabilityLabel(preset: TelegramGroupPermissionSummary["capabilities"]["preset"]) {
   return preset === "agent-defaults" ? "Agent defaults" : preset === "chat-only" ? "Chat only" : preset === "selected-tools" ? "Selected tools" : preset === "research" ? "Research" : "Custom";
+}
+
+function agentName(agentId: string, agents: AgentOption[], fallback: string) {
+  const agent = agents.find((entry) => entry.id === agentId);
+  return agent?.name || agent?.identityName || agent?.identity?.name || fallback;
+}
+
+function defaultBroadcastDraft(agentId: string): BroadcastDraft {
+  return {
+    agentIds: agentId ? [agentId] : [],
+    enabled: false,
+    strategy: "parallel",
+    mentionGating: true,
+    maxRounds: 1,
+    maxTurns: null
+  };
+}
+
+function broadcastDraftsEqual(left: BroadcastDraft, right: TelegramGroupBroadcast | null) {
+  if (!right) return false;
+  return left.agentIds.length === right.agentIds.length
+    && left.agentIds.every((agentId, index) => agentId === right.agentIds[index])
+    && left.strategy === right.strategy
+    && left.mentionGating === right.mentionGating
+    && left.maxRounds === right.maxRounds
+    && left.maxTurns === right.maxTurns;
 }
 
 function isAbortError(error: unknown) {

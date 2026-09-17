@@ -559,7 +559,7 @@ export function AgentChannelsSection({
       {summaryError ? <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100" role="alert">{summaryError}</div> : null}
       {summary?.diagnostics?.topicConfig === "unavailable" ? <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-100">Telegram topic state could not be read. Group and account bindings remain visible; refresh after OpenClaw is available.</div> : null}
       {loadingSummary ? <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Reading OpenClaw route state…</div> : null}
-      {showSummaryEmpty ? <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs leading-5 text-muted-foreground">No channels are connected yet. Connect a group or channel to send its messages to this agent.</div> : null}
+      {showSummaryEmpty ? <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs leading-5 text-muted-foreground">This agent has no direct routes yet. For Telegram, open Add group below to see every known group, the agent currently receiving it, and the reassignment or removal controls.</div> : null}
 
       {summary?.routes.length ? (
         <div className="grid gap-2 sm:grid-cols-2">
