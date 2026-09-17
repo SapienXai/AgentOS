@@ -17,6 +17,8 @@ type TelegramKnownGroup = {
   titleSource: "observed" | "stored" | "chat-id";
   configured: boolean;
   connectedAgentId: string | null;
+  bindingMatch?: "exact" | "inherited" | "fallback" | "shadowed" | "overlapping" | "ambiguous-edit" | "none" | "conflict" | null;
+  bindingSource?: "openclaw" | "agentos-compatibility" | null;
   historicalAgentId: string | null;
   source: "openclaw-config" | "openclaw-binding" | "agentos-registry" | "openclaw-session";
   sources: Array<"openclaw-config" | "openclaw-binding" | "agentos-registry" | "openclaw-session">;
@@ -326,8 +328,11 @@ function KnownGroupRow({
   onOpenPermissions: () => void;
 }) {
   const key = groupKey(group);
-  const currentAgent = group.connectedAgentId === currentAgentId;
-  const otherAgent = Boolean(group.connectedAgentId && !currentAgent);
+  const explicitBinding = group.bindingMatch === "exact";
+  const inheritedBinding = group.bindingMatch === "inherited" || group.bindingMatch === "fallback";
+  const currentAgent = explicitBinding && group.connectedAgentId === currentAgentId;
+  const inheritedToCurrentAgent = inheritedBinding && group.connectedAgentId === currentAgentId;
+  const otherAgent = explicitBinding && Boolean(group.connectedAgentId && !currentAgent);
   const actionLabel = group.historical || !group.configured ? "Add & connect" : "Connect";
 
   return (
@@ -338,14 +343,17 @@ function KnownGroupRow({
           <span className="font-mono">{group.chatId}</span>
           {group.historical ? <span>Previously used</span> : null}
           {group.lastObservedAt ? <span>Observed by OpenClaw</span> : null}
+          {inheritedBinding ? <span>Inherited from {group.connectedAgentId ?? "OpenClaw default"}</span> : null}
           <span>{summary ? `${accessLabel(summary.access.mode)} · ${summary.response.requireMention ? "Mention required" : "Mentions optional"} · ${capabilityLabel(summary.capabilities.preset)}` : "Permissions"}</span>
         </span>
       </button>
       <div className="flex shrink-0 items-center gap-2">
         {group.bindingConflict ? <Badge variant="warning" className="h-6 rounded-md px-2 text-[10px]">Binding conflict</Badge> : null}
         {!group.bindingConflict && currentAgent ? <Badge variant="success" className="h-6 rounded-md px-2 text-[10px]">Connected</Badge> : null}
+        {!group.bindingConflict && inheritedToCurrentAgent ? <Badge variant="muted" className="h-6 rounded-md px-2 text-[10px]">Inherited</Badge> : null}
         {!group.bindingConflict && otherAgent ? <span className="max-w-[150px] truncate text-right text-[10px] text-muted-foreground" title={group.connectedAgentId ?? undefined}>Connected to {group.connectedAgentId}</span> : null}
-        {!group.bindingConflict && !group.connectedAgentId ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : actionLabel}</Button> : null}
+        {!group.bindingConflict && inheritedBinding ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : inheritedToCurrentAgent ? "Make explicit" : actionLabel}</Button> : null}
+        {!group.bindingConflict && !group.connectedAgentId && !inheritedBinding ? <Button type="button" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onConnect} disabled={actionKey === key}>{actionKey === key ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{actionKey === key ? "Connecting…" : actionLabel}</Button> : null}
       </div>
     </div>
   );
