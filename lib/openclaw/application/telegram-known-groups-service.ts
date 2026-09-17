@@ -9,6 +9,7 @@ import {
   readNativeRouteBindings,
   readOpenClawDefaultAgentId,
   resolveChannelRouteBinding,
+  type ChannelRouteBindingMatch,
   type OpenClawNativeRouteBinding
 } from "@/lib/openclaw/application/channel-route-binding-service";
 import { buildChannelRouteIdentity } from "@/lib/openclaw/domains/channel-center";
@@ -33,6 +34,9 @@ export type TelegramKnownGroup = {
   titleSource: "observed" | "stored" | "chat-id";
   configured: boolean;
   connectedAgentId: string | null;
+  /** Effective OpenClaw route match; inherited/default is not a concrete group ownership claim. */
+  bindingMatch?: ChannelRouteBindingMatch | null;
+  bindingSource?: "openclaw" | "agentos-compatibility" | null;
   historicalAgentId: string | null;
   source: TelegramKnownGroupSource;
   sources: TelegramKnownGroupSource[];
@@ -160,7 +164,11 @@ export async function listTelegramKnownGroups(input: {
     return {
       ...group,
       connectedAgentId,
-      connectable: !bindingConflict && !connectedAgentId,
+      bindingMatch: resolution.source === "unknown" ? null : resolution.match,
+      bindingSource: resolution.source === "unknown" ? null : resolution.source,
+      // A broad route can be overridden with an exact group binding. An exact
+      // binding owned by another agent still requires an explicit reassignment.
+      connectable: !bindingConflict && (resolution.effectiveMatch !== "exact" || !connectedAgentId),
       bindingConflict
     } satisfies TelegramKnownGroup;
   });

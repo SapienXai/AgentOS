@@ -311,7 +311,11 @@ async function assertTelegramRouteCanBeClaimed(
     });
   }
 
-  if (resolution.agentId && resolution.agentId !== agentId && resolution.effectiveMatch !== "fallback") {
+  // A broad account/channel/default route is a fallback, not ownership of the
+  // concrete group. An exact peer binding may safely override it. Only refuse
+  // to claim a group when OpenClaw already has an exact native peer binding for
+  // another agent.
+  if (resolution.agentId && resolution.agentId !== agentId && resolution.effectiveMatch === "exact") {
     throw new TelegramGroupBindingConflictError({
       route,
       existingAgentId: resolution.agentId,

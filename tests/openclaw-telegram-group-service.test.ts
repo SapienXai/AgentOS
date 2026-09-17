@@ -188,6 +188,44 @@ test("does not silently steal a Telegram route owned by another agent", async ()
   assert.deepEqual(writes, []);
 });
 
+test("overrides a broad Telegram route with an exact group binding", async () => {
+  const { adapter, config, writes } = createConfigAdapter({
+    bindings: [{
+      agentId: "main",
+      match: { channel: "telegram", accountId: "*" }
+    }],
+    channels: {
+      telegram: {
+        groups: { "-1001000000008": { requireMention: true } }
+      }
+    }
+  });
+
+  const result = await registerAndConnectTelegramGroup({
+    accountId: "default",
+    groupId: "-1001000000008",
+    agentId: "workspace-builder",
+    adapter
+  });
+
+  assert.equal(result.bindingVerification.verified, true);
+  assert.deepEqual(writes.map((write) => write.path), ["bindings"]);
+  assert.deepEqual(config.bindings, [
+    {
+      agentId: "main",
+      match: { channel: "telegram", accountId: "*" }
+    },
+    {
+      agentId: "workspace-builder",
+      match: {
+        channel: "telegram",
+        accountId: "default",
+        peer: { kind: "group", id: "-1001000000008" }
+      }
+    }
+  ]);
+});
+
 test("connects a newly registered group with requireMention enabled and verifies native binding", async () => {
   const { adapter, config, writes } = createConfigAdapter({
     bindings: [],
