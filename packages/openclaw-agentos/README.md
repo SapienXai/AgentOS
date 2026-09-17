@@ -1,9 +1,5 @@
 <div align="center">
 
-  <a href="https://agentos.sapienx.app/">
-    <img src="https://raw.githubusercontent.com/SapienXai/AgentOS/main/public/assets/logo.webp" alt="AgentOS logo" width="84" />
-  </a>
-
   <h1>Run AgentOS from OpenClaw.</h1>
 
   <p>

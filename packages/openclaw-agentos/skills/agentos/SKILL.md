@@ -7,10 +7,6 @@ metadata: { "openclaw": { "emoji": "🧭" } }
 
 <div align="center">
 
-  <a href="https://agentos.sapienx.app/">
-    <img src="https://raw.githubusercontent.com/SapienXai/AgentOS/main/public/assets/logo.webp" alt="AgentOS logo" width="72" />
-  </a>
-
   <h1>AgentOS</h1>
 
   <p>

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Remove the oversized duplicate logo from the ClawHub plugin and skill headers.
+
 ## 0.1.1
 
 - Refresh the ClawHub plugin presentation with product visuals and clearer operator pathways.
