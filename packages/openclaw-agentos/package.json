@@ -1,0 +1,59 @@
+{
+  "name": "@sapienx/openclaw-agentos",
+  "version": "0.1.0",
+  "description": "Official OpenClaw CLI bridge for the AgentOS control plane",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SapienXai/AgentOS.git",
+    "directory": "packages/openclaw-agentos"
+  },
+  "homepage": "https://agentos.sapienx.app/",
+  "bugs": {
+    "url": "https://github.com/SapienXai/AgentOS/issues"
+  },
+  "engines": {
+    "node": ">=24.16.0 <25 || >=26.1.0"
+  },
+  "files": [
+    "dist/",
+    "openclaw.plugin.json",
+    "README.md",
+    "CHANGELOG.md",
+    "skills/"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "validate": "clawhub package validate . --openclaw-version 2026.9.4 --json",
+    "test": "pnpm build && node --test tests/*.test.mjs",
+    "pack:clawhub": "pnpm build && pnpm validate && node scripts/pack-clawhub.mjs"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.9.4 <2027"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "commander": "15.0.0",
+    "openclaw": "2026.9.4",
+    "typescript": "^5.8.2"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.9.4",
+      "minGatewayVersion": "2026.9.4"
+    },
+    "build": {
+      "openclawVersion": "2026.9.4",
+      "pluginSdkVersion": "2026.9.4"
+    }
+  }
+}

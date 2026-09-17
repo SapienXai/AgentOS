@@ -1,11 +1,16 @@
 .DS_Store
 .env*.local
 /node_modules
+node_modules/
 /.next
 /.mission-control
 /.openclaw-release-intake
 /packages/agentos/bundle
 /packages/agentos/*.tgz
+/packages/openclaw-agentos/dist/
+/packages/openclaw-agentos/*.tgz
+/packages/openclaw-agentos/.clawhub-reports/
+/packages/openclaw-agentos/reports/
 /apps/desktop/runtime
 /apps/desktop/bootstrap/assets
 /.desktop-cache
