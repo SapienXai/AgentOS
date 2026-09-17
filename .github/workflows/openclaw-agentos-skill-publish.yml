@@ -14,7 +14,7 @@ permissions:
 jobs:
   dry-run:
     if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@7c81d2c2656faf9395b779555d301c8b15a9086e
     with:
       skill_path: packages/openclaw-agentos/skills/agentos
       owner: sapienx
@@ -22,7 +22,7 @@ jobs:
 
   publish:
     if: github.event_name == 'workflow_dispatch'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@7c81d2c2656faf9395b779555d301c8b15a9086e
     with:
       skill_path: packages/openclaw-agentos/skills/agentos
       owner: sapienx
