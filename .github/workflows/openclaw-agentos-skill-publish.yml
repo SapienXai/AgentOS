@@ -1,0 +1,31 @@
+name: Publish AgentOS skill
+
+on:
+  pull_request:
+    paths:
+      - "packages/openclaw-agentos/skills/agentos/**"
+      - ".github/workflows/openclaw-agentos-skill-publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      skill_path: packages/openclaw-agentos/skills/agentos
+      owner: sapienx
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      skill_path: packages/openclaw-agentos/skills/agentos
+      owner: sapienx
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
