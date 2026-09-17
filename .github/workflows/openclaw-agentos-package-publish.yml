@@ -1,0 +1,82 @@
+name: Publish AgentOS OpenClaw plugin
+
+on:
+  pull_request:
+    paths:
+      - "packages/openclaw-agentos/**"
+      - ".github/workflows/openclaw-agentos-package-publish.yml"
+  workflow_dispatch:
+  push:
+    tags:
+      - "openclaw-agentos-v*"
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+jobs:
+  build-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build plugin
+        run: pnpm --filter @sapienx/openclaw-agentos build
+
+      - name: Install pinned ClawHub CLI
+        run: npm install --global clawhub@0.23.3
+
+      - name: Validate plugin
+        run: pnpm --filter @sapienx/openclaw-agentos validate
+
+      - name: Create ClawPack artifact
+        run: |
+          mkdir -p clawhub-package-artifact
+          clawhub package pack "$GITHUB_WORKSPACE/packages/openclaw-agentos" \
+            --pack-destination "$GITHUB_WORKSPACE/clawhub-package-artifact" \
+            --json
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: openclaw-agentos-clawpack
+          path: clawhub-package-artifact/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  dry-run:
+    if: github.event_name == 'pull_request'
+    needs: build-package
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.3
+    with:
+      source_path: packages/openclaw-agentos
+      package_artifact_name: openclaw-agentos-clawpack
+      family: code-plugin
+      owner: sapienx
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/openclaw-agentos-v')
+    needs: build-package
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.3
+    with:
+      source_path: packages/openclaw-agentos
+      package_artifact_name: openclaw-agentos-clawpack
+      family: code-plugin
+      owner: sapienx
+      dry_run: false
+      wait_for_publication: true
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}

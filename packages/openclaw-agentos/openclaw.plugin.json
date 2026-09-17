@@ -1,0 +1,24 @@
+{
+  "id": "agentos",
+  "name": "AgentOS",
+  "description": "Open the AgentOS control plane and inspect its local OpenClaw runtime.",
+  "version": "0.1.2",
+  "activation": {
+    "onStartup": false,
+    "onCommands": ["agentos"]
+  },
+  "cliCommands": [
+    {
+      "name": "agentos",
+      "description": "Open and inspect the AgentOS control plane",
+      "hasSubcommands": true
+    }
+  ],
+  "categories": ["other"],
+  "skills": ["skills/agentos"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

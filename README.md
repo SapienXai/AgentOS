@@ -213,6 +213,19 @@ Then:
 
 If OpenClaw is already installed, AgentOS connects to the live Gateway and projects its real state. If OpenClaw is missing or unhealthy, AgentOS shows an explicit setup or unavailable state instead of presenting fake operational data.
 
+### OpenClaw plugin
+
+AgentOS also ships an official thin OpenClaw plugin through ClawHub. Install AgentOS separately, then install the plugin and use the native command surface:
+
+```bash
+openclaw plugins install clawhub:@sapienx/openclaw-agentos
+openclaw agentos
+openclaw agentos status
+openclaw agentos doctor --deep
+```
+
+The plugin delegates to the canonical AgentOS CLI and does not embed a second AgentOS runtime. See [`docs/openclaw-agentos-plugin-release.md`](docs/openclaw-agentos-plugin-release.md) for compatibility, local verification, publication, and trusted-publisher details.
+
 ## What AgentOS does
 
 ### Build digital workers
