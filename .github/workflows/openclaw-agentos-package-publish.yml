@@ -11,6 +11,7 @@ on:
       - "openclaw-agentos-v*"
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
