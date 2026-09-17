@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Refresh the ClawHub plugin presentation with product visuals and clearer operator pathways.
+- Refresh the bundled AgentOS skill presentation while preserving its OpenClaw-native guidance.
+
 ## 0.1.0
 
 - Add the official OpenClaw `agentos` CLI bridge.
