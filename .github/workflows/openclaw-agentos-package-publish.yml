@@ -45,8 +45,8 @@ jobs:
       - name: Create ClawPack artifact
         run: |
           mkdir -p .clawhub-package-artifact
-          clawhub package pack packages/openclaw-agentos \
-            --pack-destination .clawhub-package-artifact \
+          clawhub package pack "$GITHUB_WORKSPACE/packages/openclaw-agentos" \
+            --pack-destination "$GITHUB_WORKSPACE/.clawhub-package-artifact" \
             --json
 
       - uses: actions/upload-artifact@v6
