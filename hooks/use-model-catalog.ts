@@ -26,6 +26,10 @@ const MODEL_CATALOG_RECONCILE_INTERVAL_MS = 60_000;
 const cachedPayloads = new Map<string, ModelCatalogPayload>();
 const catalogRequests = new Map<string, Promise<ModelCatalogPayload>>();
 
+export function invalidateModelCatalogCache() {
+  cachedPayloads.clear();
+}
+
 async function loadModelCatalog(view: ModelCatalogView, force = false, agentId?: string, sessionKey?: string) {
   const cacheKey = `${view}:${agentId ?? "global"}:${sessionKey ?? "global"}`;
   const cachedPayload = cachedPayloads.get(cacheKey);

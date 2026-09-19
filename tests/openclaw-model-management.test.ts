@@ -5,6 +5,8 @@ import { test } from "node:test";
 
 import {
   buildModelSelectionProjection,
+  collectConfiguredProviderModelIds,
+  isLocalProviderEndpoint,
   isSelectableModel,
   MODEL_SELECTION_CATALOG_VIEW,
   modelManagementModelToCatalogModel,
@@ -15,6 +17,25 @@ import { normalizeModelsPayload } from "@/lib/openclaw/client/native-ws-gateway-
 import { formatModelProviderLabel, modelProviderPresentationRegistry } from "@/lib/openclaw/model-provider-registry";
 
 const rootDir = process.cwd();
+
+test("provider registrations use the native scoped model identity", () => {
+  assert.deepEqual(
+    collectConfiguredProviderModelIds({
+      bonsai_local: {
+        models: [{ id: "bonsai-2-27b-pq2" }]
+      },
+      openai: {
+        models: [{ id: "openai/gpt-5.6-luna" }]
+      }
+    }),
+    ["bonsai_local/bonsai-2-27b-pq2", "openai/gpt-5.6-luna"]
+  );
+});
+
+test("loopback explicit providers are treated as local without an API key", () => {
+  assert.equal(isLocalProviderEndpoint({ baseUrl: "http://127.0.0.1:8080/v1" }), true);
+  assert.equal(isLocalProviderEndpoint({ baseUrl: "https://api.example.com/v1" }), false);
+});
 
 test("native model management preserves aliases, roles, and unavailable state without provider hardcoding", () => {
   assert.equal(modelProviderPresentationRegistry["new-provider"], undefined);
@@ -27,6 +48,7 @@ test("native model management preserves aliases, roles, and unavailable state wi
     providerName: "New Provider",
     input: "text,image",
     contextWindow: 128000,
+    local: true,
     available: false,
     availability: "needs-auth",
     unavailableReason: "missing-auth",
@@ -51,6 +73,7 @@ test("native model management preserves aliases, roles, and unavailable state wi
   assert.equal(model.missing, true);
   assert.equal(model.available, false);
   assert.equal(model.supportsTools, true);
+  assert.equal(model.local, true);
 });
 
 test("model projection preserves unknown native availability and capabilities", () => {

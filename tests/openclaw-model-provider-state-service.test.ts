@@ -454,6 +454,44 @@ test("agent-scoped model readiness ignores a stale global snapshot", async () =>
   ]);
 });
 
+test("agent-scoped readiness accepts a configured loopback provider without API auth", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "models.providers.bonsai_local") {
+        return {
+          baseUrl: "http://127.0.0.1:8080/v1",
+          api: "openai-completions",
+          models: [{ id: "bonsai-2-27b-pq2" }]
+        };
+      }
+
+      return null;
+    },
+    async getAgentModelStatus() {
+      return { auth: { providers: [] } };
+    },
+    async listModels() {
+      return {
+        models: [{
+          key: "bonsai_local/bonsai-2-27b-pq2",
+          name: "Bonsai 2 27B PQ2_0 (Local)",
+          input: "text,image",
+          contextWindow: 65536,
+          local: true,
+          available: true,
+          missing: false,
+          tags: []
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await isOpenClawAgentModelReady({
+    agentId: "house-of-works-primary-operator",
+    modelId: "bonsai_local/bonsai-2-27b-pq2"
+  }), true);
+});
+
 test("valid ChatGPT OAuth remains connected when model discovery fails", async () => {
   setOpenClawAdapterForTesting({
     async getConfig() {

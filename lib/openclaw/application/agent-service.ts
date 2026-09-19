@@ -79,7 +79,8 @@ import {
 import { workspaceIdFromPath, workspacePathMatchesId } from "@/lib/openclaw/domains/workspace-id";
 import {
   resolveAgentCreationReadinessError,
-  resolveAgentCreationReadinessErrorWithNativeAgentEvidence
+  resolveAgentCreationReadinessErrorWithNativeAgentEvidence,
+  resolveAgentModelAssignmentReadinessErrorWithNativeAgentEvidence
 } from "@/lib/openclaw/readiness";
 import type {
   AgentCreateInput,
@@ -693,7 +694,7 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
         : agent.modelId ?? null;
 
   if (input.modelId !== undefined && nextModelId !== null) {
-    const readinessError = await resolveAgentCreationReadinessErrorWithNativeAgentEvidence(snapshot, {
+    const readinessError = await resolveAgentModelAssignmentReadinessErrorWithNativeAgentEvidence(snapshot, {
       requestedModelId: nextModelId,
       candidateAgentIds: [agentId],
       verifyAgentModel: isOpenClawAgentModelReady

@@ -37,15 +37,19 @@ function mergeCatalogModel(
   catalogModel: AddModelsCatalogModel,
   configuredModel: AddModelsCatalogModel
 ): AddModelsCatalogModel {
+  const nativeLocalCatalog = catalogModel.local === true;
+
   return {
     ...catalogModel,
     id: configuredModel.id,
     contextWindow: configuredModel.contextWindow ?? catalogModel.contextWindow,
     local: configuredModel.local || catalogModel.local,
-    available: configuredModel.available,
+    // A stale mission snapshot must not turn a currently discovered local
+    // provider model back into a remote/unavailable option.
+    available: nativeLocalCatalog ? catalogModel.available : configuredModel.available,
     ...(catalogModel.deprecated === true || configuredModel.deprecated === true ? { deprecated: true } : {}),
     ...(catalogModel.disabled === true || configuredModel.disabled === true ? { disabled: true } : {}),
-    missing: configuredModel.missing,
+    missing: nativeLocalCatalog ? catalogModel.missing : configuredModel.missing,
     alreadyAdded: catalogModel.alreadyAdded || configuredModel.alreadyAdded,
     recommended: catalogModel.recommended || configuredModel.recommended,
     supportsTools: mergeNativeBoolean(catalogModel.supportsTools, configuredModel.supportsTools),

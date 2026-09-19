@@ -87,6 +87,7 @@ export type ModelManagementModel = {
   input: string;
   contextWindow: number | null;
   contextWindows?: Array<{ id: string; label: string; contextWindow: number }>;
+  local?: boolean | null;
   available: boolean | null;
   availability: ModelAvailabilityStatus;
   missing?: boolean;
@@ -107,6 +108,76 @@ export type ModelManagementModel = {
     disabled: boolean;
   };
 };
+
+/**
+ * Provider model arrays are OpenClaw's registration boundary for explicit
+ * providers. Keep those ids aligned with the native provider/model identity so
+ * every AgentOS model surface can agree on whether a model was added.
+ */
+export function collectConfiguredProviderModelIds(value: unknown): string[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return [];
+  }
+
+  const ids = new Set<string>();
+
+  for (const [providerId, providerConfig] of Object.entries(value)) {
+    if (typeof providerConfig !== "object" || providerConfig === null || Array.isArray(providerConfig)) {
+      continue;
+    }
+
+    const models = (providerConfig as { models?: unknown }).models;
+    if (!Array.isArray(models)) {
+      continue;
+    }
+
+    for (const model of models) {
+      if (typeof model !== "object" || model === null || Array.isArray(model)) {
+        continue;
+      }
+
+      const modelId = (model as { id?: unknown }).id;
+      if (typeof modelId !== "string" || !modelId.trim()) {
+        continue;
+      }
+
+      const scopedId = modelId.includes("/") ? modelId : `${providerId}/${modelId}`;
+      ids.add(normalizeOpenAiModelId(scopedId));
+    }
+  }
+
+  return [...ids];
+}
+
+export function isLocalProviderEndpoint(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const config = value as { baseUrl?: unknown; baseURL?: unknown };
+  const rawBaseUrl = typeof config.baseUrl === "string"
+    ? config.baseUrl
+    : typeof config.baseURL === "string"
+      ? config.baseURL
+      : "";
+
+  try {
+    const hostname = new URL(rawBaseUrl).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "::1" || hostname === "127.0.0.1" || hostname === "0.0.0.0";
+  } catch {
+    return false;
+  }
+}
+
+export function collectLocalProviderIds(value: unknown): string[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return [];
+  }
+
+  return Object.entries(value)
+    .filter(([, providerConfig]) => isLocalProviderEndpoint(providerConfig))
+    .map(([providerId]) => providerId);
+}
 
 export type NativeModelSelectabilityFacts = {
   available?: boolean | null;
@@ -366,7 +437,7 @@ export function modelManagementModelToCatalogModel(model: ModelManagementModel):
     provider: model.provider,
     input: model.input,
     contextWindow: model.contextWindow,
-    local: model.provider === "ollama" || model.tags.includes("local"),
+    local: model.local === true || model.provider === "ollama" || model.tags.includes("local"),
     available: model.available,
     ...(model.advanced.deprecated ? { deprecated: true } : {}),
     ...(model.advanced.disabled ? { disabled: true } : {}),

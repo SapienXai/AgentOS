@@ -21,6 +21,10 @@ import {
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import {
+  collectConfiguredProviderModelIds,
+  isLocalProviderEndpoint
+} from "@/lib/openclaw/domains/model-management";
+import {
   getModelProviderDescriptor,
   getModelProviderCredentialTarget,
   modelProviderCredentialRegistry,
@@ -134,20 +138,27 @@ type OpenClawAgentDefaultsConfig = NonNullable<NonNullable<OpenClawConfigPayload
 
 export async function readOpenClawConfiguredModelIds() {
   try {
-    const defaults = await getOpenClawAdapter().getConfig<OpenClawAgentDefaultsConfig>(
-      "agents.defaults",
-      { timeoutMs: 5_000 }
-    );
+    const adapter = getOpenClawAdapter();
+    const [defaults, providers] = await Promise.all([
+      adapter.getConfig<OpenClawAgentDefaultsConfig>("agents.defaults", { timeoutMs: 5_000 }),
+      adapter.getConfig<Record<string, OpenClawProviderModelsEntry>>("models.providers", { timeoutMs: 5_000 })
+    ]);
 
     if (isRecord(defaults)) {
-      return readConfiguredModelIdsFromDefaults(defaults);
+      return new Set([
+        ...readConfiguredModelIdsFromDefaults(defaults),
+        ...collectConfiguredProviderModelIds(providers)
+      ]);
     }
   } catch {
     // Local file read remains an offline recovery fallback when Gateway config is unavailable.
   }
 
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-  return readConfiguredModelIdsFromDefaults(config.agents?.defaults);
+  return new Set([
+    ...readConfiguredModelIdsFromDefaults(config.agents?.defaults),
+    ...collectConfiguredProviderModelIds(config.models?.providers)
+  ]);
 }
 
 function readConfiguredModelIdsFromDefaults(defaults: OpenClawAgentDefaultsConfig | undefined) {
@@ -239,18 +250,23 @@ export async function isOpenClawAgentModelReady(input: {
   }
 
   try {
-    const [status, catalog] = await Promise.all([
+    const [status, catalog, providerConfig] = await Promise.all([
       readOpenClawProviderModelStatus({ agentId }),
-      listOpenClawModels({ all: true, agentId }, { timeoutMs: 8_000 })
+      listOpenClawModels({ all: true, agentId }, { timeoutMs: 8_000 }),
+      readOpenClawExplicitProviderConfig(provider)
     ]);
     const model = catalog.models.find((entry) => normalizeOpenAiModelId(entry.key) === modelId);
     const connection = buildModelStatusConnectionStatus(provider, status, [modelId]);
+    const localProviderModelConfigured = isLocalProviderEndpoint(providerConfig) &&
+      collectConfiguredProviderModelIds({ [provider]: providerConfig }).some(
+        (configuredModelId) => normalizeOpenAiModelId(configuredModelId) === modelId
+      );
 
     return Boolean(
-      connection?.connected &&
       model &&
       model.missing !== true &&
-      model.available !== false
+      model.available !== false &&
+      (localProviderModelConfigured || connection?.connected)
     );
   } catch {
     return false;

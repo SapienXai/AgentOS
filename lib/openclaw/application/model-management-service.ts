@@ -17,6 +17,8 @@ import type {
 } from "@/lib/openclaw/domains/model-management";
 import {
   buildModelSelectionProjection,
+  collectConfiguredProviderModelIds,
+  collectLocalProviderIds,
   resolveModelAvailability
 } from "@/lib/openclaw/domains/model-management";
 
@@ -109,8 +111,45 @@ export async function readModelManagementState(
   const configuredModelIds = new Set([
     ...Object.keys(defaults.models),
     ...(defaultModel ? [defaultModel] : []),
-    ...fallbackModels
+    ...fallbackModels,
+    ...collectConfiguredProviderModelIds(defaults.providers)
   ].map((id) => normalizeOpenAiModelId(id).toLowerCase()));
+  const localProviderIds = new Set(collectLocalProviderIds(defaults.providers));
+  let catalogModels = catalogResult.value.models;
+
+  // OpenClaw's default view is intentionally narrow and may omit a model that
+  // is registered under an explicit provider. Supplement only those configured
+  // identities from the native all-model view so Change Model stays curated.
+  if (view === "default") {
+    const catalogModelIds = new Set(catalogModels.map((model) => normalizeOpenAiModelId(model.key).toLowerCase()));
+    const needsConfiguredSupplement = [...configuredModelIds].some((id) => !catalogModelIds.has(id));
+
+    if (needsConfiguredSupplement) {
+      const expandedCatalogResult = await listOpenClawModels(
+        {
+          view: "all",
+          refresh: options.refresh,
+          includeProviderCapabilities: true
+        },
+        { timeoutMs: 20_000 }
+      ).then((value) => ({ ok: true as const, value })).catch(() => ({ ok: false as const }));
+
+      if (expandedCatalogResult.ok) {
+        const configuredCatalogModels = new Map(
+          catalogModels.map((model) => [normalizeOpenAiModelId(model.key).toLowerCase(), model] as const)
+        );
+
+        for (const model of expandedCatalogResult.value.models) {
+          const id = normalizeOpenAiModelId(model.key).toLowerCase();
+          if (configuredModelIds.has(id)) {
+            configuredCatalogModels.set(id, model);
+          }
+        }
+
+        catalogModels = [...configuredCatalogModels.values()];
+      }
+    }
+  }
   const linkedAgents = new Map<string, number>();
 
   if (agentsResult.ok) {
@@ -125,16 +164,23 @@ export async function readModelManagementState(
     }
   }
 
-  const models = catalogResult.value.models.map((model) => {
+  const models = catalogModels.map((model) => {
     const id = normalizeOpenAiModelId(model.key);
     const key = id.toLowerCase();
     const fallbackPosition = fallbackById.get(key);
-    const isDefault = Boolean(defaultModel && defaultModel.toLowerCase() === key) || model.tags.includes("default");
-    const available = model.available;
+    const configured = configuredModelIds.has(key);
+    const tags = Array.from(new Set([
+      ...model.tags,
+      ...(configured ? ["configured"] : [])
+    ]));
+    const isDefault = Boolean(defaultModel && defaultModel.toLowerCase() === key) || tags.includes("default");
+    const provider = model.provider ?? id.split("/", 1)[0] ?? "unknown";
+    const locallyConfigured = configured && localProviderIds.has(provider);
+    const available = locallyConfigured ? true : model.available;
     const availability = resolveModelAvailability({
       available,
-      missing: model.missing,
-      unavailableReason: model.unavailableReason,
+      missing: locallyConfigured ? false : model.missing,
+      unavailableReason: available === true ? undefined : model.unavailableReason,
       disabled: model.disabled,
       deprecated: model.deprecated
     });
@@ -142,26 +188,27 @@ export async function readModelManagementState(
     return {
       id,
       name: model.name || id,
-      provider: model.provider ?? id.split("/", 1)[0] ?? "unknown",
-      providerName: formatModelProviderLabel(model.provider ?? id.split("/", 1)[0] ?? "unknown"),
+      provider,
+      providerName: formatModelProviderLabel(provider),
       input: model.input,
       contextWindow: model.contextWindow,
       ...(model.contextWindows ? { contextWindows: model.contextWindows } : {}),
+      local: model.local === true || locallyConfigured,
       available,
       availability,
-      ...(model.missing ? { missing: true } : {}),
-      ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
+      ...(!locallyConfigured && model.missing ? { missing: true } : {}),
+      ...(available !== true && model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
       ...(model.unavailableUntil !== undefined ? { unavailableUntil: model.unavailableUntil } : {}),
       ...(model.reasoning !== undefined ? { reasoning: model.reasoning } : {}),
       ...(model.supportsTools !== undefined ? { supportsTools: model.supportsTools } : {}),
-      tags: model.tags,
+      tags,
       ...(model.alias ? { alias: model.alias } : {}),
       role: unavailable ? "unavailable" : availability === "unknown" ? "unknown" : isDefault ? "default" : fallbackPosition ? "fallback" : "available",
       ...(fallbackPosition ? { fallbackPosition } : {}),
       linkedAgents: linkedAgents.get(key) ?? 0,
       advanced: {
         rawId: id,
-        providerId: model.provider ?? id.split("/", 1)[0] ?? "unknown",
+        providerId: provider,
         ...(model.agentRuntime?.id ? { runtimeRoute: model.agentRuntime.id } : {}),
         deprecated: model.deprecated === true,
         disabled: model.disabled === true
@@ -184,6 +231,7 @@ export async function readModelManagementState(
       providerName: formatModelProviderLabel(provider),
       input: "text",
       contextWindow: null,
+      local: false,
       available: null,
       availability: "unavailable",
       missing: true,
@@ -469,7 +517,7 @@ function normalizeDefaults(value: JsonRecord | null) {
 }
 
 function emptyDefaults() {
-  return { model: { primary: null, fallbacks: [] as string[] }, models: {}, modelPolicy: { allow: null } };
+  return { model: { primary: null, fallbacks: [] as string[] }, models: {}, providers: null, modelPolicy: { allow: null } };
 }
 
 function readConfiguredProviderIds(value: JsonRecord | null) {

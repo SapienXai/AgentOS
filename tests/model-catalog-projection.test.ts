@@ -54,6 +54,33 @@ test("configured model projection combines catalog metadata with snapshot readin
   });
 });
 
+test("local native catalog metadata wins over a stale snapshot projection", () => {
+  const localCatalogModel: AddModelsCatalogModel = {
+    ...catalogModel,
+    id: "bonsai_local/bonsai-2-27b-pq2",
+    name: "Bonsai 2 27B PQ2_0 (Local)",
+    provider: "bonsai_local",
+    local: true,
+    available: true,
+    missing: false
+  };
+  const staleSnapshotModel: ModelRecord = {
+    ...localCatalogModel,
+    local: false,
+    available: false,
+    missing: true,
+    supportsTools: true,
+    tags: ["configured"],
+    usageCount: 0
+  };
+
+  const models = mergeCatalogWithConfiguredModels([localCatalogModel], [staleSnapshotModel]);
+
+  assert.equal(models[0]?.local, true);
+  assert.equal(models[0]?.available, true);
+  assert.equal(models[0]?.missing, false);
+});
+
 test("provider discovery models use shared catalog presentation metadata", () => {
   const discoveredModel: AddModelsCatalogModel = {
     ...catalogModel,

@@ -51,7 +51,7 @@ import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-prov
 import { isSelectableModel } from "@/lib/openclaw/domains/model-management";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
-import { useModelCatalog } from "@/hooks/use-model-catalog";
+import { invalidateModelCatalogCache, useModelCatalog } from "@/hooks/use-model-catalog";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -1121,6 +1121,10 @@ export function AddModelsDialog({
         onSnapshotChange(result.snapshot);
       }
 
+      // Model Library writes OpenClaw provider config. Clear the picker cache
+      // so the next Change Model open reads that native registration.
+      invalidateModelCatalogCache();
+
       if (!options?.silent) {
         toast.success("Models added.", {
           description: result.message
@@ -1237,6 +1241,8 @@ export function AddModelsDialog({
     if (result.snapshot) {
       onSnapshotChange(result.snapshot);
     }
+
+    invalidateModelCatalogCache();
 
     setProviderDrafts((current) =>
       Object.fromEntries(

@@ -12,6 +12,7 @@ import {
   isOpenClawSystemReady,
   resolveAgentCreationReadinessError,
   resolveAgentCreationReadinessErrorWithNativeAgentEvidence,
+  resolveAgentModelAssignmentReadinessError,
   resolveMissionDispatchReadinessError,
   resolveWorkspaceCreationReadinessError,
   resolveWorkspaceCreationReadinessErrorWithNativeAgentEvidence
@@ -278,6 +279,10 @@ test("a clean install blocks an implicit OpenAI default before any chat or smoke
   assert.match(
     resolveMissionDispatchReadinessError(snapshot, "openai/gpt-5.5") ?? "",
     /Requested model openai\/gpt-5\.5 is not ready/
+  );
+  assert.match(
+    resolveAgentModelAssignmentReadinessError(snapshot, "openai/gpt-5.5") ?? "",
+    /Choose a ready model before assigning it to the agent/
   );
 
   const chatRoute = readFileSync(path.join(process.cwd(), "app/api/agents/[agentId]/chat/route.ts"), "utf8");

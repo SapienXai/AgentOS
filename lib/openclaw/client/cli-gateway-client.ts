@@ -935,7 +935,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {
     const args = ["models", "list"];
-    if (input.all) {
+    if (input.all || input.view === "all") {
       args.push("--all");
     }
     args.push("--json");

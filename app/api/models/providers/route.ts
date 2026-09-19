@@ -27,6 +27,7 @@ import {
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { mergeOllamaCatalogModels } from "@/lib/openclaw/domains/model-provider-catalog";
+import { isLocalProviderEndpoint } from "@/lib/openclaw/domains/model-management";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { clearModelCatalogCache } from "@/lib/openclaw/application/model-catalog-cache-service";
 import { readLocalOllamaModels } from "@/lib/openclaw/application/local-model-provider-service";
@@ -1385,7 +1386,7 @@ function normalizeExplicitProviderCatalogModels(
         provider,
         input,
         contextWindow: typeof model.contextWindow === "number" ? model.contextWindow : null,
-        local: false,
+        local: isLocalProviderEndpoint(providerConfig),
         available: true,
         missing: false,
         alreadyAdded: configuredModelIds.has(scopedId),
@@ -1843,18 +1844,22 @@ async function buildExplicitProviderConnectionStatus(
   const apiKey = readProviderApiKey(providerConfig);
   const modelCount = providerConfig?.models?.length ?? 0;
   const configuredCount = [...configuredModelIds].filter((modelId) => modelMatchesProvider(provider, modelId)).length;
+  const local = isLocalProviderEndpoint(providerConfig);
+  const ready = Boolean(baseUrl && (apiKey || local) && (modelCount > 0 || configuredCount > 0));
 
   return {
     provider,
-    connected: Boolean(baseUrl && apiKey && (modelCount > 0 || configuredCount > 0)),
+    connected: ready,
     canConnect: true,
     needsTerminal: false,
     source: "openclaw-config",
-    degraded: Boolean(baseUrl && apiKey && modelCount === 0 && configuredCount === 0),
+    degraded: Boolean(baseUrl && !ready),
     stale: false,
-    recovery: baseUrl && apiKey && modelCount === 0 && configuredCount === 0
-      ? "Discovery returned no persisted models. Add a model ID manually or retry discovery."
-      : null,
+    recovery: baseUrl && !apiKey && !local
+      ? "Add the provider credential before using this endpoint."
+      : baseUrl && ready && modelCount === 0 && configuredCount === 0
+        ? "Discovery returned no persisted models. Add a model ID manually or retry discovery."
+        : null,
     detail: baseUrl
       ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS. Endpoint: ${baseUrl}.`
       : "Configure this explicit OpenAI-compatible provider before discovery."

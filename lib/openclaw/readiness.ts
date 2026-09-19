@@ -107,6 +107,21 @@ export async function resolveAgentCreationReadinessErrorWithNativeAgentEvidence(
   );
 }
 
+/**
+ * Model assignment uses the same native proof as agent creation, but keeps
+ * the recovery copy accurate for an existing agent's Change Model flow.
+ */
+export async function resolveAgentModelAssignmentReadinessErrorWithNativeAgentEvidence(
+  snapshot: MissionControlSnapshot,
+  input: NativeAgentModelEvidenceInput
+) {
+  return resolveReadinessErrorWithNativeAgentEvidence(
+    snapshot,
+    input,
+    resolveAgentModelAssignmentReadinessError
+  );
+}
+
 async function resolveReadinessErrorWithNativeAgentEvidence(
   snapshot: MissionControlSnapshot,
   input: NativeAgentModelEvidenceInput,
@@ -161,6 +176,25 @@ export function resolveAgentCreationReadinessError(
 
   if (modelIssue) {
     return `${modelIssue} Choose a ready model before creating the agent.`;
+  }
+
+  return null;
+}
+
+export function resolveAgentModelAssignmentReadinessError(
+  snapshot: MissionControlSnapshot,
+  requestedModelId?: string | null
+) {
+  const systemIssue = resolveOpenClawSystemReadinessIssue(snapshot);
+
+  if (systemIssue) {
+    return `${systemIssue} Model assignment is blocked until OpenClaw is ready.`;
+  }
+
+  const modelIssue = resolveOpenClawModelReadinessIssue(snapshot, requestedModelId);
+
+  if (modelIssue) {
+    return `${modelIssue} Choose a ready model before assigning it to the agent.`;
   }
 
   return null;
