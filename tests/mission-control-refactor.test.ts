@@ -490,7 +490,7 @@ test("Agent card connections use the Agent-scoped channel flow and verify native
   assert.match(agentChannelsSource, /Connect account and continue/);
   assert.match(agentChannelsSource, /initialProviderId/);
   assert.match(agentChannelsSource, /TelegramKnownGroupsPanel/);
-  assert.match(telegramKnownGroupsSource, /Known groups/);
+  assert.match(telegramKnownGroupsSource, /KnownGroupsResponse|Known Telegram groups/);
   assert.match(telegramKnownGroupsSource, /Find group/);
   assert.match(telegramKnownGroupsSource, /Enter group ID manually/);
   assert.match(telegramKnownGroupsSource, /sources\.includes\("openclaw-session"\)/);

@@ -595,18 +595,24 @@ test("OpenClaw local module imports do not introduce cycles", () => {
 
 test("sidebar exposes config-driven mission and admin navigation routes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+  const navigationSource = readFileSync(path.join(rootDir, "components/mission-control/navigation-config.ts"), "utf8");
 
-  assert.match(source, /type SidebarSection = "overview" \| "operations" \| "system";/);
-  assert.match(source, /type SidebarItem = \{[\s\S]*?href\?: string;[\s\S]*?icon: LucideIcon;[\s\S]*?section: SidebarSection;/);
-  assert.match(source, /const sidebarItems: SidebarItem\[] = \[/);
-  assert.match(source, /\{ label: "Mission Control", href: "\/", icon: Gauge, section: "overview" \}/);
-  assert.match(source, /\{ label: "Agents", href: "\/agents", icon: Bot, section: "operations" \}/);
-  assert.match(source, /\{ label: "Missions", href: "\/missions", icon: ClipboardList, section: "operations" \}/);
-  assert.match(source, /\{ label: "Human Control", href: "\/human-control", icon: ShieldAlert, section: "operations" \}/);
-  assert.match(source, /\{ label: "Files", href: "\/files", icon: FileText, section: "operations" \}/);
-  assert.match(source, /\{ label: "Models", href: "\/models", icon: Cpu, section: "operations" \}/);
-  assert.match(source, /\{ label: "Integrations", href: "\/integrations", icon: Plug, section: "operations" \}/);
-  assert.match(source, /\{ label: "Settings", href: "\/settings", icon: Settings2, section: "system" \}/);
+  assert.match(source, /navigation-config/);
+  assert.match(navigationSource, /NavigationSectionId = "operate" \| "connect" \| "system"/);
+  assert.match(source, /type SidebarItem = NavigationItem/);
+  assert.match(source, /const sidebarItems = navigationItems;/);
+  assert.ok(navigationSource.includes('id: "home", label: "Home", href: "/dashboard"'));
+  assert.ok(navigationSource.includes('id: "mission-control", label: "Mission Control", href: "/"'));
+  assert.ok(navigationSource.includes('id: "agents", label: "Agents", href: "/agents", icon: Bot, section: "operate"'));
+  assert.ok(navigationSource.includes('id: "missions", label: "Missions", href: "/missions", icon: ClipboardList, section: "operate"'));
+  assert.ok(navigationSource.includes('id: "human-control", label: "Human Control", href: "/human-control", icon: ShieldAlert, section: "operate"'));
+  assert.ok(navigationSource.includes('id: "channels", label: "Channels", href: "/channels", icon: MessageCircle, section: "connect"'));
+  assert.ok(navigationSource.includes('id: "accounts", label: "Accounts", href: "/accounts", icon: KeyRound, section: "connect"'));
+  assert.ok(navigationSource.includes('id: "models", label: "Models", href: "/models", icon: Cpu, section: "system"'));
+  assert.ok(navigationSource.includes('id: "integrations", label: "Integrations", href: "/integrations", icon: Plug, section: "system"'));
+  assert.ok(navigationSource.includes('id: "files", label: "Files", href: "/files", icon: FileText, section: "system"'));
+  assert.ok(navigationSource.includes('id: "operations", label: "Operations", href: "/operations", icon: Activity, section: "system"'));
+  assert.ok(navigationSource.includes('id: "settings", label: "Settings", href: "/settings", icon: Settings2, section: "system"'));
   assert.match(source, /onOpenWorkspaceCreate: \(\) => void;/);
   assert.match(source, /<span className="block truncate text-\[0\.82rem\] font-medium">Create Workspace<\/span>/);
   assert.match(source, /onOpenWorkspaceCreate\(\);[\s\S]*?setOpen\(false\);/);
@@ -623,8 +629,10 @@ test("sidebar resolves active nav items from path and hash", () => {
   assert.match(source, /const syncHash = \(\) => setActiveHash\(window\.location\.hash\.replace/);
   assert.match(source, /window\.addEventListener\("hashchange", syncHash\)/);
   assert.match(source, /function isSidebarItemActive\(item: SidebarItem, pathname: string, activeHash: string\)/);
-  assert.match(source, /item\.label === "Mission Control"/);
-  assert.match(source, /pathname === "\/" && Boolean\(item\.hash\) && activeHash === item\.hash/);
+  assert.match(source, /return isNavigationItemActive\(item, pathname, activeHash\)/);
+  const navigationSource = readFileSync(path.join(rootDir, "components/mission-control/navigation-config.ts"), "utf8");
+  assert.match(navigationSource, /pathname === "\/" \|\| pathname === "\/mission-control"/);
+  assert.match(navigationSource, /item\.id === "home"/);
 });
 
 test("sidebar keeps its header and user footer fixed around scrollable navigation", () => {
@@ -644,8 +652,8 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
   assert.match(source, /aria-pressed=\{pinned\}/);
   assert.match(source, /<SidebarPanelToggleIcon filled=\{pinned\} \/>/);
   assert.match(source, /filled \? "fill-slate-950 dark:fill-slate-100" : "fill-transparent"/);
-  assert.match(source, /const collapsedSidebarItems = sidebarItems\.slice\([\s\S]*?item\.label === "Channels"[\s\S]*?\);/);
-  assert.match(source, /\{collapsedSidebarItems[\s\S]*?\.filter\(\(item\) => item\.section === section\.id\)/);
+  assert.match(source, /const collapsedSidebarItemsWithUpdates = collapsedNavigationItems;/);
+  assert.match(source, /\{collapsedSidebarItemsWithUpdates[\s\S]*?\.filter\(\(item\) => item\.section === section\.id\)/);
   assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
   assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
   assert.match(source, /onProfileSaved=\{onProfileSaved\}/);
