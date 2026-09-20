@@ -102,15 +102,19 @@ function readPathBasename(value: string) {
 
 export function OperationsShell({
   initialSnapshot,
+  preferredWorkspaceId = null,
   children
 }: {
   initialSnapshot: MissionControlSnapshot;
+  preferredWorkspaceId?: string | null;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
   const { snapshot, connectionState, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
-    initialSnapshot.workspaces[0]?.id ?? null
+    preferredWorkspaceId && initialSnapshot.workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
+      ? preferredWorkspaceId
+      : initialSnapshot.workspaces[0]?.id ?? null
   );
   const [sidebarExpandedState, setSidebarExpanded] = useState(false);
   const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
@@ -226,9 +230,11 @@ export function OperationsShell({
       ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
     ]));
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get("workspaceId");
-    const resolvedWorkspaceId = requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
-      ? requestedWorkspaceId
-      : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, activeWorkspaceId);
+    const resolvedWorkspaceId = preferredWorkspaceId && selectableWorkspaceIds.includes(preferredWorkspaceId)
+      ? preferredWorkspaceId
+      : requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
+        ? requestedWorkspaceId
+        : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, activeWorkspaceId);
 
     if (resolvedWorkspaceId !== activeWorkspaceId) {
       setActiveWorkspaceId(resolvedWorkspaceId);
@@ -238,6 +244,7 @@ export function OperationsShell({
   }, [
     activeWorkspaceId,
     loadedWorkspaceSelectionRoot,
+    preferredWorkspaceId,
     visiblePendingCreatedAgents,
     snapshot
   ]);

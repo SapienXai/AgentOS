@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
+import { Activity, ArrowLeft, ArrowUpRight, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -534,6 +534,13 @@ function AgentCard({
               {agent.sessionsCount === 1 ? "" : "s"}
             </p>
           </div>
+          <Link
+            href={`/agents/${encodeURIComponent(agent.id)}`}
+            className="mt-2 inline-flex min-h-0 w-full items-center justify-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10"
+            onClick={(event) => event.stopPropagation()}
+          >
+            Open worker detail <ArrowUpRight className="h-3 w-3" />
+          </Link>
         </div>
       </div>
     </div>
