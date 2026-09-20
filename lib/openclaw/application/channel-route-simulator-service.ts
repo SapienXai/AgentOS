@@ -4,7 +4,11 @@ import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getChannelCenterSnapshot, type ChannelCenterSnapshot } from "@/lib/openclaw/application/channel-center-service";
 import { getChannelRouteBinding, type ChannelRouteBindingResolution } from "@/lib/openclaw/application/channel-route-binding-service";
-import { readTelegramRoutePolicy, type TelegramRoutePolicyRead } from "@/lib/openclaw/application/telegram-group-permissions-service";
+import {
+  normalizeTelegramSenderId,
+  readTelegramRoutePolicy,
+  type TelegramRoutePolicyRead
+} from "@/lib/openclaw/application/telegram-group-permissions-service";
 import { getWorkerEffectiveCapabilities } from "@/lib/openclaw/application/worker-capability-service";
 import type { ChannelRouteIdentity } from "@/lib/openclaw/domains/channel-center";
 import type { EffectiveCapability, OpenClawAgent } from "@/lib/openclaw/types";
@@ -109,15 +113,20 @@ export async function simulateChannelRoute(
   const adapter = dependencies.adapter ?? getOpenClawAdapter();
   const capturedAt = new Date().toISOString();
   const binding = await getChannelRouteBinding(input.route, { adapter });
+  const ambiguous = isAmbiguousBinding(binding);
+  const effectiveAgentId = ambiguous ? null : binding.agentId;
   const centerResult = await readChannelCenterSafely(dependencies.readChannelCenter ?? getChannelCenterSnapshot);
   const account = projectAccountAvailability(centerResult, input.route.provider, input.route.accountId);
   const policy = await readPolicy(input.route, adapter);
-  const worker = await resolveWorker(binding, adapter, dependencies.readAgents);
-  const capabilities = await readCapabilitySnapshot(worker.id, adapter, dependencies.readCapabilities);
-
-  const ambiguous = binding.editingAmbiguity
-    || Boolean(binding.conflict)
-    || ["shadowed", "overlapping", "ambiguous-edit", "conflict"].includes(binding.match);
+  const worker = await resolveWorker(effectiveAgentId, adapter, dependencies.readAgents);
+  const capabilities = await readCapabilitySnapshot(
+    effectiveAgentId,
+    adapter,
+    dependencies.readCapabilities,
+    ambiguous
+      ? "Capability snapshot unavailable. A single effective worker could not be established because the route is ambiguous."
+      : undefined
+  );
   const enabledGate = buildEnabledGate(policy);
   const senderGate = buildSenderGate(policy, input.senderId);
   const mentionGate = buildMentionGate(policy, input.mentioned);
@@ -170,9 +179,8 @@ export async function simulateChannelRoute(
     senderGate,
     mentionGate,
     policy,
-    agentId: binding.agentId
+    agentId: effectiveAgentId
   });
-  const effectiveAgentId = ambiguous ? null : binding.agentId;
   const expectedMatch = input.expectedAgentId
     ? effectiveAgentId
       ? effectiveAgentId === input.expectedAgentId ? "match" : "mismatch"
@@ -318,16 +326,24 @@ function buildEnabledGate(policy: ChannelRouteSimulationPolicy): ChannelRouteSim
   return { status: "unknown", label: "Route enabled", detail: "OpenClaw did not expose a deterministic enabled state for this route.", source: "OpenClaw policy" };
 }
 
+function isAmbiguousBinding(binding: ChannelRouteBindingResolution) {
+  return binding.editingAmbiguity
+    || Boolean(binding.conflict)
+    || ["shadowed", "overlapping", "ambiguous-edit", "conflict"].includes(binding.match);
+}
+
 function buildSenderGate(policy: ChannelRouteSimulationPolicy, senderId: string | null): ChannelRouteSimulationGate {
   if (policy.availability !== "available") return { status: "unknown", label: "Sender policy", detail: "Sender eligibility is unavailable for this provider.", source: policy.source };
   if (policy.groupPolicy === "open") return { status: "pass", label: "Sender policy", detail: "The effective group policy accepts any sender.", source: "OpenClaw policy" };
   if (policy.groupPolicy === "disabled") return { status: "fail", label: "Sender policy", detail: "The effective group policy accepts no senders.", source: "OpenClaw policy" };
   if (policy.groupPolicy !== "allowlist") return { status: "unknown", label: "Sender policy", detail: "The effective sender policy is not known.", source: "OpenClaw policy" };
   if (!senderId) return { status: "unknown", label: "Sender policy", detail: "Provide a sender ID to evaluate the effective Telegram allowlist.", source: "OpenClaw policy" };
+  const normalizedSenderId = normalizeTelegramSenderId(senderId);
+  if (!normalizedSenderId) return { status: "unknown", label: "Sender policy", detail: "A numeric Telegram user ID is required to evaluate this allowlist.", source: "Operator input" };
   if (policy.allowFrom.length === 0) return { status: "fail", label: "Sender policy", detail: "The effective allowlist is empty, so no sender is eligible.", source: "OpenClaw policy" };
-  return policy.allowFrom.includes(senderId)
-    ? { status: "pass", label: "Sender policy", detail: `Sender ${senderId} appears in the effective allowlist.`, source: "OpenClaw policy" }
-    : { status: "fail", label: "Sender policy", detail: `Sender ${senderId} is not present in the effective allowlist.`, source: "OpenClaw policy" };
+  return policy.allowFrom.includes(normalizedSenderId)
+    ? { status: "pass", label: "Sender policy", detail: `Sender ${normalizedSenderId} appears in the effective allowlist.`, source: "OpenClaw policy" }
+    : { status: "fail", label: "Sender policy", detail: `Sender ${normalizedSenderId} is not present in the effective allowlist.`, source: "OpenClaw policy" };
 }
 
 function buildMentionGate(policy: ChannelRouteSimulationPolicy, mentioned: boolean | null): ChannelRouteSimulationGate {
@@ -355,23 +371,30 @@ function resolveOutcome(input: {
   return "deliverable";
 }
 
-async function resolveWorker(binding: ChannelRouteBindingResolution, adapter: OpenClawAdapter, reader?: (adapter: OpenClawAdapter) => Promise<OpenClawAgent[]>): Promise<{ id: string | null; label: string | null }> {
-  if (!binding.agentId) return { id: null, label: null };
+async function resolveWorker(agentId: string | null, adapter: OpenClawAdapter, reader?: (adapter: OpenClawAdapter) => Promise<OpenClawAgent[]>): Promise<{ id: string | null; label: string | null }> {
+  if (!agentId) return { id: null, label: null };
   try {
     const agents = await (reader ?? (async (currentAdapter) => (await currentAdapter.listAgents({ timeoutMs: 8_000 })).agents))(adapter);
-    const agent = agents.find((candidate) => candidate.id === binding.agentId);
-    return { id: binding.agentId, label: agent?.name ?? binding.agentId };
+    const agent = agents.find((candidate) => candidate.id === agentId);
+    return { id: agentId, label: agent?.name ?? agentId };
   } catch {
-    return { id: binding.agentId, label: binding.agentId };
+    return { id: agentId, label: agentId };
   }
 }
 
 async function readCapabilitySnapshot(
   agentId: string | null,
   adapter: OpenClawAdapter,
-  reader?: ChannelRouteSimulationDependencies["readCapabilities"]
+  reader?: ChannelRouteSimulationDependencies["readCapabilities"],
+  unavailableDetail?: string
 ): Promise<ChannelRouteSimulationResult["capabilities"]> {
-  if (!agentId) return { status: "unknown", sessionKey: null, summary: null, entries: [], detail: "No resolved worker exists for a capability snapshot." };
+  if (!agentId) return {
+    status: "unknown",
+    sessionKey: null,
+    summary: null,
+    entries: [],
+    detail: unavailableDetail ?? "No resolved worker exists for a capability snapshot."
+  };
   try {
     const payload = await (reader ?? getWorkerEffectiveCapabilities)(agentId, { adapter });
     return {
