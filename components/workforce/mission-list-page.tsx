@@ -79,8 +79,8 @@ export function MissionListPage({
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <PageHeader
-        title="Workforce"
-        subtitle="Give your workforce a goal, then see what is running, what needs you, and what finished."
+        title="Missions"
+        subtitle="Set the goal-level work here. Tasks are individual runtime actions; Operations is the technical job and cron surface."
         primaryAction={{ label: "New mission", icon: Plus, onClick: () => setNewMissionOpen(true), disabled: snapshot.agents.length === 0, title: snapshot.agents.length === 0 ? "Connect an eligible agent before starting a mission." : undefined }}
       />
 

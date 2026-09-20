@@ -1,39 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   Bot,
-  BrainCircuit,
-  CheckCircle2,
   CircleCheck,
   Clock3,
-  Cpu,
-  Gauge,
   Inbox,
-  KeyRound,
-  Plug,
   Plus,
   RefreshCw,
   Search,
   Settings2,
-  ShieldCheck,
-  Sparkles,
   TerminalSquare,
-  Workflow,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "@/components/ui/sonner";
-import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
 import { HumanControlInbox } from "@/components/operations/human-control-inbox";
-import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
 import {
   OperatorRecoveryLink,
   OperatorScopeFreshness,
@@ -44,20 +32,13 @@ import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projec
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import {
   buildAgentViews,
-  buildIntegrationViews,
-  buildModelViews,
   buildTaskViews,
-  formatBigNumber,
-  summarizeTokens,
   type AgentView,
   type TaskView
 } from "@/components/operations/operations-data";
 import {
   EmptyState,
   EntityIcon,
-  KeyValue,
-  MiniBadge,
-  ProgressBar,
   SectionCard,
   StatCard,
   StatGrid,
@@ -79,7 +60,6 @@ export function DashboardPageContent({
   attentionRefreshGeneration,
   surfaceTheme,
   refresh,
-  setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
@@ -89,36 +69,20 @@ export function DashboardPageContent({
   attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
-  setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
   const agents = useMemo(() => buildAgentViews(snapshot), [snapshot]);
   const tasks = useMemo(() => buildTaskViews(snapshot), [snapshot]);
-  const models = useMemo(() => buildModelViews(snapshot), [snapshot]);
-  const integrations = useMemo(() => buildIntegrationViews(rootSnapshot), [rootSnapshot]);
   const referenceMs = resolveRelativeTimeReferenceMs(rootSnapshot.generatedAt);
   const taskCounts = summarizeTasks(tasks);
   const runningAgents = agents.filter((agent) => agent.status === "running");
   const readyAgents = agents.filter((agent) => agent.status === "ready");
   const agentsNeedingApproval = agents.filter((agent) => agent.status === "needs-approval");
-  const tokenTotal = summarizeSnapshotTokens(snapshot);
-  const gatewaySummary = summarizeGateway(rootSnapshot);
   const operatorRuntime = useMemo(
-    () => presentOperatorRuntime(rootSnapshot, {
-      connectionState,
-      scope: {
-        workspaceId: activeWorkspaceId,
-        workspaceName: activeWorkspace?.name ?? null,
-        workspaceCount: rootSnapshot.workspaces.length
-      }
-    }),
-    [activeWorkspace?.name, activeWorkspaceId, connectionState, rootSnapshot]
+    () => presentOperatorRuntime(rootSnapshot, { connectionState }),
+    [connectionState, rootSnapshot]
   );
-  const compatibilityReport = rootSnapshot.diagnostics.compatibilityReport ?? null;
-  const modelReadiness = rootSnapshot.diagnostics.modelReadiness;
-  const enabledAccounts = rootSnapshot.channelAccounts.filter((account) => account.enabled);
-  const connectedIntegrations = integrations.filter((integration) => integration.status === "connected");
   const activeRuntimeIssues = rootSnapshot.diagnostics.runtimeIssues.filter(
     (issue) => issue.status !== "resolved" && issue.status !== "dismissed"
   );
@@ -131,78 +95,14 @@ export function DashboardPageContent({
     () => filterAgents(agents, dashboardQuery),
     [agents, dashboardQuery]
   );
-  const filteredRecentTasks = useMemo(
-    () =>
-      filterTasks(
-        [...tasks].sort((left, right) => (right.source?.updatedAt ?? 0) - (left.source?.updatedAt ?? 0)),
-        dashboardQuery
-      ).slice(0, 6),
-    [dashboardQuery, tasks]
-  );
   const activeTaskByAgentId = useMemo(() => buildActiveTaskByAgentId(tasks), [tasks]);
   const visibleAgents = filteredAgents.slice(0, 6);
+  const activeTasks = useMemo(
+    () => filterTasks(tasks.filter((task) => ["running", "queued", "approval", "stalled"].includes(task.status)), dashboardQuery).slice(0, 6),
+    [dashboardQuery, tasks]
+  );
   const activeWorkspaceLabel = activeWorkspace?.name ?? "All workspaces";
   const activeWorkspaceDetail = activeWorkspace?.path ? compactPath(activeWorkspace.path) : `${rootSnapshot.workspaces.length} workspaces visible`;
-  const [auditActivity, setAuditActivity] = useState<TaskAuditActivity | null>(null);
-
-  const runTaskHealthAudit = async () => {
-    setAuditActivity({
-      status: "running",
-      lastRunAt: null,
-      title: "Task audit running",
-      detail: "OpenClaw CLI audit is running."
-    });
-    try {
-      const response = await fetch("/api/tasks/health", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          action: "audit"
-        })
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok || result.error) {
-        throw new Error(result.error || "Unable to run the task audit.");
-      }
-
-      const auditResult = result as {
-        completedAt?: string;
-        audit?: { state?: string; explanation?: string; warnings?: number; errors?: number; total?: number };
-      };
-      const completedAt = auditResult.completedAt ?? new Date().toISOString();
-      const auditSummary = auditResult.audit;
-      toast.success("Task audit completed.");
-      setAuditActivity({
-        status: "success",
-        lastRunAt: completedAt,
-        title:
-          auditSummary?.state === "clean"
-            ? "Task audit clean"
-            : auditSummary?.state === "findings"
-              ? "Task audit found findings"
-              : "Task audit completed",
-        detail:
-          auditSummary?.explanation ??
-          (auditSummary?.errors || auditSummary?.warnings
-            ? `${auditSummary.errors ?? 0} errors, ${auditSummary.warnings ?? 0} warnings`
-            : "OpenClaw task audit completed successfully.")
-      });
-      await refresh();
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown task audit error.";
-      setAuditActivity({
-        status: "error",
-        lastRunAt: new Date().toISOString(),
-        title: "Task audit failed",
-        detail
-      });
-      toast.error("Task audit failed.", {
-        description: detail
-      });
-    }
-  };
 
   return (
     <>
@@ -216,12 +116,14 @@ export function DashboardPageContent({
                 <OperatorRecoveryLink projection={operatorRuntime} surfaceTheme={surfaceTheme} />
               </div>
               <h1 className="mt-1 font-display text-[1.7rem] font-semibold leading-tight tracking-normal text-foreground sm:mt-4">
-                Dashboard
+                Home
               </h1>
               <p className="mt-1.5 max-w-3xl text-[0.8rem] leading-5 text-muted-foreground">
-                Operational cockpit for {activeWorkspaceLabel}, backed by live OpenClaw runtime data.
+                See what is happening, what needs you, and whether the system is operational.
               </p>
-              <p className="mt-1 text-[0.68rem] leading-4 text-muted-foreground/80">{activeWorkspaceDetail}</p>
+              <p className="mt-2 text-[0.68rem] leading-4 text-muted-foreground/80">
+                <span className="font-semibold text-foreground">Workspace view:</span> {activeWorkspaceLabel} · {activeWorkspaceDetail}
+              </p>
             </div>
 
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center xl:justify-end">
@@ -253,28 +155,16 @@ export function DashboardPageContent({
           </div>
         </header>
 
-        <StatGrid columns={6}>
-          <StatCard label="Workspaces" value={String(rootSnapshot.workspaces.length)} detail="Visible in snapshot" icon={Workflow} tone="info" />
-          <StatCard label="Agents" value={String(agents.length)} detail={`${runningAgents.length} active, ${readyAgents.length} ready`} icon={Bot} tone="success" />
-          <StatCard label="Running Tasks" value={String(taskCounts.running)} detail={`${taskCounts.queued} queued`} icon={Activity} tone="info" />
-          <StatCard label="Completed" value={String(taskCounts.completed)} detail="Completed task records" icon={CircleCheck} tone="success" />
-          <StatCard label="Needs Attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, runtimeAttentionCount)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
-          <StatCard label="Tokens" value={tokenTotal > 0 ? formatBigNumber(tokenTotal) : "None"} detail={tokenTotal > 0 ? "Reported usage" : "No usage reported"} icon={Sparkles} tone="purple" />
+        <StatGrid columns={3}>
+          <StatCard label="Active workforce" value={String(runningAgents.length)} detail={`${readyAgents.length} ready`} icon={Bot} tone="success" />
+          <StatCard label="Active work" value={String(taskCounts.running + taskCounts.queued)} detail={`${taskCounts.running} running, ${taskCounts.queued} queued`} icon={Activity} tone="info" />
+          <StatCard label="Needs your attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, runtimeAttentionCount)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
         </StatGrid>
-
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
-          <QuickAction icon={Workflow} label="Missions" href="/missions" />
-          <QuickAction icon={Bot} label="Add Agent" href="/agents" />
-          <QuickAction icon={KeyRound} label="Connect Account" href="/accounts" />
-          <QuickAction icon={BrainCircuit} label="Manage Models" href="/models" />
-          <QuickAction icon={Settings2} label="Open Settings" href="/settings" />
-          <QuickAction icon={Gauge} label="Mission Control" href="/" />
-        </div>
 
         <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-12">
           <SectionCard
-            title="Mission Control"
-            action={<PanelLink href="/missions" label="View missions" />}
+            title="Active workforce"
+            action={<PanelLink href="/agents" label="View agents" />}
             className={cn(dashboardPanelClassName, "xl:col-span-7")}
           >
             <div className="space-y-3 p-3">
@@ -325,20 +215,18 @@ export function DashboardPageContent({
 
           <div className={cn("space-y-3 xl:col-span-5")}>
             <HumanControlInbox surfaceTheme={surfaceTheme} attentionRefreshGeneration={attentionRefreshGeneration} />
-            <TaskHealthCard
-              snapshot={rootSnapshot}
-              title="Task Health"
-              compact
-              onRefresh={refresh}
-              onRunAudit={runTaskHealthAudit}
-              auditActivity={auditActivity}
-            />
-            <RuntimeIssuesCard
-              snapshot={rootSnapshot}
-              surfaceTheme={surfaceTheme}
-              onSnapshotChange={setSnapshot}
-              onRefresh={refresh}
-            />
+            <div className={cn("grid grid-cols-2 gap-2 rounded-xl border p-3", insetSurfaceClassName)}>
+              <div className="min-w-0">
+                <p className="text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Task review</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{currentTaskIssueCount}</p>
+                <PanelLink href="/tasks" label="Open tasks" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Runtime signals</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{runtimeAttentionCount}</p>
+                <PanelLink href="/settings#diagnostics" label="View diagnostics" />
+              </div>
+            </div>
             {diagnosticInboxItems.length > 0 ? (
               <CompactIssueList
                 items={diagnosticInboxItems}
@@ -353,86 +241,67 @@ export function DashboardPageContent({
           </div>
 
           <SectionCard
-            title="Recent Runtime Activity"
+            title="Active work"
             action={<PanelLink href="/missions" label="View missions" />}
             className={cn(dashboardPanelClassName, "xl:col-span-7")}
           >
-            {tasks.length === 0 ? (
+            {activeTasks.length === 0 ? (
               <div className="p-3">
                 <ActionEmptyState
-                  title="No task activity"
-                  description="No OpenClaw task records are available for this workspace yet."
+                  title="No active work"
+                  description="There are no running, queued, approval, or stalled tasks in this workspace right now."
                   actions={
-                    <Button size="sm" className="h-8 rounded-lg px-3 text-xs" onClick={() => setDispatchOpen(true)}>
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />
-                      Create Task
-                    </Button>
+                    <>
+                      <Button size="sm" className="h-8 rounded-lg px-3 text-xs" onClick={() => setDispatchOpen(true)}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        Create Task
+                      </Button>
+                      <Button asChild variant="secondary" size="sm" className="h-8 rounded-lg px-3 text-xs">
+                        <Link href="/missions">New mission</Link>
+                      </Button>
+                    </>
                   }
                 />
               </div>
-            ) : filteredRecentTasks.length === 0 ? (
+            ) : filterTasks(activeTasks, dashboardQuery).length === 0 ? (
               <div className="p-3">
-                <EmptyState title="No tasks match this search" description="Clear the dashboard search to restore recent task activity." />
+                <EmptyState title="No active work matches this search" description="Clear the search to restore the active work view." />
               </div>
             ) : (
               <div className="divide-y divide-border/70">
-                {filteredRecentTasks.map((task) => (
+                {activeTasks.map((task) => (
                   <TaskActivityRow key={task.id} task={task} referenceMs={referenceMs} />
                 ))}
               </div>
             )}
           </SectionCard>
 
-          <SectionCard
-            title="System Health"
-            action={<PanelLink href="/settings#diagnostics" label="View diagnostics" />}
-            className={cn(dashboardPanelClassName, "xl:col-span-5")}
-          >
-            <div className="space-y-3 p-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <HealthSummaryRow
-                  icon={Activity}
-                  label="AgentOS stream"
-                  value={operatorRuntime.transport.label}
-                  tone={operatorRuntime.transport.state === "live" ? "success" : operatorRuntime.transport.state === "offline" ? "danger" : "warning"}
-                />
-                <HealthSummaryRow
-                  icon={TerminalSquare}
-                  label="OpenClaw runtime"
-                  value={operatorRuntime.stateLabel}
-                  tone={operatorRuntime.tone}
-                />
-              </div>
-              {needsAttentionCount === 0 && operatorRuntime.state === "ready" ? (
+          {operatorRuntime.state !== "ready" || operatorRuntime.transport.state !== "live" ? (
+            <SectionCard
+              title="System status"
+              action={<PanelLink href="/settings#diagnostics" label="View diagnostics" />}
+              className={cn(dashboardPanelClassName, "xl:col-span-5")}
+            >
+              <div className="space-y-3 p-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <HealthSummaryRow
+                    icon={Activity}
+                    label="AgentOS stream"
+                    value={operatorRuntime.transport.label}
+                    tone={operatorRuntime.transport.state === "offline" ? "danger" : "warning"}
+                  />
+                  <HealthSummaryRow icon={TerminalSquare} label="OpenClaw runtime" value={operatorRuntime.stateLabel} tone={operatorRuntime.tone} />
+                </div>
                 <div className={cn("rounded-lg border p-4", insetSurfaceClassName)}>
                   <div className="flex items-start gap-3">
-                    <EntityIcon icon={CheckCircle2} label="Healthy" tone="success" size="sm" />
+                    <EntityIcon icon={AlertTriangle} label="Attention required" tone={operatorRuntime.tone} size="sm" />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground">All systems operational</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        AgentOS stream and native OpenClaw Gateway RPC are ready in the current snapshot.
-                      </p>
+                      <p className="text-sm font-semibold text-foreground">Runtime attention required</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{operatorRuntime.explanation}</p>
                     </div>
-                  </div>
-                </div>
-              ) : (
-                <div className={cn("rounded-lg border p-4", insetSurfaceClassName)}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground">Attention required</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {needsAttentionCount} task or runtime signal{needsAttentionCount === 1 ? "" : "s"} need review.
-                      </p>
-                    </div>
-                    <StatusBadge label="Review" tone="warning" />
                   </div>
                   {operatorRuntime.primaryRecovery ? (
-                    <Button
-                      asChild
-                      variant="secondary"
-                      size="sm"
-                      className="mt-3 h-8 w-full justify-between rounded-lg border-[hsl(var(--status-warning)/0.28)] bg-[hsl(var(--status-warning)/0.10)] text-xs text-[hsl(var(--status-warning-foreground))] hover:bg-[hsl(var(--status-warning)/0.14)] hover:text-[hsl(var(--status-warning-foreground))]"
-                    >
+                    <Button asChild variant="secondary" size="sm" className="mt-3 h-8 w-full justify-between rounded-lg text-xs">
                       <Link href={operatorRuntime.primaryRecovery.href}>
                         {operatorRuntime.primaryRecovery.label}
                         <Settings2 className="h-3.5 w-3.5" />
@@ -440,151 +309,10 @@ export function DashboardPageContent({
                     </Button>
                   ) : null}
                 </div>
-              )}
-            </div>
-          </SectionCard>
-
-          <SectionCard
-            title="OpenClaw Runtime"
-            action={<PanelLink href="/settings#diagnostics" label="Diagnostics" />}
-            className={cn(dashboardPanelClassName, "hidden sm:block xl:col-span-8")}
-          >
-            <div className="space-y-3 p-3">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)]">
-                <RuntimeSummaryBlock
-                  icon={TerminalSquare}
-                  title="Gateway"
-                  status={operatorRuntime.stateLabel}
-                  tone={operatorRuntime.tone}
-                  rows={[
-                    ["Health", formatHealthLabel(rootSnapshot.diagnostics.health)],
-                    ["RPC", rootSnapshot.diagnostics.rpcOk ? "OK" : "Unavailable"],
-                    ["Loaded", rootSnapshot.diagnostics.loaded ? "Yes" : "No"],
-                    ["Transport", rootSnapshot.diagnostics.transport?.mode ?? "Unknown"],
-                    ["Endpoint", rootSnapshot.diagnostics.gatewayUrl || "Not reported"]
-                  ]}
-                />
-                <NativeCoverageSummary gatewaySummary={gatewaySummary} />
-                <RuntimeSummaryBlock
-                  icon={ShieldCheck}
-                  title="Compatibility"
-                  status={compatibilityReport ? formatCompatibilityStatus(compatibilityReport.status) : "Unknown"}
-                  tone={compatibilityReport ? compatibilityStatusTone(compatibilityReport.status) : "muted"}
-                  rows={[
-                    ["Installed", compatibilityReport?.openClaw.installedVersion ?? gatewaySummary.installedVersionLabel],
-                    ["Recommended", compatibilityReport?.openClaw.recommendedVersion ?? "Unknown"],
-                    ["Fallback ops", String(gatewaySummary.cliFallbackOperationCount)],
-                    ["Limited ops", String(gatewaySummary.degradedOperationCount)],
-                    ["Unsupported", String(gatewaySummary.unsupportedGatewayMethods)],
-                    ["Smoke test", rootSnapshot.diagnostics.compatibilitySmokeTest?.status ?? "Not run"]
-                  ]}
-                />
-              </div>
-              {gatewaySummary.lastFallbackReason || compatibilityReport?.recovery ? (
-                <details className={cn("rounded-lg border px-3 py-2", insetSurfaceClassName)}>
-                  <summary className="cursor-pointer text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">
-                    View runtime details
-                  </summary>
-                  <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-                    {gatewaySummary.lastFallbackReason ? (
-                      <p>
-                        <span className="font-semibold text-foreground">Last fallback:</span>{" "}
-                        {gatewaySummary.lastFallbackReason}
-                      </p>
-                    ) : null}
-                    {compatibilityReport?.recovery ? (
-                      <p>
-                        <span className="font-semibold text-foreground">Recovery:</span>{" "}
-                        {compatibilityReport.recovery}
-                      </p>
-                    ) : null}
-                  </div>
-                </details>
-              ) : null}
-            </div>
-          </SectionCard>
-
-          <SectionCard
-            title="System Details"
-            action={<PanelLink href="/settings#diagnostics" label="Diagnostics" />}
-            className={cn(dashboardPanelClassName, "sm:hidden")}
-          >
-            <div className="grid grid-cols-2 gap-2 p-3">
-              <QuickAction icon={TerminalSquare} label="Runtime" href="/operations" />
-              <QuickAction icon={BrainCircuit} label="Models" href="/models" />
-              <QuickAction icon={KeyRound} label="Accounts" href="/accounts" />
-              <QuickAction icon={Plug} label="Integrations" href="/integrations" />
-            </div>
-          </SectionCard>
-
-          <div className="hidden gap-3 sm:grid lg:col-span-2 lg:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
-            <SectionCard
-              title="Models"
-              action={<PanelLink href="/models" label="Manage" />}
-              className={dashboardPanelClassName}
-            >
-              <div className="space-y-3 p-3">
-                <div className={cn("rounded-lg border p-3", insetSurfaceClassName)}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Default Model</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                        {modelReadiness.resolvedDefaultModel ?? modelReadiness.defaultModel ?? "Not configured"}
-                      </p>
-                    </div>
-                    <StatusBadge label={modelReadiness.ready ? "Ready" : "Needs Setup"} tone={modelReadiness.ready ? "success" : "warning"} />
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <MiniMetric label="Available" value={String(modelReadiness.availableModelCount)} />
-                    <MiniMetric label="Local" value={String(modelReadiness.localModelCount)} />
-                    <MiniMetric label="Remote" value={String(modelReadiness.remoteModelCount)} />
-                  </div>
-                </div>
-                {models.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {models.slice(0, 8).map((model) => (
-                      <MiniBadge key={model.id}>{model.name}</MiniBadge>
-                    ))}
-                  </div>
-                ) : (
-                  <CompactEmptyState
-                    title="No model records"
-                    description="The snapshot does not include model records yet."
-                    action={<PanelLink href="/models" label="Manage Models" />}
-                  />
-                )}
               </div>
             </SectionCard>
+          ) : null}
 
-            <SectionCard
-              title="Accounts & Integrations"
-              action={<PanelLink href="/accounts" label="Connect" />}
-              className={dashboardPanelClassName}
-            >
-              <div className="space-y-3 p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <MiniMetric label="Accounts" value={String(rootSnapshot.channelAccounts.length)} detail={`${enabledAccounts.length} enabled`} />
-                  <MiniMetric label="Integrations" value={String(connectedIntegrations.length)} detail={`${integrations.length} tracked`} />
-                </div>
-                {rootSnapshot.channelAccounts.length === 0 ? (
-                  <CompactEmptyState
-                    title="No connected accounts"
-                    description="OpenClaw has not reported channel accounts for this workspace."
-                    action={<PanelLink href="/accounts" label="Connect Account" />}
-                  />
-                ) : (
-                  <div className="space-y-2">
-                    {rootSnapshot.channelAccounts.slice(0, 4).map((account) => (
-                      <div key={account.id} className={cn("flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2", insetSurfaceClassName)}>
-                        <span className="min-w-0 truncate text-xs font-medium text-foreground">{account.name}</span>
-                        <StatusBadge label={account.enabled ? "Enabled" : "Disabled"} tone={account.enabled ? "success" : "muted"} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </SectionCard>
-          </div>
         </div>
       </div>
 
@@ -632,39 +360,6 @@ function DashboardSearch({
   );
 }
 
-function QuickAction({
-  icon: Icon,
-  label,
-  href,
-  onClick
-}: {
-  icon: LucideIcon;
-  label: string;
-  href?: string;
-  onClick?: () => void;
-}) {
-  const content = (
-    <>
-      <Icon className="h-3.5 w-3.5" />
-      <span className="truncate">{label}</span>
-    </>
-  );
-
-  if (href) {
-    return (
-      <Button asChild variant="secondary" size="sm" className="h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-xs">
-        <Link href={href}>{content}</Link>
-      </Button>
-    );
-  }
-
-  return (
-    <Button variant="secondary" size="sm" className="h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-xs" onClick={onClick}>
-      {content}
-    </Button>
-  );
-}
-
 function PanelLink({ href, label }: { href: string; label: string }) {
   return (
     <Button asChild variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem] text-primary hover:text-primary">
@@ -690,24 +385,6 @@ function ActionEmptyState({
       <p className="text-sm font-semibold text-foreground">{title}</p>
       <p className="mt-2 max-w-md text-xs leading-5 text-muted-foreground">{description}</p>
       {actions ? <div className="mt-4 flex flex-wrap items-center justify-center gap-2">{actions}</div> : null}
-    </div>
-  );
-}
-
-function CompactEmptyState({
-  title,
-  description,
-  action
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className={cn("rounded-lg border border-dashed p-3", insetSurfaceClassName)}>
-      <p className="text-xs font-semibold text-foreground">{title}</p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
 }
@@ -853,74 +530,6 @@ function HealthSummaryRow({
   );
 }
 
-function RuntimeSummaryBlock({
-  icon,
-  title,
-  status,
-  tone,
-  rows
-}: {
-  icon: LucideIcon;
-  title: string;
-  status: string;
-  tone: StatusTone;
-  rows: Array<[string, string]>;
-}) {
-  return (
-    <div className={cn("rounded-lg border p-3", insetSurfaceClassName)}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <EntityIcon icon={icon} label={title} tone={tone} size="sm" />
-          <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-foreground">{title}</p>
-            <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">{status}</p>
-          </div>
-        </div>
-        <StatusBadge label={status} tone={tone} />
-      </div>
-      <div className="mt-3">
-        {rows.map(([label, value]) => (
-          <KeyValue key={label} label={label} value={<span className="break-words">{value}</span>} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function NativeCoverageSummary({ gatewaySummary }: { gatewaySummary: ReturnType<typeof summarizeGateway> }) {
-  const coveragePercent = gatewaySummary.nativeCoveragePercent;
-  const dialValue = typeof coveragePercent === "number" ? coveragePercent : 0;
-
-  return (
-    <div className={cn("flex flex-col justify-between rounded-lg border p-3 text-center", insetSurfaceClassName)}>
-      <div className="flex items-center justify-between gap-2 text-left">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <EntityIcon icon={Cpu} label="Native Coverage" tone={gatewaySummary.nativeOperationCount > 0 ? "success" : "muted"} size="sm" />
-          <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-foreground">Native Coverage</p>
-            <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">{gatewaySummary.nativeCoverageLabel}</p>
-          </div>
-        </div>
-      </div>
-      <div className="mx-auto my-4 flex h-28 w-28 items-center justify-center rounded-full p-2 shadow-[inset_0_0_0_1px_hsl(var(--border)/0.7)]"
-        style={{
-          background: `conic-gradient(hsl(var(--primary)) ${dialValue}%, hsl(var(--border) / 0.58) 0)`
-        }}
-      >
-        <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-card text-foreground shadow-[inset_0_0_18px_hsl(var(--background)/0.78)]">
-          <span className="text-2xl font-semibold leading-none">
-            {typeof coveragePercent === "number" ? `${coveragePercent}%` : gatewaySummary.nativeOperationCount}
-          </span>
-          <span className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {typeof coveragePercent === "number" ? "native" : "ops"}
-          </span>
-        </div>
-      </div>
-      <ProgressBar value={dialValue} tone={gatewaySummary.nativeOperationCount > 0 ? "success" : "muted"} />
-    </div>
-  );
-}
-
 function summarizeTasks(tasks: TaskView[]) {
   const running = tasks.filter((task) => task.status === "running").length;
   const queued = tasks.filter((task) => task.status === "queued").length;
@@ -935,74 +544,6 @@ function summarizeTasks(tasks: TaskView[]) {
       ...tasks.filter((task) => (task.source?.warningCount ?? 0) > 0).map((task) => task.id)
     ]).size
   };
-}
-
-function summarizeSnapshotTokens(snapshot: MissionControlSnapshot) {
-  const taskTokens = snapshot.tasks.reduce((sum, task) => sum + (task.tokenUsage?.total ?? 0), 0);
-  return taskTokens || summarizeTokens(snapshot);
-}
-
-function summarizeGateway(snapshot: MissionControlSnapshot) {
-  const diagnostics = snapshot.diagnostics;
-  const operations = Object.values(diagnostics.capabilityMatrix?.operations ?? {});
-  const compatibility = diagnostics.capabilityMatrix?.compatibility;
-  const compatibilityReport = diagnostics.compatibilityReport;
-  const fallbackDiagnostics = diagnostics.gatewayFallbackDiagnostics ?? diagnostics.capabilityMatrix?.fallbackDiagnostics ?? [];
-  const fallbackReasons = diagnostics.gatewayFallbackReasons ?? diagnostics.capabilityMatrix?.fallbackReasons ?? [];
-  const nativeOperationCount =
-    compatibilityReport?.summary.nativeGatewayCoveragePercent != null
-      ? compatibilityReport.contracts.filter((contract) => contract.nativeGatewaySupported).length
-      : compatibility?.nativeOperationCount ?? operations.filter((operation) => operation.mode === "gateway-native").length;
-  const degradedOperationCount =
-    compatibilityReport?.summary.degradedOperationCount ??
-    compatibility?.degradedOperationCount ??
-    operations.filter((operation) => operation.mode === "degraded" || operation.mode === "cli-fallback" || operation.mode === "disabled").length;
-  const cliFallbackOperationCount =
-    compatibilityReport?.summary.cliFallbackOperationCount ??
-    operations.filter((operation) => operation.mode === "cli-fallback").length;
-  const label = diagnostics.rpcOk ? "Native RPC" : diagnostics.loaded ? "Gateway Degraded" : diagnostics.installed ? "Installed" : "Unavailable";
-
-  return {
-    label,
-    detail: diagnostics.version ? `OpenClaw v${diagnostics.version}` : diagnostics.installed ? "Version unknown" : "OpenClaw not installed",
-    installedVersionLabel: diagnostics.version ? `v${diagnostics.version}` : diagnostics.installed ? "Version unknown" : "Not installed",
-    tone: diagnostics.rpcOk && diagnostics.health === "healthy" ? "success" as const : diagnostics.installed ? "warning" as const : "danger" as const,
-    nativeCoverageLabel: compatibilityReport?.summary.nativeGatewayCoverageLabel ?? `${nativeOperationCount} native`,
-    nativeCoveragePercent: compatibilityReport?.summary.nativeGatewayCoveragePercent ?? null,
-    nativeOperationCount,
-    degradedOperationCount,
-    cliFallbackOperationCount,
-    unsupportedGatewayMethods: diagnostics.capabilityMatrix?.unsupportedGatewayMethods.length ?? 0,
-    fallbackCount: fallbackDiagnostics.length,
-    fallbackReasonCount: fallbackReasons.length,
-    lastFallbackReason: fallbackReasons[0] ?? fallbackDiagnostics[0]?.issue ?? null
-  };
-}
-
-function formatCompatibilityStatus(status: NonNullable<MissionControlSnapshot["diagnostics"]["compatibilityReport"]>["status"]) {
-  switch (status) {
-    case "compatible":
-      return "Compatible";
-    case "degraded":
-      return "Degraded";
-    case "incompatible":
-      return "Incompatible";
-    case "unknown":
-      return "Unknown";
-  }
-}
-
-function compatibilityStatusTone(status: NonNullable<MissionControlSnapshot["diagnostics"]["compatibilityReport"]>["status"]): StatusTone {
-  switch (status) {
-    case "compatible":
-      return "success";
-    case "degraded":
-      return "warning";
-    case "incompatible":
-      return "danger";
-    case "unknown":
-      return "muted";
-  }
 }
 
 function buildAttentionItems(snapshot: MissionControlSnapshot) {
@@ -1107,10 +648,6 @@ function formatAttentionDetail(taskAttentionCount: number, runtimeAttentionCount
   }
 
   return parts.join(", ");
-}
-
-function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health"]) {
-  return health.charAt(0).toUpperCase() + health.slice(1);
 }
 
 function truncateText(value: string, maxLength: number) {

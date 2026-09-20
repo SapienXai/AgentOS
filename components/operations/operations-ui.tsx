@@ -216,10 +216,12 @@ export function StatCard({
   );
 }
 
-export function StatGrid({ children, columns = 5 }: { children: ReactNode; columns?: 4 | 5 | 6 }) {
+export function StatGrid({ children, columns = 5 }: { children: ReactNode; columns?: 3 | 4 | 5 | 6 }) {
   const columnsClass =
     columns === 6
       ? "xl:grid-cols-6"
+      : columns === 3
+        ? "xl:grid-cols-3"
       : columns === 4
         ? "xl:grid-cols-4"
         : "xl:grid-cols-5";

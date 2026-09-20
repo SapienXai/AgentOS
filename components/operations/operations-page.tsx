@@ -36,7 +36,6 @@ export function OperationsPage({
               attentionRefreshGeneration={context.attentionRefreshGeneration}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
-              setSnapshot={context.setSnapshot}
             />
           );
         }
