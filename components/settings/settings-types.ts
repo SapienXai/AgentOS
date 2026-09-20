@@ -12,6 +12,7 @@ export type SettingsPageProps = {
   onOpenAdvancedSection: (section: string) => void;
   onToggleTheme: () => void;
   snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+  connectionState: MissionControlShellSettingsPanelProps["connectionState"];
   surfaceTheme: MissionControlShellSettingsPanelProps["surfaceTheme"];
   workspaceRootDraft: string;
   isSavingWorkspaceRoot: boolean;

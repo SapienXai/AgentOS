@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Menu } from "lucide-react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
@@ -31,6 +31,8 @@ import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import type { MissionControlSnapshot, WorkspaceCreateResult, WorkspacePlanDeployResult, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
+
+const useIsomorphicLayoutEffect = typeof globalThis.window === "undefined" ? useEffect : useLayoutEffect;
 
 export type OperationsShellContext = {
   snapshot: MissionControlSnapshot;
@@ -206,7 +208,7 @@ export function OperationsShell({
     };
   }, [mobileSidebarOpen]);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const workspaceRoot = snapshot.diagnostics.workspaceRoot;
 
     if (loadedWorkspaceSelectionRoot === workspaceRoot) {
@@ -228,13 +230,11 @@ export function OperationsShell({
       ? requestedWorkspaceId
       : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, activeWorkspaceId);
 
-    queueMicrotask(() => {
-      if (resolvedWorkspaceId !== activeWorkspaceId) {
-        setActiveWorkspaceId(resolvedWorkspaceId);
-      }
+    if (resolvedWorkspaceId !== activeWorkspaceId) {
+      setActiveWorkspaceId(resolvedWorkspaceId);
+    }
 
-      setLoadedWorkspaceSelectionRoot(workspaceRoot);
-    });
+    setLoadedWorkspaceSelectionRoot(workspaceRoot);
   }, [
     activeWorkspaceId,
     loadedWorkspaceSelectionRoot,
@@ -536,6 +536,8 @@ export function OperationsShell({
               compact
               snapshot={snapshot}
               connectionState={connectionState}
+              activeWorkspaceId={activeWorkspaceId}
+              activeWorkspaceName={activeWorkspace?.name ?? null}
               surfaceTheme={surfaceTheme}
               onRefresh={() => {
                 void refresh();
@@ -548,6 +550,8 @@ export function OperationsShell({
             <OperationsTopBar
               snapshot={snapshot}
               connectionState={connectionState}
+              activeWorkspaceId={activeWorkspaceId}
+              activeWorkspaceName={activeWorkspace?.name ?? null}
               surfaceTheme={surfaceTheme}
               onRefresh={() => {
                 void refresh();

@@ -41,6 +41,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
 import { SettingsPage } from "@/components/settings/settings-page";
+import { OperatorScopeFreshness, OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import type { SettingsArea } from "@/components/settings/settings-types";
 import {
   buildOpenClawCapabilityRows,
@@ -98,6 +99,7 @@ import {
 } from "@/lib/openclaw/contracts/contract-diff-service";
 import type { AgentOsOpenClawContractComparisonFilter } from "@/lib/openclaw/contracts/types";
 import { cn } from "@/lib/utils";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 
 const binaryModes: Array<{
   value: MissionControlShellSettingsPanelProps["openClawBinarySelection"]["mode"];
@@ -383,6 +385,13 @@ export function SettingsControlCenter(
   const transportSummary = useMemo(
     () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState, snapshot.diagnostics.eventBridge),
     [connectionState, snapshot.diagnostics.eventBridge, snapshot.diagnostics.transport]
+  );
+  const operatorRuntime = useMemo(
+    () => presentOperatorRuntime(snapshot, {
+      connectionState,
+      scope: { workspaceId: null, workspaceCount: snapshot.workspaces.length }
+    }),
+    [connectionState, snapshot]
   );
   const activeRuntimeIssues = snapshot.diagnostics.runtimeIssues.filter(
     (issue) => issue.status !== "resolved" && issue.status !== "dismissed"
@@ -1299,6 +1308,7 @@ export function SettingsControlCenter(
         }}
         onToggleTheme={onToggleTheme}
         snapshot={snapshot}
+        connectionState={connectionState}
         surfaceTheme={surfaceTheme}
         workspaceRootDraft={workspaceRootDraft}
         isSavingWorkspaceRoot={isSavingWorkspaceRoot}
@@ -1364,6 +1374,10 @@ export function SettingsControlCenter(
               <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
                 Advanced settings
               </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
+                <OperatorScopeFreshness projection={operatorRuntime} compact />
+              </div>
               <p className={cn("max-w-2xl text-sm leading-6", mutedTextClassName(surfaceTheme))}>
                 Low-level OpenClaw controls, diagnostics, and compatibility tooling.
               </p>
@@ -1394,7 +1408,7 @@ export function SettingsControlCenter(
                   <Card title="Gateway" icon={ShieldCheck} surfaceTheme={surfaceTheme}>
                     <Metric
                       label="Gateway"
-                      value={snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}
+                      value={operatorRuntime.stateLabel}
                       badge={transportSummary.protocolLabel}
                       surfaceTheme={surfaceTheme}
                     />
@@ -1427,8 +1441,8 @@ export function SettingsControlCenter(
                     surfaceTheme={surfaceTheme}
                     action={
                       <StatusPill
-                        label={activeRuntimeIssues.length ? `${activeRuntimeIssues.length} visible` : "Healthy"}
-                        tone={activeRuntimeIssues.length ? "danger" : "success"}
+                        label={activeRuntimeIssues.length ? `${activeRuntimeIssues.length} visible` : operatorRuntime.stateLabel}
+                        tone={activeRuntimeIssues.length ? "danger" : operatorRuntime.tone === "success" ? "success" : operatorRuntime.tone === "danger" ? "danger" : operatorRuntime.tone === "warning" ? "warning" : "neutral"}
                         surfaceTheme={surfaceTheme}
                       />
                     }

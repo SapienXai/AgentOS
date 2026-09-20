@@ -105,6 +105,7 @@ import type {
   DiscoveredModelCandidate,
   MissionControlSnapshot
 } from "@/lib/agentos/contracts";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { cn } from "@/lib/utils";
 
 type AgentDraft = {
@@ -357,13 +358,16 @@ export function MissionSidebar({
     activePendingWorkspace ??
     snapshot.workspaces[0] ??
     null;
-  const statusTone = resolveStatusTone(snapshot.diagnostics.health, connectionState);
-  const statusLabel =
-    connectionState === "live"
-      ? "Online"
-      : connectionState === "retrying"
-        ? "Retrying"
-        : "Connecting";
+  const operatorRuntime = presentOperatorRuntime(snapshot, {
+    connectionState,
+    scope: {
+      workspaceId: activeWorkspaceId,
+      workspaceName: activeWorkspace?.name ?? null,
+      workspaceCount: snapshot.workspaces.length
+    }
+  });
+  const statusTone = resolveOperatorStatusTone(operatorRuntime.tone);
+  const statusLabel = `${operatorRuntime.stateLabel} · ${operatorRuntime.freshness.state === "live" ? "Live" : operatorRuntime.freshness.label}`;
   const handleNavigate = useCallback((item: SidebarItem) => {
     setActiveHash(item.hash ?? "");
   }, []);
@@ -2852,19 +2856,17 @@ function isSidebarItemActive(item: SidebarItem, pathname: string, activeHash: st
   return pathname === "/" && Boolean(item.hash) && activeHash === item.hash;
 }
 
-function resolveStatusTone(
-  health: MissionControlSnapshot["diagnostics"]["health"],
-  connectionState: "connecting" | "live" | "retrying"
-) {
-  if (connectionState === "live" && health === "healthy") {
-    return "bg-emerald-400";
+function resolveOperatorStatusTone(tone: "success" | "warning" | "danger" | "muted") {
+  switch (tone) {
+    case "success":
+      return "bg-emerald-400";
+    case "warning":
+      return "bg-amber-300";
+    case "danger":
+      return "bg-rose-300";
+    default:
+      return "bg-slate-400";
   }
-
-  if (connectionState === "retrying" || health === "degraded") {
-    return "bg-amber-300";
-  }
-
-  return "bg-rose-300";
 }
 
 function isLiveAgent(agent: MissionControlSnapshot["agents"][number]) {

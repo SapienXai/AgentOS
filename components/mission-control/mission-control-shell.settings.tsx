@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
-  Info,
   KeyRound,
   LoaderCircle,
   Plus,
@@ -15,8 +14,8 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
-import { formatGatewayHealthLabel } from "@/components/mission-control/settings-control-center.utils";
 import type {
   AddModelsProviderId,
   MissionControlSnapshot,
@@ -25,6 +24,7 @@ import type {
   ResetTarget
 } from "@/lib/agentos/contracts";
 import type { GatewayNativeAuthStatus } from "@/lib/openclaw/gateway-auth";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import type { OpenClawCapabilityDiffReport } from "@/lib/openclaw/types";
 import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
 import { formatOpenClawProductUpdateStateLabel } from "@/lib/openclaw/update-presentation";
@@ -78,6 +78,7 @@ export type MissionControlShellSettingsPanelProps = {
 export function MissionControlShellSettingsPanel({
   snapshot,
   surfaceTheme,
+  connectionState,
   onOpenSetupWizard,
   onOpenAddModels
 }: MissionControlShellSettingsPanelProps) {
@@ -102,6 +103,7 @@ export function MissionControlShellSettingsPanel({
       !gatewayAuthStatus.native.ok &&
       (gatewayAuthStatus.native.kind === "auth" || gatewayAuthStatus.native.kind === "scope-limited")
   );
+  const operatorRuntime = presentOperatorRuntime(snapshot, { connectionState });
 
   const refreshGatewayAuthStatus = useCallback(async () => {
     setIsCheckingGatewayAuth(true);
@@ -165,8 +167,8 @@ export function MissionControlShellSettingsPanel({
               OpenClaw
             </p>
             <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="font-display text-[1rem]">{formatGatewayHealthLabel(snapshot)}</span>
-              <StatusPill snapshot={snapshot} surfaceTheme={surfaceTheme} />
+              <span className="font-display text-[1rem]">{operatorRuntime.stateLabel}</span>
+              <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
             </div>
           </div>
           <div className="text-right">
@@ -314,55 +316,6 @@ export function MissionControlShellSettingsPanel({
         </Button>
       </div>
     </div>
-  );
-}
-
-function StatusPill({
-  snapshot,
-  surfaceTheme
-}: {
-  snapshot: MissionControlSnapshot;
-  surfaceTheme: SurfaceTheme;
-}) {
-  const isCliFallbackActive = snapshot.diagnostics.transport?.gatewayMode === "fallback-active";
-  const health = snapshot.diagnostics.health;
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
-        health === "healthy"
-          ? surfaceTheme === "light"
-            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-            : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-          : health === "degraded"
-            ? surfaceTheme === "light"
-              ? "border-amber-300 bg-amber-50 text-amber-700"
-              : "border-amber-300/25 bg-amber-300/10 text-amber-100"
-            : surfaceTheme === "light"
-              ? "border-rose-300 bg-rose-50 text-rose-700"
-              : "border-rose-300/25 bg-rose-300/10 text-rose-100"
-      )}
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {formatGatewayHealthLabel(snapshot)}
-      {isCliFallbackActive ? <CliFallbackInfo surfaceTheme={surfaceTheme} /> : null}
-    </span>
-  );
-}
-
-function CliFallbackInfo({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
-  return (
-    <span
-      aria-label="CLI fallback active"
-      title="CLI fallback active"
-      className={cn(
-        "inline-flex h-4 w-4 items-center justify-center rounded-full",
-        surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-200"
-      )}
-    >
-      <Info className="h-3 w-3 opacity-75" />
-    </span>
   );
 }
 

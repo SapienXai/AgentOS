@@ -19,8 +19,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
+import { OperatorScopeFreshness, OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import type { AgentOsStatusTone, AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { cn } from "@/lib/utils";
 
 export type StatusTone = AgentOsStatusTone;
@@ -63,7 +65,9 @@ export function OperationsTopBar({
   onRefresh,
   onToggleTheme,
   onSnapshotChange,
-  compact = false
+  compact = false,
+  activeWorkspaceId = null,
+  activeWorkspaceName = null
 }: {
   snapshot: MissionControlSnapshot;
   connectionState: "connecting" | "live" | "retrying";
@@ -72,11 +76,18 @@ export function OperationsTopBar({
   onToggleTheme: () => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   compact?: boolean;
+  activeWorkspaceId?: string | null;
+  activeWorkspaceName?: string | null;
 }) {
   const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
-  const streamLive = connectionState === "live";
-  const online = streamLive && snapshot.diagnostics.health === "healthy";
-  const label = streamLive ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting";
+  const operatorRuntime = presentOperatorRuntime(snapshot, {
+    connectionState,
+    scope: {
+      workspaceId: activeWorkspaceId,
+      workspaceName: activeWorkspaceName,
+      workspaceCount: snapshot.workspaces.length
+    }
+  });
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
@@ -85,17 +96,8 @@ export function OperationsTopBar({
       <span className="hidden font-mono text-muted-foreground/80 sm:inline">
         v{version}
       </span>
-      {!compact ? (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 tracking-[0.16em]",
-            online ? toneStyles.success : toneStyles.warning
-          )}
-        >
-          <span className={cn("h-1.5 w-1.5 rounded-full", online ? dotStyles.success : dotStyles.warning)} />
-          <span>{label}</span>
-        </span>
-      ) : null}
+      <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
+      <OperatorScopeFreshness projection={operatorRuntime} compact className={compact ? "hidden sm:flex" : "hidden xl:flex"} />
       <RuntimeIssueIndicator
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}

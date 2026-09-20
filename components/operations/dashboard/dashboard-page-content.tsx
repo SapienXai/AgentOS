@@ -34,7 +34,13 @@ import { toast } from "@/components/ui/sonner";
 import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
 import { HumanControlInbox } from "@/components/operations/human-control-inbox";
 import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
+import {
+  OperatorRecoveryLink,
+  OperatorScopeFreshness,
+  OperatorTruthBadge
+} from "@/components/operations/operator-truth-indicator";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import {
   buildAgentViews,
@@ -98,6 +104,17 @@ export function DashboardPageContent({
   const agentsNeedingApproval = agents.filter((agent) => agent.status === "needs-approval");
   const tokenTotal = summarizeSnapshotTokens(snapshot);
   const gatewaySummary = summarizeGateway(rootSnapshot);
+  const operatorRuntime = useMemo(
+    () => presentOperatorRuntime(rootSnapshot, {
+      connectionState,
+      scope: {
+        workspaceId: activeWorkspaceId,
+        workspaceName: activeWorkspace?.name ?? null,
+        workspaceCount: rootSnapshot.workspaces.length
+      }
+    }),
+    [activeWorkspace?.name, activeWorkspaceId, connectionState, rootSnapshot]
+  );
   const compatibilityReport = rootSnapshot.diagnostics.compatibilityReport ?? null;
   const modelReadiness = rootSnapshot.diagnostics.modelReadiness;
   const enabledAccounts = rootSnapshot.channelAccounts.filter((account) => account.enabled);
@@ -106,10 +123,9 @@ export function DashboardPageContent({
     (issue) => issue.status !== "resolved" && issue.status !== "dismissed"
   );
   const diagnosticInboxItems = buildDiagnosticInboxItems(rootSnapshot, activeRuntimeIssues);
-  const attentionItems = buildAttentionItems(rootSnapshot);
-  const hasGatewayPermissionIssue = attentionItems.some(isGatewayPermissionIssue);
   const currentTaskIssueCount = rootSnapshot.diagnostics.taskHealth?.currentIssue.count ?? taskCounts.attention;
-  const needsAttentionCount = currentTaskIssueCount + activeRuntimeIssues.length + diagnosticInboxItems.length;
+  const runtimeAttentionCount = activeRuntimeIssues.length + diagnosticInboxItems.length + (operatorRuntime.state === "ready" ? 0 : 1);
+  const needsAttentionCount = currentTaskIssueCount + runtimeAttentionCount;
   const dashboardQuery = dashboardSearch.trim().toLowerCase();
   const filteredAgents = useMemo(
     () => filterAgents(agents, dashboardQuery),
@@ -125,7 +141,6 @@ export function DashboardPageContent({
   );
   const activeTaskByAgentId = useMemo(() => buildActiveTaskByAgentId(tasks), [tasks]);
   const visibleAgents = filteredAgents.slice(0, 6);
-  const snapshotAgeLabel = formatRelativeTime(Date.parse(rootSnapshot.generatedAt), referenceMs);
   const activeWorkspaceLabel = activeWorkspace?.name ?? "All workspaces";
   const activeWorkspaceDetail = activeWorkspace?.path ? compactPath(activeWorkspace.path) : `${rootSnapshot.workspaces.length} workspaces visible`;
   const [auditActivity, setAuditActivity] = useState<TaskAuditActivity | null>(null);
@@ -196,24 +211,9 @@ export function DashboardPageContent({
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <div className="hidden flex-wrap items-center gap-2 sm:flex">
-                <HeaderStatusPill
-                  label="OpenClaw"
-                  value={resolveOpenClawStatus(rootSnapshot).label}
-                  tone={resolveOpenClawStatus(rootSnapshot).tone}
-                  title="OpenClaw reachability from the current snapshot"
-                />
-                <HeaderStatusPill
-                  label="Runtime"
-                  value={gatewaySummary.cliFallbackOperationCount > 0 ? `${gatewaySummary.cliFallbackOperationCount} CLI fallback` : gatewaySummary.label}
-                  tone={gatewaySummary.cliFallbackOperationCount > 0 ? "warning" : gatewaySummary.tone}
-                  title="Gateway transport and fallback mode"
-                />
-                <HeaderStatusPill
-                  label="Snapshot"
-                  value={`${rootSnapshot.mode === "live" ? "Live" : "Fallback"} / ${snapshotAgeLabel}`}
-                  tone={rootSnapshot.mode === "live" ? "success" : "warning"}
-                  title="Last snapshot update"
-                />
+                <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} />
+                <OperatorScopeFreshness projection={operatorRuntime} compact />
+                <OperatorRecoveryLink projection={operatorRuntime} surfaceTheme={surfaceTheme} />
               </div>
               <h1 className="mt-1 font-display text-[1.7rem] font-semibold leading-tight tracking-normal text-foreground sm:mt-4">
                 Dashboard
@@ -258,7 +258,7 @@ export function DashboardPageContent({
           <StatCard label="Agents" value={String(agents.length)} detail={`${runningAgents.length} active, ${readyAgents.length} ready`} icon={Bot} tone="success" />
           <StatCard label="Running Tasks" value={String(taskCounts.running)} detail={`${taskCounts.queued} queued`} icon={Activity} tone="info" />
           <StatCard label="Completed" value={String(taskCounts.completed)} detail="Completed task records" icon={CircleCheck} tone="success" />
-          <StatCard label="Needs Attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, activeRuntimeIssues.length + diagnosticInboxItems.length)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
+          <StatCard label="Needs Attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, runtimeAttentionCount)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
           <StatCard label="Tokens" value={tokenTotal > 0 ? formatBigNumber(tokenTotal) : "None"} detail={tokenTotal > 0 ? "Reported usage" : "No usage reported"} icon={Sparkles} tone="purple" />
         </StatGrid>
 
@@ -393,24 +393,24 @@ export function DashboardPageContent({
                 <HealthSummaryRow
                   icon={Activity}
                   label="AgentOS stream"
-                  value={formatConnectionState(connectionState)}
-                  tone={connectionState === "live" ? "success" : "warning"}
+                  value={operatorRuntime.transport.label}
+                  tone={operatorRuntime.transport.state === "live" ? "success" : operatorRuntime.transport.state === "offline" ? "danger" : "warning"}
                 />
                 <HealthSummaryRow
                   icon={TerminalSquare}
                   label="OpenClaw runtime"
-                  value={formatHealthLabel(rootSnapshot.diagnostics.health)}
-                  tone={healthTone(rootSnapshot.diagnostics.health)}
+                  value={operatorRuntime.stateLabel}
+                  tone={operatorRuntime.tone}
                 />
               </div>
-              {needsAttentionCount === 0 ? (
+              {needsAttentionCount === 0 && operatorRuntime.state === "ready" ? (
                 <div className={cn("rounded-lg border p-4", insetSurfaceClassName)}>
                   <div className="flex items-start gap-3">
                     <EntityIcon icon={CheckCircle2} label="Healthy" tone="success" size="sm" />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground">All systems operational</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        AgentOS stream and OpenClaw runtime look healthy in the current snapshot.
+                        AgentOS stream and native OpenClaw Gateway RPC are ready in the current snapshot.
                       </p>
                     </div>
                   </div>
@@ -426,15 +426,15 @@ export function DashboardPageContent({
                     </div>
                     <StatusBadge label="Review" tone="warning" />
                   </div>
-                  {hasGatewayPermissionIssue ? (
+                  {operatorRuntime.primaryRecovery ? (
                     <Button
                       asChild
                       variant="secondary"
                       size="sm"
                       className="mt-3 h-8 w-full justify-between rounded-lg border-[hsl(var(--status-warning)/0.28)] bg-[hsl(var(--status-warning)/0.10)] text-xs text-[hsl(var(--status-warning-foreground))] hover:bg-[hsl(var(--status-warning)/0.14)] hover:text-[hsl(var(--status-warning-foreground))]"
                     >
-                      <Link href="/settings#gateway">
-                        Manage Gateway permissions
+                      <Link href={operatorRuntime.primaryRecovery.href}>
+                        {operatorRuntime.primaryRecovery.label}
                         <Settings2 className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
@@ -454,8 +454,8 @@ export function DashboardPageContent({
                 <RuntimeSummaryBlock
                   icon={TerminalSquare}
                   title="Gateway"
-                  status={gatewaySummary.label}
-                  tone={gatewaySummary.tone}
+                  status={operatorRuntime.stateLabel}
+                  tone={operatorRuntime.tone}
                   rows={[
                     ["Health", formatHealthLabel(rootSnapshot.diagnostics.health)],
                     ["RPC", rootSnapshot.diagnostics.rpcOk ? "OK" : "Unavailable"],
@@ -629,32 +629,6 @@ function DashboardSearch({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function HeaderStatusPill({
-  label,
-  value,
-  tone,
-  title
-}: {
-  label: string;
-  value: string;
-  tone: StatusTone;
-  title?: string;
-}) {
-  return (
-    <span
-      title={title}
-      className={cn(
-        "inline-flex min-h-8 items-center gap-2 rounded-full border bg-card/75 px-2.5 py-1 text-[0.66rem] font-semibold text-foreground shadow-sm",
-        toneBorderClass(tone)
-      )}
-    >
-      <span className={cn("h-1.5 w-1.5 rounded-full", dotClass(tone))} />
-      <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
-    </span>
   );
 }
 
@@ -1135,30 +1109,6 @@ function formatAttentionDetail(taskAttentionCount: number, runtimeAttentionCount
   return parts.join(", ");
 }
 
-function resolveOpenClawStatus(snapshot: MissionControlSnapshot): { label: string; tone: StatusTone } {
-  if (snapshot.diagnostics.rpcOk && snapshot.diagnostics.health === "healthy") {
-    return { label: "Online", tone: "success" };
-  }
-
-  if (snapshot.diagnostics.loaded || snapshot.diagnostics.installed) {
-    return { label: "Degraded", tone: "warning" };
-  }
-
-  return { label: "Unknown", tone: "muted" };
-}
-
-function formatConnectionState(connectionState: "connecting" | "live" | "retrying") {
-  if (connectionState === "live") {
-    return "Live";
-  }
-
-  if (connectionState === "retrying") {
-    return "Retrying";
-  }
-
-  return "Connecting";
-}
-
 function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health"]) {
   return health.charAt(0).toUpperCase() + health.slice(1);
 }
@@ -1171,22 +1121,6 @@ function truncateText(value: string, maxLength: number) {
   }
 
   return `${trimmed.slice(0, maxLength - 3).trim()}...`;
-}
-
-function isGatewayPermissionIssue(item: string) {
-  return /operator-scope approval|device access|pairing-pending|scope upgrade/i.test(item);
-}
-
-function healthTone(health: MissionControlSnapshot["diagnostics"]["health"]): StatusTone {
-  if (health === "healthy") {
-    return "success";
-  }
-
-  if (health === "degraded") {
-    return "warning";
-  }
-
-  return "danger";
 }
 
 function toneBorderClass(tone: StatusTone) {
@@ -1211,28 +1145,4 @@ function toneBorderClass(tone: StatusTone) {
   }
 
   return "border-primary/25";
-}
-
-function dotClass(tone: StatusTone) {
-  if (tone === "success") {
-    return "bg-emerald-400";
-  }
-
-  if (tone === "warning") {
-    return "bg-amber-300";
-  }
-
-  if (tone === "danger") {
-    return "bg-rose-400";
-  }
-
-  if (tone === "purple") {
-    return "bg-violet-400";
-  }
-
-  if (tone === "muted") {
-    return "bg-slate-400";
-  }
-
-  return "bg-primary";
 }

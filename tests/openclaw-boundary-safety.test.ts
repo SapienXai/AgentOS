@@ -399,11 +399,12 @@ test("settings device access repair stays behind the OpenClaw adapter", () => {
 
 test("dashboard gateway permission issues route to Settings repair flow", () => {
   const source = readFileSync(path.join(rootDir, "components/operations/dashboard/dashboard-page-content.tsx"), "utf8");
+  const projection = readFileSync(path.join(rootDir, "lib/agentos/ui/operator-runtime-projection.ts"), "utf8");
 
-  assert.match(source, /const hasGatewayPermissionIssue = attentionItems\.some\(isGatewayPermissionIssue\)/);
-  assert.match(source, /operator-scope approval\|device access\|pairing-pending\|scope upgrade/);
-  assert.match(source, /Manage Gateway permissions/);
-  assert.match(source, /href="\/settings#gateway"/);
+  assert.match(source, /OperatorRecoveryLink/);
+  assert.match(projection, /operator-scope approval\|device access\|pairing-pending\|scope upgrade/);
+  assert.match(projection, /Review Gateway permissions/);
+  assert.match(projection, /href: "\/settings#gateway"/);
   assert.doesNotMatch(source, /fetch\(["']\/api\/settings\/gateway/);
 });
 
@@ -737,7 +738,8 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
   assert.match(pinningSource, /agentos\.sidebar\.pinned/);
   assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
-  assert.match(operationsUiSource, /\{!compact \? \(\s*<span/);
+  assert.match(operationsUiSource, /OperatorTruthBadge/);
+  assert.match(operationsUiSource, /OperatorScopeFreshness/);
   assert.doesNotMatch(operationsUiSource, /compact \? "h-11 px-3"/);
 });
 
@@ -795,7 +797,8 @@ test("settings control center exposes hash navigation for subpages", () => {
 test("sidebar keeps diagnostics out of the premium navigation surface", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
 
-  assert.match(source, /function resolveStatusTone\(/);
+  assert.match(source, /function resolveOperatorStatusTone\(/);
+  assert.match(source, /presentOperatorRuntime/);
   assert.doesNotMatch(source, /snapshot\.diagnostics\.issues/);
   assert.doesNotMatch(source, /resolveSidebarDiagnosticIssue/);
   assert.doesNotMatch(source, /Gateway-first request fell back to CLI/);

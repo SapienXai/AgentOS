@@ -2,7 +2,7 @@
 
 import type { MutableRefObject } from "react";
 
-import { ArrowUpCircle, Info, MoonStar, Settings2, SunMedium } from "lucide-react";
+import { ArrowUpCircle, MoonStar, Settings2, SunMedium } from "lucide-react";
 import { motion } from "motion/react";
 
 import {
@@ -10,13 +10,14 @@ import {
   type MissionControlShellSettingsPanelProps
 } from "@/components/mission-control/mission-control-shell.settings";
 import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
+import { OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import {
   resolveDiagnosticHealthBadgeClasses,
   resolveDiagnosticHealthDotClasses,
   type SurfaceTheme
 } from "@/components/mission-control/surface-visual-tones";
-import { formatGatewayHealthLabel } from "@/components/mission-control/settings-control-center.utils";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { cn } from "@/lib/utils";
 
 type CanvasTopBarProps = MissionControlShellSettingsPanelProps & {
@@ -95,10 +96,10 @@ export function CanvasTopBar({
 }: CanvasTopBarProps) {
   const { snapshot, surfaceTheme } = settingsPanelProps;
   const { onOpenSetupWizard } = settingsPanelProps;
-  const health = snapshot.diagnostics.health;
-  const isOffline = health === "offline";
-  const healthLabel = formatGatewayHealthLabel(snapshot);
-  const isCliFallbackActive = snapshot.diagnostics.transport?.gatewayMode === "fallback-active";
+  const operatorRuntime = presentOperatorRuntime(snapshot, {
+    connectionState: settingsPanelProps.connectionState
+  });
+  const isOffline = operatorRuntime.state === "offline";
   const settingsChromeButtonStyles = settingsChromeButtonClassName(surfaceTheme);
   const settingsThemeSwitchTrackStyles = settingsThemeSwitchTrackClassName(surfaceTheme);
   const settingsThemeSwitchThumbStyles = settingsThemeSwitchThumbClassName(surfaceTheme);
@@ -150,7 +151,7 @@ export function CanvasTopBar({
               transition={{ type: "spring", stiffness: 420, damping: 28 }}
               className={cn(
                 "group relative inline-flex cursor-pointer select-none items-center gap-2 overflow-hidden rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em] transition-[background-color,border-color,color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme),
+                resolveDiagnosticHealthBadgeClasses("offline", surfaceTheme),
                 surfaceTheme === "light"
                   ? "shadow-[0_10px_24px_rgba(244,63,94,0.12)] hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
                   : "shadow-[0_10px_24px_rgba(244,63,94,0.18)] hover:border-rose-300/40 hover:bg-rose-300/15 hover:text-rose-100"
@@ -171,11 +172,11 @@ export function CanvasTopBar({
                 aria-hidden="true"
                 className={cn(
                   "relative z-10 h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]",
-                  resolveDiagnosticHealthDotClasses(health)
+                  resolveDiagnosticHealthDotClasses("offline")
                 )}
               />
               <span className="relative z-10 inline-flex items-center gap-1.5">
-                <span>{healthLabel}</span>
+                <span>{operatorRuntime.stateLabel}</span>
                 <span
                   className={cn(
                     "rounded-full border px-1.5 py-0.5 text-[7px] uppercase tracking-[0.18em]",
@@ -190,19 +191,7 @@ export function CanvasTopBar({
               </span>
             </motion.button>
           ) : (
-            <span
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em]",
-                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme)
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn("h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]", resolveDiagnosticHealthDotClasses(health))}
-              />
-              {healthLabel}
-              {isCliFallbackActive ? <CliFallbackInfo surfaceTheme={surfaceTheme} /> : null}
-            </span>
+            <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
           )}
           <RuntimeIssueIndicator
             snapshot={snapshot}
@@ -237,21 +226,6 @@ export function CanvasTopBar({
         {isSettingsOpen ? <MissionControlShellSettingsPanel {...settingsPanelProps} /> : null}
       </div>
     </div>
-  );
-}
-
-function CliFallbackInfo({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
-  return (
-    <span
-      aria-label="CLI fallback active"
-      title="CLI fallback active"
-      className={cn(
-        "inline-flex h-4 w-4 items-center justify-center rounded-full",
-        surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-200"
-      )}
-    >
-      <Info className="h-3 w-3 opacity-75" />
-    </span>
   );
 }
 

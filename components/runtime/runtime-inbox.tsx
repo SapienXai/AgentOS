@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } from "@/lib/agentos/contracts";
+import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import { cn } from "@/lib/utils";
 import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
@@ -75,6 +76,8 @@ export function RuntimeIssueIndicator({
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const summary = summarizeRuntimeIssues(snapshot.diagnostics.runtimeIssues);
+  const operatorRuntime = useMemo(() => presentOperatorRuntime(snapshot), [snapshot]);
+  const runtimeNeedsAttention = summary.actionCount > 0 || operatorRuntime.state !== "ready";
 
   useEffect(() => {
     if (!open) {
@@ -114,18 +117,22 @@ export function RuntimeIssueIndicator({
             ? surfaceTheme === "light"
               ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
               : "border-amber-300/24 bg-amber-300/10 text-amber-100 hover:bg-amber-300/14"
-            : surfaceTheme === "light"
-              ? "border-border bg-card text-muted-foreground hover:bg-muted"
-              : "border-white/10 bg-[#121d2d] text-slate-300 hover:bg-[#182538]"
+            : runtimeNeedsAttention
+              ? surfaceTheme === "light"
+                ? "border-amber-300/70 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                : "border-amber-300/24 bg-amber-300/10 text-amber-100 hover:bg-amber-300/14"
+              : surfaceTheme === "light"
+                ? "border-border bg-card text-muted-foreground hover:bg-muted"
+                : "border-white/10 bg-[#121d2d] text-slate-300 hover:bg-[#182538]"
         )}
       >
         <span
           className={cn(
             "h-1.5 w-1.5 rounded-full",
-            summary.actionCount > 0 ? "bg-amber-500" : "bg-emerald-500"
+            runtimeNeedsAttention ? "bg-amber-500" : "bg-emerald-500"
           )}
         />
-        {summary.actionCount > 0 ? `Action required · ${summary.actionCount}` : summary.openCount > 0 ? `Runtime · ${summary.openCount}` : "Runtime"}
+        {summary.actionCount > 0 ? `Action required · ${summary.actionCount}` : summary.openCount > 0 ? `Runtime · ${summary.openCount}` : `Runtime · ${operatorRuntime.stateLabel}`}
         <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
@@ -248,6 +255,7 @@ export function RuntimeInboxPanel({
     });
     return typeof maxIssues === "number" ? visible.slice(0, maxIssues) : visible;
   }, [exitingIssueIds, hiddenIssueIds, maxIssues, snapshot.diagnostics.runtimeIssues]);
+  const operatorRuntime = useMemo(() => presentOperatorRuntime(snapshot), [snapshot]);
 
   useEffect(() => () => {
     dismissTimersRef.current.forEach(clearTimeout);
@@ -291,17 +299,17 @@ export function RuntimeInboxPanel({
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Runtime Inbox</p>
           <h2 className="mt-1 text-sm font-semibold text-current">Runtime Issues</h2>
         </div>
-        <span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em]", issueCountClassName(surfaceTheme, issues))}>
-          {issues.length ? `${issues.length} visible` : "Healthy"}
+        <span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em]", issues.length > 0 ? issueCountClassName(surfaceTheme, issues) : "border-border bg-muted text-muted-foreground")}>
+          {issues.length ? `${issues.length} visible` : "No actionable issues"}
         </span>
       </div>
 
       {issues.length === 0 ? (
         <div className={cn("mt-3 rounded-[12px] border p-3", insetClassName(surfaceTheme))}>
           <div className="flex items-start gap-2.5">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <p className="text-xs leading-5 text-muted-foreground">
-              No runtime issues. AgentOS and OpenClaw look healthy.
+              No actionable runtime issues. Current runtime state: {operatorRuntime.stateLabel.toLowerCase()}.
             </p>
           </div>
         </div>
