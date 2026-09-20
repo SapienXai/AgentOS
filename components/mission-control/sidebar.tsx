@@ -8,28 +8,17 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  Activity,
   AlertTriangle,
   Bot,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
-  Cpu,
-  Download,
-  FileText,
-  Gauge,
   Home,
-  Inbox,
-  KeyRound,
   LockKeyhole,
   Loader2,
   LogOut,
-  MessageCircle,
   Pencil,
-  Plug,
   Plus,
   Settings2,
-  ShieldAlert,
   Trash2,
   UserRound,
   Users
@@ -106,6 +95,14 @@ import type {
   MissionControlSnapshot
 } from "@/lib/agentos/contracts";
 import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
+import {
+  collapsedNavigationItems,
+  isNavigationItemActive,
+  navigationItems,
+  navigationSections,
+  type NavigationItem,
+  type NavigationSectionId
+} from "@/components/mission-control/navigation-config";
 import { cn } from "@/lib/utils";
 
 type AgentDraft = {
@@ -120,16 +117,8 @@ type AgentDraft = {
   heartbeat: AgentHeartbeatDraft;
 };
 
-type SidebarSection = "overview" | "operations" | "system";
-
-type SidebarItem = {
-  label: string;
-  href?: string;
-  hash?: string;
-  icon: LucideIcon;
-  badge?: number;
-  section: SidebarSection;
-};
+type SidebarSection = NavigationSectionId;
+type SidebarItem = NavigationItem & { badge?: number };
 
 type MissionSidebarProps = {
   snapshot: MissionControlSnapshot;
@@ -178,35 +167,9 @@ type MissionSidebarProps = {
   settingsMode?: boolean;
 };
 
-const sidebarSections: Array<{ id: SidebarSection; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "operations", label: "Operations" },
-  { id: "system", label: "System" }
-];
-
-const sidebarItems: SidebarItem[] = [
-  { label: "Mission Control", href: "/", icon: Gauge, section: "overview" },
-  { label: "Dashboard", href: "/dashboard", icon: Inbox, section: "overview" },
-  { label: "Agents", href: "/agents", icon: Bot, section: "operations" },
-  { label: "Operations", href: "/operations", icon: Activity, section: "operations" },
-  { label: "Missions", href: "/missions", icon: ClipboardList, section: "operations" },
-  { label: "Human Control", href: "/human-control", icon: ShieldAlert, section: "operations" },
-  { label: "Files", href: "/files", icon: FileText, section: "operations" },
-  { label: "Accounts", href: "/accounts", icon: KeyRound, section: "operations" },
-  { label: "Models", href: "/models", icon: Cpu, section: "operations" },
-  { label: "Channels", href: "/channels", icon: MessageCircle, section: "operations" },
-  { label: "Integrations", href: "/integrations", icon: Plug, section: "operations" },
-  { label: "Updates", href: "/updates", icon: Download, section: "system" },
-  { label: "Settings", href: "/settings", icon: Settings2, section: "system" },
-];
-
-const collapsedSidebarItems = sidebarItems.slice(
-  0,
-  sidebarItems.findIndex((item) => item.label === "Channels") + 1
-);
-const collapsedSidebarItemsWithUpdates = sidebarItems.filter(
-  (item) => collapsedSidebarItems.includes(item) || item.label === "Updates"
-);
+const sidebarSections = navigationSections;
+const sidebarItems = navigationItems;
+const collapsedSidebarItemsWithUpdates = collapsedNavigationItems;
 
 const agentOsLogoSrc = "/assets/logo.webp";
 const emptyOperatorProfile: OperatorProfileSummary = {
@@ -2401,7 +2364,10 @@ function SidebarSectionGroup({
     <section className="flex flex-col gap-2" aria-labelledby={`sidebar-${section.id}`}>
       <h2
         id={`sidebar-${section.id}`}
-        className="px-2 text-[0.64rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground"
+        className={cn(
+          "px-2 text-[0.64rem] font-semibold uppercase leading-none tracking-[0.22em]",
+          section.id === "system" ? "text-muted-foreground/70" : "text-muted-foreground"
+        )}
       >
         {section.label}
       </h2>
@@ -2409,11 +2375,11 @@ function SidebarSectionGroup({
         {sidebarItems
           .filter((item) => item.section === section.id)
           .map((item) => {
-            const displayedItem = item.label === "Updates" && updateNotice ? { ...item, badge: 1 } : item;
+            const displayedItem = item.id === "updates" && updateNotice ? { ...item, badge: 1 } : item;
 
             return (
             <SidebarNavItem
-              key={item.label}
+              key={item.id}
               item={displayedItem}
               active={isSidebarItemActive(displayedItem, pathname, activeHash)}
               onNavigate={() => onNavigate(item)}
@@ -2774,13 +2740,13 @@ function CollapsedSidebar({
             {collapsedSidebarItemsWithUpdates
               .filter((item) => item.section === section.id)
               .map((item) => {
-                const displayedItem = item.label === "Updates" && updateNotice ? { ...item, badge: 1 } : item;
+                const displayedItem = item.id === "updates" && updateNotice ? { ...item, badge: 1 } : item;
                 const active = isSidebarItemActive(item, pathname, activeHash);
                 const Icon = displayedItem.icon;
 
                 return (
                   <RailTooltip
-                    key={item.label}
+                    key={item.id}
                     label={displayedItem.label}
                     side="right"
                     surfaceTheme={surfaceTheme}
@@ -2829,31 +2795,7 @@ function CollapsedSidebar({
 }
 
 function isSidebarItemActive(item: SidebarItem, pathname: string, activeHash: string) {
-  if (item.label === "Mission Control") {
-    return pathname === "/" && !activeHash;
-  }
-
-  if (item.label === "Dashboard") {
-    return pathname === "/dashboard";
-  }
-
-  if (item.href && !item.hash && item.href !== "/" && !item.href.startsWith("/settings")) {
-    return pathname === item.href || pathname.startsWith(`${item.href}/`);
-  }
-
-  if (item.href?.startsWith("/settings")) {
-    if (pathname !== "/settings") {
-      return false;
-    }
-
-    if (item.hash) {
-      return activeHash === item.hash;
-    }
-
-    return !activeHash || activeHash === "settings";
-  }
-
-  return pathname === "/" && Boolean(item.hash) && activeHash === item.hash;
+  return isNavigationItemActive(item, pathname, activeHash);
 }
 
 function resolveOperatorStatusTone(tone: "success" | "warning" | "danger" | "muted") {
