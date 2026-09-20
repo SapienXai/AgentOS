@@ -26,7 +26,7 @@ import { AgentChannelsSection } from "@/components/operations/agents/agent-chann
 import { EffectiveCapabilitiesPanel } from "@/components/operations/agents/effective-capabilities-panel";
 import {
   AGENT_DETAIL_TABS,
-  parseAgentDetailTab,
+  parseAgentDetailQueryState,
   type AgentDetailTab
 } from "@/components/operations/agents/agent-detail-tabs";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
@@ -62,15 +62,16 @@ import { cn } from "@/lib/utils";
 
 export { parseAgentDetailTab, type AgentDetailTab } from "@/components/operations/agents/agent-detail-tabs";
 
-function readAgentDetailTabFromLocation() {
-  if (typeof window === "undefined") return "overview" as const;
-  return parseAgentDetailTab(new URLSearchParams(window.location.search).get("tab"));
-}
-
-function readAgentDetailFocusFromLocation(key: "capability" | "session") {
-  if (typeof window === "undefined") return null;
-  const value = new URLSearchParams(window.location.search).get(key)?.trim();
-  return value || null;
+function readAgentDetailLocation() {
+  if (typeof window === "undefined") {
+    return parseAgentDetailQueryState({});
+  }
+  const search = new URLSearchParams(window.location.search);
+  return parseAgentDetailQueryState({
+    tab: search.get("tab"),
+    capability: search.get("capability"),
+    session: search.get("session")
+  });
 }
 
 export function AgentDetailPageContent({
@@ -79,7 +80,10 @@ export function AgentDetailPageContent({
   rootSnapshot,
   surfaceTheme,
   refresh,
-  setSnapshot
+  setSnapshot,
+  initialTab,
+  initialCapabilityFocus,
+  initialSessionFocus
 }: {
   agentId: string;
   snapshot: MissionControlSnapshot;
@@ -87,10 +91,13 @@ export function AgentDetailPageContent({
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
+  initialTab: AgentDetailTab;
+  initialCapabilityFocus: string | null;
+  initialSessionFocus: string | null;
 }) {
   const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
   const workspace = agent ? resolveAgentDetailWorkspace(snapshot, agent) : null;
-  const [tab, setTab] = useState<AgentDetailTab>(readAgentDetailTabFromLocation);
+  const [tab, setTab] = useState<AgentDetailTab>(initialTab);
   const [chatOpen, setChatOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -99,11 +106,16 @@ export function AgentDetailPageContent({
   const [addModelsOpen, setAddModelsOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const capabilities = useWorkerEffectiveCapabilities({ agentId: agent?.id });
-  const capabilityFocusId = readAgentDetailFocusFromLocation("capability");
-  const sessionFocusKey = readAgentDetailFocusFromLocation("session");
+  const [capabilityFocusId, setCapabilityFocusId] = useState(initialCapabilityFocus);
+  const [sessionFocusKey, setSessionFocusKey] = useState(initialSessionFocus);
 
   useEffect(() => {
-    const handlePopState = () => setTab(readAgentDetailTabFromLocation());
+    const handlePopState = () => {
+      const location = readAgentDetailLocation();
+      setTab(location.tab);
+      setCapabilityFocusId(location.capabilityFocus);
+      setSessionFocusKey(location.sessionFocus);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -137,8 +149,12 @@ export function AgentDetailPageContent({
     }
     const url = new URL(window.location.href);
     url.searchParams.set("tab", nextTab);
+    if (nextTab !== "capabilities") url.searchParams.delete("capability");
+    if (nextTab !== "sessions") url.searchParams.delete("session");
     window.history.pushState({}, "", url);
     setTab(nextTab);
+    setCapabilityFocusId(nextTab === "capabilities" ? parseAgentDetailQueryState({ capability: url.searchParams.get("capability") }).capabilityFocus : null);
+    setSessionFocusKey(nextTab === "sessions" ? parseAgentDetailQueryState({ session: url.searchParams.get("session") }).sessionFocus : null);
   };
 
   if (!agent || !workspace || !agentView || !currentWork) {
