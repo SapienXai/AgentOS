@@ -20,7 +20,21 @@ import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
 
-export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mode = "card", missionId = null }: { surfaceTheme: SurfaceTheme; attentionRefreshGeneration: number; mode?: "card" | "page"; missionId?: string | null }) {
+export function HumanControlInbox({
+  surfaceTheme,
+  attentionRefreshGeneration,
+  mode = "card",
+  missionId = null,
+  prefetch = false,
+  onSummaryChange
+}: {
+  surfaceTheme: SurfaceTheme;
+  attentionRefreshGeneration: number;
+  mode?: "card" | "page";
+  missionId?: string | null;
+  prefetch?: boolean;
+  onSummaryChange?: (summary: HumanControlInboxPayload["summary"] | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<HumanControlInboxPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,14 +50,15 @@ export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mo
   const loadInboxRef = useRef<() => Promise<void>>(async () => {});
 
   const visible = mode === "page" || open;
-  openRef.current = visible;
+  const shouldLoad = visible || prefetch;
+  openRef.current = shouldLoad;
   loadingRef.current = loading;
   pendingIdRef.current = pendingId;
 
   useEffect(() => {
-    if (!visible || payload || loading || error) return;
+    if (!shouldLoad || payload || loading || error) return;
     void loadInboxRef.current();
-  }, [error, loading, mode, missionId, payload, visible]);
+  }, [error, loading, mode, missionId, payload, shouldLoad]);
 
   async function loadInbox() {
     setLoading(true);
@@ -55,7 +70,9 @@ export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mo
       if (!response.ok || nextPayload.error) throw new Error(nextPayload.error || "Human Control is unavailable.");
       setPayload(nextPayload);
       setAnswers((current) => preserveQuestionAnswers(nextPayload.items, current));
+      onSummaryChange?.(nextPayload.summary);
     } catch (reason) {
+      onSummaryChange?.(null);
       setError(reason instanceof Error ? reason.message : "Human Control is unavailable.");
     } finally {
       setLoading(false);
@@ -84,19 +101,19 @@ export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mo
   useEffect(() => {
     if (refreshGenerationRef.current === attentionRefreshGeneration) return;
     refreshGenerationRef.current = attentionRefreshGeneration;
-    if (!visible) return;
+    if (!shouldLoad) return;
     if (pendingId || loading) {
       deferredRefreshRef.current = true;
       return;
     }
     scheduleInboxRefresh();
-  }, [attentionRefreshGeneration, loading, mode, pendingId, scheduleInboxRefresh, visible]);
+  }, [attentionRefreshGeneration, loading, mode, pendingId, scheduleInboxRefresh, shouldLoad]);
 
   useEffect(() => {
-    if (!visible || pendingId || loading || !deferredRefreshRef.current) return;
+    if (!shouldLoad || pendingId || loading || !deferredRefreshRef.current) return;
     deferredRefreshRef.current = false;
     scheduleInboxRefresh();
-  }, [loading, pendingId, scheduleInboxRefresh, visible]);
+  }, [loading, pendingId, scheduleInboxRefresh, shouldLoad]);
 
   useEffect(() => () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -144,7 +161,15 @@ export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mo
     return <section className="flex min-w-0 flex-col gap-3"><div className="flex items-start gap-2.5"><div className="mt-0.5 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] p-2 text-[hsl(var(--status-warning-foreground))]"><Inbox className="h-4 w-4" aria-hidden="true" /></div><div><h1 className="font-display text-[1.48rem] font-semibold leading-tight text-foreground">Human Control</h1><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Every unresolved approval, question, blocker, and recovery decision in one operator queue.</p></div></div>{summary ? <InboxSummary summary={summary} /> : null}{inboxContent}</section>;
   }
 
-  return <section className={cn("cockpit-panel rounded-xl border p-3", surfaceTheme === "dark" ? "border-border/80" : "border-border")}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-2.5"><div className="mt-0.5 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] p-2 text-[hsl(var(--status-warning-foreground))]"><Inbox className="h-4 w-4" aria-hidden="true" /></div><div className="min-w-0"><p className="text-sm font-semibold text-foreground">Needs your attention</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{summary ? `${summary.totalPending} pending item${summary.totalPending === 1 ? "" : "s"}.` : "Review approvals, questions, and active blockers."}</p></div></div><Button size="sm" variant="secondary" className="h-8 shrink-0 rounded-lg px-2.5 text-xs" onClick={() => setOpen(true)}>{summary ? "View all" : "Open queue"}<ChevronRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" /></Button></div>{summary ? <InboxSummary summary={summary} /> : null}<Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (nextOpen) { setPayload(null); setError(null); setAnswers({}); } }}><DialogContent className="flex max-h-[min(88dvh,760px)] max-w-2xl flex-col gap-3 overflow-hidden rounded-[18px] p-4 sm:p-5"><DialogHeader className="pr-8"><DialogTitle className="text-lg">Needs your attention</DialogTitle><DialogDescription className="text-xs leading-5">Current OpenClaw items that need an operator decision or action.</DialogDescription></DialogHeader>{inboxContent}</DialogContent></Dialog></section>;
+  const hasPending = Boolean(summary?.totalPending);
+  const queueIconClass = !summary
+    ? "border-border bg-muted text-muted-foreground"
+    : hasPending
+      ? "border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] text-[hsl(var(--status-warning-foreground))]"
+      : "border-[hsl(var(--status-success)/0.25)] bg-[hsl(var(--status-success)/0.10)] text-[hsl(var(--status-success-foreground))]";
+  const queueTitle = !summary ? "Checking operator queue" : hasPending ? "Needs your attention" : "Operator queue clear";
+
+  return <section className={cn("cockpit-panel rounded-xl border p-3", surfaceTheme === "dark" ? "border-border/80" : "border-border")}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-2.5"><div className={cn("mt-0.5 rounded-lg border p-2", queueIconClass)}><Inbox className="h-4 w-4" aria-hidden="true" /></div><div className="min-w-0"><p className="text-sm font-semibold text-foreground">{queueTitle}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{summary ? hasPending ? `${summary.totalPending} pending item${summary.totalPending === 1 ? "" : "s"}.` : "No verified approvals, questions, or blockers." : "Checking approvals, questions, and active blockers."}</p></div></div><Button size="sm" variant="secondary" className="h-8 shrink-0 rounded-lg px-2.5 text-xs" onClick={() => setOpen(true)}>{summary ? "View all" : "Open queue"}<ChevronRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" /></Button></div>{summary ? <InboxSummary summary={summary} /> : null}<Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (nextOpen) { setPayload(null); setError(null); setAnswers({}); } }}><DialogContent className="flex max-h-[min(88dvh,760px)] max-w-2xl flex-col gap-3 overflow-hidden rounded-[18px] p-4 sm:p-5"><DialogHeader className="pr-8"><DialogTitle className="text-lg">Needs your attention</DialogTitle><DialogDescription className="text-xs leading-5">Current OpenClaw items that need an operator decision or action.</DialogDescription></DialogHeader>{inboxContent}</DialogContent></Dialog></section>;
 }
 
 function InboxSummary({ summary }: { summary: HumanControlInboxPayload["summary"] }) {
@@ -152,9 +177,10 @@ function InboxSummary({ summary }: { summary: HumanControlInboxPayload["summary"
     ["Approvals", summary.approvals],
     ["Questions", summary.questions],
     ["Suggested work", summary.suggestedWork],
-    ["Setup / blockers", summary.setupAndBlockers]
+    ["Setup / blockers", summary.setupAndBlockers],
+    ["Runtime issues", summary.runtimeIssues]
   ] as const;
-  return <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{values.map(([label, value]) => <div key={label} className="rounded-lg border border-border/70 bg-background/30 px-2.5 py-2"><p className="text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold text-foreground">{value}</p></div>)}</div>;
+  return <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">{values.map(([label, value]) => <div key={label} className="rounded-lg border border-border/70 bg-background/30 px-2.5 py-2"><p className="text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold text-foreground">{value}</p></div>)}</div>;
 }
 
 function AttentionRow({

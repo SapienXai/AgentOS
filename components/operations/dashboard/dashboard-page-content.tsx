@@ -30,6 +30,7 @@ import {
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
+import type { HumanControlInboxSummary } from "@/lib/openclaw/types";
 import {
   buildAgentViews,
   buildTaskViews,
@@ -72,6 +73,7 @@ export function DashboardPageContent({
 }) {
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
+  const [humanControlSummary, setHumanControlSummary] = useState<HumanControlInboxSummary | null>(null);
   const agents = useMemo(() => buildAgentViews(snapshot), [snapshot]);
   const tasks = useMemo(() => buildTaskViews(snapshot), [snapshot]);
   const referenceMs = resolveRelativeTimeReferenceMs(rootSnapshot.generatedAt);
@@ -88,8 +90,8 @@ export function DashboardPageContent({
   );
   const diagnosticInboxItems = buildDiagnosticInboxItems(rootSnapshot, activeRuntimeIssues);
   const currentTaskIssueCount = rootSnapshot.diagnostics.taskHealth?.currentIssue.count ?? taskCounts.attention;
-  const runtimeAttentionCount = activeRuntimeIssues.length + diagnosticInboxItems.length + (operatorRuntime.state === "ready" ? 0 : 1);
-  const needsAttentionCount = currentTaskIssueCount + runtimeAttentionCount;
+  const runtimeSignalCount = activeRuntimeIssues.length + diagnosticInboxItems.length + (operatorRuntime.state === "ready" ? 0 : 1);
+  const needsAttentionValue = humanControlSummary ? String(humanControlSummary.totalPending) : "—";
   const dashboardQuery = dashboardSearch.trim().toLowerCase();
   const filteredAgents = useMemo(
     () => filterAgents(agents, dashboardQuery),
@@ -158,7 +160,13 @@ export function DashboardPageContent({
         <StatGrid columns={3}>
           <StatCard label="Active workforce" value={String(runningAgents.length)} detail={`${readyAgents.length} ready`} icon={Bot} tone="success" />
           <StatCard label="Active work" value={String(taskCounts.running + taskCounts.queued)} detail={`${taskCounts.running} running, ${taskCounts.queued} queued`} icon={Activity} tone="info" />
-          <StatCard label="Needs your attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, runtimeAttentionCount)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
+          <StatCard
+            label="Needs your attention"
+            value={needsAttentionValue}
+            detail={formatHumanControlDetail(humanControlSummary)}
+            icon={AlertTriangle}
+            tone={humanControlSummary && humanControlSummary.totalPending > 0 ? "warning" : "muted"}
+          />
         </StatGrid>
 
         <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-12">
@@ -214,7 +222,12 @@ export function DashboardPageContent({
           </SectionCard>
 
           <div className={cn("space-y-3 xl:col-span-5")}>
-            <HumanControlInbox surfaceTheme={surfaceTheme} attentionRefreshGeneration={attentionRefreshGeneration} />
+            <HumanControlInbox
+              surfaceTheme={surfaceTheme}
+              attentionRefreshGeneration={attentionRefreshGeneration}
+              prefetch
+              onSummaryChange={setHumanControlSummary}
+            />
             <div className={cn("grid grid-cols-2 gap-2 rounded-xl border p-3", insetSurfaceClassName)}>
               <div className="min-w-0">
                 <p className="text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Task review</p>
@@ -223,14 +236,15 @@ export function DashboardPageContent({
               </div>
               <div className="min-w-0">
                 <p className="text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Runtime signals</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{runtimeAttentionCount}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{runtimeSignalCount}</p>
                 <PanelLink href="/settings#diagnostics" label="View diagnostics" />
               </div>
             </div>
             {diagnosticInboxItems.length > 0 ? (
               <CompactIssueList
                 items={diagnosticInboxItems}
-                title="Diagnostics"
+                title="Runtime signals"
+                onRefresh={refresh}
                 footer={
                   diagnosticInboxItems.length > 3 ? (
                     <PanelLink href="/settings#diagnostics" label="View all issues" />
@@ -300,14 +314,25 @@ export function DashboardPageContent({
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{operatorRuntime.explanation}</p>
                     </div>
                   </div>
-                  {operatorRuntime.primaryRecovery ? (
-                    <Button asChild variant="secondary" size="sm" className="mt-3 h-8 w-full justify-between rounded-lg text-xs">
-                      <Link href={operatorRuntime.primaryRecovery.href}>
-                        {operatorRuntime.primaryRecovery.label}
-                        <Settings2 className="h-3.5 w-3.5" />
-                      </Link>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 justify-between rounded-lg text-xs"
+                      onClick={() => void refresh()}
+                    >
+                      Recheck native Gateway
+                      <RefreshCw className="h-3.5 w-3.5" />
                     </Button>
-                  ) : null}
+                    {operatorRuntime.primaryRecovery ? (
+                      <Button asChild variant="secondary" size="sm" className="h-8 justify-between rounded-lg text-xs">
+                        <Link href={operatorRuntime.primaryRecovery.href}>
+                          {operatorRuntime.primaryRecovery.label}
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </SectionCard>
@@ -457,7 +482,11 @@ function TaskActivityRow({ task, referenceMs }: { task: TaskView; referenceMs: n
       : "No tokens reported";
 
   return (
-    <div className="flex min-w-0 items-center gap-3 px-3 py-3">
+    <Link
+      href="/tasks"
+      title={`Inspect ${task.title} in Tasks`}
+      className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+    >
       <EntityIcon icon={Icon} label={task.statusLabel} tone={task.statusTone} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
@@ -468,36 +497,60 @@ function TaskActivityRow({ task, referenceMs }: { task: TaskView; referenceMs: n
           {task.agentName} / {formatRelativeTime(task.source?.updatedAt ?? null, referenceMs)} / {tokenLabel}
         </p>
       </div>
-    </div>
+    </Link>
   );
 }
 
 function CompactIssueList({
   title,
   items,
-  footer
+  footer,
+  onRefresh
 }: {
   title: string;
-  items: string[];
+  items: DashboardDiagnosticItem[];
   footer?: ReactNode;
+  onRefresh: () => Promise<void>;
 }) {
+  const hasWarning = items.some((item) => item.tone === "warning");
+  const tone = hasWarning ? "warning" : "info";
+
   return (
     <div className={cn("rounded-lg border p-3", insetSurfaceClassName)}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <EntityIcon icon={Inbox} label={title} tone="warning" size="sm" />
+          <EntityIcon icon={Inbox} label={title} tone={tone} size="sm" />
           <p className="text-xs font-semibold text-foreground">{title}</p>
         </div>
-        <StatusBadge label={`${items.length} item${items.length === 1 ? "" : "s"}`} tone="warning" />
+        <StatusBadge label={`${items.length} item${items.length === 1 ? "" : "s"}`} tone={tone} />
       </div>
       <div className="mt-3 space-y-2">
         {items.slice(0, 3).map((item) => (
-          <details key={item} className="rounded-lg border border-[hsl(var(--status-warning)/0.22)] bg-[hsl(var(--status-warning)/0.08)] px-2.5 py-2">
-            <summary className="cursor-pointer text-xs font-medium leading-5 text-[hsl(var(--status-warning-foreground))]">
-              {truncateText(item, 112)}
-            </summary>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">{item}</p>
-          </details>
+          <div key={item.id} className={cn("rounded-lg border px-2.5 py-2", item.tone === "info" ? "border-border/70 bg-background/20" : "border-[hsl(var(--status-warning)/0.22)] bg-[hsl(var(--status-warning)/0.08)]")}>
+            <div className="flex items-start gap-2">
+              <details className="min-w-0 flex-1">
+                <summary className={cn("cursor-pointer text-xs font-medium leading-5", item.tone === "info" ? "text-muted-foreground" : "text-[hsl(var(--status-warning-foreground))]")}>
+                  {truncateText(item.message, 112)}
+                </summary>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.message}</p>
+              </details>
+              <div className="shrink-0">
+              {item.action === "refresh" ? (
+                <Button type="button" variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem]" onClick={() => void onRefresh()}>
+                  <RefreshCw className="mr-1.5 h-3 w-3" />
+                  Refresh now
+                </Button>
+              ) : (
+                <Button asChild type="button" variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem]">
+                  <Link href="/settings#diagnostics">
+                    <Settings2 className="mr-1.5 h-3 w-3" />
+                    Inspect diagnostics
+                  </Link>
+                </Button>
+              )}
+              </div>
+            </div>
+          </div>
         ))}
       </div>
       {footer ? <div className="mt-2">{footer}</div> : null}
@@ -540,8 +593,7 @@ function summarizeTasks(tasks: TaskView[]) {
     queued,
     completed,
     attention: new Set([
-      ...tasks.filter((task) => task.status === "stalled" || task.status === "cancelled" || task.status === "approval").map((task) => task.id),
-      ...tasks.filter((task) => (task.source?.warningCount ?? 0) > 0).map((task) => task.id)
+      ...tasks.filter((task) => task.status === "stalled" || task.status === "cancelled" || task.status === "approval").map((task) => task.id)
     ]).size
   };
 }
@@ -579,7 +631,24 @@ function buildDiagnosticInboxItems(
     .map((item) => item.trim())
     .filter(Boolean)
     .filter((item, index, items) => items.indexOf(item) === index)
-    .filter((item) => !runtimeIssueText.includes(item.toLowerCase()));
+    .filter((item) => !runtimeIssueText.includes(item.toLowerCase()))
+    .map((message) => ({
+      id: message,
+      message,
+      tone: isTransientDiagnostic(message) ? "info" as const : "warning" as const,
+      action: isTransientDiagnostic(message) ? "refresh" as const : "diagnostics" as const
+    }));
+}
+
+type DashboardDiagnosticItem = {
+  id: string;
+  message: string;
+  tone: "info" | "warning";
+  action: "refresh" | "diagnostics";
+};
+
+function isTransientDiagnostic(message: string) {
+  return /Reusing the last successful (?:gateway status|payload) (?:after a transient OpenClaw check failure|while a slow OpenClaw command refreshes in the background)/i.test(message);
 }
 
 function buildActiveTaskByAgentId(tasks: TaskView[]) {
@@ -632,21 +701,21 @@ function filterTasks(tasks: TaskView[], query: string) {
   );
 }
 
-function formatAttentionDetail(taskAttentionCount: number, runtimeAttentionCount: number) {
-  if (taskAttentionCount === 0 && runtimeAttentionCount === 0) {
-    return "No review signals";
+function formatHumanControlDetail(summary: HumanControlInboxSummary | null) {
+  if (!summary) {
+    return "Checking the current operator queue";
+  }
+
+  if (summary.totalPending === 0) {
+    return "No verified pending actions";
   }
 
   const parts = [];
-
-  if (taskAttentionCount > 0) {
-    parts.push(`${taskAttentionCount} task${taskAttentionCount === 1 ? "" : "s"}`);
-  }
-
-  if (runtimeAttentionCount > 0) {
-    parts.push(`${runtimeAttentionCount} runtime`);
-  }
-
+  if (summary.approvals > 0) parts.push(`${summary.approvals} approval${summary.approvals === 1 ? "" : "s"}`);
+  if (summary.questions > 0) parts.push(`${summary.questions} question${summary.questions === 1 ? "" : "s"}`);
+  if (summary.setupAndBlockers > 0) parts.push(`${summary.setupAndBlockers} setup/blocker${summary.setupAndBlockers === 1 ? "" : "s"}`);
+  if (summary.runtimeIssues > 0) parts.push(`${summary.runtimeIssues} runtime issue${summary.runtimeIssues === 1 ? "" : "s"}`);
+  if (summary.suggestedWork > 0) parts.push(`${summary.suggestedWork} suggestion${summary.suggestedWork === 1 ? "" : "s"}`);
   return parts.join(", ");
 }
 

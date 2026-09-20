@@ -298,8 +298,8 @@ export function buildTaskViews(snapshot: MissionControlSnapshot): TaskView[] {
       id: task.id,
       title: task.title || task.mission || task.id,
       status,
-      statusLabel: resolveTaskStatusLabel(status),
-      statusTone: resolveTaskStatusTone(status),
+      statusLabel: resolveTaskStatusLabel(status, task.warningCount),
+      statusTone: resolveTaskStatusTone(status, task.warningCount),
       agentName: task.primaryAgentName || "Unassigned",
       category: readMetadataString(task.metadata, ["category", "type", "source"]) || "Uncategorized",
       priority: inferTaskPriority(task),
@@ -464,10 +464,6 @@ function mapAgentStatus(agent: AgentRecord): AgentFilter {
 }
 
 function mapTaskStatus(task: WorkItemRecord): TaskView["status"] {
-  if (task.warningCount > 0 && task.status !== "completed" && task.status !== "cancelled") {
-    return "approval";
-  }
-
   if (task.status === "running") {
     return "running";
   }
@@ -500,7 +496,11 @@ function resolveTaskProgress(task: WorkItemRecord, status: TaskView["status"]) {
   return status === "completed" ? 100 : 0;
 }
 
-function resolveTaskStatusLabel(status: TaskView["status"]) {
+function resolveTaskStatusLabel(status: TaskView["status"], warningCount = 0) {
+  if (warningCount > 0 && status !== "completed" && status !== "cancelled" && status !== "stalled" && status !== "approval") {
+    return "Warning";
+  }
+
   if (status === "approval") {
     return "Awaiting Approval";
   }
@@ -512,16 +512,20 @@ function resolveTaskStatusLabel(status: TaskView["status"]) {
   return toTitleCase(status);
 }
 
-function resolveTaskStatusTone(status: TaskView["status"]): StatusTone {
+function resolveTaskStatusTone(status: TaskView["status"], warningCount = 0): StatusTone {
   if (status === "completed") {
     return "success";
   }
 
   if (status === "running") {
-    return "info";
+    return warningCount > 0 ? "warning" : "info";
   }
 
   if (status === "approval" || status === "stalled") {
+    return "warning";
+  }
+
+  if (warningCount > 0) {
     return "warning";
   }
 
