@@ -67,6 +67,14 @@ export function resolveAttentionDestination(item: AttentionItem, action?: Attent
     };
   }
 
+  if (action === "review" && workerId && !sessionKey) {
+    return {
+      href: `/agents/${workerId}?tab=overview`,
+      label: "Review worker",
+      reason: "The item has worker evidence but no more specific mission or session destination."
+    };
+  }
+
   if (workerId && sessionKey) {
     return {
       href: `/agents/${workerId}?tab=sessions&session=${encodeURIComponent(sessionKey)}`,

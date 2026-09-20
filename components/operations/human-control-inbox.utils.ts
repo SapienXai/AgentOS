@@ -1,4 +1,5 @@
 import type { AttentionItem } from "@/lib/agentos/contracts";
+import { resolveAttentionDestination } from "@/lib/agentos/attention-destinations";
 
 export const HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS = 150;
 
@@ -41,7 +42,9 @@ function groupingKey(item: AttentionItem) {
   if (item.type === "runtime-issue") {
     const runtimeIssueType = item.evidence?.runtimeIssueType?.trim();
     const reasonCode = item.evidence?.reasonCode?.trim() || runtimeIssueType;
-    return runtimeIssueType ? `runtime-issue:${item.worker.id}:${runtimeIssueType}:${reasonCode ?? "unknown"}` : null;
+    if (!runtimeIssueType) return null;
+    const destination = resolveAttentionDestination(item, "inspect");
+    return `runtime-issue:${item.worker.id}:${runtimeIssueType}:${reasonCode ?? "unknown"}:${destination.href}`;
   }
   return null;
 }

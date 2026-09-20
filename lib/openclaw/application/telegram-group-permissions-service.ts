@@ -170,7 +170,7 @@ type GroupResolution = {
 };
 
 const TELEGRAM_GROUP_ID_PATTERN = /^-?\d+$/;
-const TELEGRAM_SENDER_ID_PATTERN = /^\d+$/;
+export const TELEGRAM_SENDER_ID_PATTERN = /^\d+$/;
 const MAX_TOOL_IDS = 200;
 const MAX_SENDER_IDS = 200;
 
@@ -821,9 +821,14 @@ function readAllowFrom(value: unknown) {
 
 function normalizeSenderIds(value: unknown) {
   const ids = normalizeStringArray(value, MAX_SENDER_IDS, "sender IDs");
-  const invalid = ids.filter((id) => !TELEGRAM_SENDER_ID_PATTERN.test(id));
+  const invalid = ids.filter((id) => !normalizeTelegramSenderId(id));
   if (invalid.length > 0) throw new Error("Telegram sender IDs must be numeric user IDs, not group IDs or usernames.");
-  return uniqueStrings(ids);
+  return uniqueStrings(ids.map((id) => normalizeTelegramSenderId(id)!));
+}
+
+export function normalizeTelegramSenderId(value: unknown) {
+  const senderId = typeof value === "string" ? value.trim() : String(value ?? "").trim();
+  return TELEGRAM_SENDER_ID_PATTERN.test(senderId) ? senderId : null;
 }
 
 function normalizeStringArray(value: unknown, max: number, label: string, throwOnInvalid = true) {
