@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Check,
   ChevronRight,
@@ -339,6 +340,11 @@ export function ChannelCenterPageContent({
         subtitle="Manage OpenClaw providers, accounts, routes, access, and agent handoff from one place."
         actions={
           <>
+            <Button asChild variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg">
+              <Link href={buildSimulatorHref(selectedProvider?.id ?? null, selectedAccount?.accountId ?? null, selectedRoute)}>
+                Test routing
+              </Link>
+            </Button>
             <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => setIsConnectDialogOpen(true)}>
               Add account
             </Button>
@@ -717,6 +723,21 @@ function routeKindLabel(kind: DirectoryEntry["kind"]) {
     case "role": return "Role selector";
     default: return "Peer";
   }
+}
+
+function buildSimulatorHref(providerId: string | null, accountId: string | null, route: DirectoryEntry | null) {
+  const params = new URLSearchParams();
+  if (providerId) params.set("provider", providerId);
+  if (accountId) params.set("account", accountId);
+  if (route) {
+    if (route.kind === "topic") {
+      if (route.parentRouteId) params.set("group", route.parentRouteId);
+      params.set("topic", route.routeId);
+    } else {
+      params.set("group", route.routeId);
+    }
+  }
+  return `/channels/simulator${params.size ? `?${params.toString()}` : ""}`;
 }
 
 function RouteIcon({ kind }: { kind: DirectoryEntry["kind"] }) {

@@ -31,11 +31,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
+import { useWorkerEffectiveCapabilities } from "@/hooks/use-worker-effective-capabilities";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { AgentPolicy, MissionControlSnapshot } from "@/lib/agentos/contracts";
-import type {
-  WorkerEffectiveCapabilitiesPayload
-} from "@/lib/openclaw/types";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -93,11 +91,7 @@ export function WorkerProfileDialog({
   const workspace = snapshot.workspaces.find((entry) => entry.id === agent?.workspaceId) ?? null;
   const [draft, setDraft] = useState<WorkerProfileDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [effectiveCapabilities, setEffectiveCapabilities] = useState<{
-    loading: boolean;
-    data: WorkerEffectiveCapabilitiesPayload | null;
-    error: string | null;
-  }>({ loading: false, data: null, error: null });
+  const effectiveCapabilities = useWorkerEffectiveCapabilities({ agentId, enabled: open });
 
   useEffect(() => {
     if (!open || !agent) {
@@ -106,36 +100,6 @@ export function WorkerProfileDialog({
 
     setDraft(buildDraft(agent));
   }, [agent, open, snapshot]);
-
-  useEffect(() => {
-    if (!open || !agentId) {
-      return;
-    }
-
-    const controller = new AbortController();
-    setEffectiveCapabilities({ loading: true, data: null, error: null });
-    void fetch(`/api/agents/${encodeURIComponent(agentId)}/capabilities`, {
-      cache: "no-store",
-      signal: controller.signal
-    })
-      .then(async (response) => {
-        const payload = await response.json() as WorkerEffectiveCapabilitiesPayload & { error?: string };
-        if (!response.ok || payload.error) {
-          throw new Error(payload.error || "Unable to read effective capabilities.");
-        }
-        setEffectiveCapabilities({ loading: false, data: payload, error: null });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setEffectiveCapabilities({
-          loading: false,
-          data: null,
-          error: error instanceof Error ? error.message : "Unable to read effective capabilities."
-        });
-      });
-
-    return () => controller.abort();
-  }, [agentId, open]);
 
   const accountSummary = useMemo(() => {
     if (!agent) {
@@ -287,33 +251,7 @@ export function WorkerProfileDialog({
               </ProfileSection>
 
               <ProfileSection id="worker-profile-capabilities" eyebrow="03 · Capability envelope" icon={Wrench} title="Capabilities" description="Grant the smallest useful tool surface; global OpenClaw policy still applies.">
-                <EffectiveCapabilitiesPanel state={effectiveCapabilities} onActivate={async (skill) => {
-                  const sessionKey = effectiveCapabilities.data?.session.key;
-                  if (!sessionKey) {
-                    toast.message("Skill activation is unavailable.", { description: "OpenClaw has not exposed a usable session context for this worker." });
-                    return;
-                  }
-                  try {
-                    const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/capabilities`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        sessionKey,
-                        action: "attach",
-                        skillId: skill.id,
-                        revision: skill.revision.id
-                      })
-                    });
-                    const payload = await response.json() as { capabilities?: WorkerEffectiveCapabilitiesPayload; error?: string };
-                    if (!response.ok || payload.error || !payload.capabilities) {
-                      throw new Error(payload.error || "Skill activation failed.");
-                    }
-                    setEffectiveCapabilities({ loading: false, data: payload.capabilities, error: null });
-                    toast.success("Skill activation requested.", { description: "OpenClaw will apply the selected revision on the next turn." });
-                  } catch (error) {
-                    toast.error("Skill activation failed.", { description: error instanceof Error ? error.message : "Unknown activation error." });
-                  }
-                }} />
+                <EffectiveCapabilitiesPanel state={effectiveCapabilities} onActivate={effectiveCapabilities.activateSkill} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Tool profile"><select value={draft.toolProfile} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, toolProfile: event.target.value as ToolProfile })}><option value="">Inherit OpenClaw default</option><option value="minimal">Minimal</option><option value="coding">Coding</option><option value="messaging">Messaging</option><option value="full">Full</option></select></Field>
                   <Field label="File boundary"><select value={draft.policy.fileAccess} className={profileSelectClassName} onChange={(event) => updatePolicy("fileAccess", event.target.value as AgentPolicy["fileAccess"])}><option value="workspace-only">Workspace only</option><option value="extended">Extended</option></select></Field>

@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AttentionAction, AttentionItem, HumanControlInbox as HumanControlInboxPayload } from "@/lib/agentos/contracts";
 import {
+  groupHumanControlItems,
   HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS,
   preserveQuestionAnswers,
   shouldScheduleHumanControlRefresh
 } from "@/components/operations/human-control-inbox.utils";
+import { resolveAttentionDestination } from "@/lib/agentos/attention-destinations";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -131,7 +133,7 @@ export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration, mo
       ) : error ? (
         <div className="rounded-lg border border-[hsl(var(--status-danger)/0.30)] bg-[hsl(var(--status-danger)/0.08)] p-3 text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}<Button variant="secondary" size="sm" className="mt-3 h-8 rounded-lg text-xs" onClick={() => { setPayload(null); void loadInbox(); }}>Try again</Button></div>
       ) : payload?.items.length ? (
-        <div className={cn("space-y-2", mode === "page" ? "" : "min-h-0 overflow-y-auto pr-1")}>{payload.items.map((item) => <AttentionRow key={item.id} item={item} pending={pendingId === item.id} answers={answers} onAnswerChange={(questionId, values) => setAnswers((current) => ({ ...current, [questionId]: values }))} onAction={(action, actionPayload) => void runAction(item, action, actionPayload)} />)}</div>
+        <div className={cn("space-y-2", mode === "page" ? "" : "min-h-0 overflow-y-auto pr-1")}>{groupHumanControlItems(payload.items).map((group) => <AttentionRow key={group.key} item={group.item} group={group} pending={pendingId === group.item.id} answers={answers} onAnswerChange={(questionId, values) => setAnswers((current) => ({ ...current, [questionId]: values }))} onAction={(action, actionPayload) => void runAction(group.item, action, actionPayload)} />)}</div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-10 text-center"><Check className="h-7 w-7 text-[hsl(var(--status-success-foreground))]" aria-hidden="true" /><p className="mt-3 text-sm font-semibold text-foreground">Nothing needs your attention</p><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{payload?.issues?.length ? "No verified pending items are currently available." : "OpenClaw has no current approvals, questions, suggestions, or actionable blockers."}</p></div>
       )}
@@ -157,12 +159,14 @@ function InboxSummary({ summary }: { summary: HumanControlInboxPayload["summary"
 
 function AttentionRow({
   item,
+  group,
   pending,
   answers,
   onAnswerChange,
   onAction
 }: {
   item: AttentionItem;
+  group: ReturnType<typeof groupHumanControlItems>[number];
   pending: boolean;
   answers: Record<string, string[]>;
   onAnswerChange: (questionId: string, values: string[]) => void;
@@ -173,6 +177,7 @@ function AttentionRow({
   const primaryAction = item.availableActions.find((action) => ["approve", "answer", "accept", "open-setup", "review-policy", "inspect"].includes(action.id));
   const secondaryActions = item.availableActions.filter((action) => action !== primaryAction && ["deny", "dismiss", "review"].includes(action.id));
   const canAnswer = isQuestion && item.question?.every((question) => (answers[question.questionId] ?? []).length > 0);
+  const destination = primaryAction ? resolveAttentionDestination(item, primaryAction.id) : null;
 
   return (
     <article className="rounded-xl border border-border/80 bg-card/55 p-3">
@@ -181,9 +186,11 @@ function AttentionRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={cn("rounded-full px-2 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.12em]", item.severity === "critical" ? "bg-[hsl(var(--status-danger)/0.13)] text-[hsl(var(--status-danger-foreground))]" : item.severity === "high" ? "bg-[hsl(var(--status-warning)/0.13)] text-[hsl(var(--status-warning-foreground))]" : "bg-muted text-muted-foreground")}>{typeLabel}</span>
             {item.worker.label ? <span className="truncate text-[0.68rem] font-medium text-muted-foreground">{item.worker.label}</span> : null}
+            {group.items.length > 1 ? <span className="rounded-full bg-muted px-2 py-0.5 text-[0.58rem] font-medium text-muted-foreground">Seen in {group.items.length} active contexts</span> : null}
           </div>
           <h3 className="mt-2 text-sm font-semibold text-foreground">{item.title}</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.summary}</p>
+          {item.worker.id || item.evidence?.capabilityId || item.source.sessionKey ? <p className="mt-1 text-[0.68rem] text-muted-foreground">{item.worker.label ? `Worker ${item.worker.label}` : "Worker context unavailable"}{item.evidence?.capabilityId ? ` · Capability ${item.evidence.capabilityId}` : ""}{item.source.sessionKey ? ` · Session ${shortId(item.source.sessionKey)}` : ""}</p> : null}
           {item.mission?.title ? <p className="mt-1 text-[0.68rem] text-muted-foreground">Mission: {item.mission.title}</p> : null}
           {item.createdAt ? <p className="mt-1 text-[0.65rem] text-muted-foreground/80">{formatAttentionTime(item.createdAt)}</p> : null}
         </div>
@@ -196,10 +203,10 @@ function AttentionRow({
             {pending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
             {pending ? "Resolving…" : primaryAction.label}
           </Button>
-        ) : primaryAction && ["open-setup", "review-policy", "inspect"].includes(primaryAction.id) ? (
-          <Button asChild size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs"><Link href={linkForAction(primaryAction.id)}>{primaryAction.label}</Link></Button>
+        ) : primaryAction && ["open-setup", "review-policy", "inspect"].includes(primaryAction.id) && destination ? (
+          <Button asChild size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs"><Link href={destination.href} title={destination.reason}>{destination.label}</Link></Button>
         ) : null}
-        {secondaryActions.map((action) => action.id === "review" ? <Button key={action.id} asChild size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs"><Link href={item.mission?.id ? `/missions/${encodeURIComponent(item.mission.id)}` : "/missions"}>{action.label}</Link></Button> : <Button key={action.id} size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" disabled={pending} onClick={() => onAction(action.id)}>{action.id === "deny" ? <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> : null}{action.label}</Button>)}
+        {secondaryActions.map((action) => action.id === "review" ? <Button key={action.id} asChild size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs"><Link href={resolveAttentionDestination(item, action.id).href}>{resolveAttentionDestination(item, action.id).label}</Link></Button> : <Button key={action.id} size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" disabled={pending} onClick={() => onAction(action.id)}>{action.id === "deny" ? <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> : null}{action.label}</Button>)}
       </div>
     </article>
   );
@@ -212,10 +219,8 @@ function QuestionAnswer({ item, answers, onAnswerChange }: { item: AttentionItem
   })}</div>;
 }
 
-function linkForAction(action: AttentionAction["id"]) {
-  if (action === "open-setup") return "/accounts";
-  if (action === "review-policy") return "/settings#gateway";
-  return "/operations";
+function shortId(value: string) {
+  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-4)}` : value;
 }
 
 function formatAttentionTime(value: string) {

@@ -6,14 +6,16 @@ import { cn } from "@/lib/utils";
 
 export function EffectiveCapabilitiesPanel({
   state,
-  onActivate
+  onActivate,
+  focusId = null
 }: {
   state: {
     loading: boolean;
     data: WorkerEffectiveCapabilitiesPayload | null;
     error: string | null;
   };
-  onActivate: (skill: SkillLibraryItem) => Promise<void>;
+  onActivate: (skill: SkillLibraryItem) => Promise<void | boolean>;
+  focusId?: string | null;
 }) {
   if (state.loading) {
     return <div className="rounded-2xl border border-border bg-muted/25 px-4 py-3 text-xs text-muted-foreground">Reading OpenClaw&apos;s current effective tools and Skills Library state...</div>;
@@ -43,7 +45,7 @@ export function EffectiveCapabilitiesPanel({
       {data.capabilities.length ? (
         <div className="grid gap-2 sm:grid-cols-2">
           {data.capabilities.map((capability) => (
-            <div key={capability.id} className="rounded-xl border border-border bg-background/65 px-3 py-3">
+            <div key={capability.id} data-capability-id={capability.id} className={cn("rounded-xl border border-border bg-background/65 px-3 py-3", focusId === capability.id && "ring-2 ring-primary/40")}>
               <div className="flex items-start gap-2">
                 <span className={cn("mt-0.5 h-2 w-2 shrink-0 rounded-full", capabilityStatusDot(capability.status))} />
                 <div className="min-w-0">
@@ -68,7 +70,7 @@ export function EffectiveCapabilitiesPanel({
   );
 }
 
-function SkillLibraryPanel({ data, onActivate }: { data: WorkerEffectiveCapabilitiesPayload; onActivate: (skill: SkillLibraryItem) => Promise<void> }) {
+function SkillLibraryPanel({ data, onActivate }: { data: WorkerEffectiveCapabilitiesPayload; onActivate: (skill: SkillLibraryItem) => Promise<void | boolean> }) {
   return (
     <div className="space-y-2 border-t border-border/70 pt-3">
       <div className="flex items-center justify-between gap-3">

@@ -128,6 +128,26 @@ export type TelegramGroupPermissionsMutation = {
   permissions: TelegramGroupPermissions;
 };
 
+export type TelegramRoutePolicyRead = {
+  provider: "telegram";
+  accountId: string;
+  groupId: string;
+  topicId: string | null;
+  enabled: boolean | null;
+  groupPolicy: "open" | "allowlist" | "disabled" | null;
+  allowFrom: string[];
+  requireMention: boolean | null;
+  source: "openclaw" | "unknown";
+  inheritance: Array<{
+    layer: "provider" | "account" | "wildcard" | "group" | "topic";
+    path: string;
+    fields: string[];
+    applied: boolean;
+  }>;
+  configPath: string;
+  warnings: string[];
+};
+
 type ProviderConfigRead = {
   config: Record<string, unknown>;
   baseHash: string | null;
@@ -172,6 +192,24 @@ export async function readTelegramGroupPermissions(input: {
     agentId,
     adapter
   });
+}
+
+/**
+ * Read-only Telegram policy projection used by operator explanations. It
+ * shares the same config scope and inheritance interpretation as the group
+ * permissions surface and never writes OpenClaw configuration.
+ */
+export async function readTelegramRoutePolicy(input: {
+  accountId: string;
+  groupId: string;
+  topicId?: string | null;
+  adapter?: OpenClawAdapter;
+}): Promise<TelegramRoutePolicyRead> {
+  const accountId = normalizeRequired(input.accountId, "A Telegram account is required.");
+  const groupId = normalizeTelegramGroupId(input.groupId);
+  const topicId = normalizeOptionalString(input.topicId);
+  const provider = await readTelegramProviderConfig(input.adapter ?? getOpenClawAdapter());
+  return resolveTelegramRoutePolicy(provider.config, accountId, groupId, topicId);
 }
 
 export async function updateTelegramGroupPermissions(input: {
@@ -310,17 +348,9 @@ async function buildPermissions(input: {
 }): Promise<TelegramGroupPermissions> {
   const resolved = resolveGroup(input.provider.config, input.accountId, input.groupId);
   const selected = resolved.selectedGroup;
-  const accountPolicy = readGroupPolicy(resolved.account?.groupPolicy);
-  const providerPolicy = readGroupPolicy(input.provider.config.groupPolicy);
-  const groupPolicy = readGroupPolicy(selected?.groupPolicy) ?? accountPolicy ?? providerPolicy ?? "allowlist";
-  const groupAllowFrom = readAllowFrom(
-    hasOwn(selected, "allowFrom")
-      ? selected?.allowFrom
-      : resolved.account?.groupAllowFrom
-        ?? resolved.account?.allowFrom
-        ?? input.provider.config.groupAllowFrom
-        ?? input.provider.config.allowFrom
-  );
+  const routePolicy = resolveTelegramRoutePolicy(input.provider.config, input.accountId, input.groupId, null);
+  const groupPolicy = routePolicy.groupPolicy ?? "allowlist";
+  const groupAllowFrom = routePolicy.allowFrom;
   const access: TelegramGroupAccessMode = groupPolicy === "disabled"
     ? "nobody"
     : groupPolicy === "open"
@@ -329,7 +359,7 @@ async function buildPermissions(input: {
         ? "selected"
         : "nobody";
 
-  const requireMention = readBoolean(selected?.requireMention) ?? true;
+  const requireMention = routePolicy.requireMention ?? true;
   const promptSource = hasOwn(selected, "systemPrompt")
     ? "group"
     : hasOwn(resolved.wildcardGroup, "systemPrompt")
@@ -512,6 +542,95 @@ function resolveGroup(config: Record<string, unknown>, accountId: string, groupI
     selectedSource: directGroup ? "direct" : wildcardGroup ? "wildcard" : "none",
     account: resolveAccount(config, accountId)
   };
+}
+
+function resolveTelegramRoutePolicy(
+  config: Record<string, unknown>,
+  accountId: string,
+  groupId: string,
+  topicId: string | null
+): TelegramRoutePolicyRead {
+  const resolved = resolveGroup(config, accountId, groupId);
+  const provider = config;
+  const account = resolved.account;
+  const wildcard = resolved.wildcardGroup;
+  const group = resolved.directGroup;
+  const selected = resolved.selectedGroup;
+  const selectedLayer: "group" | "wildcard" = resolved.selectedSource === "direct" ? "group" : "wildcard";
+  const topic = topicId ? asRecord(asRecord(selected?.topics)[topicId]) : {};
+  const scopePath = resolved.scope.configPath.replace(/\.groups$/, "");
+  const topicPath = `${resolved.scope.groupPath}.topics[${JSON.stringify(topicId ?? "")}]`;
+
+  const layers: TelegramRoutePolicyRead["inheritance"] = [
+    { layer: "provider", path: "channels.telegram", fields: policyFields(provider), applied: false },
+    { layer: "account", path: `${scopePath}.accounts[${JSON.stringify(accountId)}]`, fields: policyFields(account), applied: false },
+    { layer: "wildcard", path: `${resolved.scope.configPath}[\"*\"]`, fields: policyFields(wildcard), applied: false },
+    { layer: "group", path: resolved.scope.groupPath, fields: policyFields(group), applied: false },
+    ...(topicId ? [{ layer: "topic" as const, path: topicPath, fields: policyFields(topic), applied: false }] : [])
+  ];
+
+  const readFirst = (field: string, candidates: Array<{ value: unknown; layer: TelegramRoutePolicyRead["inheritance"][number] }>) => {
+    for (const candidate of candidates) {
+      if (candidate.value !== undefined && candidate.value !== null) {
+        candidate.layer.applied = true;
+        return candidate.value;
+      }
+    }
+    return undefined;
+  };
+  const layer = (name: TelegramRoutePolicyRead["inheritance"][number]["layer"]) => layers.find((entry) => entry.layer === name)!;
+  const policyCandidates = (field: string) => [
+    ...(topicId ? [{ value: topic?.[field], layer: layer("topic") }] : []),
+    { value: selected?.[field], layer: layer(selectedLayer) },
+    { value: account?.[field], layer: layer("account") },
+    { value: provider[field], layer: layer("provider") }
+  ];
+  const groupPolicyValue = readFirst("groupPolicy", policyCandidates("groupPolicy"));
+  const allowFromValue = readFirst("allowFrom", [
+    ...(topicId ? [{ value: topic?.allowFrom, layer: layer("topic") }] : []),
+    { value: selected?.allowFrom, layer: layer(selectedLayer) },
+    { value: account?.groupAllowFrom ?? account?.allowFrom, layer: layer("account") },
+    { value: provider.groupAllowFrom ?? provider.allowFrom, layer: layer("provider") }
+  ]);
+  const requireMentionValue = readFirst("requireMention", [
+    ...(topicId ? [{ value: topic?.requireMention, layer: layer("topic") }] : []),
+    { value: selected?.requireMention, layer: layer(selectedLayer) }
+  ]);
+  const enabledValue = readFirst("enabled", policyCandidates("enabled"));
+
+  const groupPolicy = readGroupPolicy(groupPolicyValue) ?? "allowlist";
+  const allowFrom = readAllowFrom(allowFromValue);
+  const requireMention = readBoolean(requireMentionValue) ?? true;
+
+  if (groupPolicyValue === undefined) {
+    layers[0]!.fields = [...layers[0]!.fields, "groupPolicy"];
+  }
+  if (requireMentionValue === undefined) {
+    layers[0]!.fields = [...layers[0]!.fields, "requireMention"];
+  }
+
+  return {
+    provider: "telegram",
+    accountId,
+    groupId,
+    topicId,
+    enabled: typeof enabledValue === "boolean" ? enabledValue : null,
+    groupPolicy,
+    allowFrom,
+    requireMention,
+    source: "openclaw",
+    inheritance: layers,
+    configPath: topicId ? topicPath : resolved.scope.groupPath,
+    warnings: resolved.selectedSource === "wildcard"
+      ? ["This route inherits a wildcard OpenClaw group policy."]
+      : []
+  };
+}
+
+function policyFields(value: Record<string, unknown> | null) {
+  if (!value) return [];
+  return ["enabled", "groupPolicy", "groupAllowFrom", "allowFrom", "requireMention"]
+    .filter((field) => hasOwn(value, field));
 }
 
 function resolveGroupScope(config: Record<string, unknown>, accountId: string, groupId: string): GroupScope {

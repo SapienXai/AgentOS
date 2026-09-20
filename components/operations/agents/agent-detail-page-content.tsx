@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -24,6 +24,11 @@ import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer"
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
 import { EffectiveCapabilitiesPanel } from "@/components/operations/agents/effective-capabilities-panel";
+import {
+  AGENT_DETAIL_TABS,
+  parseAgentDetailTab,
+  type AgentDetailTab
+} from "@/components/operations/agents/agent-detail-tabs";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import {
   buildAgentDetailActivity,
@@ -46,21 +51,27 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { toast } from "@/components/ui/sonner";
+import {
+  useWorkerEffectiveCapabilities,
+  type WorkerEffectiveCapabilitiesState
+} from "@/hooks/use-worker-effective-capabilities";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName, formatRelativeTime, resolveAgentModelLabel, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import type { SkillLibraryItem, WorkerEffectiveCapabilitiesPayload } from "@/lib/openclaw/types";
 import { cn } from "@/lib/utils";
 
-type AgentDetailTab = "overview" | "behavior" | "capabilities" | "channels" | "sessions";
+export { parseAgentDetailTab, type AgentDetailTab } from "@/components/operations/agents/agent-detail-tabs";
 
-const tabs: Array<{ id: AgentDetailTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "behavior", label: "Behavior" },
-  { id: "capabilities", label: "Capabilities" },
-  { id: "channels", label: "Channels" },
-  { id: "sessions", label: "Sessions" }
-];
+function readAgentDetailTabFromLocation() {
+  if (typeof window === "undefined") return "overview" as const;
+  return parseAgentDetailTab(new URLSearchParams(window.location.search).get("tab"));
+}
+
+function readAgentDetailFocusFromLocation(key: "capability" | "session") {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get(key)?.trim();
+  return value || null;
+}
 
 export function AgentDetailPageContent({
   agentId,
@@ -79,7 +90,7 @@ export function AgentDetailPageContent({
 }) {
   const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
   const workspace = agent ? resolveAgentDetailWorkspace(snapshot, agent) : null;
-  const [tab, setTab] = useState<AgentDetailTab>("overview");
+  const [tab, setTab] = useState<AgentDetailTab>(readAgentDetailTabFromLocation);
   const [chatOpen, setChatOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -87,35 +98,15 @@ export function AgentDetailPageContent({
   const [capabilityFocus, setCapabilityFocus] = useState<"skills" | "tools">("skills");
   const [addModelsOpen, setAddModelsOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
-  const [capabilities, setCapabilities] = useState<{
-    loading: boolean;
-    data: WorkerEffectiveCapabilitiesPayload | null;
-    error: string | null;
-  }>({ loading: false, data: null, error: null });
-
-  const loadCapabilities = useCallback(async (signal?: AbortSignal) => {
-    const targetAgentId = agent?.id;
-    if (!targetAgentId) return;
-    setCapabilities({ loading: true, data: null, error: null });
-    try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(targetAgentId)}/capabilities`, {
-      cache: "no-store",
-      signal
-      });
-      const payload = await response.json() as WorkerEffectiveCapabilitiesPayload & { error?: string };
-      if (!response.ok || payload.error) throw new Error(payload.error || "Unable to read effective capabilities.");
-      setCapabilities({ loading: false, data: payload, error: null });
-    } catch (error) {
-      if (signal?.aborted) return;
-      setCapabilities({ loading: false, data: null, error: error instanceof Error ? error.message : "Unable to read effective capabilities." });
-    }
-  }, [agent?.id]);
+  const capabilities = useWorkerEffectiveCapabilities({ agentId: agent?.id });
+  const capabilityFocusId = readAgentDetailFocusFromLocation("capability");
+  const sessionFocusKey = readAgentDetailFocusFromLocation("session");
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadCapabilities(controller.signal);
-    return () => controller.abort();
-  }, [loadCapabilities]);
+    const handlePopState = () => setTab(readAgentDetailTabFromLocation());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const agentView = useMemo<AgentView | null>(
     () => (agent ? buildAgentViews(snapshot).find((entry) => entry.id === agent.id) ?? null : null),
@@ -124,6 +115,31 @@ export function AgentDetailPageContent({
   const currentWork = agent ? resolveAgentCurrentWork(agent, snapshot) : null;
   const sessions = agent ? buildAgentDetailSessions(snapshot, agent.id) : [];
   const activity = agent ? buildAgentDetailActivity(snapshot, agent.id) : [];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (tab === "capabilities" && capabilityFocusId) {
+      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-capability-id]"))
+        .find((element) => element.dataset.capabilityId === capabilityFocusId);
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    if (tab === "sessions" && sessionFocusKey) {
+      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-session-key]"))
+        .find((element) => element.dataset.sessionKey === sessionFocusKey);
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [capabilities.data, capabilityFocusId, sessionFocusKey, sessions.length, tab]);
+
+  const updateTab = (nextTab: AgentDetailTab) => {
+    if (typeof window === "undefined") {
+      setTab(nextTab);
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", nextTab);
+    window.history.pushState({}, "", url);
+    setTab(nextTab);
+  };
 
   if (!agent || !workspace || !agentView || !currentWork) {
     return (
@@ -141,27 +157,6 @@ export function AgentDetailPageContent({
     setCapabilityFocus(focus);
     setCapabilityOpen(true);
   };
-  const activateSkill = async (skill: SkillLibraryItem) => {
-    const sessionKey = capabilities.data?.session.key;
-    if (!sessionKey) {
-      toast.message("Skill activation is unavailable.", { description: "OpenClaw has not exposed a usable session context for this worker." });
-      return;
-    }
-    try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/capabilities`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionKey, action: "attach", skillId: skill.id, revision: skill.revision.id })
-      });
-      const payload = await response.json() as { capabilities?: WorkerEffectiveCapabilitiesPayload; error?: string };
-      if (!response.ok || payload.error || !payload.capabilities) throw new Error(payload.error || "Skill activation failed.");
-      setCapabilities({ loading: false, data: payload.capabilities, error: null });
-      toast.success("Skill activation requested.", { description: "OpenClaw will apply the selected revision on the next turn." });
-    } catch (error) {
-      toast.error("Skill activation failed.", { description: error instanceof Error ? error.message : "Unknown activation error." });
-    }
-  };
-
   return (
     <>
       <OperationsPageLayout
@@ -176,7 +171,7 @@ export function AgentDetailPageContent({
               subtitle={`${agent.workerProfile?.employment.role || "OpenClaw worker"} · ${workspace.name}`}
               actions={
                 <>
-                  <Button variant="secondary" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setProfileOpen(true)}>
+                  <Button variant="ghost" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setProfileOpen(true)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
                   </Button>
                   <Button variant="secondary" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setChatOpen(true)}>
@@ -198,13 +193,13 @@ export function AgentDetailPageContent({
 
             <nav aria-label="Worker detail sections" className="overflow-x-auto border-b border-border">
               <div className="flex min-w-max gap-1">
-                {tabs.map((item) => (
+                {AGENT_DETAIL_TABS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     role="tab"
                     aria-selected={tab === item.id}
-                    onClick={() => setTab(item.id)}
+                    onClick={() => updateTab(item.id)}
                     className={cn("border-b-2 px-3 py-2.5 text-xs font-medium transition-colors", tab === item.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
                   >
                     {item.label}
@@ -213,21 +208,22 @@ export function AgentDetailPageContent({
               </div>
             </nav>
 
-            <div role="tabpanel" aria-label={`${tabs.find((item) => item.id === tab)?.label} for ${displayName}`}>
-              {tab === "overview" ? <OverviewTab agent={agent} workspace={workspace} modelLabel={modelLabel} currentWork={currentWork} activity={activity} capabilities={capabilities.data} onOpenCapabilities={() => setTab("capabilities")} onOpenChannels={() => setTab("channels")} onChangeModel={() => setModelOpen(true)} /> : null}
+            <div role="tabpanel" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label} for ${displayName}`}>
+              {tab === "overview" ? <OverviewTab agent={agent} workspace={workspace} modelLabel={modelLabel} currentWork={currentWork} activity={activity} capabilities={capabilities.data} onOpenCapabilities={() => updateTab("capabilities")} onOpenChannels={() => updateTab("channels")} onChangeModel={() => setModelOpen(true)} /> : null}
               {tab === "behavior" ? <BehaviorTab agent={agent} onEdit={() => setProfileOpen(true)} /> : null}
               {tab === "capabilities" ? (
                 <CapabilitiesTab
                   agent={agent}
                   capabilities={capabilities}
-                  onRefreshCapabilities={() => void loadCapabilities()}
-                  onActivate={activateSkill}
+                  onRefreshCapabilities={() => void capabilities.refresh()}
+                  onActivate={capabilities.activateSkill}
                   onOpenEditor={openCapabilityEditor}
                   onEditProfile={() => setProfileOpen(true)}
+                  focusId={capabilityFocusId}
                 />
               ) : null}
               {tab === "channels" ? <ChannelsTab agent={agent} workspace={workspace} surfaceTheme={surfaceTheme} onRouteChanged={refresh} /> : null}
-              {tab === "sessions" ? <SessionsTab sessions={sessions} activity={activity} onRefresh={refresh} /> : null}
+              {tab === "sessions" ? <SessionsTab sessions={sessions} activity={activity} onRefresh={refresh} focusKey={sessionFocusKey} /> : null}
             </div>
           </div>
         }
@@ -297,16 +293,16 @@ function BehaviorTab({ agent, onEdit }: { agent: MissionControlSnapshot["agents"
   return <div className="space-y-4"><SectionCard title="Behavior contract" action={<Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit behavior</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><ReadOnlyBlock label="Mission" value={mission} /><ReadOnlyBlock label="Working guidance" value={behavior || "No behavior instructions are configured."} /><div className="lg:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operator labels</p><div className="mt-2 flex flex-wrap gap-2">{labels.length ? labels.map((label) => <Badge key={label} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{label}</Badge>) : <span className="text-xs text-muted-foreground">No labels configured.</span>}</div></div></div></SectionCard><SectionCard title="Edit semantics"><div className="flex items-start gap-3 p-4"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /><p className="text-xs leading-5 text-muted-foreground">Behavior edits open the existing Worker Profile editor. Draft changes stay local until Save Worker Profile commits them through the protected AgentOS/OpenClaw update path.</p></div></SectionCard></div>;
 }
 
-function CapabilitiesTab({ agent, capabilities, onRefreshCapabilities, onActivate, onOpenEditor, onEditProfile }: { agent: MissionControlSnapshot["agents"][number]; capabilities: { loading: boolean; data: WorkerEffectiveCapabilitiesPayload | null; error: string | null }; onRefreshCapabilities: () => void; onActivate: (skill: SkillLibraryItem) => Promise<void>; onOpenEditor: (focus: "skills" | "tools") => void; onEditProfile: () => void }) {
-  return <div className="space-y-4"><SectionCard title="Configured vs effective" action={<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onRefreshCapabilities}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", capabilities.loading && "animate-spin")} />Refresh</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Configured declarations</p><div className="mt-2 flex flex-wrap gap-2">{agent.skills.map((skill) => <Badge key={skill} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Skill · {skill}</Badge>)}{agent.tools.map((tool) => <Badge key={tool} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Tool · {tool}</Badge>)}{agent.skills.length === 0 && agent.tools.length === 0 ? <span className="text-xs text-muted-foreground">No explicit declarations.</span> : null}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("skills")}><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Manage skills</Button><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("tools")}><Wrench className="mr-1.5 h-3.5 w-3.5" /> Manage tools</Button></div></div><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Effective session state</p>{capabilities.loading ? <p className="mt-2 text-xs text-muted-foreground">Reading native OpenClaw session evidence…</p> : capabilities.error ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">{capabilities.error}</p> : capabilities.data ? <div className="mt-2 flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.data.summary.available} tone="success" /><CapabilityCount label="Setup" value={capabilities.data.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.data.summary["requires-approval"]} tone="info" /><CapabilityCount label="Blocked" value={capabilities.data.summary.blocked} tone="danger" /></div> : <p className="mt-2 text-xs text-muted-foreground">No effective session state was returned.</p>}</div></div></SectionCard><EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} /><SectionCard title="Guardrails & access" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={onEditProfile}>Edit in Worker Profile</Button>}><div className="grid gap-3 p-4 sm:grid-cols-3"><KeyValue label="Policy" value={agent.policy.preset} /><KeyValue label="File access" value={agent.policy.fileAccess} /><KeyValue label="Network" value={agent.policy.networkAccess} /><KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} /><KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} /><KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} /></div></SectionCard></div>;
+function CapabilitiesTab({ agent, capabilities, onRefreshCapabilities, onActivate, onOpenEditor, onEditProfile, focusId }: { agent: MissionControlSnapshot["agents"][number]; capabilities: WorkerEffectiveCapabilitiesState; onRefreshCapabilities: () => void; onActivate: (skill: SkillLibraryItem) => Promise<boolean>; onOpenEditor: (focus: "skills" | "tools") => void; onEditProfile: () => void; focusId: string | null }) {
+  return <div className="space-y-4"><SectionCard title="Configured vs effective" action={<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onRefreshCapabilities}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", capabilities.loading && "animate-spin")} />Refresh</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Configured declarations</p><div className="mt-2 flex flex-wrap gap-2">{agent.skills.map((skill) => <Badge key={skill} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Skill · {skill}</Badge>)}{agent.tools.map((tool) => <Badge key={tool} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Tool · {tool}</Badge>)}{agent.skills.length === 0 && agent.tools.length === 0 ? <span className="text-xs text-muted-foreground">No explicit declarations.</span> : null}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("skills")}><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Manage skills</Button><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("tools")}><Wrench className="mr-1.5 h-3.5 w-3.5" /> Manage tools</Button></div></div><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Effective session state</p>{capabilities.loading ? <p className="mt-2 text-xs text-muted-foreground">Reading native OpenClaw session evidence…</p> : capabilities.error ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">{capabilities.error}</p> : capabilities.data ? <div className="mt-2 flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.data.summary.available} tone="success" /><CapabilityCount label="Setup" value={capabilities.data.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.data.summary["requires-approval"]} tone="info" /><CapabilityCount label="Blocked" value={capabilities.data.summary.blocked} tone="danger" /></div> : <p className="mt-2 text-xs text-muted-foreground">No effective session state was returned.</p>}</div></div></SectionCard><EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} focusId={focusId} /><SectionCard title="Guardrails & access" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={onEditProfile}>Edit in Worker Profile</Button>}><div className="grid gap-3 p-4 sm:grid-cols-3"><KeyValue label="Policy" value={agent.policy.preset} /><KeyValue label="File access" value={agent.policy.fileAccess} /><KeyValue label="Network" value={agent.policy.networkAccess} /><KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} /><KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} /><KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} /></div></SectionCard></div>;
 }
 
 function ChannelsTab({ agent, workspace, surfaceTheme, onRouteChanged }: { agent: MissionControlSnapshot["agents"][number]; workspace: MissionControlSnapshot["workspaces"][number]; surfaceTheme: "dark" | "light"; onRouteChanged: () => Promise<void> }) {
-  return <SectionCard title="Channel bindings"><div className="p-4"><p className="mb-4 max-w-2xl text-xs leading-5 text-muted-foreground">These routes are read and changed through OpenClaw&apos;s canonical Channel Center binding service. Telegram groups and topics keep their inherited and explicit route states.</p><AgentChannelsSection agentId={agent.id} workspaceId={workspace.id} workspacePath={workspace.path} surfaceTheme={surfaceTheme} onRouteChanged={onRouteChanged} /></div></SectionCard>;
+  return <SectionCard title="Channel bindings" action={<Button asChild size="sm" variant="secondary" className="h-8 rounded-lg px-2.5 text-xs"><Link href={`/channels/simulator?expectedAgentId=${encodeURIComponent(agent.id)}`}>Test delivery</Link></Button>}><div className="p-4"><p className="mb-4 max-w-2xl text-xs leading-5 text-muted-foreground">These routes are read and changed through OpenClaw&apos;s canonical Channel Center binding service. Telegram groups and topics keep their inherited and explicit route states.</p><AgentChannelsSection agentId={agent.id} workspaceId={workspace.id} workspacePath={workspace.path} surfaceTheme={surfaceTheme} onRouteChanged={onRouteChanged} /></div></SectionCard>;
 }
 
-function SessionsTab({ sessions, activity, onRefresh }: { sessions: ReturnType<typeof buildAgentDetailSessions>; activity: ReturnType<typeof buildAgentDetailActivity>; onRefresh: () => Promise<void> }) {
-  return <div className="space-y-4"><SectionCard title="Session history" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => void onRefresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>}><div className="p-4"><p className="mb-3 text-xs leading-5 text-muted-foreground">Session rows are projected from the existing OpenClaw runtime/session/task snapshot. AgentOS does not create a parallel session store here.</p>{sessions.length ? <div className="grid gap-2 lg:grid-cols-2">{sessions.map((session) => <div key={session.key} className="rounded-xl border border-border bg-muted/20 p-3"><div className="flex items-start gap-3"><EntityIcon icon={session.source === "runtime" ? Code2 : FolderKanban} label="S" tone="info" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{session.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{session.subtitle}</p><div className="mt-2 flex flex-wrap gap-2"><StatusBadge label={session.status} tone={session.status === "running" ? "info" : session.status === "completed" ? "success" : "muted"} /><span className="text-[10px] text-muted-foreground">{session.updatedLabel}</span><span className="text-[10px] text-muted-foreground">{session.tokenLabel} tokens</span></div></div></div><p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{session.key}</p></div>)}</div> : <EmptyState title="No sessions reported" description="OpenClaw has not exposed session evidence for this worker yet." />}</div></SectionCard><SectionCard title="Recent activity"><div className="divide-y divide-border">{activity.length ? activity.map((entry) => <div key={entry.id} className="flex items-start gap-3 px-4 py-3"><CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="text-xs font-medium">{entry.title}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{entry.detail}</p></div><span className="text-[10px] text-muted-foreground">{entry.updatedLabel}</span></div>) : <div className="p-4"><EmptyState title="No recent activity" description="Only confirmed runtime and task evidence appears here." /></div>}</div></SectionCard></div>;
+function SessionsTab({ sessions, activity, onRefresh, focusKey }: { sessions: ReturnType<typeof buildAgentDetailSessions>; activity: ReturnType<typeof buildAgentDetailActivity>; onRefresh: () => Promise<void>; focusKey: string | null }) {
+  return <div className="space-y-4"><SectionCard title="Session history" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => void onRefresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>}><div className="p-4"><p className="mb-3 text-xs leading-5 text-muted-foreground">Session rows are projected from the existing OpenClaw runtime/session/task snapshot. AgentOS does not create a parallel session store here.</p>{sessions.length ? <div className="grid gap-2 lg:grid-cols-2">{sessions.map((session) => <div key={session.key} data-session-key={session.key} className={cn("rounded-xl border border-border bg-muted/20 p-3", focusKey === session.key && "ring-2 ring-primary/40")}><div className="flex items-start gap-3"><EntityIcon icon={session.source === "runtime" ? Code2 : FolderKanban} label="S" tone="info" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{session.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{session.subtitle}</p><div className="mt-2 flex flex-wrap gap-2"><StatusBadge label={session.status} tone={session.status === "running" ? "info" : session.status === "completed" ? "success" : "muted"} /><span className="text-[10px] text-muted-foreground">{session.updatedLabel}</span><span className="text-[10px] text-muted-foreground">{session.tokenLabel} tokens</span></div></div></div><p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{session.key}</p></div>)}</div> : <EmptyState title="No sessions reported" description="OpenClaw has not exposed session evidence for this worker yet." />}</div></SectionCard><SectionCard title="Recent activity"><div className="divide-y divide-border">{activity.length ? activity.map((entry) => <div key={entry.id} className="flex items-start gap-3 px-4 py-3"><CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="text-xs font-medium">{entry.title}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{entry.detail}</p></div><span className="text-[10px] text-muted-foreground">{entry.updatedLabel}</span></div>) : <div className="p-4"><EmptyState title="No recent activity" description="Only confirmed runtime and task evidence appears here." /></div>}</div></SectionCard></div>;
 }
 
 function ReadOnlyBlock({ label, value }: { label: string; value: string }) {
