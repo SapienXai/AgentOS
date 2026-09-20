@@ -119,14 +119,54 @@ test("explains Telegram topic inheritance from its parent group route", async ()
 });
 
 test("does not select a winner when native bindings are ambiguous", async () => {
-  const result = await simulateChannelRoute({ route: route(), senderId: "1842", mentioned: false }, deps(adapter([
+  let capabilityReads = 0;
+  let workerReads = 0;
+  const currentAdapter = adapter([
     { agentId: "support-agent", match: { channel: "telegram", accountId: "support-bot", peer: { kind: "group", id: "-100123" } } },
     { agentId: "another-agent", match: { channel: "telegram", accountId: "support-bot", peer: { kind: "group", id: "-100123" } } }
-  ], groupConfig())));
+  ], groupConfig());
+  const result = await simulateChannelRoute({ route: route(), senderId: "1842", mentioned: false }, {
+    ...deps(currentAdapter),
+    readAgents: async () => {
+      workerReads += 1;
+      return [{ id: "support-agent", name: "Support Agent" }] as never;
+    },
+    readCapabilities: async () => {
+      capabilityReads += 1;
+      return capabilities();
+    }
+  });
 
   assert.equal(result.outcome, "ambiguous");
   assert.equal(result.binding.effectiveAgentId, null);
   assert.equal(result.worker.label, null);
+  assert.equal(result.capabilities.status, "unknown");
+  assert.match(result.capabilities.detail, /single effective worker could not be established/i);
+  assert.equal(workerReads, 0);
+  assert.equal(capabilityReads, 0);
+});
+
+test("keeps an ambiguous Telegram topic worker-neutral when its parent route is ambiguous", async () => {
+  let capabilityReads = 0;
+  const currentAdapter = adapter([
+    { agentId: "support-agent", match: { channel: "telegram", accountId: "support-bot", peer: { kind: "group", id: "-100123" } } },
+    { agentId: "another-agent", match: { channel: "telegram", accountId: "support-bot", peer: { kind: "group", id: "-100123" } } }
+  ], {
+    groups: { "-100123": { enabled: true, groupPolicy: "open", requireMention: false, topics: { "12": {} } } }
+  });
+  const result = await simulateChannelRoute({ route: route("topic"), senderId: "1842", mentioned: false }, {
+    ...deps(currentAdapter),
+    readCapabilities: async () => {
+      capabilityReads += 1;
+      return capabilities();
+    }
+  });
+
+  assert.equal(result.outcome, "ambiguous");
+  assert.equal(result.binding.effectiveAgentId, null);
+  assert.equal(result.worker.id, null);
+  assert.equal(result.capabilities.entries.length, 0);
+  assert.equal(capabilityReads, 0);
 });
 
 test("blocks a Telegram message that is not mentioned when mention is required", async () => {
@@ -159,6 +199,18 @@ test("uses the canonical Telegram allowlist and does not infer sender identity",
   assert.equal(denied.outcome, "blocked");
   assert.equal(unknown.outcome, "unknown");
   assert.equal(unknown.access.senderGate.status, "unknown");
+
+  const whitespace = await simulateChannelRoute({ route: route(), senderId: " 1842 ", mentioned: false }, deps(currentAdapter));
+  const username = await simulateChannelRoute({ route: route(), senderId: "@kazim", mentioned: false }, deps(currentAdapter));
+  const groupId = await simulateChannelRoute({ route: route(), senderId: "-100123", mentioned: false }, deps(currentAdapter));
+
+  assert.equal(whitespace.outcome, "deliverable");
+  assert.equal(whitespace.access.senderGate.status, "pass");
+  assert.equal(username.outcome, "unknown");
+  assert.equal(username.access.senderGate.status, "unknown");
+  assert.match(username.access.senderGate.detail, /numeric Telegram user ID is required/i);
+  assert.equal(groupId.outcome, "unknown");
+  assert.equal(groupId.access.senderGate.status, "unknown");
 });
 
 test("preserves native group-over-account policy precedence", async () => {
