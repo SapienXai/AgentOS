@@ -2,25 +2,25 @@
 
 import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, ArrowUpRight, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
+import { AgentChatDialog } from "@/components/mission-control/agent-chat-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
-import { resolveAgentStatusDotTone } from "@/components/mission-control/node-visual-tones";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { AddModelsProviderId } from "@/lib/openclaw/types";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,7 @@ import {
   type AgentView
 } from "@/components/operations/operations-data";
 import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, type StatusTone } from "@/components/operations/operations-ui";
-import { agentFilterLabel, formatAgentDisplayNameFromRecord, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
+import { agentFilterLabel, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
 export function AgentsPageContent({
   snapshot,
@@ -71,6 +71,7 @@ export function AgentsPageContent({
   const [dispatchAgent, setDispatchAgent] = useState<AgentView | null>(null);
   const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
+  const [modelProviderToConnect, setModelProviderToConnect] = useState<AddModelsProviderId | null>(null);
 
   const filteredAgents = agents.filter((agent) => {
     const query = search.trim().toLowerCase();
@@ -102,6 +103,21 @@ export function AgentsPageContent({
   const openCapabilityEditor = (agentId: string, focus: "skills" | "tools") => {
     setCapabilityAgentId(agentId);
     setCapabilityFocus(focus);
+  };
+  const openAddModels = (provider?: AddModelsProviderId | null) => {
+    setModelProviderToConnect(provider ?? null);
+    setIsAddModelsDialogOpen(true);
+  };
+  const openChatModelProvider = (provider: AddModelsProviderId) => {
+    setModelProviderToConnect(provider);
+    setChatAgentId(null);
+    window.requestAnimationFrame(() => setIsAddModelsDialogOpen(true));
+  };
+  const handleAddModelsOpenChange = (open: boolean) => {
+    setIsAddModelsDialogOpen(open);
+    if (!open) {
+      setModelProviderToConnect(null);
+    }
   };
 
   const deleteAgent = async (agent: AgentView) => {
@@ -254,60 +270,22 @@ export function AgentsPageContent({
         />
       ) : null}
     />
-      <Dialog open={Boolean(chatAgent)} onOpenChange={(open) => setChatAgentId(open ? chatAgentId : null)}>
-        <DialogContent
-          className="left-0 top-0 flex h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:left-1/2 sm:top-1/2 sm:h-[min(82dvh,760px)] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-4 sm:rounded-[18px] sm:border sm:p-4"
-          closeClassName="hidden sm:block"
-        >
-          <DialogHeader className="shrink-0 border-b border-border/55 px-3 pb-3 pt-[calc(0.6rem+env(safe-area-inset-top))] sm:border-0 sm:p-0">
-            <div className="flex min-w-0 items-center gap-3 sm:block">
-              <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:hidden">
-                <ArrowLeft className="h-4 w-4" />
-                <span className="sr-only">Back to agents</span>
-              </DialogClose>
-              <div className="min-w-0 flex-1 sm:pr-10">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <DialogTitle className="truncate text-[1.05rem] sm:text-xl">
-                    <span className="sm:hidden">
-                      {chatAgent ? formatAgentDisplayNameFromRecord(chatAgent) : "Agent Chat"}
-                    </span>
-                    <span className="hidden sm:inline">
-                      {chatAgent ? `Message ${formatAgentDisplayNameFromRecord(chatAgent)}` : "Agent Chat"}
-                    </span>
-                  </DialogTitle>
-                  {chatAgent ? (
-                    <span
-                      aria-label={chatAgent.status}
-                      title={chatAgent.status}
-                      className={cn("h-2 w-2 shrink-0 rounded-full sm:hidden", resolveAgentStatusDotTone(chatAgent.status))}
-                    />
-                  ) : null}
-                </div>
-                <DialogDescription className="mt-0.5 truncate text-[11px] sm:mt-2 sm:text-sm">
-                  <span className="sm:hidden">
-                    {chatAgent?.currentAction?.trim() || (chatAgent ? `${chatAgent.status} · Ready to chat` : "Direct agent chat")}
-                  </span>
-                  <span className="hidden sm:inline">
-                    Messages are sent through the existing AgentOS/OpenClaw agent chat runner.
-                  </span>
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-0">
-            {chatAgent ? (
-              <AgentChatDrawer
-                agent={chatAgent}
-                snapshot={rootSnapshot}
-                surfaceTheme={surfaceTheme}
-                isVisible={Boolean(chatAgent)}
-                onRefresh={refresh}
-                onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
-              />
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AgentChatDialog
+        open={Boolean(chatAgent)}
+        onOpenChange={(open) => setChatAgentId(open ? chatAgentId : null)}
+        agent={chatAgent}
+      >
+        {chatAgent ? (
+          <AgentChatDrawer
+            agent={chatAgent}
+            snapshot={rootSnapshot}
+            isVisible={Boolean(chatAgent)}
+            onRefresh={refresh}
+            onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+            onConnectModelProvider={openChatModelProvider}
+          />
+        ) : null}
+      </AgentChatDialog>
       <AgentModelPickerDialog
         open={Boolean(modelAgentId)}
         agentId={modelAgentId}
@@ -315,7 +293,7 @@ export function AgentsPageContent({
         onOpenChange={(open) => setModelAgentId(open ? modelAgentId : null)}
         onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
         onRefresh={refresh}
-        onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
+        onOpenAddModels={openAddModels}
         surfaceTheme={surfaceTheme}
       />
       <WorkerProfileDialog
@@ -336,8 +314,9 @@ export function AgentsPageContent({
       />
       <AddModelsDialog
         open={isAddModelsDialogOpen}
-        onOpenChange={setIsAddModelsDialogOpen}
+        onOpenChange={handleAddModelsOpenChange}
         snapshot={rootSnapshot}
+        initialProvider={modelProviderToConnect}
         onSnapshotChange={setSnapshot}
         surfaceTheme={surfaceTheme}
       />

@@ -587,7 +587,6 @@ function InspectorPanelContent({
                       <AgentChatDrawer
                         agent={selectedAgent}
                         snapshot={snapshot}
-                        surfaceTheme={surfaceTheme}
                         isVisible={isChatView}
                         onRefresh={onRefresh}
                         onSnapshotChange={onSnapshotChange}

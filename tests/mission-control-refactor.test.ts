@@ -1412,9 +1412,34 @@ test("agent chat keeps the send action in the composer bottom-right", () => {
 
   assert.match(
     source,
-    /absolute bottom-1\.5 right-1\.5 h-10 w-10 rounded-full p-0 shadow-none lg:bottom-3 lg:right-3 lg:h-8 lg:w-auto lg:px-3/
+    /absolute bottom-1\.5 right-1\.5 h-10 w-10 rounded-full p-0 shadow-none/
   );
   assert.doesNotMatch(source, /absolute bottom-1\.5 right-1\.5[\s\S]*lg:top-3/);
+});
+
+test("agent chat uses a focused responsive sheet, safe composer, and readable markdown", () => {
+  const detailSource = readFileSync(path.join(rootDir, "components/operations/agents/agent-detail-page-content.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-dialog.tsx"), "utf8");
+  const drawerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-drawer.tsx"), "utf8");
+  const markdownSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-message-content.tsx"), "utf8");
+  const globalStyles = readFileSync(path.join(rootDir, "app/globals.css"), "utf8");
+
+  assert.match(detailSource, /<AgentChatDialog open=\{chatOpen\}[\s\S]*statusLabel=\{agentView\.statusLabel\}/);
+  assert.match(shellSource, /agent-chat-sheet fixed[\s\S]*h-\[94dvh\]/);
+  assert.match(shellSource, /md:w-\[min\(92vw,860px\)\]/);
+  assert.match(shellSource, /window\.visualViewport/);
+  assert.match(shellSource, /onPointerUp=\{finishDrag\}/);
+  assert.match(shellSource, /Back to agent control center/);
+  assert.match(detailSource, /onConnectModelProvider=\{openChatModelProvider\}/);
+  assert.match(detailSource, /initialProvider=\{modelProviderToConnect\}/);
+  assert.match(drawerSource, /max-w-2xl/);
+  assert.match(drawerSource, /env\(safe-area-inset-bottom\)/);
+  assert.match(drawerSource, /event\.nativeEvent\.isComposing/);
+  assert.match(drawerSource, /prompts=\{quickPrompts\}/);
+  assert.match(markdownSource, /remarkPlugins=\{\[remarkGfm\]\}/);
+  assert.match(markdownSource, /skipHtml/);
+  assert.match(globalStyles, /max-width: 767px[\s\S]*agent-chat-sheet/);
+  assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);
 });
 
 test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
@@ -1427,17 +1452,18 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(drawerSource, /currentActivity/);
   assert.match(drawerSource, /previousActivity/);
   assert.match(drawerSource, /agent-chat-activity-label/);
+  assert.match(drawerSource, /<details[\s\S]*Recent activity/);
   assert.match(drawerSource, /statusHistory=\{runSnapshot\.statusHistory\}/);
-  assert.match(drawerSource, /isPendingAssistant[\s\S]*lg:border-0[\s\S]*lg:shadow-none/);
+  assert.match(drawerSource, /<AgentChatMessageContent text=\{entry\.text\}/);
   assert.doesNotMatch(drawerSource, /rounded-\[14px\] border px-3 py-2\.5/);
   assert.doesNotMatch(drawerSource, /Show details|Reading your message|Live activity/);
   assert.match(runnerSource, /statusHistory: string\[\]/);
   assert.match(runnerSource, /maxAgentChatStatusHistory = 5/);
   assert.match(routeSource, /latestItem\?\.role === "toolCall"/);
   assert.match(routeSource, /latestItem\?\.role === "toolResult"/);
-  assert.match(globalStyles, /@keyframes agent-chat-activity-shimmer/);
-  assert.match(globalStyles, /background-color: var\(--agent-chat-activity-base\)/);
-  assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-label/);
+  assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
+  assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
+  assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);
 });
 
 test("mobile light sidebar uses an opaque surface and hides its launcher while open", () => {

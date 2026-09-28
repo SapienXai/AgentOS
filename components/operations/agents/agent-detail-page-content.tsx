@@ -20,6 +20,7 @@ import {
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
+import { AgentChatDialog } from "@/components/mission-control/agent-chat-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
@@ -50,14 +51,13 @@ import {
 } from "@/components/operations/operations-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   useWorkerEffectiveCapabilities,
   type WorkerEffectiveCapabilitiesState
 } from "@/hooks/use-worker-effective-capabilities";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName, formatRelativeTime, resolveAgentModelLabel, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
-import type { SkillLibraryItem, WorkerEffectiveCapabilitiesPayload } from "@/lib/openclaw/types";
+import type { AddModelsProviderId, SkillLibraryItem, WorkerEffectiveCapabilitiesPayload } from "@/lib/openclaw/types";
 import { cn } from "@/lib/utils";
 
 export { parseAgentDetailTab, type AgentDetailTab } from "@/components/operations/agents/agent-detail-tabs";
@@ -104,6 +104,7 @@ export function AgentDetailPageContent({
   const [capabilityOpen, setCapabilityOpen] = useState(false);
   const [capabilityFocus, setCapabilityFocus] = useState<"skills" | "tools">("skills");
   const [addModelsOpen, setAddModelsOpen] = useState(false);
+  const [modelProviderToConnect, setModelProviderToConnect] = useState<AddModelsProviderId | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const capabilities = useWorkerEffectiveCapabilities({ agentId: agent?.id });
   const [capabilityFocusId, setCapabilityFocusId] = useState(initialCapabilityFocus);
@@ -172,6 +173,21 @@ export function AgentDetailPageContent({
   const openCapabilityEditor = (focus: "skills" | "tools") => {
     setCapabilityFocus(focus);
     setCapabilityOpen(true);
+  };
+  const openAddModels = (provider?: AddModelsProviderId | null) => {
+    setModelProviderToConnect(provider ?? null);
+    setAddModelsOpen(true);
+  };
+  const openChatModelProvider = (provider: AddModelsProviderId) => {
+    setModelProviderToConnect(provider);
+    setChatOpen(false);
+    window.requestAnimationFrame(() => setAddModelsOpen(true));
+  };
+  const handleAddModelsOpenChange = (open: boolean) => {
+    setAddModelsOpen(open);
+    if (!open) {
+      setModelProviderToConnect(null);
+    }
   };
   return (
     <>
@@ -246,17 +262,16 @@ export function AgentDetailPageContent({
         inspector={null}
       />
 
-      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
-        <DialogContent className="left-0 top-0 flex h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:left-1/2 sm:top-1/2 sm:h-[min(82dvh,760px)] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-4 sm:rounded-[18px] sm:border sm:p-4">
-          <DialogHeader className="shrink-0 border-b border-border/55 px-3 pb-3 pt-[calc(0.6rem+env(safe-area-inset-top))] sm:border-0 sm:p-0">
-            <div className="flex items-center gap-3 sm:block">
-              <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent sm:hidden"><ArrowLeft className="h-4 w-4" /><span className="sr-only">Back to worker detail</span></DialogClose>
-              <div className="min-w-0 sm:pr-10"><DialogTitle className="truncate text-[1.05rem] sm:text-xl">Chat with {displayName}</DialogTitle><DialogDescription className="mt-0.5 truncate text-[11px] sm:mt-2 sm:text-sm">Messages use the existing AgentOS/OpenClaw agent chat runner.</DialogDescription></div>
-            </div>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-0"><AgentChatDrawer agent={agent} snapshot={rootSnapshot} surfaceTheme={surfaceTheme} isVisible={chatOpen} onRefresh={refresh} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} /></div>
-        </DialogContent>
-      </Dialog>
+      <AgentChatDialog open={chatOpen} onOpenChange={setChatOpen} agent={agent} statusLabel={agentView.statusLabel}>
+        <AgentChatDrawer
+          agent={agent}
+          snapshot={rootSnapshot}
+          isVisible={chatOpen}
+          onRefresh={refresh}
+          onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+          onConnectModelProvider={openChatModelProvider}
+        />
+      </AgentChatDialog>
 
       <WorkerProfileDialog
         open={profileOpen}
@@ -268,8 +283,8 @@ export function AgentDetailPageContent({
         onManageCapabilities={(nextAgentId, focus) => { setProfileOpen(false); setCapabilityFocus(focus); setCapabilityOpen(Boolean(nextAgentId)); }}
         surfaceTheme={surfaceTheme}
       />
-      <AgentModelPickerDialog open={modelOpen} agentId={agent.id} snapshot={rootSnapshot} onOpenChange={setModelOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} onOpenAddModels={() => setAddModelsOpen(true)} surfaceTheme={surfaceTheme} />
-      <AddModelsDialog open={addModelsOpen} onOpenChange={setAddModelsOpen} snapshot={rootSnapshot} onSnapshotChange={setSnapshot} surfaceTheme={surfaceTheme} />
+      <AgentModelPickerDialog open={modelOpen} agentId={agent.id} snapshot={rootSnapshot} onOpenChange={setModelOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} onOpenAddModels={openAddModels} surfaceTheme={surfaceTheme} />
+      <AddModelsDialog open={addModelsOpen} onOpenChange={handleAddModelsOpenChange} snapshot={rootSnapshot} initialProvider={modelProviderToConnect} onSnapshotChange={setSnapshot} surfaceTheme={surfaceTheme} />
       <AgentCapabilityEditorDialog open={capabilityOpen} agentId={agent.id} initialFocus={capabilityFocus} snapshot={rootSnapshot} onOpenChange={setCapabilityOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} surfaceTheme={surfaceTheme} />
       <MissionDispatchDialog open={dispatchOpen} agent={agentView} onOpenChange={setDispatchOpen} onSubmitted={refresh} />
     </>
