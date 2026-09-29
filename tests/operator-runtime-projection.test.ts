@@ -122,6 +122,133 @@ test("active CLI fallback is explicit and degraded", () => {
   assert.equal(projection.fallback.active, true);
 });
 
+test("informational update availability fallback preserves native READY truth", () => {
+  const snapshot = makeSnapshot();
+  const fallback = {
+    at: new Date(NOW).toISOString(),
+    operation: "update.status",
+    issue: "OpenClaw Gateway update.status did not include update availability details.",
+    kind: "malformed-response",
+    recovery: "Update OpenClaw or report the incompatible Gateway response shape."
+  };
+  snapshot.diagnostics.transport = {
+    ...snapshot.diagnostics.transport!,
+    gatewayMode: "fallback-active",
+    fallbackCounts: { "update.status": 1 },
+    fallbackTotal: 1,
+    recentFallbackDiagnostics: [fallback]
+  };
+  snapshot.diagnostics.gatewayFallbackDiagnostics = [{
+    ...fallback,
+    operationLabel: "Update Status"
+  }];
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "ready");
+  assert.equal(projection.authority.mode, "native-gateway");
+  assert.equal(projection.fallback.active, true);
+  assert.equal(projection.fallback.informationalOperationCount, 1);
+  assert.equal(projection.fallback.degradedOperationCount, 0);
+});
+
+test("core operation CLI fallback stays degraded with explicit fallback authority", () => {
+  const snapshot = makeSnapshot({ health: "degraded", gatewayMode: "fallback-active" });
+  const fallback = {
+    at: new Date(NOW).toISOString(),
+    operation: "chat.send",
+    issue: "unknown method: chat.send",
+    kind: "unsupported",
+    recovery: "Update OpenClaw to enable native chat dispatch."
+  };
+  snapshot.diagnostics.transport!.recentFallbackDiagnostics = [fallback];
+  snapshot.diagnostics.gatewayFallbackDiagnostics = [{
+    ...fallback,
+    operationLabel: "Chat Send"
+  }];
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "degraded");
+  assert.equal(projection.authority.mode, "cli-fallback");
+  assert.equal(projection.fallback.degradedOperationCount, 1);
+});
+
+test("a disabled required native capability prevents READY", () => {
+  const snapshot = makeSnapshot();
+  snapshot.diagnostics.capabilityMatrix = {
+    ...snapshot.diagnostics.capabilityMatrix!,
+    operations: {
+      chat: {
+        label: "Mission dispatch",
+        mode: "disabled",
+        methods: ["chat.send"],
+        events: [],
+        fallbackAllowed: false,
+        baseline: "required",
+        reason: "OpenClaw does not expose the required native dispatch method."
+      }
+    }
+  } as NonNullable<MissionControlSnapshot["diagnostics"]["capabilityMatrix"]>;
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "degraded");
+  assert.equal(projection.compatibility.state, "degraded");
+  assert.equal(projection.authority.mode, "native-gateway");
+});
+
+test("a compatible report cannot hide a lost required native capability", () => {
+  const snapshot = makeSnapshot();
+  snapshot.diagnostics.compatibilityReport = {
+    status: "compatible",
+    summary: { nativeGatewayCoveragePercent: 100 },
+    contracts: [],
+    fallback: { diagnostics: [] }
+  } as unknown as NonNullable<MissionControlSnapshot["diagnostics"]["compatibilityReport"]>;
+  snapshot.diagnostics.capabilityMatrix = {
+    ...snapshot.diagnostics.capabilityMatrix!,
+    operations: {
+      chat: {
+        label: "Mission dispatch",
+        mode: "disabled",
+        methods: ["chat.send"],
+        events: [],
+        fallbackAllowed: false,
+        baseline: "required",
+        reason: "OpenClaw does not expose the required native dispatch method."
+      }
+    }
+  } as NonNullable<MissionControlSnapshot["diagnostics"]["capabilityMatrix"]>;
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "degraded");
+  assert.equal(projection.compatibility.state, "degraded");
+});
+
+test("auth fallback blocks runtime readiness and points to Gateway permissions", () => {
+  const snapshot = makeSnapshot({ health: "degraded", gatewayMode: "fallback-active" });
+  const fallback = {
+    at: new Date(NOW).toISOString(),
+    operation: "update.status",
+    issue: "Gateway rejected the operator token.",
+    kind: "auth",
+    recovery: "Repair local Gateway access."
+  };
+  snapshot.diagnostics.transport!.recentFallbackDiagnostics = [fallback];
+  snapshot.diagnostics.gatewayFallbackDiagnostics = [{
+    ...fallback,
+    operationLabel: "Update Status"
+  }];
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "blocked");
+  assert.equal(projection.attention.actionableCount, 1);
+  assert.equal(projection.primaryRecovery?.id, "gateway-permissions");
+});
+
 test("connecting and retrying remain transport states even when a snapshot exists", () => {
   const snapshot = makeSnapshot();
 
@@ -130,7 +257,7 @@ test("connecting and retrying remain transport states even when a snapshot exist
   assert.match(presentOperatorRuntime(snapshot, { connectionState: "retrying", now: NOW }).freshness.label, /^Reconnecting/);
 });
 
-test("Gateway unreachable with an actionable issue is blocked", () => {
+test("Gateway unreachable remains offline even when its issue is actionable", () => {
   const issue = {
     id: "gateway",
     type: "gateway_unreachable" as const,
@@ -147,8 +274,17 @@ test("Gateway unreachable with an actionable issue is blocked", () => {
     now: NOW
   });
 
-  assert.equal(projection.state, "blocked");
+  assert.equal(projection.state, "offline");
   assert.equal(projection.attention.actionableCount, 1);
+});
+
+test("a closed Gateway transport is offline", () => {
+  const snapshot = makeSnapshot({ rpcOk: false, health: "degraded", gatewayMode: "degraded" });
+  snapshot.diagnostics.transport!.connectionState = "closed";
+
+  const projection = presentOperatorRuntime(snapshot, { connectionState: "live", now: NOW });
+
+  assert.equal(projection.state, "offline");
 });
 
 test("Gateway permission signals keep the Settings recovery route", () => {
@@ -164,6 +300,8 @@ test("Gateway permission signals keep the Settings recovery route", () => {
 
   assert.equal(projection.primaryRecovery?.id, "gateway-permissions");
   assert.equal(projection.primaryRecovery?.href, "/settings#gateway");
+  assert.equal(projection.state, "blocked");
+  assert.equal(projection.attention.actionableCount, 1);
 });
 
 test("unknown compatibility remains unknown instead of becoming available", () => {

@@ -221,6 +221,32 @@ test("transport diagnostics summary totals only positive finite fallback counts"
   assert.equal(summary.statusTone, "danger");
 });
 
+test("informational fallback keeps diagnostics visible without warning transport health", () => {
+  const summary = resolveTransportDiagnosticsSummary(
+    createTransportDiagnostics({
+      gatewayMode: "native-ws",
+      statusLabel: "Native Gateway: OK",
+      fallbackCounts: { "update.status": 2 },
+      fallbackTotal: 2,
+      recentFallbackDiagnostics: [{
+        at: "2026-05-16T10:02:00.000Z",
+        operation: "update.status",
+        issue: "Gateway update availability details were omitted.",
+        kind: "malformed-response",
+        recovery: "Use the read-only update status fallback."
+      }],
+      lastConnectedAt: "2026-05-16T10:01:00.000Z"
+    }),
+    "live"
+  );
+
+  assert.equal(summary.fallbackTotal, 2);
+  assert.equal(summary.gatewayModeLabel, "native-ws");
+  assert.equal(summary.statusLabel, "Native Gateway: OK");
+  assert.equal(summary.statusTone, "success");
+  assert.equal(summary.recentFallbackDiagnostics.length, 1);
+});
+
 test("transport diagnostics summary treats repaired pre-connect fallback as healthy", () => {
   const summary = resolveTransportDiagnosticsSummary(
     createTransportDiagnostics({

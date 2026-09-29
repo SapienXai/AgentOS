@@ -4,6 +4,10 @@ import type {
   OpenClawGatewayClientDiagnostics,
   OpenClawGatewayRecentFallbackDiagnostic
 } from "@/lib/openclaw/client/types";
+import {
+  classifyGatewayFallbackImpact,
+  isGatewayFallbackDiagnosticCurrent
+} from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 
 export function isOpenClawGatewayTransportIssueActive(
   transport: OpenClawGatewayClientDiagnostics | null | undefined
@@ -24,7 +28,19 @@ export function isOpenClawGatewayTransportIssueActive(
     return false;
   }
 
-  return isDiagnosticAtOrAfter(transport.lastNativeFailureAt, transport.lastConnectedAt);
+  if (!isDiagnosticAtOrAfter(transport.lastNativeFailureAt, transport.lastConnectedAt)) {
+    return false;
+  }
+
+  if (!transport.lastNativeFailureOperation) {
+    return true;
+  }
+
+  return classifyGatewayFallbackImpact({
+    operation: transport.lastNativeFailureOperation,
+    kind: transport.lastNativeFailureKind,
+    issue: transport.lastNativeError
+  }) !== "informational";
 }
 
 export function isOpenClawGatewayFallbackDiagnosticActive(
@@ -35,11 +51,11 @@ export function isOpenClawGatewayFallbackDiagnosticActive(
     return true;
   }
 
-  if (transport.gatewayMode !== "native-ws" || transport.connectionState !== "connected") {
+  if (transport.connectionState !== "connected") {
     return true;
   }
 
-  return isDiagnosticAtOrAfter(diagnostic.at, transport.lastConnectedAt);
+  return isGatewayFallbackDiagnosticCurrent(diagnostic, transport.lastConnectedAt);
 }
 
 export function filterActiveOpenClawGatewayFallbackDiagnostics<TDiagnostic extends { at: string }>(

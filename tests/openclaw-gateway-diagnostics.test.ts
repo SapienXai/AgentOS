@@ -111,6 +111,7 @@ test("gateway diagnostics carry fallback counts and recent fallback records", ()
   assert.equal(diagnostics.health, "degraded");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operation, "models.list");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operationLabel, "Models List");
+  assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.impact, "degrading");
   assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /Recovery: Update OpenClaw/);
   assert.equal(diagnostics.eventBridge?.mode, "polling");
   assert.match(diagnostics.eventBridge?.recovery ?? "", /Gateway event capabilities/);
@@ -184,9 +185,9 @@ test("update availability fallback stays visible without degrading Gateway healt
     modelReadiness,
     transport: {
       mode: "native-ws",
-      gatewayMode: "fallback-active",
-      statusLabel: "CLI fallback used",
-      recovery: "Update OpenClaw or report the incompatible Gateway response shape.",
+      gatewayMode: "native-ws",
+      statusLabel: "Native Gateway: OK",
+      recovery: null,
       connectionState: "connected",
       protocolVersion: 4,
       protocolRange: { min: 3, max: 4 },
@@ -226,6 +227,7 @@ test("update availability fallback stays visible without degrading Gateway healt
 
   assert.equal(diagnostics.health, "healthy");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operation, "update.status");
+  assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.impact, "informational");
   assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /update availability details/);
 });
 

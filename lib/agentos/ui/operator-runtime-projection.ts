@@ -1,4 +1,9 @@
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import {
+  classifyGatewayFallbackImpact,
+  isGatewayFallbackDiagnosticCurrent,
+  type GatewayFallbackDiagnosticLike
+} from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 
 /**
  * The Mission Control snapshot cache is refreshed on a 30 second TTL. Keep the
@@ -36,6 +41,8 @@ export type OperatorRuntimeProjection = {
     active: boolean;
     operationCount: number;
     degradedOperationCount: number;
+    blockingOperationCount: number;
+    informationalOperationCount: number;
     lastReason: string | null;
   };
   coverage: {
@@ -96,20 +103,29 @@ export function presentOperatorRuntime(
   const actionableIssues = activeIssues.filter((issue) => issue.severity === "action_required" || issue.severity === "blocked");
   const hasGatewayPermissionIssue =
     activeIssues.some((issue) => issue.type === "scope_upgrade_pending") ||
+    fallback.blockingOperationCount > 0 ||
     collectOperatorAttentionText(snapshot).some(isGatewayPermissionIssue);
-  const blockingIssue = activeIssues.some((issue) => issue.severity === "blocked" || issue.type === "gateway_unreachable");
-  const gatewayOffline = diagnostics.health === "offline" || diagnostics.transport?.gatewayMode === "unreachable";
+  const gatewayOffline =
+    diagnostics.health === "offline" ||
+    diagnostics.transport?.gatewayMode === "unreachable" ||
+    diagnostics.transport?.connectionState === "error" ||
+    diagnostics.transport?.connectionState === "closed";
+  const blockingIssue = fallback.blockingOperationCount > 0 || activeIssues.some((issue) =>
+    issue.severity === "blocked" ||
+    issue.type === "scope_upgrade_pending" ||
+    issue.type === "model_auth_required"
+  ) || hasGatewayPermissionIssue;
   const gatewayWritable = diagnostics.runtime.stateWritable && diagnostics.runtime.sessionStoreWritable;
 
   let state: OperatorRuntimeState;
   let explanation: string;
 
-  if (blockingIssue) {
-    state = "blocked";
-    explanation = "OpenClaw reported an actionable runtime blocker that needs review before normal operations can continue.";
-  } else if (gatewayOffline) {
+  if (gatewayOffline) {
     state = "offline";
     explanation = "The OpenClaw Gateway is not reachable from the current runtime snapshot.";
+  } else if (blockingIssue) {
+    state = "blocked";
+    explanation = "OpenClaw reported an actionable runtime blocker that needs review before normal operations can continue.";
   } else if (transport.state === "connecting" || transport.state === "retrying") {
     state = "connecting";
     explanation = transport.state === "retrying"
@@ -121,16 +137,32 @@ export function presentOperatorRuntime(
   } else if (compatibility.state === "incompatible") {
     state = "blocked";
     explanation = "The current OpenClaw compatibility evidence is incompatible with the AgentOS runtime contract.";
-  } else if (compatibility.state === "unknown" && diagnostics.rpcOk && diagnostics.health === "healthy" && !fallback.active) {
+  } else if (
+    compatibility.state === "unknown" &&
+    diagnostics.rpcOk &&
+    diagnostics.health === "healthy" &&
+    fallback.degradedOperationCount === 0
+  ) {
     state = "unknown";
     explanation = "OpenClaw compatibility could not be verified from the current evidence.";
-  } else if (diagnostics.rpcOk && diagnostics.health === "healthy" && !fallback.active && gatewayWritable && actionableIssues.length === 0 && compatibility.state === "compatible" && !freshness.stale) {
+  } else if (
+    diagnostics.rpcOk &&
+    diagnostics.health === "healthy" &&
+    fallback.degradedOperationCount === 0 &&
+    fallback.blockingOperationCount === 0 &&
+    diagnostics.transport?.mode !== "cli" &&
+    diagnostics.transport?.gatewayMode !== "cli-forced" &&
+    gatewayWritable &&
+    actionableIssues.length === 0 &&
+    compatibility.state === "compatible" &&
+    !freshness.stale
+  ) {
     state = "ready";
     explanation = "Native OpenClaw Gateway RPC is ready and the current runtime snapshot has no blocking issues.";
   } else {
     state = "degraded";
-    explanation = fallback.active
-      ? "OpenClaw is usable through CLI fallback for some operations; native Gateway readiness is not fully available."
+    explanation = fallback.degradedOperationCount > 0
+      ? "One or more core OpenClaw operations used CLI fallback, reducing native Gateway capability."
       : actionableIssues.length > 0
         ? "OpenClaw is available, but one or more runtime issues need operator attention."
         : "OpenClaw is installed or loaded, but native runtime readiness is incomplete.";
@@ -167,8 +199,14 @@ export function presentOperatorRuntime(
     freshness,
     scope,
     attention: {
-      actionableCount: actionableIssues.length,
-      informationalCount: Math.max(0, activeIssues.length - actionableIssues.length)
+      actionableCount: actionableIssues.length + fallback.blockingOperationCount + (
+        hasGatewayPermissionIssue &&
+        fallback.blockingOperationCount === 0 &&
+        !activeIssues.some((issue) => issue.type === "scope_upgrade_pending")
+          ? 1
+          : 0
+      ),
+      informationalCount: Math.max(0, activeIssues.length - actionableIssues.length) + fallback.informationalOperationCount
     },
     explanation,
     primaryRecovery
@@ -210,14 +248,20 @@ function resolveAuthority(
     snapshot.diagnostics.rpcOk &&
     transport?.mode !== "cli" &&
     transport?.gatewayMode !== "cli-forced" &&
-    transport?.gatewayMode !== "fallback-active" &&
     transport?.gatewayMode !== "degraded" &&
-    transport?.gatewayMode !== "unreachable"
+    transport?.gatewayMode !== "unreachable" &&
+    fallback.degradedOperationCount === 0 &&
+    fallback.blockingOperationCount === 0
   ) {
     return { mode: "native-gateway", label: "Native Gateway" };
   }
 
-  if (fallback.active || transport?.mode === "cli" || transport?.gatewayMode === "cli-forced") {
+  if (
+    fallback.degradedOperationCount > 0 ||
+    fallback.blockingOperationCount > 0 ||
+    transport?.mode === "cli" ||
+    transport?.gatewayMode === "cli-forced"
+  ) {
     return { mode: "cli-fallback", label: "CLI fallback" };
   }
 
@@ -232,16 +276,24 @@ function resolveFallback(snapshot: MissionControlSnapshot): OperatorRuntimeProje
   const diagnostics = snapshot.diagnostics;
   const report = diagnostics.compatibilityReport;
   const matrix = diagnostics.capabilityMatrix;
-  const operations = Object.values(matrix?.operations ?? {});
-  const reportSummary = report?.summary;
-  const operationCount = reportSummary?.cliFallbackOperationCount ?? operations.filter((operation) => operation.mode === "cli-fallback").length;
-  const activeFallbackCount = reportSummary?.activeCliFallbackCount ?? 0;
-  const active = diagnostics.transport?.gatewayMode === "fallback-active" || diagnostics.transport?.mode === "cli" || activeFallbackCount > 0;
-  const fallbackDiagnostics = [
+  const transport = diagnostics.transport;
+  const fallbackDiagnostics: GatewayFallbackDiagnosticLike[] = [
     ...(diagnostics.gatewayFallbackDiagnostics ?? []),
+    ...(transport?.recentFallbackDiagnostics ?? []),
     ...(matrix?.fallbackDiagnostics ?? []),
     ...(report?.fallback.diagnostics ?? [])
-  ];
+  ].filter((entry) => isGatewayFallbackDiagnosticCurrent(entry, transport?.lastConnectedAt));
+  const uniqueFallbackDiagnostics = Array.from(
+    new Map(fallbackDiagnostics.map((entry) => [
+      `${entry.at ?? ""}\u0000${entry.operation}\u0000${entry.issue ?? ""}`,
+      entry
+    ])).values()
+  );
+  const impacts = uniqueFallbackDiagnostics.map((entry) => classifyGatewayFallbackImpact(entry));
+  const forcedCli = transport?.mode === "cli" || transport?.gatewayMode === "cli-forced";
+  const unclassifiedActiveFallback = transport?.gatewayMode === "fallback-active" && uniqueFallbackDiagnostics.length === 0;
+  const fallbackSentinelCount = forcedCli || unclassifiedActiveFallback ? 1 : 0;
+  const active = forcedCli || transport?.gatewayMode === "fallback-active" || uniqueFallbackDiagnostics.length > 0;
   const fallbackReasons = [
     ...(diagnostics.gatewayFallbackReasons ?? []),
     ...(matrix?.fallbackReasons ?? [])
@@ -249,9 +301,11 @@ function resolveFallback(snapshot: MissionControlSnapshot): OperatorRuntimeProje
 
   return {
     active,
-    operationCount,
-    degradedOperationCount: reportSummary?.degradedOperationCount ?? matrix?.compatibility?.degradedOperationCount ?? operations.filter((operation) => operation.mode === "degraded" || operation.mode === "cli-fallback" || operation.mode === "disabled").length,
-    lastReason: fallbackReasons[0] ?? fallbackDiagnostics[0]?.issue ?? diagnostics.transport?.lastNativeError ?? null
+    operationCount: uniqueFallbackDiagnostics.length + fallbackSentinelCount,
+    degradedOperationCount: impacts.filter((impact) => impact === "degrading").length + fallbackSentinelCount,
+    blockingOperationCount: impacts.filter((impact) => impact === "blocking").length,
+    informationalOperationCount: impacts.filter((impact) => impact === "informational").length,
+    lastReason: uniqueFallbackDiagnostics[0]?.issue ?? fallbackReasons[0] ?? transport?.lastNativeError ?? null
   };
 }
 
@@ -271,8 +325,24 @@ function resolveCoverage(snapshot: MissionControlSnapshot): OperatorRuntimeProje
 
 function resolveCompatibility(snapshot: MissionControlSnapshot): { state: OperatorCompatibilityState } {
   const reportStatus = snapshot.diagnostics.compatibilityReport?.status;
+  if (reportStatus === "incompatible") {
+    return { state: reportStatus };
+  }
+
+  const requiredOperations = Object.values(snapshot.diagnostics.capabilityMatrix?.operations ?? {})
+    .filter((operation) => operation.baseline === "required");
+  if (requiredOperations.some((operation) =>
+    operation.mode === "degraded" || operation.mode === "cli-fallback" || operation.mode === "disabled"
+  )) {
+    return { state: "degraded" };
+  }
+
   if (reportStatus) {
     return { state: reportStatus };
+  }
+
+  if (requiredOperations.some((operation) => operation.mode === "unknown")) {
+    return { state: "unknown" };
   }
 
   const protocolStatus = snapshot.diagnostics.capabilityMatrix?.compatibility?.protocol.status;

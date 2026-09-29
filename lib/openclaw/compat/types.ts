@@ -1,3 +1,5 @@
+import type { GatewayFallbackHealthImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
+
 export type OpenClawCompatibilityStatus = "compatible" | "degraded" | "incompatible" | "unknown";
 
 export type OpenClawCompatibilityTargetKind = "real" | "simulated";
@@ -168,6 +170,7 @@ export type OpenClawCompatibilityFallbackDiagnostic = {
   issue: string;
   kind: string;
   recovery: string;
+  impact?: GatewayFallbackHealthImpact;
 };
 
 export type OpenClawCompatibilityTransportDiagnostics = {

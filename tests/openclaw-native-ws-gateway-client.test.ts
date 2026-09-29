@@ -1274,7 +1274,11 @@ test("native WS gateway client uses CLI update status when Gateway lacks availab
   });
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "update.status"]);
   assert.deepEqual(fallback.calls.map((call) => call.method), ["getUpdateStatus"]);
-  assert.equal(client.getDiagnostics().fallbackTotal, 1);
+  const diagnostics = client.getDiagnostics();
+  assert.equal(diagnostics.fallbackTotal, 1);
+  assert.equal(diagnostics.gatewayMode, "native-ws");
+  assert.equal(diagnostics.statusLabel, "Native Gateway: OK");
+  assert.equal(diagnostics.recentFallbackDiagnostics[0]?.operation, "update.status");
   assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "update.status");
 });
 
@@ -1470,6 +1474,7 @@ test("native WS gateway client falls back to CLI when Google provider catalog is
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "models.list"]);
   assert.deepEqual(fallback.calls.map((call) => call.method), ["listModels"]);
   assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "models.list");
+  assert.equal(client.getDiagnostics().gatewayMode, "native-ws");
 });
 
 test("native WS gateway client treats mixed model auth profiles as connected when one profile is usable", async () => {

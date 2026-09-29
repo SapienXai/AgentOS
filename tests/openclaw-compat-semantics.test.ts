@@ -9,7 +9,8 @@ import {
 } from "@/lib/openclaw/compat/report";
 import type {
   OpenClawCompatibilityContractCheck,
-  OpenClawCompatibilityReport
+  OpenClawCompatibilityReport,
+  OpenClawCompatibilityReportInput
 } from "@/lib/openclaw/compat/types";
 import type { GatewayDiagnostics } from "@/lib/openclaw/types";
 
@@ -250,10 +251,28 @@ test("the native plugin catalog never receives CLI fallback permission", async (
   assert.equal(catalog?.fallbackUsed, false);
 });
 
+test("compatibility diagnostics label an informational fallback without degrading the contract", () => {
+  const report = buildReport([], "gateway-advertised", "compatible", {
+    fallbackTotal: 1,
+    recentFallbackDiagnostics: [{
+      at: "2026-09-13T00:00:00.000Z",
+      operation: "update.status",
+      issue: "Gateway update availability details were omitted.",
+      kind: "malformed-response",
+      recovery: "Use the read-only update status fallback."
+    }]
+  });
+
+  assert.equal(report.status, "compatible");
+  assert.equal(report.summary.activeCliFallbackCount, 1);
+  assert.equal(report.fallback.diagnostics[0]?.impact, "informational");
+});
+
 function buildReport(
   contracts: OpenClawCompatibilityContractCheck[],
   capabilitySource: OpenClawCompatibilityReport["gateway"]["capabilitySource"],
-  protocolStatus: OpenClawCompatibilityReport["gateway"]["protocolStatus"] = "compatible"
+  protocolStatus: OpenClawCompatibilityReport["gateway"]["protocolStatus"] = "compatible",
+  transport?: OpenClawCompatibilityReportInput["transport"]
 ) {
   return buildOpenClawCompatibilityReport({
     target: {
@@ -285,6 +304,7 @@ function buildReport(
     capabilitySource,
     cliAvailable: true,
     cliForced: false,
+    transport,
     capabilities: [],
     contracts,
     diagnostics: []

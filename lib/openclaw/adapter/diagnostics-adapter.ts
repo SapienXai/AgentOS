@@ -6,6 +6,7 @@ import type {
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
 import { getOpenClawGatewayOperationLabel } from "@/lib/openclaw/client/gateway-compatibility";
 import { filterActiveOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-diagnostic-activity";
+import { classifyGatewayFallbackImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 import {
   collectIssues,
   compareVersionStrings,
@@ -213,7 +214,8 @@ export function buildGatewayDiagnostics(input: {
 }): MissionControlSnapshot["diagnostics"] {
   const gatewayFallbackDiagnostics = (input.transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
     ...entry,
-    operationLabel: getOpenClawGatewayOperationLabel(entry.operation)
+    operationLabel: getOpenClawGatewayOperationLabel(entry.operation),
+    impact: classifyGatewayFallbackImpact(entry)
   }));
   const activeGatewayFallbackDiagnostics = filterActiveOpenClawGatewayFallbackDiagnostics(
     gatewayFallbackDiagnostics,
@@ -243,7 +245,7 @@ export function buildGatewayDiagnostics(input: {
         warningCount: securityWarnings.length,
         runtimeIssueCount:
           issues.filter((issue) => !isTransientRefreshIssue(issue)).length +
-          activeGatewayFallbackDiagnostics.filter((entry) => !isNonBlockingUpdateAvailabilityFallback(entry)).length +
+          activeGatewayFallbackDiagnostics.filter((entry) => entry.impact !== "informational").length +
           (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
         hasOpenClawSignal: input.hasOpenClawSignal
       }),
@@ -294,7 +296,7 @@ export function buildGatewayDiagnostics(input: {
       warningCount: securityWarnings.length,
       runtimeIssueCount:
         issues.filter((issue) => !isTransientRefreshIssue(issue)).length +
-        activeGatewayFallbackDiagnostics.filter((entry) => !isNonBlockingUpdateAvailabilityFallback(entry)).length +
+        activeGatewayFallbackDiagnostics.filter((entry) => entry.impact !== "informational").length +
         (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
       hasOpenClawSignal: input.hasOpenClawSignal
     }),
@@ -466,17 +468,5 @@ function isTransientRefreshIssue(issue: string) {
   return (
     issue.includes("Reusing the last successful payload while a slow OpenClaw command refreshes in the background.") ||
     issue.includes("Reusing the last successful gateway status after a transient OpenClaw check failure.")
-  );
-}
-
-function isNonBlockingUpdateAvailabilityFallback(entry: {
-  operation: string;
-  kind: string;
-  issue: string;
-}) {
-  return (
-    entry.operation === "update.status" &&
-    entry.kind === "malformed-response" &&
-    /update availability details/i.test(entry.issue)
   );
 }

@@ -482,12 +482,18 @@ async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
 
   server.on("connection", (socket) => {
+    socket.send(JSON.stringify({
+      type: "event",
+      event: "connect.challenge",
+      payload: { nonce: `agentos-compat-${Date.now()}`, ts: Date.now() }
+    }));
+
     socket.on("message", (data) => {
       const frame = JSON.parse(data.toString()) as GatewayFrame;
       const id = frame.id;
       const method = frame.method;
 
-      if (!id || !method) {
+      if (id === undefined || !method) {
         return;
       }
 
@@ -495,9 +501,11 @@ async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget
         send(socket, id, {
           type: "hello-ok",
           protocol: 4,
-          server: { version },
+          server: { version, connId: "agentos-compat" },
           features: { methods, events },
-          auth: { role: "operator", scopes: ["operator.read", "operator.write", "operator.approvals"] }
+          snapshot: {},
+          auth: { role: "operator", scopes: ["operator.read", "operator.write", "operator.approvals"] },
+          policy: { maxPayload: 1_000_000, maxBufferedBytes: 1_000_000, tickIntervalMs: 15_000 }
         });
         return;
       }

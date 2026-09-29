@@ -1,5 +1,9 @@
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { GatewayNativeAuthIssueKind } from "@/lib/openclaw/gateway-auth";
+import {
+  classifyGatewayFallbackImpact,
+  isGatewayFallbackDiagnosticCurrent
+} from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 
 export type SnapshotStreamState = "connecting" | "live" | "retrying";
 export type TransportStatusTone = "success" | "warning" | "danger" | "neutral";
@@ -205,20 +209,28 @@ export function resolveTransportDiagnosticsSummary(
   eventBridge?: EventBridgeDiagnostics
 ): TransportDiagnosticsSummary {
   const fallbackTotal = sumFallbackCounts(transport?.fallbackCounts);
-  const activeFallbackTotal = hasFallbackAfterLastConnected(
-    transport?.recentFallbackDiagnostics ?? [],
-    transport?.lastConnectedAt ?? null
-  )
-    ? fallbackTotal
-    : 0;
+  const activeFallbackDiagnostics = (transport?.recentFallbackDiagnostics ?? []).filter((entry) =>
+    isGatewayFallbackDiagnosticCurrent(entry, transport?.lastConnectedAt)
+  );
+  const activeDegradingFallbackTotal = activeFallbackDiagnostics.filter((entry) =>
+    classifyGatewayFallbackImpact(entry) !== "informational"
+  ).length;
+  const hasUnclassifiedFallbackMode = transport?.gatewayMode === "fallback-active" &&
+    activeFallbackDiagnostics.length === 0;
+  const informationalFallbackOnly = transport?.mode === "native-ws" &&
+    transport.connectionState === "connected" &&
+    activeFallbackDiagnostics.length > 0 &&
+    activeDegradingFallbackTotal === 0 &&
+    transport.gatewayMode === "fallback-active";
+  const effectiveGatewayMode = informationalFallbackOnly ? "native-ws" : transport?.gatewayMode;
   const connectionLabel = formatTransportConnectionState(transport?.connectionState);
   const streamLabel = formatSnapshotStreamState(streamState);
   const eventBridgeSummary = resolveEventBridgeDiagnosticsSummary(eventBridge);
 
   return {
     modeLabel: formatTransportMode(transport?.mode),
-    gatewayModeLabel: formatGatewayMode(transport?.gatewayMode),
-    statusLabel: formatGatewayStatusLabel(transport),
+    gatewayModeLabel: formatGatewayMode(effectiveGatewayMode),
+    statusLabel: informationalFallbackOnly ? "Native Gateway: OK" : formatGatewayStatusLabel(transport),
     connectionLabel,
     protocolLabel: formatProtocolVersion(transport?.protocolVersion),
     protocolRangeLabel: formatProtocolRange(transport?.protocolRange),
@@ -237,11 +249,11 @@ export function resolveTransportDiagnosticsSummary(
     recovery: transport?.recovery?.trim() || null,
     recentFallbackDiagnostics: transport?.recentFallbackDiagnostics ?? [],
     statusTone: resolveTransportStatusTone({
-      gatewayMode: transport?.gatewayMode,
+      gatewayMode: effectiveGatewayMode,
       connectionState: transport?.connectionState,
       mode: transport?.mode,
       streamState,
-      fallbackTotal: activeFallbackTotal
+      fallbackTotal: activeDegradingFallbackTotal + (hasUnclassifiedFallbackMode ? 1 : 0)
     })
   };
 }
@@ -1019,27 +1031,4 @@ function resolveTransportStatusTone(input: {
   }
 
   return "neutral";
-}
-
-function hasFallbackAfterLastConnected(
-  diagnostics: NonNullable<TransportDiagnostics["recentFallbackDiagnostics"]>,
-  lastConnectedAt: string | null
-) {
-  if (diagnostics.length === 0) {
-    return false;
-  }
-
-  if (!lastConnectedAt) {
-    return true;
-  }
-
-  const connectedMs = Date.parse(lastConnectedAt);
-  if (!Number.isFinite(connectedMs)) {
-    return true;
-  }
-
-  return diagnostics.some((entry) => {
-    const fallbackMs = Date.parse(entry.at);
-    return !Number.isFinite(fallbackMs) || fallbackMs >= connectedMs;
-  });
 }

@@ -13,6 +13,7 @@ import {
 import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import type { NativeWsOpenClawGatewayClientOptions } from "@/lib/openclaw/client/native-ws-gateway-client";
 import type { OpenClawGatewayClientDiagnostics } from "@/lib/openclaw/client/types";
+import { classifyGatewayFallbackImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { resolveOpenClawBin, resolveOpenClawVersion } from "@/lib/openclaw/cli";
 import {
@@ -316,7 +317,10 @@ export function buildOpenClawCompatibilityReport(
       cliForced: input.cliForced,
       operationCount: input.contracts.filter((check) => check.cliFallbackAvailable).length,
       activeFallbackCount,
-      diagnostics: input.transport?.recentFallbackDiagnostics ?? []
+      diagnostics: (input.transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
+        ...entry,
+        impact: classifyGatewayFallbackImpact(entry)
+      }))
     },
     capabilities: input.capabilities,
     contracts: input.contracts,

@@ -2,6 +2,7 @@ import type { OpenClawCompatibilityReport } from "@/lib/openclaw/compat/types";
 import type { OpenClawFallbackRegistrySummary } from "@/lib/openclaw/fallback-registry";
 import type { ConfigUpdatePacingSnapshot } from "@/lib/openclaw/config-pacing-types";
 import type { RuntimeIssue } from "@/lib/openclaw/runtime-issues";
+import type { GatewayFallbackHealthImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 import type {
   AgentOSWorkerProfile,
   AgentOSWorkerProfileInput
@@ -354,6 +355,7 @@ export interface OpenClawGatewayFallbackDiagnosticRecord {
   issue: string;
   kind: string;
   recovery: string;
+  impact?: GatewayFallbackHealthImpact;
 }
 
 export interface OpenClawEventBridgeStreamStatus {

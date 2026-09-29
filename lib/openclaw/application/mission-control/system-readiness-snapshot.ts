@@ -23,6 +23,7 @@ import type {
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { filterActiveOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-diagnostic-activity";
 import { getOpenClawGatewayOperationLabel } from "@/lib/openclaw/client/gateway-compatibility";
+import { classifyGatewayFallbackImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   getLatestRuntimeSmokeTest,
@@ -81,15 +82,18 @@ export async function buildSystemReadinessSnapshot({
   const transport = getOpenClawGatewayClient()?.getDiagnostics?.();
   const gatewayFallbackDiagnostics = (transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
     ...entry,
-    operationLabel: getOpenClawGatewayOperationLabel(entry.operation)
+    operationLabel: getOpenClawGatewayOperationLabel(entry.operation),
+    impact: classifyGatewayFallbackImpact(entry)
   }));
   const activeGatewayFallbackDiagnostics = filterActiveOpenClawGatewayFallbackDiagnostics(
     gatewayFallbackDiagnostics,
     transport
   );
-  const gatewayFallbackIssues = activeGatewayFallbackDiagnostics.map(
+  const gatewayFallbackIssues = activeGatewayFallbackDiagnostics
+    .filter((entry) => entry.impact !== "informational")
+    .map(
     (entry) => `gateway.${entry.operation}: Gateway-first request fell back to CLI (${entry.kind}): ${entry.issue} Recovery: ${entry.recovery}`
-  );
+    );
   const issues = [
     rpcOk ? null : "OpenClaw Gateway RPC is not ready.",
     ...runtimeDiagnostics.issues,

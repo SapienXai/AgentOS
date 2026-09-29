@@ -118,6 +118,8 @@ export type OpenClawGatewayClientDiagnostics = {
   recentFallbackDiagnostics: OpenClawGatewayRecentFallbackDiagnostic[];
   lastNativeError: string | null;
   lastNativeFailureAt: string | null;
+  lastNativeFailureOperation?: string | null;
+  lastNativeFailureKind?: string | null;
   lastConnectedAt: string | null;
   lastDisconnectedAt: string | null;
   operatorIdentity?: OpenClawOperatorIdentity;

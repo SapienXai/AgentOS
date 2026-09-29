@@ -21,6 +21,10 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 import {
+  classifyGatewayFallbackImpact,
+  isGatewayFallbackDiagnosticCurrent
+} from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
+import {
   clearGatewayFallbackDiagnostic,
   clearGatewayFallbackDiagnosticsForTesting,
   getRecentOpenClawGatewayFallbackDiagnostics as readRecentOpenClawGatewayFallbackDiagnostics,
@@ -419,12 +423,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return Number.isFinite(value) && value > 0 ? total + value : total;
     }, 0);
     const recentFallbackDiagnostics = readRecentOpenClawGatewayFallbackDiagnostics();
-    const activeFallbackTotal = hasFallbackAfterLastConnected(
-      recentFallbackDiagnostics,
-      connection.lastConnectedAt
-    )
-      ? fallbackTotal
-      : 0;
+    const activeFallbackDiagnostics = recentFallbackDiagnostics.filter((entry) =>
+      isGatewayFallbackDiagnosticCurrent(entry, connection.lastConnectedAt)
+    );
     const activeNativeFailure = isDiagnosticAtOrAfter(
       this.lastNativeFailure?.at ?? null,
       connection.lastConnectedAt
@@ -437,7 +438,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     const gatewayMode = resolveGatewayMode({
       forceCli,
       connectionState: connection.connectionState,
-      fallbackTotal: activeFallbackTotal,
+      activeFallbackDiagnostics,
+      lastNativeFailure: activeNativeFailure,
       lastNativeError: activeLastNativeError
     });
 
@@ -460,6 +462,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       recentFallbackDiagnostics,
       lastNativeError: lastNativeError || null,
       lastNativeFailureAt: this.lastNativeFailure?.at ?? null,
+      lastNativeFailureOperation: this.lastNativeFailure?.operation ?? null,
+      lastNativeFailureKind: this.lastNativeFailure?.kind ?? null,
       lastConnectedAt: connection.lastConnectedAt,
       lastDisconnectedAt: connection.lastDisconnectedAt,
       operatorIdentity: this.connection.getOperatorIdentity(),
@@ -830,7 +834,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     if (shouldRecoverPartialModelAuthStatusWithCli(status)) {
       this.recordGatewayFallback(
         "models.authStatus",
-        new Error("Native Gateway model auth status omitted Codex runtime auth details.")
+        new OpenClawGatewayClientError(
+          "Native Gateway model auth status omitted Codex runtime auth details.",
+          "malformed-response"
+        )
       );
 
       try {
@@ -892,7 +899,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     if (shouldRecoverPartialModelAuthStatusWithCli(status)) {
       this.recordGatewayFallback(
         "models.authStatus",
-        new Error("Native Gateway agent model auth status omitted Codex runtime auth details.")
+        new OpenClawGatewayClientError(
+          "Native Gateway agent model auth status omitted Codex runtime auth details.",
+          "malformed-response"
+        )
       );
 
       try {
@@ -3458,21 +3468,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 }
 
-function hasFallbackAfterLastConnected(
-  diagnostics: OpenClawGatewayClientDiagnostics["recentFallbackDiagnostics"],
-  lastConnectedAt: string | null
-) {
-  if (diagnostics.length === 0) {
-    return false;
-  }
-
-  if (!lastConnectedAt) {
-    return true;
-  }
-
-  return diagnostics.some((entry) => isDiagnosticAtOrAfter(entry.at, lastConnectedAt));
-}
-
 function jsonValuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -3592,7 +3587,12 @@ function isDiagnosticAtOrAfter(value: string | null, reference: string | null) {
 function resolveGatewayMode(input: {
   forceCli: boolean;
   connectionState: OpenClawGatewayClientDiagnostics["connectionState"];
-  fallbackTotal: number;
+  activeFallbackDiagnostics: OpenClawGatewayClientDiagnostics["recentFallbackDiagnostics"];
+  lastNativeFailure: {
+    operation: string;
+    issue: string;
+    kind: string;
+  } | null;
   lastNativeError: string | null;
 }): OpenClawGatewayClientDiagnostics["gatewayMode"] {
   if (input.forceCli) {
@@ -3603,11 +3603,15 @@ function resolveGatewayMode(input: {
     return "unreachable";
   }
 
-  if (input.fallbackTotal > 0) {
+  if (input.activeFallbackDiagnostics.some((entry) =>
+    classifyGatewayFallbackImpact(entry) !== "informational"
+  )) {
     return "fallback-active";
   }
 
-  if (input.connectionState === "closed" || input.lastNativeError) {
+  const informationalLastFailure = input.lastNativeFailure &&
+    classifyGatewayFallbackImpact(input.lastNativeFailure) === "informational";
+  if (input.connectionState === "closed" || (input.lastNativeError && !informationalLastFailure)) {
     return "degraded";
   }
 

@@ -73,6 +73,7 @@ import type {
   GatewayNativeAuthStatus
 } from "@/lib/openclaw/gateway-auth";
 import { compactPath } from "@/lib/openclaw/presenters";
+import { classifyGatewayFallbackImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import type {
   OpenClawCapabilityDiffReport,
@@ -2262,6 +2263,9 @@ export function SettingsControlCenter(
                                 </code>
                                 <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200")}>
                                   {formatGatewayFallbackDiagnosticKind(diagnostic.kind)}
+                                </span>
+                                <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                                  Health impact: {classifyGatewayFallbackImpact(diagnostic)}
                                 </span>
                                 <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
                                   {formatTimestamp(diagnostic.at)}
