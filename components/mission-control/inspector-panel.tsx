@@ -504,8 +504,8 @@ function InspectorPanelContent({
 
             <div
               className={cn(
-                "flex-1 px-4 pb-4 pt-0",
-                isChatView && "min-h-0 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:pb-4"
+                "flex-1",
+                isChatView ? "min-h-0 overflow-hidden p-0" : "px-4 pb-4 pt-0"
               )}
             >
               <AnimatePresence mode="wait">
@@ -588,6 +588,7 @@ function InspectorPanelContent({
                         agent={selectedAgent}
                         snapshot={snapshot}
                         isVisible={isChatView}
+                        surface="transparent"
                         onRefresh={onRefresh}
                         onSnapshotChange={onSnapshotChange}
                         onConnectModelProvider={onConnectModelProvider}

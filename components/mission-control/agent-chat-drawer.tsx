@@ -170,6 +170,7 @@ export function AgentChatDrawer({
   agent,
   snapshot,
   isVisible,
+  surface = "default",
   onRefresh,
   onSnapshotChange,
   onConnectModelProvider
@@ -177,6 +178,7 @@ export function AgentChatDrawer({
   agent: AgentRecord;
   snapshot: MissionControlSnapshot;
   isVisible: boolean;
+  surface?: "default" | "transparent";
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onConnectModelProvider?: (provider: AddModelsProviderId) => void;
@@ -483,7 +485,12 @@ export function AgentChatDrawer({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col text-foreground",
+        surface === "transparent" ? "bg-transparent" : "bg-background"
+      )}
+    >
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
@@ -629,7 +636,12 @@ export function AgentChatDrawer({
         ) : null}
       </div>
 
-      <div className="shrink-0 border-t border-border/70 bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm sm:px-6">
+      <div
+        className={cn(
+          "shrink-0 border-t border-border/70 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6",
+          surface === "transparent" ? "bg-transparent" : "bg-background/95 backdrop-blur-sm"
+        )}
+      >
         <div className="mx-auto w-full max-w-2xl">
           <div
             className="relative overflow-hidden rounded-[22px] border border-border bg-card shadow-sm"
