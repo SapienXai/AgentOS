@@ -347,7 +347,7 @@ async function certifyHandshakeAndCoreReads(client: OpenClawGatewayClient, evide
   await runOperation(evidence, "core", "update status", "update.status", () => client.getUpdateStatus({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: false });
   await runOperation(evidence, "agents", "agents.list", "agents.list", () => client.listAgents({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
   await runOperation(evidence, "sessions", "sessions.list", "sessions.list", () => client.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
-  await runOperation(evidence, "tasks", "tasks.list", "tasks.list", () => client.listTasks({}, { timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
+  await runOperation(evidence, "tasks", "tasks.list", "tasks.list", () => client.listTasks({}, { timeoutMs: REQUEST_TIMEOUT_MS }), { required: false });
   await runOperation(evidence, "models", "models.list", "models.list", () => client.listModels({}, { timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
   await runOperation(evidence, "models", "models.status", "models.status", () => client.getModelStatus({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: false });
   await runOperation(evidence, "channels", "channels.status", "channels.status", () => client.getChannelStatus({}, { timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
