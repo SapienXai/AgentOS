@@ -7,6 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import {
   comparePinnedMethodScopes,
   parsePinnedCoreDescriptorScopes,
@@ -45,6 +46,7 @@ async function main() {
 
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-native-doctor-"));
   const resources = {
+    homeDir: path.join(disposableRoot, "home"),
     stateDir: path.join(disposableRoot, "state"),
     workspaceDir: path.join(disposableRoot, "workspace"),
     configPath: path.join(disposableRoot, "openclaw.json"),
@@ -409,10 +411,11 @@ function createClient(resources: { port: number; token: string }) {
   });
 }
 
-async function startGateway(input: { packageRoot: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string }) {
+async function startGateway(input: { packageRoot: string; homeDir: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string }) {
+  await mkdir(input.homeDir, { recursive: true, mode: 0o700 });
   const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--auth", "token", "--token", input.token, "--ws-log", "compact"], {
     cwd: input.workspaceDir,
-    env: { ...process.env, OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token },
+    env: createDisposableOpenClawEnvironment({ homeDir: input.homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token } }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

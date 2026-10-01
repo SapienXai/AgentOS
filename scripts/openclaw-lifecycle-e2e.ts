@@ -15,6 +15,7 @@ import {
   OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/certification-target";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { OpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { requestSupervisorCommand, type SupervisorResponse } from "@/lib/openclaw/lifecycle/supervisor-ipc";
 
@@ -326,19 +327,20 @@ async function startSupervisor(input: { packageRoot: string; homeDir: string; st
   const scriptPath = path.resolve("scripts/railway-supervisor.mjs");
   const child = spawn(process.execPath, [scriptPath], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      HOME: input.homeDir,
-      AGENTOS_SUPERVISOR_TEST_MODE: "1",
-      AGENTOS_DEPLOYMENT_PLATFORM: "railway",
-      OPENCLAW_SUPERVISOR_MODE: "external",
-      OPENCLAW_GATEWAY_BINARY: path.join(input.packageRoot, "openclaw.mjs"),
-      OPENCLAW_STATE_DIR: input.stateDir,
-      OPENCLAW_CONFIG_PATH: input.configPath,
-      OPENCLAW_GATEWAY_PORT: String(input.port),
-      OPENCLAW_GATEWAY_TOKEN: input.token,
-      AGENTOS_SUPERVISOR_SOCKET_PATH: input.socketPath
-    },
+    env: createDisposableOpenClawEnvironment({
+      homeDir: input.homeDir,
+      overrides: {
+        AGENTOS_SUPERVISOR_TEST_MODE: "1",
+        AGENTOS_DEPLOYMENT_PLATFORM: "railway",
+        OPENCLAW_SUPERVISOR_MODE: "external",
+        OPENCLAW_GATEWAY_BINARY: path.join(input.packageRoot, "openclaw.mjs"),
+        OPENCLAW_STATE_DIR: input.stateDir,
+        OPENCLAW_CONFIG_PATH: input.configPath,
+        OPENCLAW_GATEWAY_PORT: String(input.port),
+        OPENCLAW_GATEWAY_TOKEN: input.token,
+        AGENTOS_SUPERVISOR_SOCKET_PATH: input.socketPath
+      }
+    }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";
@@ -591,12 +593,13 @@ async function installExactOpenClawPackage(installPrefix: string, version: strin
     `openclaw@${version}`
   ], {
     cwd: installPrefix,
-    env: {
-      ...process.env,
-      HOME: homeDir,
-      npm_config_userconfig: path.join(homeDir, ".npmrc"),
-      npm_config_cache: path.join(homeDir, ".npm-cache")
-    },
+    env: createDisposableOpenClawEnvironment({
+      homeDir,
+      overrides: {
+        npm_config_userconfig: path.join(homeDir, ".npmrc"),
+        npm_config_cache: path.join(homeDir, ".npm-cache")
+      }
+    }),
     maxBuffer: 2 * 1024 * 1024,
     timeout: 180_000
   });

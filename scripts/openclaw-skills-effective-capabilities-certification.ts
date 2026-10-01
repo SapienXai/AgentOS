@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { resolveEffectiveCapability } from "@/lib/openclaw/application/worker-capability-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import type { OpenClawToolsCatalogPayload } from "@/lib/openclaw/client/types";
 import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
 import {
@@ -37,6 +38,7 @@ type PackageIdentity = {
 
 type RuntimeResources = {
   disposableRoot: string;
+  homeDir: string;
   stateDir: string;
   workspaceDir: string;
   configPath: string;
@@ -57,6 +59,7 @@ async function main() {
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-skills-"));
   const resources: RuntimeResources = {
     disposableRoot,
+    homeDir: path.join(disposableRoot, "home"),
     stateDir: path.join(disposableRoot, "state"),
     workspaceDir: path.join(disposableRoot, "workspace"),
     configPath: path.join(disposableRoot, "openclaw.json"),
@@ -584,9 +587,10 @@ async function startFixture() {
 }
 
 async function startGateway(input: { packageRoot: string; resources: RuntimeResources }) {
+  await mkdir(input.resources.homeDir, { recursive: true, mode: 0o700 });
   const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.resources.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.resources.token, "--ws-log", "compact"], {
     cwd: input.resources.workspaceDir,
-    env: { ...process.env, OPENCLAW_STATE_DIR: input.resources.stateDir, OPENCLAW_CONFIG_PATH: input.resources.configPath, OPENCLAW_GATEWAY_TOKEN: input.resources.token },
+    env: createDisposableOpenClawEnvironment({ homeDir: input.resources.homeDir, overrides: { OPENCLAW_STATE_DIR: input.resources.stateDir, OPENCLAW_CONFIG_PATH: input.resources.configPath, OPENCLAW_GATEWAY_TOKEN: input.resources.token } }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

@@ -12,6 +12,7 @@ import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { OPENCLAW_CERTIFICATION_TARGET_COMMIT, OPENCLAW_CERTIFICATION_TARGET_VERSION } from "@/lib/openclaw/certification-target";
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
 import { redactSecretText } from "@/lib/security/redaction";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 
 const TARGET_VERSION = OPENCLAW_CERTIFICATION_TARGET_VERSION;
 const TARGET_LABEL = TARGET_VERSION.split(".").slice(1).join(".");
@@ -59,7 +60,6 @@ async function main() {
   const configPath = path.join(fixtureRoot, "fresh-config", "openclaw.json");
   const workspacePath = path.join(fixtureRoot, "workspace");
   const certificationWorkspace = path.join(fixtureRoot, "certification-workspace");
-  const certificationOutput = path.join(fixtureRoot, "runtime-certification.json");
   const port = await reservePort();
   const token = randomBytes(24).toString("hex");
   const gatewayUrl = `ws://127.0.0.1:${port}`;
@@ -93,9 +93,11 @@ async function main() {
       token,
       homeDir
     });
+    await waitForGatewayReadiness(gatewayUrl, 30_000);
 
-    const lifecycleEnv = {
-      ...process.env,
+    const lifecycleEnv = createDisposableOpenClawEnvironment({
+      homeDir,
+      overrides: {
       AGENTOS_DEPLOYMENT_PLATFORM: "local",
       OPENCLAW_SUPERVISOR_MODE: "agentos-managed",
       OPENCLAW_GATEWAY_URL: gatewayUrl,
@@ -103,7 +105,8 @@ async function main() {
       OPENCLAW_GATEWAY_BINARY: path.join(installRoot, "openclaw.mjs"),
       OPENCLAW_STATE_DIR: stateDir,
       OPENCLAW_CONFIG_PATH: configPath
-    };
+      }
+    });
     const lifecycle = new OpenClawLifecycleService({
       env: lifecycleEnv,
       platform: process.platform,
@@ -123,7 +126,9 @@ async function main() {
       agentToAgentAllow: agentToAgentConfig?.allow ?? null
     };
     if (!lifecycleReadiness.ready || securityBootstrap.sessionsVisibility !== "tree" || securityBootstrap.agentToAgentEnabled !== false || !Array.isArray(securityBootstrap.agentToAgentAllow) || securityBootstrap.agentToAgentAllow.length !== 0) {
-      throw new Error(`Managed fresh Gateway security bootstrap did not produce the explicit AgentOS policy (readiness=${lifecycleReadiness.ready}, reason=${lifecycleReadiness.reason ?? "none"}, visibility=${String(securityBootstrap.sessionsVisibility)}, agentToAgent=${String(securityBootstrap.agentToAgentEnabled)}, allowCount=${Array.isArray(securityBootstrap.agentToAgentAllow) ? securityBootstrap.agentToAgentAllow.length : "unknown"}).`);
+      const readinessEvidence = await readGatewayReadiness(gatewayUrl);
+      const gatewayOutput = gateway.diagnostics();
+      throw new Error(`Managed fresh Gateway security bootstrap did not produce the explicit AgentOS policy (readiness=${lifecycleReadiness.ready}, reason=${lifecycleReadiness.reason ?? "none"}, visibility=${String(securityBootstrap.sessionsVisibility)}, agentToAgent=${String(securityBootstrap.agentToAgentEnabled)}, allowCount=${Array.isArray(securityBootstrap.agentToAgentAllow) ? securityBootstrap.agentToAgentAllow.length : "unknown"}). Readiness endpoints: ${readinessEvidence}. Gateway output: ${gatewayOutput || "none"}`);
     }
 
     const certification = await runRuntimeCertification({
@@ -133,7 +138,7 @@ async function main() {
       configPath,
       binaryPath: path.join(installRoot, "openclaw.mjs"),
       workspace: certificationWorkspace,
-      outputPath: certificationOutput,
+      outputPath: RUNTIME_CERTIFICATION_OUTPUT_PATH,
       homeDir
     });
     runtimeCertification = certification;
@@ -339,6 +344,7 @@ function assertExactTarget(identity: ExactPackageIdentity) {
 
 type FreshGatewayProcess = {
   stop: () => Promise<void>;
+  diagnostics: () => string;
 };
 
 async function startFreshGateway(input: {
@@ -363,14 +369,16 @@ async function startFreshGateway(input: {
     "compact",
     "--no-color"
   ], {
-    env: {
-      ...process.env,
+    env: createDisposableOpenClawEnvironment({
+      homeDir: input.homeDir,
+      overrides: {
       HOME: input.homeDir,
       OPENCLAW_STATE_DIR: input.stateDir,
       OPENCLAW_CONFIG_PATH: input.configPath,
       OPENCLAW_GATEWAY_TOKEN: input.token,
       OPENCLAW_GATEWAY_PASSWORD: ""
-    },
+      }
+    }),
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
@@ -386,6 +394,7 @@ async function startFreshGateway(input: {
     throw new Error(`${error instanceof Error ? error.message : String(error)} ${redactSecretText(output).trim()}`.trim());
   }
   return {
+    diagnostics: () => redactSecretText(output).trim().slice(-2_000),
     stop: async () => {
       if (exited || child.exitCode !== null) return;
       child.kill("SIGTERM");
@@ -397,6 +406,38 @@ async function startFreshGateway(input: {
       if (!exited && child.exitCode === null) throw new Error("Fresh Gateway process did not exit.");
     }
   };
+}
+
+async function readGatewayReadiness(gatewayUrl: string) {
+  const origin = gatewayUrl.replace(/^ws/, "http");
+  const values = await Promise.all(["/healthz", "/readyz"].map(async (endpoint) => {
+    try {
+      const response = await fetch(`${origin}${endpoint}`, { signal: AbortSignal.timeout(2_000) });
+      const body = redactSecretText((await response.text()).slice(0, 500));
+      return `${endpoint}=${response.status}${body ? ` ${body}` : ""}`;
+    } catch (error) {
+      return `${endpoint}=unavailable (${error instanceof Error ? error.message : String(error)})`;
+    }
+  }));
+  return values.join("; ");
+}
+
+async function waitForGatewayReadiness(gatewayUrl: string, timeoutMs: number) {
+  const endpoint = `${gatewayUrl.replace(/^ws/, "http")}/readyz`;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(endpoint, { signal: AbortSignal.timeout(1_500), cache: "no-store" });
+      if (response.ok) {
+        const body = await response.json() as { ready?: unknown };
+        if (body?.ready === true) return;
+      }
+    } catch {
+      // Startup can briefly reject the readiness probe while listeners initialize.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`Fresh OpenClaw ${TARGET_VERSION} Gateway did not become ready within ${timeoutMs} ms. ${await readGatewayReadiness(gatewayUrl)}`);
 }
 
 async function runRuntimeCertification(input: {
@@ -456,7 +497,10 @@ async function runProcess(command: string, args: string[], input: { cwd?: string
   return await new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: input.cwd,
-      env: { ...process.env, ...input.env },
+      env: createDisposableOpenClawEnvironment({
+        homeDir: input.env?.HOME ?? process.env.HOME ?? "/tmp",
+        overrides: input.env
+      }),
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });

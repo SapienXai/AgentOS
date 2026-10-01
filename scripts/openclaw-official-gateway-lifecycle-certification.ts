@@ -11,6 +11,7 @@ import {
   createOfficialBackedOpenClawGatewayClient,
   OfficialOpenClawGatewayTransport
 } from "@/lib/openclaw/client/gateway-client";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
@@ -295,13 +296,14 @@ async function startGateway(input: {
     "--auth", "token", "--token", input.token, "--ws-log", "compact"
   ], {
     cwd: input.workspaceDir,
-    env: {
-      ...process.env,
-      HOME: input.homeDir,
-      OPENCLAW_STATE_DIR: input.stateDir,
-      OPENCLAW_CONFIG_PATH: input.configPath,
-      OPENCLAW_GATEWAY_TOKEN: input.token
-    },
+    env: createDisposableOpenClawEnvironment({
+      homeDir: input.homeDir,
+      overrides: {
+        OPENCLAW_STATE_DIR: input.stateDir,
+        OPENCLAW_CONFIG_PATH: input.configPath,
+        OPENCLAW_GATEWAY_TOKEN: input.token
+      }
+    }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

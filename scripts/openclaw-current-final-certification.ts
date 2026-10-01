@@ -17,32 +17,49 @@ import {
   OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
+  OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_TAG,
+  OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY,
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
   OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
 
-const TARGET_VERSION = "2026.9.4";
-const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
-const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
-const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE?.trim();
-const GATEWAY_CLIENT_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE?.trim();
-const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE?.trim();
-const UPSTREAM_EVIDENCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_UPSTREAM_EVIDENCE?.trim() || null;
-const COMPATIBILITY_REPORT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_COMPATIBILITY_REPORT?.trim() || null;
-const CHANNEL_RUNTIME_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_RUNTIME_ACCEPTANCE?.trim() || null;
-const CHANNEL_BROWSER_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_BROWSER_ACCEPTANCE?.trim() || null;
-const CERTIFIED_CODE_HEAD_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_CERTIFIED_CODE_HEAD?.trim() || null;
-const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT?.trim() || null;
+const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
+const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;
+const TARGET_BUILD = OPENCLAW_IDENTITY_CONTRACT_BUILD;
+const TARGET_TAG = OPENCLAW_IDENTITY_CONTRACT_TAG;
+const TARGET_TAG_OBJECT = OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT;
+const TARGET_PROTOCOL = OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL;
+const TARGET_STATE_SCHEMA = OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA;
+const TARGET_AGENT_SCHEMA = OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA;
+const TARGET_PACKAGE_INTEGRITY = OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY;
+const TARGET_GATEWAY_CLIENT_INTEGRITY = OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY;
+const TARGET_GATEWAY_PROTOCOL_INTEGRITY = OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY;
+const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_PACKAGE?.trim();
+const PACKAGE_TARBALL_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_PACKAGE_TARBALL?.trim();
+const GATEWAY_CLIENT_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_GATEWAY_CLIENT_PACKAGE?.trim();
+const GATEWAY_CLIENT_TARBALL_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_GATEWAY_CLIENT_TARBALL?.trim();
+const GATEWAY_PROTOCOL_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_GATEWAY_PROTOCOL_PACKAGE?.trim();
+const GATEWAY_PROTOCOL_TARBALL_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_GATEWAY_PROTOCOL_TARBALL?.trim();
+const UPSTREAM_EVIDENCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_UPSTREAM_EVIDENCE?.trim() || `docs/evidence/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-intake.json`;
+const COMPATIBILITY_REPORT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_COMPATIBILITY_REPORT?.trim() || null;
+const CHANNEL_RUNTIME_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_CHANNEL_RUNTIME_ACCEPTANCE?.trim() || null;
+const CHANNEL_BROWSER_ACCEPTANCE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_CHANNEL_BROWSER_ACCEPTANCE?.trim() || null;
+const CERTIFIED_CODE_HEAD_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_CERTIFIED_CODE_HEAD?.trim() || null;
+const EVIDENCE_COMMIT_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_EVIDENCE_COMMIT?.trim() || null;
+const MIGRATION_SOURCE_VERSION = process.env.OPENCLAW_FINAL_CERTIFICATION_MIGRATION_SOURCE_VERSION?.trim() || OPENCLAW_SUPPORTED_BASELINE_VERSION;
 const FINAL_CERTIFICATION_ARTIFACT_TYPE = getOpenClawFinalCertificationArtifactType(TARGET_VERSION);
 const FINAL_CERTIFICATION_FILENAME = getOpenClawFinalCertificationFilename(TARGET_VERSION);
-const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_9_4_OUTPUT?.trim() || `docs/evidence/${FINAL_CERTIFICATION_FILENAME}`);
+const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_FINAL_CERTIFICATION_OUTPUT?.trim() || `docs/evidence/${FINAL_CERTIFICATION_FILENAME}`);
 
 const REQUIRED_ARTIFACTS = [
-  ["contract-diff", `docs/evidence/openclaw-2026.9.3-to-${TARGET_VERSION}-contract-diff.json`],
+  ["contract-diff", process.env.OPENCLAW_FINAL_CERTIFICATION_CONTRACT_DIFF?.trim() || `docs/evidence/openclaw-${MIGRATION_SOURCE_VERSION}-to-${TARGET_VERSION}-contract-diff.json`],
   ["fresh-baseline", `docs/evidence/openclaw-${TARGET_VERSION}-fresh-baseline.json`],
   ["runtime", `docs/evidence/openclaw-${TARGET_VERSION}-runtime-certification.json`],
-  ["migration", `docs/evidence/openclaw-2026.9.3-to-${TARGET_VERSION}-migration.json`],
+  ["migration", process.env.OPENCLAW_FINAL_CERTIFICATION_MIGRATION?.trim() || `docs/evidence/openclaw-${MIGRATION_SOURCE_VERSION}-to-${TARGET_VERSION}-migration.json`],
   ["lifecycle", `docs/evidence/openclaw-${TARGET_VERSION}-lifecycle-certification.json`],
   ["identity", `docs/evidence/openclaw-${TARGET_VERSION}-identity-authorization.json`],
   ["multi-user", `docs/evidence/openclaw-${TARGET_VERSION}-multi-user.json`],
@@ -68,8 +85,11 @@ export type OpenClawExactPackageIdentity = {
   sourceCommit: string;
   buildId: string;
   packageHash: string;
+  npmPackageIntegrity: string | null;
   gatewayClientVersion: string | null;
+  gatewayClientIntegrity: string | null;
   gatewayProtocolVersion: string | null;
+  gatewayProtocolIntegrity: string | null;
   stateSchema: number;
   agentSchema: number;
 };
@@ -135,7 +155,10 @@ async function main() {
   const packageIdentity = PACKAGE_INPUT && GATEWAY_CLIENT_PACKAGE_INPUT && GATEWAY_PROTOCOL_PACKAGE_INPUT ? await readPackageIdentity(
     path.resolve(PACKAGE_INPUT),
     path.resolve(GATEWAY_CLIENT_PACKAGE_INPUT),
-    path.resolve(GATEWAY_PROTOCOL_PACKAGE_INPUT)
+    path.resolve(GATEWAY_PROTOCOL_PACKAGE_INPUT),
+    PACKAGE_TARBALL_INPUT ? path.resolve(PACKAGE_TARBALL_INPUT) : null,
+    GATEWAY_CLIENT_TARBALL_INPUT ? path.resolve(GATEWAY_CLIENT_TARBALL_INPUT) : null,
+    GATEWAY_PROTOCOL_TARBALL_INPUT ? path.resolve(GATEWAY_PROTOCOL_TARBALL_INPUT) : null
   ).catch((error) => {
     failures.push(`cannot inspect exact OpenClaw package: ${safeError(error)}`);
     return null;
@@ -145,7 +168,7 @@ async function main() {
   const channelRuntimeAcceptance = await readOptionalJson(CHANNEL_RUNTIME_ACCEPTANCE_INPUT, "channel runtime acceptance", failures);
   const channelBrowserAcceptance = await readOptionalJson(CHANNEL_BROWSER_ACCEPTANCE_INPUT, "channel browser acceptance", failures);
   if (!CHANNEL_BROWSER_ACCEPTANCE_INPUT) {
-    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_CHANNEL_BROWSER_ACCEPTANCE is required for final human UX acceptance");
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_CHANNEL_BROWSER_ACCEPTANCE is required for final human UX acceptance");
   } else {
     const telegramBrowserAcceptance = asRecord(channelBrowserAcceptance?.telegramBrowserAcceptance);
     const discordBrowserAcceptance = asRecord(channelBrowserAcceptance?.discordBrowserAcceptance);
@@ -160,34 +183,46 @@ async function main() {
       failures.push("Live Telegram classification must be VERIFIED, PARTIALLY_VERIFIED, or BLOCKED_BY_ENVIRONMENT");
     }
   }
-  if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_PACKAGE is not set");
-  if (!GATEWAY_CLIENT_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_CLIENT_PACKAGE is not set");
-  if (!GATEWAY_PROTOCOL_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_GATEWAY_PROTOCOL_PACKAGE is not set");
+  if (!PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_PACKAGE is not set");
+  if (!PACKAGE_TARBALL_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_PACKAGE_TARBALL is not set");
+  if (!GATEWAY_CLIENT_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_GATEWAY_CLIENT_PACKAGE is not set");
+  if (!GATEWAY_CLIENT_TARBALL_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_GATEWAY_CLIENT_TARBALL is not set");
+  if (!GATEWAY_PROTOCOL_PACKAGE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_GATEWAY_PROTOCOL_PACKAGE is not set");
+  if (!GATEWAY_PROTOCOL_TARBALL_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_GATEWAY_PROTOCOL_TARBALL is not set");
+  if (!UPSTREAM_EVIDENCE_INPUT) failures.push("OPENCLAW_FINAL_CERTIFICATION_UPSTREAM_EVIDENCE is not set");
   if (OPENCLAW_RECOMMENDED_VERSION !== TARGET_VERSION || OPENCLAW_NATIVE_CONTRACT_VERSION !== TARGET_VERSION || OPENCLAW_IDENTITY_CONTRACT_VERSION !== TARGET_VERSION) {
-    failures.push("AgentOS recommended, native, and identity contracts are not promoted to 2026.9.4");
+    failures.push(`AgentOS recommended, native, and identity contracts are not promoted to ${TARGET_VERSION}`);
   }
-  if (OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT !== TARGET_COMMIT || OPENCLAW_IDENTITY_CONTRACT_BUILD !== TARGET_BUILD || OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL !== 4 || OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA !== 17 || OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA !== 19) {
-    failures.push("AgentOS identity contract does not match the verified 2026.9.4 identity");
+  if (OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT !== TARGET_COMMIT || OPENCLAW_IDENTITY_CONTRACT_BUILD !== TARGET_BUILD || OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL !== TARGET_PROTOCOL || OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA !== TARGET_STATE_SCHEMA || OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA !== TARGET_AGENT_SCHEMA) {
+    failures.push(`AgentOS identity contract does not match the verified ${TARGET_VERSION} identity`);
   }
   if (path.basename(OUTPUT_PATH) !== FINAL_CERTIFICATION_FILENAME) {
     failures.push(`Final certification output must use ${FINAL_CERTIFICATION_FILENAME}.`);
   }
   if (!packageIdentity) {
     // Keep the report deterministic; the failure has already been recorded.
-  } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.gatewayClientVersion !== TARGET_VERSION || packageIdentity.gatewayProtocolVersion !== TARGET_VERSION || packageIdentity.stateSchema !== 17 || packageIdentity.agentSchema !== 19) {
-    failures.push("exact 2026.9.4 package identity, Gateway package versions, build, or schema does not match the verified target");
+  } else if (packageIdentity.version !== TARGET_VERSION || packageIdentity.sourceCommit !== TARGET_COMMIT || packageIdentity.buildId !== TARGET_BUILD || packageIdentity.gatewayClientVersion !== TARGET_VERSION || packageIdentity.gatewayProtocolVersion !== TARGET_VERSION || packageIdentity.stateSchema !== TARGET_STATE_SCHEMA || packageIdentity.agentSchema !== TARGET_AGENT_SCHEMA) {
+    failures.push(`exact ${TARGET_VERSION} package identity, Gateway package versions, build, or schema does not match the verified target`);
+  } else if (packageIdentity.npmPackageIntegrity !== TARGET_PACKAGE_INTEGRITY || packageIdentity.gatewayClientIntegrity !== TARGET_GATEWAY_CLIENT_INTEGRITY || packageIdentity.gatewayProtocolIntegrity !== TARGET_GATEWAY_PROTOCOL_INTEGRITY) {
+    failures.push(`npm tarball integrity does not match the independently verified ${TARGET_VERSION} package metadata`);
+  }
+  const intakeIdentity = asRecord(upstreamEvidence?.identity);
+  const intakeMismatches = readStringArray(intakeIdentity.mismatches);
+  const intakeMissingEvidence = readStringArray(intakeIdentity.missingEvidence);
+  if (intakeIdentity.status !== "verified" || intakeIdentity.version !== TARGET_VERSION || intakeIdentity.tag !== TARGET_TAG || intakeIdentity.sourceCommit !== TARGET_COMMIT || intakeIdentity.packageIntegrity !== TARGET_PACKAGE_INTEGRITY || asRecord(intakeIdentity.gatewayClientPackage).integrity !== TARGET_GATEWAY_CLIENT_INTEGRITY || asRecord(intakeIdentity.gatewayProtocolPackage).integrity !== TARGET_GATEWAY_PROTOCOL_INTEGRITY || intakeMismatches.length > 0 || intakeMissingEvidence.length > 0) {
+    failures.push(`authenticated upstream release intake does not establish the exact ${TARGET_VERSION} release identity and package integrity`);
   }
   if (!EVIDENCE_COMMIT_INPUT) {
-    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT is required for final evidence provenance");
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_EVIDENCE_COMMIT is required for final evidence provenance");
   } else if (!resolveRepositoryCommit(EVIDENCE_COMMIT_INPUT)) {
-    failures.push("OPENCLAW_FINAL_CERTIFICATION_9_4_EVIDENCE_COMMIT must resolve to a Git commit in the repository");
+    failures.push("OPENCLAW_FINAL_CERTIFICATION_EVIDENCE_COMMIT must resolve to a Git commit in the repository");
   }
 
   for (const [name, relativePath] of REQUIRED_ARTIFACTS) {
     try {
       const artifact = JSON.parse(await readFile(path.resolve(relativePath), "utf8")) as JsonRecord;
       artifacts[name] = artifact;
-      const result = assessArtifact(name, artifact);
+      const result = assessOpenClawCertificationArtifact(name, artifact);
       matrix[name] = { path: relativePath, ...result };
       if (result.status !== "PASS") failures.push(`${name}: ${String(result.reason ?? "artifact did not pass")}`);
     } catch (error) {
@@ -198,8 +233,13 @@ async function main() {
 
   const contract = artifacts["contract-diff"];
   const migration = artifacts.migration;
-  if (contract?.success !== true || !Object.values(asRecord(contract?.checks)).every(Boolean)) failures.push("contract audit checks are incomplete");
-  if (migration?.success !== true || !Object.values(asRecord(migration?.checks)).every(Boolean)) failures.push("9.3 to 9.4 migration checks are incomplete");
+  if (contract?.success !== true || !hasPassingBooleanChecks(contract?.checks)) failures.push("contract audit checks are incomplete");
+  const migrationProvenance = asRecord(migration?.provenance);
+  const migrationSource = asRecord(migrationProvenance.source);
+  const migrationTarget = asRecord(migrationProvenance.target);
+  if (migration?.success !== true || !hasPassingBooleanChecks(migration?.checks) || migrationSource.version !== MIGRATION_SOURCE_VERSION || migrationTarget.version !== TARGET_VERSION) {
+    failures.push(`${MIGRATION_SOURCE_VERSION} to ${TARGET_VERSION} migration checks are incomplete or target a different exact release`);
+  }
 
   const deploymentPin = await readRepositoryDeploymentPin();
   const certifiedCodeHead = await gitOutput(["rev-parse", CERTIFIED_CODE_HEAD_INPUT || "HEAD"]);
@@ -261,11 +301,14 @@ export function buildOpenClawFinalCertificationReport(input: {
     input.packageIdentity.version === TARGET_VERSION &&
     exactSourceIdentity &&
     input.packageIdentity.buildId === TARGET_BUILD &&
+    input.packageIdentity.npmPackageIntegrity === TARGET_PACKAGE_INTEGRITY &&
     input.packageIdentity.gatewayClientVersion === TARGET_VERSION &&
+    input.packageIdentity.gatewayClientIntegrity === TARGET_GATEWAY_CLIENT_INTEGRITY &&
     input.packageIdentity.gatewayProtocolVersion === TARGET_VERSION &&
+    input.packageIdentity.gatewayProtocolIntegrity === TARGET_GATEWAY_PROTOCOL_INTEGRITY &&
     isSha256(input.packageIdentity.packageHash) &&
-    input.packageIdentity.stateSchema === 17 &&
-    input.packageIdentity.agentSchema === 19
+    input.packageIdentity.stateSchema === TARGET_STATE_SCHEMA &&
+    input.packageIdentity.agentSchema === TARGET_AGENT_SCHEMA
   );
   const migrationProvenance = readMigrationProvenance(input.artifacts.migration);
   const runtimeProvenance = readRuntimeProvenance(input.artifacts.runtime);
@@ -330,15 +373,18 @@ export function buildOpenClawFinalCertificationReport(input: {
       exactArtifact: exactPackageMatchesTarget ? "disposable-exact-openclaw-package" : "unavailable",
       expectedOpenClaw: {
         version: TARGET_VERSION,
-        tag: "v2026.9.4",
-        signedTagObject: "8bec206f3c1f787e1e9c45cfd34d3de2a78c7b8e",
+        tag: TARGET_TAG,
+        tagObjectSha: TARGET_TAG_OBJECT,
         sourceCommit: TARGET_COMMIT,
         buildId: TARGET_BUILD,
-        gatewayProtocol: 4,
-        stateSchema: 17,
-        agentSchema: 19,
+        packageIntegrity: TARGET_PACKAGE_INTEGRITY,
+        gatewayProtocol: TARGET_PROTOCOL,
+        stateSchema: TARGET_STATE_SCHEMA,
+        agentSchema: TARGET_AGENT_SCHEMA,
         gatewayClient: TARGET_VERSION,
-        gatewayProtocolPackage: TARGET_VERSION
+        gatewayClientIntegrity: TARGET_GATEWAY_CLIENT_INTEGRITY,
+        gatewayProtocolPackage: TARGET_VERSION,
+        gatewayProtocolIntegrity: TARGET_GATEWAY_PROTOCOL_INTEGRITY
       },
       supportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
       agentosContract: {
@@ -371,7 +417,7 @@ export function buildOpenClawFinalCertificationReport(input: {
       migration: migrationProvenance,
       certifiedIdentity: {
         version: input.packageIdentity?.version ?? null,
-        tag: "v2026.9.4",
+        tag: TARGET_TAG,
         sourceCommit: input.packageIdentity?.sourceCommit ?? null,
         buildId: input.packageIdentity?.buildId ?? null,
         packageHash: input.packageIdentity?.packageHash ?? null,
@@ -482,7 +528,7 @@ function readRuntimeProvenance(artifact: JsonRecord | undefined) {
   const installedVersion = readString(runtime.installedVersion);
   const protocolValue = typeof runtime.protocolVersion === "number" ? runtime.protocolVersion : null;
   const summary = asRecord(runtime.summary);
-  const verified = targetVersion === TARGET_VERSION && installedVersion === TARGET_VERSION && protocolValue === 4 && summary.failed === 0 && summary.requiredFailures === 0 && summary.unknown === 0;
+  const verified = targetVersion === TARGET_VERSION && installedVersion === TARGET_VERSION && protocolValue === TARGET_PROTOCOL && summary.failed === 0 && summary.requiredFailures === 0 && summary.unknown === 0;
   return {
     installedVersion,
     protocolVersion: protocolValue,
@@ -493,28 +539,28 @@ function readRuntimeProvenance(artifact: JsonRecord | undefined) {
   };
 }
 
-function assessArtifact(name: string, artifact: JsonRecord) {
+export function assessOpenClawCertificationArtifact(name: string, artifact: JsonRecord) {
   const statuses = collectStatusValues(artifact);
   const failures: string[] = [];
   if (name === "contract-diff") {
     const target = asRecord(asRecord(artifact.provenance)?.target);
     const checks = asRecord(artifact.checks);
-    if (target?.version !== TARGET_VERSION || target?.sourceCommit !== TARGET_COMMIT || target?.stateSchema !== 17 || target?.agentSchema !== 19 || target?.protocol !== 4) failures.push("contract target identity/schema/protocol mismatch");
-    if (!Object.values(checks).every(Boolean)) failures.push("contract audit contains a failed check");
+    if (target?.version !== TARGET_VERSION || target?.sourceCommit !== TARGET_COMMIT || target?.stateSchema !== TARGET_STATE_SCHEMA || target?.agentSchema !== TARGET_AGENT_SCHEMA || target?.protocol !== TARGET_PROTOCOL) failures.push("contract target identity/schema/protocol mismatch");
+    if (!hasPassingBooleanChecks(checks)) failures.push("contract audit checks are empty or contain a failed check");
   } else if (name === "migration") {
     if (artifact.success !== true) failures.push("migration success is not true");
-    if (!Object.values(asRecord(artifact.checks)).every(Boolean)) failures.push("migration contains a failed check");
+    if (!hasPassingBooleanChecks(artifact.checks)) failures.push("migration checks are empty or contain a failed check");
   } else if (name === "runtime") {
     const runtime = asRecord(artifact.runtime);
     const summary = asRecord(runtime?.summary);
-    if (runtime?.targetVersion !== TARGET_VERSION || runtime?.installedVersion !== TARGET_VERSION || runtime?.protocolVersion !== 4) failures.push("runtime target identity or protocol mismatch");
+    if (runtime?.targetVersion !== TARGET_VERSION || runtime?.installedVersion !== TARGET_VERSION || runtime?.protocolVersion !== TARGET_PROTOCOL) failures.push("runtime target identity or protocol mismatch");
     if (summary?.failed !== 0 || summary?.requiredFailures !== 0 || summary?.unknown !== 0) failures.push("runtime contains failures, required failures, or unknown outcomes");
   } else if (name === "workforce") {
     if (asRecord(artifact.summary).failed !== 0) failures.push("workforce summary contains failures");
   } else if (name === "official-transport") {
     const requests = asRecord(artifact.requests);
     const denial = asRecord(artifact.authorizationDenial);
-    if (Object.values(requests).some((entry) => asRecord(entry).status !== "passed") || denial.status !== "denied" || asRecord(artifact.target).protocol !== 4) {
+    if (Object.values(requests).some((entry) => asRecord(entry).status !== "passed") || denial.status !== "denied" || asRecord(artifact.target).protocol !== TARGET_PROTOCOL) {
       failures.push("official transport probes or expected authorization denial failed");
     }
   } else if (artifact.success !== true && !(typeof artifact.gate === "string" && artifact.gate.endsWith("PASS")) && artifact.result !== "PASS") {
@@ -526,6 +572,7 @@ function assessArtifact(name: string, artifact: JsonRecord) {
 }
 
 function collectStatusValues(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStatusValues); if (!value || typeof value !== "object") return []; const record = value as JsonRecord; const current = Object.entries(record).filter(([key, entry]) => ["status", "result", "outcome"].includes(key) && typeof entry === "string").map(([, entry]) => entry as string); return [...current, ...Object.values(record).flatMap(collectStatusValues)]; }
+function hasPassingBooleanChecks(value: unknown) { const checks = Object.values(asRecord(value)); return checks.length > 0 && checks.every((check) => check === true); }
 function collectStrings(value: unknown): string[] { if (Array.isArray(value)) return value.flatMap(collectStrings); if (typeof value === "string") return [value]; if (!value || typeof value !== "object") return []; return Object.values(value as JsonRecord).flatMap(collectStrings); }
 function asRecord(value: unknown): JsonRecord { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {}; }
 function readStringArray(value: unknown): string[] { return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim()) : []; }
@@ -533,7 +580,14 @@ function readString(value: unknown): string | null { return typeof value === "st
 function isGitCommit(value: string | null | undefined): value is string { return typeof value === "string" && /^[0-9a-f]{40}$/i.test(value.trim()); }
 function resolveRepositoryCommit(value: string | null | undefined, repositoryPath = process.cwd()): string | null { if (!isGitCommit(value)) return null; const candidate = value.trim().toLowerCase(); try { const resolved = execFileSync("git", ["-C", repositoryPath, "rev-parse", "--verify", `${candidate}^{commit}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().toLowerCase(); return isGitCommit(resolved) && resolved === candidate ? resolved : null; } catch { return null; } }
 function isSha256(value: string): boolean { return /^[0-9a-f]{64}$/i.test(value); }
-export async function readPackageIdentity(packageRoot: string, gatewayClientPackageRoot: string, gatewayProtocolPackageRoot: string) {
+export async function readPackageIdentity(
+  packageRoot: string,
+  gatewayClientPackageRoot: string,
+  gatewayProtocolPackageRoot: string,
+  packageTarballPath: string | null = null,
+  gatewayClientTarballPath: string | null = null,
+  gatewayProtocolTarballPath: string | null = null
+) {
   const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord;
   const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as JsonRecord;
   const hash = createHash("sha256");
@@ -546,11 +600,18 @@ export async function readPackageIdentity(packageRoot: string, gatewayClientPack
     sourceCommit: String(buildInfo.commit ?? ""),
     buildId: String(buildInfo.buildId ?? ""),
     packageHash: hash.digest("hex"),
+    npmPackageIntegrity: await readNpmTarballIntegrity(packageTarballPath),
     gatewayClientVersion: await readExactPackageVersion(gatewayClientPackageRoot, "@openclaw/gateway-client"),
+    gatewayClientIntegrity: await readNpmTarballIntegrity(gatewayClientTarballPath),
     gatewayProtocolVersion: await readExactPackageVersion(gatewayProtocolPackageRoot, "@openclaw/gateway-protocol"),
+    gatewayProtocolIntegrity: await readNpmTarballIntegrity(gatewayProtocolTarballPath),
     stateSchema: Number(asRecord(packageJson.openclaw).schemaVersions ? asRecord(asRecord(packageJson.openclaw).schemaVersions).state : 0),
     agentSchema: Number(asRecord(asRecord(packageJson.openclaw).schemaVersions).agent ?? 0)
   };
+}
+async function readNpmTarballIntegrity(tarballPath: string | null) {
+  if (!tarballPath) return null;
+  return `sha512-${createHash("sha512").update(await readFile(tarballPath)).digest("base64")}`;
 }
 async function readExactPackageVersion(packageRoot: string, expectedName: string) {
   const packageJson = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as JsonRecord;
@@ -576,6 +637,6 @@ async function readOptionalJson(input: string | null, label: string, failures: s
   }
 }
 
-if (process.argv[1]?.endsWith("openclaw-2026-9-4-final-certification.ts")) {
+if (process.argv[1]?.endsWith("openclaw-current-final-certification.ts")) {
   void main();
 }

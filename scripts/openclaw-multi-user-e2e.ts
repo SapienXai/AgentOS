@@ -16,6 +16,7 @@ import {
   resetManagedAgentOsUserPassword
 } from "@/lib/agentos/application/agentos-account-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import {
   OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
@@ -62,6 +63,8 @@ async function main() {
   assert.equal(packageIdentity.buildId, OPENCLAW_IDENTITY_CONTRACT_BUILD);
 
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-multi-user-"));
+  const homeDir = path.join(disposableRoot, "home");
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
   const agentOsRuntimeDir = path.join(disposableRoot, "agentos-runtime");
   const stateDir = path.join(disposableRoot, "openclaw-state");
   const workspaceDir = path.join(disposableRoot, "workspace");
@@ -69,7 +72,7 @@ async function main() {
   const port = await reservePort();
   const gatewayToken = `agentos-multi-user-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token: gatewayToken });
-  const env = { ...process.env, AGENTOS_RUNTIME_DIR: agentOsRuntimeDir, NODE_ENV: "production" as const };
+  const env = createDisposableOpenClawEnvironment({ homeDir, overrides: { AGENTOS_RUNTIME_DIR: agentOsRuntimeDir, NODE_ENV: "production" } });
   const client = createOfficialBackedOpenClawGatewayClient({
     url: `ws://127.0.0.1:${port}`,
     token: gatewayToken,
@@ -270,7 +273,9 @@ async function main() {
     evidence.controlPlaneChecks.push({ actor: "Owner A", operation: "disable-protection-with-multiple-users", result: "expected-denial", code: "multi-user-protection-required" });
 
     const singleOwnerRuntime = path.join(disposableRoot, "single-owner-runtime");
-    const singleOwnerEnv = { ...process.env, AGENTOS_RUNTIME_DIR: singleOwnerRuntime, NODE_ENV: "production" as const };
+    const singleOwnerHome = path.join(disposableRoot, "single-owner-home");
+    await mkdir(singleOwnerHome, { recursive: true, mode: 0o700 });
+    const singleOwnerEnv = createDisposableOpenClawEnvironment({ homeDir: singleOwnerHome, overrides: { AGENTOS_RUNTIME_DIR: singleOwnerRuntime, NODE_ENV: "production" } });
     const singleOwner = await enableInstanceProtection({ username: "single-owner", password: "single owner password" }, singleOwnerEnv);
     assert.equal(singleOwner.status.authenticated, true);
     const singleOwnerState = await readInstanceProtectionState(singleOwnerEnv);
@@ -336,10 +341,12 @@ function requestWithCookie(session: string) {
 }
 
 async function startGateway(input: { packageRoot: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string }) {
+  const homeDir = path.join(path.dirname(input.stateDir), "home");
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
   await mkdir(input.workspaceDir, { recursive: true, mode: 0o700 });
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } }, agents: { defaults: { workspace: input.workspaceDir }, list: [{ id: "main", workspace: input.workspaceDir }] }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
-  const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"], { cwd: input.workspaceDir, env: { ...process.env, OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"], { cwd: input.workspaceDir, env: createDisposableOpenClawEnvironment({ homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token } }), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });

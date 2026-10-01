@@ -10,6 +10,7 @@ import {
   getOpenClawGatewayClient,
   resetOpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import type {
   OpenClawGatewayClient,
   OpenClawGatewayEventSubscription
@@ -649,18 +650,22 @@ async function startGateway(input: {
   port: number;
   token: string;
 }) {
+  const homeDir = path.join(path.dirname(input.stateDir), "home");
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
   const child = spawn(process.execPath, [
     path.join(input.packageRoot, "openclaw.mjs"),
     "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured",
     "--auth", "token", "--token", input.token, "--ws-log", "compact"
   ], {
     cwd: input.workspaceDir,
-    env: {
-      ...process.env,
-      OPENCLAW_STATE_DIR: input.stateDir,
-      OPENCLAW_CONFIG_PATH: input.configPath,
-      OPENCLAW_GATEWAY_TOKEN: input.token
-    },
+    env: createDisposableOpenClawEnvironment({
+      homeDir,
+      overrides: {
+        OPENCLAW_STATE_DIR: input.stateDir,
+        OPENCLAW_CONFIG_PATH: input.configPath,
+        OPENCLAW_GATEWAY_TOKEN: input.token
+      }
+    }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

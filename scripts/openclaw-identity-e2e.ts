@@ -8,6 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
@@ -56,12 +57,13 @@ async function main() {
   assert.equal(packageIdentity.buildId, OPENCLAW_IDENTITY_CONTRACT_BUILD);
 
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-identity-"));
+  const homeDir = path.join(disposableRoot, "home");
   const stateDir = path.join(disposableRoot, "state");
   const workspaceDir = path.join(disposableRoot, "workspace");
   const configPath = path.join(disposableRoot, "openclaw.json");
   const port = await reservePort();
   const token = `agentos-identity-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
+  const gateway = await startGateway({ packageRoot, homeDir, stateDir, workspaceDir, configPath, port, token });
   const clients: OfficialBackedGatewayClient[] = [];
   const checks: CheckResult[] = [];
   const dynamicChecks: CheckResult[] = [];
@@ -438,12 +440,14 @@ async function runExactOpenClawAgentCreate(
     ],
     {
       cwd: runtime.workspaceDir,
-      env: {
-        ...process.env,
-        OPENCLAW_STATE_DIR: runtime.stateDir,
-        OPENCLAW_CONFIG_PATH: runtime.configPath,
-        OPENCLAW_GATEWAY_TOKEN: runtime.token
-      },
+      env: createDisposableOpenClawEnvironment({
+        homeDir: path.join(path.dirname(runtime.stateDir), "home"),
+        overrides: {
+          OPENCLAW_STATE_DIR: runtime.stateDir,
+          OPENCLAW_CONFIG_PATH: runtime.configPath,
+          OPENCLAW_GATEWAY_TOKEN: runtime.token
+        }
+      }),
       maxBuffer: 1_000_000
     }
   );
@@ -454,12 +458,14 @@ async function runExactOpenClawAgentCreate(
     [path.join(runtime.packageRoot, "openclaw.mjs"), "agents", "list", "--json"],
     {
       cwd: runtime.workspaceDir,
-      env: {
-        ...process.env,
-        OPENCLAW_STATE_DIR: runtime.stateDir,
-        OPENCLAW_CONFIG_PATH: runtime.configPath,
-        OPENCLAW_GATEWAY_TOKEN: runtime.token
-      },
+      env: createDisposableOpenClawEnvironment({
+        homeDir: path.join(path.dirname(runtime.stateDir), "home"),
+        overrides: {
+          OPENCLAW_STATE_DIR: runtime.stateDir,
+          OPENCLAW_CONFIG_PATH: runtime.configPath,
+          OPENCLAW_GATEWAY_TOKEN: runtime.token
+        }
+      }),
       maxBuffer: 1_000_000
     }
   );
@@ -488,12 +494,14 @@ function summarizeIdentity(identity: OpenClawOperatorIdentity | null) {
 
 async function startGateway(input: {
   packageRoot: string;
+  homeDir: string;
   stateDir: string;
   workspaceDir: string;
   configPath: string;
   port: number;
   token: string;
 }) {
+  await mkdir(input.homeDir, { recursive: true, mode: 0o700 });
   await mkdir(input.workspaceDir, { recursive: true, mode: 0o700 });
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({
@@ -519,12 +527,14 @@ async function startGateway(input: {
     "compact"
   ], {
     cwd: input.workspaceDir,
-    env: {
-      ...process.env,
-      OPENCLAW_STATE_DIR: input.stateDir,
-      OPENCLAW_CONFIG_PATH: input.configPath,
-      OPENCLAW_GATEWAY_TOKEN: input.token
-    },
+    env: createDisposableOpenClawEnvironment({
+      homeDir: input.homeDir,
+      overrides: {
+        OPENCLAW_STATE_DIR: input.stateDir,
+        OPENCLAW_CONFIG_PATH: input.configPath,
+        OPENCLAW_GATEWAY_TOKEN: input.token
+      }
+    }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

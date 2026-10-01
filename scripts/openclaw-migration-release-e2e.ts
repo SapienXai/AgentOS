@@ -7,17 +7,25 @@ import os from "node:os";
 import path from "node:path";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 
-const SOURCE_VERSION = "2026.9.3";
-const SOURCE_COMMIT = "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7";
-const SOURCE_BUILD = "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z";
-const TARGET_VERSION = "2026.9.4";
-const TARGET_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
-const TARGET_BUILD = "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
-const OUTPUT_PATH = path.resolve(process.env.OPENCLAW_MIGRATION_9_4_OUTPUT?.trim() || "docs/evidence/openclaw-2026.9.3-to-2026.9.4-migration.json");
-const SOURCE_PACKAGE = process.env.OPENCLAW_MIGRATION_9_3_PACKAGE?.trim();
-const TARGET_PACKAGE = process.env.OPENCLAW_MIGRATION_9_4_PACKAGE?.trim();
+const SOURCE_VERSION = readEnv("OPENCLAW_MIGRATION_SOURCE_VERSION") ?? "2026.9.3";
+const SOURCE_COMMIT = readEnv("OPENCLAW_MIGRATION_SOURCE_COMMIT") ?? "1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7";
+const SOURCE_BUILD = readEnv("OPENCLAW_MIGRATION_SOURCE_BUILD") ?? "2026.9.3-release-1391f7cd2d40-2026-09-08T07-46-00.264Z";
+const SOURCE_STATE_SCHEMA = Number(readEnv("OPENCLAW_MIGRATION_SOURCE_STATE_SCHEMA") ?? "16");
+const SOURCE_AGENT_SCHEMA = Number(readEnv("OPENCLAW_MIGRATION_SOURCE_AGENT_SCHEMA") ?? "19");
+const TARGET_VERSION = readEnv("OPENCLAW_MIGRATION_TARGET_VERSION") ?? "2026.9.4";
+const TARGET_COMMIT = readEnv("OPENCLAW_MIGRATION_TARGET_COMMIT") ?? "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
+const TARGET_BUILD = readEnv("OPENCLAW_MIGRATION_TARGET_BUILD") ?? "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z";
+const TARGET_STATE_SCHEMA = Number(readEnv("OPENCLAW_MIGRATION_TARGET_STATE_SCHEMA") ?? "17");
+const TARGET_AGENT_SCHEMA = Number(readEnv("OPENCLAW_MIGRATION_TARGET_AGENT_SCHEMA") ?? "19");
+const OUTPUT_PATH = path.resolve(
+  readEnv("OPENCLAW_MIGRATION_OUTPUT", "OPENCLAW_MIGRATION_9_4_OUTPUT") ??
+    `docs/evidence/openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-migration.json`
+);
+const SOURCE_PACKAGE = readEnv("OPENCLAW_MIGRATION_SOURCE_PACKAGE", "OPENCLAW_MIGRATION_9_3_PACKAGE");
+const TARGET_PACKAGE = readEnv("OPENCLAW_MIGRATION_TARGET_PACKAGE", "OPENCLAW_MIGRATION_9_4_PACKAGE");
 
 type PackageIdentity = {
   version: string;
@@ -33,7 +41,7 @@ type GatewayProcess = { child: ChildProcess; stop: () => Promise<void> };
 async function main() {
   const evidence: Record<string, unknown> = {
     schemaVersion: 1,
-    artifactType: "openclaw-2026.9.3-to-2026.9.4-migration-certification",
+    artifactType: `openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-migration-certification`,
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
@@ -41,14 +49,14 @@ async function main() {
       source: { version: SOURCE_VERSION, commit: SOURCE_COMMIT, buildId: SOURCE_BUILD },
       target: { version: TARGET_VERSION, commit: TARGET_COMMIT, buildId: TARGET_BUILD },
       protocol: 4,
-      stateSchema: "16 -> 17",
-      agentSchema: 19,
+      stateSchema: `${SOURCE_STATE_SCHEMA} -> ${TARGET_STATE_SCHEMA}`,
+      agentSchema: `${SOURCE_AGENT_SCHEMA} -> ${TARGET_AGENT_SCHEMA}`,
       runtimeMode: "isolated disposable packages, state, HOME, config, workspace, and loopback ports"
     },
     fixture: {
       kind: "real-package-upgrade",
-      sourceState: "OpenClaw 2026.9.3 initialized and exercised through the official Gateway",
-      targetState: "OpenClaw 2026.9.4 migrated through native Doctor/runtime startup and reconnected through official gateway-client",
+      sourceState: `OpenClaw ${SOURCE_VERSION} initialized and exercised through the official Gateway`,
+      targetState: `OpenClaw ${TARGET_VERSION} migrated through native Doctor/runtime startup and reconnected through official gateway-client`,
       representativeState: [
         "agents", "sessions", "session lineage", "assistant transcript", "provider/auth-shaped config",
         "channel/account config", "workspace/project marker", "skill marker", "memory marker", "cron state",
@@ -74,15 +82,15 @@ async function main() {
 
   try {
     if (!SOURCE_PACKAGE || !TARGET_PACKAGE) {
-      throw new Error("Set OPENCLAW_MIGRATION_9_3_PACKAGE and OPENCLAW_MIGRATION_9_4_PACKAGE to exact package roots.");
+      throw new Error("Set OPENCLAW_MIGRATION_SOURCE_PACKAGE and OPENCLAW_MIGRATION_TARGET_PACKAGE to exact package roots.");
     }
     const sourceIdentity = await readPackageIdentity(path.resolve(SOURCE_PACKAGE));
     const targetIdentity = await readPackageIdentity(path.resolve(TARGET_PACKAGE));
-    assertIdentity(sourceIdentity, { version: SOURCE_VERSION, commit: SOURCE_COMMIT, build: SOURCE_BUILD, state: 16 });
-    assertIdentity(targetIdentity, { version: TARGET_VERSION, commit: TARGET_COMMIT, build: TARGET_BUILD, state: 17 });
+    assertIdentity(sourceIdentity, { version: SOURCE_VERSION, commit: SOURCE_COMMIT, build: SOURCE_BUILD, state: SOURCE_STATE_SCHEMA, agent: SOURCE_AGENT_SCHEMA });
+    assertIdentity(targetIdentity, { version: TARGET_VERSION, commit: TARGET_COMMIT, build: TARGET_BUILD, state: TARGET_STATE_SCHEMA, agent: TARGET_AGENT_SCHEMA });
     evidence.provenance = { ...(evidence.provenance as Record<string, unknown>), sourcePackage: sourceIdentity, targetPackage: targetIdentity };
 
-    fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-9-3-to-9-4-"));
+    fixtureRoot = await mkdtemp(path.join(os.tmpdir(), `agentos-openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-`));
     const stateDir = path.join(fixtureRoot, "state");
     const homeDir = path.join(fixtureRoot, "home");
     const workspaceDir = path.join(fixtureRoot, "workspace");
@@ -93,8 +101,8 @@ async function main() {
     await mkdir(workspaceDir, { recursive: true, mode: 0o700 });
     await mkdir(path.join(workspaceDir, "skills", "agentos-migration-fixture"), { recursive: true, mode: 0o700 });
     await mkdir(path.join(workspaceDir, "projects", "migration-fixture"), { recursive: true, mode: 0o700 });
-    await writeFile(path.join(workspaceDir, "skills", "agentos-migration-fixture", "SKILL.md"), "# AgentOS migration fixture\n\nPreserve this native skill workspace marker.\n", { mode: 0o600 });
-    await writeFile(path.join(workspaceDir, "MEMORY.md"), "# Migration memory\n\nA durable 9.3 to 9.4 migration marker.\n", { mode: 0o600 });
+    await writeFile(path.join(workspaceDir, "skills", "agentos-migration-fixture", "SKILL.md"), "---\nname: agentos-migration-fixture\ndescription: A disposable OpenClaw migration certification fixture.\n---\n\n# AgentOS migration fixture\n\nPreserve this native skill workspace marker.\n", { mode: 0o600 });
+    await writeFile(path.join(workspaceDir, "MEMORY.md"), `# Migration memory\n\nA durable ${SOURCE_VERSION} to ${TARGET_VERSION} migration marker.\n`, { mode: 0o600 });
     await writeFile(path.join(workspaceDir, "projects", "migration-fixture", "PROJECT.md"), "# Migration project\n\nPreserve this project marker.\n", { mode: 0o600 });
     await writeFile(path.join(workspaceDir, "transcript-marker.txt"), "AgentOS migration transcript marker\n", { mode: 0o600 });
     await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
@@ -134,14 +142,14 @@ async function main() {
     const childSessionKey = `agent:${sourceAgentId}:agentos-migration-child`;
     await sourceClient.callNative("sessions.create", { key: rootSessionKey, agentId: "main", label: "AgentOS migration fixture" }, mutationPolicy());
     await sourceClient.callNative("sessions.create", { key: childSessionKey, agentId: sourceAgentId, label: "AgentOS migration child", parentSessionKey: rootSessionKey, spawnDepth: 1 }, mutationPolicy()).catch(() => null);
-    await sourceClient.callNative("chat.send", { sessionKey: rootSessionKey, message: "AGENTOS_MIGRATION_9_4_FIRST_PROMPT", idempotencyKey: "agentos-migration-9-4-first" }, mutationPolicy());
+    await sourceClient.callNative("chat.send", { sessionKey: rootSessionKey, message: `AGENTOS_MIGRATION_${SOURCE_VERSION}_FIRST_PROMPT`, idempotencyKey: `agentos-migration-${SOURCE_VERSION}-first` }, mutationPolicy());
     await waitForHistory(sourceClient, rootSessionKey, 1);
     const sourceReads = await readNativeSurfaces(sourceClient, rootSessionKey);
-    sourceClient.close("9.3 migration fixture source capture");
+    sourceClient.close(`${SOURCE_VERSION} migration fixture source capture`);
     await sourceGateway.stop();
     sourceGateway = null;
 
-    const before = await inspectFixture({ stateDir, configPath, workspaceDir });
+    const before = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: sourceIdentity.agentSchema });
     evidence.source = {
       package: sourceIdentity,
       runtime: { version: sourceHandshake.server?.version ?? null, buildId: sourceHandshake.server?.buildId ?? null, protocol: sourceHandshake.protocol ?? null },
@@ -153,13 +161,13 @@ async function main() {
     };
 
     const doctor = await runCommand(path.join(path.resolve(TARGET_PACKAGE), "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
-    const afterDoctor = await inspectFixture({ stateDir, configPath, workspaceDir });
+    const afterDoctor = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.migration = {
-      officialPath: "OpenClaw 2026.9.4 native Doctor/runtime migration path",
+      officialPath: `OpenClaw ${TARGET_VERSION} native Doctor/runtime migration path`,
       doctor: summarizeCommand(doctor),
       stateBefore: before,
       stateAfterDoctor: afterDoctor,
-      schema16To17: before.stateSchema === 16 && afterDoctor.stateSchema === 17,
+      stateSchemaMigrated: before.stateSchema === SOURCE_STATE_SCHEMA && afterDoctor.stateSchema === TARGET_STATE_SCHEMA,
       noSilentDataLoss: sameRepresentativeState(before, afterDoctor)
     };
 
@@ -171,7 +179,7 @@ async function main() {
     const targetSessions = await targetClient.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy());
     const targetHistory = await targetClient.callNative<Record<string, unknown>>("chat.history", { sessionKey: rootSessionKey, limit: 20 }, readPolicy());
     const targetReads = await readNativeSurfaces(targetClient, rootSessionKey);
-    const afterRuntime = await inspectFixture({ stateDir, configPath, workspaceDir });
+    const afterRuntime = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.target = {
       package: targetIdentity,
       runtime: { version: targetHandshake.server?.version ?? null, buildId: targetHandshake.server?.buildId ?? null, protocol: targetHandshake.protocol ?? null, reconnect: true },
@@ -190,37 +198,42 @@ async function main() {
       },
       state: afterRuntime
     };
-    targetClient.close("9.4 migration fixture target capture");
+    targetClient.close(`${TARGET_VERSION} migration fixture target capture`);
     await targetGateway.stop();
     targetGateway = null;
 
     const recoveryDoctor = await runCommand(path.join(path.resolve(TARGET_PACKAGE), "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
-    const afterRecovery = await inspectFixture({ stateDir, configPath, workspaceDir });
+    const afterRecovery = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.recovery = {
       doctor: summarizeCommand(recoveryDoctor),
       idempotent: recoveryDoctor.code === 0,
       stateAfterRecovery: afterRecovery,
-      schemaStill17: afterRecovery.stateSchema === 17,
+      schemaStillTarget: afterRecovery.stateSchema === TARGET_STATE_SCHEMA,
       representativeStateStillIntact: sameRepresentativeState(afterRuntime, afterRecovery)
     };
 
     const migration = evidence.migration as Record<string, unknown>;
+    const source = evidence.source as Record<string, unknown>;
     const target = evidence.target as Record<string, unknown>;
     const targetRuntime = target.runtime as Record<string, unknown>;
     const representative = target.representativeState as Record<string, unknown>;
     const recovery = evidence.recovery as Record<string, unknown>;
+    const sourceState = source.state as Record<string, unknown>;
+    const stateAfterDoctor = migration.stateAfterDoctor as Record<string, unknown>;
+    const targetState = target.state as Record<string, unknown>;
     evidence.checks = {
       exactSourcePackage: sourceIdentity.version === SOURCE_VERSION && sourceIdentity.sourceCommit === SOURCE_COMMIT && sourceIdentity.buildId === SOURCE_BUILD,
       exactTargetPackage: targetIdentity.version === TARGET_VERSION && targetIdentity.sourceCommit === TARGET_COMMIT && targetIdentity.buildId === TARGET_BUILD,
-      sourceRuntime93: Boolean((evidence.source as Record<string, unknown>).runtime) && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).version === SOURCE_VERSION && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).protocol === 4,
-      targetRuntime94: targetRuntime.version === TARGET_VERSION && targetRuntime.buildId === TARGET_BUILD && targetRuntime.protocol === 4,
-      stateSchema16To17: migration.schema16To17 === true,
-      agentSchema19: sourceIdentity.agentSchema === 19 && targetIdentity.agentSchema === 19,
+      sourceRuntimeIdentity: Boolean((evidence.source as Record<string, unknown>).runtime) && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).version === SOURCE_VERSION && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).protocol === 4,
+      targetRuntimeIdentity: targetRuntime.version === TARGET_VERSION && targetRuntime.buildId === TARGET_BUILD && targetRuntime.protocol === 4,
+      stateSchemaMigrated: migration.stateSchemaMigrated === true,
+      agentSchemaIdentity: sourceIdentity.agentSchema === SOURCE_AGENT_SCHEMA && targetIdentity.agentSchema === TARGET_AGENT_SCHEMA,
+      agentDatabaseSchemasMigrated: allAgentDatabasesMatch(sourceState, SOURCE_AGENT_SCHEMA) && allAgentDatabasesMatch(stateAfterDoctor, TARGET_AGENT_SCHEMA) && allAgentDatabasesMatch(targetState, TARGET_AGENT_SCHEMA),
       gatewayReconnect: targetRuntime.reconnect === true,
       representativeStatePreserved: migration.noSilentDataLoss === true && Number(representative.transcriptAssistantMessages ?? 0) >= 1 && representative.providerConfigPresent === true && representative.channelConfigPresent === true && representative.skillPresent === true && representative.memoryPresent === true && representative.projectPresent === true,
       securityPolicyPreserved: representative.securityPolicyExplicit === true,
       nativeSurfacesReadable: hasReadableNativeSurfaces(target.nativeSurfaces),
-      recoveryIdempotent: recovery.idempotent === true && recovery.schemaStill17 === true && recovery.representativeStateStillIntact === true,
+      recoveryIdempotent: recovery.idempotent === true && recovery.schemaStillTarget === true && recovery.representativeStateStillIntact === true,
       noProductionMutation: true
     };
     evidence.success = Object.values(evidence.checks as Record<string, boolean>).every(Boolean);
@@ -252,8 +265,8 @@ async function readPackageIdentity(packageRoot: string): Promise<PackageIdentity
   return { version: packageJson.version ?? "", sourceCommit: buildInfo.commit ?? "", buildId: buildInfo.buildId ?? "", packageHash: hash.digest("hex"), stateSchema: packageJson.openclaw?.schemaVersions?.state ?? 0, agentSchema: packageJson.openclaw?.schemaVersions?.agent ?? 0 };
 }
 
-function assertIdentity(actual: PackageIdentity, expected: { version: string; commit: string; build: string; state: number }) {
-  if (actual.version !== expected.version || actual.sourceCommit !== expected.commit || actual.buildId !== expected.build || actual.stateSchema !== expected.state || actual.agentSchema !== 19) throw new Error(`Exact package identity mismatch for ${expected.version}.`);
+function assertIdentity(actual: PackageIdentity, expected: { version: string; commit: string; build: string; state: number; agent: number }) {
+  if (actual.version !== expected.version || actual.sourceCommit !== expected.commit || actual.buildId !== expected.build || actual.stateSchema !== expected.state || actual.agentSchema !== expected.agent) throw new Error(`Exact package identity mismatch for ${expected.version}.`);
 }
 
 function createClient(port: number, token: string, stateDir: string) {
@@ -273,7 +286,7 @@ async function readNativeSurfaces(client: ReturnType<typeof createClient>, sessi
 function hasReadableNativeSurfaces(value: unknown) { return Object.values(value as Record<string, { status: string }>).filter((entry) => entry.status === "PASS").length >= 3; }
 
 async function startGateway(packageRoot: string, stateDir: string, homeDir: string, configPath: string, token: string, port: number): Promise<GatewayProcess> {
-  const child = spawn(process.execPath, [path.join(packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(port), "--bind", "loopback", "--allow-unconfigured", "--ws-log", "compact", "--no-color"], { env: { ...process.env, HOME: homeDir, OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, OPENCLAW_GATEWAY_TOKEN: token, OPENCLAW_GATEWAY_PASSWORD: "" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [path.join(packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(port), "--bind", "loopback", "--allow-unconfigured", "--ws-log", "compact", "--no-color"], { env: createDisposableOpenClawEnvironment({ homeDir, overrides: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, OPENCLAW_GATEWAY_TOKEN: token, OPENCLAW_GATEWAY_PASSWORD: "" } }), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout?.on("data", (chunk) => { output = `${output}${String(chunk)}`.slice(-6000); });
   child.stderr?.on("data", (chunk) => { output = `${output}${String(chunk)}`.slice(-6000); });
@@ -281,7 +294,7 @@ async function startGateway(packageRoot: string, stateDir: string, homeDir: stri
   return { child, stop: () => stopChild(child) };
 }
 
-async function inspectFixture(input: { stateDir: string; configPath: string; workspaceDir: string }) {
+async function inspectFixture(input: { stateDir: string; configPath: string; workspaceDir: string; agentSchema: number }) {
   const databasePath = path.join(input.stateDir, "state", "openclaw.sqlite");
   let stateSchema: number | null = null;
   const tables: Record<string, number> = {};
@@ -292,9 +305,21 @@ async function inspectFixture(input: { stateDir: string; configPath: string; wor
     for (const row of names) { if (!row.name || !/^[A-Za-z0-9_]+$/.test(row.name)) continue; try { tables[row.name] = Number(database.prepare(`SELECT COUNT(*) AS count FROM "${row.name}"`).get()?.count ?? 0); } catch {} }
     database.close();
   } catch {}
+  const files = await listStateFiles(input.stateDir);
+  const agentDatabaseSchemas: Record<string, number> = {};
+  for (const relativePath of files.filter((filePath) => /(?:^|\/)openclaw-agent\.sqlite$/.test(filePath))) {
+    try {
+      const database = new DatabaseSync(path.join(input.stateDir, relativePath), { readOnly: true });
+      agentDatabaseSchemas[relativePath] = Number(database.prepare("PRAGMA user_version").get()?.user_version ?? 0);
+      database.close();
+    } catch {
+      agentDatabaseSchemas[relativePath] = 0;
+    }
+  }
   return {
     stateSchema,
-    agentSchema: 19,
+    agentSchema: input.agentSchema,
+    agentDatabaseSchemas,
     tables: Object.fromEntries(Object.entries(tables).filter(([name]) => /agent|session|task|update|memory|auth|channel|cron|worker|identity/i.test(name))),
     configPresent: await pathExists(input.configPath),
     configHash: await hashFile(input.configPath),
@@ -308,12 +333,40 @@ async function inspectFixture(input: { stateDir: string; configPath: string; wor
 
 async function readSecurityPolicy(configPath: string) { try { const config = JSON.parse(await readFileText(configPath)); return readPath(config, ["tools", "sessions", "visibility"]) === "tree" && readPath(config, ["tools", "agentToAgent", "enabled"]) === false && Array.isArray(readPath(config, ["tools", "agentToAgent", "allow"])) && (readPath(config, ["tools", "agentToAgent", "allow"]) as unknown[]).length === 0; } catch { return false; } }
 async function listStateFiles(root: string) { const result: string[] = []; async function visit(dir: string) { let entries; try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; } for (const entry of entries) { const full = path.join(dir, entry.name); if (entry.isDirectory()) await visit(full); else if (/\.(jsonl|sqlite|db)$/.test(entry.name)) result.push(path.relative(root, full)); } } await visit(root); return result.sort(); }
-function sameRepresentativeState(left: Record<string, unknown>, right: Record<string, unknown>) { return left.configPresent === right.configPresent && left.skillPresent === right.skillPresent && left.memoryPresent === right.memoryPresent && left.projectPresent === right.projectPresent && left.securityPolicyExplicit === right.securityPolicyExplicit && Array.isArray(left.transcriptFiles) && Array.isArray(right.transcriptFiles) && (left.transcriptFiles as string[]).length <= (right.transcriptFiles as string[]).length; }
+function sameRepresentativeState(left: Record<string, unknown>, right: Record<string, unknown>) {
+  const durableFiles = (value: Record<string, unknown>) => Array.isArray(value.transcriptFiles)
+    ? (value.transcriptFiles as string[]).filter((filePath) => !filePath.startsWith("tmp/"))
+    : null;
+  const leftFiles = durableFiles(left);
+  const rightFiles = durableFiles(right);
+  return left.configPresent === right.configPresent && left.skillPresent === right.skillPresent && left.memoryPresent === right.memoryPresent && left.projectPresent === right.projectPresent && left.securityPolicyExplicit === right.securityPolicyExplicit && Boolean(leftFiles) && Boolean(rightFiles) && leftFiles!.every((filePath) => rightFiles!.includes(filePath));
+}
+function allAgentDatabasesMatch(value: unknown, expected: number) {
+  const state = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const schemas = state.agentDatabaseSchemas && typeof state.agentDatabaseSchemas === "object"
+    ? Object.values(state.agentDatabaseSchemas as Record<string, unknown>)
+    : [];
+  return schemas.length > 0 && schemas.every((schema) => schema === expected);
+}
 function readPath(value: unknown, segments: string[]): unknown { let current = value; for (const segment of segments) { if (!current || typeof current !== "object" || Array.isArray(current)) return undefined; current = (current as Record<string, unknown>)[segment]; } return current; }
 function countRecords(value: Record<string, unknown>, key: string) { return Array.isArray(value[key]) ? value[key].length : 0; }
 function countAssistantMessages(value: Record<string, unknown>) { return (Array.isArray(value.messages) ? value.messages : []).filter((message) => message && typeof message === "object" && (message as Record<string, unknown>).role === "assistant").length; }
-async function waitForHistory(client: ReturnType<typeof createClient>, sessionKey: string, minimum: number) { for (let attempt = 0; attempt < 40; attempt += 1) { const history = await client.callNative<Record<string, unknown>>("chat.history", { sessionKey, limit: 20 }, readPolicy()); if (countAssistantMessages(history) >= minimum) return history; await new Promise((resolve) => setTimeout(resolve, 250)); } throw new Error("The 9.3 migration fixture did not persist an assistant transcript."); }
-async function runCommand(command: string, args: string[], env: Record<string, string>) { return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => { const child = spawn(command, args, { env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] }); let stdout = ""; let stderr = ""; const timer = setTimeout(() => child.kill("SIGTERM"), 60_000); child.stdout.on("data", (chunk) => { stdout += String(chunk); }); child.stderr.on("data", (chunk) => { stderr += String(chunk); }); child.once("error", () => { clearTimeout(timer); resolve({ code: null, stdout, stderr }); }); child.once("close", (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); }); }); }
+async function waitForHistory(client: ReturnType<typeof createClient>, sessionKey: string, minimum: number) { for (let attempt = 0; attempt < 40; attempt += 1) { const history = await client.callNative<Record<string, unknown>>("chat.history", { sessionKey, limit: 20 }, readPolicy()); if (countAssistantMessages(history) >= minimum) return history; await new Promise((resolve) => setTimeout(resolve, 250)); } throw new Error(`The ${SOURCE_VERSION} migration fixture did not persist an assistant transcript.`); }
+async function runCommand(command: string, args: string[], env: Record<string, string>) {
+  return await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+    const child = spawn(command, args, {
+      env: createDisposableOpenClawEnvironment({ homeDir: env.HOME ?? "/tmp", overrides: env }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => child.kill("SIGTERM"), 60_000);
+    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    child.once("error", () => { clearTimeout(timer); resolve({ code: null, stdout, stderr }); });
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
+}
 function summarizeCommand(result: { code: number | null; stdout: string; stderr: string }) { return { exitCode: result.code, completed: result.code === 0, outputPresent: Boolean(result.stdout.trim() || result.stderr.trim()), outputContainsSecret: /agentos-migration-fixture|token|api[_-]?key|password/i.test(`${result.stdout}\n${result.stderr}`), sanitizedOutputExcerpt: sanitizeError(`${result.stdout}\n${result.stderr}`).slice(-3000) }; }
 async function waitForPort(port: number, child: ChildProcess, timeoutMs: number) { const started = Date.now(); while (Date.now() - started < timeoutMs) { if (child.exitCode !== null) throw new Error(`Gateway exited before listening (${child.exitCode}).`); const connected = await new Promise<boolean>((resolve) => { const socket = net.createConnection({ host: "127.0.0.1", port }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => { socket.destroy(); resolve(false); }); }); if (connected) return; await new Promise((resolve) => setTimeout(resolve, 100)); } throw new Error(`Timed out waiting for disposable Gateway port ${port}.`); }
 async function stopChild(child: ChildProcess) { if (child.exitCode !== null) return; child.kill("SIGTERM"); await new Promise<void>((resolve) => { const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 5_000); child.once("close", () => { clearTimeout(timer); resolve(); }); }); }
@@ -323,6 +376,7 @@ async function hashFile(filePath: string) { try { return createHash("sha256").up
 async function gitHead() { const result = await runCommand("git", ["rev-parse", "HEAD"], {}); return result.stdout.trim() || null; }
 async function readFileText(filePath: string, mode: "buffer"): Promise<Buffer>; async function readFileText(filePath: string, mode?: "text"): Promise<string>; async function readFileText(filePath: string, mode: "buffer" | "text" = "text"): Promise<Buffer | string> { return mode === "buffer" ? await readFile(filePath) : await readFile(filePath, "utf8"); }
 function readString(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
+function readEnv(...names: string[]) { for (const name of names) { const value = process.env[name]?.trim(); if (value) return value; } return null; }
 function sanitizeError(error: unknown) { return String(error instanceof Error ? error.message : error).replace(/(?:token|password|secret|api[_-]?key)[^\s]*/gi, "$1=[redacted]"); }
 
 void main().catch((error) => { console.error(sanitizeError(error)); process.exitCode = 1; });

@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
@@ -561,7 +562,7 @@ async function startGateway(input: {
     "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"
   ], {
     cwd: input.workspaceDir,
-    env: { ...process.env, HOME: input.homeDir, OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token },
+    env: createDisposableOpenClawEnvironment({ homeDir: input.homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token } }),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

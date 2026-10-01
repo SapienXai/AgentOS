@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -7,23 +8,41 @@ import path from "node:path";
 
 import {
   buildOpenClawFinalCertificationReport,
+  assessOpenClawCertificationArtifact,
   readPackageIdentity,
   type OpenClawExactPackageIdentity
-} from "@/scripts/openclaw-2026-9-4-final-certification";
+} from "@/scripts/openclaw-current-final-certification";
+import {
+  OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
+  OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+  OPENCLAW_IDENTITY_CONTRACT_VERSION
+} from "@/lib/openclaw/identity/contract";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+
+const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 
 const repositoryHead = gitCommit("HEAD");
 const repositoryParent = gitCommit("HEAD^");
 
 test("final certification keeps code, evidence, package, runtime, and production provenance distinct", () => {
   const packageIdentity: OpenClawExactPackageIdentity = {
-    version: "2026.9.4",
-    sourceCommit: "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
-    buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+    version: TARGET_VERSION,
+    sourceCommit: OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+    buildId: OPENCLAW_IDENTITY_CONTRACT_BUILD,
     packageHash: "d".repeat(64),
-    gatewayClientVersion: "2026.9.4",
-    gatewayProtocolVersion: "2026.9.4",
-    stateSchema: 17,
-    agentSchema: 19
+    npmPackageIntegrity: OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY,
+    gatewayClientVersion: TARGET_VERSION,
+    gatewayClientIntegrity: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY,
+    gatewayProtocolVersion: TARGET_VERSION,
+    gatewayProtocolIntegrity: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY,
+    stateSchema: OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+    agentSchema: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA
   };
   const report = buildOpenClawFinalCertificationReport({
     generatedAt: "2026-09-13T10:00:00.000Z",
@@ -35,16 +54,16 @@ test("final certification keeps code, evidence, package, runtime, and production
       migration: {
         success: true,
         provenance: {
-          source: { version: "2026.9.3" },
-          target: { version: "2026.9.4" }
+          source: { version: OPENCLAW_SUPPORTED_BASELINE_VERSION },
+          target: { version: TARGET_VERSION }
         },
-        checks: { stateSchema16To17: true }
+        checks: { stateSchemaMigrated: true }
       },
       runtime: {
         runtime: {
-          targetVersion: "2026.9.4",
-          installedVersion: "2026.9.4",
-          protocolVersion: 4,
+          targetVersion: TARGET_VERSION,
+          installedVersion: TARGET_VERSION,
+          protocolVersion: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
           summary: { failed: 0, requiredFailures: 0, unknown: 0 }
         },
         outcomes: [{ status: "SKIPPED" }, { status: "EXPECTED-DENIAL" }]
@@ -56,8 +75,8 @@ test("final certification keeps code, evidence, package, runtime, and production
     },
     deploymentPin: {
       status: "found",
-      version: "2026.9.4",
-      image: "ghcr.io/openclaw/openclaw:2026.9.4",
+      version: TARGET_VERSION,
+      image: `ghcr.io/openclaw/openclaw:${TARGET_VERSION}`,
       digest: "d".repeat(64),
       reason: "Repository pin read."
     },
@@ -65,12 +84,12 @@ test("final certification keeps code, evidence, package, runtime, and production
   });
 
   assert.equal(report.schemaVersion, 2);
-  assert.equal(report.artifactType, "openclaw-2026.9.4-pre-merge-final-certification");
+  assert.equal(report.artifactType, `openclaw-${TARGET_VERSION}-pre-merge-final-certification`);
   assert.equal(report.phase, "pre-merge-final-certification");
   assert.equal(report.certifiedAt, "2026-09-13T10:00:00.000Z");
   assert.equal(report.agentosHead, repositoryHead);
-  assert.equal(report.openclawVersion, "2026.9.4");
-  assert.equal(report.openclawSourceSha, "3a9d69db306cd7f081e06254cb89c4bcc14a7107");
+  assert.equal(report.openclawVersion, TARGET_VERSION);
+  assert.equal(report.openclawSourceSha, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT);
   assert.deepEqual(report.upstreamEvidenceHashes, {});
   assert.equal(report.contractAudit, null);
   assert.equal(report.compatibility, null);
@@ -81,12 +100,12 @@ test("final certification keeps code, evidence, package, runtime, and production
   assert.notEqual(report.provenance.certifiedCodeHead, report.provenance.evidenceCommit);
   assert.equal(report.provenance.exactArtifact, "disposable-exact-openclaw-package");
   assert.equal(report.versionRoles.supportedMinimum.version, "2026.9.1");
-  assert.equal(report.versionRoles.recommended.version, "2026.9.4");
-  assert.equal(report.versionRoles.nativeContract.version, "2026.9.4");
-  assert.equal(report.versionRoles.packageVersions.gatewayClient.version, "2026.9.4");
-  assert.equal(report.versionRoles.deploymentPin.version, "2026.9.4");
-  assert.equal(report.versionRoles.migration.sourceVersion, "2026.9.3");
-  assert.equal(report.versionRoles.migration.targetVersion, "2026.9.4");
+  assert.equal(report.versionRoles.recommended.version, TARGET_VERSION);
+  assert.equal(report.versionRoles.nativeContract.version, TARGET_VERSION);
+  assert.equal(report.versionRoles.packageVersions.gatewayClient.version, TARGET_VERSION);
+  assert.equal(report.versionRoles.deploymentPin.version, TARGET_VERSION);
+  assert.equal(report.versionRoles.migration.sourceVersion, OPENCLAW_SUPPORTED_BASELINE_VERSION);
+  assert.equal(report.versionRoles.migration.targetVersion, TARGET_VERSION);
   assert.equal(report.versionRoles.migration.status, "verified");
   assert.equal(report.versionRoles.certifiedIdentity.status, "verified");
   assert.equal(report.versionRoles.liveRuntime.status, "verified");
@@ -133,14 +152,17 @@ test("final certification rejects an unresolved exact OpenClaw source identity",
     evidenceCommit: repositoryParent,
     branch: "codex/auto-dev",
     packageIdentity: {
-      version: "2026.9.4",
+      version: TARGET_VERSION,
       sourceCommit: "f".repeat(40),
-      buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z",
+      buildId: OPENCLAW_IDENTITY_CONTRACT_BUILD,
       packageHash: "d".repeat(64),
-      gatewayClientVersion: "2026.9.4",
-      gatewayProtocolVersion: "2026.9.4",
-      stateSchema: 17,
-      agentSchema: 19
+      npmPackageIntegrity: OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY,
+      gatewayClientVersion: TARGET_VERSION,
+      gatewayClientIntegrity: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY,
+      gatewayProtocolVersion: TARGET_VERSION,
+      gatewayProtocolIntegrity: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY,
+      stateSchema: OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+      agentSchema: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA
     },
     artifacts: { runtime: {} },
     matrix: { runtime: { status: "PASS" } },
@@ -165,14 +187,56 @@ test("final certification reads separately published Gateway package identities"
     await writePackageFixture(protocolRoot, "@openclaw/gateway-protocol");
 
     const identity = await readPackageIdentity(openClawRoot, clientRoot, protocolRoot);
-    assert.equal(identity.version, "2026.9.4");
-    assert.equal(identity.gatewayClientVersion, "2026.9.4");
-    assert.equal(identity.gatewayProtocolVersion, "2026.9.4");
-    assert.equal(identity.stateSchema, 17);
-    assert.equal(identity.agentSchema, 19);
+    assert.equal(identity.version, TARGET_VERSION);
+    assert.equal(identity.gatewayClientVersion, TARGET_VERSION);
+    assert.equal(identity.gatewayProtocolVersion, TARGET_VERSION);
+    assert.equal(identity.stateSchema, OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA);
+    assert.equal(identity.agentSchema, OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA);
+    assert.equal(identity.npmPackageIntegrity, null);
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+});
+
+test("final certification calculates exact npm tarball integrity from supplied archives", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-integrity-"));
+  try {
+    const openClawRoot = path.join(fixtureRoot, "openclaw");
+    const clientRoot = path.join(fixtureRoot, "gateway-client");
+    const protocolRoot = path.join(fixtureRoot, "gateway-protocol");
+    const [openclawArchive, clientArchive, protocolArchive] = ["openclaw.tgz", "gateway-client.tgz", "gateway-protocol.tgz"].map((file) => path.join(fixtureRoot, file)) as [string, string, string];
+    await writeOpenClawFixture(openClawRoot);
+    await writePackageFixture(clientRoot, "@openclaw/gateway-client");
+    await writePackageFixture(protocolRoot, "@openclaw/gateway-protocol");
+    const archiveBytes = ["openclaw archive", "client archive", "protocol archive"].map((value) => Buffer.from(value));
+    await Promise.all([openclawArchive, clientArchive, protocolArchive].map((archive, index) => writeFile(archive, archiveBytes[index])));
+
+    const identity = await readPackageIdentity(openClawRoot, clientRoot, protocolRoot, openclawArchive, clientArchive, protocolArchive);
+    const expected = archiveBytes.map((bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`);
+    assert.deepEqual([
+      identity.npmPackageIntegrity,
+      identity.gatewayClientIntegrity,
+      identity.gatewayProtocolIntegrity
+    ], expected);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("final certification treats empty or non-boolean contract checks as incomplete", () => {
+  const base = {
+    provenance: {
+      target: {
+        version: TARGET_VERSION,
+        sourceCommit: OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+        stateSchema: OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
+        agentSchema: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
+        protocol: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL
+      }
+    }
+  };
+  assert.equal(assessOpenClawCertificationArtifact("contract-diff", { ...base, checks: {} }).status, "FAIL");
+  assert.equal(assessOpenClawCertificationArtifact("contract-diff", { ...base, checks: { exact: "true" } }).status, "FAIL");
 });
 
 test("final certification rejects missing or mismatched separate Gateway packages", async () => {
@@ -202,19 +266,19 @@ async function writeOpenClawFixture(root: string) {
   await mkdir(path.join(root, "dist"), { recursive: true });
   await writeFile(path.join(root, "package.json"), JSON.stringify({
     name: "openclaw",
-    version: "2026.9.4",
-    openclaw: { schemaVersions: { state: 17, agent: 19 } }
+    version: TARGET_VERSION,
+    openclaw: { schemaVersions: { state: OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA, agent: OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA } }
   }));
   await writeFile(path.join(root, "openclaw.mjs"), "export {};\n");
   await writeFile(path.join(root, "dist", "build-info.json"), JSON.stringify({
-    commit: "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
-    buildId: "2026.9.4-release-3a9d69db306c-2026-09-10T22-53-16.719Z"
+    commit: OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+    buildId: OPENCLAW_IDENTITY_CONTRACT_BUILD
   }));
 }
 
 async function writePackageFixture(root: string, name: string) {
   await mkdir(root, { recursive: true });
-  await writeFile(path.join(root, "package.json"), JSON.stringify({ name, version: "2026.9.4" }));
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name, version: TARGET_VERSION }));
 }
 
 function gitCommit(ref: string) {

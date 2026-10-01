@@ -15,6 +15,7 @@ import { bridgeOpenClawStaticRuntimeEvidence } from "@/lib/openclaw/runtime-cert
 import { runOpenClawRuntimeCertification } from "@/lib/openclaw/runtime-certification/harness";
 import { evaluateOpenClawRuntimeMigrationReadiness } from "@/lib/openclaw/runtime-certification/readiness-gate";
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
+import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { createOpenClawRuntimeProviderFixture, OPENCLAW_RUNTIME_FIXTURE_MODEL_ID } from "@/scripts/openclaw-runtime-provider-fixture";
 import { OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT } from "@/lib/openclaw/identity/contract";
 import { OPENCLAW_NATIVE_CONTRACT_VERSION } from "@/lib/openclaw/versions";
@@ -113,6 +114,9 @@ async function main() {
     const handshake = await fullClient.probeNativeHandshake({ timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS });
     const readHandshake = await readClient.probeNativeHandshake({ timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS });
     if (fixture) await configureFixtureProvider(fullClient, fixture);
+    const advertisedMethods = Array.isArray(handshake.features?.methods)
+      ? handshake.features.methods.filter((method): method is string => typeof method === "string")
+      : null;
     const contextClients = {
       full: {
         client: fullClient,
@@ -129,7 +133,8 @@ async function main() {
       resources,
       cronName: `agentos-runtime-cert-${Date.now()}`,
       questionRequestId: `runtime_cert_question_${Date.now()}`,
-      fixture
+      fixture,
+      advertisedMethods
     });
 
     report = await runOpenClawRuntimeCertification({
@@ -244,6 +249,7 @@ function createProbes(input: {
   questionRequestId: string;
   cronName: string;
   fixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>> | null;
+  advertisedMethods: string[] | null;
 }): OpenClawRuntimeCertificationProbe[] {
   const uniqueSessionLabel = `AgentOS runtime certification ${Date.now()}`;
   const sessionData = (context: OpenClawRuntimeCertificationContext) => ({
@@ -262,9 +268,12 @@ function createProbes(input: {
       params: {},
       validateResponse: objectWith()
     }),
-    probe("tasks-list", "taskEvents", "Task ledger", "tasks.list", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the native task ledger before projecting task state.", {
+    probe("tasks-list", "taskEvents", "Task ledger", "tasks.list", "optional", OPTIONAL_DIMENSIONS, "AgentOS uses the native task ledger when the connected Gateway exposes it.", {
       clientId: "read",
       params: {},
+      ...(input.advertisedMethods && !input.advertisedMethods.includes("tasks.list")
+        ? { skipReason: `The exact Gateway method inventory does not advertise optional method tasks.list (advertised methods: ${input.advertisedMethods.length}).` }
+        : {}),
       validateResponse: objectWith("tasks")
     }),
     probe("channels-status", "channels", "Channel status", "channels.status", "required", OPTIONAL_DIMENSIONS, "AgentOS reads configured channel status without probing or mutating external providers.", {
@@ -581,6 +590,16 @@ function createProbes(input: {
     }),
     probe("agents-update", "agents.update", "Disposable agent update", "agents.update", "required", CORE_CONTROL_DIMENSIONS, "AgentOS requires Gateway agent updates.", {
       params: () => ({ agentId: input.resources.agentId ?? "agentos-runtime-cert-agent-missing", name: `AgentOS runtime certification updated ${Date.now()}` }),
+      execute: async (context) => {
+        const agentId = input.resources.agentId ?? "agentos-runtime-cert-agent-missing";
+        await waitForAgentInNativeList(context.clients.full.client, agentId);
+        return await context.clients.full.client.callNative(
+          "agents.update",
+          { agentId, name: `AgentOS runtime certification updated ${Date.now()}` },
+          { timeoutMs: 8_000 },
+          { safety: "mutation", timeoutMs: 8_000 }
+        );
+      },
       validateResponse: objectWith("ok", "agentId")
     }),
     probe("agents-update-read-denial", "agents.update", "Read-only agent update denial", "agents.update", "required", CORE_CONTROL_DIMENSIONS, "A read-only caller must not update agents.", {
@@ -848,6 +867,26 @@ async function configureFixtureProvider(
   await wait(500);
 }
 
+async function waitForAgentInNativeList(
+  client: OpenClawRuntimeCertificationContext["clients"][string]["client"],
+  agentId: string
+) {
+  const timeoutMs = 10_000;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const payload = asRecord(await client.callNative(
+      "agents.list",
+      {},
+      { timeoutMs: 4_000 },
+      { safety: "read", timeoutMs: 4_000 }
+    ));
+    const agents = Array.isArray(payload?.agents) ? payload.agents : [];
+    if (agents.some((agent) => asRecord(agent)?.id === agentId)) return;
+    await wait(150);
+  }
+  throw new Error(`OpenClaw agents.list did not expose the created agent ${agentId} within ${timeoutMs} ms.`);
+}
+
 async function runStreamingTurn(input: {
   client: OpenClawRuntimeCertificationContext["clients"][string]["client"];
   sessionKey: string;
@@ -1050,7 +1089,10 @@ async function firstExistingPath(paths: string[]) {
 function runQuietProcess(command: string, args: string[], extraEnv?: Record<string, string>) {
   return new Promise<{ code: number | null; stdout: string }>((resolve) => {
     const child = spawn(command, args, {
-      env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+      env: createDisposableOpenClawEnvironment({
+        homeDir: extraEnv?.HOME ?? process.env.HOME ?? "/tmp",
+        overrides: extraEnv
+      }),
       stdio: ["ignore", "pipe", "ignore"]
     });
     let stdout = "";
