@@ -549,11 +549,93 @@ export async function reconcileNativeDoctorMutation(
 
   const generation = await waitForNativeReconnect(options.adapter ?? getOpenClawAdapter(), options.before.identity.connectionGeneration);
   if (generation === null) {
+    const adapter = options.adapter ?? getOpenClawAdapter();
+    const terminalRun = await readNativeUpdateRunAfterAttempt(adapter, options.before, options.commandOptions);
+    if (terminalRun?.status === "failed" || terminalRun?.status === "rolled-back") {
+      const state = terminalRun.status === "rolled-back" ? "was rolled back" : "failed";
+      return {
+        ...mutation,
+        outcome: "failed",
+        reconciliation: "inconclusive",
+        verification: unknownVerification("OpenClaw reported a terminal update failure, but AgentOS did not observe a fresh Gateway reconnect."),
+        message: describeNativeUpdateRunFailure(terminalRun, state)
+      };
+    }
+    if (terminalRun?.status === "skipped") {
+      return {
+        ...mutation,
+        outcome: "skipped",
+        reconciliation: "inconclusive",
+        verification: unknownVerification("OpenClaw skipped the native update and AgentOS did not observe a fresh Gateway reconnect."),
+        message: terminalRun.reason
+          ? `OpenClaw skipped the native update: ${terminalRun.reason}`
+          : "OpenClaw skipped the native update."
+      };
+    }
+    if (terminalRun?.status === "succeeded") {
+      return applyVerification(
+        mutation,
+        unknownVerification("OpenClaw reports that its update run completed, but AgentOS did not observe a fresh Gateway reconnect and cannot verify the installed runtime yet.")
+      );
+    }
     return applyVerification(mutation, unknownVerification("OpenClaw accepted the update, but AgentOS did not observe a fresh reconnect generation."));
   }
   const fresh = await getNativeDoctorSnapshot({ adapter: options.adapter, commandOptions: options.commandOptions, probe: true });
   const capabilityMatrix = await (options.getCapabilityMatrix ?? (() => getOpenClawCapabilityMatrix({ force: true })))().catch(() => null);
   return applyVerification(mutation, verifyFreshUpdateState(options.before, fresh, generation, capabilityMatrix));
+}
+
+async function readNativeUpdateRunAfterAttempt(
+  adapter: OpenClawAdapter,
+  before: NativeDoctorSnapshot,
+  commandOptions?: OpenClawCommandOptions
+): Promise<NativeUpdateRunProjection | null> {
+  if (!adapter.getNativeUpdateStatus || !before.update.updateAvailable || !normalizeVersion(before.update.latestVersion)) {
+    return null;
+  }
+
+  try {
+    const payload = await adapter.getNativeUpdateStatus({ timeoutMs: NATIVE_READ_TIMEOUT_MS, ...commandOptions });
+    const run = projectUpdateRun(payload.lastRun);
+    if (!run) return null;
+
+    const previousRunIds = new Set(
+      [before.update.activeRun?.runId, before.update.lastRun?.runId].filter((runId): runId is string => Boolean(runId))
+    );
+    if (previousRunIds.has(run.runId)) return null;
+
+    const expectedTarget = normalizeVersion(before.update.latestVersion);
+    const reportedTarget = normalizeVersion(run.targetVersion);
+    if (reportedTarget && reportedTarget !== expectedTarget) return null;
+
+    return run;
+  } catch {
+    return null;
+  }
+}
+
+function describeNativeUpdateRunFailure(run: NativeUpdateRunProjection, state: "failed" | "was rolled back") {
+  const failedStep = run.steps.find((step) => step.status === "failed");
+  const stage = failedStep ? ` during ${formatNativeUpdateStepName(failedStep.step)}` : "";
+  const reason = run.reason ? ` OpenClaw reported ${run.reason}.` : "";
+  const detail = failedStep?.detail ? ` ${failedStep.detail}` : "";
+  const target = run.targetVersion ? ` for v${normalizeVersion(run.targetVersion)}` : "";
+  return `OpenClaw's native update ${state}${target}${stage}.${reason}${detail} AgentOS did not observe a fresh Gateway reconnect, so runtime verification remains incomplete.`;
+}
+
+function formatNativeUpdateStepName(step: string) {
+  const normalized = step.replace(/[-_.]+/g, " ").trim().toLowerCase();
+  const knownSteps: Record<string, string> = {
+    requested: "update request",
+    staging: "package staging",
+    validating: "package validation",
+    repairing: "package repair",
+    activating: "package activation",
+    restarting: "Gateway restart",
+    verifying: "runtime verification",
+    finished: "update completion"
+  };
+  return knownSteps[normalized] ?? normalized.replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 async function reconcileRestartMutation(

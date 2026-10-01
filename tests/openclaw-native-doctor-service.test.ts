@@ -398,6 +398,91 @@ test("accepted update without a fresh Gateway reconnect remains unverified and i
   assert.equal(updateCalls, 1);
 });
 
+test("native update failure is reported before reconnect verification and is never replayed", async () => {
+  let updateCalls = 0;
+  let exposeFailedRun = false;
+  const adapter = createAdapter({
+    async getNativeUpdateStatus() {
+      return {
+        sentinel: null,
+        updateAvailable: { currentVersion: "2026.9.4", latestVersion: "2026.9.7" },
+        effectiveChannel: "stable" as const,
+        ...(exposeFailedRun ? {
+          lastRun: {
+            runId: "failed-update-run",
+            createdAtMs: 100,
+            updatedAtMs: 200,
+            finishedAtMs: 200,
+            trigger: "api" as const,
+            phase: "finished" as const,
+            status: "failed" as const,
+            reason: "global-install-failed",
+            target: { version: "2026.9.7" },
+            before: { version: "2026.9.4" },
+            after: { version: "2026.9.4" },
+            steps: [{ step: "validating", status: "failed", detail: "Package rollback launcher backup changed." }]
+          }
+        } : {})
+      };
+    },
+    async runNativeUpdate() {
+      updateCalls += 1;
+      exposeFailedRun = true;
+      return { ok: true, result: { status: "ok" }, restart: { status: "accepted" } };
+    },
+    async subscribeNativeRuntimeEvents() {
+      return { reconnectManagedByClient: false, close() {} };
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
+  const reconciled = await reconcileNativeDoctorMutation(mutation, { before, adapter });
+
+  assert.equal(reconciled.outcome, "failed");
+  assert.equal(reconciled.verification.status, "unknown");
+  assert.match(reconciled.message, /failed for v2026\.9\.7 during package validation/i);
+  assert.match(reconciled.message, /global-install-failed/i);
+  assert.match(reconciled.message, /rollback launcher backup changed/i);
+  assert.match(reconciled.verification.message, /did not observe a fresh Gateway reconnect/i);
+  assert.equal(updateCalls, 1);
+});
+
+test("a previously recorded native failure is not attributed to a later update request", async () => {
+  const adapter = createAdapter({
+    async getNativeUpdateStatus() {
+      return {
+        sentinel: null,
+        updateAvailable: { currentVersion: "2026.9.4", latestVersion: "2026.9.7" },
+        effectiveChannel: "stable" as const,
+        lastRun: {
+          runId: "previous-failed-run",
+          createdAtMs: 100,
+          updatedAtMs: 200,
+          finishedAtMs: 200,
+          trigger: "api" as const,
+          phase: "finished" as const,
+          status: "failed" as const,
+          reason: "previous-attempt-failed",
+          target: { version: "2026.9.7" }
+        }
+      };
+    },
+    async runNativeUpdate() {
+      return { ok: true, result: { status: "ok" }, restart: { status: "accepted" } };
+    },
+    async subscribeNativeRuntimeEvents() {
+      return { reconnectManagedByClient: false, close() {} };
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
+  const reconciled = await reconcileNativeDoctorMutation(mutation, { before, adapter });
+
+  assert.equal(reconciled.outcome, "accepted");
+  assert.equal(reconciled.verification.status, "unknown");
+  assert.match(reconciled.message, /did not observe a fresh reconnect generation/i);
+});
+
 test("ambiguous update transport reconnects and verifies native truth without retrying update.run", async () => {
   let generation = 1;
   let installedTarget = false;

@@ -84,6 +84,11 @@ type CommunityResponse = {
 };
 
 type UpdateActionState = "idle" | "running" | "success" | "error" | "unknown";
+type NativeUpdateAttempt = {
+  startedAtMs: number;
+  targetVersion: string | null;
+  previousRunIds: string[];
+};
 
 export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProps) {
   const [native, setNative] = useState<NativeDoctorSnapshot | null>(null);
@@ -98,7 +103,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [awaitingNativeVerification, setAwaitingNativeVerification] = useState(false);
-  const [updateStartedAtMs, setUpdateStartedAtMs] = useState<number | null>(null);
+  const [updateAttempt, setUpdateAttempt] = useState<NativeUpdateAttempt | null>(null);
 
   const loadNative = useCallback(async (probe = false) => {
     setNativeError(null);
@@ -173,6 +178,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const availableVersion = normalizeVersion(
     productUpdate?.availableVersion || policy?.nativeAvailableVersion || native?.update.latestVersion
   );
+  const retryingFailedTarget = isFailedUpdateRunForTarget(native?.update.lastRun, availableVersion);
   const channel = formatNativeChannel(
     policy?.effectiveChannel || native?.update.effectiveChannel || native?.status.updateChannel || snapshot.diagnostics.updateChannel
   );
@@ -202,12 +208,12 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
 
     setConfirmUpdate(false);
     setActionState("running");
-    setActionMessage("Updating OpenClaw. The runtime may restart and reconnect.");
-    setAwaitingNativeVerification(false);
-    setUpdateStartedAtMs(Date.now());
-    const toastId = toast.loading("Updating OpenClaw...", {
-      description: "OpenClaw's native update lifecycle is running.",
-      duration: Infinity
+    setActionMessage("Request sent to OpenClaw. AgentOS is reading the native update status for progress and completion.");
+    setAwaitingNativeVerification(true);
+    setUpdateAttempt({
+      startedAtMs: Date.now(),
+      targetVersion: confirmation.availableVersion,
+      previousRunIds: [native?.update.activeRun?.runId, native?.update.lastRun?.runId].filter((runId): runId is string => Boolean(runId))
     });
 
     try {
@@ -242,12 +248,12 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
         setAwaitingNativeVerification(false);
         setActionState("error");
         setActionMessage(resultMessage);
-        toast.error("OpenClaw update needs attention", { id: toastId, description: resultMessage });
+        toast.error("OpenClaw update failed", { description: resultMessage });
       } else if (skipped) {
         setAwaitingNativeVerification(false);
         setActionState("unknown");
         setActionMessage(resultMessage);
-        toast.warning("OpenClaw skipped the update", { id: toastId, description: resultMessage });
+        toast.warning("OpenClaw skipped the update", { description: resultMessage });
       } else if (verificationUnknown || deferred) {
         setAwaitingNativeVerification(true);
         setActionState("unknown");
@@ -258,12 +264,11 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               ? resultMessage
               : "OpenClaw accepted the update request, but AgentOS has not verified the final runtime state yet."
         );
-        toast.warning("OpenClaw update verification pending", { id: toastId, description: resultMessage });
       } else {
         setAwaitingNativeVerification(false);
         setActionState("success");
         setActionMessage(result?.verification?.status === "verified" ? "OpenClaw updated and verified." : resultMessage);
-        toast.success("OpenClaw update completed", { id: toastId, description: resultMessage });
+        toast.success("OpenClaw update completed", { description: resultMessage });
       }
 
       await Promise.all([loadNative(true), refresh()]);
@@ -272,7 +277,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       const message = error instanceof Error ? error.message : "OpenClaw update failed.";
       setActionState("error");
       setActionMessage(message);
-      toast.error("OpenClaw update needs attention", { id: toastId, description: message });
+      toast.error("OpenClaw update needs attention", { description: message });
     }
   };
 
@@ -337,14 +342,25 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     }
   };
 
-  const durableUpdateRunning = native?.update.activeRun?.status === "running";
-  const shouldPollNativeUpdate = awaitingNativeVerification || durableUpdateRunning;
+  const activeNativeUpdateRun = native?.update.activeRun?.status === "running"
+    ? native.update.activeRun
+    : native?.update.lastRun?.status === "running"
+      ? native.update.lastRun
+      : null;
+  const durableUpdateRunning = activeNativeUpdateRun !== null;
+  const shouldPollNativeUpdate = awaitingNativeVerification || durableUpdateRunning || actionState === "running";
 
   useEffect(() => {
     if (!shouldPollNativeUpdate) return;
 
     const interval = window.setInterval(() => {
-      if (awaitingNativeVerification && updateStartedAtMs !== null && Date.now() - updateStartedAtMs >= 120_000) {
+      if (
+        awaitingNativeVerification &&
+        actionState !== "running" &&
+        !durableUpdateRunning &&
+        updateAttempt !== null &&
+        Date.now() - updateAttempt.startedAtMs >= 120_000
+      ) {
         setAwaitingNativeVerification(false);
         setActionState("unknown");
         setActionMessage("AgentOS could not establish the final OpenClaw runtime state yet. Refresh native status and review it before treating the update as complete.");
@@ -355,28 +371,33 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [awaitingNativeVerification, loadNative, refresh, shouldPollNativeUpdate, updateStartedAtMs]);
+  }, [actionState, awaitingNativeVerification, durableUpdateRunning, loadNative, refresh, shouldPollNativeUpdate, updateAttempt]);
 
   useEffect(() => {
-    if (!awaitingNativeVerification || durableUpdateRunning || !updateStartedAtMs) return;
+    if (!awaitingNativeVerification || durableUpdateRunning || !updateAttempt) return;
 
     const run = native?.update.lastRun;
     if (!run) return;
 
-    const terminalAtMs = run.finishedAtMs ?? run.updatedAtMs;
-    if (terminalAtMs < updateStartedAtMs) return;
+    if (updateAttempt.previousRunIds.includes(run.runId) || run.status === "running") return;
+    if (run.targetVersion && updateAttempt.targetVersion && normalizeVersion(run.targetVersion) !== normalizeVersion(updateAttempt.targetVersion)) {
+      setAwaitingNativeVerification(false);
+      setActionState("unknown");
+      setActionMessage("OpenClaw reported a completed update run for a different target. Refresh native status and review it before continuing.");
+      return;
+    }
 
     setAwaitingNativeVerification(false);
 
     if (run.status === "failed") {
       setActionState("error");
-      setActionMessage(run.reason ? `OpenClaw update failed: ${run.reason}` : "OpenClaw update failed. The installed runtime was not changed.");
+      setActionMessage(describeUpdateRunFailure(run, updateAttempt.targetVersion, "failed"));
       return;
     }
 
     if (run.status === "rolled-back") {
       setActionState("error");
-      setActionMessage(run.reason ? `OpenClaw rolled back the update: ${run.reason}` : "OpenClaw rolled back the update. The previous runtime remains installed.");
+      setActionMessage(describeUpdateRunFailure(run, updateAttempt.targetVersion, "was rolled back"));
       return;
     }
 
@@ -399,22 +420,16 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     // success based only on the update ledger.
     setActionState("unknown");
     setActionMessage("OpenClaw reports a terminal update run, but AgentOS has not verified the final runtime state. Refresh and review the Gateway status before treating the update as complete.");
-  }, [awaitingNativeVerification, durableUpdateRunning, native?.update.lastRun, updateStartedAtMs]);
+  }, [awaitingNativeVerification, durableUpdateRunning, native?.update.lastRun, updateAttempt]);
 
-  const showPikoLoader = isRefreshing || actionState === "running" || awaitingNativeVerification || durableUpdateRunning;
+  const showPikoLoader = isRefreshing;
 
   return (
     <>
       <PikoLoader
         open={showPikoLoader}
-        title={actionState === "running" || awaitingNativeVerification || durableUpdateRunning ? "Updating OpenClaw" : "Checking OpenClaw updates"}
-        description={
-          actionState === "running" || awaitingNativeVerification || durableUpdateRunning
-            ? durableUpdateRunning
-              ? "OpenClaw is applying its native update run. AgentOS is monitoring the Gateway for the terminal result."
-              : "OpenClaw may restart. AgentOS is waiting for the Gateway to reconnect and report the final runtime state."
-            : "Reading the authoritative native update status."
-        }
+        title="Checking OpenClaw updates"
+        description="Reading the authoritative native update status."
       />
       <PageHeader
         title="OpenClaw Updates"
@@ -522,9 +537,13 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       <Dialog open={confirmUpdate} onOpenChange={setConfirmUpdate}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update OpenClaw?</DialogTitle>
+            <DialogTitle>
+              {retryingFailedTarget ? "Retry OpenClaw update?" : "Update OpenClaw?"}
+            </DialogTitle>
             <DialogDescription>
-              OpenClaw will run its native update lifecycle. The Gateway may disconnect briefly, then AgentOS will reconnect and verify the runtime.
+              {retryingFailedTarget
+                ? "The previous native update attempt failed. Review its failure details before retrying. OpenClaw will run a new native update attempt, and AgentOS will monitor the result."
+                : "OpenClaw will run its native update lifecycle. The Gateway may disconnect briefly, then AgentOS will reconnect and verify the runtime."}
             </DialogDescription>
           </DialogHeader>
           {policy?.requiresInformedConfirmation ? (
@@ -539,7 +558,9 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
           </div>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setConfirmUpdate(false)}>Cancel</Button>
-            <Button type="button" onClick={() => void runNativeUpdate()}>Update OpenClaw</Button>
+            <Button type="button" onClick={() => void runNativeUpdate()}>
+              {retryingFailedTarget ? "Retry update" : "Update OpenClaw"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -594,10 +615,22 @@ function PrimaryUpdateCard({
   isOpeningControlUi: boolean;
   onRefresh: () => void;
 }) {
-  const copy = resolvePrimaryCopy({ state, currentVersion, availableVersion, agentOsDecision, policyReason, nativeError });
+  const activeNativeUpdateRun = native?.update.activeRun?.status === "running"
+    ? native.update.activeRun
+    : native?.update.lastRun?.status === "running"
+      ? native.update.lastRun
+      : null;
+  const failedRun = isFailedUpdateRunForTarget(native?.update.lastRun, availableVersion) ? native?.update.lastRun ?? null : null;
+  const copy = actionState === "error" && failedRun
+    ? {
+        statusLabel: "Update failed",
+        title: `OpenClaw could not update to ${availableVersion ? `v${availableVersion}` : "the available release"}`,
+        description: "OpenClaw stopped its native update before the new runtime was verified. Review the reported failure and recovery state below."
+      }
+    : resolvePrimaryCopy({ state, currentVersion, availableVersion, agentOsDecision, policyReason, nativeError });
   const tone = primaryTone(state, actionState);
-  const hasFailedNativeRun = native?.update.lastRun?.status === "failed" || native?.update.lastRun?.status === "rolled-back";
-  const showNativeReviewAction = hasFailedNativeRun && !actionMessage;
+  const hasFailedNativeRun = failedRun !== null;
+  const showNativeReviewAction = (native?.update.lastRun?.status === "failed" || native?.update.lastRun?.status === "rolled-back") && !actionMessage;
 
   return (
     <SectionCard className="overflow-hidden">
@@ -625,9 +658,10 @@ function PrimaryUpdateCard({
           </div>
         ) : null}
 
-        {native?.update.activeRun ? <ActiveUpdateRun run={native.update.activeRun} /> : null}
-        {!native?.update.activeRun && native?.update.lastRun ? (
+        {activeNativeUpdateRun ? <ActiveUpdateRun run={activeNativeUpdateRun} /> : null}
+        {!activeNativeUpdateRun && native?.update.lastRun ? (
           <LastUpdateRun
+            key={`${native.update.lastRun.runId}:${native.update.lastRun.status}`}
             run={native.update.lastRun}
             onOpenControlUi={onOpenControlUi}
             isOpeningControlUi={isOpeningControlUi}
@@ -716,7 +750,7 @@ function PrimaryUpdateCard({
               className="min-h-11 sm:min-h-9"
             >
               {actionState === "running" ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Wrench className="mr-1.5 h-4 w-4" />}
-              Update OpenClaw
+              {hasFailedNativeRun ? "Retry OpenClaw update" : "Update OpenClaw"}
             </Button>
           ) : null}
           {updateActionBlockReason && (state === "available-certified" || state === "available-uncertified") ? (
@@ -801,15 +835,22 @@ function CommunityDisclosure({
 
 function ActiveUpdateRun({ run }: { run: NonNullable<NativeDoctorSnapshot["update"]["activeRun"]> }) {
   const target = run.targetVersion ? ` · v${run.targetVersion}` : "";
+  const completedSteps = run.steps.filter((step) => step.status === "completed").length;
+  const currentStep = run.steps.find((step) => step.status === "in_progress");
   return (
-    <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3" role="status">
+    <div className="mt-4 rounded-lg border border-[hsl(var(--status-info)/0.25)] bg-[hsl(var(--status-info)/0.06)] p-3" role="status" aria-live="polite">
       <div className="flex items-start gap-2">
-        <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[hsl(var(--status-warning-foreground))]" />
+        <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[hsl(var(--status-info-foreground))]" />
         <div className="min-w-0">
           <p className="font-medium text-foreground">OpenClaw update in progress{target}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {formatNativeUpdateRunPhase(run.phase)} Gateway state is owned by OpenClaw. AgentOS will re-read it after reconnect.
-          </p>
+          <p className="mt-1 text-sm leading-5 text-foreground">{formatNativeUpdateRunPhase(run.phase)}</p>
+          {run.steps.length > 0 ? (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {completedSteps} native {completedSteps === 1 ? "step" : "steps"} complete
+              {currentStep ? ` · ${formatUpdateStepName(currentStep.step)} in progress` : ""}
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Progress is read from OpenClaw. AgentOS will verify the runtime after it reconnects.</p>
         </div>
       </div>
     </div>
@@ -825,24 +866,41 @@ function LastUpdateRun({
   onOpenControlUi: () => void;
   isOpeningControlUi: boolean;
 }) {
-  const outcome = run.status === "succeeded" ? "Native run succeeded" : run.status === "failed" || run.status === "rolled-back" ? "Needs attention" : "Skipped";
+  const outcome = run.status === "succeeded" ? "Native run succeeded" : run.status === "failed" ? "Update failed" : run.status === "rolled-back" ? "Update rolled back" : "Skipped";
   const needsNativeReview = run.status === "failed" || run.status === "rolled-back";
+  const failedStep = run.steps.find((step) => step.status === "failed");
+  const [isOpen, setIsOpen] = useState(needsNativeReview);
   return (
-    <details className="group mt-4 rounded-lg border border-border bg-muted/20">
+    <details
+      className={cn("group mt-4 rounded-lg border bg-muted/20", needsNativeReview ? "border-[hsl(var(--status-danger)/0.35)] bg-[hsl(var(--status-danger)/0.04)]" : "border-border")}
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <span>
           <span className="font-medium text-foreground">Last update</span>
-          <span className="ml-2 text-xs text-muted-foreground">{outcome} · {formatTimestampMs(run.finishedAtMs ?? run.updatedAtMs)}</span>
+          <span className={cn("ml-2 text-xs", needsNativeReview ? "text-[hsl(var(--status-danger-foreground))]" : "text-muted-foreground")}>
+            {outcome} · {formatTimestampMs(run.finishedAtMs ?? run.updatedAtMs)}
+          </span>
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
       <div className="border-t border-border px-3 py-3 text-xs leading-5 text-muted-foreground">
         <div className="grid gap-2 sm:grid-cols-3">
           <StatusFact label="From" value={run.beforeVersion ? `v${run.beforeVersion}` : "Unknown"} />
-          <StatusFact label="To" value={run.afterVersion || run.targetVersion ? `v${run.afterVersion || run.targetVersion}` : "Unknown"} />
+          <StatusFact label="Target" value={run.targetVersion ? `v${run.targetVersion}` : "Not reported"} />
+          <StatusFact label="Version after run" value={run.afterVersion ? `v${run.afterVersion}` : "Not reported"} />
           <StatusFact label="Native version check" value={run.verification?.versionMatch === true ? "Match reported" : run.verification?.versionMatch === false ? "Mismatch" : "Not reported"} />
         </div>
-        {run.reason ? <p className="mt-3">{run.reason}</p> : null}
+        {needsNativeReview ? (
+          <div className="mt-3 rounded-md border border-[hsl(var(--status-danger)/0.25)] bg-[hsl(var(--status-danger)/0.06)] p-3" role="status">
+            <p className="font-medium text-foreground">
+              {failedStep ? `Failed during ${formatUpdateStepName(failedStep.step)}` : "OpenClaw reported a failed update"}
+              {run.reason ? ` · ${run.reason}` : ""}
+            </p>
+            {failedStep?.detail ? <p className="mt-1 break-words">{failedStep.detail}</p> : null}
+          </div>
+        ) : run.reason ? <p className="mt-3">{run.reason}</p> : null}
         {needsNativeReview ? (
           <Button
             type="button"
@@ -864,19 +922,57 @@ function LastUpdateRun({
 function formatNativeUpdateRunPhase(phase: NonNullable<NativeDoctorSnapshot["update"]["activeRun"]>["phase"]) {
   switch (phase) {
     case "requested":
-      return "Preparing the update…";
+      return "OpenClaw is preparing the update…";
     case "staging":
+      return "OpenClaw is staging the update…";
     case "validating":
+      return "OpenClaw is validating the staged package…";
     case "repairing":
-      return "Updating OpenClaw…";
+      return "OpenClaw is repairing the package installation…";
     case "activating":
+      return "OpenClaw is activating the new version…";
     case "restarting":
-      return "Restarting the Gateway…";
+      return "OpenClaw is restarting the Gateway…";
     case "verifying":
-      return "Verifying the runtime…";
+      return "OpenClaw is verifying the new runtime…";
     case "finished":
-      return "Finishing the update…";
+      return "OpenClaw is finishing the update…";
   }
+}
+
+function formatUpdateStepName(step: string) {
+  const normalized = step.replace(/[-_.]+/g, " ").trim().toLowerCase();
+  const knownSteps: Record<string, string> = {
+    requested: "update request",
+    staging: "package staging",
+    validating: "package validation",
+    repairing: "package repair",
+    activating: "package activation",
+    restarting: "Gateway restart",
+    verifying: "runtime verification",
+    finished: "update completion"
+  };
+  return knownSteps[normalized] ?? normalized.replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function describeUpdateRunFailure(
+  run: NonNullable<NativeDoctorSnapshot["update"]["lastRun"]>,
+  targetVersion: string | null,
+  state: "failed" | "was rolled back"
+) {
+  const failedStep = run.steps.find((step) => step.status === "failed");
+  const stage = failedStep ? ` during ${formatUpdateStepName(failedStep.step)}` : "";
+  const target = targetVersion ? ` for v${normalizeVersion(targetVersion)}` : "";
+  const reason = run.reason ? ` OpenClaw reported ${run.reason}.` : "";
+  return `OpenClaw's native update ${state}${target}${stage}.${reason} AgentOS has not observed a fresh Gateway reconnect, so post-update runtime verification is incomplete.`;
+}
+
+function isFailedUpdateRunForTarget(
+  run: NativeDoctorSnapshot["update"]["lastRun"] | undefined,
+  targetVersion: string | null
+) {
+  if (!run || (run.status !== "failed" && run.status !== "rolled-back")) return false;
+  return !run.targetVersion || !targetVersion || normalizeVersion(run.targetVersion) === normalizeVersion(targetVersion);
 }
 
 function StatusLine({ label, value }: { label: string; value: string }) {

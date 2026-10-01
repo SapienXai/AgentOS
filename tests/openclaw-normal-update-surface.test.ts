@@ -17,14 +17,21 @@ test("canonical Updates page reads native status and runs native update.run", ()
   assert.doesNotMatch(source, /--tag/);
   assert.match(source, /Community release intelligence is advisory/);
   assert.match(source, /Community confidence never decides whether OpenClaw is up to date or whether an update runs/);
-  assert.match(source, /const shouldPollNativeUpdate = awaitingNativeVerification \|\| durableUpdateRunning/);
+  assert.match(source, /const shouldPollNativeUpdate = awaitingNativeVerification \|\| durableUpdateRunning \|\| actionState === "running"/);
+  assert.match(source, /const showPikoLoader = isRefreshing/);
+  assert.match(source, /run\.steps\.find\(\(step\) => step\.status === "in_progress"\)/);
   assert.match(source, /setInterval\(\(\) => \{/);
   assert.match(source, /open=\{showPikoLoader\}/);
-  assert.match(source, /OpenClaw update failed: \$\{run\.reason\}/);
+  assert.match(source, /previousRunIds\.includes\(run\.runId\)/);
+  assert.match(source, /OpenClaw's native update \$\{state\}/);
+  assert.doesNotMatch(source, /OpenClaw update verification pending/);
+  assert.match(source, /Version after run/);
+  assert.match(source, /Failed during \$\{formatUpdateStepName\(failedStep\.step\)\}/);
+  assert.match(source, /Retry OpenClaw update/);
   assert.match(source, /fetch\("\/api\/openclaw\/dashboard"/);
   assert.match(source, /Open OpenClaw Control UI/);
   assert.match(source, /needsNativeReview = run\.status === "failed" \|\| run\.status === "rolled-back"/);
-  assert.match(source, /showNativeReviewAction = hasFailedNativeRun && !actionMessage/);
+  assert.match(source, /showNativeReviewAction = .*&& !actionMessage/);
 });
 
 test("native update.run consumes a server-issued confirmation challenge after fresh policy checks", () => {
