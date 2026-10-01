@@ -846,13 +846,31 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
 
 const OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS = ["users.list"] as const;
 
-/** Additive Gateway methods introduced by the certified OpenClaw 2026.9.4 contract. */
-export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = [
+/** Gateway methods added by the OpenClaw 2026.9.4 contract. */
+export const OPENCLAW_2026_9_4_ADDITIONAL_GATEWAY_METHODS = [
   "tasks.history",
   "environments.prepare",
   "plugins.catalog.browse",
   "plugins.catalog.categories",
   "plugins.catalog.get"
+] as const;
+
+/** 2026.9.4 methods still present in the current 2026.9.7 native contract. */
+export const OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS = [
+  "environments.prepare",
+  "plugins.catalog.browse",
+  "plugins.catalog.categories",
+  "plugins.catalog.get"
+] as const;
+
+/** Optional methods removed by OpenClaw 2026.9.7. */
+export const OPENCLAW_2026_9_7_REMOVED_OPTIONAL_GATEWAY_METHODS = [
+  "tasks.cancel",
+  "tasks.dismiss",
+  "tasks.get",
+  "tasks.history",
+  "tasks.list",
+  "tasks.retry"
 ] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [

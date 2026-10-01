@@ -59,6 +59,18 @@ test("capability discovery is authoritative for newer runtimes while version def
     installedVersion: "2026.9.7",
     source: "gateway-discovery"
   });
+  const currentDefault = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: [],
+    advertisedEvents: [],
+    installedVersion: "2026.9.7",
+    source: "unavailable"
+  });
+  const currentHandshake = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: ["sessions.list"],
+    advertisedEvents: [],
+    installedVersion: "2026.9.7",
+    source: "gateway-advertised"
+  });
   const newerHandshake = resolveOpenClawCompatibilityMethods({
     advertisedMethods: ["sessions.list", "tasks.list"],
     advertisedEvents: [],
@@ -78,6 +90,13 @@ test("capability discovery is authoritative for newer runtimes while version def
   assert.equal(testedDefault.source, "version-default");
   assert.equal(testedHandshake.effectiveMethods.includes("tasks.history"), true);
   assert.equal(testedDiscovery.effectiveMethods.includes("tasks.history"), false);
+  assert.equal(currentDefault.source, "version-default");
+  assert.equal(currentDefault.knownByContractMethods.includes("tasks.history"), false);
+  assert.equal(currentDefault.effectiveMethods.some((method) => method.startsWith("tasks.")), false);
+  assert.equal(currentDefault.knownByContractMethods.includes("plugins.catalog.get"), true);
+  assert.equal(currentHandshake.effectiveMethods.includes("tasks.history"), false);
+  assert.equal(currentHandshake.effectiveMethods.includes("tasks.list"), false);
+  assert.equal(currentHandshake.effectiveMethods.includes("plugins.catalog.get"), true);
   assert.equal(newerInventory.knownByContractMethods.includes("tasks.history"), false);
   assert.equal(newerInventory.effectiveMethods.includes("tasks.history"), false);
   assert.deepEqual(newerInventory.effectiveMethods, ["sessions.list", "tasks.list"]);

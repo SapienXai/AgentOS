@@ -1,6 +1,8 @@
 import {
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
   OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+  OPENCLAW_2026_9_4_ADDITIONAL_GATEWAY_METHODS,
+  OPENCLAW_2026_9_7_REMOVED_OPTIONAL_GATEWAY_METHODS,
   OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS
 } from "@/lib/openclaw/client/gateway-compatibility";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -21,6 +23,9 @@ type CapabilityDefinition = {
   methods: string[];
   events?: string[];
 };
+
+const OPENCLAW_2026_9_4_CONTRACT_VERSION = "2026.9.4";
+const OPENCLAW_2026_9_7_CONTRACT_VERSION = "2026.9.7";
 
 const capabilityDefinitions: CapabilityDefinition[] = [
   {
@@ -308,12 +313,9 @@ export function resolveOpenClawCompatibilityMethods(input: {
 }) {
   const advertisedMethods = uniqueSorted(input.advertisedMethods);
   const advertisedEvents = uniqueSorted(input.advertisedEvents);
+  const versionContractMethods = getVersionContractMethods(input.installedVersion);
   const knownByContractMethods: string[] = isWithinKnownContractRange(input.installedVersion)
-    ? uniqueSorted([
-      ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
-      ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
-      ...(isAtLeastNativeContract(input.installedVersion) ? OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS : [])
-    ])
+    ? versionContractMethods
     : [];
   const source = input.source === "unavailable" ? "gateway-advertised" as const : input.source;
 
@@ -345,9 +347,7 @@ export function resolveOpenClawCompatibilityMethods(input: {
       advertisedMethods,
       advertisedEvents,
       effectiveMethods: uniqueSorted([
-        ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
-        ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
-        ...(isAtLeastNativeContract(input.installedVersion) ? OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS : [])
+        ...versionContractMethods
       ]),
       effectiveEvents: [],
       knownByContractMethods,
@@ -526,9 +526,30 @@ function toCapabilitySource(source: OpenClawCompatibilityMethodSource): OpenClaw
   }
 }
 
-function isAtLeastNativeContract(version: string | null) {
+function getVersionContractMethods(version: string | null) {
   const normalized = version?.trim().replace(/^v/i, "");
-  return Boolean(normalized && compareVersionStrings(normalized, OPENCLAW_NATIVE_CONTRACT_VERSION) >= 0);
+  if (!normalized || !isWithinKnownContractRange(normalized)) {
+    return [];
+  }
+
+  const methods = new Set([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
+    ...(compareVersionStrings(normalized, OPENCLAW_2026_9_4_CONTRACT_VERSION) >= 0
+      ? OPENCLAW_2026_9_4_ADDITIONAL_GATEWAY_METHODS
+      : [])
+  ]);
+
+  if (compareVersionStrings(normalized, OPENCLAW_2026_9_7_CONTRACT_VERSION) >= 0) {
+    for (const method of OPENCLAW_2026_9_7_REMOVED_OPTIONAL_GATEWAY_METHODS) {
+      methods.delete(method);
+    }
+    for (const method of OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS) {
+      methods.add(method);
+    }
+  }
+
+  return uniqueSorted([...methods]);
 }
 
 function isWithinKnownContractRange(version: string | null) {
