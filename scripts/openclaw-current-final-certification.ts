@@ -75,7 +75,8 @@ const REQUIRED_ARTIFACTS = [
   ["memory", `docs/evidence/openclaw-${TARGET_VERSION}-native-memory.json`],
   ["doctor", `docs/evidence/openclaw-${TARGET_VERSION}-doctor-update-recovery.json`],
   ["doctor-hardening", `docs/evidence/openclaw-${TARGET_VERSION}-doctor-update-recovery-hardening.json`],
-  ["human-control", `docs/evidence/openclaw-${TARGET_VERSION}-human-control-inbox.json`]
+  ["human-control", `docs/evidence/openclaw-${TARGET_VERSION}-human-control-inbox.json`],
+  ["native-update", `docs/evidence/openclaw-${TARGET_VERSION}-native-update-lifecycle.json`]
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -563,6 +564,22 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
     if (Object.values(requests).some((entry) => asRecord(entry).status !== "passed") || denial.status !== "denied" || asRecord(artifact.target).protocol !== TARGET_PROTOCOL) {
       failures.push("official transport probes or expected authorization denial failed");
     }
+  } else if (name === "native-update") {
+    const target = asRecord(artifact.target);
+    const update = asRecord(artifact.update);
+    const nativeRun = asRecord(update.nativeCliRun);
+    const runtime = asRecord(artifact.runtime);
+    const restart = asRecord(update.restart);
+    if (artifact.artifactType !== `openclaw-${TARGET_VERSION}-native-update-lifecycle-certification` || target.version !== TARGET_VERSION || target.sourceCommit !== TARGET_COMMIT || target.buildId !== TARGET_BUILD || target.gatewayProtocol !== TARGET_PROTOCOL || target.stateSchema !== TARGET_STATE_SCHEMA || target.agentSchema !== TARGET_AGENT_SCHEMA) {
+      failures.push("native update evidence does not identify the exact target package contract");
+    }
+    if (update.mutationOwner !== "OpenClaw native updater" || update.agentOsInvokedUpdateMutation !== false || nativeRun.status !== "succeeded" || nativeRun.target !== TARGET_VERSION || nativeRun.after !== TARGET_VERSION || nativeRun.recoveryVersion !== TARGET_VERSION) {
+      failures.push("native update evidence does not establish a successful OpenClaw-owned update and recovery record");
+    }
+    if (runtime.health !== "PASS" || runtime.installedVersion !== TARGET_VERSION || runtime.updateStatus !== "current" || runtime.activeUpdateRun !== false || runtime.configuration !== "valid" || restart.gatewayFreshlyReconnected !== true) {
+      failures.push("native update post-restart runtime verification is incomplete");
+    }
+    if (!hasPassingBooleanChecks(artifact.checks)) failures.push("native update checks are empty or contain a failed check");
   } else if (artifact.success !== true && !(typeof artifact.gate === "string" && artifact.gate.endsWith("PASS")) && artifact.result !== "PASS") {
     failures.push("artifact success/gate/result is not PASS");
   }
