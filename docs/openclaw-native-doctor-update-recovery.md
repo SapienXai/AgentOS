@@ -1,10 +1,13 @@
 # OpenClaw Native Doctor, Update, and Recovery
 
 AgentOS presents operational OpenClaw state without becoming a second runtime or
-repair engine. OpenClaw 2026.9.4 remains authoritative for health, configuration
+repair engine. OpenClaw remains authoritative for health, configuration
 application, updates, restart coordination, suspension, authorization, and
-reconnect behavior. AgentOS normalizes those native facts for the existing
-Settings, Diagnostics, Gateway, and Updates surfaces.
+reconnect behavior. The exact 2026.9.4 contract is the latest release this
+AgentOS build has fully certified; the runtime updater can expose an unverified
+newer stable release when current native facts and safety policy allow it.
+AgentOS normalizes native facts for the existing Settings, Diagnostics,
+Gateway, and Updates surfaces.
 
 ## Native contract
 
@@ -106,16 +109,71 @@ Updates page
   → fresh native health, status, config, and update verification
 ```
 
-The page displays the installed version, the effective native channel, native
-availability, and the AgentOS certification policy separately. The normal
-decision is calculated from the exact native target and exact manifest entry;
-version ordering is never used as a substitute for certification. A certified
-native target exposes one `Update & restart` action. An uncertified target is
-shown as available but remains behind advanced compatibility tools. The server
-independently repeats this decision before `update.run`, so hiding a button in
-the UI is not the security boundary. A successful RPC is not presented as a
-completed update until the post-reconnect native verification succeeds;
-supervisor handoff, skipped, failed, and unknown results remain distinct.
+The page displays the installed version, effective native channel, native
+availability, and AgentOS compatibility confidence separately. Certification
+means AgentOS tested that exact release; absence from the manifest means not yet
+verified. For an unverified exact stable Gateway target, normal update
+eligibility depends on native authorization, stable-channel/runtime evidence,
+healthy preflight, no explicit compatibility blocker or unmet AgentOS minimum,
+and informed confirmation. The normal **Update OpenClaw** action is available
+when those facts pass. The server independently recomputes them immediately
+before `update.run`; hiding a button in the UI is not the security boundary.
+A successful RPC is not presented as a completed update until the
+post-reconnect native verification succeeds; supervisor handoff, skipped,
+failed, and unknown results remain distinct.
+
+`OPENCLAW_RECOMMENDED_VERSION` is the newest release tested and recommended by
+AgentOS, not the maximum version allowed to run. A newer runtime remains healthy
+when required capabilities are present. Missing optional capabilities affect
+their dependent feature; missing required capabilities identify the affected
+operation rather than making every surface globally degraded.
+
+## Cumulative 2026.9.4 to 2026.9.7 compatibility review
+
+The 2026.9.5 release added safer retained-history and repeated-repair handling,
+improved Doctor behavior during Gateway startup, and fixed managed-service
+environment refresh during an upgrade from 2026.9.4. The Gateway descriptor
+comparison found additive methods and no removed AgentOS-required method or
+scope change in this step. AgentOS keeps OpenClaw's update, restart, and repair
+flows authoritative and verifies the resulting runtime after reconnect.
+
+The 2026.9.6 release completed managed Gateway upgrades across Node installation
+path changes and improved restart recovery. Its contract comparison removed
+`sessions.compaction.branch`, `sessions.compaction.list`, and
+`sessions.compaction.restore`, and narrowed `sessions.github.publish` from
+`operator.write` to `operator.sessions.write`. AgentOS does not call the
+removed compaction methods; session GitHub capability is discovered from the
+live Gateway and remains optional. Native scope evidence remains authoritative.
+
+The 2026.9.7 release strengthens package-update recovery, including preserving
+the state database across migration and restoring it on rollback. Its contract
+comparison removes the optional `tasks.cancel`, `tasks.dismiss`, `tasks.get`,
+`tasks.history`, `tasks.list`, and `tasks.retry` methods. AgentOS therefore
+keeps session inventory required while task inventory and task-history
+projection degrade only where those optional methods are used. The release adds
+other capabilities, but this update task does not expose them as AgentOS
+features.
+
+The 2026.9.7 core descriptor now includes `lifetime: "observation"`, which
+means OpenClaw cancels that observation when its requester disconnects or
+restart drain begins. AgentOS preserves this value in contract evidence,
+surfaces unknown future lifetime literals as unknown evidence, and rejects
+unsupported descriptor shapes rather than dropping them.
+The pinned 2026.9.7 Gateway client retires a socket after a sequence gap and
+does not deliver the out-of-sequence frame; AgentOS uses its existing reconnect
+and bounded runtime reconciliation path to recover the current projection.
+
+The Gateway client and protocol packages are pinned to 2026.9.7. When GitHub's
+compare endpoint returns a bounded or diverged listing, the release watcher
+resolves both immutable release tags and compares their complete recursive Git
+trees. If the exact tag tree cannot be fetched or GitHub marks it truncated,
+the intake stays unknown instead of treating the compare endpoint's partial
+list as complete. The final refresh in this workspace received HTTP 403 while
+loading upstream contract evidence, so its generated intake remains unknown.
+The disposable 2026.9.7 migration and runtime certification matrix also has not
+run. The compatibility manifest recommendation and native contract version
+therefore remain at 2026.9.4. These limits affect certification confidence, not
+normal native update eligibility for an authorized, informed user.
 
 The normal policy flow is:
 
@@ -161,9 +219,9 @@ and can fail or become stale without blocking native status or native update
 execution. It never supplies installed-version truth, channel truth, update
 availability, or an update target.
 
-The pinned 2026.9.4 `update.status` response exposes bounded availability,
-channel, automatic schedule, and durable `activeRun`/`lastRun` records. AgentOS
-projects only the run ID, phase/status, target/before/after versions, bounded
+The native `update.status` response exposes bounded availability, channel,
+automatic schedule, and durable `activeRun`/`lastRun` records. AgentOS projects
+only the run ID, phase/status, target/before/after versions, bounded
 steps, verification facts, and timing. Origin session identifiers, process
 metadata, install paths, and raw output are excluded. The Updates page derives
 an active progress state from the native record even when React state is idle,

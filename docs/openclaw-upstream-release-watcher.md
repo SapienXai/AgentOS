@@ -59,6 +59,14 @@ file changes, update/session contract flags, security-sensitive evidence, and
 changed domains. Release-note signals are preserved separately as advisory
 evidence; they cannot override the contract diff.
 
+GitHub's compare endpoint can truncate large release diffs or report histories
+that have diverged. In either case, the watcher resolves each exact release tag
+to its commit and recursively compares the immutable Git trees. Tree entries
+are validated and the comparison remains unknown if either tree is truncated,
+malformed, or unavailable; partial path evidence is never treated as complete.
+The release contract records whether the evidence came from this upstream
+diff path or from an explicit test fixture.
+
 Release identity verification and compatibility evidence completeness are
 independent. A verified package/tag identity does not prove that the contract
 diff is complete. Any incomplete identity evidence or contract evidence gap keeps
@@ -85,9 +93,13 @@ and shared-Gateway trust review; update evidence requires Native Doctor,
 durable lifecycle, reconnect, and target verification; config/default changes
 require fresh-baseline and migration checks.
 
-The intake always has certification status `not-certified` and normal update
-permission `false`. Exact manifest status is read from the current manifest;
-version ordering never infers certification. A closed issue is not a
+The intake always has certification status `not-certified`. That means the
+watcher has not certified or promoted the exact version; it does not decide
+whether a user may use OpenClaw's native updater. Normal update eligibility is
+recomputed from fresh Gateway status, authorization, safety preflight, explicit
+manifest blockers, AgentOS requirements, and confirmation. An exact stable
+target absent from the manifest is not yet verified, not automatically denied.
+Version ordering never infers certification. A closed issue is not a
 certification decision.
 
 ## Artifacts and issues
