@@ -17,7 +17,7 @@ import type {
 
 const NATIVE_HISTORY_LABEL = "Native OpenClaw task history";
 const LEGACY_HISTORY_LABEL = "Legacy session history fallback (bounded)";
-const LEGACY_HISTORY_RECOVERY = "Update OpenClaw to 2026.9.4 for native task history.";
+const LEGACY_HISTORY_RECOVERY = "Review Gateway task-history capability and use bounded session history when an authoritative session key is available.";
 
 export type TaskHistoryLoadResult = {
   record: TaskHistoryRecord;
@@ -101,12 +101,12 @@ export async function loadTaskHistoryForTask({
         };
       }
 
-      fallbackReason = "OpenClaw does not expose tasks.history on this supported version.";
+      fallbackReason = "OpenClaw does not expose tasks.history on the connected Gateway.";
     }
   } else {
     fallbackReason = snapshot.mode === "fallback"
       ? "Native OpenClaw task history is unavailable in the current degraded runtime."
-      : "OpenClaw does not expose tasks.history on this supported version.";
+      : "OpenClaw does not expose tasks.history on the connected Gateway.";
   }
 
   const sessionKey = resolveLegacySessionKey(task, runs);

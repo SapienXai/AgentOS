@@ -101,6 +101,29 @@ test("official-backed event bridge coalesces sequence gaps into bounded reconcil
   }
 });
 
+test("a complete Gateway inventory without tasks.list keeps session reconciliation healthy", { concurrency: false }, async () => {
+  activeHarness = await createHarness({ methods: ["sessions.subscribe", "sessions.list"] });
+  activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "no-task-list-token" });
+  setOpenClawGatewayClientForTesting(activeClient);
+  await getOpenClawCapabilityMatrix({ force: true });
+
+  const unsubscribe = subscribeOpenClawEventBridgeEvents(() => {});
+  try {
+    await waitFor(() => countRequests("sessions.subscribe") === 1);
+    const baselineSessions = countRequests("sessions.list");
+    activeHarness.emitEvent("task", { task: { id: "task-gap", status: "running" } }, 1);
+    activeHarness.emitEvent("task", { task: { id: "task-gap", status: "completed" } }, 3);
+    await waitFor(() => getOpenClawEventBridgeStatus().sequenceGapCount === 1);
+    await waitFor(() => getOpenClawEventBridgeStreamStatus().lastReconciledAt !== null, 5_000);
+
+    assert.ok(countRequests("sessions.list") > baselineSessions);
+    assert.equal(countRequests("tasks.list"), 0);
+    assert.equal(getOpenClawEventBridgeStreamStatus().reconciliationState, "idle");
+  } finally {
+    unsubscribe();
+  }
+});
+
 test("official event delivery invalidates the snapshot before SSE subscribers refresh", { concurrency: false }, async () => {
   activeHarness = await createHarness();
   activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "freshness-token" });
@@ -212,10 +235,11 @@ test("official-backed event bridge leaves reconnect storms to the official clien
   }
 });
 
-async function createHarness() {
+async function createHarness(options: { methods?: string[] } = {}) {
+  const methods = options.methods ?? ["sessions.subscribe", "sessions.list", "tasks.list"];
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,
-    methods: ["sessions.subscribe", "sessions.list", "tasks.list"],
+    methods,
     events: ["task", "session.message"]
   }));
 

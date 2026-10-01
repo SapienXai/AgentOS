@@ -402,8 +402,8 @@ test("managed-write official host persists and fences device-token mutation", as
 
   const first = createAgentOsGatewayClientHostDeps({ stateDir, sharedStateMode: "managed-write" });
   const second = createAgentOsGatewayClientHostDeps({ stateDir, sharedStateMode: "managed-write" });
-  const firstLoaded = first.loadDeviceAuthToken?.({ deviceId: "device-1", role: "operator" });
-  const secondLoaded = second.loadDeviceAuthToken?.({ deviceId: "device-1", role: "operator" });
+  const firstLoaded = await first.loadDeviceAuthToken?.({ deviceId: "device-1", role: "operator" });
+  const secondLoaded = await second.loadDeviceAuthToken?.({ deviceId: "device-1", role: "operator" });
   assert.equal(firstLoaded?.token, "token-x");
   assert.equal(secondLoaded?.token, "token-x");
 
@@ -454,8 +454,8 @@ test("managed-write official host uses canonical OpenClaw SQLite auth state when
     const first = createAgentOsGatewayClientHostDeps({ stateDir, sharedStateMode: "managed-write" });
     const second = createAgentOsGatewayClientHostDeps({ stateDir, sharedStateMode: "managed-write" });
     assert.equal(first.loadOrCreateDeviceIdentity?.()?.deviceId, deviceId);
-    assert.equal(first.loadDeviceAuthToken?.({ deviceId, role: "operator" })?.token, "token-x");
-    assert.equal(second.loadDeviceAuthToken?.({ deviceId, role: "operator" })?.token, "token-x");
+    assert.equal((await first.loadDeviceAuthToken?.({ deviceId, role: "operator" }))?.token, "token-x");
+    assert.equal((await second.loadDeviceAuthToken?.({ deviceId, role: "operator" }))?.token, "token-x");
 
     first.storeDeviceAuthToken?.({ deviceId, role: "operator", token: "token-y", scopes: ["operator.write"] });
     second.clearDeviceAuthToken?.({ deviceId, role: "operator" });

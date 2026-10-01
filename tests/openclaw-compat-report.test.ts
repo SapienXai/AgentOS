@@ -42,6 +42,58 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
 });
 
+test("a newer runtime with required advertised capabilities stays healthy beyond the recommendation", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ]);
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway, { installedVersion: "2026.9.8" }),
+    installedVersion: "2026.9.8",
+    openClawVersionSource: "detected",
+    includeLiveShapeChecks: true
+  });
+
+  assert.equal(report.openClaw.installedVersion, "2026.9.8");
+  assert.equal(report.status, "compatible");
+  assert.equal(report.gateway.protocolStatus, "compatible");
+  assert.equal(report.contracts.every((check) => !check.required || check.status === "ok"), true);
+});
+
+test("an optional capability loss stays local to the dependent feature", async () => {
+  const methods = [
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS.filter((method) => method !== "diagnostics.stability")
+  ];
+  const gateway = createCompatibilityGateway(methods);
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway),
+    includeLiveShapeChecks: true
+  });
+
+  assert.equal(report.status, "compatible");
+  const diagnostics = report.contracts.find((check) => check.operation === "diagnosticsStability");
+  assert.notEqual(diagnostics?.status, "ok");
+  assert.equal(report.summary.degradedSurfaces.includes("Gateway diagnostics"), true);
+});
+
+test("a missing task ledger does not turn session runtime snapshots incompatible", async () => {
+  const methods = [
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS.filter((method) => method !== "tasks.list" && method !== "tasks.get")
+  ];
+  const gateway = createCompatibilityGateway(methods);
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway),
+    includeLiveShapeChecks: false
+  });
+
+  const runtimeSnapshot = report.contracts.find((check) => check.operation === "runtimeSnapshot");
+  assert.equal(report.status, "compatible");
+  assert.equal(runtimeSnapshot?.status, "ok");
+  assert.equal(runtimeSnapshot?.supportedMethod, "sessions.list");
+});
+
 test("compatibility report scopes usage cost probes across configured agents", async () => {
   const gateway = createCompatibilityGateway([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
@@ -251,8 +303,9 @@ test("compatibility scope checks honor dedicated scopes and legacy write authori
 
 function baseReportOptions(
   gateway: FakeOpenClawGateway,
-  options: { authScopes?: string[] } = {}
+  options: { authScopes?: string[]; installedVersion?: string } = {}
 ) {
+  const installedVersion = options.installedVersion ?? OPENCLAW_SUPPORTED_BASELINE_VERSION;
   const authScopes = options.authScopes ?? [
     "operator.read",
     "operator.write",
@@ -270,10 +323,10 @@ function baseReportOptions(
       }),
       label: "OpenClaw stable test gateway"
     },
-    installedVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+    installedVersion,
     status: {
-      runtimeVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
-      version: OPENCLAW_SUPPORTED_BASELINE_VERSION
+      runtimeVersion: installedVersion,
+      version: installedVersion
     },
     gatewayStatus: {
       service: { loaded: true, label: "OpenClaw Gateway" },

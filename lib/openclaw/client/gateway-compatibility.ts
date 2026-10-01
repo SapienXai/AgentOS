@@ -413,7 +413,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "optional"
   },
   { id: "artifactDownload", label: "Artifact download", methods: ["artifacts.download"], baseline: "optional" },
-  { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["sessions.list", "tasks.list"], baseline: "required" },
+  { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["sessions.list"], baseline: "required" },
   { id: "commands", label: "Command catalog", methods: ["commands.list"], fallbackAllowed: false, baseline: "optional" },
   {
     id: "tools",

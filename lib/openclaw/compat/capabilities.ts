@@ -308,29 +308,39 @@ export function resolveOpenClawCompatibilityMethods(input: {
 }) {
   const advertisedMethods = uniqueSorted(input.advertisedMethods);
   const advertisedEvents = uniqueSorted(input.advertisedEvents);
-  const knownByContractMethods: string[] = isAtLeastBaseline(input.installedVersion)
+  const knownByContractMethods: string[] = isWithinKnownContractRange(input.installedVersion)
     ? uniqueSorted([
       ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
       ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
       ...(isAtLeastNativeContract(input.installedVersion) ? OPENCLAW_NATIVE_CONTRACT_GATEWAY_METHODS : [])
     ])
     : [];
+  const source = input.source === "unavailable" ? "gateway-advertised" as const : input.source;
 
   if (advertisedMethods.length > 0 || advertisedEvents.length > 0) {
     return {
       advertisedMethods,
       advertisedEvents,
-      // OpenClaw's discovery lists are conservative. The installed exact
-      // contract is the second source of truth, so omission is not proof of
-      // unsupported behavior and must not trigger CLI fallback.
-      effectiveMethods: uniqueSorted([...advertisedMethods, ...knownByContractMethods]),
+      // For the bounded versions AgentOS has described, Gateway hello method
+      // lists may be incomplete, so retain that tested contract expectation.
+      // Explicit discovery is authoritative, and a newer runtime must never
+      // inherit methods from an older contract that it may have removed.
+      effectiveMethods: uniqueSorted([
+        ...advertisedMethods,
+        ...(source === "gateway-advertised" && isWithinKnownContractRange(input.installedVersion)
+          ? knownByContractMethods
+          : [])
+      ]),
       effectiveEvents: advertisedEvents,
       knownByContractMethods,
-      source: input.source === "unavailable" ? "gateway-advertised" as const : input.source
+      source
     };
   }
 
-  if (isAtLeastBaseline(input.installedVersion)) {
+  // Version defaults are useful only inside the version range AgentOS has
+  // actually described. A newer runtime without live capability evidence is
+  // unknown; the version number alone cannot establish its method inventory.
+  if (isWithinKnownContractRange(input.installedVersion)) {
     return {
       advertisedMethods,
       advertisedEvents,
@@ -516,12 +526,16 @@ function toCapabilitySource(source: OpenClawCompatibilityMethodSource): OpenClaw
   }
 }
 
-function isAtLeastBaseline(version: string | null) {
-  const normalized = version?.trim().replace(/^v/i, "");
-  return Boolean(normalized && compareVersionStrings(normalized, OPENCLAW_SUPPORTED_BASELINE_VERSION) >= 0);
-}
-
 function isAtLeastNativeContract(version: string | null) {
   const normalized = version?.trim().replace(/^v/i, "");
   return Boolean(normalized && compareVersionStrings(normalized, OPENCLAW_NATIVE_CONTRACT_VERSION) >= 0);
+}
+
+function isWithinKnownContractRange(version: string | null) {
+  const normalized = version?.trim().replace(/^v/i, "");
+  return Boolean(
+    normalized &&
+    compareVersionStrings(normalized, OPENCLAW_SUPPORTED_BASELINE_VERSION) >= 0 &&
+    compareVersionStrings(normalized, OPENCLAW_NATIVE_CONTRACT_VERSION) <= 0
+  );
 }

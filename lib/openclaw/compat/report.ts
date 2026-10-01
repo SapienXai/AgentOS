@@ -585,9 +585,7 @@ function resolveOverallStatus(input: {
     };
   }
 
-  const degradedIssue = requiredVerificationIssue ?? input.contracts.find((check) =>
-    !check.required && check.status === "failed"
-  );
+  const degradedIssue = requiredVerificationIssue;
 
   if (
     degradedIssue ||

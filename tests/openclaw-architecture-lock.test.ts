@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/openclaw-protocol";
+import {
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
+  OPENCLAW_RECOMMENDED_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
 
 const root = process.cwd();
 
@@ -90,14 +95,17 @@ test("AgentOS policy and event layers remain above the official transport", asyn
   assert.match(bridge, /onConnectionStateChange/);
 });
 
-test("the exact OpenClaw 2026.9.4 package and protocol remain authoritative", async () => {
+test("OpenClaw 2026.9.7 packages are integrated without claiming unearned certification", async () => {
   const packageJson = JSON.parse(await source("package.json")) as { dependencies?: Record<string, string> };
   const lockfile = await source("pnpm-lock.yaml");
 
-  assert.equal(packageJson.dependencies?.["@openclaw/gateway-client"], "2026.9.4");
-  assert.equal(packageJson.dependencies?.["@openclaw/gateway-protocol"], "2026.9.4");
-  assert.match(lockfile, /'@openclaw\/gateway-client':\n\s+specifier: 2026\.9\.4\n\s+version: 2026\.9\.4/);
-  assert.match(lockfile, /'@openclaw\/gateway-protocol':\n\s+specifier: 2026\.9\.4\n\s+version: 2026\.9\.4/);
+  assert.equal(packageJson.dependencies?.["@openclaw/gateway-client"], "2026.9.7");
+  assert.equal(packageJson.dependencies?.["@openclaw/gateway-protocol"], "2026.9.7");
+  assert.match(lockfile, /'@openclaw\/gateway-client':\n\s+specifier: 2026\.9\.7\n\s+version: 2026\.9\.7/);
+  assert.match(lockfile, /'@openclaw\/gateway-protocol':\n\s+specifier: 2026\.9\.7\n\s+version: 2026\.9\.7/);
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.4");
+  assert.equal(OPENCLAW_NATIVE_CONTRACT_VERSION, "2026.9.4");
+  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
   assert.deepEqual(OPENCLAW_GATEWAY_PROTOCOL_RANGE, { min: 4, max: 4 });
 });
 

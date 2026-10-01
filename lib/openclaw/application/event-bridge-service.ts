@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
+import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   OpenClawGatewayEventFrame,
   OpenClawGatewayEventConnectionState,
@@ -335,9 +336,14 @@ function reconcileRuntimeProjection() {
       reconciliationFollowUp = false;
       try {
         const adapter = getOpenClawAdapter();
-        const refreshes: Array<Promise<unknown>> = [
-          adapter.listSessions({}, { timeoutMs: 5_000 }),
-          adapter.listTasks({}, { timeoutMs: 5_000 })
+        const capabilityMatrix = await getOpenClawCapabilityMatrix().catch(() => null);
+        const methodContract = capabilityMatrix?.compatibility?.methodContract;
+        const completeMethodInventory = methodContract?.source === "rpc.methods" || methodContract?.source === "rpc.discover";
+        const refreshes: Array<{ method: "sessions.list" | "tasks.list"; promise: Promise<unknown> }> = [
+          { method: "sessions.list", promise: adapter.listSessions({}, { timeoutMs: 5_000 }) },
+          ...(completeMethodInventory && !capabilityMatrix?.supportedMethods.includes("tasks.list")
+            ? []
+            : [{ method: "tasks.list" as const, promise: adapter.listTasks({}, { timeoutMs: 5_000 }) }])
         ];
         const optionalRefreshes: Array<Promise<unknown>> = [];
         if (adapter.listTaskSuggestions) {
@@ -355,7 +361,17 @@ function reconcileRuntimeProjection() {
         if (adapter.listQuestions) {
           optionalRefreshes.push(adapter.listQuestions({ timeoutMs: 5_000 }));
         }
-        await Promise.all(refreshes);
+        const results = await Promise.allSettled(refreshes.map((refresh) => refresh.promise));
+        const rejectedRequiredRefresh = results.find((result, index) =>
+          result.status === "rejected" && refreshes[index]?.method === "sessions.list"
+        );
+        if (rejectedRequiredRefresh?.status === "rejected") {
+          throw rejectedRequiredRefresh.reason;
+        }
+        const taskRefresh = results.find((_, index) => refreshes[index]?.method === "tasks.list");
+        if (taskRefresh?.status === "rejected" && normalizeClientError(taskRefresh.reason).kind !== "unsupported") {
+          throw taskRefresh.reason;
+        }
         await Promise.allSettled(optionalRefreshes);
         if (bridgeGeneration !== generation) {
           return;

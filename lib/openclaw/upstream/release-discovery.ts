@@ -37,6 +37,14 @@ export function parseOpenClawReleaseVersion(value: unknown): ParsedOpenClawVersi
 
   const [, core, suffix] = match;
   const [year, month, day] = core.split(".").map((part) => Number.parseInt(part, 10));
+  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+
   return {
     version: normalized,
     year,

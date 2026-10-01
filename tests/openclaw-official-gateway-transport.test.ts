@@ -191,14 +191,16 @@ test("official transport preserves structured Gateway errors and AgentOS classif
   }
 });
 
-test("official transport forwards raw task/session events and reports sequence gaps", async () => {
+test("official transport retires a gapped stream without forwarding the out-of-sequence frame", async () => {
   const harness = await OfficialGatewayHarness.create();
   const events: Array<{ event: string; seq?: number }> = [];
   const gaps: Array<{ expected: number; received: number }> = [];
+  let helloReceived = false;
   const transport = new OfficialOpenClawGatewayTransport({
     url: harness.url,
     token: "token",
     callbacks: {
+      onHello: () => { helloReceived = true; },
       onEvent: (event) => events.push({ event: event.event, seq: event.seq }),
       onGap: (gap) => gaps.push(gap)
     }
@@ -207,17 +209,16 @@ test("official transport forwards raw task/session events and reports sequence g
   try {
     transport.start();
     await harness.waitForRequest("connect");
+    await waitFor(() => helloReceived);
     harness.emitEvent("task", {
       task: { id: "task-1", agentId: "agent-1", status: "running" }
     }, 1);
     harness.emitEvent("sessions.changed", { sessionId: "session-1" }, 2);
     harness.emitEvent("session.message", { sessionId: "session-1", text: "hello" }, 4);
-    await waitFor(() => events.length === 3);
     await waitFor(() => gaps.length === 1);
     assert.deepEqual(events, [
       { event: "task", seq: 1 },
-      { event: "sessions.changed", seq: 2 },
-      { event: "session.message", seq: 4 }
+      { event: "sessions.changed", seq: 2 }
     ]);
     assert.deepEqual(gaps, [{ expected: 3, received: 4 }]);
   } finally {

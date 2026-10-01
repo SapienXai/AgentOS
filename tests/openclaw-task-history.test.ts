@@ -28,23 +28,63 @@ test("task history request normalization preserves cursor and bounds limit to th
   );
 });
 
-test("task history capability is version-gated to the certified native contract", () => {
+test("capability discovery is authoritative for newer runtimes while version defaults stop at the tested contract", () => {
   const legacy = resolveOpenClawCompatibilityMethods({
     advertisedMethods: [],
     advertisedEvents: [],
     installedVersion: "2026.9.1",
     source: "gateway-discovery"
   });
-  const certified = resolveOpenClawCompatibilityMethods({
+  const testedDefault = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: [],
+    advertisedEvents: [],
+    installedVersion: "2026.9.4",
+    source: "unavailable"
+  });
+  const testedHandshake = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: ["tasks.list"],
+    advertisedEvents: [],
+    installedVersion: "2026.9.4",
+    source: "gateway-advertised"
+  });
+  const testedDiscovery = resolveOpenClawCompatibilityMethods({
     advertisedMethods: ["tasks.list"],
     advertisedEvents: [],
     installedVersion: "2026.9.4",
     source: "gateway-discovery"
   });
+  const newerInventory = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: ["sessions.list", "tasks.list"],
+    advertisedEvents: [],
+    installedVersion: "2026.9.7",
+    source: "gateway-discovery"
+  });
+  const newerHandshake = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: ["sessions.list", "tasks.list"],
+    advertisedEvents: [],
+    installedVersion: "2026.9.8",
+    source: "gateway-advertised"
+  });
+  const futureWithoutEvidence = resolveOpenClawCompatibilityMethods({
+    advertisedMethods: [],
+    advertisedEvents: [],
+    installedVersion: "2026.9.8",
+    source: "unavailable"
+  });
 
   assert.equal(legacy.effectiveMethods.includes("tasks.history"), false);
-  assert.equal(certified.knownByContractMethods.includes("tasks.history"), true);
-  assert.equal(certified.effectiveMethods.includes("tasks.history"), true);
+  assert.equal(testedDefault.knownByContractMethods.includes("tasks.history"), true);
+  assert.equal(testedDefault.effectiveMethods.includes("tasks.history"), true);
+  assert.equal(testedDefault.source, "version-default");
+  assert.equal(testedHandshake.effectiveMethods.includes("tasks.history"), true);
+  assert.equal(testedDiscovery.effectiveMethods.includes("tasks.history"), false);
+  assert.equal(newerInventory.knownByContractMethods.includes("tasks.history"), false);
+  assert.equal(newerInventory.effectiveMethods.includes("tasks.history"), false);
+  assert.deepEqual(newerInventory.effectiveMethods, ["sessions.list", "tasks.list"]);
+  assert.equal(newerHandshake.effectiveMethods.includes("tasks.history"), false);
+  assert.deepEqual(newerHandshake.effectiveMethods, ["sessions.list", "tasks.list"]);
+  assert.equal(futureWithoutEvidence.effectiveMethods.length, 0);
+  assert.equal(futureWithoutEvidence.source, "unavailable");
 });
 
 test("task history contract avoids a synthetic live probe and preserves operator.read scope", async () => {
