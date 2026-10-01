@@ -18,7 +18,15 @@ import {
 import {
   OPENCLAW_8_2_IDENTITY_INVENTORY,
   OPENCLAW_CAPABILITY_SCOPES,
+  OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
+  OPENCLAW_IDENTITY_CONTRACT_BUILD,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY,
+  OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
+  OPENCLAW_IDENTITY_CONTRACT_TAG,
+  OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT,
   OPENCLAW_IDENTITY_CONTRACT_VERSION,
   OPENCLAW_STATIC_METHOD_SCOPES
 } from "@/lib/openclaw/identity/contract";
@@ -616,9 +624,17 @@ test("selected public OpenClaw mutation routes require preflight and pass server
   assert.match(mobilePairingSource, /device\.pair\.setup"\s*\+\s*"Code/);
 });
 
-test("identity inventory pins the 9.4 contract and current AgentOS use", () => {
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.9.4");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "3a9d69db306cd7f081e06254cb89c4bcc14a7107");
+test("identity inventory pins the exact 9.7 package contract and current AgentOS use", () => {
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.9.7");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG, "v2026.9.7");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT, "a05c851cc522fb5e6bc347f1eb0ff10d8f378fcc");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "c074824a27c96d3983043f9eeb33823cd1772d8c");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_BUILD, "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY, "sha512-/8N2LnfTFQPvnZizi8qKSFfnLQaPvSG3Cb4xo1YV7b4JhYiUc43ZNRpXJ01bWghLK0Ezk3HVeo/DGHcIRQwRWA==");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY, "sha512-/3ghRJlZDOgkBxsS+i31+kqZHrref/0+N2UbOigcHPbHIR1bCh7HmHOZS6gC3bURC8EDhgZVSzm1UtN2f/RA1g==");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY, "sha512-0g/B9YzeCCNOYBrF/BDwGax5rm/t4UjqTSYUU87yZUlnsTpzEFla8PGMAINhRgMIxVFpnY/XZsxV5PDBQo37/g==");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA, 19);
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA, 24);
   assert.deepEqual(OPENCLAW_CAPABILITY_SCOPES.canUseTalkSecrets, ["operator.talk.secrets"]);
   assert.ok(OPENCLAW_8_2_IDENTITY_INVENTORY.some((entry) => entry.methodOrField === "users.list"));
   assert.ok(OPENCLAW_8_2_IDENTITY_INVENTORY.some((entry) => entry.methodOrField === "sessions.create/patch/delete/dispatch" && entry.dynamicAuthorization));

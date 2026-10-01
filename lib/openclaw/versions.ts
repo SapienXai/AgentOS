@@ -1,12 +1,12 @@
-// 2026.9.4 is the newest OpenClaw release explicitly tested and recommended by
+// 2026.9.7 is the newest OpenClaw release explicitly tested and recommended by
 // this AgentOS build. This recommendation is not an upper update allowlist:
 // exact unverified stable targets can use OpenClaw's native updater after
 // authorization, preflight, and informed confirmation. Keep 9.1 as the
 // supported minimum for existing installations whose security-sensitive
 // configuration is explicit.
-export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.4";
+export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.7";
 export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.9.1";
-export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.9.4";
+export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.9.7";
 export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;
 
 export function getOpenClawFinalCertificationArtifactType(version: string) {
