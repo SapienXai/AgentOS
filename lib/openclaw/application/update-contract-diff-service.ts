@@ -19,10 +19,13 @@ const PROTOCOL_PATH_PREFIXES = [
   "src/gateway/protocol/"
 ] as const;
 const REQUEST_TIMEOUT_MS = 4_000;
+const GITHUB_TREE_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_SOURCE_BYTES = 2_000_000;
+const MAX_GITHUB_TREE_BYTES = 24_000_000;
 const MAX_DESCRIPTOR_ROWS = 2_000;
 const MAX_COMPARE_PAGES = 10;
 const COMPARE_PAGE_SIZE = 100;
+const MAX_COMPARE_FILES = 300;
 const CACHE_TTL_MS = 10 * 60 * 1_000;
 const VERSION_PATTERN = /^\d{4}\.\d{1,2}\.\d{1,2}(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$/;
 const OPENCLAW_SCOPE_PATTERN = /^(?:dynamic|node|operator\.[a-z][a-z0-9._-]*)$/;
@@ -56,6 +59,20 @@ type GitHubComparePayload = {
   total_commits?: unknown;
 };
 
+type GitHubCommitPayload = {
+  commit?: { tree?: { sha?: unknown } };
+};
+
+type GitHubTreePayload = {
+  tree?: unknown;
+  truncated?: unknown;
+};
+
+type GitHubTreeSnapshot = {
+  entries: Map<string, string>;
+  truncated: boolean;
+};
+
 type ContractDiffOptions = {
   fetchImpl?: FetchLike;
   now?: () => Date;
@@ -66,6 +83,7 @@ const reportCache = new Map<string, {
   expiresAt: number;
   value: Promise<OpenClawServerMethodContractDiffReport>;
 }>();
+let releaseTreeCache = new WeakMap<FetchLike, Map<string, Promise<GitHubTreeSnapshot>>>();
 
 export async function getOpenClawServerMethodContractDiff(
   input: { currentVersion: string; targetVersion: string },
@@ -516,6 +534,7 @@ function stripJavaScriptComments(source: string) {
 
 export function resetOpenClawServerMethodContractDiffCache() {
   reportCache.clear();
+  releaseTreeCache = new WeakMap();
 }
 
 async function buildContractDiff(input: {
@@ -547,9 +566,34 @@ async function buildContractDiff(input: {
   try {
     const currentSpecs = parseOpenClawCoreMethodSpecs(currentResult.value);
     const targetSpecs = parseOpenClawCoreMethodSpecs(targetResult.value);
-    const compareFiles = compareResult.status === "fulfilled"
+    let compareFiles = compareResult.status === "fulfilled"
       ? compareResult.value
       : { files: [], truncated: false };
+    let completeFileEvidence = compareResult.status === "fulfilled" && !compareFiles.truncated;
+    let fileEvidenceError: string | null = compareResult.status === "rejected"
+      ? readErrorMessage(compareResult.reason, "GitHub changed-file evidence could not be loaded.")
+      : null;
+    if (!completeFileEvidence) {
+      try {
+        const treeFiles = await fetchChangedFilesFromReleaseTrees(
+          input.currentVersion,
+          input.targetVersion,
+          input.fetchImpl
+        );
+        if (!treeFiles.truncated) {
+          compareFiles = treeFiles;
+          completeFileEvidence = true;
+          fileEvidenceError = null;
+        } else {
+          fileEvidenceError = "GitHub reported a truncated recursive tag tree.";
+        }
+      } catch (error) {
+        fileEvidenceError = readErrorMessage(error, "Complete GitHub tag-tree evidence could not be loaded.");
+      }
+    }
+    if (!completeFileEvidence) {
+      compareFiles = { ...compareFiles, truncated: true };
+    }
     const changedFiles = compareFiles.files;
     const changedServerMethodFiles = changedFiles.filter((file) => file.startsWith(SERVER_METHODS_PREFIX));
     const changedProtocolFiles = changedFiles.filter((file) =>
@@ -558,18 +602,16 @@ async function buildContractDiff(input: {
     const changes = compareOpenClawCoreMethodSpecs(currentSpecs, targetSpecs);
     const evidenceWarnings: OpenClawServerMethodContractChange[] = [];
 
-    if (compareResult.status === "rejected") {
+    if (!completeFileEvidence) {
       evidenceWarnings.push(createEvidenceWarning(
         "__implementation_evidence__",
-        "Server-method implementation file evidence could not be loaded; method and scope comparison is still available."
+        "Server-method implementation file evidence could not be loaded completely; method and scope comparison is still available."
+      ));
+      evidenceWarnings.push(createEvidenceUnknown(
+        "__comparison_truncated__",
+        `The GitHub changed-file listing and complete tag-tree fallback were incomplete; implementation and protocol path counts are unknown${fileEvidenceError ? ` (${fileEvidenceError})` : ""}.`
       ));
     } else {
-      if (compareFiles.truncated) {
-        evidenceWarnings.push(createEvidenceUnknown(
-          "__comparison_truncated__",
-          "The tag comparison contains more changed files than the bounded GitHub file listing; implementation and protocol path counts are incomplete."
-        ));
-      }
       if (changedServerMethodFiles.length > 0) {
         evidenceWarnings.push(createEvidenceWarning(
           "__server_method_implementations__",
@@ -616,7 +658,7 @@ async function buildContractDiff(input: {
       renamedCount: allChanges.filter((change) => change.kind === "renamed").length,
       replacedCount: allChanges.filter((change) => change.kind === "replaced").length,
       summary: summarizeDiff({ status, changes: allChanges, changedServerMethodFiles, changedProtocolFiles }),
-      error: compareResult.status === "rejected"
+      error: compareResult.status === "rejected" && !completeFileEvidence
         ? readErrorMessage(compareResult.reason, "GitHub implementation comparison was unavailable.")
         : null
     };
@@ -943,11 +985,18 @@ async function fetchCompareFiles(currentVersion: string, targetVersion: string, 
   for (let page = 1; page <= MAX_COMPARE_PAGES; page += 1) {
     const url = `${baseUrl}?per_page=${COMPARE_PAGE_SIZE}&page=${page}`;
     const payload = JSON.parse(await fetchText(url, fetchImpl, "application/vnd.github+json")) as GitHubComparePayload;
-    if (payload.status === "diverged" || (typeof payload.total_commits === "number" && payload.total_commits >= 10_000)) {
+    const requiresTreeFallback = payload.status === "diverged" ||
+      (typeof payload.total_commits === "number" && payload.total_commits >= 10_000);
+    if (requiresTreeFallback) {
       truncated = true;
     }
     const pageFiles = Array.isArray(payload.files) ? payload.files as GitHubCompareFile[] : [];
     files.push(...pageFiles);
+    if (requiresTreeFallback) break;
+    if (new Set(files.flatMap((file) => [file.filename, file.previous_filename]).filter(Boolean)).size >= MAX_COMPARE_FILES) {
+      truncated = true;
+      break;
+    }
     if (pageFiles.length < COMPARE_PAGE_SIZE) {
       break;
     }
@@ -964,9 +1013,97 @@ async function fetchCompareFiles(currentVersion: string, targetVersion: string, 
   };
 }
 
+async function fetchChangedFilesFromReleaseTrees(
+  currentVersion: string,
+  targetVersion: string,
+  fetchImpl: FetchLike
+) {
+  const [currentTree, targetTree] = await Promise.all([
+    getReleaseTree(currentVersion, fetchImpl),
+    getReleaseTree(targetVersion, fetchImpl)
+  ]);
+  const paths = new Set([...currentTree.entries.keys(), ...targetTree.entries.keys()]);
+  const files = [...paths]
+    .filter((path) => currentTree.entries.get(path) !== targetTree.entries.get(path))
+    .sort();
+  return {
+    files,
+    truncated: currentTree.truncated || targetTree.truncated
+  };
+}
+
+function getReleaseTree(version: string, fetchImpl: FetchLike): Promise<GitHubTreeSnapshot> {
+  let cache = releaseTreeCache.get(fetchImpl);
+  if (!cache) {
+    cache = new Map();
+    releaseTreeCache.set(fetchImpl, cache);
+  }
+  const cached = cache.get(version);
+  if (cached) return cached;
+
+  const snapshot = fetchReleaseTree(version, fetchImpl);
+  cache.set(version, snapshot);
+  return snapshot;
+}
+
+async function fetchReleaseTree(version: string, fetchImpl: FetchLike): Promise<GitHubTreeSnapshot> {
+  const commitUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/commits/v${encodeURIComponent(version)}`;
+  const commit = await fetchJson<GitHubCommitPayload>(commitUrl, fetchImpl, MAX_SOURCE_BYTES);
+  const treeSha = commit.commit?.tree?.sha;
+  if (typeof treeSha !== "string" || !/^[a-f0-9]{40}$/i.test(treeSha)) {
+    throw new Error(`GitHub did not return a valid tree identity for OpenClaw ${version}.`);
+  }
+
+  const treeUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/git/trees/${treeSha}?recursive=1`;
+  const payload = await fetchJson<GitHubTreePayload>(treeUrl, fetchImpl, MAX_GITHUB_TREE_BYTES, GITHUB_TREE_REQUEST_TIMEOUT_MS);
+  if (!Array.isArray(payload.tree) || typeof payload.truncated !== "boolean") {
+    throw new Error(`GitHub returned an unsupported recursive tree shape for OpenClaw ${version}.`);
+  }
+
+  const entries = new Map<string, string>();
+  for (const item of payload.tree) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      throw new Error(`GitHub returned an invalid recursive tree entry for OpenClaw ${version}.`);
+    }
+    const entry = item as Record<string, unknown>;
+    if (entry.type === "tree") continue;
+    if (
+      typeof entry.path !== "string" ||
+      !entry.path ||
+      typeof entry.type !== "string" ||
+      typeof entry.sha !== "string" ||
+      typeof entry.mode !== "string"
+    ) {
+      throw new Error(`GitHub returned an unsupported recursive tree entry for OpenClaw ${version}.`);
+    }
+    entries.set(entry.path, `${entry.type}:${entry.sha}:${entry.mode}`);
+  }
+
+  return { entries, truncated: payload.truncated };
+}
+
+async function fetchJson<T>(url: string, fetchImpl: FetchLike, maxBytes: number, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+  const text = await fetchTextWithLimit(url, fetchImpl, "application/vnd.github+json", maxBytes, timeoutMs);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("GitHub returned invalid JSON for OpenClaw tag-tree evidence.");
+  }
+}
+
 async function fetchText(url: string, fetchImpl: FetchLike, accept = "text/plain") {
+  return fetchTextWithLimit(url, fetchImpl, accept, MAX_SOURCE_BYTES);
+}
+
+async function fetchTextWithLimit(
+  url: string,
+  fetchImpl: FetchLike,
+  accept: string,
+  maxBytes: number,
+  timeoutMs = REQUEST_TIMEOUT_MS
+) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetchImpl(url, {
@@ -982,13 +1119,13 @@ async function fetchText(url: string, fetchImpl: FetchLike, accept = "text/plain
     }
 
     const contentLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(contentLength) && contentLength > MAX_SOURCE_BYTES) {
-      throw new Error("OpenClaw contract source exceeded the safe response size limit.");
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error("OpenClaw compatibility evidence exceeded the safe response size limit.");
     }
 
     const text = await response.text();
-    if (text.length > MAX_SOURCE_BYTES) {
-      throw new Error("OpenClaw contract source exceeded the safe response size limit.");
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      throw new Error("OpenClaw compatibility evidence exceeded the safe response size limit.");
     }
     return text;
   } finally {

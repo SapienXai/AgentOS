@@ -36,8 +36,7 @@ export async function getOpenClawReleaseContractDiff(input: {
     }
   );
   return {
-    ...adaptOpenClawServerMethodContractDiff(report, input.supplement),
-    source: "fixture" as const
+    ...adaptOpenClawServerMethodContractDiff(report, input.supplement)
   };
 }
 

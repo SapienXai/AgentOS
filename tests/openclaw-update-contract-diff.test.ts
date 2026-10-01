@@ -7,6 +7,7 @@ import {
   parseOpenClawCoreMethodSpecs,
   resetOpenClawServerMethodContractDiffCache
 } from "@/lib/openclaw/application/update-contract-diff-service";
+import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
 import { OPENCLAW_2026_9_7_CORE_DESCRIPTOR_FIXTURE } from "./fixtures/openclaw-2026.9.7-core-descriptors";
 
 const currentDescriptor = `
@@ -343,7 +344,84 @@ test("explicit replacement evidence prevents a required-loss blocker", () => {
   assert.equal(changes.find((change) => change.method === "required.primary")?.status, "warning");
 });
 
-test("diverged compare evidence remains incomplete after the bounded first page", async () => {
+test("truncated compare evidence is completed from immutable release tag trees", async () => {
+  resetOpenClawServerMethodContractDiffCache();
+  const oldSha = "1".repeat(40);
+  const sharedSha = "2".repeat(40);
+  const newSha = "3".repeat(40);
+  const report = await getOpenClawServerMethodContractDiff(
+    { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
+    {
+      bypassCache: true,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/compare/")) {
+          return jsonResponse({
+            status: "ahead",
+            total_commits: 10_000,
+            files: Array.from({ length: 300 }, (_, index) => ({ filename: `partial/file-${index}` }))
+          });
+        }
+        if (url.includes("/commits/v2026.6.8")) {
+          return jsonResponse({ commit: { tree: { sha: "a".repeat(40) } } });
+        }
+        if (url.includes("/commits/v2026.7.1")) {
+          return jsonResponse({ commit: { tree: { sha: "b".repeat(40) } } });
+        }
+        if (url.includes("/git/trees/")) {
+          const isCurrent = url.includes("a".repeat(40));
+          const entries = isCurrent
+            ? [
+                { path: "src/gateway/server-methods/old.ts", type: "blob", sha: oldSha, mode: "100644" },
+                { path: "src/gateway/server-methods/shared.ts", type: "blob", sha: sharedSha, mode: "100644" },
+                { path: "package.json", type: "blob", sha: oldSha, mode: "100644" }
+              ]
+            : [
+                { path: "src/gateway/server-methods/shared.ts", type: "blob", sha: sharedSha, mode: "100644" },
+                { path: "src/gateway/server-methods/new.ts", type: "blob", sha: newSha, mode: "100644" },
+                { path: "package.json", type: "blob", sha: newSha, mode: "100644" }
+              ];
+          return jsonResponse({ tree: entries, truncated: false });
+        }
+        if (url.includes("v2026.6.8")) return new Response(currentDescriptor);
+        return new Response(currentDescriptor);
+      }
+    }
+  );
+
+  assert.equal(report.status, "warning");
+  assert.deepEqual(report.changedFiles, [
+    "package.json",
+    "src/gateway/server-methods/new.ts",
+    "src/gateway/server-methods/old.ts"
+  ]);
+  assert.deepEqual(report.changedServerMethodFiles, [
+    "src/gateway/server-methods/new.ts",
+    "src/gateway/server-methods/old.ts"
+  ]);
+  assert.equal(report.changes.some((change) => change.method === "__comparison_truncated__"), false);
+  assert.equal(report.unknownCount, 0);
+});
+
+test("live release contract evidence keeps its upstream-diff provenance", async () => {
+  resetOpenClawServerMethodContractDiffCache();
+  const report = await getOpenClawReleaseContractDiff({
+    fromVersion: "2026.6.8",
+    targetVersion: "2026.7.1",
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.includes("/compare/")) {
+        return jsonResponse({ status: "ahead", total_commits: 1, files: [] });
+      }
+      return new Response(url.includes("v2026.6.8") ? currentDescriptor : targetDescriptor);
+    }
+  });
+
+  assert.equal(report.source, "agentos-server-method-diff");
+  assert.deepEqual(report.evidenceGaps, []);
+});
+
+test("diverged compare evidence remains incomplete when complete tag trees are unavailable", async () => {
   const comparePages: number[] = [];
   const report = await getOpenClawServerMethodContractDiff(
     { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
@@ -367,7 +445,7 @@ test("diverged compare evidence remains incomplete after the bounded first page"
     }
   );
 
-  assert.deepEqual(comparePages, [1, 2]);
+  assert.deepEqual(comparePages, [1]);
   assert.deepEqual(report.changedServerMethodFiles, []);
   assert.deepEqual(report.changedProtocolFiles, []);
   assert.equal(report.changes.some((change) => change.method === "__comparison_truncated__" && change.status === "unknown"), true);
