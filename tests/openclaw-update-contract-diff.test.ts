@@ -7,6 +7,7 @@ import {
   parseOpenClawCoreMethodSpecs,
   resetOpenClawServerMethodContractDiffCache
 } from "@/lib/openclaw/application/update-contract-diff-service";
+import { OPENCLAW_2026_9_7_CORE_DESCRIPTOR_FIXTURE } from "./fixtures/openclaw-2026.9.7-core-descriptors";
 
 const currentDescriptor = `
 export const CORE_GATEWAY_METHOD_SPECS = [
@@ -76,6 +77,82 @@ test("tuple descriptors accept the pinned OpenClaw shared mutation policy consta
 
   assert.equal(methods[0]?.name, "config.apply");
   assert.equal(methods[0]?.controlPlaneWrite, true);
+});
+
+test("OpenClaw 2026.9.7 observation lifetimes are preserved in compatibility evidence", () => {
+  const current = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+    ["agent.wait", "agent", "operator.write", "<=2026.7", { startup: true }],
+  ] as const;`);
+  const target = parseOpenClawCoreMethodSpecs(OPENCLAW_2026_9_7_CORE_DESCRIPTOR_FIXTURE);
+  const wait = target.find((method) => method.name === "agent.wait");
+
+  assert.equal(wait?.lifetime, "observation");
+  assert.equal(target.filter((method) => method.lifetime === "observation").length, 5);
+  assert.deepEqual(target.find((method) => method.name === "portal.session.list")?.sessionAccess, {
+    mode: "write",
+    allowOwnSessionScope: true,
+    requiredTool: "portal"
+  });
+
+  const change = compareOpenClawCoreMethodSpecs(current, target).find(
+    (entry) => entry.method === "agent.wait" && entry.message.includes("lifetime")
+  );
+  assert.equal(change?.status, "warning");
+  assert.equal(change?.currentLifetime, null);
+  assert.equal(change?.targetLifetime, "observation");
+  assert.match(change?.message ?? "", /requester disconnects or restart drain/);
+});
+
+test("session-scoped Gateway access policy remains structured compatibility evidence", () => {
+  const target = parseOpenClawCoreMethodSpecs(OPENCLAW_2026_9_7_CORE_DESCRIPTOR_FIXTURE);
+  const added = compareOpenClawCoreMethodSpecs([], target).find((entry) => entry.method === "portal.session.open");
+
+  assert.equal(added?.targetSessionAccess?.mode, "write");
+  assert.equal(added?.targetSessionAccess?.allowOwnSessionScope, true);
+  assert.equal(added?.targetSessionAccess?.requiredTool, "portal");
+  assert.throws(
+    () => parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+      ["portal.session.open", "portals", "operator.write", "2026.9", { sessionAccess: { mode: "write", newFutureRule: true } }],
+    ] as const;`),
+    /unsupported field newFutureRule/
+  );
+  assert.throws(
+    () => parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+      ["portal.session.open", "portals", "operator.write", "2026.9", { sessionAccess: { mode: "admin" } }],
+    ] as const;`),
+    /unsupported sessionAccess mode/
+  );
+});
+
+test("unknown descriptor lifetime values remain visible as unknown evidence", () => {
+  const unknownTarget = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+    ["agent.wait", "agent", "operator.write", "<=2026.7", { lifetime: "durable-observation" }],
+  ] as const;`);
+  const change = compareOpenClawCoreMethodSpecs(
+    [{
+      name: "agent.wait",
+      family: "agent",
+      scope: "operator.write",
+      since: "<=2026.7",
+      advertise: true,
+      startup: true,
+      controlPlaneWrite: false,
+      compatibilityRestored: false,
+      description: null,
+      lifetime: null
+    }],
+    unknownTarget
+  ).find((entry) => entry.method === "agent.wait" && entry.targetLifetime === "durable-observation");
+
+  assert.equal(unknownTarget[0]?.lifetime, "durable-observation");
+  assert.equal(change?.status, "unknown");
+  assert.equal(change?.targetLifetime, "durable-observation");
+  assert.throws(
+    () => parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+      ["agent.wait", "agent", "operator.write", "<=2026.7", { lifetime: { kind: "observation" } }],
+    ] as const;`),
+    /invalid lifetime string/
+  );
 });
 
 test("malformed or unsupported descriptor rows fail closed", () => {

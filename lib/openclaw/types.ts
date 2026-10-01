@@ -512,6 +512,12 @@ export interface OpenClawUpdateSafetyCheck {
 
 export type OpenClawServerMethodContractDiffStatus = "safe" | "warning" | "blocker" | "unknown";
 
+export interface OpenClawGatewaySessionAccessContract {
+  mode: "write";
+  allowOwnSessionScope?: boolean;
+  requiredTool?: string;
+}
+
 export interface OpenClawServerMethodContractChange {
   method: string;
   kind: "added" | "removed" | "renamed" | "replaced" | "scope-changed" | "policy-changed";
@@ -519,6 +525,12 @@ export interface OpenClawServerMethodContractChange {
   authorizationEvidence: "static" | "runtime-required";
   currentScope: string | null;
   targetScope: string | null;
+  /** Descriptor lifecycle facts are retained in static compatibility evidence. */
+  currentLifetime?: string | null;
+  targetLifetime?: string | null;
+  /** Session-scoped authorization metadata is retained without flattening it into scope. */
+  currentSessionAccess?: OpenClawGatewaySessionAccessContract | null;
+  targetSessionAccess?: OpenClawGatewaySessionAccessContract | null;
   affectedOperations: string[];
   message: string;
 }

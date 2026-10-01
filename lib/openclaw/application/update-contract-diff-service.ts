@@ -5,6 +5,7 @@ import {
   type OpenClawGatewayCompatibilityOperationDefinition
 } from "@/lib/openclaw/client/gateway-compatibility";
 import type {
+  OpenClawGatewaySessionAccessContract,
   OpenClawServerMethodContractChange,
   OpenClawServerMethodContractDiffReport,
   OpenClawServerMethodContractDiffStatus
@@ -39,6 +40,9 @@ export type OpenClawCoreMethodSpec = {
   controlPlaneWrite: boolean;
   compatibilityRestored: boolean;
   description: string | null;
+  /** Unknown lifetime literals are retained as evidence and never treated as supported. */
+  lifetime?: string | null;
+  sessionAccess?: OpenClawGatewaySessionAccessContract | null;
 };
 
 type GitHubCompareFile = {
@@ -182,7 +186,7 @@ function parseCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMethodS
 
 function parseLegacyCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMethodSpec {
   const fields = parseObjectFields(row, rowNumber);
-  assertAllowedFields(fields, ["name", "scope", "advertise", "startup", "controlPlaneWrite"], rowNumber);
+  assertAllowedFields(fields, ["name", "scope", "advertise", "startup", "controlPlaneWrite", "lifetime", "sessionAccess"], rowNumber);
 
   const name = parseMethodName(fields.get("name"), rowNumber);
   const scope = parseScope(fields.get("scope"), rowNumber);
@@ -195,7 +199,9 @@ function parseLegacyCoreMethodRow(row: string, rowNumber: number): OpenClawCoreM
     startup: parseBooleanField(fields, "startup", false, rowNumber),
     controlPlaneWrite: parseBooleanField(fields, "controlPlaneWrite", false, rowNumber),
     compatibilityRestored: false,
-    description: null
+    description: null,
+    lifetime: parseLifetimeField(fields, rowNumber),
+    sessionAccess: parseSessionAccessField(fields, rowNumber)
   };
 }
 
@@ -216,7 +222,7 @@ function parseTupleCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMe
   const since = parseSince(values[3], rowNumber);
   const policy = values[4] ? parsePolicyObject(values[4], rowNumber) : new Map<string, string>();
 
-  assertAllowedFields(policy, ["advertise", "startup", "controlPlaneWrite", "compatibilityRestored", "description"], rowNumber);
+  assertAllowedFields(policy, ["advertise", "startup", "controlPlaneWrite", "compatibilityRestored", "description", "lifetime", "sessionAccess"], rowNumber);
   return {
     name,
     family,
@@ -228,7 +234,42 @@ function parseTupleCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMe
     compatibilityRestored: parseBooleanField(policy, "compatibilityRestored", false, rowNumber),
     description: policy.has("description")
       ? parseStringLiteral(policy.get("description"), "description", rowNumber)
-      : null
+      : null,
+    lifetime: parseLifetimeField(policy, rowNumber),
+    sessionAccess: parseSessionAccessField(policy, rowNumber)
+  };
+}
+
+function parseLifetimeField(fields: Map<string, string>, rowNumber: number): string | null {
+  if (!fields.has("lifetime")) return null;
+  return parseStringLiteral(fields.get("lifetime"), "lifetime", rowNumber);
+}
+
+function parseSessionAccessField(fields: Map<string, string>, rowNumber: number): OpenClawGatewaySessionAccessContract | null {
+  if (!fields.has("sessionAccess")) return null;
+  const value = fields.get("sessionAccess")?.trim() ?? "";
+  if (!value.startsWith("{") || !value.endsWith("}")) {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid sessionAccess object.`);
+  }
+  const policy = parseObjectFields(value, rowNumber);
+  assertAllowedFields(policy, ["mode", "allowOwnSessionScope", "requiredTool"], rowNumber);
+  const mode = parseStringLiteral(policy.get("mode"), "sessionAccess.mode", rowNumber);
+  if (mode !== "write") {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an unsupported sessionAccess mode.`);
+  }
+  const allowOwnSessionScope = policy.has("allowOwnSessionScope")
+    ? parseBooleanField(policy, "allowOwnSessionScope", false, rowNumber)
+    : undefined;
+  const requiredTool = policy.has("requiredTool")
+    ? parseStringLiteral(policy.get("requiredTool"), "sessionAccess.requiredTool", rowNumber)
+    : undefined;
+  if (requiredTool !== undefined && requiredTool.trim().length === 0) {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an empty sessionAccess.requiredTool.`);
+  }
+  return {
+    mode,
+    ...(allowOwnSessionScope !== undefined ? { allowOwnSessionScope } : {}),
+    ...(requiredTool !== undefined ? { requiredTool } : {})
   };
 }
 
@@ -613,6 +654,10 @@ export function compareOpenClawCoreMethodSpecs(
         authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: null,
         targetScope: target.scope,
+        currentLifetime: null,
+        targetLifetime: target.lifetime ?? null,
+        currentSessionAccess: null,
+        targetSessionAccess: target.sessionAccess ?? null,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} is added with ${target.scope} scope; descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
@@ -631,6 +676,10 @@ export function compareOpenClawCoreMethodSpecs(
         authorizationEvidence: "static",
         currentScope: current.scope,
         targetScope: null,
+        currentLifetime: current.lifetime ?? null,
+        targetLifetime: null,
+        currentSessionAccess: current.sessionAccess ?? null,
+        targetSessionAccess: null,
         affectedOperations,
         message: affectedOperations.length
           ? `${method} is removed${replacement ? ` with explicit replacement evidence for ${replacement.replacementMethod}` : ""} and affects ${affectedOperations.join(", ")}.`
@@ -643,6 +692,46 @@ export function compareOpenClawCoreMethodSpecs(
       continue;
     }
 
+    const currentLifetime = current.lifetime ?? null;
+    const targetLifetime = target.lifetime ?? null;
+    const currentSessionAccess = current.sessionAccess ?? null;
+    const targetSessionAccess = target.sessionAccess ?? null;
+    const targetLifetimeUnknown = targetLifetime !== null && targetLifetime !== "observation";
+    if (currentLifetime !== targetLifetime || targetLifetimeUnknown) {
+      changes.push({
+        method,
+        kind: "policy-changed",
+        status: targetLifetimeUnknown ? "unknown" : "warning",
+        authorizationEvidence: "static",
+        currentScope: current.scope,
+        targetScope: target.scope,
+        currentLifetime,
+        targetLifetime,
+        affectedOperations,
+        message: targetLifetimeUnknown
+          ? `${method} declares unrecognized lifetime ${JSON.stringify(targetLifetime)}; AgentOS retained the value, but its disconnect and restart semantics require review.`
+          : `${method} lifetime changes from ${currentLifetime ?? "unspecified"} to ${targetLifetime ?? "unspecified"}${targetLifetime === "observation" ? "; OpenClaw cancels this observation when the requester disconnects or restart drain begins" : ""}.`
+      });
+    }
+
+    if (JSON.stringify(currentSessionAccess) !== JSON.stringify(targetSessionAccess)) {
+      const widened = hasBroaderSessionAccess(currentSessionAccess, targetSessionAccess);
+      changes.push({
+        method,
+        kind: "policy-changed",
+        status: widened ? "unknown" : "warning",
+        authorizationEvidence: "runtime-required",
+        currentScope: current.scope,
+        targetScope: target.scope,
+        currentSessionAccess,
+        targetSessionAccess,
+        affectedOperations,
+        message: widened
+          ? `${method} changes session-scoped write authority in a way that may broaden access; AgentOS retained the descriptor policy and requires runtime authorization review.`
+          : `${method} session-scoped access policy changes from ${formatSessionAccess(currentSessionAccess)} to ${formatSessionAccess(targetSessionAccess)}.`
+      });
+    }
+
     if (current.scope !== target.scope) {
       const status = scopeChangeStatus(method, current.scope, target.scope);
       const dynamicAuthorization = requiresRuntimeAuthorization(target.scope);
@@ -653,6 +742,10 @@ export function compareOpenClawCoreMethodSpecs(
         authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: current.scope,
         targetScope: target.scope,
+        currentLifetime: current.lifetime ?? null,
+        targetLifetime: target.lifetime ?? null,
+        currentSessionAccess: current.sessionAccess ?? null,
+        targetSessionAccess: target.sessionAccess ?? null,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} scope changes from ${current.scope} to ${target.scope}; authorization depends on request parameters or runtime state and requires live runtime verification.`
@@ -680,6 +773,8 @@ export function compareOpenClawCoreMethodSpecs(
         authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: current.scope,
         targetScope: target.scope,
+        currentLifetime: current.lifetime ?? null,
+        targetLifetime: target.lifetime ?? null,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}); descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
@@ -775,8 +870,26 @@ function formatPolicy(spec: OpenClawCoreMethodSpec) {
     spec.advertise ? "advertised" : "hidden",
     spec.startup ? "startup" : "normal-startup",
     spec.controlPlaneWrite ? "control-plane-write" : "standard-write",
-    spec.compatibilityRestored ? "compatibility-restored" : "standard-compatibility"
+    spec.compatibilityRestored ? "compatibility-restored" : "standard-compatibility",
+    `lifetime=${spec.lifetime ?? "unspecified"}`,
+    `session-access=${formatSessionAccess(spec.sessionAccess ?? null)}`
   ].join(", ");
+}
+
+function formatSessionAccess(value: OpenClawGatewaySessionAccessContract | null) {
+  return value ? JSON.stringify(value) : "unspecified";
+}
+
+function hasBroaderSessionAccess(
+  current: OpenClawGatewaySessionAccessContract | null,
+  target: OpenClawGatewaySessionAccessContract | null
+) {
+  if (!target) return false;
+  if (!current) return true;
+  if (!current.allowOwnSessionScope && target.allowOwnSessionScope) return true;
+  if (current.requiredTool && !target.requiredTool) return true;
+  if (current.requiredTool && target.requiredTool !== current.requiredTool) return true;
+  return false;
 }
 
 function createEvidenceWarning(method: string, message: string): OpenClawServerMethodContractChange {
