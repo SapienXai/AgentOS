@@ -14,7 +14,10 @@ import {
   NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
-import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
+import {
+  OfficialGatewayHarness,
+  type OfficialGatewayRequestContext
+} from "@/tests/helpers/official-gateway-harness";
 
 test("official-backed domain client preserves representative reads and identity", async () => {
   const harness = await OfficialGatewayHarness.create({
@@ -287,6 +290,66 @@ test("official coordinator replays session intent once after official reconnect"
   } finally {
     client.close?.("phase3 test cleanup");
     await harness.close();
+  }
+});
+
+test("session-message observer IDs follow the connected Gateway schema", async () => {
+  for (const scenario of [
+    { version: "2026.9.4", supportsSubscriptionId: false },
+    { version: "2026.9.7-rc.1", supportsSubscriptionId: false },
+    { version: "2026.9.7", supportsSubscriptionId: true }
+  ]) {
+    const observed: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const validateObserverId = ({ request, fail, respond }: OfficialGatewayRequestContext) => {
+      const params = request.params && typeof request.params === "object"
+        ? request.params as Record<string, unknown>
+        : {};
+      const hasSubscriptionId = typeof params.subscriptionId === "string" && params.subscriptionId.length > 0;
+      if (hasSubscriptionId !== scenario.supportsSubscriptionId) {
+        fail({ code: "INVALID_REQUEST", message: "Session message subscription params do not match this Gateway schema." });
+        return;
+      }
+      observed.push({ method: request.method, params });
+      respond({ key: params.key });
+    };
+    const harness = await OfficialGatewayHarness.create({
+      version: scenario.version,
+      routes: {
+        "sessions.messages.subscribe": validateObserverId,
+        "sessions.messages.unsubscribe": validateObserverId
+      }
+    });
+    const client = createOfficialBackedOpenClawGatewayClient({ url: harness.url, token: "token" });
+
+    try {
+      const subscription = await client.subscribeRuntimeEvents(
+        { includeSessions: false, sessionKeys: ["key-a"] },
+        { onEvent: () => {} }
+      );
+      await waitFor(() => observed.some((request) => request.method === "sessions.messages.subscribe"));
+      const subscribeParams = observed.find((request) => request.method === "sessions.messages.subscribe")?.params;
+      const subscribeId = subscribeParams?.subscriptionId;
+      assert.equal(subscribeParams?.key, "key-a");
+      if (scenario.supportsSubscriptionId) {
+        assert.equal(typeof subscribeId, "string");
+      } else {
+        assert.deepEqual(subscribeParams, { key: "key-a" });
+      }
+
+      subscription.close();
+      await waitFor(() => observed.some((request) => request.method === "sessions.messages.unsubscribe"));
+      const unsubscribeParams = observed.find((request) => request.method === "sessions.messages.unsubscribe")?.params;
+      const unsubscribeId = unsubscribeParams?.subscriptionId;
+      assert.equal(unsubscribeParams?.key, "key-a");
+      if (scenario.supportsSubscriptionId) {
+        assert.equal(unsubscribeId, subscribeId);
+      } else {
+        assert.deepEqual(unsubscribeParams, { key: "key-a" });
+      }
+    } finally {
+      client.close?.("session message subscription schema test cleanup");
+      await harness.close();
+    }
   }
 });
 

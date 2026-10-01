@@ -9,6 +9,7 @@ import {
   type GatewaySessionMessageSubscriptionCoordinator
 } from "@openclaw/gateway-client";
 
+import { compareOpenClawVersions } from "@/lib/openclaw/migration-engine/paths";
 import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   OpenClawCommandOptions,
@@ -40,6 +41,11 @@ type OfficialCoordinatorOptions = {
 };
 
 const defaultReplayTimeoutMs = 5_000;
+const SESSION_MESSAGE_SUBSCRIPTION_ID_MIN_VERSION = "2026.9.7";
+const SESSION_MESSAGE_SUBSCRIPTION_METHODS = new Set([
+  "sessions.messages.subscribe",
+  "sessions.messages.unsubscribe"
+]);
 
 /**
  * AgentOS-owned integration coordinator for one official GatewayClient.
@@ -76,21 +82,27 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
 
   handleHello(hello: HelloOk): void {
     const generation = this.#transport.getGeneration();
+    const supportsSessionMessageSubscriptionIds = supportsSessionMessageObserverIds(hello.server.version);
     if (this.#messageRequestClient) {
       resetGatewaySessionMessageSubscriptionCoordinator(this.#messageRequestClient);
     }
     this.#messageSubscriptions.clear();
     this.#messageRequestClient = {
       request: <TPayload = unknown>(method: string, params: Record<string, unknown>, options?: { timeoutMs?: number | null; signal?: AbortSignal }) =>
-        this.#transport.requestForGeneration<TPayload>(generation, method, params, {
-          timeoutMs: Math.min(
-            this.#replayTimeoutMs,
-            typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
-              ? Math.max(1, options.timeoutMs)
-              : this.#replayTimeoutMs
-          ),
-          signal: options?.signal
-        })
+        this.#transport.requestForGeneration<TPayload>(
+          generation,
+          method,
+          normalizeSessionMessageSubscriptionParams(method, params, supportsSessionMessageSubscriptionIds),
+          {
+            timeoutMs: Math.min(
+              this.#replayTimeoutMs,
+              typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+                ? Math.max(1, options.timeoutMs)
+                : this.#replayTimeoutMs
+            ),
+            signal: options?.signal
+          }
+        )
     };
     this.#messageCoordinator = getGatewaySessionMessageSubscriptionCoordinator(this.#messageRequestClient);
     this.#generation = generation;
@@ -528,6 +540,30 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
       });
     }
   }
+}
+
+function normalizeSessionMessageSubscriptionParams(
+  method: string,
+  params: Record<string, unknown>,
+  supportsSubscriptionIds: boolean
+) {
+  if (supportsSubscriptionIds || !SESSION_MESSAGE_SUBSCRIPTION_METHODS.has(method) || !("subscriptionId" in params)) {
+    return params;
+  }
+
+  const compatibleParams = { ...params };
+  delete compatibleParams.subscriptionId;
+  return compatibleParams;
+}
+
+function supportsSessionMessageObserverIds(version: string) {
+  const normalizedVersion = version.trim().replace(/^v/i, "");
+  if (normalizedVersion.includes("-")) {
+    return false;
+  }
+
+  const comparison = compareOpenClawVersions(normalizedVersion, SESSION_MESSAGE_SUBSCRIPTION_ID_MIN_VERSION);
+  return comparison !== null && comparison >= 0;
 }
 
 function normalizeRuntimeIntent(params: Record<string, unknown>) {
