@@ -50,7 +50,7 @@ The preview and execution share the same ownership model. Execution also re-chec
 
 ## OpenClaw and installation behavior
 
-AgentOS currently supports OpenClaw contract version `2026.9.4`. The native plan uses:
+AgentOS currently supports OpenClaw contract version `2026.9.7`. The native plan uses:
 
 ```text
 openclaw uninstall --service --state --app --yes --non-interactive
@@ -64,4 +64,4 @@ Packaged and release installations run a parent launcher plus a bundled server c
 
 The confirmation plan is short-lived, opaque, one-use, and bound to the authenticated actor, request session, target, and stored preview. Raw credentials are never persisted in the plan.
 
-For the upstream contract, see the [OpenClaw v2026.9.4 uninstall CLI](https://github.com/openclaw/openclaw/blob/v2026.9.4/docs/cli/uninstall.md) and [uninstall guide](https://github.com/openclaw/openclaw/blob/v2026.9.4/docs/install/uninstall.md).
+For the upstream contract, see the [OpenClaw v2026.9.7 uninstall CLI](https://github.com/openclaw/openclaw/blob/v2026.9.7/docs/cli/uninstall.md) and [uninstall guide](https://github.com/openclaw/openclaw/blob/v2026.9.7/docs/install/uninstall.md).

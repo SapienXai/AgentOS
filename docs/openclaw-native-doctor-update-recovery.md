@@ -3,16 +3,17 @@
 AgentOS presents operational OpenClaw state without becoming a second runtime or
 repair engine. OpenClaw remains authoritative for health, configuration
 application, updates, restart coordination, suspension, authorization, and
-reconnect behavior. The exact 2026.9.4 contract is the latest release this
-AgentOS build has fully certified; the runtime updater can expose an unverified
-newer stable release when current native facts and safety policy allow it.
+reconnect behavior. AgentOS has certified OpenClaw 2026.9.7 as its current tested
+and recommended contract. Certification records tested confidence; it is not an
+installation allowlist. The runtime updater can expose a newer unverified stable
+release when current native facts and safety policy allow it.
 AgentOS normalizes native facts for the existing Settings, Diagnostics,
 Gateway, and Updates surfaces.
 
 ## Native contract
 
 The online operational projection uses the official Gateway transport and these
-2026.9.4 methods:
+2026.9.7 methods:
 
 | Surface | Native methods | AgentOS use |
 | --- | --- | --- |
@@ -31,7 +32,7 @@ authorization remains final.
 
 ### Phase 6.1 — Truthfulness and recovery reconciliation
 
-The exact OpenClaw 2026.9.4 descriptor protects `update.status` with
+The exact OpenClaw 2026.9.7 descriptor protects `update.status` with
 `operator.admin`, even though the method is read-shaped. AgentOS therefore
 keeps the health, status, diagnostics, and config portions of Doctor usable for
 read-capable operators while projecting update status as forbidden/unavailable
@@ -168,12 +169,14 @@ compare endpoint returns a bounded or diverged listing, the release watcher
 resolves both immutable release tags and compares their complete recursive Git
 trees. If the exact tag tree cannot be fetched or GitHub marks it truncated,
 the intake stays unknown instead of treating the compare endpoint's partial
-list as complete. The final refresh in this workspace received HTTP 403 while
-loading upstream contract evidence, so its generated intake remains unknown.
-The disposable 2026.9.7 migration and runtime certification matrix also has not
-run. The compatibility manifest recommendation and native contract version
-therefore remain at 2026.9.4. These limits affect certification confidence, not
-normal native update eligibility for an authorized, informed user.
+list as complete. The authenticated GitHub Actions release-watch workflow
+refreshed the existing 2026.9.7 intake with complete identity, tree, descriptor,
+and contract-diff evidence; the earlier local HTTP 403 did not produce
+compatibility evidence. The disposable 2026.9.4-to-2026.9.7 migration and
+runtime certification matrix subsequently passed. The current recommendation
+and native contract are 2026.9.7. See
+[`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md)
+and the generated final certification artifact for the recorded evidence.
 
 The normal policy flow is:
 
@@ -191,7 +194,7 @@ update` only when `update.status` reports an automatic campaign in the native
 `waiting-for-idle` or `countdown` state and no hold is already active. Native
 campaign or rollout hold state is projected as `Update held`; AgentOS does not
 create a parallel hold lifecycle or silently clear an OpenClaw hold. No fixed
-duration is shown because the 2026.9.4 contract does not define one in the
+duration is shown because the 2026.9.7 contract does not define one in the
 request; OpenClaw owns the resulting `holdUntilMs`.
 
 ## Advanced compatibility path
@@ -235,15 +238,16 @@ link. Native Doctor and Diagnostics report update health and recovery evidence,
 but link to the canonical Updates page instead of exposing a second normal
 update action. Rollback remains a recovery operation for advanced operators.
 
-The pinned OpenClaw 2026.9.4 Gateway contract does not expose an
+The pinned OpenClaw 2026.9.7 Gateway contract does not expose an
 `update.repair` method, so AgentOS does not invent a Repair button or guess CLI
 flags. Unknown or failed native outcomes remain recoverable through the
 existing supervisor/reconnect evidence, Runtime Inbox guidance, and advanced
 Compatibility Lab rollback tools.
 
-OpenClaw 2026.9.4 keeps Doctor repair and JSON reporting as separate CLI modes:
+Historical 2026.9.4 certification verified that Doctor repair and JSON
+reporting were separate CLI modes:
 `doctor --json` is advisory/read-only and cannot be combined with `--fix`. The
-disposable 2026.9.3 to 2026.9.4 migration therefore uses the official
+disposable 2026.9.3-to-2026.9.4 migration therefore used the official
 `doctor --fix --non-interactive` path, while read-only diagnostics use JSON
 where supported. Migration-bearing updates also require verified backup
 protection. If the native updater rolls back after a failed update, AgentOS
@@ -284,10 +288,14 @@ the next detail read obtains current authoritative state. A rejected or
 ambiguous mutation is reported honestly; AgentOS does not synthesize progress or
 claim verification that the reconnecting Gateway has not provided.
 
-## Phase 6 certification note
+## Certification records
 
-The 2026.9.4 certification is recorded in
+The historical 2026.9.4 certification is recorded in
 [`openclaw-2026.9.4-compatibility-audit.md`](./openclaw-2026.9.4-compatibility-audit.md).
+The current 2026.9.7 certification is recorded in
+[`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md)
+and
+[`evidence/openclaw-2026.9.7-pre-merge-final-certification.json`](./evidence/openclaw-2026.9.7-pre-merge-final-certification.json).
 The closeout also attempted the official native Git update in an isolated 9.1
 checkout targeting the official 9.2 release. The first run replaced the
 checkout but ended with the official `doctor-failed` outcome because a

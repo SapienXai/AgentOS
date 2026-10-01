@@ -4,11 +4,13 @@ Date: 2026-05-02
 
 Latest production-readiness validation update: 2026-05-16.
 
-> Historical migration record. The active recommended contract is OpenClaw
-> `2026.9.4`; see [`openclaw-2026.9.4-compatibility-audit.md`](./openclaw-2026.9.4-compatibility-audit.md).
+> Historical migration record. This migration was first certified against
+> OpenClaw `2026.9.4`; current `main` recommends and certifies `2026.9.7` with
+> `2026.9.1` as the supported baseline. See the
+> [2026.9.7 compatibility audit](./openclaw-2026.9.7-compatibility-audit.md)
 > and [`openclaw-official-gateway-transport.md`](./openclaw-official-gateway-transport.md)
-> for the current official-client architecture. The dated narrative below is retained for
-> migration provenance.
+> for the current official-client architecture. The dated narrative below is
+> retained for migration provenance.
 
 Current Gateway method mapping and source audit details are summarized in
 [`openclaw-sync-audit.md`](./openclaw-sync-audit.md).
@@ -17,10 +19,13 @@ This pass moves AgentOS closer to the target provider shape:
 
 `AgentOS UI/API -> AgentOS Control Plane Contract -> OpenClawAdapter -> OpenClawGatewayClient -> Gateway-first implementation -> CLI fallback`
 
-The OpenClaw CLI remains the bounded fallback implementation. AgentOS consumes the public
-`@openclaw/gateway-protocol@2026.9.4` package for protocol constants and capability names, and
-the official `@openclaw/gateway-client@2026.9.4` owns the production transport. AgentOS retains
-application-level request policy, normalized payload projections, fallback policy, and diagnostics.
+The OpenClaw CLI remains the bounded fallback implementation. The original
+2026.9.4 migration consumed the public
+`@openclaw/gateway-protocol@2026.9.4` package for protocol constants and
+capability names, and the official `@openclaw/gateway-client@2026.9.4` owned
+the production transport at that time. Current pins are 2026.9.7. AgentOS
+retains application-level request policy, normalized payload projections,
+fallback policy, and diagnostics.
 
 Phase 1 official-protocol authority is documented in
 [`openclaw-2026.9.4-compatibility-audit.md`](./openclaw-2026.9.4-compatibility-audit.md). The

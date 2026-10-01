@@ -1,14 +1,14 @@
 {
   "config": {
     "argv": [
-      "/Users/kazimakgul/.nvm/versions/node/v24.20.0/bin/node",
-      "/Users/kazimakgul/Documents/GitHub/AgentOS/node_modules/@playwright/test/cli.js",
+      "<user-home>/.nvm/versions/node/v24.20.0/bin/node",
+      "<workspace-root>/node_modules/@playwright/test/cli.js",
       "test",
       "tests/browser/channels-acceptance-certified.spec.mjs",
       "--reporter=json"
     ],
-    "configFile": "/Users/kazimakgul/Documents/GitHub/AgentOS/playwright.config.mjs",
-    "rootDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/tests/browser",
+    "configFile": "<workspace-root>/playwright.config.mjs",
+    "rootDir": "<workspace-root>/tests/browser",
     "failOnFlakyTests": false,
     "forbidOnly": false,
     "fullyParallel": false,
@@ -24,7 +24,7 @@
     "preserveOutput": "always",
     "projects": [
       {
-        "outputDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/test-results",
+        "outputDir": "<workspace-root>/test-results",
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
@@ -32,7 +32,7 @@
         },
         "id": "",
         "name": "",
-        "testDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/tests/browser",
+        "testDir": "<workspace-root>/tests/browser",
         "testIgnore": [],
         "testMatch": [
           "**/*.spec.mjs"
@@ -63,9 +63,9 @@
       "timeout": 120000,
       "env": {
         "NODE_ENV": "development",
-        "AGENTOS_RUNTIME_DIR": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/agentos",
-        "OPENCLAW_STATE_DIR": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/openclaw",
-        "OPENCLAW_CONFIG_PATH": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/openclaw/openclaw.json",
+        "AGENTOS_RUNTIME_DIR": "<temporary-root>/agentos-channels-browser-98689/agentos",
+        "OPENCLAW_STATE_DIR": "<temporary-root>/agentos-channels-browser-98689/openclaw",
+        "OPENCLAW_CONFIG_PATH": "<temporary-root>/agentos-channels-browser-98689/openclaw/openclaw.json",
         "AGENTOS_API_TOKEN": "",
         "AGENTOS_UNSAFE_DISABLE_API_AUTH": ""
       }

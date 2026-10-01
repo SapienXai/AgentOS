@@ -602,9 +602,9 @@
         "state/session-sqlite-migration-runs/session-sqlite-1788261796558-1ecd18ee.json",
         "state/state/openclaw.sqlite-shm",
         "state/state/openclaw.sqlite-wal",
-        "state/tmp/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
-        "state/tmp/openclaw-501/gateway.facdcfc0.lock.sqlite",
-        "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+        "state<temporary-root>/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
+        "state<temporary-root>/openclaw-501/gateway.facdcfc0.lock.sqlite",
+        "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
       ],
       "removed": [
         "state/agents/dev/sessions/c0addd53-137d-4f8f-a7ac-369e02a77d39.jsonl",
@@ -621,9 +621,9 @@
         "sqlite": [
           "state/agents/dev/agent/openclaw-agent.sqlite",
           "state/state/openclaw.sqlite",
-          "state/tmp/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.facdcfc0.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+          "state<temporary-root>/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.facdcfc0.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
         ],
         "sessions-transcripts": [
           "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.c0addd53-137d-4f8f-a7ac-369e02a77d39.jsonl.imported-1788261796575",
@@ -832,9 +832,9 @@
               "state/session-sqlite-migration-runs/session-sqlite-1788261796558-1ecd18ee.json",
               "state/state/openclaw.sqlite-shm",
               "state/state/openclaw.sqlite-wal",
-              "state/tmp/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
-              "state/tmp/openclaw-501/gateway.facdcfc0.lock.sqlite",
-              "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+              "state<temporary-root>/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
+              "state<temporary-root>/openclaw-501/gateway.facdcfc0.lock.sqlite",
+              "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
             ],
             "removed": [
               "state/agents/dev/sessions/c0addd53-137d-4f8f-a7ac-369e02a77d39.jsonl",
@@ -851,9 +851,9 @@
               "sqlite": [
                 "state/agents/dev/agent/openclaw-agent.sqlite",
                 "state/state/openclaw.sqlite",
-                "state/tmp/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.facdcfc0.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+                "state<temporary-root>/openclaw-501/device-identity.aea6a3d5.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.facdcfc0.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
               ],
               "sessions-transcripts": [
                 "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.c0addd53-137d-4f8f-a7ac-369e02a77d39.jsonl.imported-1788261796575",
@@ -1678,9 +1678,9 @@
           "state/session-sqlite-migration-runs/session-sqlite-1788261865296-ac30f61c.json",
           "state/state/openclaw.sqlite-shm",
           "state/state/openclaw.sqlite-wal",
-          "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+          "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
         ],
         "removed": [
           "state/agents/dev/sessions/db201cc3-8946-4815-a904-6f99bec868a7.jsonl",
@@ -1697,9 +1697,9 @@
           "sqlite": [
             "state/agents/dev/agent/openclaw-agent.sqlite",
             "state/state/openclaw.sqlite",
-            "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-            "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-            "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+            "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+            "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+            "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
           ],
           "sessions-transcripts": [
             "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.db201cc3-8946-4815-a904-6f99bec868a7.jsonl.imported-1788261865313",
@@ -1908,9 +1908,9 @@
                 "state/session-sqlite-migration-runs/session-sqlite-1788261865296-ac30f61c.json",
                 "state/state/openclaw.sqlite-shm",
                 "state/state/openclaw.sqlite-wal",
-                "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+                "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
               ],
               "removed": [
                 "state/agents/dev/sessions/db201cc3-8946-4815-a904-6f99bec868a7.jsonl",
@@ -1927,9 +1927,9 @@
                 "sqlite": [
                   "state/agents/dev/agent/openclaw-agent.sqlite",
                   "state/state/openclaw.sqlite",
-                  "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-                  "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-                  "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+                  "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+                  "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+                  "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
                 ],
                 "sessions-transcripts": [
                   "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.db201cc3-8946-4815-a904-6f99bec868a7.jsonl.imported-1788261865313",
@@ -2481,9 +2481,9 @@
           "state/session-sqlite-migration-runs/session-sqlite-1788261865296-ac30f61c.json",
           "state/state/openclaw.sqlite-shm",
           "state/state/openclaw.sqlite-wal",
-          "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-          "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+          "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+          "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
         ],
         "removed": [
           "state/agents/dev/sessions/db201cc3-8946-4815-a904-6f99bec868a7.jsonl",
@@ -2500,9 +2500,9 @@
           "sqlite": [
             "state/agents/dev/agent/openclaw-agent.sqlite",
             "state/state/openclaw.sqlite",
-            "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-            "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-            "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+            "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+            "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+            "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
           ],
           "sessions-transcripts": [
             "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.db201cc3-8946-4815-a904-6f99bec868a7.jsonl.imported-1788261865313",
@@ -2711,9 +2711,9 @@
                 "state/session-sqlite-migration-runs/session-sqlite-1788261865296-ac30f61c.json",
                 "state/state/openclaw.sqlite-shm",
                 "state/state/openclaw.sqlite-wal",
-                "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-                "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+                "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+                "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
               ],
               "removed": [
                 "state/agents/dev/sessions/db201cc3-8946-4815-a904-6f99bec868a7.jsonl",
@@ -2730,9 +2730,9 @@
                 "sqlite": [
                   "state/agents/dev/agent/openclaw-agent.sqlite",
                   "state/state/openclaw.sqlite",
-                  "state/tmp/openclaw-501/device-identity.55b5b340.lock.sqlite",
-                  "state/tmp/openclaw-501/gateway.1691f7a7.lock.sqlite",
-                  "state/tmp/openclaw-501/gateway.state.lock.sqlite"
+                  "state<temporary-root>/openclaw-501/device-identity.55b5b340.lock.sqlite",
+                  "state<temporary-root>/openclaw-501/gateway.1691f7a7.lock.sqlite",
+                  "state<temporary-root>/openclaw-501/gateway.state.lock.sqlite"
                 ],
                 "sessions-transcripts": [
                   "state/agents/dev/session-sqlite-import-archive/agent_dev_legacy-migration-fixture.db201cc3-8946-4815-a904-6f99bec868a7.jsonl.imported-1788261865313",

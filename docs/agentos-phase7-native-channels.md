@@ -4,7 +4,7 @@
 > contract supersedes workspace `agentIds` as a runtime routing authority;
 > those fields are retained only as workspace metadata compatibility.
 
-The readiness projection is aligned with the OpenClaw 2026.9.4 channel
+The readiness projection is aligned with the OpenClaw 2026.9.7 channel
 account-state contract: `running` is the native started state, while a
 configured account with no running transport is stopped. WhatsApp linking is
 an authentication fact; it does not by itself claim a running listener.

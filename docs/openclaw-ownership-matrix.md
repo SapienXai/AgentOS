@@ -1,8 +1,12 @@
 # AgentOS / OpenClaw Ownership Matrix
 
-Status: repository decision record, aligned to the locally certified OpenClaw
-`2026.9.4` target as of `2026-09-13`. This is a bounded ownership index, not a
-replacement for the compatibility audit or live Gateway status.
+Status: repository decision record, originally aligned to the locally certified
+OpenClaw `2026.9.4` target as of `2026-09-13`. Current `main` promotes OpenClaw
+`2026.9.7` with supported baseline `2026.9.1`; see the
+[2026.9.7 compatibility audit](openclaw-2026.9.7-compatibility-audit.md) and
+[final certification artifact](evidence/openclaw-2026.9.7-pre-merge-final-certification.json).
+This is a bounded ownership index, not a replacement for the compatibility
+audit or live Gateway status.
 
 ## Reading the matrix
 
@@ -31,6 +35,13 @@ state schema 17, and agent schema 19. Start with the [2026.9.4 compatibility
 audit](openclaw-2026.9.4-compatibility-audit.md) and its [exact contract
 diff](evidence/openclaw-2026.9.3-to-2026.9.4-contract-diff.json).
 
+**Certified 2026.9.7 evidence (`C97`)** is generated against the exact
+2026.9.7 package identity and binds code HEAD
+`48b6cd132b1c4b897244caa1d6aebe78a89ae602`. The official tag object is not
+signature-verified; evidence binds the source commit and npm integrity values.
+See the [2026.9.7 audit](openclaw-2026.9.7-compatibility-audit.md) and
+[generated certification matrix](evidence/openclaw-2026.9.7-pre-merge-final-certification.json).
+
 The evidence artifacts record their own historical AgentOS code heads. They
 prove the dated 9.4 certification runs, not runtime certification of this
 matrix commit. The code links below are the current checkout implementation.
@@ -44,14 +55,17 @@ decision](openclaw-native-workspace-foundation.md) records that upstream `main`
 was inspected for drift without promoting unreleased behavior. Re-check the
 exact supported package before using any such signal for implementation.
 
-No GitHub issue status was changed, and external issues were not mutated.
+No GitHub issue status was changed during this matrix's original 2026-09-13
+pass. Later authenticated release-watch runs updated the existing
+2026.9.5–2026.9.7 compatibility intake issues; see the archived run evidence
+linked above.
 
 ## Ownership matrix
 
 | Concern | Owner | Source of truth | C94 evidence / current code | Integration status | Next bounded action |
 | --- | --- | --- | --- | --- | --- |
 | Mission intent, worker role, and AgentOS sidecar | A | AgentOS mission request plus the worker-profile sidecar in `.openclaw/project.json`; native agent/runtime facts remain OpenClaw-owned. | [C94 workspace foundation](openclaw-native-workspace-foundation.md); [agent service](../lib/openclaw/application/agent-service.ts); [worker profile](../lib/agentos/worker-profile.ts) | native | Keep role/mission/policy metadata separate from shared OpenClaw bootstrap context. |
-| Worker lifecycle | B | OpenClaw Gateway, agents, sessions, runtime, and native supervisor. | [C94 lifecycle](evidence/openclaw-2026.9.4-lifecycle-certification.json); [runtime service](../lib/openclaw/application/runtime-service.ts); [runtime state](../lib/openclaw/application/runtime-state-service.ts) | native | Extend only through an observed 9.4 Gateway method/event and a focused contract test. |
+| Worker lifecycle | B | OpenClaw Gateway, agents, sessions, runtime, and native supervisor. | [C94 lifecycle](evidence/openclaw-2026.9.4-lifecycle-certification.json); [runtime service](../lib/openclaw/application/runtime-service.ts); [runtime state](../lib/openclaw/application/runtime-state-service.ts) | native | Extend only through an observed supported Gateway method/event and a focused contract test. |
 | Retries, reconnect, and mutation ambiguity | B | OpenClaw transport/lifecycle semantics; AgentOS request policy may coalesce reads and perform one authoritative reread, but never owns a second retry ledger. | [C94 official transport](evidence/openclaw-2026.9.4-official-transport-certification.json); [official coordinator](../lib/openclaw/client/official-gateway-coordinator.ts); [request policy](../lib/openclaw/client/gateway-request-policy.ts) | native + degraded | Preserve native reconnect ownership and reconcile ambiguous mutations once; do not blindly retry a sent mutation. |
 | Recovery and repair | B | OpenClaw Doctor, health/status, restart/suspend, update recovery, and rollback state. | [C94 Doctor/recovery](evidence/openclaw-2026.9.4-doctor-update-recovery.json); [Doctor service](../lib/openclaw/application/native-doctor-service.ts); [recovery decision](openclaw-native-doctor-update-recovery.md) | native + fallback | Keep CLI repair explicit and observable where Gateway self-control is unavailable; retain failed-after-rollback as failure. |
 | Delegation and mission dispatch | B | OpenClaw `chat.send` / `sessions.send` and the returned native session/run identity; AgentOS owns intent and permissions only. | [C94 session/task alignment](evidence/openclaw-2026.9.4-session-task-alignment.json); [native client](../lib/openclaw/client/native-ws-gateway-client.ts); [mission workflow](../lib/openclaw/domains/mission-dispatch-workflow.ts) | native + fallback | Keep native dispatch first, with visible CLI fallback only for unsupported/older Gateway paths. |
