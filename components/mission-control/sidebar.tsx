@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -2437,20 +2438,40 @@ function SidebarUserMenu({
   onProfileSaved: (profile: OperatorProfileSummary) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; bottom: number; maxHeight: number } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
   const { status: protectionStatus, lock, signOut } = useInstanceProtection();
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuContentRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const displayName = resolveOperatorDisplayName(operatorProfile);
   const displayDetail = resolveOperatorDisplayDetail(operatorProfile);
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = Math.min(296, Math.max(0, window.innerWidth - 24));
+    const maxLeft = Math.max(12, window.innerWidth - menuWidth - 12);
+
+    setMenuPosition({
+      left: Math.min(Math.max(12, rect.left), maxLeft),
+      bottom: window.innerHeight - rect.top + 10,
+      maxHeight: Math.max(120, rect.top - 24)
+    });
+  }, []);
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
+    updateMenuPosition();
+
     const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !menuContentRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -2460,101 +2481,119 @@ function SidebarUserMenu({
       }
     };
 
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
     window.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [open, updateMenuPosition]);
 
   return (
     <>
       <div ref={menuRef} className="relative mt-4 shrink-0 border-t border-border pt-4">
-      <AnimatePresence>
-        {open ? (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[min(296px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-[0_20px_50px_hsl(var(--foreground)/0.16)]"
-            role="menu"
-            aria-label="User menu"
-          >
-            <div className="flex items-center gap-3 px-2.5 py-2">
-              <UserAvatar profile={operatorProfile} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-                <p className="truncate text-xs text-muted-foreground">{displayDetail}</p>
-              </div>
-              {operatorProfile.role ? <span className="shrink-0 text-[10px] font-medium capitalize text-muted-foreground">{operatorProfile.role}</span> : null}
-            </div>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
 
-            <div className="my-1.5 h-px bg-border" />
-            <SidebarUserMenuAction
-              icon={UserRound}
-              label="Profile"
-              onSelect={() => {
-                setOpen(false);
-                setProfileOpen(true);
-              }}
-            />
-            {operatorProfile.role === "owner" ? (
-              <SidebarUserMenuAction
-                icon={Users}
-                label="Team"
-                onSelect={() => {
-                  setOpen(false);
-                  setUserManagementOpen(true);
-                }}
-              />
-            ) : null}
-            <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
-            {protectionStatus?.protectionEnabled ? (
-              <SidebarUserMenuAction
-                icon={LockKeyhole}
-                label="Lock AgentOS"
-                onSelect={() => {
-                  setOpen(false);
-                  void lock().catch(() => toast.error("AgentOS could not be locked."));
-                }}
-              />
-            ) : null}
-            <div className="my-1.5 h-px bg-border" />
-            <SidebarUserMenuAction
-              icon={LogOut}
-              label="Sign out"
-              onSelect={() => {
-                setOpen(false);
-                void signOut().catch(() => toast.error("AgentOS could not sign out."));
-              }}
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={cn(
-          "flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
-          open
-            ? "border-primary/25 bg-primary/10"
-            : "border-transparent bg-muted/55 hover:border-border hover:bg-accent"
-        )}
-      >
-        <UserAvatar profile={operatorProfile} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[0.84rem] font-semibold text-foreground">{displayName}</span>
-          <span className="block truncate text-xs text-muted-foreground">{displayDetail}</span>
-        </span>
-        <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "-rotate-90")} />
-      </button>
+            updateMenuPosition();
+            setOpen(true);
+          }}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
+            open
+              ? "border-primary/25 bg-primary/10"
+              : "border-transparent bg-muted/55 hover:border-border hover:bg-accent"
+          )}
+        >
+          <UserAvatar profile={operatorProfile} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[0.84rem] font-semibold text-foreground">{displayName}</span>
+            <span className="block truncate text-xs text-muted-foreground">{displayDetail}</span>
+          </span>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "-rotate-90")} />
+        </button>
       </div>
+      {typeof document !== "undefined" ? createPortal(
+        <AnimatePresence>
+          {open && menuPosition ? (
+            <motion.div
+              ref={menuContentRef}
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="fixed z-[60] w-[min(296px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-[0_20px_50px_hsl(var(--foreground)/0.16)]"
+              style={{ left: menuPosition.left, bottom: menuPosition.bottom, maxHeight: menuPosition.maxHeight }}
+              role="menu"
+              aria-label="User menu"
+              data-sidebar-portal
+            >
+              <div className="flex items-center gap-3 px-2.5 py-2">
+                <UserAvatar profile={operatorProfile} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{displayDetail}</p>
+                </div>
+                {operatorProfile.role ? <span className="shrink-0 text-[10px] font-medium capitalize text-muted-foreground">{operatorProfile.role}</span> : null}
+              </div>
+
+              <div className="my-1.5 h-px bg-border" />
+              <SidebarUserMenuAction
+                icon={UserRound}
+                label="Profile"
+                onSelect={() => {
+                  setOpen(false);
+                  setProfileOpen(true);
+                }}
+              />
+              {operatorProfile.role === "owner" ? (
+                <SidebarUserMenuAction
+                  icon={Users}
+                  label="Team"
+                  onSelect={() => {
+                    setOpen(false);
+                    setUserManagementOpen(true);
+                  }}
+                />
+              ) : null}
+              <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
+              {protectionStatus?.protectionEnabled ? (
+                <SidebarUserMenuAction
+                  icon={LockKeyhole}
+                  label="Lock AgentOS"
+                  onSelect={() => {
+                    setOpen(false);
+                    void lock().catch(() => toast.error("AgentOS could not be locked."));
+                  }}
+                />
+              ) : null}
+              <div className="my-1.5 h-px bg-border" />
+              <SidebarUserMenuAction
+                icon={LogOut}
+                label="Sign out"
+                onSelect={() => {
+                  setOpen(false);
+                  void signOut().catch(() => toast.error("AgentOS could not sign out."));
+                }}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>,
+        document.body
+      ) : null}
       <UserProfileDialog
         open={profileOpen}
         onOpenChange={setProfileOpen}

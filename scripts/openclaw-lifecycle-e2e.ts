@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -55,9 +55,11 @@ async function main() {
   assert.equal(identity.sourceCommit, TARGET_COMMIT);
 
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-lifecycle-"));
-  const runtimePackageRoot = path.join(fixtureRoot, "exact-openclaw-package");
-  await cp(packageRoot, runtimePackageRoot, { recursive: true, dereference: false });
-  await ensurePackageDependencies(runtimePackageRoot);
+  const homeDir = path.join(fixtureRoot, "home");
+  const runtimePackageRoot = path.join(fixtureRoot, "node_modules", "openclaw");
+  await installExactOpenClawPackage(fixtureRoot, identity.version, homeDir);
+  const installedIdentity = await readPackageIdentity(runtimePackageRoot);
+  assert.equal(installedIdentity.packageHash, identity.packageHash, "The disposable install must match the exact package supplied for certification.");
   const fixture = await createOpenClawRuntimeProviderFixture();
   const evidence = {
     schemaVersion: 1,
@@ -88,8 +90,8 @@ async function main() {
   };
 
   try {
-    const managed = await runManagedLifecycle({ fixtureRoot, packageRoot: runtimePackageRoot, fixtureBaseUrl: fixture.baseUrl });
-    const external = await runExternalLifecycle({ fixtureRoot, packageRoot: runtimePackageRoot, fixtureBaseUrl: fixture.baseUrl });
+    const managed = await runManagedLifecycle({ fixtureRoot, homeDir, packageRoot: runtimePackageRoot, fixtureBaseUrl: fixture.baseUrl });
+    const external = await runExternalLifecycle({ fixtureRoot, homeDir, packageRoot: runtimePackageRoot, fixtureBaseUrl: fixture.baseUrl });
     const crashLoopProtection = await proveCrashLoopProtection();
     evidence.managed = managed.evidence;
     evidence.external = external.evidence;
@@ -125,13 +127,14 @@ async function main() {
   console.log(`Evidence: ${OUTPUT_PATH}`);
 }
 
-async function runManagedLifecycle(input: { fixtureRoot: string; packageRoot: string; fixtureBaseUrl: string }) {
+async function runManagedLifecycle(input: { fixtureRoot: string; homeDir: string; packageRoot: string; fixtureBaseUrl: string }) {
   const stateDir = path.join(input.fixtureRoot, "managed-state");
   const configPath = path.join(input.fixtureRoot, "managed-config", "openclaw.json");
   const port = await reservePort();
   const token = randomBytes(24).toString("hex");
   await provisionRuntimeConfig(configPath);
   const env = {
+    HOME: input.homeDir,
     OPENCLAW_SUPERVISOR_MODE: "agentos-managed",
     OPENCLAW_GATEWAY_PROCESS_MODE: "child",
     OPENCLAW_GATEWAY_BINARY: path.join(input.packageRoot, "openclaw.mjs"),
@@ -215,15 +218,16 @@ async function runManagedLifecycle(input: { fixtureRoot: string; packageRoot: st
   }
 }
 
-async function runExternalLifecycle(input: { fixtureRoot: string; packageRoot: string; fixtureBaseUrl: string }) {
+async function runExternalLifecycle(input: { fixtureRoot: string; homeDir: string; packageRoot: string; fixtureBaseUrl: string }) {
   const stateDir = path.join(input.fixtureRoot, "external-state");
   const configPath = path.join(input.fixtureRoot, "external-config", "openclaw.json");
   const socketPath = path.join(input.fixtureRoot, "supervisor.sock");
   const port = await reservePort();
   const token = randomBytes(24).toString("hex");
   await provisionRuntimeConfig(configPath);
-  const supervisor = await startSupervisor({ packageRoot: input.packageRoot, stateDir, configPath, socketPath, port, token });
+  const supervisor = await startSupervisor({ packageRoot: input.packageRoot, homeDir: input.homeDir, stateDir, configPath, socketPath, port, token });
   const env = {
+    HOME: input.homeDir,
     AGENTOS_DEPLOYMENT_PLATFORM: "railway",
     OPENCLAW_SUPERVISOR_MODE: "external",
     OPENCLAW_GATEWAY_BINARY: path.join(input.packageRoot, "openclaw.mjs"),
@@ -318,12 +322,13 @@ async function runExternalLifecycle(input: { fixtureRoot: string; packageRoot: s
   }
 }
 
-async function startSupervisor(input: { packageRoot: string; stateDir: string; configPath: string; socketPath: string; port: number; token: string }) {
+async function startSupervisor(input: { packageRoot: string; homeDir: string; stateDir: string; configPath: string; socketPath: string; port: number; token: string }) {
   const scriptPath = path.resolve("scripts/railway-supervisor.mjs");
   const child = spawn(process.execPath, [scriptPath], {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      HOME: input.homeDir,
       AGENTOS_SUPERVISOR_TEST_MODE: "1",
       AGENTOS_DEPLOYMENT_PLATFORM: "railway",
       OPENCLAW_SUPERVISOR_MODE: "external",
@@ -570,9 +575,31 @@ async function readPackageIdentity(packageRoot: string) {
   return { version: packageJson.version || "", sourceCommit: buildInfo.commit || null, buildId: buildInfo.buildId || null, packageHash: hash.digest("hex") };
 }
 
-async function ensurePackageDependencies(packageRoot: string) {
-  if (await pathExists(path.join(packageRoot, "node_modules", "tslog", "package.json"))) return;
-  await execFileAsync("npm", ["install", "--prefix", packageRoot, "--omit=dev", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund"], { cwd: packageRoot, maxBuffer: 2 * 1024 * 1024, timeout: 180_000 });
+async function installExactOpenClawPackage(installPrefix: string, version: string, homeDir: string) {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  await execFileAsync("npm", [
+    "install",
+    "--prefix",
+    installPrefix,
+    "--no-save",
+    "--package-lock=false",
+    "--omit=dev",
+    "--ignore-scripts",
+    "--legacy-peer-deps",
+    "--no-audit",
+    "--no-fund",
+    `openclaw@${version}`
+  ], {
+    cwd: installPrefix,
+    env: {
+      ...process.env,
+      HOME: homeDir,
+      npm_config_userconfig: path.join(homeDir, ".npmrc"),
+      npm_config_cache: path.join(homeDir, ".npm-cache")
+    },
+    maxBuffer: 2 * 1024 * 1024,
+    timeout: 180_000
+  });
 }
 
 async function provesUnknownOwnershipBlocked() {

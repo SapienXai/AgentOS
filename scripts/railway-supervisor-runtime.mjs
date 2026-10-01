@@ -103,6 +103,7 @@ export function createGatewaySupervisor(options) {
       if (stopping) return;
       const delayMs = Math.min(attempt * 1_000, 30_000);
       if (attempt > 1) await wait(delayMs);
+      if (stopping) return;
       try {
         state = "starting";
         gateway = spawnGateway();
@@ -162,6 +163,12 @@ export function createGatewaySupervisor(options) {
     const child = gateway;
     gateway = null;
     if (child) await stopProcess(child, signal);
+    await transition.catch(() => {});
+    await recoveryPromise?.catch(() => {});
+    const lateChild = gateway;
+    gateway = null;
+    if (lateChild) await stopProcess(lateChild, signal);
+    await monitorPromise?.catch(() => {});
     state = "stopped";
     await unlink(socketPath).catch(() => {});
     closeResolve();

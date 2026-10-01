@@ -12,6 +12,8 @@ import {
   OfficialOpenClawGatewayTransport
 } from "@/lib/openclaw/client/gateway-client";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
+import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import {
   OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
   OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
@@ -36,6 +38,7 @@ async function main() {
 
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-official-lifecycle-"));
   const stateDir = path.join(disposableRoot, "state");
+  const homeDir = path.join(disposableRoot, "home");
   const workspaceDir = path.join(disposableRoot, "workspace");
   const configPath = path.join(disposableRoot, "openclaw.json");
   const port = await reservePort();
@@ -73,6 +76,8 @@ async function main() {
       deviceSignatureRoundTrip: false,
       deviceTokenPersistence: false,
       officialBackedDomainReads: false,
+      optionalTaskMethodsScoped: false,
+      gatewayHealthAfterOptionalTaskProbe: false,
       reconnectAfterRuntimeRestart: false,
       noParallelReconnectOwner: true
     },
@@ -83,6 +88,12 @@ async function main() {
       helloCount: 0,
       grantedRole: null as string | null,
       grantedScopes: [] as string[],
+      sessionListShapeValid: false,
+      taskListMethodStatus: "not-probed" as "not-probed" | "available" | "unsupported" | "failed",
+      taskListErrorKind: null as string | null,
+      nativeSessionReadUsed: false,
+      cliFallbackUsed: false,
+      gatewayHealthAfterTaskProbe: false,
       deviceId,
       transportDeviceIdPresent: false,
       canonicalIdentityPresent: false,
@@ -119,18 +130,25 @@ async function main() {
       }
     }
   });
+  const noCliFallback = new Proxy({}, {
+    get: (_target, property) => async () => {
+      throw new Error(`Unexpected CLI fallback during official Gateway certification: ${String(property)}.`);
+    }
+  }) as OpenClawGatewayClient;
   const domainClient = createOfficialBackedOpenClawGatewayClient({
     url: `ws://127.0.0.1:${port}`,
     stateDir,
     sharedStateMode: "managed-write",
     includeDeviceIdentityWithExplicitAuth: true,
     token: gatewayToken,
-    requestTimeoutMs: REQUEST_TIMEOUT_MS
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+    fallback: noCliFallback
   });
 
   try {
     evidence.checks.exactPackage = true;
-    gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token: gatewayToken });
+    await mkdir(homeDir, { recursive: true, mode: 0o700 });
+    gateway = await startGateway({ packageRoot, stateDir, homeDir, workspaceDir, configPath, port, token: gatewayToken });
     transport.start();
     const firstHello = await transport.waitForReady({ timeoutMs: REQUEST_TIMEOUT_MS });
     evidence.checks.officialHandshake = firstHello.protocol === 4 && firstHello.server.version === TARGET_VERSION;
@@ -154,16 +172,36 @@ async function main() {
     evidence.observations.canonicalDeviceTokenPresent = typeof authState?.token === "string";
     evidence.observations.canonicalDeviceTokenChanged = authState?.token !== deviceToken;
 
-    const [sessions, tasks] = await Promise.all([
-      domainClient.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS }),
-      domainClient.listTasks({}, { timeoutMs: REQUEST_TIMEOUT_MS })
-    ]);
-    evidence.checks.officialBackedDomainReads = Array.isArray(sessions.sessions) && Array.isArray(tasks.tasks);
+    const sessions = await domainClient.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS });
+    const sessionDiagnostics = domainClient.getDiagnostics();
+    evidence.observations.sessionListShapeValid = Array.isArray(sessions.sessions);
+    evidence.observations.nativeSessionReadUsed = !sessionDiagnostics.fallbackCounts["sessions.list"];
+    evidence.observations.cliFallbackUsed = Object.values(sessionDiagnostics.fallbackCounts).some((count) => count > 0);
+
+    let taskListStatus: "available" | "unsupported" | "failed" = "failed";
+    try {
+      const tasks = await transport.request<{ tasks?: unknown[] }>("tasks.list", { limit: 1 }, { timeoutMs: REQUEST_TIMEOUT_MS });
+      if (Array.isArray(tasks.tasks)) taskListStatus = "available";
+    } catch (error) {
+      const normalized = normalizeClientError(error);
+      evidence.observations.taskListErrorKind = normalized.kind;
+      if (normalized.kind === "unsupported") taskListStatus = "unsupported";
+    }
+    evidence.observations.taskListMethodStatus = taskListStatus;
+    evidence.checks.optionalTaskMethodsScoped = taskListStatus === "available" || taskListStatus === "unsupported";
+
+    const gatewayHealth = await transport.request<Record<string, unknown>>("health", {}, { timeoutMs: REQUEST_TIMEOUT_MS });
+    evidence.observations.gatewayHealthAfterTaskProbe = Boolean(gatewayHealth && typeof gatewayHealth === "object");
+    evidence.checks.gatewayHealthAfterOptionalTaskProbe = evidence.observations.gatewayHealthAfterTaskProbe;
+    evidence.checks.officialBackedDomainReads = evidence.observations.sessionListShapeValid &&
+      evidence.observations.nativeSessionReadUsed &&
+      !evidence.observations.cliFallbackUsed &&
+      evidence.checks.optionalTaskMethodsScoped;
 
     await stopProcess(gateway);
     gateway = null;
     await waitFor(() => transport.getLifecycleState() === "reconnecting", 10_000);
-    restartedGateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token: gatewayToken });
+    restartedGateway = await startGateway({ packageRoot, stateDir, homeDir, workspaceDir, configPath, port, token: gatewayToken });
     await waitFor(() => helloVersions.length >= 2, 20_000);
     evidence.observations.connectionCount = 2;
     evidence.checks.reconnectAfterRuntimeRestart = helloVersions.length >= 2;
@@ -245,6 +283,7 @@ async function provisionState(input: {
 async function startGateway(input: {
   packageRoot: string;
   stateDir: string;
+  homeDir: string;
   workspaceDir: string;
   configPath: string;
   port: number;
@@ -258,6 +297,7 @@ async function startGateway(input: {
     cwd: input.workspaceDir,
     env: {
       ...process.env,
+      HOME: input.homeDir,
       OPENCLAW_STATE_DIR: input.stateDir,
       OPENCLAW_CONFIG_PATH: input.configPath,
       OPENCLAW_GATEWAY_TOKEN: input.token

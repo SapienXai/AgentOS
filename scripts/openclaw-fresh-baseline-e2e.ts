@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -53,8 +53,9 @@ async function main() {
   assertExactTarget(inputIdentity);
 
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-fresh-baseline-"));
-  const installRoot = path.join(fixtureRoot, "managed-package");
+  const installRoot = inputPackage;
   const stateDir = path.join(fixtureRoot, "fresh-state");
+  const homeDir = path.join(fixtureRoot, "home");
   const configPath = path.join(fixtureRoot, "fresh-config", "openclaw.json");
   const workspacePath = path.join(fixtureRoot, "workspace");
   const certificationWorkspace = path.join(fixtureRoot, "certification-workspace");
@@ -72,10 +73,7 @@ async function main() {
     await mkdir(certificationWorkspace, { recursive: true, mode: 0o700 });
     const stateEmptyBeforeBootstrap = (await readdir(stateDir)).length === 0;
 
-    await cp(inputPackage, installRoot, { recursive: true, dereference: false });
-    await ensurePackageDependencies(installRoot);
-    const provisionedIdentity = await readExactPackageIdentity(installRoot);
-    assertExactTarget(provisionedIdentity);
+    const provisionedIdentity = inputIdentity;
 
     await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
     await writeFile(configPath, `${JSON.stringify({
@@ -93,7 +91,7 @@ async function main() {
       configPath,
       port,
       token,
-      homeDir: path.join(fixtureRoot, "home")
+      homeDir
     });
 
     const lifecycleEnv = {
@@ -125,7 +123,7 @@ async function main() {
       agentToAgentAllow: agentToAgentConfig?.allow ?? null
     };
     if (!lifecycleReadiness.ready || securityBootstrap.sessionsVisibility !== "tree" || securityBootstrap.agentToAgentEnabled !== false || !Array.isArray(securityBootstrap.agentToAgentAllow) || securityBootstrap.agentToAgentAllow.length !== 0) {
-      throw new Error("Managed fresh Gateway security bootstrap did not produce the explicit AgentOS policy.");
+      throw new Error(`Managed fresh Gateway security bootstrap did not produce the explicit AgentOS policy (readiness=${lifecycleReadiness.ready}, reason=${lifecycleReadiness.reason ?? "none"}, visibility=${String(securityBootstrap.sessionsVisibility)}, agentToAgent=${String(securityBootstrap.agentToAgentEnabled)}, allowCount=${Array.isArray(securityBootstrap.agentToAgentAllow) ? securityBootstrap.agentToAgentAllow.length : "unknown"}).`);
     }
 
     const certification = await runRuntimeCertification({
@@ -136,7 +134,7 @@ async function main() {
       binaryPath: path.join(installRoot, "openclaw.mjs"),
       workspace: certificationWorkspace,
       outputPath: certificationOutput,
-      homeDir: path.join(fixtureRoot, "home")
+      homeDir
     });
     runtimeCertification = certification;
 
@@ -337,20 +335,6 @@ function assertExactTarget(identity: ExactPackageIdentity) {
   if (identity.version !== TARGET_VERSION || identity.sourceCommit !== TARGET_COMMIT) {
     throw new Error(`The package must be OpenClaw ${TARGET_VERSION} at commit ${TARGET_COMMIT}.`);
   }
-}
-
-async function ensurePackageDependencies(packageRoot: string) {
-  if (await pathExists(path.join(packageRoot, "node_modules", "tslog", "package.json"))) return;
-  await runProcess("npm", [
-    "install",
-    "--prefix",
-    packageRoot,
-    "--omit=dev",
-    "--ignore-scripts",
-    "--legacy-peer-deps",
-    "--no-audit",
-    "--no-fund"
-  ], { cwd: packageRoot, timeoutMs: 180_000 });
 }
 
 type FreshGatewayProcess = {

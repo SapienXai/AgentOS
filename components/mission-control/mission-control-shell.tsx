@@ -227,7 +227,7 @@ function isMissingTranscriptActivityMessage(value: string | null | undefined) {
 }
 
 function shouldKeepSidebarOpenForPortal(target: EventTarget | null) {
-  if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')) {
+  if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper], [data-sidebar-portal]')) {
     return true;
   }
 

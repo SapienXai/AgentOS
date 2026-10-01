@@ -1,13 +1,85 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
   classifyCertificationChangedPaths,
-  evaluateCertificationFreshness
+  evaluateCertificationFreshness,
+  getCertificationEvidencePathForVersion,
+  getCurrentCertificationTarget,
+  resolveCertificationEvidenceSelection,
+  checkCertificationFreshness
 } from "@/scripts/check-certification-freshness.mjs";
 
 const certifiedCodeHead = "a".repeat(40);
 const currentHead = "b".repeat(40);
+
+async function withPolicyFixture(run: (root: string) => Promise<void>) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-freshness-"));
+  try {
+    await mkdir(path.join(root, "lib/openclaw"), { recursive: true });
+    await writeFile(path.join(root, "lib/openclaw/versions.ts"), [
+      'export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.7";',
+      'export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.9.7";',
+      'export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;'
+    ].join("\n"));
+    await run(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+test("default certification freshness follows the promoted policy target, not the newest file", async () => {
+  await withPolicyFixture(async (root) => {
+    await mkdir(path.join(root, "docs/evidence"), { recursive: true });
+    await writeFile(path.join(root, "docs/evidence/openclaw-2026.9.8-pre-merge-final-certification.json"), "{}");
+
+    assert.deepEqual(getCurrentCertificationTarget(root), {
+      version: "2026.9.7",
+      phase: "pre-merge-final-certification",
+      evidencePath: "docs/evidence/openclaw-2026.9.7-pre-merge-final-certification.json"
+    });
+    assert.equal(getCertificationEvidencePathForVersion("2026.9.4"), "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json");
+    assert.deepEqual(resolveCertificationEvidenceSelection({ repoRoot: root, version: "2026.9.4" }), {
+      version: "2026.9.4",
+      evidencePath: "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json"
+    });
+  });
+});
+
+test("certification freshness refuses ambiguous recommended and native targets", async () => {
+  await withPolicyFixture(async (root) => {
+    const policyPath = path.join(root, "lib/openclaw/versions.ts");
+    const source = await readFile(policyPath, "utf8");
+    await writeFile(policyPath, source.replace("OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.9.7\"", "OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.9.4\""));
+    assert.throws(() => getCurrentCertificationTarget(root), /differ/i);
+  });
+});
+
+test("certification freshness rejects evidence whose target identity differs from its selected version", async () => {
+  await withPolicyFixture(async (root) => {
+    const evidencePath = "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json";
+    await mkdir(path.dirname(path.join(root, evidencePath)), { recursive: true });
+    await writeFile(path.join(root, evidencePath), JSON.stringify({
+      artifactType: "openclaw-2026.9.4-pre-merge-final-certification",
+      openclawVersion: "2026.9.4",
+      success: true
+    }));
+
+    const result = checkCertificationFreshness({
+      repoRoot: root,
+      evidencePath,
+      expectedVersion: "2026.9.7",
+      currentHead: currentHead
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "certification-target-mismatch");
+    assert.equal(result.expectedVersion, "2026.9.7");
+    assert.equal(result.actualVersion, "2026.9.4");
+  });
+});
 
 test("certification freshness accepts the exact certified code HEAD", () => {
   const result = evaluateCertificationFreshness({

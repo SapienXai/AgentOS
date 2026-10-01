@@ -17,6 +17,15 @@ test("account menu keeps lock and sign out as separate compact actions", async (
   assert.doesNotMatch(menu, /Login & Protection|Appearance|Help center|label="Connect"/);
 });
 
+test("account menu renders above the sidebar in a viewport-layer portal", async () => {
+  const source = await readFile(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+  const menu = source.match(/function SidebarUserMenu\([\s\S]*?\n}\n\nfunction UserAvatar/)?.[0] ?? "";
+
+  assert.match(menu, /createPortal\([\s\S]*?document\.body/);
+  assert.match(menu, /className="fixed z-\[60\][^"]*overflow-y-auto/);
+  assert.match(menu, /data-sidebar-portal/);
+});
+
 test("profile remains a human identity surface", async () => {
   const source = await readFile(path.join(rootDir, "components/mission-control/user-profile-dialog.tsx"), "utf8");
 

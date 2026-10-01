@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
+import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import {
@@ -41,6 +42,7 @@ async function main() {
 
   const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-session-task-"));
   const stateDir = path.join(disposableRoot, "state");
+  const homeDir = path.join(disposableRoot, "home");
   const workspaceDir = path.join(disposableRoot, "workspace");
   const configPath = path.join(disposableRoot, "openclaw.json");
   const port = await reservePort();
@@ -50,6 +52,7 @@ async function main() {
   try {
     gateway = await startGateway({
       packageRoot,
+      homeDir,
       stateDir,
       workspaceDir,
       configPath,
@@ -102,6 +105,7 @@ async function main() {
       get: "tasks.get",
       cancel: "tasks.cancel",
       assignment: `unsupported in exact ${OPENCLAW_IDENTITY_CONTRACT_VERSION}`,
+      availability: "probed from the connected native Gateway; absent methods remain feature-scoped",
       taskSummaryFields: ["id", "status", "agentId", "sessionKey", "runId", "parentTaskId", "sourceId"]
     },
     sourceOfTruthMatrix: [
@@ -129,7 +133,8 @@ async function main() {
     },
     sessionCorrelation: [] as Array<Record<string, unknown>>,
     nativeTaskIntegration: {
-      taskListRequest: "PASS",
+      taskListRequest: "pending",
+      taskMethodsAvailable: false,
       taskIds: [] as string[],
       taskGetChecks: [] as Array<Record<string, unknown>>,
       taskCancelChecks: [] as Array<Record<string, unknown>>,
@@ -263,7 +268,22 @@ async function main() {
       historyAssistantCount: firstTurn.historyAssistantCount
     });
 
-    const taskPayload = await client.listTasks({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
+    let taskPayload: { tasks?: unknown[] } | null = null;
+    try {
+      taskPayload = await client.callNative(
+        "tasks.list",
+        { sessionKey },
+        { timeoutMs: REQUEST_TIMEOUT_MS },
+        { safety: "read", timeoutMs: REQUEST_TIMEOUT_MS }
+      );
+      evidence.nativeTaskIntegration.taskListRequest = "PASS-native";
+      evidence.nativeTaskIntegration.taskMethodsAvailable = true;
+    } catch (error) {
+      const normalized = normalizeClientError(error);
+      if (normalized.kind !== "unsupported") throw error;
+      evidence.nativeTaskIntegration.taskListRequest = "UNSUPPORTED-optional-native-method";
+      evidence.nativeTaskIntegration.emptyLedgerExplanation = `OpenClaw ${OPENCLAW_IDENTITY_CONTRACT_VERSION} does not expose tasks.list; task APIs are scoped as unavailable while native session operations continue.`;
+    }
     const taskRuntimes = mapOpenClawTaskListToRuntimes(taskPayload, {
       agentConfig: [{ id: "main", workspace: workspaceDir }],
       agentsList: [{ id: "main", workspace: workspaceDir }],
@@ -320,16 +340,20 @@ async function main() {
       { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }
     );
     try {
-      const cancelProbe = await client.cancelTask(
-        { taskId: `task-not-found-session-task-e2e-${Date.now()}`, reason: "disposable cancellation probe" },
-        { timeoutMs: REQUEST_TIMEOUT_MS }
-      );
-      const cancelRecord = cancelProbe as Record<string, unknown>;
-      evidence.taskControlSemantics.taskCancelProbe = {
-        result: "PASS",
-        found: cancelRecord.found ?? null,
-        cancelled: cancelRecord.cancelled ?? null
-      };
+      if (evidence.nativeTaskIntegration.taskMethodsAvailable) {
+        const cancelProbe = await client.cancelTask(
+          { taskId: `task-not-found-session-task-e2e-${Date.now()}`, reason: "disposable cancellation probe" },
+          { timeoutMs: REQUEST_TIMEOUT_MS }
+        );
+        const cancelRecord = cancelProbe as Record<string, unknown>;
+        evidence.taskControlSemantics.taskCancelProbe = {
+          result: "PASS",
+          found: cancelRecord.found ?? null,
+          cancelled: cancelRecord.cancelled ?? null
+        };
+      } else {
+        evidence.taskControlSemantics.taskCancelProbe = { result: "SKIPPED-unsupported-optional-method" };
+      }
       const abortProbe = await client.callNative<Record<string, unknown>>(
         "sessions.abort",
         { key: controlSessionKey },
@@ -354,6 +378,7 @@ async function main() {
     await stopProcess(gateway);
     gateway = await startGateway({
       packageRoot,
+      homeDir,
       stateDir,
       workspaceDir,
       configPath,
@@ -500,6 +525,7 @@ function createClient(port: number, token: string, clientVersion: string) {
 
 async function startGateway(input: {
   packageRoot: string;
+  homeDir: string;
   stateDir: string;
   workspaceDir: string;
   configPath: string;
@@ -535,7 +561,7 @@ async function startGateway(input: {
     "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"
   ], {
     cwd: input.workspaceDir,
-    env: { ...process.env, OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token },
+    env: { ...process.env, HOME: input.homeDir, OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token },
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";

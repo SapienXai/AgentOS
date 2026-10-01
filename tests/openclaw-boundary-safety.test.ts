@@ -703,7 +703,7 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   assert.match(source, /const isSidebarOpen = isSidebarOpenState \|\| \(isSidebarPinned && !isCompactViewport\);/);
   assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
   assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
-  assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
+  assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\], \[data-sidebar-portal\]'\)/);
   assert.match(source, /document\.querySelector\('\[role="dialog"\]'\)/);
   assert.match(source, /const handleSidebarPinToggle = useCallback\(\(\) => \{/);
   assert.match(source, /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches/);

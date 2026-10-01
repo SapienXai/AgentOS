@@ -5,9 +5,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const DEFAULT_CERTIFICATION_EVIDENCE_PATH =
-  "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json";
-
 /**
  * Only documentation and evidence paths may follow a certified code commit.
  * Everything else is conservatively treated as behavior-affecting, including
@@ -106,7 +103,7 @@ function parseArguments(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--repo-root" || argument === "--evidence") {
+    if (argument === "--repo-root" || argument === "--evidence" || argument === "--version") {
       const value = argv[index + 1];
       if (!value) {
         throw new Error(`${argument} requires a value.`);
@@ -121,6 +118,72 @@ function parseArguments(argv) {
   }
 
   return options;
+}
+
+function readPolicyConstant(source, name) {
+  const match = source.match(new RegExp(`export\\s+const\\s+${name}\\s*(?::\\s*[^=]+)?=\\s*["']([^"']+)["']`));
+  return match?.[1] ?? null;
+}
+
+function isOpenClawReleaseVersion(value) {
+  return typeof value === "string" && /^\d{4}\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/.test(value);
+}
+
+export function getCertificationEvidencePathForVersion(version, phase = "pre-merge-final-certification") {
+  if (!isOpenClawReleaseVersion(version)) {
+    throw new Error(`Invalid OpenClaw certification version: ${String(version)}`);
+  }
+  if (!/^[a-z0-9-]+$/.test(phase)) {
+    throw new Error("OpenClaw certification phase is invalid.");
+  }
+  return `docs/evidence/openclaw-${version}-${phase}.json`;
+}
+
+export function getCurrentCertificationTarget(repoRoot) {
+  const policyPath = path.join(repoRoot, "lib/openclaw/versions.ts");
+  const source = readFileSync(policyPath, "utf8");
+  const recommendedVersion = readPolicyConstant(source, "OPENCLAW_RECOMMENDED_VERSION");
+  const nativeContractVersion = readPolicyConstant(source, "OPENCLAW_NATIVE_CONTRACT_VERSION");
+  const phase = readPolicyConstant(source, "OPENCLAW_FINAL_CERTIFICATION_PHASE");
+
+  if (!isOpenClawReleaseVersion(recommendedVersion) || !isOpenClawReleaseVersion(nativeContractVersion)) {
+    throw new Error("Could not read valid recommended and native-contract OpenClaw versions from lib/openclaw/versions.ts.");
+  }
+  if (recommendedVersion !== nativeContractVersion) {
+    throw new Error("Recommended and native-contract OpenClaw versions differ; the current certification target is ambiguous.");
+  }
+  if (!phase || !/^[a-z0-9-]+$/.test(phase)) {
+    throw new Error("Could not read a valid OpenClaw final certification phase from lib/openclaw/versions.ts.");
+  }
+
+  return {
+    version: nativeContractVersion,
+    phase,
+    evidencePath: getCertificationEvidencePathForVersion(nativeContractVersion, phase)
+  };
+}
+
+function versionFromEvidencePath(evidencePath) {
+  const match = String(evidencePath).match(/(?:^|\/)openclaw-(\d{4}\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)-[a-z0-9-]+\.json$/);
+  return match?.[1] ?? null;
+}
+
+export function resolveCertificationEvidenceSelection({ repoRoot, evidencePath, version } = {}) {
+  if (version && !isOpenClawReleaseVersion(version)) {
+    throw new Error(`Invalid OpenClaw certification version: ${String(version)}`);
+  }
+
+  if (evidencePath) {
+    const inferredVersion = version || versionFromEvidencePath(evidencePath);
+    return { evidencePath, version: inferredVersion };
+  }
+
+  if (version) {
+    const current = getCurrentCertificationTarget(repoRoot);
+    return { evidencePath: getCertificationEvidencePathForVersion(version, current.phase), version };
+  }
+
+  return getCurrentCertificationTarget(repoRoot);
 }
 
 function runGit(repoRoot, args) {
@@ -187,10 +250,40 @@ function readChangedPaths(repoRoot, certifiedCodeHead, currentHead) {
 
 export function checkCertificationFreshness({
   repoRoot,
-  evidencePath = DEFAULT_CERTIFICATION_EVIDENCE_PATH,
+  evidencePath,
+  expectedVersion,
   currentHead = runGit(repoRoot, ["rev-parse", "HEAD"])
 }) {
+  const selection = resolveCertificationEvidenceSelection({ repoRoot, evidencePath, version: expectedVersion });
+  evidencePath = selection.evidencePath;
   const artifact = JSON.parse(readFileSync(path.resolve(repoRoot, evidencePath), "utf8"));
+  const actualVersion = artifact?.openclawVersion;
+  const certificationVersion = selection.version || actualVersion;
+  const policySource = readFileSync(path.join(repoRoot, "lib/openclaw/versions.ts"), "utf8");
+  const phase = readPolicyConstant(policySource, "OPENCLAW_FINAL_CERTIFICATION_PHASE");
+  const expectedArtifactType = isOpenClawReleaseVersion(certificationVersion) && phase
+    ? `openclaw-${certificationVersion}-${phase}`
+    : null;
+  const targetMatches = Boolean(
+    isOpenClawReleaseVersion(certificationVersion) &&
+    actualVersion === certificationVersion &&
+    artifact?.artifactType === expectedArtifactType
+  );
+  if (!targetMatches) {
+    return {
+      ok: false,
+      status: "certification-target-mismatch",
+      reason: `The evidence identity does not match the requested certification target ${certificationVersion || "unknown"}.`,
+      certifiedCodeHead: null,
+      currentHead,
+      changedPaths: [],
+      documentationOnlyPaths: [],
+      meaningfulPaths: [],
+      expectedVersion: certificationVersion || null,
+      actualVersion: typeof actualVersion === "string" ? actualVersion : null,
+      expectedArtifactType
+    };
+  }
   const certifiedCodeHead = artifact?.provenance?.certifiedCodeHead?.trim?.().toLowerCase?.() || null;
   const resolvedCertifiedCodeHead = resolveCommit(repoRoot, certifiedCodeHead);
   const resolvedCurrentHead = resolveCommit(repoRoot, currentHead);
@@ -220,12 +313,13 @@ export function checkCertificationFreshness({
     };
   }
 
-  return result;
+  return { ...result, expectedVersion: certificationVersion, evidencePath };
 }
 
 function formatResult(result, evidencePath) {
   const lines = [
     `Certification freshness: ${result.ok ? "PASS" : "FAIL"}`,
+    `OpenClaw target: ${result.expectedVersion || "unknown"}`,
     `Evidence: ${evidencePath}`,
     `Certified code HEAD: ${result.certifiedCodeHead || "missing"}`,
     `Current HEAD: ${result.currentHead || "missing"}`,
@@ -260,14 +354,14 @@ export function main(argv = process.argv.slice(2)) {
   }
 
   const repoRoot = path.resolve(options["repo-root"] || process.cwd());
-  const evidencePath = options.evidence || process.env.OPENCLAW_CERTIFICATION_FRESHNESS_EVIDENCE || DEFAULT_CERTIFICATION_EVIDENCE_PATH;
-
   try {
-    const result = checkCertificationFreshness({ repoRoot, evidencePath });
+    const evidencePath = options.evidence || process.env.OPENCLAW_CERTIFICATION_FRESHNESS_EVIDENCE || undefined;
+    const selection = resolveCertificationEvidenceSelection({ repoRoot, evidencePath, version: options.version });
+    const result = checkCertificationFreshness({ repoRoot, evidencePath: selection.evidencePath, expectedVersion: selection.version });
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      console.log(formatResult(result, evidencePath));
+      console.log(formatResult(result, selection.evidencePath));
     }
     if (!result.ok) {
       process.exitCode = 1;
