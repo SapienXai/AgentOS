@@ -65,6 +65,7 @@ type NativeDoctorResponse = {
   snapshot?: NativeDoctorSnapshot;
   confirmation?: NativeDoctorConfirmation;
   policy?: NormalOpenClawUpdatePolicy;
+  permissions?: { canManageUpdates?: boolean };
   error?: string;
 };
 
@@ -87,6 +88,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const [native, setNative] = useState<NativeDoctorSnapshot | null>(null);
   const [confirmation, setConfirmation] = useState<NativeDoctorConfirmation | null>(null);
   const [policy, setPolicy] = useState<NormalOpenClawUpdatePolicy | null>(null);
+  const [canManageUpdates, setCanManageUpdates] = useState(false);
   const [nativeError, setNativeError] = useState<string | null>(null);
   const [community, setCommunity] = useState<OpenClawStabilitySnapshot | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(true);
@@ -113,8 +115,11 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       setNative(payload.snapshot);
       setConfirmation(payload.confirmation ?? null);
       setPolicy(payload.policy ?? null);
+      setCanManageUpdates(payload.permissions?.canManageUpdates === true);
+      return true;
     } catch (error) {
       setNativeError(error instanceof Error ? error.message : "OpenClaw update status is unavailable.");
+      return false;
     }
   }, []);
 
@@ -134,11 +139,15 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     setIsRefreshing(true);
     void loadCommunity();
     try {
-      await Promise.all([loadNative(true), refresh()]);
+      const [nativeLoaded] = await Promise.all([loadNative(true), refresh()]);
+      if (nativeLoaded && actionState === "unknown" && !awaitingNativeVerification) {
+        setActionState("idle");
+        setActionMessage(null);
+      }
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadCommunity, loadNative, refresh]);
+  }, [actionState, awaitingNativeVerification, loadCommunity, loadNative, refresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,8 +177,8 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   );
   const userState: OpenClawProductUpdateState = productUpdate?.state ?? policy?.state ?? "unknown";
   const nativeState: NativeUpdateUserState = productUpdate?.nativeState ?? policy?.state ?? "unknown";
-  const canRunNativeUpdate = Boolean(policy?.canRunNormalUpdate && confirmation?.connectionId);
-  const canHoldNativeUpdate = Boolean(policy?.canHoldUpdate && confirmation?.connectionId);
+  const canRunNativeUpdate = Boolean(canManageUpdates && policy?.canRunNormalUpdate && confirmation?.connectionId);
+  const canHoldNativeUpdate = Boolean(canManageUpdates && policy?.canHoldUpdate && confirmation?.connectionId);
   const communityRelease = useMemo(
     () => findCommunityRelease(community, availableVersion),
     [availableVersion, community]
@@ -201,6 +210,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
         body: JSON.stringify({
           action: "update.run",
           confirmation,
+          unverifiedAcknowledged: policy?.requiresInformedConfirmation === true,
           note: "AgentOS Updates"
         })
       });
@@ -215,7 +225,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       }
 
       const resultMessage = result?.message || payload?.error || "OpenClaw returned an update result.";
-      const verificationUnknown = result?.verification?.status === "unknown" || result?.outcome === "unknown";
+      const verificationUnknown = result?.verification?.status !== "verified" || result?.outcome === "unknown";
       const deferred = result?.outcome === "deferred";
       const failed = result?.outcome === "failed";
       const skipped = result?.outcome === "skipped";
@@ -225,20 +235,22 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
         setActionState("error");
         setActionMessage(resultMessage);
         toast.error("OpenClaw update needs attention", { id: toastId, description: resultMessage });
+      } else if (skipped) {
+        setAwaitingNativeVerification(false);
+        setActionState("unknown");
+        setActionMessage(resultMessage);
+        toast.warning("OpenClaw skipped the update", { id: toastId, description: resultMessage });
       } else if (verificationUnknown || deferred) {
         setAwaitingNativeVerification(true);
         setActionState("unknown");
         setActionMessage(
           deferred
             ? "OpenClaw handed the update to its supervisor. Return here to verify the result."
-            : resultMessage
+            : result?.verification?.status === "unknown"
+              ? resultMessage
+              : "OpenClaw accepted the update request, but AgentOS has not verified the final runtime state yet."
         );
         toast.warning("OpenClaw update verification pending", { id: toastId, description: resultMessage });
-      } else if (skipped) {
-        setAwaitingNativeVerification(false);
-        setActionState("unknown");
-        setActionMessage(resultMessage);
-        toast.warning("OpenClaw skipped the update", { id: toastId, description: resultMessage });
       } else {
         setAwaitingNativeVerification(false);
         setActionState("success");
@@ -324,12 +336,18 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     if (!shouldPollNativeUpdate) return;
 
     const interval = window.setInterval(() => {
+      if (awaitingNativeVerification && updateStartedAtMs !== null && Date.now() - updateStartedAtMs >= 120_000) {
+        setAwaitingNativeVerification(false);
+        setActionState("unknown");
+        setActionMessage("AgentOS could not establish the final OpenClaw runtime state yet. Refresh native status and review it before treating the update as complete.");
+        return;
+      }
       void loadNative(true);
       void refresh();
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [loadNative, refresh, shouldPollNativeUpdate]);
+  }, [awaitingNativeVerification, loadNative, refresh, shouldPollNativeUpdate, updateStartedAtMs]);
 
   useEffect(() => {
     if (!awaitingNativeVerification || durableUpdateRunning || !updateStartedAtMs) return;
@@ -366,8 +384,13 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       return;
     }
 
-    setActionState("success");
-    setActionMessage("OpenClaw update completed and the native run reached a terminal state.");
+    // A terminal native run alone does not prove the Gateway is healthy, the
+    // confirmed version is installed, configuration is applied, or required
+    // capabilities and authorization survived the restart. Keep an earlier
+    // inconclusive verification inconclusive instead of promoting it to UI
+    // success based only on the update ledger.
+    setActionState("unknown");
+    setActionMessage("OpenClaw reports a terminal update run, but AgentOS has not verified the final runtime state. Refresh and review the Gateway status before treating the update as complete.");
   }, [awaitingNativeVerification, durableUpdateRunning, native?.update.lastRun, updateStartedAtMs]);
 
   const showPikoLoader = isRefreshing || actionState === "running" || awaitingNativeVerification || durableUpdateRunning;
@@ -414,8 +437,11 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               nativeError={nativeError}
               actionState={actionState}
               actionMessage={actionMessage}
+              canManageUpdates={canManageUpdates}
               canRunNativeUpdate={canRunNativeUpdate}
               canHoldNativeUpdate={canHoldNativeUpdate}
+              verificationPending={awaitingNativeVerification}
+              refreshing={isRefreshing}
               onRequestUpdate={() => setConfirmUpdate(true)}
               onHoldUpdate={() => void holdNativeUpdate()}
               onOpenControlUi={() => void openControlUi()}
@@ -477,7 +503,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
                 <StatusLine label="Available" value={availableVersion ? `v${availableVersion}` : "None reported"} />
                 <StatusLine label="AgentOS compatibility" value={formatAgentOsPolicy(policy?.agentOsDecision ?? null)} />
                 <p className="border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
-                  OpenClaw owns update availability and execution. AgentOS only applies its certification policy and verifies the returned runtime state.
+                  OpenClaw owns update availability and execution. AgentOS applies compatibility and safety policy, then verifies the returned runtime state.
                 </p>
               </div>
             </SectionCard>
@@ -488,11 +514,16 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       <Dialog open={confirmUpdate} onOpenChange={setConfirmUpdate}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update and restart OpenClaw?</DialogTitle>
+            <DialogTitle>Update OpenClaw?</DialogTitle>
             <DialogDescription>
               OpenClaw will run its native update lifecycle. The Gateway may disconnect briefly, then AgentOS will reconnect and verify the runtime.
             </DialogDescription>
           </DialogHeader>
+          {policy?.requiresInformedConfirmation ? (
+            <div className="rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm leading-5" role="note">
+              This OpenClaw release is newer than the version currently verified by AgentOS. AgentOS has not identified a known incompatibility, but this exact release has not yet completed AgentOS compatibility verification.
+            </div>
+          ) : null}
           <div className="space-y-2 rounded-lg border border-border bg-muted/35 p-3 text-sm">
             <KeyValue label="Current version" value={currentVersion ? `v${currentVersion}` : "Unknown"} />
             <KeyValue label="Available version" value={availableVersion ? `v${availableVersion}` : "Unknown"} />
@@ -500,7 +531,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
           </div>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setConfirmUpdate(false)}>Cancel</Button>
-            <Button type="button" onClick={() => void runNativeUpdate()}>Update & restart</Button>
+            <Button type="button" onClick={() => void runNativeUpdate()}>Update OpenClaw</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -521,8 +552,11 @@ function PrimaryUpdateCard({
   nativeError,
   actionState,
   actionMessage,
+  canManageUpdates,
   canRunNativeUpdate,
   canHoldNativeUpdate,
+  verificationPending,
+  refreshing,
   onRequestUpdate,
   onHoldUpdate,
   onOpenControlUi,
@@ -541,8 +575,11 @@ function PrimaryUpdateCard({
   nativeError: string | null;
   actionState: UpdateActionState;
   actionMessage: string | null;
+  canManageUpdates: boolean;
   canRunNativeUpdate: boolean;
   canHoldNativeUpdate: boolean;
+  verificationPending: boolean;
+  refreshing: boolean;
   onRequestUpdate: () => void;
   onHoldUpdate: () => void;
   onOpenControlUi: () => void;
@@ -589,13 +626,13 @@ function PrimaryUpdateCard({
           />
         ) : null}
 
-        {state === "available-uncertified" ? (
+        {state === "available-uncertified" && availabilitySource === "native-gateway" ? (
           <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm">
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-warning-foreground))]" />
               <div>
-                <p className="font-medium text-foreground">AgentOS has not certified this exact OpenClaw release.</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">Wait for AgentOS certification before using the normal update action. Advanced compatibility tools remain available if you need to test this release.</p>
+                <p className="font-medium text-foreground">This release has not yet been verified by AgentOS.</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">AgentOS has not identified a known incompatibility. You can continue with OpenClaw’s native updater after reviewing the confirmation.</p>
               </div>
             </div>
           </div>
@@ -662,16 +699,16 @@ function PrimaryUpdateCard({
               {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
             </Button>
           ) : null}
-          {state === "available-certified" ? (
+          {state === "available-certified" || (state === "available-uncertified" && availabilitySource === "native-gateway") ? (
             <Button
               type="button"
               onClick={onRequestUpdate}
-              disabled={!canRunNativeUpdate || actionState === "running"}
-              title={!canRunNativeUpdate ? "Native OpenClaw update scope or connection confirmation is unavailable." : undefined}
+              disabled={!canRunNativeUpdate || actionState === "running" || actionState === "unknown" || verificationPending || refreshing}
+              title={!canRunNativeUpdate ? !canManageUpdates ? "Your AgentOS account cannot manage updates." : policyReason || "Native OpenClaw update authorization or preflight evidence is unavailable." : undefined}
               className="min-h-11 sm:min-h-9"
             >
               {actionState === "running" ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Wrench className="mr-1.5 h-4 w-4" />}
-              Update & restart
+              Update OpenClaw
             </Button>
           ) : null}
           {canHoldNativeUpdate ? (
@@ -686,7 +723,7 @@ function PrimaryUpdateCard({
               Hold this update
             </Button>
           ) : null}
-          {state === "available-uncertified" || state === "available-fallback" || state === "blocked" || state === "available-agentos-required" ? (
+          {state === "available-fallback" || state === "blocked" || state === "available-agentos-required" ? (
             <Button asChild type="button" variant="secondary" className="min-h-11 sm:min-h-9">
               <Link href="/settings#developer">
                 {state === "blocked" ? "View compatibility tools" : state === "available-agentos-required" ? "View AgentOS update options" : "Open in-app update tools"}
@@ -777,7 +814,7 @@ function LastUpdateRun({
   onOpenControlUi: () => void;
   isOpeningControlUi: boolean;
 }) {
-  const outcome = run.status === "succeeded" ? "Completed" : run.status === "failed" || run.status === "rolled-back" ? "Needs attention" : "Skipped";
+  const outcome = run.status === "succeeded" ? "Native run succeeded" : run.status === "failed" || run.status === "rolled-back" ? "Needs attention" : "Skipped";
   const needsNativeReview = run.status === "failed" || run.status === "rolled-back";
   return (
     <details className="group mt-4 rounded-lg border border-border bg-muted/20">
@@ -792,7 +829,7 @@ function LastUpdateRun({
         <div className="grid gap-2 sm:grid-cols-3">
           <StatusFact label="From" value={run.beforeVersion ? `v${run.beforeVersion}` : "Unknown"} />
           <StatusFact label="To" value={run.afterVersion || run.targetVersion ? `v${run.afterVersion || run.targetVersion}` : "Unknown"} />
-          <StatusFact label="Verification" value={run.verification?.versionMatch === true ? "Verified" : run.verification?.versionMatch === false ? "Mismatch" : "Not reported"} />
+          <StatusFact label="Native version check" value={run.verification?.versionMatch === true ? "Match reported" : run.verification?.versionMatch === false ? "Mismatch" : "Not reported"} />
         </div>
         {run.reason ? <p className="mt-3">{run.reason}</p> : null}
         {needsNativeReview ? (
@@ -870,9 +907,9 @@ function resolvePrimaryCopy(input: {
       };
     case "available-certified":
       return {
-        statusLabel: "Update available",
+        statusLabel: "Update available — verified",
         title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
-        description: "AgentOS has verified this OpenClaw release. Updating will use OpenClaw's native updater and restart the Gateway if required."
+        description: "Verified with this AgentOS version. Updating will use OpenClaw's native updater and restart the Gateway if required."
       };
     case "available-agentos-required":
       return {
@@ -888,9 +925,9 @@ function resolvePrimaryCopy(input: {
       };
     case "available-uncertified":
       return {
-        statusLabel: "Certification pending",
+        statusLabel: "Update available — not yet verified",
         title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
-        description: input.agentOsDecision?.reason || "AgentOS has not certified this exact OpenClaw release."
+        description: "This release has not yet been verified by AgentOS. AgentOS has not identified a known incompatibility."
       };
     case "blocked":
       return {
@@ -940,11 +977,11 @@ function formatAgentOsPolicy(decision: NormalOpenClawUpdatePolicy["agentOsDecisi
     case "certified":
       return "Certified";
     case "candidate":
-      return "Candidate — advanced only";
+      return "Not yet verified";
     case "blocked":
       return "Blocked";
     case "unknown":
-      return "Not yet certified";
+      return "Not yet verified";
     default:
       return "Unavailable";
   }
