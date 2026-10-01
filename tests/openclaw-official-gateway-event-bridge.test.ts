@@ -117,6 +117,7 @@ test("a complete Gateway inventory without tasks.list keeps session reconciliati
     activeHarness.emitEvent("task", { task: { id: "task-gap", status: "completed" } }, 3);
     await waitFor(() => getOpenClawEventBridgeStatus().sequenceGapCount === 1);
     await waitFor(() => getOpenClawEventBridgeStreamStatus().lastReconciledAt !== null, 5_000);
+    await waitFor(() => getOpenClawEventBridgeStreamStatus().reconciliationState === "idle", 5_000);
 
     assert.ok(countRequests("sessions.list") > baselineSessions);
     assert.equal(countRequests("tasks.list"), 0);
