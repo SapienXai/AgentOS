@@ -239,8 +239,8 @@ export function resolveOpenClawUpdateDecision(input: {
       minRequiredAgentOsVersion,
       reason:
         mode === "advanced"
-          ? "Unknown OpenClaw version allowed only through advanced update mode."
-          : "Unknown OpenClaw versions are hidden from the default update path.",
+          ? "This OpenClaw version has no AgentOS compatibility decision; the advanced compatibility path requires explicit opt-in and preflight."
+          : "This OpenClaw version has not yet been verified by AgentOS. Native update eligibility is evaluated separately from certification.",
       notes: notes || "This version is not present in the AgentOS compatibility manifest."
     };
   }

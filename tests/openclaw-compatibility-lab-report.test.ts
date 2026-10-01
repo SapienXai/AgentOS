@@ -17,7 +17,7 @@ test("compatibility lab keeps unknown targets report-only and certification bloc
       version: "2026.9.0",
       status: "unknown",
       allowed: false,
-      reason: "Unknown OpenClaw versions are hidden from the default update path."
+      reason: "This OpenClaw version has not yet been verified by AgentOS. Native update eligibility is evaluated separately from certification."
     }),
     preflightReport: null,
     compatibilityReport: null,

@@ -479,6 +479,7 @@ export interface OpenClawUpdateCompatibilityVersion {
 export interface OpenClawUpdateDecision {
   version: string;
   status: OpenClawUpdateCompatibilityStatus;
+  /** Compatibility-manifest clearance only; native update eligibility has a separate runtime policy. */
   allowed: boolean;
   defaultVisible: boolean;
   requiresExplicitOptIn: boolean;

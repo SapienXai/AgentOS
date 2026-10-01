@@ -96,7 +96,7 @@ test("candidate OpenClaw version requires explicit opt-in", () => {
   assert.equal(previewDecision.allowed, true);
 });
 
-test("unknown OpenClaw version is hidden from the default update path", () => {
+test("unknown OpenClaw compatibility decision remains distinct from native eligibility", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
@@ -107,6 +107,7 @@ test("unknown OpenClaw version is hidden from the default update path", () => {
   assert.equal(decision.status, "unknown");
   assert.equal(decision.allowed, false);
   assert.equal(decision.defaultVisible, false);
+  assert.match(decision.reason, /Native update eligibility is evaluated separately/i);
 });
 
 test("Compatibility Lab report generation keeps unknown latest in report-only policy mode", () => {

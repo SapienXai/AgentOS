@@ -45,13 +45,18 @@ export type OpenClawProductUpdateProjection = {
 };
 
 export type NormalOpenClawUpdatePolicy = {
+  agentOsVersion: string;
   currentVersion: string | null;
   nativeAvailableVersion: string | null;
   effectiveChannel: string | null;
   agentOsDecision: OpenClawUpdateDecision | null;
+  nativeAuthorizationAvailable: boolean;
+  nativeIdentityAvailable: boolean;
+  nativePreflightAvailable: boolean;
   state: NativeUpdateUserState;
   productUpdate: OpenClawProductUpdateProjection;
   canRunNormalUpdate: boolean;
+  requiresInformedConfirmation: boolean;
   canHoldUpdate: boolean;
   reason: string;
 };
@@ -78,6 +83,7 @@ export function resolveOpenClawProductUpdateState(input: {
   availableVersion: string | null;
   availabilitySource?: OpenClawProductUpdateAvailabilitySource;
   agentOsDecision: OpenClawUpdateDecision | null;
+  normalNativeUpdateEligible?: boolean;
 }): OpenClawProductUpdateProjection {
   const availabilitySource = input.availabilitySource ?? null;
   const hasVersionDelta = Boolean(
@@ -107,6 +113,10 @@ export function resolveOpenClawProductUpdateState(input: {
     return buildProductUpdateProjection(input, "up-to-date", "none", "OpenClaw reports no update is currently available.");
   }
 
+  if (availabilitySource === "openclaw-cli-fallback" && input.availableVersion) {
+    return buildAvailableProductUpdateProjection(input, "available-fallback", "advanced");
+  }
+
   if (!input.availableVersion) {
     return buildProductUpdateProjection(input, "unknown", "check-again", "OpenClaw reported an update without an exact target version.");
   }
@@ -116,8 +126,12 @@ export function resolveOpenClawProductUpdateState(input: {
 
 export function resolveNormalOpenClawUpdatePolicy(input: {
   snapshot: {
-    status: Pick<NativeDoctorSnapshot["status"], "runtimeVersion" | "version" | "updateChannel">;
+    status: NativeDoctorSnapshot["status"];
     update: NativeDoctorSnapshot["update"];
+    runtime: NativeDoctorSnapshot["runtime"];
+    config: NativeDoctorSnapshot["config"];
+    recovery: NativeDoctorSnapshot["recovery"];
+    identity: NativeDoctorSnapshot["identity"];
   };
   agentOsVersion: string;
   manifest?: OpenClawCompatibilityManifest;
@@ -138,40 +152,93 @@ export function resolveNormalOpenClawUpdatePolicy(input: {
     ? resolveOpenClawUpdateDecision({ manifest, agentOsVersion: input.agentOsVersion, targetVersion: decisionVersion, mode: "recommended" })
     : null;
   const state = resolveNativeUpdateUserState({ update: input.snapshot.update, agentOsDecision });
+  const stableChannel = effectiveChannel === "stable" || effectiveChannel === "extended-stable";
+  const currentIsStableVersion = isStableOpenClawVersion(currentVersion);
+  const targetIsStableVersion = isStableOpenClawVersion(nativeAvailableVersion);
+  const nativeIdentityAvailable = Boolean(
+    input.snapshot.identity.connectionId &&
+    input.snapshot.identity.deviceId &&
+    input.snapshot.identity.connectionGeneration !== null
+  );
+  const targetAdvancesRuntime = Boolean(
+    currentVersion && nativeAvailableVersion && compareVersionStrings(nativeAvailableVersion, currentVersion) > 0
+  );
+  const nativeAuthorizationAvailable = input.snapshot.identity.updateAuthorized === true;
+  const nativePreflightAvailable = input.snapshot.runtime.status === "healthy" &&
+    input.snapshot.status.readStatus === "available" &&
+    input.snapshot.config.readStatus === "available" &&
+    input.snapshot.config.valid === true &&
+    input.snapshot.config.application === "applied" &&
+    input.snapshot.recovery.status === "healthy";
+  const targetCompatibilityAllowsNativeUpdate = Boolean(
+    agentOsDecision &&
+    agentOsDecision.status !== "blocked" &&
+    !agentOsDecision.requiresAgentOsUpdate
+  );
+  const canRunNormalUpdate = Boolean(
+    state === "available-certified" || state === "available-uncertified"
+  ) &&
+    input.snapshot.update.readStatus === "available" &&
+    input.snapshot.update.status === "available" &&
+    input.snapshot.update.updateAvailable === true &&
+    availabilitySource === "native-gateway" &&
+    Boolean(nativeAvailableVersion) &&
+    stableChannel &&
+    currentIsStableVersion &&
+    targetIsStableVersion &&
+    targetAdvancesRuntime &&
+    nativeAuthorizationAvailable &&
+    nativeIdentityAvailable &&
+    nativePreflightAvailable &&
+    targetCompatibilityAllowsNativeUpdate;
   const productUpdate = resolveOpenClawProductUpdateState({
     nativeState: state,
     currentVersion,
     availableVersion,
     availabilitySource,
-    agentOsDecision
+    agentOsDecision,
+    normalNativeUpdateEligible: canRunNormalUpdate
   });
-  const canRunNormalUpdate = state === "available-certified" &&
-    input.snapshot.update.readStatus === "available" &&
-    input.snapshot.update.status === "available" &&
-    input.snapshot.update.updateAvailable === true &&
-    Boolean(nativeAvailableVersion) && Boolean(effectiveChannel) &&
-    agentOsDecision?.status === "certified" && agentOsDecision.allowed && agentOsDecision.defaultVisible;
 
   return {
+    agentOsVersion: normalizeVersion(input.agentOsVersion) ?? input.agentOsVersion,
     currentVersion,
     nativeAvailableVersion,
     effectiveChannel,
     agentOsDecision,
+    nativeAuthorizationAvailable,
+    nativeIdentityAvailable,
+    nativePreflightAvailable,
     state,
     productUpdate,
     canRunNormalUpdate,
+    requiresInformedConfirmation: Boolean(agentOsDecision && agentOsDecision.status !== "certified"),
     canHoldUpdate: canHoldNativeUpdate(input.snapshot.update),
-    reason: normalUpdatePolicyReason({ state, update: input.snapshot.update, decision: agentOsDecision, nativeAvailableVersion })
+    reason: normalUpdatePolicyReason({
+      state,
+      update: input.snapshot.update,
+      decision: agentOsDecision,
+      nativeAvailableVersion,
+      nativeAuthorizationAvailable,
+      nativeIdentityAvailable,
+      nativePreflightAvailable,
+      stableChannel,
+      targetIsStableVersion,
+      currentIsStableVersion,
+      targetAdvancesRuntime,
+      availabilitySource
+    })
   };
 }
 
 export type NormalOpenClawUpdateGateResult =
   | { allowed: true }
-  | { allowed: false; code: "UPDATE_CONFIRMATION_STALE" | "NATIVE_UPDATE_STATUS_UNAVAILABLE" | "NATIVE_UPDATE_NOT_AVAILABLE" | "NATIVE_UPDATE_TARGET_UNKNOWN" | "UPDATE_CERTIFICATION_REQUIRED" | "UPDATE_POLICY_BLOCKED" | "UPDATE_ALREADY_RUNNING"; status: 409 | 403 | 503; error: string };
+  | { allowed: false; code: "UPDATE_CONFIRMATION_STALE" | "NATIVE_UPDATE_STATUS_UNAVAILABLE" | "NATIVE_UPDATE_NOT_AVAILABLE" | "NATIVE_UPDATE_TARGET_UNKNOWN" | "UPDATE_CONFIRMATION_REQUIRED" | "NATIVE_UPDATE_AUTHORIZATION_REQUIRED" | "NATIVE_UPDATE_IDENTITY_UNAVAILABLE" | "UPDATE_PREFLIGHT_UNAVAILABLE" | "UPDATE_TARGET_INVALID" | "UPDATE_CHANNEL_UNSUPPORTED" | "UPDATE_POLICY_BLOCKED" | "UPDATE_ALREADY_RUNNING"; status: 409 | 403 | 503; error: string };
 
 export function guardNormalOpenClawUpdate(input: {
   policy: NormalOpenClawUpdatePolicy;
   confirmationMatches: boolean;
+  unverifiedAcknowledged?: boolean;
 }): NormalOpenClawUpdateGateResult {
   if (!input.confirmationMatches) return { allowed: false, code: "UPDATE_CONFIRMATION_STALE", status: 409, error: "The OpenClaw Gateway identity, update channel, or available target changed. Refresh before retrying." };
   if (input.policy.state === "running") return { allowed: false, code: "UPDATE_ALREADY_RUNNING", status: 409, error: "An OpenClaw update is already in progress. Return here after the Gateway reconnects to verify it." };
@@ -179,7 +246,21 @@ export function guardNormalOpenClawUpdate(input: {
   if (input.policy.state === "up-to-date" || input.policy.state === "held") return { allowed: false, code: "NATIVE_UPDATE_NOT_AVAILABLE", status: 409, error: input.policy.reason };
   if (!input.policy.nativeAvailableVersion || !input.policy.agentOsDecision) return { allowed: false, code: "NATIVE_UPDATE_TARGET_UNKNOWN", status: 409, error: "OpenClaw reported an update, but the exact available target could not be verified. Refresh before retrying." };
   if (input.policy.agentOsDecision.status === "blocked") return { allowed: false, code: "UPDATE_POLICY_BLOCKED", status: 409, error: input.policy.agentOsDecision.reason };
-  if (!input.policy.canRunNormalUpdate) return { allowed: false, code: "UPDATE_CERTIFICATION_REQUIRED", status: 409, error: input.policy.agentOsDecision.reason };
+  if (input.policy.agentOsDecision.requiresAgentOsUpdate) return { allowed: false, code: "UPDATE_POLICY_BLOCKED", status: 409, error: input.policy.agentOsDecision.reason };
+  if (!input.policy.nativeAvailableVersion || !isStableOpenClawVersion(input.policy.nativeAvailableVersion)) return { allowed: false, code: "UPDATE_TARGET_INVALID", status: 409, error: "The native target is not a valid stable OpenClaw release." };
+  if (input.policy.effectiveChannel !== "stable" && input.policy.effectiveChannel !== "extended-stable") return { allowed: false, code: "UPDATE_CHANNEL_UNSUPPORTED", status: 409, error: "Normal updates are available only when OpenClaw reports a stable update channel." };
+  if (!input.policy.canRunNormalUpdate) {
+    if (!input.policy.nativeAvailableVersion || !input.policy.currentVersion || compareVersionStrings(input.policy.nativeAvailableVersion, input.policy.currentVersion) <= 0) {
+      return { allowed: false, code: "UPDATE_TARGET_INVALID", status: 409, error: "The native target is not newer than the installed OpenClaw version." };
+    }
+    if (!input.policy.nativeAuthorizationAvailable) return { allowed: false, code: "NATIVE_UPDATE_AUTHORIZATION_REQUIRED", status: 403, error: "OpenClaw did not confirm operator admin access for update.run." };
+    if (!input.policy.nativeIdentityAvailable) return { allowed: false, code: "NATIVE_UPDATE_IDENTITY_UNAVAILABLE", status: 503, error: "The Gateway connection, authenticated device, or reconnect generation cannot be bound to this update." };
+    if (!input.policy.nativePreflightAvailable) return { allowed: false, code: "UPDATE_PREFLIGHT_UNAVAILABLE", status: 503, error: "OpenClaw health, configuration, or recovery state must be available and healthy before updating." };
+    return { allowed: false, code: "NATIVE_UPDATE_STATUS_UNAVAILABLE", status: 503, error: input.policy.reason };
+  }
+  if (input.policy.requiresInformedConfirmation && input.unverifiedAcknowledged !== true) {
+    return { allowed: false, code: "UPDATE_CONFIRMATION_REQUIRED", status: 409, error: "This release has not yet been verified by AgentOS. Confirm that you want to continue with OpenClaw's native update." };
+  }
   return { allowed: true };
 }
 
@@ -206,14 +287,36 @@ export function canHoldNativeUpdate(update: NativeDoctorSnapshot["update"]) {
     (holdUntilMs === null || holdUntilMs <= Date.now());
 }
 
-function normalUpdatePolicyReason(input: { state: NativeUpdateUserState; update: NativeDoctorSnapshot["update"]; decision: OpenClawUpdateDecision | null; nativeAvailableVersion: string | null }) {
+function normalUpdatePolicyReason(input: {
+  state: NativeUpdateUserState;
+  update: NativeDoctorSnapshot["update"];
+  decision: OpenClawUpdateDecision | null;
+  nativeAvailableVersion: string | null;
+  nativeAuthorizationAvailable: boolean;
+  nativeIdentityAvailable: boolean;
+  nativePreflightAvailable: boolean;
+  stableChannel: boolean;
+  targetIsStableVersion: boolean;
+  currentIsStableVersion: boolean;
+  targetAdvancesRuntime: boolean;
+  availabilitySource: OpenClawProductUpdateAvailabilitySource;
+}) {
   if (input.state === "unavailable") return input.update.readStatus === "forbidden" ? "OpenClaw update status requires operator admin access." : "The native OpenClaw update status method is unavailable.";
   if (input.state === "unknown") return "AgentOS could not verify the current native OpenClaw update state.";
   if (input.state === "running") return "OpenClaw is applying an update through its native campaign lifecycle.";
   if (input.state === "held") return "OpenClaw has temporarily held the active update campaign.";
   if (input.state === "up-to-date") return "OpenClaw reports no update is currently available.";
   if (!input.nativeAvailableVersion) return "OpenClaw reported an update, but its exact target version is unknown.";
-  return input.decision?.reason || "AgentOS could not verify whether this OpenClaw release is allowed for normal updating.";
+  if (input.decision?.status === "blocked") return input.decision.reason;
+  if (input.decision?.requiresAgentOsUpdate) return input.decision.reason;
+  if (input.availabilitySource !== "native-gateway") return "The connected Gateway did not expose the exact native update target.";
+  if (!input.stableChannel) return "The active OpenClaw channel is not a stable update channel.";
+  if (!input.targetIsStableVersion || !input.currentIsStableVersion || !input.targetAdvancesRuntime) return "The installed version or exact update target is not a valid forward stable version transition.";
+  if (!input.nativeAuthorizationAvailable) return "OpenClaw operator admin authorization for update.run could not be verified.";
+  if (!input.nativeIdentityAvailable) return "Gateway identity and reconnect generation cannot be bound to this update.";
+  if (!input.nativePreflightAvailable) return "OpenClaw health, configuration, or recovery state is not ready for an update.";
+  if (input.decision?.status !== "certified") return `OpenClaw ${input.nativeAvailableVersion} is available. This release has not yet been verified by AgentOS.`;
+  return input.decision.reason;
 }
 
 function buildAvailableProductUpdateProjection(
@@ -257,6 +360,21 @@ function buildAvailableProductUpdateProjection(
     );
   }
 
+  if (
+    state === "available-uncertified" &&
+    input.availabilitySource === "native-gateway" &&
+    input.normalNativeUpdateEligible === true &&
+    input.agentOsDecision &&
+    !input.agentOsDecision.requiresAgentOsUpdate
+  ) {
+    return buildProductUpdateProjection(
+      input,
+      "available-uncertified",
+      "update-openclaw",
+      `OpenClaw ${input.availableVersion ?? "update"} is available. This release has not yet been verified by AgentOS.`
+    );
+  }
+
   return buildProductUpdateProjection(
     input,
     state === "available-fallback" ? "available-fallback" : "available-uncertified",
@@ -287,6 +405,19 @@ function buildProductUpdateProjection(
 function normalizeVersion(value: string | null | undefined) {
   const normalized = value?.trim().replace(/^v/i, "");
   return normalized || null;
+}
+
+export function isStableOpenClawVersion(value: string | null | undefined): value is string {
+  const version = normalizeVersion(value);
+  if (!version) return false;
+  const match = /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/.exec(version);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
 function readString(value: unknown) {

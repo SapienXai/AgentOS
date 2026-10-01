@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import {
   classifyNativeMutationError,
   normalizeClientError
@@ -16,6 +17,7 @@ import type {
   OpenClawUpdateRunRecord,
   OpenClawUpdateRunInput
 } from "@/lib/openclaw/client/types";
+import type { OpenClawCapabilityMatrix, OpenClawUpdateDecision } from "@/lib/openclaw/types";
 import { openClawScopesAllow } from "@/lib/openclaw/identity/types";
 import { redactSecretText } from "@/lib/security/redaction";
 
@@ -110,14 +112,38 @@ export type NativeDoctorSnapshot = {
     authenticated: boolean | null;
     role: string | null;
     grantedScopesKnown: boolean | null;
+    updateAuthorized: boolean;
   };
   reads: Record<string, NativeReadStatus>;
 };
 
 export type NativeDoctorConfirmation = {
   connectionId: string | null;
+  deviceId: string | null;
+  connectionGeneration: number | null;
+  currentVersion: string | null;
   effectiveChannel: string | null;
   availableVersion: string | null;
+  updateReadStatus: NativeReadStatus;
+  updateStatus: NativeUpdateStatus;
+  updateAvailable: boolean | null;
+  availabilitySource: NativeDoctorSnapshot["update"]["availabilitySource"];
+  authenticated: boolean | null;
+  grantedScopesKnown: boolean | null;
+  updateAuthorized: boolean;
+  runtimeStatus: NativeHealthStatus;
+  statusReadStatus: NativeReadStatus;
+  configReadStatus: NativeReadStatus;
+  configValid: boolean | null;
+  configApplication: NativeConfigApplicationStatus;
+  configuredRevisionHash: string | null;
+  appliedRevisionHash: string | null;
+  recoveryStatus: NativeRecoveryStatus;
+  agentOsVersion: string | null;
+  compatibilityStatus: OpenClawUpdateDecision["status"] | null;
+  compatibilityAllowed: boolean | null;
+  requiresAgentOsUpdate: boolean | null;
+  minRequiredAgentOsVersion: string | null;
 };
 
 export type NativeDoctorMutationOutcome = {
@@ -136,6 +162,19 @@ export type NativeDoctorVerification = {
 };
 
 const NATIVE_READ_TIMEOUT_MS = 12_000;
+let nativeUpdateRunInFlight = false;
+
+/** Prevent simultaneous AgentOS requests from issuing duplicate native update.run calls. */
+export function claimNativeUpdateRunAdmission(): (() => void) | null {
+  if (nativeUpdateRunInFlight) return null;
+  nativeUpdateRunInFlight = true;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    nativeUpdateRunInFlight = false;
+  };
+}
 
 export async function getNativeDoctorSnapshot(
   options: { adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions; probe?: boolean; refreshCheckout?: boolean } = {}
@@ -317,7 +356,13 @@ export async function getNativeDoctorSnapshot(
       role: readNonEmptyString(identity.value?.role),
       grantedScopesKnown: typeof identity.value?.grantedScopesKnown === "boolean"
         ? identity.value.grantedScopesKnown
-        : null
+        : null,
+      updateAuthorized: identity.status === "available" &&
+        identity.value?.source === "native-handshake" &&
+        identity.value.authenticated === true &&
+        identity.value.grantedScopesKnown === true &&
+        Array.isArray(identity.value.grantedScopes) &&
+        openClawScopesAllow(identity.value.grantedScopes, ["operator.admin"])
     },
     reads: {
       health: health.status,
@@ -385,36 +430,65 @@ export async function executeNativeDoctorMutation(
   }
 }
 
-export function buildNativeDoctorConfirmation(snapshot: NativeDoctorSnapshot): NativeDoctorConfirmation {
+export function buildNativeDoctorConfirmation(
+  snapshot: NativeDoctorSnapshot,
+  compatibility?: { agentOsVersion: string; decision: OpenClawUpdateDecision | null }
+): NativeDoctorConfirmation {
   return {
     connectionId: snapshot.identity.connectionId,
+    deviceId: snapshot.identity.deviceId,
+    connectionGeneration: snapshot.identity.connectionGeneration,
+    currentVersion: normalizeVersion(snapshot.update.currentVersion || snapshot.status.runtimeVersion || snapshot.status.version),
     effectiveChannel: snapshot.update.effectiveChannel,
-    availableVersion: snapshot.update.latestVersion
+    availableVersion: snapshot.update.latestVersion,
+    updateReadStatus: snapshot.update.readStatus,
+    updateStatus: snapshot.update.status,
+    updateAvailable: snapshot.update.updateAvailable,
+    availabilitySource: snapshot.update.availabilitySource ?? null,
+    authenticated: snapshot.identity.authenticated,
+    grantedScopesKnown: snapshot.identity.grantedScopesKnown,
+    updateAuthorized: snapshot.identity.updateAuthorized,
+    runtimeStatus: snapshot.runtime.status,
+    statusReadStatus: snapshot.status.readStatus,
+    configReadStatus: snapshot.config.readStatus,
+    configValid: snapshot.config.valid,
+    configApplication: snapshot.config.application,
+    configuredRevisionHash: snapshot.config.configuredRevisionHash,
+    appliedRevisionHash: snapshot.config.appliedRevisionHash,
+    recoveryStatus: snapshot.recovery.status,
+    agentOsVersion: compatibility?.agentOsVersion ?? null,
+    compatibilityStatus: compatibility?.decision?.status ?? null,
+    compatibilityAllowed: compatibility?.decision?.allowed ?? null,
+    requiresAgentOsUpdate: compatibility?.decision?.requiresAgentOsUpdate ?? null,
+    minRequiredAgentOsVersion: compatibility?.decision?.minRequiredAgentOsVersion ?? null
   };
 }
 
-export function auditResultForNativeDoctorMutation(outcome: NativeDoctorMutationOutcome["outcome"]): "succeeded" | "failed" | "unknown" {
+export function auditResultForNativeDoctorMutation(
+  outcome: NativeDoctorMutationOutcome["outcome"],
+  verificationStatus?: NativeDoctorVerification["status"]
+): "succeeded" | "failed" | "unknown" {
   if (outcome === "failed") return "failed";
   if (outcome === "unknown") return "unknown";
+  if (verificationStatus !== undefined && verificationStatus !== "verified") return "unknown";
   return "succeeded";
 }
 
 export async function reconcileNativeDoctorMutation(
   mutation: NativeDoctorMutationOutcome,
-  options: { before: NativeDoctorSnapshot; adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions }
+  options: {
+    before: NativeDoctorSnapshot;
+    adapter?: OpenClawAdapter;
+    commandOptions?: OpenClawCommandOptions;
+    getCapabilityMatrix?: () => Promise<OpenClawCapabilityMatrix>;
+  }
 ): Promise<NativeDoctorMutationOutcome> {
   if (mutation.method === "gateway.restart.request") {
     return reconcileRestartMutation(mutation, options);
   }
 
-  if (mutation.method !== "update.run" || mutation.outcome === "failed" || mutation.outcome === "unknown" || mutation.outcome === "skipped") {
+  if (mutation.method !== "update.run" || mutation.outcome === "failed" || mutation.outcome === "skipped") {
     return mutation;
-  }
-
-  const restartExpected = isRecord(mutation.result?.restart) || isRecord(mutation.result?.handoff);
-  if (!restartExpected) {
-    const fresh = await getNativeDoctorSnapshot({ adapter: options.adapter, commandOptions: options.commandOptions, probe: true });
-    return applyVerification(mutation, verifyFreshUpdateState(options.before, fresh));
   }
 
   const generation = await waitForNativeReconnect(options.adapter ?? getOpenClawAdapter(), options.before.identity.connectionGeneration);
@@ -422,7 +496,8 @@ export async function reconcileNativeDoctorMutation(
     return applyVerification(mutation, unknownVerification("OpenClaw accepted the update, but AgentOS did not observe a fresh reconnect generation."));
   }
   const fresh = await getNativeDoctorSnapshot({ adapter: options.adapter, commandOptions: options.commandOptions, probe: true });
-  return applyVerification(mutation, verifyFreshUpdateState(options.before, fresh, generation));
+  const capabilityMatrix = await (options.getCapabilityMatrix ?? (() => getOpenClawCapabilityMatrix({ force: true })))().catch(() => null);
+  return applyVerification(mutation, verifyFreshUpdateState(options.before, fresh, generation, capabilityMatrix));
 }
 
 async function reconcileRestartMutation(
@@ -464,22 +539,32 @@ export function verifyFreshRestartState(
 export function verifyFreshUpdateState(
   before: NativeDoctorSnapshot,
   after: NativeDoctorSnapshot,
-  generation: number | null = null
+  generation: number | null = null,
+  capabilityMatrix: OpenClawCapabilityMatrix | null = null
 ): NativeDoctorVerification {
-  if (generation !== null && !hasFreshAuthenticatedGeneration(before, after, generation)) {
+  if (!hasFreshAuthenticatedGeneration(before, after, generation)) {
     return unknownVerification("OpenClaw returned after the update, but AgentOS could not verify the intended native Gateway identity.", generation);
   }
   if (after.runtime.status !== "healthy" || after.status.readStatus !== "available" || after.update.readStatus !== "available") {
     return unknownVerification("OpenClaw may have applied the update, but fresh native health, status, or update evidence is incomplete.", generation);
   }
-  if (after.update.status !== "current") {
-    return unknownVerification("OpenClaw returned fresh state, but the update is not confirmed current.", generation);
+  if (after.runtime.status !== "healthy" || after.config.readStatus !== "available" || after.config.valid !== true || after.config.application !== "applied") {
+    return unknownVerification("OpenClaw is reachable, but AgentOS could not verify healthy runtime and applied valid configuration after the update.", generation);
+  }
+  if (after.recovery.status !== "healthy" || after.update.activeRun?.status === "running") {
+    return unknownVerification("OpenClaw reports an active recovery or update lifecycle after the update.", generation);
+  }
+  if (after.identity.authenticated !== true || after.identity.grantedScopesKnown !== true || after.identity.updateAuthorized !== true) {
+    return unknownVerification("OpenClaw reconnected, but native authorization evidence is unavailable or no longer includes operator admin access.", generation);
   }
   const expectedVersion = normalizeVersion(before.update.latestVersion);
+  if (!expectedVersion) {
+    return unknownVerification("AgentOS could not verify the exact native target that was confirmed before the update.", generation);
+  }
   const installedVersion = normalizeVersion(
     after.update.currentVersion || after.status.runtimeVersion || after.status.version
   );
-  if (expectedVersion && installedVersion !== expectedVersion) {
+  if (installedVersion !== expectedVersion) {
     return unknownVerification(
       installedVersion
         ? `OpenClaw returned a current runtime at v${installedVersion}, but the confirmed native target was v${expectedVersion}.`
@@ -487,12 +572,41 @@ export function verifyFreshUpdateState(
       generation
     );
   }
+  const lastRun = after.update.lastRun;
+  if (lastRun && (
+    lastRun.status !== "succeeded" ||
+    (lastRun.targetVersion !== null && normalizeVersion(lastRun.targetVersion) !== expectedVersion) ||
+    lastRun.repair.some((attempt) => attempt.status === "running" || attempt.status === "in_progress")
+  )) {
+    return unknownVerification("OpenClaw's native update ledger does not show a successful terminal run for the confirmed target.", generation);
+  }
+  if (after.update.status !== "current" && !(after.update.status === "available" && lastRun?.status === "succeeded" && normalizeVersion(lastRun.targetVersion) === expectedVersion)) {
+    return unknownVerification("OpenClaw returned fresh state, but the confirmed update has not reached a native terminal/current state.", generation);
+  }
+  if (!capabilityMatrix || !hasPostUpdateCapabilities(capabilityMatrix)) {
+    return unknownVerification("OpenClaw returned healthy runtime state, but required Gateway capabilities, protocol, or authorization could not be verified.", generation);
+  }
   return verifiedVerification("OpenClaw returned fresh healthy status and confirmed the update state.", generation);
+}
+
+function hasPostUpdateCapabilities(matrix: OpenClawCapabilityMatrix) {
+  const methodContract = matrix.compatibility?.methodContract;
+  const requiredSessions = ["sessions.list", "sessions.get", "sessions.send", "agent.wait"];
+  const methods = new Set(matrix.supportedMethods);
+  return matrix.compatibility?.protocol.status === "compatible" &&
+    matrix.updates === "supported" &&
+    methodContract !== undefined &&
+    (methodContract.status === "advertised" || methodContract.status === "verified") &&
+    (methodContract.missingRequiredMethods?.length ?? 0) === 0 &&
+    requiredSessions.every((method) => methods.has(method)) &&
+    Array.isArray(matrix.authScopes) &&
+    openClawScopesAllow(matrix.authScopes, ["operator.admin"]);
 }
 
 function applyVerification(mutation: NativeDoctorMutationOutcome, verification: NativeDoctorVerification): NativeDoctorMutationOutcome {
   return {
     ...mutation,
+    outcome: verification.status === "verified" && mutation.outcome === "unknown" ? "succeeded" : mutation.outcome,
     reconciliation: verification.status === "verified" ? "confirmed" : "inconclusive",
     verification,
     message: verification.status === "verified" ? verification.message : verification.message
@@ -518,6 +632,10 @@ function hasFreshAuthenticatedGeneration(before: NativeDoctorSnapshot, after: Na
 async function waitForNativeReconnect(adapter: OpenClawAdapter, beforeGeneration: number | null): Promise<number | null> {
   if (beforeGeneration === null || !adapter.subscribeNativeRuntimeEvents || adapter.getNativeConnectionGeneration === undefined) {
     return null;
+  }
+  const alreadyReconnected = readConnectionGeneration(adapter);
+  if (alreadyReconnected !== null && alreadyReconnected > beforeGeneration) {
+    return alreadyReconnected;
   }
 
   const timeoutMs = 15_000;
@@ -560,11 +678,33 @@ export function confirmationMatches(
   expected: NativeDoctorConfirmation,
   actual: NativeDoctorConfirmation
 ) {
-  return expected.connectionId !== null
-    && actual.connectionId !== null
-    && expected.connectionId === actual.connectionId
-    && expected.effectiveChannel === actual.effectiveChannel
-    && expected.availableVersion === actual.availableVersion;
+  return expected.connectionId !== null && actual.connectionId !== null &&
+    expected.connectionId === actual.connectionId &&
+    expected.deviceId === actual.deviceId &&
+    expected.connectionGeneration === actual.connectionGeneration &&
+    expected.currentVersion === actual.currentVersion &&
+    expected.effectiveChannel === actual.effectiveChannel &&
+    expected.availableVersion === actual.availableVersion &&
+    expected.updateReadStatus === actual.updateReadStatus &&
+    expected.updateStatus === actual.updateStatus &&
+    expected.updateAvailable === actual.updateAvailable &&
+    expected.availabilitySource === actual.availabilitySource &&
+    expected.authenticated === actual.authenticated &&
+    expected.grantedScopesKnown === actual.grantedScopesKnown &&
+    expected.updateAuthorized === actual.updateAuthorized &&
+    expected.runtimeStatus === actual.runtimeStatus &&
+    expected.statusReadStatus === actual.statusReadStatus &&
+    expected.configReadStatus === actual.configReadStatus &&
+    expected.configValid === actual.configValid &&
+    expected.configApplication === actual.configApplication &&
+    expected.configuredRevisionHash === actual.configuredRevisionHash &&
+    expected.appliedRevisionHash === actual.appliedRevisionHash &&
+    expected.recoveryStatus === actual.recoveryStatus &&
+    expected.agentOsVersion === actual.agentOsVersion &&
+    expected.compatibilityStatus === actual.compatibilityStatus &&
+    expected.compatibilityAllowed === actual.compatibilityAllowed &&
+    expected.requiresAgentOsUpdate === actual.requiresAgentOsUpdate &&
+    expected.minRequiredAgentOsVersion === actual.minRequiredAgentOsVersion;
 }
 
 export function projectUpdateRun(value: unknown): NativeUpdateRunProjection | null {

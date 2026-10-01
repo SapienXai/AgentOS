@@ -107,7 +107,7 @@ function createReport(
       requiresExplicitOptIn: true,
       requiresAgentOsUpdate: false,
       minRequiredAgentOsVersion: "0.7.2",
-      reason: "Unknown OpenClaw versions are hidden from the default update path.",
+      reason: "This OpenClaw version has not yet been verified by AgentOS. Native update eligibility is evaluated separately from certification.",
       notes: null
     },
     probeTimestamp: "2026-06-17T11:59:00.000Z",

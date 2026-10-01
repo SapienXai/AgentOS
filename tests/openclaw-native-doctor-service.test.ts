@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   auditResultForNativeDoctorMutation,
   buildNativeDoctorConfirmation,
+  claimNativeUpdateRunAdmission,
   confirmationMatches,
   executeNativeDoctorMutation,
   getNativeDoctorSnapshot,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/openclaw/application/native-doctor-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
+import type { OpenClawCapabilityMatrix } from "@/lib/openclaw/types";
 import { NativeGatewayError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 
 function createAdapter(overrides: Partial<OpenClawAdapter> = {}) {
@@ -61,6 +63,9 @@ function createAdapter(overrides: Partial<OpenClawAdapter> = {}) {
           }
         }
       };
+    },
+    getNativeConnectionGeneration() {
+      return 1;
     },
     ...overrides
   } as unknown as OpenClawAdapter;
@@ -331,6 +336,9 @@ test("unknown Doctor mutation outcomes are audited as unknown", () => {
   assert.equal(auditResultForNativeDoctorMutation("unknown"), "unknown");
   assert.equal(auditResultForNativeDoctorMutation("failed"), "failed");
   assert.equal(auditResultForNativeDoctorMutation("skipped"), "succeeded");
+  assert.equal(auditResultForNativeDoctorMutation("succeeded", "unknown"), "unknown");
+  assert.equal(auditResultForNativeDoctorMutation("accepted", "verified"), "succeeded");
+  assert.equal(auditResultForNativeDoctorMutation("skipped", "not-required"), "unknown");
 });
 
 test("accepted restart becomes verified only after a fresh native generation", async () => {
@@ -364,6 +372,155 @@ test("accepted restart becomes verified only after a fresh native generation", a
   assert.equal(reconciled.verification.status, "verified");
   assert.equal(reconciled.reconciliation, "confirmed");
   assert.equal(subscriptionClosed, true);
+});
+
+test("accepted update without a fresh Gateway reconnect remains unverified and is never replayed", async () => {
+  let updateCalls = 0;
+  const adapter = createAdapter({
+    async runNativeUpdate() {
+      updateCalls += 1;
+      return { ok: true, result: { status: "ok" }, restart: { status: "accepted" } };
+    },
+    async subscribeNativeRuntimeEvents() {
+      return { reconnectManagedByClient: false, close() {} };
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
+  const reconciled = await reconcileNativeDoctorMutation(mutation, { before, adapter });
+
+  assert.equal(mutation.outcome, "accepted");
+  assert.equal(reconciled.outcome, "accepted");
+  assert.equal(reconciled.verification.status, "unknown");
+  assert.match(reconciled.message, /did not observe a fresh reconnect generation/i);
+  assert.equal(updateCalls, 1);
+});
+
+test("ambiguous update transport reconnects and verifies native truth without retrying update.run", async () => {
+  let generation = 1;
+  let installedTarget = false;
+  let updateCalls = 0;
+  const adapter = createAdapter({
+    getNativeConnectionGeneration() { return generation; },
+    getConnectionIdentity() {
+      return {
+        connectionId: `connection-${generation}`,
+        client: {
+          async getOperatorIdentity() {
+            return {
+              requestedRole: "operator",
+              role: "operator",
+              requestedScopes: ["operator.admin", "operator.read"],
+              grantedScopes: ["operator.admin", "operator.read"],
+              grantedScopesKnown: true,
+              deviceId: "device",
+              connectionId: `connection-${generation}`,
+              authenticated: true,
+              source: "native-handshake" as const
+            };
+          }
+        } as OpenClawGatewayClient
+      };
+    },
+    async getNativeStatus() {
+      return { runtimeVersion: installedTarget ? "2026.9.8" : "2026.9.7", version: installedTarget ? "2026.9.8" : "2026.9.7" };
+    },
+    async getNativeUpdateStatus() {
+      return {
+        sentinel: null,
+        updateAvailable: installedTarget ? null : { currentVersion: "2026.9.7", latestVersion: "2026.9.8" },
+        effectiveChannel: "stable" as const
+      };
+    },
+    async runNativeUpdate() {
+      updateCalls += 1;
+      throw new Error("Gateway disconnected after the native request was sent");
+    },
+    async subscribeNativeRuntimeEvents(_input, callbacks) {
+      installedTarget = true;
+      generation = 2;
+      await callbacks.onReconnected?.({ generation });
+      return { reconnectManagedByClient: true, close() {} };
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
+  assert.equal(mutation.outcome, "unknown");
+
+  const reconciled = await reconcileNativeDoctorMutation(mutation, {
+    before,
+    adapter,
+    getCapabilityMatrix: async () => postUpdateCapabilities()
+  });
+
+  assert.equal(reconciled.outcome, "succeeded");
+  assert.equal(reconciled.verification.status, "verified");
+  assert.equal(reconciled.verification.connectionGeneration, 2);
+  assert.equal(updateCalls, 1);
+});
+
+test("ambiguous update reconciles a Gateway that reconnected before the listener was attached", async () => {
+  let generation = 1;
+  let installedTarget = false;
+  let updateCalls = 0;
+  let subscribeCalls = 0;
+  const adapter = createAdapter({
+    getNativeConnectionGeneration() { return generation; },
+    getConnectionIdentity() {
+      return {
+        connectionId: `connection-${generation}`,
+        client: {
+          async getOperatorIdentity() {
+            return {
+              requestedRole: "operator",
+              role: "operator",
+              requestedScopes: ["operator.admin", "operator.read"],
+              grantedScopes: ["operator.admin", "operator.read"],
+              grantedScopesKnown: true,
+              deviceId: "device",
+              connectionId: `connection-${generation}`,
+              authenticated: true,
+              source: "native-handshake" as const
+            };
+          }
+        } as OpenClawGatewayClient
+      };
+    },
+    async getNativeStatus() {
+      const version = installedTarget ? "2026.9.8" : "2026.9.7";
+      return { runtimeVersion: version, version };
+    },
+    async getNativeUpdateStatus() {
+      return {
+        sentinel: null,
+        updateAvailable: installedTarget ? null : { currentVersion: "2026.9.7", latestVersion: "2026.9.8" },
+        effectiveChannel: "stable" as const
+      };
+    },
+    async runNativeUpdate() {
+      updateCalls += 1;
+      installedTarget = true;
+      generation = 2;
+      throw new Error("Gateway reconnected before the update request returned");
+    },
+    async subscribeNativeRuntimeEvents() {
+      subscribeCalls += 1;
+      throw new Error("A completed reconnect should be reconciled without a new subscription");
+    }
+  });
+  const before = await getNativeDoctorSnapshot({ adapter });
+  const mutation = await executeNativeDoctorMutation({ action: "update.run" }, { adapter });
+  const reconciled = await reconcileNativeDoctorMutation(mutation, {
+    before,
+    adapter,
+    getCapabilityMatrix: async () => postUpdateCapabilities()
+  });
+
+  assert.equal(reconciled.outcome, "succeeded");
+  assert.equal(reconciled.verification.status, "verified");
+  assert.equal(reconciled.verification.connectionGeneration, 2);
+  assert.equal(updateCalls, 1);
+  assert.equal(subscribeCalls, 0);
 });
 
 test("restart verification rejects the old generation and a different native identity", async () => {
@@ -449,28 +606,79 @@ test("ambiguous native mutations are surfaced without a blind retry", async () =
   assert.equal(result.reconciliation, "inconclusive");
 });
 
+test("AgentOS admits only one simultaneous native update.run request", () => {
+  const releaseFirst = claimNativeUpdateRunAdmission();
+  assert.equal(typeof releaseFirst, "function");
+  assert.equal(claimNativeUpdateRunAdmission(), null);
+  releaseFirst?.();
+  releaseFirst?.();
+  const releaseNext = claimNativeUpdateRunAdmission();
+  assert.equal(typeof releaseNext, "function");
+  releaseNext?.();
+});
+
 test("confirmation is tied to the current native connection and channel", () => {
+  const confirmation = (overrides: Partial<ReturnType<typeof buildNativeDoctorConfirmation>> = {}) => ({
+    connectionId: "connection-1",
+    deviceId: "device",
+    connectionGeneration: 4,
+    currentVersion: "2026.9.1",
+    effectiveChannel: "stable",
+    availableVersion: "2026.9.2",
+    updateReadStatus: "available" as const,
+    updateStatus: "available" as const,
+    updateAvailable: true,
+    availabilitySource: "native-gateway" as const,
+    authenticated: true,
+    grantedScopesKnown: true,
+    updateAuthorized: true,
+    runtimeStatus: "healthy" as const,
+    statusReadStatus: "available" as const,
+    configReadStatus: "available" as const,
+    configValid: true,
+    configApplication: "applied" as const,
+    configuredRevisionHash: "revision-1",
+    appliedRevisionHash: "revision-1",
+    recoveryStatus: "healthy" as const,
+    agentOsVersion: "0.7.2",
+    compatibilityStatus: "unknown" as const,
+    compatibilityAllowed: false,
+    requiresAgentOsUpdate: false,
+    minRequiredAgentOsVersion: null,
+    ...overrides
+  });
   assert.equal(
     confirmationMatches(
-      { connectionId: "connection-1", effectiveChannel: "stable", availableVersion: "2026.9.2" },
-      { connectionId: "connection-1", effectiveChannel: "stable", availableVersion: "2026.9.2" }
+      confirmation(),
+      confirmation()
     ),
     true
   );
   assert.equal(
     confirmationMatches(
-      { connectionId: "connection-1", effectiveChannel: "stable", availableVersion: "2026.9.2" },
-      { connectionId: "connection-2", effectiveChannel: "stable", availableVersion: "2026.9.2" }
+      confirmation(),
+      confirmation({ connectionId: "connection-2" })
     ),
     false
   );
   assert.equal(
     confirmationMatches(
-      { connectionId: "connection-1", effectiveChannel: "stable", availableVersion: "2026.9.2" },
-      { connectionId: "connection-1", effectiveChannel: "stable", availableVersion: "2026.9.3" }
+      confirmation(),
+      confirmation({ availableVersion: "2026.9.3" })
     ),
     false
   );
+  for (const changedFact of [
+    { connectionGeneration: 5 },
+    { currentVersion: "2026.9.2" },
+    { effectiveChannel: "beta" },
+    { agentOsVersion: "0.7.3" },
+    { compatibilityStatus: "blocked" as const },
+    { updateAvailable: false },
+    { configuredRevisionHash: "revision-2" }
+  ]) {
+    assert.equal(confirmationMatches(confirmation(), confirmation(changedFact)), false);
+  }
 });
 
 test("fresh native update verification rejects a version mismatch", async () => {
@@ -494,20 +702,115 @@ test("fresh native update verification rejects a version mismatch", async () => 
   });
   const after = await getNativeDoctorSnapshot({
     adapter: createAdapter({
+      getNativeConnectionGeneration() { return 2; },
       async getNativeStatus() {
         return { runtimeVersion: "2026.9.1" };
       }
     })
   });
 
-  assert.equal(verifyFreshUpdateState(before, after).status, "unknown");
+  assert.equal(verifyFreshUpdateState(before, after, 2, postUpdateCapabilities()).status, "unknown");
 
   const verifiedAfter = await getNativeDoctorSnapshot({
     adapter: createAdapter({
+      getNativeConnectionGeneration() { return 2; },
       async getNativeStatus() {
         return { runtimeVersion: "2026.9.2" };
       }
     })
   });
-  assert.equal(verifyFreshUpdateState(before, verifiedAfter).status, "verified");
+  assert.equal(verifyFreshUpdateState(before, verifiedAfter, 2, postUpdateCapabilities()).status, "verified");
 });
+
+test("update reconnect is not success without a target, native terminal state, or current capabilities", async () => {
+  const before = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      async getNativeStatus() { return { runtimeVersion: "2026.9.1" }; },
+      async getNativeUpdateStatus() {
+        return { sentinel: null, updateAvailable: { currentVersion: "2026.9.1", latestVersion: "2026.9.2" }, effectiveChannel: "stable" as const };
+      }
+    })
+  });
+  const afterAvailable = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      getNativeConnectionGeneration() { return 2; },
+      async getNativeStatus() { return { runtimeVersion: "2026.9.2" }; },
+      async getNativeUpdateStatus() {
+        return {
+          sentinel: null,
+          updateAvailable: { currentVersion: "2026.9.2", latestVersion: "2026.9.3" },
+          effectiveChannel: "stable" as const,
+          lastRun: {
+            runId: "run-1",
+            createdAtMs: 1,
+            updatedAtMs: 2,
+            trigger: "control-ui",
+            phase: "finished",
+            status: "succeeded",
+            target: { version: "2026.9.2" },
+            finishedAtMs: 2
+          }
+        } as never;
+      }
+    })
+  });
+
+  assert.equal(verifyFreshUpdateState(before, afterAvailable, 2, postUpdateCapabilities()).status, "verified");
+  assert.equal(verifyFreshUpdateState(before, afterAvailable, 2, null).status, "unknown");
+
+  const missingLedger = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      getNativeConnectionGeneration() { return 2; },
+      async getNativeStatus() { return { runtimeVersion: "2026.9.2" }; },
+      async getNativeUpdateStatus() {
+        return {
+          sentinel: null,
+          updateAvailable: { currentVersion: "2026.9.2", latestVersion: "2026.9.3" },
+          effectiveChannel: "stable"
+        };
+      }
+    })
+  });
+  assert.equal(verifyFreshUpdateState(before, missingLedger, 2, postUpdateCapabilities()).status, "unknown");
+});
+
+test("fresh update verification requires the native contract and authorization evidence", async () => {
+  const before = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      async getNativeStatus() { return { runtimeVersion: "2026.9.1" }; },
+      async getNativeUpdateStatus() {
+        return { sentinel: null, updateAvailable: { currentVersion: "2026.9.1", latestVersion: "2026.9.2" }, effectiveChannel: "stable" as const };
+      }
+    })
+  });
+  const after = await getNativeDoctorSnapshot({
+    adapter: createAdapter({
+      getNativeConnectionGeneration() { return 2; },
+      async getNativeStatus() { return { runtimeVersion: "2026.9.2" }; }
+    })
+  });
+
+  assert.equal(verifyFreshUpdateState(before, after, 2, {
+    ...postUpdateCapabilities(),
+    compatibility: {
+      protocol: { status: "compatible" },
+      methodContract: { status: "drift", missingRequiredMethods: [] }
+    }
+  } as never).status, "unknown");
+  assert.equal(verifyFreshUpdateState(before, after, 2, {
+    ...postUpdateCapabilities(),
+    authScopes: ["operator.read"]
+  } as never).status, "unknown");
+});
+
+function postUpdateCapabilities() {
+  return {
+    supportedMethods: ["sessions.list", "sessions.get", "sessions.send", "agent.wait"],
+    authScopes: ["operator.admin"],
+    updates: "supported",
+    compatibility: {
+      protocol: { status: "compatible" },
+      methodContract: { status: "advertised", missingRequiredMethods: [] }
+    }
+  } as unknown as OpenClawCapabilityMatrix;
+}

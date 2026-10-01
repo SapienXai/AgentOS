@@ -53,8 +53,12 @@ const repositoryParent = gitCommit("HEAD^");
 test("OpenClaw release versions use strict validation and numeric ordering", () => {
   assert.equal(compareOpenClawReleaseVersions("2026.9.10", "2026.9.2") > 0, true);
   assert.equal(compareOpenClawReleaseVersions("v2026.10.1", "2026.9.10") > 0, true);
+  assert.equal(compareOpenClawReleaseVersions("2027.1.1", "2026.12.31") > 0, true);
   assert.equal(compareOpenClawReleaseVersions("2026.9.3", "2026.9.3-rc.1") > 0, true);
   assert.equal(assertValidOpenClawReleaseVersion("v2026.9.3"), "2026.9.3");
+  assert.equal(assertValidOpenClawReleaseVersion("2027.1.1"), "2027.1.1");
+  assert.throws(() => assertValidOpenClawReleaseVersion("2026.2.30"), /invalid/i);
+  assert.throws(() => assertValidOpenClawReleaseVersion("2026.13.1"), /invalid/i);
   assert.throws(() => assertValidOpenClawReleaseVersion("../../foo"), /invalid/i);
   assert.throws(() => assertValidOpenClawReleaseVersion("2026.9.3; rm -rf /"), /invalid/i);
   assert.throws(() => assertValidOpenClawReleaseVersion("$(touch compromised)"), /invalid/i);
@@ -614,7 +618,7 @@ test("issue rendering is deduplicated across open and closed issues and surfaces
   assert.match(renderOpenClawCompatibilityIssue(driftIntake, { identityDrift: true }), /IDENTITY_DRIFT/);
 });
 
-test("unmanifested releases remain blocked from normal updates and watcher code has no mutation path", () => {
+test("unmanifested releases remain unverified in compatibility evidence and watcher has no mutation path", () => {
   const decision = resolveOpenClawUpdateDecision({
     targetVersion: "2026.9.5",
     agentOsVersion: "0.8.0",
@@ -623,6 +627,7 @@ test("unmanifested releases remain blocked from normal updates and watcher code 
   });
   assert.equal(decision.status, "unknown");
   assert.equal(decision.allowed, false);
+  assert.match(decision.reason, /Native update eligibility is evaluated separately/i);
 
   const watcherSource = [
     readFileSync("scripts/openclaw-release-watch.ts", "utf8"),

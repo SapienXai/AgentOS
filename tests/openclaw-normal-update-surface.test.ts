@@ -43,6 +43,8 @@ test("normal native update endpoint enforces the shared server policy and target
 
   assert.match(route, /getNormalOpenClawUpdatePolicy/);
   assert.match(route, /guardNormalOpenClawUpdate/);
+  assert.match(route, /canAgentOsActorUseProductPermission\(permission\.actor, "updates\.manage"\)/);
+  assert.match(route, /unverifiedAcknowledged: input\.unverifiedAcknowledged === true/);
   assert.match(route, /refreshCheckout:\s*true/);
   assert.match(route, /action:\s*z\.literal\("update\.run"\)/);
   assert.match(route, /availableVersion:\s*z\.string\(\)\.nullable\(\)/);
