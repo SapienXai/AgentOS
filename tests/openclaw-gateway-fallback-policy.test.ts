@@ -12,7 +12,8 @@ test("read-only update, discovery, and compatibility helpers are informational",
     "models.scan",
     "pluginCatalog",
     "rpc.discover",
-    "usage.status"
+    "usage.status",
+    "tasks.list"
   ]) {
     assert.equal(classifyGatewayFallbackImpact({ operation, kind: "unsupported" }), "informational", operation);
   }

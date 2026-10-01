@@ -270,14 +270,10 @@ async function main() {
         sessionCollaboration: { mode: "gateway-native" }
       }
     } as unknown as OpenClawCapabilityMatrix;
-    const [liveSessions, liveTasks] = await Promise.all([
-      client.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS }),
-      client.listTasks({}, { timeoutMs: REQUEST_TIMEOUT_MS })
-    ]);
+    const liveSessions = await client.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS });
     const rootProjection = await loadNativeWorkSnapshot({
       sessions: liveSessions.sessions,
       agents: [],
-      taskList: liveTasks,
       matrix: nativeWorkMatrix,
       adapter: countedAdapter,
       timeoutMs: REQUEST_TIMEOUT_MS
@@ -396,7 +392,9 @@ async function main() {
           await client.callNative("worktrees.remove", { id: worktree.id, force: true }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", allowCliFallback: false, timeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
         }
       }
-      evidence.observations.fallbackTotal = client.getDiagnostics?.().fallbackTotal ?? evidence.observations.fallbackTotal;
+      const diagnostics = client.getDiagnostics?.();
+      evidence.observations.fallbackTotal = diagnostics?.fallbackTotal ?? evidence.observations.fallbackTotal;
+      evidence.checks.noCliFallback = evidence.observations.fallbackTotal === 0;
       client.close("native work certification complete");
     }
     await stopProcess(gateway).catch(() => {});

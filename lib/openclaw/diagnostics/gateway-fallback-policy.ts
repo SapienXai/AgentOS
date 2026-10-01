@@ -42,7 +42,8 @@ const informationalFallbackOperations = new Set([
   "compatibility.report",
   "rpc.discover",
   "rpc.methods",
-  "system.capabilities"
+  "system.capabilities",
+  "tasks.list"
 ]);
 
 export function classifyGatewayFallbackImpact(
