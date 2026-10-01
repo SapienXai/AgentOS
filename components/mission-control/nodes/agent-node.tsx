@@ -21,6 +21,7 @@ import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
 import {
   agentChatLastSeenStoragePrefix,
   agentChatMessageStoragePrefix,
@@ -1342,6 +1343,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 if (!canMessage) {
                   return;
                 }
+                requestAgentChatSound("open");
                 data.onMessage?.(data.agent.id);
               }}
               onPointerDown={(event) => event.stopPropagation()}

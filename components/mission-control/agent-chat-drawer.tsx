@@ -7,6 +7,7 @@ import { ArrowDown, Bot, KeyRound, LoaderCircle, SendHorizontal } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
+import { AgentChatSoundSettings, reportAgentChatVisibility, requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
 import { AgentChatMessageContent } from "@/components/mission-control/agent-chat-message-content";
 import {
   agentChatMessageStoragePrefix,
@@ -237,7 +238,10 @@ export function AgentChatDrawer({
 
   useEffect(() => {
     isVisibleRef.current = isVisible;
-  }, [isVisible]);
+    reportAgentChatVisibility(agent.id, isVisible);
+
+    return () => reportAgentChatVisibility(agent.id, false);
+  }, [agent.id, isVisible]);
 
   useEffect(() => {
     const syncAgentChatState = () => {
@@ -398,6 +402,7 @@ export function AgentChatDrawer({
     const text = draft.trim();
     if (!text || runSnapshot.isRunning) return;
 
+    requestAgentChatSound("send");
     setDraft("");
     scrollToLatest();
 
@@ -644,7 +649,7 @@ export function AgentChatDrawer({
       >
         <div className="mx-auto w-full max-w-2xl">
           <div
-            className="relative overflow-hidden rounded-[22px] border border-border bg-card shadow-sm"
+            className="relative rounded-[22px] border border-border bg-card shadow-sm"
             onPointerDown={(event) => {
               const target = event.target as HTMLElement | null;
               if (!target || target.closest("textarea") || target.closest("button")) return;
@@ -664,8 +669,12 @@ export function AgentChatDrawer({
                 }
               }}
               placeholder={`Message ${agentLabel}…`}
-              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent px-4 py-3 pr-16 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-14 pr-16 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
+
+            <div className="absolute bottom-1.5 left-1.5 z-10">
+              <AgentChatSoundSettings />
+            </div>
 
             <Button
               type="button"

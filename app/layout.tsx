@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 
 import { Toaster } from "@/components/ui/sonner";
 import { InstanceProtectionProvider } from "@/components/auth/instance-protection-provider";
+import { AgentChatSoundProvider } from "@/components/mission-control/agent-chat-sounds";
 import { DesktopNativeTitlebar } from "@/components/desktop/native-titlebar";
 import { PwaServiceWorkerRegistration } from "@/components/pwa/pwa-service-worker-registration";
 import { WorkspaceCreationActivityIndicator } from "@/components/workspace-creation-activity-indicator";
@@ -110,10 +111,12 @@ export default async function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <body>
         <InstanceProtectionProvider initialStatus={initialProtectionStatus}>
-          {children}
-          <WorkspaceCreationActivityIndicator />
-          <PwaServiceWorkerRegistration />
-          <Toaster theme="system" richColors closeButton />
+          <AgentChatSoundProvider>
+            {children}
+            <WorkspaceCreationActivityIndicator />
+            <PwaServiceWorkerRegistration />
+            <Toaster theme="system" richColors closeButton />
+          </AgentChatSoundProvider>
         </InstanceProtectionProvider>
         <DesktopNativeTitlebar />
       </body>
