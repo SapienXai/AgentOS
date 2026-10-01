@@ -157,7 +157,6 @@ export function resolveNormalOpenClawUpdatePolicy(input: {
   const targetIsStableVersion = isStableOpenClawVersion(nativeAvailableVersion);
   const nativeIdentityAvailable = Boolean(
     input.snapshot.identity.connectionId &&
-    input.snapshot.identity.deviceId &&
     input.snapshot.identity.connectionGeneration !== null
   );
   const targetAdvancesRuntime = Boolean(
@@ -254,7 +253,7 @@ export function guardNormalOpenClawUpdate(input: {
       return { allowed: false, code: "UPDATE_TARGET_INVALID", status: 409, error: "The native target is not newer than the installed OpenClaw version." };
     }
     if (!input.policy.nativeAuthorizationAvailable) return { allowed: false, code: "NATIVE_UPDATE_AUTHORIZATION_REQUIRED", status: 403, error: "OpenClaw did not confirm operator admin access for update.run." };
-    if (!input.policy.nativeIdentityAvailable) return { allowed: false, code: "NATIVE_UPDATE_IDENTITY_UNAVAILABLE", status: 503, error: "The Gateway connection, authenticated device, or reconnect generation cannot be bound to this update." };
+    if (!input.policy.nativeIdentityAvailable) return { allowed: false, code: "NATIVE_UPDATE_IDENTITY_UNAVAILABLE", status: 503, error: "The Gateway connection ID or reconnect generation cannot be bound to this update." };
     if (!input.policy.nativePreflightAvailable) return { allowed: false, code: "UPDATE_PREFLIGHT_UNAVAILABLE", status: 503, error: "OpenClaw health, configuration, or recovery state must be available and healthy before updating." };
     return { allowed: false, code: "NATIVE_UPDATE_STATUS_UNAVAILABLE", status: 503, error: input.policy.reason };
   }
@@ -313,7 +312,7 @@ function normalUpdatePolicyReason(input: {
   if (!input.stableChannel) return "The active OpenClaw channel is not a stable update channel.";
   if (!input.targetIsStableVersion || !input.currentIsStableVersion || !input.targetAdvancesRuntime) return "The installed version or exact update target is not a valid forward stable version transition.";
   if (!input.nativeAuthorizationAvailable) return "OpenClaw operator admin authorization for update.run could not be verified.";
-  if (!input.nativeIdentityAvailable) return "Gateway identity and reconnect generation cannot be bound to this update.";
+  if (!input.nativeIdentityAvailable) return "Gateway connection ID and reconnect generation cannot be bound to this update.";
   if (!input.nativePreflightAvailable) return "OpenClaw health, configuration, or recovery state is not ready for an update.";
   if (input.decision?.status !== "certified") return `OpenClaw ${input.nativeAvailableVersion} is available. This release has not yet been verified by AgentOS.`;
   return input.decision.reason;

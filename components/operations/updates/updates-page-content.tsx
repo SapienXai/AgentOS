@@ -44,6 +44,7 @@ import {
   formatNativeChannel,
   formatNativeUpdateStateLabel,
   formatOpenClawProductUpdateStateLabel,
+  resolveNativeUpdateActionBlockReason,
   type NormalOpenClawUpdatePolicy,
   type OpenClawProductUpdateState,
   type NativeUpdateUserState
@@ -179,6 +180,13 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
   const nativeState: NativeUpdateUserState = productUpdate?.nativeState ?? policy?.state ?? "unknown";
   const canRunNativeUpdate = Boolean(canManageUpdates && policy?.canRunNormalUpdate && confirmation?.connectionId);
   const canHoldNativeUpdate = Boolean(canManageUpdates && policy?.canHoldUpdate && confirmation?.connectionId);
+  const updateActionBlockReason = resolveNativeUpdateActionBlockReason({
+    canManageUpdates,
+    policyCanRunNormalUpdate: policy?.canRunNormalUpdate ?? null,
+    policyReason: policy?.reason ?? null,
+    hasBoundConfirmation: Boolean(confirmation?.connectionId),
+    checking: isRefreshing
+  });
   const communityRelease = useMemo(
     () => findCommunityRelease(community, availableVersion),
     [availableVersion, community]
@@ -428,7 +436,8 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               currentVersion={currentVersion}
               availableVersion={availableVersion}
               agentOsDecision={policy?.agentOsDecision ?? null}
-              policyReason={productUpdate?.reason ?? policy?.reason ?? null}
+              policyReason={updateActionBlockReason ?? productUpdate?.reason ?? policy?.reason ?? null}
+              updateActionBlockReason={updateActionBlockReason}
               channel={channel}
               state={userState}
               nativeState={nativeState}
@@ -437,7 +446,6 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               nativeError={nativeError}
               actionState={actionState}
               actionMessage={actionMessage}
-              canManageUpdates={canManageUpdates}
               canRunNativeUpdate={canRunNativeUpdate}
               canHoldNativeUpdate={canHoldNativeUpdate}
               verificationPending={awaitingNativeVerification}
@@ -544,6 +552,7 @@ function PrimaryUpdateCard({
   availableVersion,
   agentOsDecision,
   policyReason,
+  updateActionBlockReason,
   channel,
   state,
   nativeState,
@@ -552,7 +561,6 @@ function PrimaryUpdateCard({
   nativeError,
   actionState,
   actionMessage,
-  canManageUpdates,
   canRunNativeUpdate,
   canHoldNativeUpdate,
   verificationPending,
@@ -567,6 +575,7 @@ function PrimaryUpdateCard({
   availableVersion: string | null;
   agentOsDecision: NormalOpenClawUpdatePolicy["agentOsDecision"];
   policyReason: string | null;
+  updateActionBlockReason: string | null;
   channel: string;
   state: OpenClawProductUpdateState;
   nativeState: NativeUpdateUserState;
@@ -575,7 +584,6 @@ function PrimaryUpdateCard({
   nativeError: string | null;
   actionState: UpdateActionState;
   actionMessage: string | null;
-  canManageUpdates: boolean;
   canRunNativeUpdate: boolean;
   canHoldNativeUpdate: boolean;
   verificationPending: boolean;
@@ -704,12 +712,15 @@ function PrimaryUpdateCard({
               type="button"
               onClick={onRequestUpdate}
               disabled={!canRunNativeUpdate || actionState === "running" || actionState === "unknown" || verificationPending || refreshing}
-              title={!canRunNativeUpdate ? !canManageUpdates ? "Your AgentOS account cannot manage updates." : policyReason || "Native OpenClaw update authorization or preflight evidence is unavailable." : undefined}
+              title={!canRunNativeUpdate ? updateActionBlockReason || policyReason || "Native OpenClaw update authorization or preflight evidence is unavailable." : undefined}
               className="min-h-11 sm:min-h-9"
             >
               {actionState === "running" ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Wrench className="mr-1.5 h-4 w-4" />}
               Update OpenClaw
             </Button>
+          ) : null}
+          {updateActionBlockReason && (state === "available-certified" || state === "available-uncertified") ? (
+            <p className="w-full text-xs leading-5 text-muted-foreground" role="status">{updateActionBlockReason}</p>
           ) : null}
           {canHoldNativeUpdate ? (
             <Button

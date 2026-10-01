@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   formatAutomaticUpdateState,
   formatNativeChannel,
+  resolveNativeUpdateActionBlockReason,
   guardNormalOpenClawUpdate,
   resolveOpenClawProductUpdateState,
   resolveNativeUpdateUserState,
@@ -34,6 +35,44 @@ test("native current status is presented as up to date", () => {
     }),
     "up-to-date"
   );
+});
+
+test("disabled native update explains the actual permission, policy, or confirmation blocker", () => {
+  assert.equal(resolveNativeUpdateActionBlockReason({
+    canManageUpdates: false,
+    policyCanRunNormalUpdate: false,
+    policyReason: "OpenClaw operator admin authorization is unavailable.",
+    hasBoundConfirmation: false,
+    checking: false
+  }), "Your AgentOS account cannot manage updates.");
+  assert.equal(resolveNativeUpdateActionBlockReason({
+    canManageUpdates: true,
+    policyCanRunNormalUpdate: false,
+    policyReason: "OpenClaw configuration is not applied.",
+    hasBoundConfirmation: true,
+    checking: false
+  }), "OpenClaw configuration is not applied.");
+  assert.equal(resolveNativeUpdateActionBlockReason({
+    canManageUpdates: true,
+    policyCanRunNormalUpdate: true,
+    policyReason: null,
+    hasBoundConfirmation: false,
+    checking: false
+  }), "Refresh native update status to bind confirmation to the current Gateway.");
+  assert.equal(resolveNativeUpdateActionBlockReason({
+    canManageUpdates: true,
+    policyCanRunNormalUpdate: true,
+    policyReason: null,
+    hasBoundConfirmation: true,
+    checking: false
+  }), null);
+  assert.equal(resolveNativeUpdateActionBlockReason({
+    canManageUpdates: false,
+    policyCanRunNormalUpdate: null,
+    policyReason: null,
+    hasBoundConfirmation: false,
+    checking: true
+  }), null);
 });
 
 test("native available target with an exact certified decision is eligible for normal update", () => {
@@ -451,8 +490,19 @@ test("native authorization and complete preflight remain server-side update requ
     agentOsVersion: "0.8.0",
     manifest: manifest([{ version: "2026.9.7", status: "certified" }])
   });
+  const missingOptionalDeviceId = resolveNormalOpenClawUpdatePolicy({
+    snapshot: {
+      ...policySnapshot(policyUpdate("2026.9.8")),
+      identity: { ...policySnapshot(policyUpdate("2026.9.8")).identity, deviceId: null }
+    },
+    agentOsVersion: "0.8.0",
+    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+  });
 
   assert.equal(guardNormalOpenClawUpdate({ policy: authorizedPolicy, confirmationMatches: true, unverifiedAcknowledged: true }).allowed, true);
+  assert.equal(missingOptionalDeviceId.nativeIdentityAvailable, true);
+  assert.equal(missingOptionalDeviceId.canRunNormalUpdate, true);
+  assert.equal(guardNormalOpenClawUpdate({ policy: missingOptionalDeviceId, confirmationMatches: true, unverifiedAcknowledged: true }).allowed, true);
   const authorizationResult = guardNormalOpenClawUpdate({ policy: unauthorized, confirmationMatches: true, unverifiedAcknowledged: true });
   assert.equal(authorizationResult.allowed, false);
   if (!authorizationResult.allowed) assert.equal(authorizationResult.code, "NATIVE_UPDATE_AUTHORIZATION_REQUIRED");

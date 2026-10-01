@@ -54,6 +54,12 @@ short-lived, server-issued challenge bound to the authenticated AgentOS actor;
 the server consumes it once immediately before the native mutation, so the same
 confirmation cannot be replayed.
 
+The Gateway connection ID and reconnect generation are required to bind an
+update to the live native connection. AgentOS also compares the device ID when
+OpenClaw supplies one, but a missing device ID alone does not disable updates:
+the authenticated native `operator.admin` scope and the connection-bound,
+one-time confirmation remain mandatory.
+
 An explicit known-incompatible decision, an unmet AgentOS minimum, unknown
 runtime/channel/target facts, insufficient authorization, an unsupported
 channel, an active or held update, or failed required preflight blocks the

@@ -76,3 +76,19 @@ export function formatOpenClawProductUpdateStateLabel(state: OpenClawProductUpda
     case "unknown": return "Unable to verify";
   }
 }
+
+export function resolveNativeUpdateActionBlockReason(input: {
+  canManageUpdates: boolean;
+  policyCanRunNormalUpdate: boolean | null;
+  policyReason: string | null;
+  hasBoundConfirmation: boolean;
+  checking: boolean;
+}) {
+  if (input.checking || input.policyCanRunNormalUpdate === null) return null;
+  if (!input.canManageUpdates) return "Your AgentOS account cannot manage updates.";
+  if (!input.policyCanRunNormalUpdate) {
+    return input.policyReason || "OpenClaw's native update safety checks are not ready.";
+  }
+  if (!input.hasBoundConfirmation) return "Refresh native update status to bind confirmation to the current Gateway.";
+  return null;
+}

@@ -659,6 +659,20 @@ test("confirmation is tied to the current native connection and channel", () => 
   );
   assert.equal(
     confirmationMatches(
+      confirmation({ deviceId: null }),
+      confirmation({ deviceId: null })
+    ),
+    true
+  );
+  assert.equal(
+    confirmationMatches(
+      confirmation({ deviceId: null }),
+      confirmation({ deviceId: "device" })
+    ),
+    false
+  );
+  assert.equal(
+    confirmationMatches(
       confirmation(),
       confirmation({ connectionId: "connection-2" })
     ),
