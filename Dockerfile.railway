@@ -37,6 +37,7 @@ COPY --from=agentos-build --chown=node:node /build/.next/standalone ./
 COPY --from=agentos-build --chown=node:node /build/.next/static ./.next/static
 COPY --from=agentos-build --chown=node:node /build/public ./public
 COPY --from=agentos-build --chown=node:node /runtime-extras/node_modules/ws ./node_modules/ws
+COPY --from=agentos-build --chown=node:node /build/node_modules/.pnpm/ws@8.21.3/node_modules/ws ./node_modules/.pnpm/ws@8.21.3/node_modules/ws
 COPY --chown=node:node scripts/railway-supervisor.mjs ./scripts/railway-supervisor.mjs
 COPY --chown=node:node scripts/railway-public-proxy.mjs ./scripts/railway-public-proxy.mjs
 COPY --chown=node:node scripts/secure-browser-worker.mjs ./scripts/secure-browser-worker.mjs
@@ -48,7 +49,8 @@ COPY scripts/railway-browser-worker-entrypoint.sh ./scripts/railway-browser-work
 
 RUN chmod 0755 ./scripts/railway-entrypoint.sh ./scripts/railway-browser-worker-entrypoint.sh && \
     rm -rf /home/node/.openclaw /home/node/.config/openclaw && \
-    mkdir -p /home/node/.config /home/node/Documents/Shared && \
+    mkdir -p /home/node/.cache /home/node/.config /home/node/Documents/Shared && \
+    chown -R node:node /home/node/.cache && \
     ln -s /data/agentos/mission-control /agentos/.mission-control && \
     ln -s /data/openclaw /home/node/.openclaw && \
     ln -s /data/openclaw-config /home/node/.config/openclaw && \

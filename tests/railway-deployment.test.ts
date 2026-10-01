@@ -46,8 +46,13 @@ test("README and Railway guide describe the same published two-service template"
 
 test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps every mutable runtime root to the volume", async () => {
   const dockerfile = await read("Dockerfile.railway");
+  const dockerignore = await read(".dockerignore");
 
   assert.match(dockerfile, /ghcr\.io\/openclaw\/openclaw:2026\.9\.7@sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc/);
+  assert.match(dockerfile, /\/build\/node_modules\/\.pnpm\/ws@8\.21\.3\/node_modules\/ws \.\/node_modules\/\.pnpm\/ws@8\.21\.3\/node_modules\/ws/);
+  assert.match(dockerignore, /^apps\/desktop\/runtime$/m);
+  assert.match(dockerignore, /^apps\/desktop\/src-tauri\/target$/m);
+  assert.match(dockerignore, /^\.desktop-cache$/m);
   assert.doesNotMatch(dockerfile, /--mount=type=cache/);
   assert.match(dockerfile, /AGENTOS_RUNTIME_DIR=\/data\/agentos/);
   assert.match(dockerfile, /AGENTOS_SUPERVISOR_SOCKET_PATH=\/tmp\/agentos-supervisor\.sock/);
@@ -65,6 +70,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /\/data\/agentos\/mission-control/);
   assert.match(dockerfile, /\/data\/workspaces/);
   assert.match(dockerfile, /gosu/);
+  assert.match(dockerfile, /mkdir -p \/home\/node\/\.cache[\s\S]*chown -R node:node \/home\/node\/\.cache/);
   const railwayGuide = await read("docs/deploy-on-railway.md");
   assert.match(railwayGuide, /OpenClaw `2026\.9\.7` multi-architecture\s+index `sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc`/);
   assert.match(railwayGuide, /verified manifests are `linux\/amd64`\s+\(`sha256:b9e8a44f6df68cf08baec914bf0306dde96459c3d1be383fa0d70d2eca8bc154`\)/);
