@@ -250,7 +250,7 @@ function resolvePluginCatalogRecovery(state: PluginCatalogProjection["state"]) {
   }
 
   if (state === "unsupported") {
-    return "Update the OpenClaw Gateway/runtime to certified 2026.9.4 or newer.";
+    return "Use an OpenClaw Gateway/runtime that advertises the native plugin catalog methods.";
   }
 
   return "Retry the native OpenClaw catalog request and inspect Gateway diagnostics if it continues.";

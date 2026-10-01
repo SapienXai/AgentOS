@@ -532,7 +532,7 @@ function getVersionContractMethods(version: string | null) {
     return [];
   }
 
-  const methods = new Set([
+  const methods = new Set<string>([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
     ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
     ...(compareVersionStrings(normalized, OPENCLAW_2026_9_4_CONTRACT_VERSION) >= 0

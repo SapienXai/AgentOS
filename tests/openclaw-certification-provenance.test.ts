@@ -290,6 +290,43 @@ test("final transport certification accepts only an explicit unsupported result 
   }).status, "FAIL");
 });
 
+test("final runtime certification requires preserved 2026.9.7 observation lifetimes", () => {
+  const methods = [
+    "agent.wait",
+    "device.scopes.waitUpgrade",
+    "exec.approval.waitDecision",
+    "plugin.approval.waitDecision",
+    "question.waitAnswer"
+  ];
+  const runtimeArtifact = {
+    runtime: {
+      targetVersion: TARGET_VERSION,
+      installedVersion: TARGET_VERSION,
+      protocolVersion: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL,
+      summary: { failed: 0, requiredFailures: 0, unknown: 0 }
+    },
+    contract: {
+      static: {
+        changes: methods.map((method) => ({
+          method,
+          targetLifetime: "observation",
+          message: `${method} observation is canceled on disconnect and restart drain.`
+        }))
+      }
+    }
+  };
+
+  assert.equal(assessOpenClawCertificationArtifact("runtime", runtimeArtifact).status, "PASS");
+  assert.equal(assessOpenClawCertificationArtifact("runtime", {
+    ...runtimeArtifact,
+    contract: { static: { changes: methods.slice(1).map((method) => ({ method, targetLifetime: "observation" })) } }
+  }).status, "FAIL");
+  assert.equal(assessOpenClawCertificationArtifact("runtime", {
+    ...runtimeArtifact,
+    contract: { static: { changes: [...runtimeArtifact.contract.static.changes, { method: "future.wait", targetLifetime: "durable-observation" }] } }
+  }).status, "FAIL");
+});
+
 test("final certification rejects missing or mismatched separate Gateway packages", async () => {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-"));
   try {

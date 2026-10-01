@@ -81,11 +81,13 @@ test("official-backed event bridge coalesces sequence gaps into bounded reconcil
     await waitFor(() => countRequests("sessions.subscribe") === 1);
     const baselineSessions = countRequests("sessions.list");
     const baselineTasks = countRequests("tasks.list");
+    const baselineReconciledAt = getOpenClawEventBridgeStreamStatus().lastReconciledAt;
 
     activeHarness.emitEvent("task", { task: { id: "task-gap", status: "running" } }, 1);
     activeHarness.emitEvent("task", { task: { id: "task-gap", status: "completed" } }, 3);
     await waitFor(() => getOpenClawEventBridgeStatus().sequenceGapCount === 1);
-    await waitFor(() => getOpenClawEventBridgeStreamStatus().lastReconciledAt !== null, 5_000);
+    await waitFor(() => getOpenClawEventBridgeStreamStatus().lastReconciledAt !== baselineReconciledAt, 5_000);
+    await waitFor(() => getOpenClawEventBridgeStreamStatus().reconciliationState === "idle", 5_000);
 
     const sessionReconciliations = countRequests("sessions.list") - baselineSessions;
     const taskReconciliations = countRequests("tasks.list") - baselineTasks;

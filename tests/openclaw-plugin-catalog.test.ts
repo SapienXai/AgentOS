@@ -146,6 +146,8 @@ test("catalog service exposes unsupported and authorization-denied states withou
     probeNativeGateway: async <TPayload>(): Promise<TPayload> => ({}) as TPayload
   });
   assert.equal(unsupported.state, "unsupported");
+  assert.match(unsupported.recovery ?? "", /advertises the native plugin catalog methods/i);
+  assert.doesNotMatch(unsupported.recovery ?? "", /certified 2026\.9\.4/i);
 
   const denied = await getOpenClawPluginCatalog({}, {}, {
     canProbeNativeGateway: () => true,

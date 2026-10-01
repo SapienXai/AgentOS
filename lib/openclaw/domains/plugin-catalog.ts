@@ -160,7 +160,7 @@ export function createPluginCatalogProjectionFailure(
   const recovery = state === "denied"
     ? "Ask an OpenClaw operator to grant operator.read, then retry."
     : state === "unsupported"
-      ? "Update the OpenClaw Gateway/runtime to certified 2026.9.4 or newer."
+      ? "Use an OpenClaw Gateway/runtime that advertises the native plugin catalog methods."
       : "Retry the native OpenClaw catalog request and inspect Gateway diagnostics if it continues.";
 
   return { operation, state, message, recovery };

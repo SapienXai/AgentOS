@@ -430,8 +430,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     label: "Native plugin discovery catalog",
     methods: ["plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"],
     fallbackAllowed: false,
-    recovery: "OpenClaw owns the plugin discovery catalog. Update the Gateway/runtime to a certified version that exposes the native catalog methods.",
-    // Additive in certified 2026.9.4; not part of the older stable baseline.
+    recovery: "OpenClaw owns the plugin discovery catalog. Use a Gateway/runtime that advertises the native catalog methods.",
+    // Added in 2026.9.4 and retained in the current 2026.9.7 contract; not part of the older stable baseline.
     baseline: "experimental",
     productIntegration: "integrated",
     productIntegratedMethods: ["plugins.catalog.browse", "plugins.catalog.categories", "plugins.catalog.get"]

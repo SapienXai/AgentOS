@@ -215,6 +215,10 @@ test("the historical 2026.9.1 to 2026.9.2 fixture detects security, behavior, an
   assert.equal(impact.changedDomains.includes("updates"), true);
   assert.equal(impact.requiredChecks.some((check) => check.id === "session-security"), true);
   assert.equal(impact.requiredChecks.some((check) => check.id === "native-update-lifecycle"), true);
+  assert.equal(
+    impact.requiredChecks.find((check) => check.id === "shared-gateway-trust-review")?.commands[0],
+    "docs/openclaw-2026.9.2-compatibility-audit.md"
+  );
 });
 
 test("verified identity does not clear unknown contract evidence", () => {

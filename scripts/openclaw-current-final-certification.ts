@@ -557,6 +557,29 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
     const summary = asRecord(runtime?.summary);
     if (runtime?.targetVersion !== TARGET_VERSION || runtime?.installedVersion !== TARGET_VERSION || runtime?.protocolVersion !== TARGET_PROTOCOL) failures.push("runtime target identity or protocol mismatch");
     if (summary?.failed !== 0 || summary?.requiredFailures !== 0 || summary?.unknown !== 0) failures.push("runtime contains failures, required failures, or unknown outcomes");
+    const staticContract = asRecord(asRecord(artifact.contract).static);
+    const descriptorChanges = Array.isArray(staticContract.changes)
+      ? staticContract.changes.map(asRecord)
+      : [];
+    const expectedObservationMethods = [
+      "agent.wait",
+      "device.scopes.waitUpgrade",
+      "exec.approval.waitDecision",
+      "plugin.approval.waitDecision",
+      "question.waitAnswer"
+    ];
+    const observationMethods = descriptorChanges
+      .filter((change) => change.targetLifetime === "observation")
+      .map((change) => change.method)
+      .filter((method): method is string => typeof method === "string");
+    const unknownLifetimes = descriptorChanges.filter((change) =>
+      change.targetLifetime !== null &&
+      change.targetLifetime !== undefined &&
+      change.targetLifetime !== "observation"
+    );
+    if (expectedObservationMethods.some((method) => !observationMethods.includes(method)) || unknownLifetimes.length > 0) {
+      failures.push("runtime static contract evidence did not preserve the five 2026.9.7 observation lifetimes or contains an unknown lifetime");
+    }
   } else if (name === "workforce") {
     const summary = asRecord(artifact.summary);
     const checks = asRecord(artifact.checks);
