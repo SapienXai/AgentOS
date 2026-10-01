@@ -1,0 +1,376 @@
+{
+  "config": {
+    "argv": [
+      "/Users/kazimakgul/.nvm/versions/node/v24.20.0/bin/node",
+      "/Users/kazimakgul/Documents/GitHub/AgentOS/node_modules/@playwright/test/cli.js",
+      "test",
+      "tests/browser/channels-acceptance-certified.spec.mjs",
+      "--reporter=json"
+    ],
+    "configFile": "/Users/kazimakgul/Documents/GitHub/AgentOS/playwright.config.mjs",
+    "rootDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/tests/browser",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/kazimakgul/Documents/GitHub/AgentOS/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.mjs"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": {
+      "command": "pnpm dev --hostname 127.0.0.1 --port 3178",
+      "url": "http://127.0.0.1:3178/mission-control",
+      "reuseExistingServer": true,
+      "timeout": 120000,
+      "env": {
+        "NODE_ENV": "development",
+        "AGENTOS_RUNTIME_DIR": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/agentos",
+        "OPENCLAW_STATE_DIR": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/openclaw",
+        "OPENCLAW_CONFIG_PATH": "/var/folders/q_/gm_5lrjs57d54k9fwbd0_54w0000gn/T/agentos-channels-browser-98689/openclaw/openclaw.json",
+        "AGENTOS_API_TOKEN": "",
+        "AGENTOS_UNSAFE_DISABLE_API_AUTH": ""
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "channels-acceptance-certified.spec.mjs",
+      "file": "channels-acceptance-certified.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Telegram online human acceptance completes all 26 steps",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5279,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "PASS Telegram acceptance step 1\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 2\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 3\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 4\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 5\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 6\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 7\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 8\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 9\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 10\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 11\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 12\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 13\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 14\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 15\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 16\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 17\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 18\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 19\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 20\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 21\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 22\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 23\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 24\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 25\n"
+                    },
+                    {
+                      "text": "PASS Telegram acceptance step 26\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:29.033Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-431d33c9ea1e299d1934",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 50,
+          "column": 1
+        },
+        {
+          "title": "Telegram STOPPED start is issued once and progresses to ONLINE",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4555,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:34.396Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-760354c889ff5a9576b3",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 138,
+          "column": 1
+        },
+        {
+          "title": "Telegram group permissions use native policy presets and reload from OpenClaw state",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2782,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:38.954Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-c520bbd4c56a222d6673",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 150,
+          "column": 1
+        },
+        {
+          "title": "Telegram token setup never projects the credential and continues to the directory",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2128,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:41.740Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-528a24942212e12a5129",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 181,
+          "column": 1
+        },
+        {
+          "title": "Discord hierarchy keeps thread routing inherited from #support",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7548,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:43.871Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-3bdcf1792062c678c5e3",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 214,
+          "column": 1
+        },
+        {
+          "title": "Agent badges show Telegram 2 and Discord 1 while default-only routes stay unbadged",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1873,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-01T13:36:51.423Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9ded8321fe8f62d3a91f-921c9b047d30b362d820",
+          "file": "channels-acceptance-certified.spec.mjs",
+          "line": 290,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-01T13:36:26.307Z",
+    "duration": 27091.357,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

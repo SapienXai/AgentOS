@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.7-multi-user-identity-collaboration-certification",
+  "generatedAt": "2026-10-01T13:07:18.236Z",
+  "certifiedCodeHead": "48b6cd132b1c4b897244caa1d6aebe78a89ae602",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "openClaw": {
+      "release": "2026.9.7",
+      "sourceCommit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.9.7",
+      "gatewayProtocolPackage": "2026.9.7",
+      "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z",
+      "packageHash": "6698423f66bdb3d8c0c827c9d448c8bc34384c2e5b6560442cb621acaed95921",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "descriptors": {
+    "source": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+    "methods": {
+      "users.list": "operator.read",
+      "users.self": "operator.read",
+      "users.setDisplayName": "operator.write",
+      "users.setAvatar": "operator.write",
+      "users.linkEmail": "operator.admin",
+      "users.setRole": "operator.admin",
+      "session.visibility.set": "operator.write",
+      "session.members.list": "operator.read",
+      "session.members.listEvidence": "operator.read",
+      "session.members.add": "operator.write",
+      "session.members.remove": "operator.write",
+      "sessions.assignOwner": "operator.write"
+    },
+    "usersCreate": "ABSENT",
+    "sourceSha256": "832e8313a450be10eec5108af47ef1e5372ddd615870358acbf7158f2ec09e5b"
+  },
+  "identity": {
+    "AgentOsPrincipal": "signed AgentOS actorId",
+    "AgentOsRoles": [
+      "owner",
+      "member"
+    ],
+    "nativePrincipal": "OpenClaw UserProfile when the native request context proves one",
+    "connection": "shared trusted AgentOS service Gateway credential",
+    "nativeAttribution": "shared service",
+    "nativeHumanIdentityVerified": false,
+    "association": "metadata-associated only; never authentication or authorization",
+    "heuristicMatching": "disabled",
+    "perHumanDelegation": "not implemented"
+  },
+  "sessionCollaboration": {
+    "owner": "OpenClaw native session owner",
+    "participants": "OpenClaw native session members",
+    "visibility": "OpenClaw native session visibility",
+    "membershipEvidence": "OpenClaw native session.members.listEvidence",
+    "productPermission": "sessions.collaborate",
+    "rootDashboardNewRpcCount": 0,
+    "perSessionFanout": false
+  },
+  "runtime": {
+    "usersList": "PASS",
+    "usersSelf": "EXPECTED-DENIAL",
+    "usersSetRole": "SKIPPED",
+    "sharedServiceAttribution": "PASS",
+    "associationDoesNotAuthenticate": "PASS",
+    "associationDoesNotAuthorize": "PASS",
+    "sessionMembersList": "PASS",
+    "sessionMembersListEvidence": "PASS",
+    "sessionMembersAdd": "SKIPPED",
+    "sessionMembersRemove": "SKIPPED",
+    "sessionVisibilitySet": "PASS",
+    "agentOwnerAssignment": "EXPECTED-DENIAL",
+    "humanOwnerAssignment": "SKIPPED",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "userProfileCount": 0,
+    "usersSelfResult": "users.self requires an authenticated user",
+    "sessionVisibilityResult": "changed-and-restored",
+    "usersSetRoleReason": "exact disposable Gateway exposed no native profile; no profile was fabricated",
+    "humanProfileReason": "exact disposable Gateway exposed no native profile",
+    "agentOwnerReason": "sessions.assignOwner requires an identified caller"
+  },
+  "cleanup": {
+    "status": "complete",
+    "sessionDeleted": true,
+    "gatewayStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "exactPackage": true,
+    "exactSourceScopes": true,
+    "noUsersCreate": true,
+    "nativeOnly": true,
+    "noActorIdAsNativeProfileId": true,
+    "noHeuristicIdentityMapping": true,
+    "noLocalAcl": true,
+    "noPerHumanCredentialStore": true
+  },
+  "success": true,
+  "failure": null
+}

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-native-memory-certification",
+  "generatedAt": "2026-10-01T13:07:18.283Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "certifiedCodeHead": "48b6cd132b1c4b897244caa1d6aebe78a89ae602",
+    "branch": "main",
+    "openClaw": {
+      "release": "2026.9.7",
+      "source": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+      "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z",
+      "packageHash": "6698423f66bdb3d8c0c827c9d448c8bc34384c2e5b6560442cb621acaed95921",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    },
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.7",
+    "gatewayProtocolPackage": "2026.9.7"
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "stateIsolation": true,
+    "configIsolation": true,
+    "userGatewayUntouched": true,
+    "realCredentialsAccessed": false,
+    "gatewayVersion": "2026.9.7",
+    "nativeTransport": true
+  },
+  "methods": {
+    "memory.search": {
+      "scope": "operator.read",
+      "status": "PASS",
+      "result": "fts-only:0"
+    },
+    "doctor.memory.status": {
+      "scope": "operator.read",
+      "status": "PASS",
+      "result": "native-memory-unavailable-or-unconfigured"
+    },
+    "doctor.memory.dreamDiary": {
+      "scope": "operator.read",
+      "status": "PASS",
+      "result": "not-found"
+    },
+    "doctor.memory.backfillDreamDiary": {
+      "scope": "operator.write",
+      "status": "PASS",
+      "result": "backfill"
+    },
+    "doctor.memory.resetDreamDiary": {
+      "scope": "operator.write",
+      "status": "PASS",
+      "result": "reset"
+    },
+    "doctor.memory.resetGroundedShortTerm": {
+      "scope": "operator.write",
+      "status": "PASS",
+      "result": "resetGroundedShortTerm"
+    },
+    "doctor.memory.repairDreamingArtifacts": {
+      "scope": "operator.write",
+      "status": "PASS",
+      "result": "repairDreamingArtifacts"
+    },
+    "doctor.memory.dedupeDreamDiary": {
+      "scope": "operator.write",
+      "status": "PASS",
+      "result": "dedupeDreamDiary"
+    }
+  },
+  "observations": {
+    "explicitNativeUnavailable": "PASS",
+    "readFailureIsNotUnavailable": "PASS",
+    "redaction": "PASS",
+    "noCliFallback": "PASS"
+  },
+  "authorization": {
+    "readScope": "PASS",
+    "writeScope": "PASS",
+    "insufficientScopeDenied": "SKIPPED",
+    "gatewayFinalAuthority": true
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessStopped": true,
+    "disposableRootRemoved": true
+  },
+  "rpcCounts": {
+    "doctor.memory.status": 1,
+    "memory.search": 1,
+    "doctor.memory.dreamDiary": 1,
+    "doctor.memory.backfillDreamDiary": 1,
+    "doctor.memory.resetGroundedShortTerm": 1,
+    "doctor.memory.repairDreamingArtifacts": 1,
+    "doctor.memory.dedupeDreamDiary": 1,
+    "doctor.memory.resetDreamDiary": 1
+  },
+  "skips": [],
+  "success": true
+}

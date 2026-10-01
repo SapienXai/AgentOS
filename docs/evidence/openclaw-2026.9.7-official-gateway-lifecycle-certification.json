@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-01T13:02:08.295Z",
+  "target": {
+    "version": "2026.9.7",
+    "sourceCommit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+    "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z",
+    "packageHash": "6698423f66bdb3d8c0c827c9d448c8bc34384c2e5b6560442cb621acaed95921",
+    "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]",
+    "protocol": 4
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPort": "[DISPOSABLE_LOOPBACK]",
+    "stateRoot": "[DISPOSABLE_ROOT]",
+    "configRoot": "[DISPOSABLE_ROOT]",
+    "tokenAuth": true,
+    "deviceAuth": true
+  },
+  "checks": {
+    "exactPackage": true,
+    "officialHandshake": true,
+    "deviceSignatureRoundTrip": true,
+    "deviceTokenPersistence": true,
+    "officialBackedDomainReads": true,
+    "optionalTaskMethodsScoped": true,
+    "gatewayHealthAfterOptionalTaskProbe": true,
+    "reconnectAfterRuntimeRestart": true,
+    "noParallelReconnectOwner": true
+  },
+  "observations": {
+    "protocol": 4,
+    "serverVersion": "2026.9.7",
+    "connectionCount": 2,
+    "helloCount": 2,
+    "grantedRole": "operator",
+    "grantedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.questions",
+      "operator.pairing",
+      "operator.talk",
+      "operator.talk.secrets"
+    ],
+    "sessionListShapeValid": true,
+    "taskListMethodStatus": "unsupported",
+    "taskListErrorKind": "unsupported",
+    "nativeSessionReadUsed": true,
+    "cliFallbackUsed": false,
+    "gatewayHealthAfterTaskProbe": true,
+    "deviceId": "45e3d5763df1d9b9f2c83d53a525e0ccb48f71c81b92efede2f2f081100d2202",
+    "transportDeviceIdPresent": true,
+    "canonicalIdentityPresent": true,
+    "canonicalIdentityIdMatches": true,
+    "canonicalDeviceTokenPresent": true,
+    "canonicalDeviceTokenChanged": false
+  },
+  "cleanup": {
+    "status": "complete",
+    "disposableRootRemoved": true,
+    "gatewayProcessesStopped": true
+  },
+  "success": true
+}

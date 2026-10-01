@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.7-native-update-lifecycle-certification",
+  "generatedAt": "2026-10-01T13:18:35.574Z",
+  "agentosHead": "48b6cd132b1c4b897244caa1d6aebe78a89ae602",
+  "target": {
+    "version": "2026.9.7",
+    "tag": "v2026.9.7",
+    "sourceCommit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+    "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z",
+    "packageHash": "6698423f66bdb3d8c0c827c9d448c8bc34384c2e5b6560442cb621acaed95921",
+    "gatewayProtocol": 4,
+    "stateSchema": 19,
+    "agentSchema": 24
+  },
+  "migration": {
+    "sourceVersion": "2026.9.4",
+    "targetVersion": "2026.9.7",
+    "runId": "7fac49de-9d65-4aa7-a5ef-e99685b4b4f8",
+    "steps": [
+      "candidate migration rehearsal",
+      "candidate doctor lint",
+      "candidate migration continuation",
+      "candidate gateway canary",
+      "finalize:doctor:model-retirement",
+      "warning:finalize:doctor:model-retirement:deferred",
+      "openclaw doctor",
+      "warning:openclaw doctor",
+      "warning:openclaw doctor:2",
+      "post-update verification",
+      "global install swap",
+      "post-plugin-doctor-lint",
+      "finalize:doctor-lint:post-plugin-doctor-lint"
+    ],
+    "successful": true
+  },
+  "update": {
+    "mutationOwner": "OpenClaw native updater",
+    "agentOsInvokedUpdateMutation": false,
+    "nativeApiRunStatus": "skipped",
+    "nativeApiRunReason": "managed-service-handoff-unavailable",
+    "nativeCliRun": {
+      "runId": "7fac49de-9d65-4aa7-a5ef-e99685b4b4f8",
+      "trigger": "cli",
+      "status": "succeeded",
+      "phase": "finished",
+      "channel": "stable",
+      "target": "2026.9.7",
+      "before": "2026.9.4",
+      "after": "2026.9.7",
+      "finished": true,
+      "recoveryVersion": "2026.9.7",
+      "serviceRestartSafe": true
+    },
+    "restart": {
+      "gatewayFreshlyReconnected": true,
+      "runtimeVersion": "2026.9.7",
+      "nativeForegroundHandoffUnavailable": true
+    }
+  },
+  "runtime": {
+    "health": "PASS",
+    "installedVersion": "2026.9.7",
+    "updateStatus": "current",
+    "activeUpdateRun": false,
+    "configuration": "valid"
+  },
+  "checks": {
+    "exactTargetPackage": true,
+    "nativePackageUpdateCompleted": true,
+    "sourceToTargetRecorded": true,
+    "migrationAndValidationRehearsed": true,
+    "installationSwapCompleted": true,
+    "nativePostUpdateRecoveryVerified": true,
+    "gatewayReconnectedAtTarget": true,
+    "nativeUpdateStatusIsCurrent": true,
+    "nativeRunHistoryIsTerminal": true,
+    "configurationRemainsInterpretable": true,
+    "foregroundGatewayHandoffWasSafelySkipped": true
+  },
+  "failures": [],
+  "success": true
+}

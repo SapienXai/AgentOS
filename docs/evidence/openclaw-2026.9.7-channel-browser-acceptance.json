@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-01T13:41:09.681Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosHead": "48b6cd132b1c4b897244caa1d6aebe78a89ae602",
+    "openClawVersion": "2026.9.7",
+    "browser": "Playwright Chromium",
+    "sourceReport": "docs/evidence/openclaw-2026.9.7-channel-browser-playwright-report.json",
+    "realProviderCredentialsUsed": false,
+    "fixtureNote": "A temporary acceptance fixture mapped Telegram chat IDs to the fixture canonical route IDs and supplied explicit bindingMatch values to match the current route-binding contract; no product source or committed test was changed."
+  },
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26,
+    "test": "Telegram online human acceptance completes all 26 steps"
+  },
+  "discordBrowserAcceptance": {
+    "passed": true,
+    "test": "Discord hierarchy keeps thread routing inherited from #support"
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "reason": "No authorized real Telegram credentials were available; browser acceptance used disposable fixture data only."
+  },
+  "suite": {
+    "expected": 6,
+    "unexpected": 0,
+    "passed": 6,
+    "failed": 0
+  }
+}
