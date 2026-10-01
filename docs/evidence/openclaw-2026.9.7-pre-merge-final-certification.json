@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.9.7-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-10-01T15:56:21.891Z",
-  "certifiedAt": "2026-10-01T15:56:21.891Z",
-  "agentosHead": "d4cdfb1ec6c0c3894119b57c2fba0929aa1a2185",
+  "generatedAt": "2026-10-01T17:59:10.831Z",
+  "certifiedAt": "2026-10-01T17:59:10.831Z",
+  "agentosHead": "8f1b554ddba09f4a1185ce5f6284d1527ca9e34b",
   "openclawVersion": "2026.9.7",
   "openclawSourceSha": "c074824a27c96d3983043f9eeb33823cd1772d8c",
   "upstreamEvidenceHashes": {},
@@ -3301,8 +3301,8 @@
   "knownExceptions": [],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "d4cdfb1ec6c0c3894119b57c2fba0929aa1a2185",
-    "evidenceCommit": "ab87b1287d11c40022833dd95c59d89366cb2374",
+    "certifiedCodeHead": "8f1b554ddba09f4a1185ce5f6284d1527ca9e34b",
+    "evidenceCommit": "10a90b001dddf0e3b296024134d8b1850e559e5c",
     "branch": "main",
     "node": "v24.20.0",
     "openClaw": {
@@ -3380,9 +3380,9 @@
       }
     },
     "deploymentPin": {
-      "version": "2026.9.4",
-      "image": "ghcr.io/openclaw/openclaw:2026.9.4",
-      "digest": "cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101",
+      "version": "2026.9.7",
+      "image": "ghcr.io/openclaw/openclaw:2026.9.7",
+      "digest": "0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc",
       "status": "verified",
       "evidence": "Dockerfile.railway contains an exact OpenClaw image digest pin."
     },
@@ -3570,9 +3570,9 @@
     "status": "not-tested",
     "gatewayTouched": false,
     "configPin": {
-      "version": "2026.9.4",
-      "image": "ghcr.io/openclaw/openclaw:2026.9.4",
-      "digest": "cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101",
+      "version": "2026.9.7",
+      "image": "ghcr.io/openclaw/openclaw:2026.9.7",
+      "digest": "0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc",
       "status": "found"
     },
     "reason": "The repository deployment pin was read for consistency only; Railway production was not inspected, mutated, or deployed."

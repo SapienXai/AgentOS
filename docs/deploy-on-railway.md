@@ -1,18 +1,20 @@
 # Deploy AgentOS on Railway
 
-The Railway deployment runs AgentOS and OpenClaw `2026.9.4` in the public
-application service and runs interactive Chromium in a separate private browser
-worker service. OpenClaw remains the runtime and source of truth; AgentOS
-connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS is
-exposed through Railway's HTTPS domain.
+The Railway application image packages AgentOS with OpenClaw `2026.9.7` in the
+public application service; interactive Chromium runs in a separate private
+browser worker service. OpenClaw remains the runtime and source of truth;
+AgentOS connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS
+is exposed through Railway's HTTPS domain.
 
-The image is pinned to the official OpenClaw `2026.9.4` multi-architecture
-index `sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101`.
+The image is pinned to the official OpenClaw `2026.9.7` multi-architecture
+index `sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc`.
 Railway selects the platform-specific manifest at deployment time; the
 verified manifests are `linux/amd64`
-(`sha256:6bc0bf3117e1c5074db8a064084a5f9d41ece1aa2a16369a82f53207b846a5c3`)
+(`sha256:b9e8a44f6df68cf08baec914bf0306dde96459c3d1be383fa0d70d2eca8bc154`)
 and `linux/arm64`
-(`sha256:3608b6f29352a7948bf0e868a1e3c78d9f9c92e55e5bb50b3b6b11cf1c58c5ad`).
+(`sha256:8a7a35b764127368b19534b3c4aa8ca040e5aa76aa6261209113255bb0fdac35`).
+The amd64 image reports OpenClaw `2026.9.7` with source prefix `c074824`,
+matching the source commit recorded in AgentOS's exact-release certification.
 
 ## What the template creates
 
@@ -221,9 +223,11 @@ prove compatibility with a third-party website and does not use real login
 credentials.
 
 OpenClaw is pinned in `Dockerfile.railway`. The current pin is the exact
-`2026.9.4` multi-architecture index recorded above. Upgrade it only together
+`2026.9.7` multi-architecture index recorded above. Upgrade it only together
 with AgentOS compatibility checks and update the pin, recommended version, and
-deployment documentation in the same change.
+deployment documentation in the same change. OpenClaw remains the owner of
+runtime updates, migrations, restart, backup, rollback, and recovery; this image
+pin is the Railway deployment contract, not a second update mechanism.
 
 ## Published one-click template
 
