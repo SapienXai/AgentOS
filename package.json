@@ -56,6 +56,7 @@
     "lint": "eslint .",
     "openclaw:compat": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-compat.ts",
     "openclaw:release-watch": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-release-watch.ts",
+    "openclaw:cumulative-contract-audit": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-cumulative-contract-audit.ts",
     "typegen": "next typegen",
     "typecheck": "tsc --noEmit",
     "test": "node -r ./tests/register-paths.cjs -r jiti/register.js --test",
