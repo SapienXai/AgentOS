@@ -62,13 +62,13 @@ jobs:
           OPENCLAW_WATCH_INCLUDE_PRERELEASE: ${{ inputs.include_prerelease }}
           OPENCLAW_WATCH_DRY_RUN: ${{ inputs.dry_run }}
           OPENCLAW_WATCH_FORCE_REFRESH: ${{ inputs.force_refresh }}
-          OPENCLAW_WATCH_OUTPUT_DIR: ${{ github.workspace }}/.openclaw-release-intake
+          OPENCLAW_WATCH_OUTPUT_DIR: ${{ github.workspace }}/openclaw-release-intake
         run: pnpm openclaw:release-watch
 
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: openclaw-release-intake
-          path: .openclaw-release-intake/*
+          path: openclaw-release-intake/*
           if-no-files-found: warn
           retention-days: 14

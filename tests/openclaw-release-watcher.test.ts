@@ -50,6 +50,13 @@ const npmPackumentEndpoint = "https://registry.npmjs.org/openclaw";
 const repositoryHead = gitCommit("HEAD");
 const repositoryParent = gitCommit("HEAD^");
 
+test("release-watch workflow uploads its generated intake directory", () => {
+  const workflow = readFileSync(".github/workflows/openclaw-release-watch.yml", "utf8");
+  assert.match(workflow, /OPENCLAW_WATCH_OUTPUT_DIR: \$\{\{ github\.workspace \}\}\/openclaw-release-intake/);
+  assert.match(workflow, /path: openclaw-release-intake\/\*/);
+  assert.doesNotMatch(workflow, /\.openclaw-release-intake/);
+});
+
 test("OpenClaw release versions use strict validation and numeric ordering", () => {
   assert.equal(compareOpenClawReleaseVersions("2026.9.10", "2026.9.2") > 0, true);
   assert.equal(compareOpenClawReleaseVersions("v2026.10.1", "2026.9.10") > 0, true);
