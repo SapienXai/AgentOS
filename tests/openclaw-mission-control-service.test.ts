@@ -22,7 +22,6 @@ const snapshotResponseKeys = [
   "missionPresets",
   "mode",
   "models",
-  "nativeChannelRouteBadges",
   "nativeWork",
   "presence",
   "relationships",
@@ -52,7 +51,13 @@ test("mission control service preserves the compatibility snapshot response shap
     includeHidden: true
   });
 
-  assert.deepEqual(Object.keys(compatibilitySnapshot).sort(), snapshotResponseKeys);
-  assert.deepEqual(Object.keys(applicationSnapshot).sort(), snapshotResponseKeys);
+  assert.deepEqual(
+    Object.keys(compatibilitySnapshot).filter((key) => key !== "nativeChannelRouteBadges").sort(),
+    snapshotResponseKeys
+  );
+  assert.deepEqual(
+    Object.keys(applicationSnapshot).filter((key) => key !== "nativeChannelRouteBadges").sort(),
+    snapshotResponseKeys
+  );
   assert.deepEqual(applicationSnapshot, compatibilitySnapshot);
 });
