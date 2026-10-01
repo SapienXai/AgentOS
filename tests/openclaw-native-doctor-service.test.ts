@@ -6,8 +6,10 @@ import {
   buildNativeDoctorConfirmation,
   claimNativeUpdateRunAdmission,
   confirmationMatches,
+  consumeNativeUpdateConfirmation,
   executeNativeDoctorMutation,
   getNativeDoctorSnapshot,
+  issueNativeUpdateConfirmation,
   normalizeNativeUpdateRunOutcome,
   projectUpdateRun,
   reconcileNativeDoctorMutation,
@@ -619,6 +621,7 @@ test("AgentOS admits only one simultaneous native update.run request", () => {
 
 test("confirmation is tied to the current native connection and channel", () => {
   const confirmation = (overrides: Partial<ReturnType<typeof buildNativeDoctorConfirmation>> = {}) => ({
+    challengeId: null,
     connectionId: "connection-1",
     deviceId: "device",
     connectionGeneration: 4,
@@ -679,6 +682,58 @@ test("confirmation is tied to the current native connection and channel", () => 
   ]) {
     assert.equal(confirmationMatches(confirmation(), confirmation(changedFact)), false);
   }
+});
+
+test("native update confirmation challenges are actor-bound, fact-bound, expiring, and one-use", () => {
+  const facts = {
+    challengeId: null,
+    connectionId: "connection-1",
+    deviceId: "device",
+    connectionGeneration: 4,
+    currentVersion: "2026.9.1",
+    effectiveChannel: "stable",
+    availableVersion: "2026.9.2",
+    updateReadStatus: "available" as const,
+    updateStatus: "available" as const,
+    updateAvailable: true,
+    availabilitySource: "native-gateway" as const,
+    authenticated: true,
+    grantedScopesKnown: true,
+    updateAuthorized: true,
+    runtimeStatus: "healthy" as const,
+    statusReadStatus: "available" as const,
+    configReadStatus: "available" as const,
+    configValid: true,
+    configApplication: "applied" as const,
+    configuredRevisionHash: "revision-1",
+    appliedRevisionHash: "revision-1",
+    recoveryStatus: "healthy" as const,
+    agentOsVersion: "0.7.2",
+    compatibilityStatus: "unknown" as const,
+    compatibilityAllowed: false,
+    requiresAgentOsUpdate: false,
+    minRequiredAgentOsVersion: null
+  } satisfies ReturnType<typeof buildNativeDoctorConfirmation>;
+
+  const actorBound = issueNativeUpdateConfirmation(facts, "owner-1", 1_000);
+  assert.match(actorBound.challengeId ?? "", /^[0-9a-f-]{36}$/i);
+  assert.equal(consumeNativeUpdateConfirmation(actorBound, "owner-2", facts, 1_001), false);
+  assert.equal(consumeNativeUpdateConfirmation(actorBound, "owner-1", facts, 1_002), true);
+
+  const factBound = issueNativeUpdateConfirmation(facts, "owner-1", 2_000);
+  assert.equal(consumeNativeUpdateConfirmation(
+    factBound,
+    "owner-1",
+    { ...facts, availableVersion: "2026.9.3" },
+    2_001
+  ), false);
+
+  const expires = issueNativeUpdateConfirmation(facts, "owner-1", 3_000);
+  assert.equal(consumeNativeUpdateConfirmation(expires, "owner-1", facts, 124_000), false);
+
+  const oneUse = issueNativeUpdateConfirmation(facts, "owner-1", 4_000);
+  assert.equal(consumeNativeUpdateConfirmation(oneUse, "owner-1", facts, 4_001), true);
+  assert.equal(consumeNativeUpdateConfirmation(oneUse, "owner-1", facts, 4_002), false);
 });
 
 test("fresh native update verification rejects a version mismatch", async () => {

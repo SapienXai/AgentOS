@@ -27,6 +27,14 @@ test("canonical Updates page reads native status and runs native update.run", ()
   assert.match(source, /showNativeReviewAction = hasFailedNativeRun && !actionMessage/);
 });
 
+test("native update.run consumes a server-issued confirmation challenge after fresh policy checks", () => {
+  const source = read("app/api/openclaw/native-doctor/route.ts");
+
+  assert.match(source, /issueNativeUpdateConfirmation\(confirmation, permission\.actor\.actorId\)/);
+  assert.match(source, /consumeNativeUpdateConfirmation\(input\.confirmation, permission\.actor\.actorId, currentConfirmation\)/);
+  assert.match(source, /confirmation: confirmationSchema\.extend\(\{ challengeId: z\.string\(\)\.uuid\(\) \}\)/);
+});
+
 test("advanced update failures link operators to native OpenClaw diagnostics", () => {
   const source = read("components/mission-control/mission-control-shell.dialogs.tsx");
 

@@ -6,8 +6,10 @@ import {
   buildNativeDoctorConfirmation,
   claimNativeUpdateRunAdmission,
   confirmationMatches,
+  consumeNativeUpdateConfirmation,
   executeNativeDoctorMutation,
   getNativeDoctorSnapshot,
+  issueNativeUpdateConfirmation,
   reconcileNativeDoctorMutation
 } from "@/lib/openclaw/application/native-doctor-service";
 import { getNormalOpenClawUpdatePolicy } from "@/lib/openclaw/application/normal-update-policy-service";
@@ -25,6 +27,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const confirmationSchema = z.object({
+  challengeId: z.string().uuid().nullable(),
   connectionId: z.string().nullable(),
   deviceId: z.string().nullable(),
   connectionGeneration: z.number().int().nonnegative().nullable(),
@@ -56,7 +59,7 @@ const confirmationSchema = z.object({
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("update.run"),
-    confirmation: confirmationSchema,
+    confirmation: confirmationSchema.extend({ challengeId: z.string().uuid() }),
     unverifiedAcknowledged: z.boolean().optional(),
     note: z.string().trim().max(200).optional()
   }).strict(),
@@ -94,12 +97,13 @@ export async function GET(request: Request) {
   const probe = new URL(request.url).searchParams.get("probe") === "1";
   const snapshot = await getNativeDoctorSnapshot(probe ? { probe: true, refreshCheckout: true } : {});
   const policy = await getNormalOpenClawUpdatePolicy(snapshot);
+  const confirmation = buildNativeDoctorConfirmation(snapshot, {
+    agentOsVersion: policy.agentOsVersion,
+    decision: policy.agentOsDecision
+  });
   return NextResponse.json(redactSecrets({
     snapshot,
-    confirmation: buildNativeDoctorConfirmation(snapshot, {
-      agentOsVersion: policy.agentOsVersion,
-      decision: policy.agentOsDecision
-    }),
+    confirmation: issueNativeUpdateConfirmation(confirmation, permission.actor.actorId),
     policy,
     permissions: {
       canManageUpdates: canAgentOsActorUseProductPermission(permission.actor, "updates.manage")
@@ -259,6 +263,17 @@ export async function POST(request: Request) {
         await recordRejectedMutation();
         return NextResponse.json(
           { error: "An OpenClaw native update request is already being reconciled. Refresh native status before trying again.", code: "UPDATE_ALREADY_RUNNING" },
+          { status: 409, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+      const currentConfirmation = buildNativeDoctorConfirmation(current, policy ? {
+        agentOsVersion: policy.agentOsVersion,
+        decision: policy.agentOsDecision
+      } : undefined);
+      if (!consumeNativeUpdateConfirmation(input.confirmation, permission.actor.actorId, currentConfirmation)) {
+        await recordRejectedMutation();
+        return NextResponse.json(
+          { error: "This OpenClaw update confirmation is expired, already used, or belongs to another account. Refresh status and confirm again.", code: "UPDATE_CONFIRMATION_STALE" },
           { status: 409, headers: { "Cache-Control": "no-store" } }
         );
       }

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import {
@@ -118,6 +119,7 @@ export type NativeDoctorSnapshot = {
 };
 
 export type NativeDoctorConfirmation = {
+  challengeId: string | null;
   connectionId: string | null;
   deviceId: string | null;
   connectionGeneration: number | null;
@@ -162,7 +164,14 @@ export type NativeDoctorVerification = {
 };
 
 const NATIVE_READ_TIMEOUT_MS = 12_000;
+const NATIVE_UPDATE_CONFIRMATION_TTL_MS = 2 * 60_000;
+const MAX_NATIVE_UPDATE_CONFIRMATIONS = 512;
 let nativeUpdateRunInFlight = false;
+const nativeUpdateConfirmations = new Map<string, {
+  actorId: string;
+  expiresAt: number;
+  confirmation: NativeDoctorConfirmation;
+}>();
 
 /** Prevent simultaneous AgentOS requests from issuing duplicate native update.run calls. */
 export function claimNativeUpdateRunAdmission(): (() => void) | null {
@@ -435,6 +444,7 @@ export function buildNativeDoctorConfirmation(
   compatibility?: { agentOsVersion: string; decision: OpenClawUpdateDecision | null }
 ): NativeDoctorConfirmation {
   return {
+    challengeId: null,
     connectionId: snapshot.identity.connectionId,
     deviceId: snapshot.identity.deviceId,
     connectionGeneration: snapshot.identity.connectionGeneration,
@@ -462,6 +472,52 @@ export function buildNativeDoctorConfirmation(
     requiresAgentOsUpdate: compatibility?.decision?.requiresAgentOsUpdate ?? null,
     minRequiredAgentOsVersion: compatibility?.decision?.minRequiredAgentOsVersion ?? null
   };
+}
+
+/** Issue a short-lived, actor-bound challenge for one native update confirmation. */
+export function issueNativeUpdateConfirmation(
+  confirmation: NativeDoctorConfirmation,
+  actorId: string,
+  now = Date.now()
+): NativeDoctorConfirmation {
+  pruneNativeUpdateConfirmations(now);
+  while (nativeUpdateConfirmations.size >= MAX_NATIVE_UPDATE_CONFIRMATIONS) {
+    const oldestChallenge = nativeUpdateConfirmations.keys().next().value;
+    if (!oldestChallenge) break;
+    nativeUpdateConfirmations.delete(oldestChallenge);
+  }
+
+  const challengeId = randomUUID();
+  nativeUpdateConfirmations.set(challengeId, {
+    actorId,
+    expiresAt: now + NATIVE_UPDATE_CONFIRMATION_TTL_MS,
+    confirmation: { ...confirmation, challengeId: null }
+  });
+  return { ...confirmation, challengeId };
+}
+
+/** Consume the challenge exactly once after the server has recomputed current facts. */
+export function consumeNativeUpdateConfirmation(
+  confirmation: NativeDoctorConfirmation,
+  actorId: string,
+  current: NativeDoctorConfirmation,
+  now = Date.now()
+) {
+  pruneNativeUpdateConfirmations(now);
+  const challengeId = confirmation.challengeId;
+  if (!challengeId) return false;
+  const issued = nativeUpdateConfirmations.get(challengeId);
+  if (!issued || issued.actorId !== actorId) return false;
+
+  nativeUpdateConfirmations.delete(challengeId);
+  return confirmationMatches(issued.confirmation, confirmation) &&
+    confirmationMatches(issued.confirmation, current);
+}
+
+function pruneNativeUpdateConfirmations(now: number) {
+  for (const [challengeId, issued] of nativeUpdateConfirmations) {
+    if (issued.expiresAt <= now) nativeUpdateConfirmations.delete(challengeId);
+  }
 }
 
 export function auditResultForNativeDoctorMutation(

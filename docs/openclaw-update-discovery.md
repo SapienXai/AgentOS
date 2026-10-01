@@ -49,7 +49,10 @@ preflight, and confirmation immediately before `update.run`. Confirmation is
 bound to Gateway connection and generation, current and target versions,
 channel, update availability/source, authorization evidence, configuration and
 recovery state, AgentOS version, and compatibility decision. A changed fact
-requires a refreshed confirmation.
+requires a refreshed confirmation. Normal update confirmation also carries a
+short-lived, server-issued challenge bound to the authenticated AgentOS actor;
+the server consumes it once immediately before the native mutation, so the same
+confirmation cannot be replayed.
 
 An explicit known-incompatible decision, an unmet AgentOS minimum, unknown
 runtime/channel/target facts, insufficient authorization, an unsupported
