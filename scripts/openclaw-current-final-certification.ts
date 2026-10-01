@@ -26,6 +26,7 @@ import {
   OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
+import { REQUIRED_WORKFORCE_PRODUCT_CHECKS } from "@/scripts/lib/workforce-certification-requirements";
 
 const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;
@@ -557,11 +558,43 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
     if (runtime?.targetVersion !== TARGET_VERSION || runtime?.installedVersion !== TARGET_VERSION || runtime?.protocolVersion !== TARGET_PROTOCOL) failures.push("runtime target identity or protocol mismatch");
     if (summary?.failed !== 0 || summary?.requiredFailures !== 0 || summary?.unknown !== 0) failures.push("runtime contains failures, required failures, or unknown outcomes");
   } else if (name === "workforce") {
-    if (asRecord(artifact.summary).failed !== 0) failures.push("workforce summary contains failures");
+    const summary = asRecord(artifact.summary);
+    const checks = asRecord(artifact.checks);
+    const cleanup = asRecord(artifact.cleanup);
+    const certification = asRecord(artifact.certification);
+    if (summary.failed !== 0 || REQUIRED_WORKFORCE_PRODUCT_CHECKS.some((checkId) => asRecord(checks[checkId]).status !== "PASS")) {
+      failures.push("workforce core AgentOS product-path checks are incomplete or failed");
+    }
+    if (!asRecord(artifact.productPath) || artifact.failure !== null) {
+      failures.push("workforce evidence has no completed product path or records an execution failure");
+    }
+    if (cleanup.disposableRootRemoved !== true || cleanup.gatewayStopped !== true || cleanup.productionGatewayTouched !== false) {
+      failures.push("workforce disposable runtime cleanup is incomplete or production was touched");
+    }
+    if (![
+      "FULLY_CERTIFIED",
+      "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS"
+    ].includes(String(certification.status))) {
+      failures.push("workforce evidence does not report a completed product-path certification");
+    }
+    const checkStatuses = Object.values(checks).map((check) => asRecord(check).status);
+    const expectedPassed = checkStatuses.filter((status) => status === "PASS").length;
+    const expectedSkipped = checkStatuses.filter((status) => status === "SKIPPED").length;
+    const expectedFailed = checkStatuses.filter((status) => status === "FAIL").length;
+    if (summary.passed !== expectedPassed || summary.skipped !== expectedSkipped || summary.failed !== expectedFailed) {
+      failures.push("workforce summary counts do not match the recorded check outcomes");
+    }
   } else if (name === "official-transport") {
     const requests = asRecord(artifact.requests);
     const denial = asRecord(artifact.authorizationDenial);
-    if (Object.values(requests).some((entry) => asRecord(entry).status !== "passed") || denial.status !== "denied" || asRecord(artifact.target).protocol !== TARGET_PROTOCOL) {
+    const taskList = asRecord(requests["tasks.list"]);
+    const requiredRequestFailure = Object.entries(requests).some(([method, entry]) => {
+      const request = asRecord(entry);
+      if (method === "tasks.list" && request.status === "skipped" && request.kind === "unsupported") return false;
+      return request.status !== "passed";
+    });
+    const optionalTaskEvidenceInvalid = taskList.status !== "passed" && !(taskList.status === "skipped" && taskList.kind === "unsupported");
+    if (requiredRequestFailure || optionalTaskEvidenceInvalid || denial.status !== "denied" || asRecord(artifact.target).protocol !== TARGET_PROTOCOL) {
       failures.push("official transport probes or expected authorization denial failed");
     }
   } else if (name === "native-update") {

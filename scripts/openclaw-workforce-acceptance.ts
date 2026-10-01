@@ -15,10 +15,12 @@ import { readMissionDispatchRecordById, readMissionDispatchRecords } from "@/lib
 import type { MissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { resolveMissionDispatchResultText } from "@/lib/openclaw/domains/mission-dispatch-model";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
+import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { projectApprovalRecords, projectQuestionRecords } from "@/lib/openclaw/application/human-control-inbox-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { REQUIRED_WORKFORCE_PRODUCT_CHECKS } from "@/scripts/lib/workforce-certification-requirements";
 import {
   OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
@@ -33,7 +35,7 @@ const TIMEOUT_MS = 10_000;
 const LIVE_EVIDENCE_CLASS = `LIVE_DISPOSABLE_${OPENCLAW_IDENTITY_CONTRACT_VERSION.replaceAll(".", "_")}`;
 
 type GatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
-type CheckStatus = "PASS" | "SKIPPED";
+type CheckStatus = "PASS" | "SKIPPED" | "FAIL";
 
 async function main() {
   if (!PACKAGE_INPUT) throw new Error(`Set OPENCLAW_WORKFORCE_PACKAGE to an exact OpenClaw ${OPENCLAW_IDENTITY_CONTRACT_VERSION} package root.`);
@@ -52,7 +54,7 @@ async function main() {
   const configPath = path.join(disposableRoot, "openclaw.json");
   const port = await reservePort();
   const token = `agentos-workforce-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const fixture = await createOpenClawRuntimeProviderFixture({ modelId: "agentos-workforce-fixture" });
+  const fixture = await createOpenClawRuntimeProviderFixture({ modelId: "workforce-check-model" });
   let gateway: ChildProcess | null = null;
   let client: GatewayClient | null = null;
   let sessionKey: string | null = null;
@@ -64,7 +66,7 @@ async function main() {
     "OPENCLAW_GATEWAY_TOKEN",
     "OPENCLAW_CONFIG_PATH",
     "OPENCLAW_STATE_DIR",
-    "OPENAI_API_KEY"
+    "OPENCLAW_BIN"
   ]);
   const cleanupRefs = { questionIds: [] as string[], approvalId: null as string | null };
   const evidence = createEvidence(identity, await readGitHead());
@@ -82,7 +84,7 @@ async function main() {
     process.env.OPENCLAW_GATEWAY_TOKEN = token;
     process.env.OPENCLAW_CONFIG_PATH = configPath;
     process.env.OPENCLAW_STATE_DIR = stateDir;
-    process.env.OPENAI_API_KEY = "agentos-workforce-fixture";
+    process.env.OPENCLAW_BIN = path.join(packageRoot, "openclaw.mjs");
     setOpenClawGatewayClientForTesting(client);
     setOpenClawAdapterForTesting(null);
     clearMissionControlCaches();
@@ -103,6 +105,61 @@ async function main() {
       securityDefaults: "tools.sessions.visibility=tree; tools.agentToAgent.enabled=false; tools.agentToAgent.allow=[]"
     };
     evidence.checks["runtime-identity"] = { status: "PASS", evidence: LIVE_EVIDENCE_CLASS };
+
+    const modelAuthResult = await client.callNative<Record<string, unknown>>(
+      "models.authSetApiKey",
+      { provider: "openai", apiKey: "sk-agentos-workforce-fixture-00000000", agentId: "main" },
+      mutationOptions()
+    );
+    assert.equal(typeof modelAuthResult.profileId, "string");
+    evidence.modelAuthSetup = {
+      method: "models.authSetApiKey",
+      scope: "operator.admin",
+      provider: "openai",
+      profileId: modelAuthResult.profileId,
+      warning: modelAuthResult.warning ?? null,
+      credentialLocation: "isolated disposable OpenClaw agent profile"
+    };
+    evidence.checks["disposable-model-auth"] = {
+      status: "PASS",
+      evidence: ["OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS],
+      detail: "OpenClaw stored the fixture-only API key in the disposable main-agent profile through its administrator-authorized native Gateway method."
+    };
+
+    const selectedModel = `openai/${fixture.modelId}`;
+    try {
+      const [modelCatalog, modelStatus] = await Promise.all([
+        client.listModels({ view: "configured", all: true }, { timeoutMs: TIMEOUT_MS }),
+        client.getModelStatus({ timeoutMs: TIMEOUT_MS })
+      ]);
+      evidence.modelReadiness = {
+        selectedModel,
+        readiness: resolveModelReadiness(modelCatalog.models, modelStatus, [selectedModel]),
+        models: modelCatalog.models.map((model) => ({
+          key: model.key,
+          provider: model.provider,
+          available: model.available,
+          local: model.local
+        })),
+        defaultModel: modelStatus.defaultModel ?? null,
+        resolvedDefault: modelStatus.resolvedDefault ?? null,
+        allowed: modelStatus.allowed ?? [],
+        authProviders: (modelStatus.auth?.providers ?? []).map((provider) => ({
+          provider: provider.provider ?? null,
+          kind: provider.effective?.kind ?? null,
+          profileCount: provider.profiles?.count ?? 0,
+          apiKeyProfiles: provider.profiles?.apiKey ?? 0,
+          tokenProfiles: provider.profiles?.token ?? 0
+        })),
+        missingProvidersInUse: modelStatus.auth?.missingProvidersInUse ?? [],
+        fallbackCounts: client.getDiagnostics?.().fallbackCounts ?? {}
+      };
+    } catch (error) {
+      evidence.modelReadiness = {
+        selectedModel,
+        error: sanitizeText(error instanceof Error ? error.message : "Model readiness probe failed.")
+      };
+    }
 
     const requestId = `workforce-product-path-${Date.now()}`;
     const productMission = await submitMission({
@@ -269,6 +326,9 @@ async function main() {
 
     evidence.checks["cancellation"] = { status: "SKIPPED", evidence: LIVE_EVIDENCE_CLASS, detail: "No native task identity was exposed by this turn, so no unrelated session was cancelled." };
     evidence.checks["child-failure"] = { status: "SKIPPED", evidence: LIVE_EVIDENCE_CLASS, detail: "No native child task was exposed by the safe deterministic turn." };
+  } catch (error) {
+    evidence.failure = sanitizeText(error instanceof Error ? error.message : "Workforce acceptance failed.");
+    throw error;
   } finally {
     if (client && cleanupRefs.approvalId) await client.callNative("exec.approval.resolve", { id: cleanupRefs.approvalId, decision: "deny" }, mutationOptions()).catch(() => {});
     if (client) {
@@ -283,14 +343,27 @@ async function main() {
     await fixture.close().catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup = { disposableRootRemoved: !(await pathExists(disposableRoot)), gatewayStopped: gateway?.exitCode !== null, productionGatewayTouched: false };
-    const upstreamGapChecks = ["delegation", "waiting-worker", "cancellation", "child-failure", "human-control-product-path"]
+    for (const checkId of REQUIRED_WORKFORCE_PRODUCT_CHECKS) {
+      if (evidence.checks[checkId]?.status !== "PASS") {
+        evidence.checks[checkId] = {
+          status: "FAIL",
+          evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS],
+          detail: "A required disposable AgentOS product-path check did not complete successfully."
+        };
+      }
+    }
+    const upstreamGapChecks = ["artifacts", "delegation", "waiting-worker", "cancellation", "child-failure", "human-control-product-path"]
       .filter((id) => evidence.checks[id]?.status === "SKIPPED");
+    evidence.summary = summarizeChecks(evidence.checks);
     evidence.certification = {
-      status: upstreamGapChecks.length > 0 ? "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS" : "FULLY_CERTIFIED",
-      capabilityRoutingReady: upstreamGapChecks.length > 0,
+      status: evidence.summary.failed > 0
+        ? "INCOMPLETE"
+        : upstreamGapChecks.length > 0
+          ? "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS"
+          : "FULLY_CERTIFIED",
+      capabilityRoutingReady: evidence.summary.failed === 0 && upstreamGapChecks.length === 0,
       skippedLiveChecks: upstreamGapChecks
     };
-    evidence.summary = summarizeChecks(evidence.checks);
     await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
     await writeFile(OUTPUT_PATH, `${JSON.stringify(sanitizeEvidence(evidence), null, 2)}\n`, { mode: 0o600 });
   }
@@ -344,11 +417,14 @@ function createEvidence(identity: { version: string; sourceCommit: string; build
     generatedAt: new Date().toISOString(),
     provenance: { repository: "SapienXai/AgentOS", agentosCommit, openClaw: identity, evidenceClasses: [LIVE_EVIDENCE_CLASS, "DETERMINISTIC_NATIVE_FIXTURE"] },
     runtime: null as Record<string, unknown> | null,
+    modelAuthSetup: null as Record<string, unknown> | null,
+    modelReadiness: null as Record<string, unknown> | null,
     productPath: null as Record<string, unknown> | null,
     checks: {} as Record<string, { status: CheckStatus; evidence: string | string[]; detail?: string }>,
     runtimeTaskLedger: null as Record<string, unknown> | null,
     cleanup: null as Record<string, unknown> | null,
     certification: null as Record<string, unknown> | null,
+    failure: null as string | null,
     summary: { passed: 0, skipped: 0, failed: 0 }
   };
 }
@@ -392,7 +468,7 @@ async function waitForDispatchTerminal(
 async function startGateway(input: { packageRoot: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string }) {
   const homeDir = path.join(path.dirname(input.stateDir), "home");
   await mkdir(homeDir, { recursive: true, mode: 0o700 });
-  const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"], { cwd: input.workspaceDir, env: createDisposableOpenClawEnvironment({ homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token } }), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"], { cwd: input.workspaceDir, env: createDisposableOpenClawEnvironment({ homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token, OPENAI_API_KEY: "sk-agentos-workforce-fixture-00000000" } }), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
@@ -407,13 +483,13 @@ async function startGateway(input: { packageRoot: string; stateDir: string; work
 }
 
 async function writeConfig(configPath: string, workspaceDir: string, fixtureBaseUrl: string, fixtureModelId: string, token: string) {
-  await writeFile(configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, agents: { defaults: { workspace: workspaceDir, model: { primary: `openai/${fixtureModelId}` } }, list: [{ id: "main", workspace: workspaceDir }] }, models: { mode: "merge", providers: { openai: { baseUrl: fixtureBaseUrl, api: "openai-completions", apiKey: "agentos-workforce-fixture", timeoutSeconds: 30, models: [{ id: fixtureModelId, name: "AgentOS Workforce Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }] } } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, agents: { defaults: { workspace: workspaceDir, model: { primary: `openai/${fixtureModelId}` } }, list: [{ id: "main", workspace: workspaceDir }] }, models: { mode: "merge", providers: { openai: { baseUrl: fixtureBaseUrl, api: "openai-completions", apiKey: { source: "env", provider: "default", id: "OPENAI_API_KEY" }, timeoutSeconds: 30, models: [{ id: fixtureModelId, name: "AgentOS Workforce Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }] } } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
 }
 
 function createClient(port: number, token: string, clientVersion: string) { return createOfficialBackedOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"], timeoutMs: TIMEOUT_MS, clientName: "gateway-client", clientVersion, sharedStateMode: "read-only" }); }
 function mutationOptions() { return { timeoutMs: TIMEOUT_MS, safety: "mutation" as const }; }
 function readOptions() { return { timeoutMs: TIMEOUT_MS, safety: "read" as const }; }
-function summarizeChecks(checks: Record<string, { status: CheckStatus }>) { return Object.values(checks).reduce((summary, check) => { if (check.status === "PASS") summary.passed += 1; else summary.skipped += 1; return summary; }, { passed: 0, skipped: 0, failed: 0 }); }
+function summarizeChecks(checks: Record<string, { status: CheckStatus }>) { return Object.values(checks).reduce((summary, check) => { if (check.status === "PASS") summary.passed += 1; else if (check.status === "FAIL") summary.failed += 1; else summary.skipped += 1; return summary; }, { passed: 0, skipped: 0, failed: 0 }); }
 async function readPackageIdentity(packageRoot: string) { const pkg = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as { version?: string }; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as { commit?: string; buildId?: string }; const hash = createHash("sha256"); for (const file of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(file); hash.update(await readFile(path.join(packageRoot, file))); } return { version: pkg.version ?? "", sourceCommit: buildInfo.commit ?? "", buildId: buildInfo.buildId ?? "", packageHash: hash.digest("hex") }; }
 async function reservePort() { return await new Promise<number>((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const address = server.address(); const port = typeof address === "object" && address ? address.port : 0; server.close((error) => error ? reject(error) : resolve(port)); }); }); }
 async function stopProcess(child: ChildProcess | null) { if (!child || child.exitCode !== null) return; child.kill("SIGTERM"); await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), wait(10_000)]); if (child.exitCode === null) child.kill("SIGKILL"); }
@@ -431,7 +507,7 @@ function restoreEnvironment(values: Record<string, string | undefined>) {
   }
 }
 function wait(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-function sanitizeText(value: string) { return value.replace(/agentos-workforce-[A-Za-z0-9._-]+/g, "[REDACTED_TOKEN]").replace(/\/Users\/[^\s"']+/g, "[LOCAL_PATH]").replace(/\/tmp\/[^\s"']+/g, "[DISPOSABLE_PATH]").slice(0, 320); }
+function sanitizeText(value: string) { return value.replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_TOKEN]").replace(/agentos-workforce-[A-Za-z0-9._-]+/g, "[REDACTED_TOKEN]").replace(/\/Users\/[^\s"']+/g, "[LOCAL_PATH]").replace(/\/tmp\/[^\s"']+/g, "[DISPOSABLE_PATH]").slice(0, 320); }
 function sanitizeEvidence(value: unknown): unknown { if (typeof value === "string") return sanitizeText(value); if (Array.isArray(value)) return value.map(sanitizeEvidence); if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeEvidence(nested)])); return value; }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : "OpenClaw Workforce acceptance failed."); process.exitCode = 1; });

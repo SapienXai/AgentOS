@@ -12,6 +12,7 @@ import {
   readPackageIdentity,
   type OpenClawExactPackageIdentity
 } from "@/scripts/openclaw-current-final-certification";
+import { REQUIRED_WORKFORCE_PRODUCT_CHECKS } from "@/scripts/lib/workforce-certification-requirements";
 import {
   OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_BUILD,
@@ -237,6 +238,56 @@ test("final certification treats empty or non-boolean contract checks as incompl
   };
   assert.equal(assessOpenClawCertificationArtifact("contract-diff", { ...base, checks: {} }).status, "FAIL");
   assert.equal(assessOpenClawCertificationArtifact("contract-diff", { ...base, checks: { exact: "true" } }).status, "FAIL");
+});
+
+test("final certification rejects workforce identity-only evidence but accepts explicit optional task gaps", () => {
+  const identityOnly = {
+    provenance: { openClaw: { version: TARGET_VERSION } },
+    checks: { "runtime-identity": { status: "PASS" } },
+    summary: { passed: 1, skipped: 0, failed: 0 },
+    certification: { status: "FULLY_CERTIFIED" }
+  };
+  assert.equal(assessOpenClawCertificationArtifact("workforce", identityOnly).status, "FAIL");
+
+  const checks = Object.fromEntries(REQUIRED_WORKFORCE_PRODUCT_CHECKS.map((checkId) => [checkId, { status: "PASS" }]));
+  checks.artifacts = { status: "SKIPPED" };
+  const completeProductPath = {
+    provenance: { openClaw: { version: TARGET_VERSION } },
+    productPath: { dispatchId: "disposable-dispatch", sessionKey: "agent:main:acceptance" },
+    checks,
+    summary: { passed: REQUIRED_WORKFORCE_PRODUCT_CHECKS.length, skipped: 1, failed: 0 },
+    certification: { status: "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS" },
+    cleanup: { disposableRootRemoved: true, gatewayStopped: true, productionGatewayTouched: false },
+    failure: null
+  };
+  assert.equal(assessOpenClawCertificationArtifact("workforce", completeProductPath).status, "PASS");
+});
+
+test("final transport certification accepts only an explicit unsupported result for optional tasks.list", () => {
+  const requests = Object.fromEntries([
+    "health",
+    "status",
+    "models.list",
+    "agents.list",
+    "sessions.list",
+    "channels.status",
+    "config.get"
+  ].map((method) => [method, { status: "passed", kind: null, message: null }]));
+  const base = {
+    target: { version: TARGET_VERSION, protocol: OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL },
+    requests: { ...requests, "tasks.list": { status: "skipped", kind: "unsupported", message: "Gateway method unsupported" } },
+    authorizationDenial: { status: "denied" }
+  };
+
+  assert.equal(assessOpenClawCertificationArtifact("official-transport", base).status, "PASS");
+  assert.equal(assessOpenClawCertificationArtifact("official-transport", {
+    ...base,
+    requests: { ...base.requests, "tasks.list": { status: "failed", kind: "unsupported", message: "Unexpected method failure" } }
+  }).status, "FAIL");
+  assert.equal(assessOpenClawCertificationArtifact("official-transport", {
+    ...base,
+    requests: { ...base.requests, "tasks.list": { status: "skipped", kind: "timeout", message: "Gateway timeout" } }
+  }).status, "FAIL");
 });
 
 test("final certification rejects missing or mismatched separate Gateway packages", async () => {

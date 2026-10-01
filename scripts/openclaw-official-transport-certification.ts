@@ -50,17 +50,17 @@ async function main() {
   try {
     client.start();
     await waitFor(() => hello !== null, 10_000);
-    for (const [label, method, params] of [
-      ["health", "health", {}],
-      ["status", "status", {}],
-      ["models.list", "models.list", {}],
-      ["agents.list", "agents.list", {}],
-      ["sessions.list", "sessions.list", { limit: 1 }],
-      ["tasks.list", "tasks.list", { limit: 1 }],
-      ["channels.status", "channels.status", {}],
-      ["config.get", "config.get", {}]
+    for (const [label, method, params, optional] of [
+      ["health", "health", {}, false],
+      ["status", "status", {}, false],
+      ["models.list", "models.list", {}, false],
+      ["agents.list", "agents.list", {}, false],
+      ["sessions.list", "sessions.list", { limit: 1 }, false],
+      ["tasks.list", "tasks.list", { limit: 1 }, true],
+      ["channels.status", "channels.status", {}, false],
+      ["config.get", "config.get", {}, false]
     ] as const) {
-      results[label] = await requestProbe(client, method, params);
+      results[label] = await requestProbe(client, method, params, { optional });
     }
 
     const readClient = new OfficialOpenClawGatewayTransport({
@@ -124,7 +124,10 @@ async function main() {
     output: OUTPUT_PATH
   })}\n`);
 
-  const requiredFailures = Object.entries(results).filter(([, result]) => result.status !== "passed");
+  const requiredFailures = Object.entries(results).filter(([label, result]) => {
+    if (label === "tasks.list" && result.status === "skipped" && result.kind === "unsupported") return false;
+    return result.status !== "passed";
+  });
   if (requiredFailures.length || denial?.status !== "denied") {
     throw new Error("Official Gateway transport certification did not satisfy all required probes.");
   }
@@ -133,7 +136,8 @@ async function main() {
 async function requestProbe(
   client: OfficialOpenClawGatewayTransport,
   method: string,
-  params: unknown
+  params: unknown,
+  options: { optional?: boolean } = {}
 ) {
   try {
     await client.request(method, params, { timeoutMs: REQUEST_TIMEOUT_MS });
@@ -143,7 +147,9 @@ async function requestProbe(
     return {
       status: method === "config.patch" && error instanceof NativeGatewayRequestError
         ? "denied" as const
-        : "failed" as const,
+        : options.optional && normalized.kind === "unsupported"
+          ? "skipped" as const
+          : "failed" as const,
       kind: normalized.kind,
       message: normalized.message
     };
