@@ -107,6 +107,9 @@ test("directory peers and members normalize empty and parent-scoped results", as
 });
 
 test("unsupported directory is explicit for providers without compatibility data", async () => {
+  setOpenClawAdapterForTesting({
+    getConfig: async () => null
+  } as unknown as OpenClawAdapter);
   setChannelDirectoryTransportForTesting({
     source: "openclaw-cli",
     listPeers: async () => ({ ok: false, error: { type: "unsupported", message: "Directory unsupported" } }),

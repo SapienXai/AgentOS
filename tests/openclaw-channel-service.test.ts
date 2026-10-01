@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/event-bridge-service";
 import { clearMissionControlCaches } from "@/lib/openclaw/application/mission-control-service";
 import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import {
+  setOpenClawAdapterForTesting,
+  type OpenClawAdapter
+} from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   createManagedChatChannelAccount as createApplicationManagedChatChannelAccount,
   createManagedSurfaceAccount as createApplicationManagedSurfaceAccount,
@@ -29,9 +33,18 @@ async function readErrorMessage(action: () => Promise<unknown>) {
   throw new Error("Expected action to throw.");
 }
 
+const offlineOpenClawAdapter = {
+  getConfig: async () => null
+} as unknown as OpenClawAdapter;
+
+beforeEach(() => {
+  setOpenClawAdapterForTesting(offlineOpenClawAdapter);
+});
+
 afterEach(() => {
   resetOpenClawEventBridgeForTesting();
   resetOpenClawGatewayClient("channel service compatibility test cleanup");
+  setOpenClawAdapterForTesting(null);
   clearMissionControlCaches();
 });
 

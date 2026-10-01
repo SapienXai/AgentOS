@@ -1,10 +1,24 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
+import {
+  setOpenClawAdapterForTesting,
+  type OpenClawAdapter
+} from "@/lib/openclaw/adapter/openclaw-adapter";
 import { buildTaskDetailFromTaskRecord } from "@/lib/openclaw/domains/task-detail";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { deriveTaskFollowUpsFromRuntimes, readTaskFollowUpsFromMetadata } from "@/lib/openclaw/domains/task-follow-up-records";
 import type { MissionControlSnapshot, RuntimeOutputRecord, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
+
+beforeEach(() => {
+  setOpenClawAdapterForTesting({
+    getTaskHistory: async () => ({ messages: [] })
+  } as unknown as OpenClawAdapter);
+});
+
+afterEach(() => {
+  setOpenClawAdapterForTesting(null);
+});
 
 test("task detail includes follow-up runtimes from the same session context", async () => {
   const baseRuntime = createRuntime({
