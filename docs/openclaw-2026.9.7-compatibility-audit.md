@@ -1,7 +1,7 @@
 # OpenClaw 2026.9.7 Compatibility and Certification
 
 Status: certified for AgentOS `main` code HEAD
-`48b6cd132b1c4b897244caa1d6aebe78a89ae602`, as of 2026-10-01.
+`d4cdfb1ec6c0c3894119b57c2fba0929aa1a2185`, as of 2026-10-01.
 
 AgentOS recommends OpenClaw `2026.9.7` and pins its native contract to that
 release. The supported baseline remains `2026.9.1`. Certification means this
@@ -98,7 +98,7 @@ minimum-version requirements remain server-side blocked.
 The generated final artifact is
 [`openclaw-2026.9.7-pre-merge-final-certification.json`](./evidence/openclaw-2026.9.7-pre-merge-final-certification.json).
 It binds the promoted implementation HEAD
-`48b6cd132b1c4b897244caa1d6aebe78a89ae602`, the separate evidence commit
+`d4cdfb1ec6c0c3894119b57c2fba0929aa1a2185`, the separate evidence commit
 recorded in its provenance, exact upstream/package identity,
 static contract evidence, disposable runtime and migration evidence, security
 evidence, and the full certification matrix. The freshness check derives this
