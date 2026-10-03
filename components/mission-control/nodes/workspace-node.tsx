@@ -131,11 +131,13 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
               value={String(data.taskCardFilter === "active" ? data.activeTaskCardCount : data.taskCardCount)}
               filter={data.taskCardFilter}
               workspaceId={data.workspace.id}
-              disabled={data.taskCardCount === 0 || !data.onTaskCardFilterChange}
+              disabled={!data.onTaskCardFilterChange && !data.onBackgroundActivityChange}
               surfaceTheme={data.surfaceTheme ?? "dark"}
               openMenu={data.openMenu}
               onOpenMenuChange={data.onMenuChange}
               onChange={(filter) => data.onTaskCardFilterChange?.(filter)}
+              showBackgroundActivity={data.showBackgroundActivity === true}
+              onBackgroundActivityChange={data.onBackgroundActivityChange}
             />
           </div>
         </div>
@@ -316,7 +318,9 @@ function TaskFilterMetric({
   surfaceTheme,
   openMenu,
   onOpenMenuChange,
-  onChange
+  onChange,
+  showBackgroundActivity,
+  onBackgroundActivityChange
 }: {
   value: string;
   filter: WorkspaceNodeData["taskCardFilter"];
@@ -326,6 +330,8 @@ function TaskFilterMetric({
   openMenu: WorkspaceMenuState | null;
   onOpenMenuChange?: (menu: WorkspaceMenuState | null) => void;
   onChange: (filter: WorkspaceNodeData["taskCardFilter"]) => void;
+  showBackgroundActivity: boolean;
+  onBackgroundActivityChange?: (show: boolean) => void;
 }) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -426,6 +432,12 @@ function TaskFilterMetric({
           )}
           onClick={(event) => event.stopPropagation()}
         >
+          <button type="button" role="menuitemcheckbox" aria-checked={showBackgroundActivity}
+            disabled={!onBackgroundActivityChange}
+            className="mb-1 w-full rounded-lg border-b px-2 py-2 text-left text-[10px] disabled:opacity-50"
+            onClick={() => { onBackgroundActivityChange?.(!showBackgroundActivity); closeMenu(); }}>
+            {showBackgroundActivity ? "✓ " : ""}Show background activity
+          </button>
           {options.map((option) => {
             const OptionIcon = option.icon;
             const selected = option.value === filter;

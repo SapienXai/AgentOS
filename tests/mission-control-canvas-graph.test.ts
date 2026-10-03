@@ -57,7 +57,7 @@ test("Active Runs keeps scheduled, running, and review tasks only", () => {
   assert.equal(filterWorkspaceTasksForCanvas(tasks, "hidden").length, 0);
 });
 
-test("Mission Control keeps native OpenClaw monitors compact and outside normal task filters", () => {
+test("Mission Control hides native OpenClaw monitors unless explicitly requested", () => {
   const monitor = {
     id: "heartbeat-main",
     metadata: { systemOwnedMonitor: "heartbeat" }
@@ -66,9 +66,11 @@ test("Mission Control keeps native OpenClaw monitors compact and outside normal 
 
   assert.equal(isSystemOwnedMonitorTask(monitor), true);
   assert.equal(isSystemOwnedMonitorTask(operatorTask), false);
-  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "all").map((task) => task.id), ["operator-task", "heartbeat-main"]);
-  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "active").map((task) => task.id), ["operator-task", "heartbeat-main"]);
-  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "hidden").map((task) => task.id), ["heartbeat-main"]);
+  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "all").map((task) => task.id), ["operator-task"]);
+  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "active").map((task) => task.id), ["operator-task"]);
+  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "hidden").map((task) => task.id), []);
+  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "all", true).map((task) => task.id), ["operator-task", "heartbeat-main"]);
+  assert.deepEqual(filterWorkspaceTasksForCanvas([monitor, operatorTask], "hidden", true).map((task) => task.id), ["heartbeat-main"]);
 });
 
 test("canvas places agent-owned tasks when task workspace id is missing", () => {

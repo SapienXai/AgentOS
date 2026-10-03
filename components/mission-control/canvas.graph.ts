@@ -103,7 +103,9 @@ export function buildCanvasGraph(
   onAddWorkspaceModel?: (workspaceId: string) => void,
   onSelectWorkspaceEntity?: (entityId: string) => void,
   openWorkspaceMenu: WorkspaceMenuState | null = null,
-  onWorkspaceMenuChange?: (menu: WorkspaceMenuState | null) => void
+  onWorkspaceMenuChange?: (menu: WorkspaceMenuState | null) => void,
+  backgroundActivityVisibility: Record<string, boolean> = {},
+  onBackgroundActivityChange?: (workspaceId: string, show: boolean) => void
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
   const safeHiddenTaskKeys = Array.isArray(hiddenTaskKeys) ? hiddenTaskKeys : [];
@@ -186,9 +188,8 @@ export function buildCanvasGraph(
       : workspaceTaskRecords.filter(
           (task) => !isTaskHidden(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
         );
-    const workspaceTasks = isFocusMode
-      ? visibleWorkspaceTasks
-      : filterWorkspaceTasksForCanvas(visibleWorkspaceTasks, taskCardFilter);
+    const showBackgroundActivity = backgroundActivityVisibility[workspace.id] === true;
+    const workspaceTasks = filterWorkspaceTasksForCanvas(visibleWorkspaceTasks, isFocusMode ? "all" : taskCardFilter, showBackgroundActivity);
     const workspaceColumn = workspaceIndex % 2;
     const groupX = workspaceColumn * workspaceColumnGap + 44;
     const groupY = rowTopY;
@@ -242,6 +243,7 @@ export function buildCanvasGraph(
         selected: false,
         data: {
           agent,
+          surfaceTheme,
           emphasis: isFocusMode ? true : !activeWorkspaceId || activeWorkspaceId === workspace.id,
           focused: focusedAgentId === agent.id,
           pendingCreation: isPendingCreation,
@@ -250,6 +252,9 @@ export function buildCanvasGraph(
           taskFocused: isTaskFocusedAgent,
           creationPulse: recentCreatedAgentId === agent.id,
           activeTaskCount,
+          backgroundTasks: workspaceTaskRecords.filter((task) => isSystemOwnedMonitorTask(task) && resolveTaskOwnerId(task) === agent.id),
+          onInspectBackgroundTask: isPendingCreation ? undefined : onInspectTask,
+          onReviewBackgroundTask: isPendingCreation ? undefined : onReviewTask,
           chatOpen: isAgentChatOpen,
           agentInboxItems,
           crossAgentTargetIds,
@@ -413,6 +418,8 @@ export function buildCanvasGraph(
           activeTaskCardCount: workspaceToggleTasks.filter(isActiveTaskForCanvas).length,
           taskCardsHidden: workspaceTaskCardsHidden,
           taskCardFilter,
+          showBackgroundActivity,
+          onBackgroundActivityChange: onBackgroundActivityChange ? (show) => onBackgroundActivityChange(workspace.id, show) : undefined,
           agents: workspaceAgents,
           models: workspaceModels,
           openMenu: openWorkspaceMenu,
@@ -422,7 +429,7 @@ export function buildCanvasGraph(
           onAddModel: onAddWorkspaceModel,
           onSelectEntity: onSelectWorkspaceEntity,
           onTaskCardFilterChange:
-            workspaceToggleTasks.length > 0 && onWorkspaceTaskCardFilterChange
+            onWorkspaceTaskCardFilterChange
               ? (filter) => onWorkspaceTaskCardFilterChange(workspace.id, filter)
               : undefined
         }
@@ -704,9 +711,10 @@ export function isActiveTaskForCanvas(task: WorkItemRecord) {
 
 export function filterWorkspaceTasksForCanvas(
   tasks: WorkItemRecord[],
-  filter: WorkspaceTaskCardFilter
+  filter: WorkspaceTaskCardFilter,
+  showBackgroundActivity = false
 ) {
-  const monitorTasks = tasks.filter(isSystemOwnedMonitorTask);
+  const monitorTasks = showBackgroundActivity ? tasks.filter(isSystemOwnedMonitorTask) : [];
   const operatorTasks = tasks.filter((task) => !isSystemOwnedMonitorTask(task));
   if (filter === "hidden") return monitorTasks;
   if (filter === "active") return [...operatorTasks.filter(isActiveTaskForCanvas), ...monitorTasks];

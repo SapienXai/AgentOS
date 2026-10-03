@@ -10,6 +10,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
+import { readBackgroundActivityVisibility, writeBackgroundActivityVisibility } from "@/components/mission-control/canvas.persistence";
 
 import {
   arePersistedNodePositionsEqual,
@@ -173,6 +174,7 @@ export function MissionCanvas({
   const [focusTaskAnchor, setFocusTaskAnchor] = useState<FocusTaskAnchor | null>(null);
   const [canvasZoom, setCanvasZoom] = useState(0.9);
   const [workspaceTaskCardFilters, setWorkspaceTaskCardFilters] = useState<Record<string, WorkspaceTaskCardFilter>>({});
+  const [backgroundActivityVisibility, setBackgroundActivityVisibility] = useState<Record<string, boolean>>({});
   const [workspaceTaskCardFiltersHydrated, setWorkspaceTaskCardFiltersHydrated] = useState(false);
   const [openWorkspaceMenu, setOpenWorkspaceMenu] = useState<WorkspaceMenuState | null>(null);
   const canvasScopeKey = focusedAgentId
@@ -184,6 +186,7 @@ export function MissionCanvas({
   useEffect(() => {
     queueMicrotask(() => {
       setWorkspaceTaskCardFilters(readWorkspaceTaskCardFilters());
+      setBackgroundActivityVisibility(readBackgroundActivityVisibility());
       setWorkspaceTaskCardFiltersHydrated(true);
     });
   }, []);
@@ -191,7 +194,12 @@ export function MissionCanvas({
   useEffect(() => {
     if (!workspaceTaskCardFiltersHydrated) return;
     writeWorkspaceTaskCardFilters(workspaceTaskCardFilters);
-  }, [workspaceTaskCardFilters, workspaceTaskCardFiltersHydrated]);
+    writeBackgroundActivityVisibility(backgroundActivityVisibility);
+  }, [workspaceTaskCardFilters, workspaceTaskCardFiltersHydrated, backgroundActivityVisibility]);
+
+  const handleBackgroundActivityChange = useCallback((workspaceId: string, show: boolean) => {
+    setBackgroundActivityVisibility((current) => ({ ...current, [workspaceId]: show }));
+  }, []);
 
   const handleAgentConnectionMenuOpenChange = useCallback((agentId: string, open: boolean) => {
     setElevatedAgentMenuId((current) => {
@@ -274,7 +282,9 @@ export function MissionCanvas({
     onAddWorkspaceModel,
     onSelectNode,
     openWorkspaceMenu,
-    handleWorkspaceMenuChange
+    handleWorkspaceMenuChange,
+    backgroundActivityVisibility,
+    handleBackgroundActivityChange
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
@@ -375,7 +385,9 @@ export function MissionCanvas({
       onAddWorkspaceModel,
       onSelectNode,
       openWorkspaceMenu,
-      handleWorkspaceMenuChange
+      handleWorkspaceMenuChange,
+      backgroundActivityVisibility,
+      handleBackgroundActivityChange
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
     lastCanvasScopeKeyRef.current = canvasScopeKey;
@@ -431,6 +443,8 @@ export function MissionCanvas({
     agentCreationWarnings,
     surfaceTheme,
     workspaceTaskCardFilters,
+    backgroundActivityVisibility,
+    handleBackgroundActivityChange,
     handleWorkspaceTaskCardFilterChange,
     onCreateWorkspaceAgent,
     onAddWorkspaceModel,

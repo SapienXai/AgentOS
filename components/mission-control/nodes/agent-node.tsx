@@ -6,6 +6,8 @@ import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow
 import { BrainCircuit, ChevronDown, Cpu, KeyRound, Layers3, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal, Sparkles, Wrench } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
+import { AgentBackgroundActivityDialog } from "@/components/mission-control/agent-background-activity-dialog";
+import { backgroundActivityNeedsAttention } from "@/components/mission-control/agent-background-activity";
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCreationCardOverlay } from "@/components/mission-control/agent-creation-progress";
 import { resolveAgentProfileVisual, resolveAgentVisualTheme } from "@/components/mission-control/agent-profile-visuals";
@@ -401,6 +403,8 @@ function useAgentNotificationUnreadCount(
 
 export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [backgroundActivityOpen, setBackgroundActivityOpen] = useState(false);
+  const backgroundAttentionCount = (data.backgroundTasks ?? []).filter(backgroundActivityNeedsAttention).length;
   const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [heartbeatOverrideEnabled, setHeartbeatOverrideEnabled] = useState<boolean | null>(null);
@@ -1221,6 +1225,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                     setMenuOpen(false);
                   }}
                 />
+                <AgentMenuButton label="Background activity" onClick={() => { setMenuOpen(false); setBackgroundActivityOpen(true); }} />
                 <AgentMenuButton
                   label="Edit"
                   onClick={() => {
@@ -1254,6 +1259,11 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 <Badge variant="default" data-agent-status="working" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   Working now
                 </Badge>
+              ) : null}
+              {backgroundAttentionCount > 0 ? (
+                <button type="button" data-agent-status="warning" className="agent-node__light-status-badge nodrag nopan rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[9px] text-amber-700 dark:text-amber-200"
+                  aria-label={`Review ${backgroundAttentionCount} background activity item(s) for ${agentLabel}`}
+                  onClick={(event) => { event.stopPropagation(); setBackgroundActivityOpen(true); }}>Needs attention · {backgroundAttentionCount}</button>
               ) : null}
               {showLiveTaskChip ? (
                 <Badge variant="success" data-agent-status="live" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
@@ -1586,6 +1596,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           </AnimatePresence>
         </div>
       </motion.div>
+      <AgentBackgroundActivityDialog open={backgroundActivityOpen} onOpenChange={setBackgroundActivityOpen} data={data} surfaceTheme={data.surfaceTheme ?? "dark"} />
     </div>
   );
 }

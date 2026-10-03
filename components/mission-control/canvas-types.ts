@@ -18,6 +18,8 @@ export type WorkspaceNodeData = Record<string, unknown> & {
   activeTaskCardCount: number;
   taskCardsHidden: boolean;
   taskCardFilter: WorkspaceTaskCardFilter;
+  showBackgroundActivity?: boolean;
+  onBackgroundActivityChange?: (show: boolean) => void;
   agents: AgentRecord[];
   models: ModelRecord[];
   openMenu: WorkspaceMenuState | null;
@@ -65,6 +67,7 @@ export type AgentAccountBadge = {
 
 export type AgentNodeData = Record<string, unknown> & {
   agent: AgentRecord;
+  surfaceTheme?: "light" | "dark";
   modelLabel: string;
   emphasis: boolean;
   focused?: boolean;
@@ -74,6 +77,9 @@ export type AgentNodeData = Record<string, unknown> & {
   taskFocused?: boolean;
   creationPulse?: boolean;
   activeTaskCount?: number;
+  backgroundTasks?: WorkItemRecord[];
+  onInspectBackgroundTask?: TaskNodeData["onInspect"];
+  onReviewBackgroundTask?: (task: WorkItemRecord) => void;
   chatOpen?: boolean;
   agentInboxItems?: AgentInboxRecord[];
   crossAgentTargetIds?: string[];

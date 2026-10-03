@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   getNodePositionsStorageKey,
+  parseBackgroundActivityVisibility,
   parseWorkspaceTaskCardFilters,
   workspaceTaskCardFiltersStorageKey
 } from "@/components/mission-control/canvas.persistence";
@@ -34,4 +35,12 @@ test("Mission Canvas hydrates and persists the workspace run filter", async () =
   assert.match(source, /readWorkspaceTaskCardFilters\(\)/);
   assert.match(source, /writeWorkspaceTaskCardFilters\(workspaceTaskCardFilters\)/);
   assert.match(shell, /workspaceTaskCardFiltersStorageKey/);
+});
+
+
+test("background visibility defaults off and accepts only boolean workspace preferences", () => {
+  assert.deepEqual(parseBackgroundActivityVisibility(null), {});
+  assert.deepEqual(parseBackgroundActivityVisibility("invalid"), {});
+  assert.deepEqual(parseBackgroundActivityVisibility("[]"), {});
+  assert.deepEqual(parseBackgroundActivityVisibility(JSON.stringify({a:true,b:false,c:"true",d:1,"":true})), {a:true,b:false});
 });

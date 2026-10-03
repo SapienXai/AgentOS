@@ -182,3 +182,22 @@ export function writeToLocalStorage(key: string, value: string) {
 
   storage.setItem(key, value);
 }
+
+
+const backgroundActivityStorageKey = "mission-control-background-activity:v1";
+
+export function parseBackgroundActivityVisibility(raw: string | null): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key.length > 0 && typeof value === "boolean"));
+  } catch { return {}; }
+}
+
+export function readBackgroundActivityVisibility() {
+  return parseBackgroundActivityVisibility(readFromLocalStorage(backgroundActivityStorageKey));
+}
+
+export function writeBackgroundActivityVisibility(value: Record<string, boolean>) {
+  writeToLocalStorage(backgroundActivityStorageKey, JSON.stringify(value));
+}
