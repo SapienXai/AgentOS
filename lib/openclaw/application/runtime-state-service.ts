@@ -62,10 +62,19 @@ export function mapOpenClawRuntimeSnapshotToRuntimes(
     return [];
   }
 
+  const sessionIdByKey = new Map<string, string>();
+  for (const entry of readRecordArray(payload.sessions)) {
+    const sessionKey = readString(entry.key) ?? readString(entry.sessionKey);
+    const sessionId = normalizeRuntimeSessionId(readString(entry.sessionId) ?? readString(entry.id));
+    if (sessionKey && sessionId) {
+      sessionIdByKey.set(sessionKey, sessionId);
+    }
+  }
+
   return [
     ...readRecordArray(payload.runtimes).flatMap((entry) => normalizeRuntimeEntry(entry, context)),
     ...readRecordArray(payload.sessions).flatMap((entry) => normalizeSessionRuntime(entry, context)),
-    ...readRecordArray(payload.tasks).flatMap((entry) => normalizeTaskRuntime(entry, context)),
+    ...readRecordArray(payload.tasks).flatMap((entry) => normalizeTaskRuntime(entry, context, sessionIdByKey)),
     ...readRecordArray(payload.artifacts).flatMap((entry) => normalizeArtifactRuntime(entry, context))
   ];
 }
@@ -87,7 +96,6 @@ export function mapOpenClawTaskListToRuntimes(
 
     const status = mapOpenClawTaskStatus(summary.status);
     const sessionKey = summary.sessionKey ?? summary.childSessionKey;
-    const sessionId = extractExplicitSessionId(sessionKey);
     const updatedAt = readTaskTimestamp(summary.updatedAt ?? summary.endedAt ?? summary.createdAt);
     const workspaceId = resolveWorkspaceIdFromAgent(summary.agentId, context);
     const executionIdentity = executionIdentityFromTaskSummary(summary, { workspaceId });
@@ -104,7 +112,7 @@ export function mapOpenClawTaskListToRuntimes(
       ageMs: updatedAt ? Math.max(0, Date.now() - updatedAt) : null,
       agentId: summary.agentId ?? undefined,
       workspaceId: workspaceId ?? undefined,
-      sessionId: sessionId ?? undefined,
+      sessionId: undefined,
       taskId: summary.id,
       runId: summary.runId ?? undefined,
       metadata: {
@@ -119,7 +127,7 @@ export function mapOpenClawTaskListToRuntimes(
         taskId: summary.id,
         sessionKey,
         openClawSessionKey: sessionKey,
-        openClawSessionId: sessionId,
+        openClawSessionId: null,
         childSessionKey: summary.childSessionKey,
         ownerKey: summary.ownerKey,
         runId: summary.runId,
@@ -144,6 +152,8 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   const sessionKey =
     readString(payload.sessionKey) ??
     readString(payload.key) ??
+    readAgentSessionKey(payload.sessionId) ??
+    readAgentSessionKey(payload.session) ??
     readString(task?.sessionKey) ??
     readString(task?.childSessionKey);
   const agentId =
@@ -151,7 +161,7 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     readString(payload.agent) ??
     readString(task?.agentId) ??
     parseAgentIdFromSessionKey(sessionKey);
-  const sessionId = readString(payload.sessionId) ?? readString(payload.session) ?? sessionKey;
+  const sessionId = normalizeRuntimeSessionId(readString(payload.sessionId) ?? readString(payload.session));
   const runId =
     readString(payload.runId) ??
     readString(payload.run) ??
@@ -178,7 +188,7 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     eventName;
   const runtimeId =
     readString(payload.runtimeId) ??
-    `runtime:gateway:${hashRuntimeIdentity(agentId, sessionId, runId, taskId, artifactId, eventName)}`;
+    `runtime:gateway:${hashRuntimeIdentity(agentId, sessionId, sessionKey, runId, taskId, artifactId, eventName)}`;
 
   if (!agentId && !sessionId && !runId && !taskId && !artifactId) {
     return null;
@@ -189,7 +199,7 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   return {
     id: runtimeId,
     source: "turn",
-    key: runId || sessionId || taskId || artifactId || runtimeId,
+    key: runId || sessionId || sessionKey || taskId || artifactId || runtimeId,
     title: readString(payload.title) ?? readString(task?.title) ?? (taskId ? "Gateway task event" : "Gateway runtime event"),
     subtitle: text,
     status,
@@ -213,6 +223,9 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
       approvalId: readString(payload.approvalId) ?? null,
       artifactId: artifactId ?? null,
       dispatchId: readString(payload.dispatchId) ?? readString(payloadMetadata?.dispatchId) ?? null,
+      sessionKey,
+      openClawSessionKey: sessionKey,
+      openClawSessionId: sessionId,
       kind: readString(payload.kind) ?? readString(payloadMetadata?.kind) ?? null,
       taskAction: eventName === "task" ? readString(payload.action) ?? null : null,
       chatType: readString(payload.chatType) ?? readString(payloadMetadata?.chatType) ?? null,
@@ -335,7 +348,11 @@ function normalizeSessionRuntime(entry: Record<string, unknown>, context: Runtim
   } satisfies RuntimeRecord];
 }
 
-function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSnapshotMappingContext) {
+function normalizeTaskRuntime(
+  entry: Record<string, unknown>,
+  context: RuntimeSnapshotMappingContext,
+  sessionIdByKey: ReadonlyMap<string, string> = new Map()
+) {
   const taskId = readString(entry.taskId) ?? readString(entry.id);
   const agentId = readString(entry.agentId) ?? readString(entry.assigneeAgentId);
 
@@ -348,11 +365,11 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     readString(entry.openClawSessionKey) ??
     readString(entry.gatewaySessionKey) ??
     readAgentSessionKey(entry.key);
-  const rawSessionId =
+  const rawSessionId = normalizeRuntimeSessionId(
     readString(entry.sessionId) ??
     readString(entry.openClawSessionId) ??
-    readString(entry.gatewaySessionId) ??
-    extractExplicitSessionId(rawSessionKey);
+    readString(entry.gatewaySessionId)
+  ) ?? (rawSessionKey ? sessionIdByKey.get(rawSessionKey) ?? null : null);
   const sessionKey = rawSessionKey ?? (rawSessionId && agentId ? `agent:${agentId}:explicit:${rawSessionId}` : null);
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts ?? entry.createdAt);
   const taskStatus = readString(entry.status);
@@ -378,7 +395,7 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     workspaceId: workspaceId ?? undefined,
     workspacePath: workspacePath ?? undefined,
     modelId: readString(entry.model) ?? readString(entry.modelId) ?? undefined,
-    sessionId: rawSessionId ?? sessionKey ?? undefined,
+    sessionId: rawSessionId ?? undefined,
     taskId: taskId ?? undefined,
     runId: readString(entry.runId) ?? undefined,
     toolNames: normalizeToolNames(entry),
@@ -643,18 +660,9 @@ function readAgentSessionKey(value: unknown) {
   return normalized?.startsWith("agent:") ? normalized : null;
 }
 
-function extractExplicitSessionId(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const marker = ":explicit:";
-  const markerIndex = value.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return value.slice(markerIndex + marker.length).trim() || null;
+function normalizeRuntimeSessionId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && !normalized.startsWith("agent:") ? normalized : null;
 }
 
 function hashRuntimeIdentity(...values: Array<string | null | undefined>) {

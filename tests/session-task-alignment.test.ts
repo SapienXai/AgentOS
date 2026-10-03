@@ -76,6 +76,9 @@ test("tasks.list projection is canonical over stale dispatch and runtime observa
       summary: "Report delivered"
     }]
   }, context);
+  assert.equal(ledgerRuntimes[0]?.sessionId, undefined);
+  assert.equal(ledgerRuntimes[0]?.metadata.openClawSessionId, null);
+  assert.equal(ledgerRuntimes[0]?.metadata.openClawSessionKey, "agent:agent-1:explicit:session-1");
   const dispatchRuntime = createRuntime({
     id: "runtime-dispatch",
     key: "agent:agent-1:explicit:session-1",
@@ -98,6 +101,27 @@ test("tasks.list projection is canonical over stale dispatch and runtime observa
   assert.equal(tasks[0]?.metadata.sourceOfTruth, "openclaw-tasks.list");
   assert.equal(tasks[0]?.metadata.identityProvenance, "authoritative");
   assert.deepEqual(tasks[0]?.runtimeIds, [ledgerRuntimes[0]?.id, "runtime-dispatch"]);
+});
+
+test("task follow-up keeps a requested explicit session key separate from the session id", () => {
+  const sessionKey = "agent:agent-1:explicit:dispatch-1";
+  const [task] = buildTaskRecords([
+    createRuntime({
+      sessionId: undefined,
+      metadata: {
+        dispatchId: "dispatch-1",
+        sessionKey,
+        admissionState: "rejected",
+        dispatchStatus: "stalled"
+      }
+    })
+  ], [createAgent()]);
+
+  assert.ok(task);
+  const context = resolveTaskFollowUpContext(task);
+  assert.equal(context.sessionKey, sessionKey);
+  assert.equal(context.sessionId, null);
+  assert.equal((task.metadata.executionIdentity as Record<string, unknown>).sessionId, null);
 });
 
 test("runtime snapshot task mapping also records the exact native task status", () => {

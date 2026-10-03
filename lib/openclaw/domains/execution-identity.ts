@@ -167,7 +167,7 @@ export function executionIdentityFromTaskSummary(
     dispatchId: context.dispatchId ?? null,
     openClawTaskId: summary.id,
     sessionKey: summary.sessionKey ?? summary.childSessionKey,
-    sessionId: extractExplicitSessionId(summary.sessionKey ?? summary.childSessionKey),
+    sessionId: null,
     runId: summary.runId,
     agentId: summary.agentId,
     workspaceId: context.workspaceId ?? null,
@@ -188,10 +188,11 @@ export function executionIdentityFromRuntime(runtime: RuntimeRecord): OpenClawEx
     readString(runtime.metadata.sessionKey) ??
     readString(runtime.metadata.gatewaySessionKey) ??
     (runtime.key.trim().startsWith("agent:") ? runtime.key.trim() : null);
-  const sessionId = runtime.sessionId?.trim() || extractExplicitSessionId(sessionKey);
+  const sessionIdCandidate = [runtime.sessionId?.trim(), readString(runtime.metadata.openClawSessionId)]
+    .find((value): value is string => Boolean(value && !value.startsWith("agent:"))) ?? null;
   const provenance: ExecutionIdentityProvenance = taskId
     ? "authoritative"
-    : dispatchId || sessionKey || sessionId || runtime.runId
+    : dispatchId || sessionKey || sessionIdCandidate || runtime.runId
       ? "correlated"
       : "heuristic";
 
@@ -199,7 +200,7 @@ export function executionIdentityFromRuntime(runtime: RuntimeRecord): OpenClawEx
     dispatchId,
     openClawTaskId: taskId,
     sessionKey,
-    sessionId,
+    sessionId: sessionIdCandidate,
     runId: runtime.runId?.trim() || readString(runtime.metadata.openClawRunId),
     agentId: runtime.agentId?.trim() || readString(runtime.metadata.primaryAgentId),
     workspaceId: runtime.workspaceId?.trim() || readString(runtime.metadata.workspaceId),

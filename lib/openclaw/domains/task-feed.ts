@@ -279,6 +279,45 @@ export async function buildMissionDispatchFeed(
       }
     )
   ];
+  const continuationHistory = (record.operatorHistory ?? []).filter((entry) => entry.kind === "continue");
+  const admissionError = record.initialAdmissionError || record.error;
+
+  if (record.admissionState === "rejected" && continuationHistory.length > 0 && admissionError) {
+    events.push({
+      id: `${record.id}:initial-admission-rejected`,
+      kind: "warning",
+      timestamp: record.submittedAt,
+      title: "Initial task start rejected",
+      detail: summarizeText(admissionError, 220),
+      isError: true,
+      agentId: task.primaryAgentId
+    });
+  }
+
+  for (const instruction of record.operatorHistory ?? []) {
+    const instructionTitle = instruction.kind === "continue"
+      ? "Continue task requested"
+      : instruction.kind === "steer"
+        ? "Direction sent"
+        : "Session message added";
+    const instructionDetail = summarizeText(instruction.message, 220);
+    events.push({
+      id: `${record.id}:${instruction.id}:requested`,
+      kind: "user",
+      timestamp: instruction.requestedAt,
+      title: instructionTitle,
+      detail: instructionDetail,
+      agentId: task.primaryAgentId
+    });
+    events.push({
+      id: `${record.id}:${instruction.id}:accepted`,
+      kind: "status",
+      timestamp: instruction.acceptedAt,
+      title: instruction.kind === "continue" ? "Continuation accepted · waiting for response" : "Direction accepted",
+      detail: "OpenClaw accepted the instruction for the task session. Acceptance confirms delivery; it does not confirm that the requested work is complete.",
+      agentId: task.primaryAgentId
+    });
+  }
 
   if (record.runner.startedAt || record.runner.pid) {
     events.push(
@@ -424,7 +463,7 @@ export async function buildMissionDispatchFeed(
     );
   }
 
-  if (record.status === "stalled") {
+  if (record.status === "stalled" && continuationHistory.length === 0) {
     const stalledPresentation = presentMissionDispatchStalledEvent(record, agentName);
 
     events.push(

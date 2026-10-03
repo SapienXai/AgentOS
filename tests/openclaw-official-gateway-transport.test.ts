@@ -66,12 +66,53 @@ test("official transport sends the canonical AgentOS handshake and correlates re
   }
 });
 
+test("official transport can bind an existing device identity to explicit token auth", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-explicit-token-device-"));
+  const identityDir = join(stateDir, "identity");
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  await mkdir(identityDir, { recursive: true });
+  await writeFile(join(identityDir, "device.json"), JSON.stringify({
+    deviceId: "device-explicit-token",
+    publicKeyPem,
+    privateKeyPem
+  }));
+
+  const harness = await OfficialGatewayHarness.create({ challengeNonce: "explicit-token-challenge" });
+  const transport = new OfficialOpenClawGatewayTransport({
+    url: harness.url,
+    stateDir,
+    sharedStateMode: "read-only",
+    token: "operator-shared-token",
+    includeDeviceIdentityWithExplicitAuth: true
+  });
+
+  try {
+    transport.start();
+    const connect = await harness.waitForRequest("connect");
+    await waitFor(() => transport.getHandshake() !== null);
+    const params = connect.params as Record<string, unknown>;
+    const device = params.device as Record<string, unknown>;
+
+    assert.deepEqual(params.auth, { token: "operator-shared-token" });
+    assert.equal(device.id, "device-explicit-token");
+    assert.equal(typeof device.signature, "string");
+    assert.equal(transport.getConnectionMetadata().hasDeviceIdentity, true);
+  } finally {
+    await transport.stopAndWait({ timeoutMs: 500 });
+    await harness.close();
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
 test("official transport is the sole native transport boundary", async () => {
   const factorySource = await readFile(
     join(process.cwd(), "lib/openclaw/client/gateway-client-factory.ts"),
     "utf8"
   );
   assert.match(factorySource, /createOfficialBackedOpenClawGatewayClient/);
+  assert.match(factorySource, /includeDeviceIdentityWithExplicitAuth: options\.includeDeviceIdentityWithExplicitAuth \?\? true/);
   assert.doesNotMatch(factorySource, /custom transport|PersistentOpenClawGatewayConnection|WebSocketFactory/);
 });
 

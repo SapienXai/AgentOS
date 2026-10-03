@@ -11,7 +11,7 @@ test("runtime snapshot mapper converts Gateway sessions, tasks, and artifacts in
   const runtimes = mapOpenClawRuntimeSnapshotToRuntimes(
     {
       sessions: [{
-        key: "agent:agent-1:task:task-1",
+        key: "agent:agent-1:explicit:session-1",
         sessionId: "session-1",
         agentId: "agent-1",
         updatedAt: 1_700_000_000_000,
@@ -190,4 +190,6 @@ test("Gateway event normalizer preserves AgentOS direct chat origin metadata", (
   assert.equal(runtime.metadata.origin, "agentos-direct-chat");
   assert.equal(runtime.metadata.kind, "direct");
   assert.equal(runtime.metadata.chatType, "direct");
+  assert.equal(runtime.sessionId, undefined);
+  assert.equal(runtime.metadata.openClawSessionKey, "agent:agent-1:explicit:chat-session");
 });

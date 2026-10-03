@@ -59,6 +59,18 @@ export function resolveTaskFollowUpAvailability(task: Pick<
     };
   }
 
+  if (
+    readTaskMetadataString(task, "admissionState") === "rejected" &&
+    !hasAcceptedContinuation(task)
+  ) {
+    return {
+      available: false,
+      reason: "OpenClaw rejected the task start. Fix the reported connection issue, then prepare a new task; this session is not confirmed.",
+      warning: null,
+      context
+    };
+  }
+
   if (!context.sessionKey && !context.sessionId) {
     return {
       available: false,
@@ -96,16 +108,16 @@ export function resolveTaskFollowUpContext(task: Pick<
     readTaskMetadataString(task, "sessionKey") ||
     readTaskMetadataString(task, "gatewaySessionKey") ||
     firstAgentSessionKey(task.sessionIds);
-  const rawSessionId =
+  const sessionIdCandidate =
     executionIdentity?.sessionId ||
     readTaskMetadataString(task, "continuationSessionId") ||
     readTaskMetadataString(task, "openClawSessionId") ||
     readTaskMetadataString(task, "sessionId") ||
     readTaskMetadataString(task, "gatewaySessionId") ||
-    firstPlainSessionId(task.sessionIds) ||
-    extractExplicitSessionId(rawSessionKey);
+    firstPlainSessionId(task.sessionIds);
+  const rawSessionId = sessionIdCandidate && sessionIdCandidate !== task.dispatchId ? sessionIdCandidate : null;
   const sessionKey = rawSessionKey ?? (rawSessionId && agentId ? `agent:${agentId}:explicit:${rawSessionId}` : null);
-  const sessionId = rawSessionId ? extractExplicitSessionId(rawSessionId) ?? rawSessionId : extractExplicitSessionId(sessionKey);
+  const sessionId = rawSessionId && !rawSessionId.startsWith("agent:") ? rawSessionId : null;
   const provenance = executionIdentity?.openClawTaskId
     ? "native-task"
     : normalizeTaskProvenance(readTaskMetadataString(task, "provenance"));
@@ -167,11 +179,27 @@ export function buildTaskFollowUpPrompt(input: TaskFollowUpPromptInput) {
 
 export function normalizeTaskFollowUpSessionId(value: string | null | undefined) {
   const trimmed = value?.trim();
-  if (!trimmed) {
+  if (!trimmed || trimmed.startsWith("agent:")) {
     return null;
   }
 
-  return extractExplicitSessionId(trimmed) ?? trimmed;
+  return trimmed;
+}
+
+function hasAcceptedContinuation(task: Pick<TaskRecord, "metadata">) {
+  const history = task.metadata.operatorHistory;
+  if (!Array.isArray(history)) {
+    return false;
+  }
+
+  return history.some((entry) =>
+    Boolean(
+      entry &&
+      typeof entry === "object" &&
+      (entry as Record<string, unknown>).kind === "continue" &&
+      typeof (entry as Record<string, unknown>).acceptedAt === "string"
+    )
+  );
 }
 
 export function formatTaskFollowUpConfidenceLabel(confidence: TaskFollowUpContext["confidence"]) {
@@ -233,21 +261,6 @@ function normalizeContinuationConfidence(
   }
 
   return provenance === "runtime-derived" || provenance === "unknown" ? "medium" : "high";
-}
-
-function extractExplicitSessionId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const marker = ":explicit:";
-  const markerIndex = normalized.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return normalized.slice(markerIndex + marker.length).trim() || null;
 }
 
 function formatCreatedFiles(task: TaskRecord, createdFiles: RuntimeCreatedFile[] | undefined) {

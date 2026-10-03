@@ -49,6 +49,9 @@ export function useMissionControlWorkspaceActions({
   const [accountBrowserProfileRecoveryBusy, setAccountBrowserProfileRecoveryBusy] = useState<"restart" | null>(null);
   const [accountSecureBrowserCapabilities, setAccountSecureBrowserCapabilities] =
     useState<SecureBrowserCapabilityView | null>(null);
+  const [secureBrowserAccounts, setSecureBrowserAccounts] = useState<SecureBrowserAccountView[]>([]);
+  const [secureBrowserAccountsError, setSecureBrowserAccountsError] = useState<string | null>(null);
+  const [secureBrowserAccountsWorkspaceId, setSecureBrowserAccountsWorkspaceId] = useState<string | null>(null);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
 
@@ -115,6 +118,9 @@ export function useMissionControlWorkspaceActions({
   const loadAccountSecureBrowserCapabilities = useCallback(async () => {
     if (!activeWorkspace) {
       setAccountSecureBrowserCapabilities(null);
+      setSecureBrowserAccounts([]);
+      setSecureBrowserAccountsError(null);
+      setSecureBrowserAccountsWorkspaceId(null);
       return;
     }
     try {
@@ -124,14 +130,21 @@ export function useMissionControlWorkspaceActions({
       );
       const payload = await response.json().catch(() => null) as {
         capabilities?: SecureBrowserCapabilityView;
+        accounts?: SecureBrowserAccountView[];
         error?: string;
       } | null;
       if (!response.ok) {
         throw new Error(payload?.error ?? "Unable to read Secure Browser capabilities.");
       }
       setAccountSecureBrowserCapabilities(payload?.capabilities ?? null);
-    } catch {
+      setSecureBrowserAccounts(Array.isArray(payload?.accounts) ? payload.accounts : []);
+      setSecureBrowserAccountsError(null);
+      setSecureBrowserAccountsWorkspaceId(activeWorkspace.id);
+    } catch (error) {
       setAccountSecureBrowserCapabilities(null);
+      setSecureBrowserAccounts([]);
+      setSecureBrowserAccountsError(readBrowserProfileError(error, "Unable to read Secure Browser accounts."));
+      setSecureBrowserAccountsWorkspaceId(activeWorkspace.id);
     }
   }, [activeWorkspace]);
 
@@ -332,6 +345,9 @@ export function useMissionControlWorkspaceActions({
     accountBrowserProfilesError,
     accountBrowserProfileRecoveryBusy,
     accountSecureBrowserCapabilities,
+    secureBrowserAccounts,
+    secureBrowserAccountsError,
+    secureBrowserAccountsWorkspaceId,
     accountTargets,
     setAccountTargets,
     accountAccessRules,

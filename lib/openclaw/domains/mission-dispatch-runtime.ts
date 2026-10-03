@@ -161,7 +161,9 @@ export function matchMissionDispatchToRuntime(
   const observedRuntimeId = record.observation.runtimeId?.trim() || null;
 
   if (shouldPreferSyntheticMissionDispatchRuntime(observedRuntimeId, runtimes, record.status)) {
-    return null;
+    if (!runtimes.some((runtime) => matchesAcceptedContinuationRuntime(runtime, record))) {
+      return null;
+    }
   }
 
   return runtimes
@@ -215,6 +217,10 @@ export function scoreMissionDispatchRuntimeMatch(
 
   if ((runtime.updatedAt ?? 0) < (Number.isNaN(options.submittedAt) ? 0 : options.submittedAt - 1500)) {
     return null;
+  }
+
+  if (matchesAcceptedContinuationRuntime(runtime, record)) {
+    return 12_000;
   }
 
   if (runtimeRunId === record.id) {
@@ -279,8 +285,9 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
   const tokenUsage = runtime.tokenUsage ?? extractMissionDispatchTokenUsage(record);
   const modelId = runtime.modelId ?? extractMissionDispatchModelId(record) ?? undefined;
   const sessionKey = readMissionDispatchSessionKey(record);
+  const currentExecution = isCurrentAcceptedContinuationRuntime(runtime, record);
   const nextStatus =
-    isMissionDispatchTerminalStatus(record.status)
+    !currentExecution && isMissionDispatchTerminalStatus(record.status)
       ? record.status
       : runtime.status;
 
@@ -302,7 +309,9 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
 
   return {
     ...runtime,
-    subtitle: isMissionDispatchTerminalStatus(record.status)
+    subtitle: currentExecution
+      ? runtime.subtitle
+      : isMissionDispatchTerminalStatus(record.status)
       ? summarizeText(resolveMissionDispatchCompletionDetail(record), 90)
       : runtime.subtitle,
     status: nextStatus,
@@ -313,8 +322,9 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       ...runtime.metadata,
       dispatchId: record.id,
       clientRequestId: record.clientRequestId ?? null,
-      dispatchStatus: record.status,
+      dispatchStatus: currentExecution ? runtime.status : record.status,
       admissionState: record.admissionState ?? null,
+      initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
@@ -323,6 +333,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       dispatchError: record.error,
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
+      currentExecution,
       sessionKey: sessionKey ?? runtime.metadata.sessionKey ?? null,
       browserAccountId: record.browserBinding?.accountId ?? null,
       browserProfileName: record.browserBinding?.profileName ?? null,
@@ -383,6 +394,7 @@ export function buildMissionDispatchTranscriptRuntime(
       bootstrapStage: resolveMissionDispatchBootstrapStage(record, runtimeStatus),
       dispatchStatus: record.status,
       admissionState: record.admissionState ?? null,
+      initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
@@ -391,6 +403,7 @@ export function buildMissionDispatchTranscriptRuntime(
       dispatchError: record.error,
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
+      currentExecution: false,
       browserAccountId: record.browserBinding?.accountId ?? null,
       browserProfileName: record.browserBinding?.profileName ?? null,
       browserBindingStatus: record.browserBinding?.status ?? null,
@@ -409,6 +422,76 @@ function readMissionDispatchSessionKey(record: MissionDispatchRecordLike) {
     : typeof record.sessionKey === "string" && record.sessionKey.trim()
       ? record.sessionKey.trim()
       : null;
+}
+
+function matchesAcceptedContinuationRuntime(runtime: RuntimeRecord, record: MissionDispatchRecordLike) {
+  if (runtime.agentId !== record.agentId) {
+    return false;
+  }
+
+  const instructions = (record.operatorHistory ?? []).filter((entry) => entry.kind === "continue");
+  if (instructions.length === 0) {
+    return false;
+  }
+
+  const runtimeRunId = runtime.runId?.trim() || "";
+  const runtimeSessionKey =
+    readRuntimeMetadataString(runtime, "sessionKey") ||
+    readRuntimeMetadataString(runtime, "openClawSessionKey") ||
+    readRuntimeMetadataString(runtime, "gatewaySessionKey") ||
+    (runtime.key.trim().startsWith("agent:") ? runtime.key.trim() : "") ||
+    (runtime.sessionId?.trim().startsWith("agent:") ? runtime.sessionId.trim() : "");
+
+  return instructions.some((entry) => {
+    if (entry.runId?.trim()) {
+      return runtimeRunId === entry.runId.trim();
+    }
+
+    const expectedSessionKey = entry.sessionKey?.trim() || record.sessionKey?.trim() || "";
+    if (!expectedSessionKey || runtimeSessionKey !== expectedSessionKey) {
+      return false;
+    }
+
+    const acceptedAt = Date.parse(entry.acceptedAt);
+    return !Number.isNaN(acceptedAt) && (runtime.updatedAt ?? 0) >= acceptedAt - 1500;
+  });
+}
+
+function isCurrentAcceptedContinuationRuntime(runtime: RuntimeRecord, record: MissionDispatchRecordLike) {
+  if (runtime.agentId !== record.agentId) {
+    return false;
+  }
+
+  const latestInstruction = [...(record.operatorHistory ?? [])]
+    .filter((entry) => entry.kind === "continue")
+    .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0];
+  if (!latestInstruction) {
+    return false;
+  }
+
+  const runtimeRunId = runtime.runId?.trim() || "";
+  if (latestInstruction.runId?.trim()) {
+    return runtimeRunId === latestInstruction.runId.trim();
+  }
+
+  const expectedSessionKey = latestInstruction.sessionKey?.trim() || record.sessionKey?.trim() || "";
+  const runtimeSessionKey =
+    readRuntimeMetadataString(runtime, "sessionKey") ||
+    readRuntimeMetadataString(runtime, "openClawSessionKey") ||
+    readRuntimeMetadataString(runtime, "gatewaySessionKey") ||
+    (runtime.key.trim().startsWith("agent:") ? runtime.key.trim() : "") ||
+    (runtime.sessionId?.trim().startsWith("agent:") ? runtime.sessionId.trim() : "");
+  if (!expectedSessionKey || runtimeSessionKey !== expectedSessionKey) {
+    return false;
+  }
+
+  const acceptedAt = Date.parse(latestInstruction.acceptedAt);
+  return !Number.isNaN(acceptedAt) && (runtime.updatedAt ?? 0) >= acceptedAt - 1500;
+}
+
+function readRuntimeMetadataString(runtime: RuntimeRecord, key: string) {
+  const value = runtime.metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 export function createMissionDispatchRuntime(
@@ -454,6 +537,8 @@ export function createMissionDispatchRuntime(
       pendingCreation: runtimeStatus === "queued" || runtimeStatus === "running",
       bootstrapStage,
       dispatchStatus: record.status,
+      admissionState: record.admissionState ?? null,
+      initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
@@ -462,6 +547,7 @@ export function createMissionDispatchRuntime(
       dispatchError: record.error,
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
+      currentExecution: false,
       ...(integrityWarning ? { warnings: [integrityWarning], warningSummary: integrityWarning } : {})
     }
   };
@@ -495,10 +581,7 @@ function resolveMissionDispatchAnnotationRuntimes(
   }
 
   const sessionId = extractMissionDispatchSessionId(record);
-
-  if (!sessionId) {
-    return Array.from(selected.values());
-  }
+  const sessionKey = readMissionDispatchSessionKey(record);
 
   const submittedAt = Date.parse(record.submittedAt);
   const earliestRuntimeAt = Number.isNaN(submittedAt) ? 0 : submittedAt - 1500;
@@ -520,7 +603,13 @@ function resolveMissionDispatchAnnotationRuntimes(
       typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
     const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
 
-    if (runtimeDispatchId === record.id || runtimeRunId === record.id || runtime.sessionId === sessionId) {
+    if (
+      runtimeDispatchId === record.id ||
+      runtimeRunId === record.id ||
+      Boolean(sessionId && runtime.sessionId === sessionId) ||
+      Boolean(sessionKey && runtime.key === sessionKey) ||
+      matchesAcceptedContinuationRuntime(runtime, record)
+    ) {
       selected.set(runtime.id, runtime);
     }
   }

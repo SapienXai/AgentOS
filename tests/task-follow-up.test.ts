@@ -68,6 +68,50 @@ test("task follow-up availability rejects tasks without agent or session context
   assert.equal(missingSession.reason, "This task does not expose an OpenClaw session to continue.");
 });
 
+test("rejected admission cannot continue a requested session key until OpenClaw accepts a later continuation", () => {
+  const rejected = createTaskRecord({
+    status: "stalled",
+    metadata: {
+      admissionState: "rejected",
+      openClawSessionKey: "agent:agent-1:explicit:dispatch-1"
+    },
+    sessionIds: []
+  });
+  const rejectedAvailability = resolveTaskFollowUpAvailability(rejected);
+
+  assert.equal(rejectedAvailability.available, false);
+  assert.match(rejectedAvailability.reason ?? "", /rejected.*task start/i);
+  assert.equal(rejectedAvailability.context.sessionId, null);
+  assert.equal(rejectedAvailability.context.sessionKey, "agent:agent-1:explicit:dispatch-1");
+
+  const acceptedContinuation = resolveTaskFollowUpAvailability(createTaskRecord({
+    status: "stalled",
+    sessionIds: [],
+    metadata: {
+      admissionState: "rejected",
+      openClawSessionKey: "agent:agent-1:explicit:dispatch-1",
+      operatorHistory: [{ kind: "continue", acceptedAt: "2026-10-03T10:00:00.000Z" }]
+    }
+  }));
+
+  assert.equal(acceptedContinuation.available, true);
+  assert.equal(acceptedContinuation.context.sessionId, null);
+});
+
+test("an explicit session key is never exposed as an OpenClaw session id", () => {
+  const availability = resolveTaskFollowUpAvailability(createTaskRecord({
+    sessionIds: [],
+    metadata: {
+      provenance: "dispatch-derived",
+      openClawSessionKey: "agent:agent-1:explicit:dispatch-1"
+    }
+  }));
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.context.sessionKey, "agent:agent-1:explicit:dispatch-1");
+  assert.equal(availability.context.sessionId, null);
+});
+
 test("task follow-up availability can use native task session metadata", () => {
   const availability = resolveTaskFollowUpAvailability(createTaskRecord({
     sessionIds: [],
@@ -80,7 +124,7 @@ test("task follow-up availability can use native task session metadata", () => {
 
   assert.equal(availability.available, true);
   assert.equal(availability.context.openClawTaskId, "task-native-1");
-  assert.equal(availability.context.sessionId, "session-native");
+  assert.equal(availability.context.sessionId, null);
   assert.equal(availability.context.sessionKey, "agent:agent-1:explicit:session-native");
   assert.equal(availability.context.confidence, "high");
 });
@@ -99,8 +143,8 @@ test("task follow-up availability warns for runtime-derived continuation context
   assert.match(availability.warning ?? "", /runtime-derived/);
 });
 
-test("task follow-up session ids normalize explicit session keys into plain session ids", () => {
-  assert.equal(normalizeTaskFollowUpSessionId("agent:agent-1:explicit:session-1"), "session-1");
+test("task follow-up session ids keep only actual session ids", () => {
+  assert.equal(normalizeTaskFollowUpSessionId("agent:agent-1:explicit:session-1"), null);
   assert.equal(normalizeTaskFollowUpSessionId(" session-plain "), "session-plain");
   assert.equal(normalizeTaskFollowUpSessionId(""), null);
 });

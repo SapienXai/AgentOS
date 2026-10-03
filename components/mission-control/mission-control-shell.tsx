@@ -995,6 +995,9 @@ export function MissionControlShell({
     accountBrowserProfilesError,
     accountBrowserProfileRecoveryBusy,
     accountSecureBrowserCapabilities,
+    secureBrowserAccounts,
+    secureBrowserAccountsError,
+    secureBrowserAccountsWorkspaceId,
     accountTargets,
     setAccountTargets,
     accountAccessRules,
@@ -5294,6 +5297,13 @@ export function MissionControlShell({
             surfaceTheme={surfaceTheme}
             activeWorkspaceId={activeWorkspaceId}
             selectedNodeId={selectedNodeId}
+            secureBrowserAccounts={secureBrowserAccounts}
+            secureBrowserAccountsError={secureBrowserAccountsError}
+            secureBrowserAccountsWorkspaceId={secureBrowserAccountsWorkspaceId}
+            onOpenAccounts={(agentId) => openAccountsConnect(
+              activeWorkspaceId ?? activeWorkspaceForDialogs?.id,
+              agentId ?? composerTargetAgentId ?? undefined
+            )}
             composeIntent={composeIntent}
             isComposerActive={isComposerActive}
             onTargetAgentChange={setComposerTargetAgentId}

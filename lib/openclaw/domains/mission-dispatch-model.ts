@@ -31,6 +31,7 @@ export type MissionDispatchRecordLike = {
   /** OpenClaw session key requested or returned for this dispatch. */
   sessionKey?: string | null;
   admissionState?: "preparing" | "session-created" | "accepted" | "unknown" | "rejected";
+  initialAdmissionError?: string | null;
   cancellation?: {
     status: "requested" | "unknown" | "confirmed";
     requestedAt: string;
@@ -314,11 +315,16 @@ export function resolveMissionDispatchSubtitle(
 }
 
 export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: MissionDispatchRecordLike): TaskRecord {
-  const status = resolveMissionDispatchRuntimeStatus(record, Date.now());
+  const status = task.metadata.currentExecution === true
+    ? task.status
+    : resolveMissionDispatchRuntimeStatus(record, Date.now());
+  const currentExecution = task.metadata.currentExecution === true;
   const bootstrapStage = resolveMissionDispatchBootstrapStage(record, status);
   const updatedAt = Date.parse(record.updatedAt);
   const subtitle =
-    status === "completed" || status === "cancelled"
+    currentExecution
+      ? task.subtitle
+      : status === "completed" || status === "cancelled"
       ? summarizeText(resolveMissionDispatchCompletionDetail(record), 90)
       : resolveMissionDispatchSubtitle(record, status);
 
@@ -327,8 +333,8 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
     dispatchId: record.id,
     status,
     subtitle,
-    updatedAt: Number.isNaN(updatedAt) ? task.updatedAt : updatedAt,
-    ageMs: Number.isNaN(updatedAt) ? task.ageMs : Math.max(Date.now() - updatedAt, 0),
+    updatedAt: currentExecution || Number.isNaN(updatedAt) ? task.updatedAt : updatedAt,
+    ageMs: currentExecution || Number.isNaN(updatedAt) ? task.ageMs : Math.max(Date.now() - updatedAt, 0),
     liveRunCount: status === "running" || status === "queued" ? Math.max(task.liveRunCount, 1) : 0,
     warningCount:
       status === "stalled" || status === "cancelled"
@@ -338,8 +344,10 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       ...task.metadata,
       bootstrapStage,
       clientRequestId: record.clientRequestId ?? null,
-      dispatchStatus: record.status,
+      dispatchStatus: status,
+      currentExecution,
       admissionState: record.admissionState ?? null,
+      initialAdmissionError: record.initialAdmissionError ?? null,
       requestedModelId: extractMissionDispatchRequestedModelId(record),
       dispatchSubmittedAt: record.submittedAt,
       dispatchRunnerStartedAt: record.runner.startedAt,

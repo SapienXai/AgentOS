@@ -345,22 +345,11 @@ function readMetadataString(metadata: Record<string, unknown> | null | undefined
 
 function normalizeSessionId(value: string | null | undefined) {
   const normalized = value?.trim();
-  if (!normalized) {
+  if (!normalized || normalized.startsWith("agent:")) {
     return null;
   }
 
-  const explicitSessionId = extractExplicitSessionId(normalized);
-  return explicitSessionId ?? normalized;
-}
-
-function extractExplicitSessionId(value: string) {
-  const marker = ":explicit:";
-  const markerIndex = value.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return value.slice(markerIndex + marker.length).trim() || null;
+  return normalized;
 }
 
 function resolveContinuationIdempotencyKey(input: {

@@ -1706,6 +1706,7 @@ export interface MissionSubmission {
   workspaceId?: string;
   executionMode?: "standard" | "isolated-worktree";
   thinking?: "off" | "minimal" | "low" | "medium" | "high";
+  browserAccountId?: string;
   browserAccount?: {
     accountId: string;
     actorUserId: string;

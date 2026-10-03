@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/sonner";
 import { shouldPreserveComposerOnBlur } from "@/components/mission-control/command-bar.utils";
 import { removePendingMissionRequest, writePendingMissionRequest } from "@/components/mission-control/mission-control-shell.utils";
 import type { MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/agentos/contracts";
+import type { SecureBrowserAccountView } from "@/components/operations/accounts/secure-browser-connect-client";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,7 @@ type DraftRecord = {
   mission: string;
   thinking: ThinkingLevel;
   executionMode: NonNullable<MissionSubmission["executionMode"]>;
+  browserAccountId: string | null;
   scheduleMode: ScheduleMode;
   cronExpression: string;
   recurrence: "weekdays" | "daily" | "weekly" | "custom";
@@ -83,12 +85,20 @@ export function CommandBar({
   onMissionDispatchFailure,
   onMissionDispatchUncertain,
   onMissionResponse,
-  onOperationScheduled
+  onOperationScheduled,
+  secureBrowserAccounts,
+  secureBrowserAccountsError,
+  secureBrowserAccountsWorkspaceId,
+  onOpenAccounts
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: "dark" | "light";
   activeWorkspaceId: string | null;
   selectedNodeId: string | null;
+  secureBrowserAccounts: SecureBrowserAccountView[];
+  secureBrowserAccountsError: string | null;
+  secureBrowserAccountsWorkspaceId: string | null;
+  onOpenAccounts: (agentId: string | null) => void;
   composeIntent: ComposeIntent | null;
   isComposerActive: boolean;
   onTargetAgentChange?: (agentId: string | null) => void;
@@ -105,6 +115,7 @@ export function CommandBar({
   const [targetAgentId, setTargetAgentId] = useState<string>("");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
   const [executionMode, setExecutionMode] = useState<NonNullable<MissionSubmission["executionMode"]>>("standard");
+  const [browserAccountId, setBrowserAccountId] = useState<string | null>(null);
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
   const [cronExpression, setCronExpression] = useState("0 9 * * 1-5");
   const [recurrence, setRecurrence] = useState<"weekdays" | "daily" | "weekly" | "custom">("weekdays");
@@ -135,12 +146,24 @@ export function CommandBar({
   const selectedAgent = availableAgents.find((agent) => agent.id === targetAgentId) ?? availableAgents[0] ?? null;
   const selectedAgentLabel = selectedAgent ? formatAgentDisplayName(selectedAgent) : null;
   const effectiveTargetAgentId = selectedAgent?.id ?? null;
+  const eligibleBrowserAccounts = secureBrowserAccounts.filter((account) =>
+    account.workspaceId === targetWorkspace?.id &&
+    Boolean(effectiveTargetAgentId && account.allowedAgentIds.includes(effectiveTargetAgentId))
+  );
+  const selectedBrowserAccount = eligibleBrowserAccounts.find(
+    (account) => account.id === browserAccountId && account.connectionStatus === "connected"
+  ) ?? null;
+  const browserAccountStillEligible = eligibleBrowserAccounts.some((account) => account.id === browserAccountId);
+  const secureAccountsLoadedForWorkspace = secureBrowserAccountsWorkspaceId === (targetWorkspace?.id ?? null);
   const agentOptions: AgentOption[] = availableAgents.map((agent) => ({
     label: formatAgentDisplayName(agent),
     value: agent.id
   }));
   const draftScopeKey = buildDraftScopeKey(targetWorkspace?.id ?? activeWorkspaceId ?? null, effectiveTargetAgentId);
-  const canSubmit = Boolean(mission.trim() && effectiveTargetAgentId && !isSubmitting);
+  const canSubmit = Boolean(
+    mission.trim() && effectiveTargetAgentId && !isSubmitting &&
+    (!browserAccountId || (secureAccountsLoadedForWorkspace && selectedBrowserAccount))
+  );
   const dynamicPlaceholder = "What should this agent accomplish?";
   const isLightTheme = surfaceTheme === "light";
   const isComposerEmpty =
@@ -219,6 +242,7 @@ export function CommandBar({
     setMission(storedDraft?.mission ?? "");
     setThinking(storedDraft?.thinking ?? "medium");
     setExecutionMode(storedDraft?.executionMode ?? "standard");
+    setBrowserAccountId(storedDraft?.browserAccountId ?? null);
     setScheduleMode(storedDraft?.scheduleMode ?? "now");
     setCronExpression(storedDraft?.cronExpression ?? "0 9 * * 1-5");
     setRecurrence(storedDraft?.recurrence ?? "weekdays");
@@ -243,6 +267,7 @@ export function CommandBar({
       mission,
       thinking,
       executionMode,
+      browserAccountId,
       scheduleMode,
       cronExpression,
       recurrence,
@@ -251,7 +276,18 @@ export function CommandBar({
       runAt,
       timezone
     });
-  }, [draftScopeKey, mission, thinking, executionMode, scheduleMode, cronExpression, recurrence, recurrenceTime, intervalMinutes, runAt, timezone]);
+  }, [draftScopeKey, mission, thinking, executionMode, browserAccountId, scheduleMode, cronExpression, recurrence, recurrenceTime, intervalMinutes, runAt, timezone]);
+
+  useEffect(() => {
+    if (
+      browserAccountId &&
+      secureAccountsLoadedForWorkspace &&
+      !secureBrowserAccountsError &&
+      !browserAccountStillEligible
+    ) {
+      setBrowserAccountId(null);
+    }
+  }, [browserAccountId, browserAccountStillEligible, secureAccountsLoadedForWorkspace, secureBrowserAccountsError]);
 
   useEffect(() => {
     if (!isComposerActive || isSubmitting) {
@@ -491,7 +527,20 @@ export function CommandBar({
   const submitTask = async () => {
     if (!effectiveTargetAgentId || !mission.trim()) return;
     if (scheduleMode === "now") {
-      await submitMission({ mission, agentId: effectiveTargetAgentId, workspaceId: targetWorkspace?.id ?? activeWorkspaceId ?? undefined, thinking, executionMode });
+      await submitMission({
+        mission,
+        agentId: effectiveTargetAgentId,
+        workspaceId: targetWorkspace?.id ?? activeWorkspaceId ?? undefined,
+        thinking,
+        executionMode,
+        ...(selectedBrowserAccount ? { browserAccountId: selectedBrowserAccount.id } : {})
+      });
+      return;
+    }
+    if (browserAccountId) {
+      toast.error("Secure Browser access cannot be attached to a schedule yet.", {
+        description: "Clear the account selection or start this task now."
+      });
       return;
     }
     if (executionMode === "isolated-worktree") {
@@ -834,6 +883,61 @@ export function CommandBar({
                     <span className={cn("ml-2 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Execution</span>
                     {([ ["Standard", "standard"], ["Isolated worktree", "isolated-worktree"] ] as const).map(([label, value]) => <button key={value} type="button" onClick={() => setExecutionMode(value)} aria-pressed={executionMode === value} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", executionMode === value ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{label}</button>)}
                   </div>
+                  <div className={cn(
+                    "mt-1.5 rounded-[10px] border px-2.5 py-2",
+                    isLightTheme ? "border-[#dfcfc3] bg-[#fffcf9]" : "border-white/[0.08] bg-white/[0.025]"
+                  )}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label htmlFor="task-secure-browser-account" className={cn("text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>
+                        Secure Browser account
+                      </label>
+                      <select
+                        id="task-secure-browser-account"
+                        value={browserAccountId ?? ""}
+                        onChange={(event) => setBrowserAccountId(event.target.value || null)}
+                        className={cn(
+                          "h-7 min-w-[160px] flex-1 rounded-md border bg-transparent px-2 text-[10px] outline-none focus:ring-2 focus:ring-primary/20",
+                          isLightTheme ? "border-[#e7d9cf] text-[#46352b]" : "border-white/[0.1] text-slate-100"
+                        )}
+                        aria-describedby="task-secure-browser-account-help"
+                      >
+                        <option value="">No account selected</option>
+                        {browserAccountId && !selectedBrowserAccount ? (
+                          <option value={browserAccountId} disabled>
+                            {secureBrowserAccountsError ? "Selected account could not be verified" : "Selected account is unavailable to this agent"}
+                          </option>
+                        ) : null}
+                        {eligibleBrowserAccounts.map((account) => (
+                          <option key={account.id} value={account.id} disabled={account.connectionStatus !== "connected"}>
+                            {account.serviceName} · {formatSecureAccountStatus(account.connectionStatus)}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => onOpenAccounts(effectiveTargetAgentId)}
+                        className={cn("h-7 rounded-md border px-2 text-[10px] font-medium", isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-300 hover:bg-white/[0.06]")}
+                      >
+                        Manage accounts
+                      </button>
+                    </div>
+                    <p id="task-secure-browser-account-help" className={cn("mt-1 text-[10px] leading-4", isLightTheme ? "text-[#9b8373]" : "text-slate-500")}>
+                      {secureBrowserAccountsError
+                        ? `Secure Browser accounts could not be loaded: ${secureBrowserAccountsError}`
+                        : !secureAccountsLoadedForWorkspace
+                          ? "Checking Secure Browser accounts for this workspace…"
+                          : eligibleBrowserAccounts.length === 0
+                          ? `If this task needs a login, connect and authorize a Secure Browser account for ${selectedAgentLabel ?? "this agent"}.`
+                          : browserAccountId
+                            ? "This task will use the selected account. Check that the profile is signed in before starting."
+                            : "Choose an account when the task needs an authenticated browser session."}
+                    </p>
+                    {browserAccountId && scheduleMode !== "now" ? (
+                      <p className={cn("mt-1 text-[10px] leading-4", isLightTheme ? "text-amber-700" : "text-amber-300")}>
+                        Secure Browser accounts cannot be attached to scheduled tasks yet. Clear this selection or start the task now.
+                      </p>
+                    ) : null}
+                  </div>
                   <SchedulePopover mode={scheduleMode} recurrence={recurrence} recurrenceTime={recurrenceTime} cronExpression={cronExpression} timezone={timezone} intervalMinutes={intervalMinutes} runAt={runAt} surfaceTheme={surfaceTheme} onModeChange={setScheduleMode} onRecurrenceChange={setRecurrence} onRecurrenceTimeChange={setRecurrenceTime} onCronChange={setCronExpression} onTimezoneChange={setTimezone} onIntervalChange={setIntervalMinutes} onRunAtChange={setRunAt} />
                 </motion.div>
               ) : null}
@@ -998,6 +1102,7 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
       mission: parsed.mission,
       thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "medium",
       executionMode: parsed.executionMode === "isolated-worktree" ? "isolated-worktree" : "standard",
+      browserAccountId: typeof parsed.browserAccountId === "string" ? parsed.browserAccountId : null,
       scheduleMode: isScheduleMode(parsed.scheduleMode) ? parsed.scheduleMode : "now",
       cronExpression: typeof parsed.cronExpression === "string" ? parsed.cronExpression : "0 9 * * 1-5",
       recurrence: isRecurrence(parsed.recurrence) ? parsed.recurrence : "weekdays",
@@ -1016,7 +1121,7 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 function writeComposerDraft(scopeKey: string, draft: DraftRecord) {
   try {
     if (
-      !draft.mission.trim() && draft.thinking === "medium" && draft.executionMode === "standard" &&
+      !draft.mission.trim() && draft.thinking === "medium" && draft.executionMode === "standard" && !draft.browserAccountId &&
       draft.scheduleMode === "now" && draft.cronExpression === "0 9 * * 1-5" &&
       draft.recurrence === "weekdays" && draft.recurrenceTime === "09:00" &&
       draft.intervalMinutes === "60" && !draft.runAt &&
@@ -1029,6 +1134,17 @@ function writeComposerDraft(scopeKey: string, draft: DraftRecord) {
     globalThis.localStorage.setItem(scopeKey, JSON.stringify(draft));
   } catch {
     // Ignore storage failures so the composer still works without persistence.
+  }
+}
+
+function formatSecureAccountStatus(value: string) {
+  switch (value) {
+    case "connected": return "Ready";
+    case "needs_verification": return "Needs verification";
+    case "expired": return "Sign in again";
+    case "recovery_required": return "Recovery needed";
+    case "revoked": return "Revoked";
+    default: return "Unavailable";
   }
 }
 

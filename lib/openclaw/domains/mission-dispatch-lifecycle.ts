@@ -109,6 +109,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     sessionId: null,
     sessionKey: null,
     admissionState: "preparing",
+    initialAdmissionError: null,
     cancellation: null,
     operatorHistory: [],
     mission: payload.mission,
@@ -487,6 +488,9 @@ async function reconcileTerminalMissionDispatchRecordFromRuntime(
   const nextRecord = {
     ...latestRecord,
     status: "completed",
+    initialAdmissionError:
+      latestRecord.initialAdmissionError ??
+      (latestRecord.admissionState === "rejected" ? latestRecord.error : null),
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
     runner: {
       ...latestRecord.runner,
@@ -1000,6 +1004,12 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,
       sessionKey: typeof parsed.sessionKey === "string" ? parsed.sessionKey : null,
       admissionState: normalizeMissionAdmissionState(parsed.admissionState),
+      initialAdmissionError:
+        typeof parsed.initialAdmissionError === "string"
+          ? parsed.initialAdmissionError
+          : parsed.admissionState === "rejected" && typeof parsed.error === "string"
+            ? parsed.error
+            : null,
       cancellation: normalizeMissionCancellation(parsed.cancellation),
       operatorHistory: normalizeMissionOperatorHistory(parsed.operatorHistory),
       mission: parsed.mission,

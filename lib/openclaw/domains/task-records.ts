@@ -37,10 +37,12 @@ export function buildTaskRecord(
   agentNameById: Map<string, string>,
   agentWorkspaceIdById: Map<string, string> = new Map()
 ): TaskRecord {
-  const sortedRuntimes = [...runtimes].sort(sortRuntimesByUpdatedAtDesc);
+  const sortedRuntimes = [...runtimes].sort(sortTaskRuntimesByCurrentExecution);
   const signalRuntimes = selectTaskSignalRuntimes(sortedRuntimes);
+  const currentExecutionRuntime = sortedRuntimes.find((runtime) => runtime.metadata.currentExecution === true);
   const nativeTaskRuntime = sortedRuntimes.find(isNativeTaskRuntime);
   const primaryRuntime =
+    currentExecutionRuntime ??
     nativeTaskRuntime ??
     [...signalRuntimes].sort((left, right) => scoreTaskRuntime(right) - scoreTaskRuntime(left))[0] ??
     signalRuntimes[0] ??
@@ -85,7 +87,7 @@ export function buildTaskRecord(
   const provenance = resolveTaskProvenance(sortedRuntimes, dispatchId);
   const openClawTaskId = resolveOpenClawTaskId(sortedRuntimes);
   const sessionKey = resolveTaskSessionKey(sortedRuntimes);
-  const sessionId = resolveTaskSessionId(sortedRuntimes, sessionIds, sessionKey);
+  const sessionId = resolveTaskSessionId(sortedRuntimes, sessionIds);
   const continuationConfidence = resolveTaskContinuationConfidence(provenance, sessionKey, sessionId);
   const executionIdentity = resolveTaskExecutionIdentity(sortedRuntimes, {
     dispatchId: dispatchId ?? null,
@@ -145,6 +147,7 @@ export function buildTaskRecord(
       sourceId: firstMetadataString(sortedRuntimes, "sourceId"),
       executionIdentity,
       identityProvenance: executionIdentity.provenance,
+      currentExecution: primaryRuntime?.metadata.currentExecution === true,
       sourceOfTruth: nativeTaskRuntime ? "openclaw-tasks.list" : "agentos-dispatch-or-runtime",
       modelId: primaryRuntime?.modelId ?? modelIds[0] ?? null,
       modelIds,
@@ -169,6 +172,17 @@ export function buildTaskRecord(
         (typeof primaryRuntime?.metadata.dispatchStatus === "string"
           ? primaryRuntime.metadata.dispatchStatus
           : null),
+      admissionState:
+        typeof primaryRuntime?.metadata.admissionState === "string"
+          ? primaryRuntime.metadata.admissionState
+          : null,
+      initialAdmissionError:
+        typeof primaryRuntime?.metadata.initialAdmissionError === "string"
+          ? primaryRuntime.metadata.initialAdmissionError
+          : null,
+      operatorHistory: Array.isArray(primaryRuntime?.metadata.operatorHistory)
+        ? primaryRuntime.metadata.operatorHistory
+        : [],
       dispatchSubmittedAt:
         typeof primaryRuntime?.metadata.dispatchSubmittedAt === "string"
           ? primaryRuntime.metadata.dispatchSubmittedAt
@@ -597,6 +611,11 @@ function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: Runtim
 }
 
 function resolveTaskDispatchStatus(runtimes: RuntimeRecord[]): RuntimeRecord["status"] | null {
+  const currentExecution = runtimes.find((runtime) => runtime.metadata.currentExecution === true);
+  if (currentExecution) {
+    return currentExecution.status;
+  }
+
   const statuses = runtimes
     .map((runtime) =>
       typeof runtime.metadata.dispatchStatus === "string" ? runtime.metadata.dispatchStatus.trim() : ""
@@ -723,7 +742,7 @@ function resolveTaskSessionKey(runtimes: RuntimeRecord[]) {
   return null;
 }
 
-function resolveTaskSessionId(runtimes: RuntimeRecord[], sessionIds: string[], sessionKey: string | null) {
+function resolveTaskSessionId(runtimes: RuntimeRecord[], sessionIds: string[]) {
   for (const runtime of runtimes) {
     const metadataSessionId =
       typeof runtime.metadata.openClawSessionId === "string"
@@ -734,19 +753,23 @@ function resolveTaskSessionId(runtimes: RuntimeRecord[], sessionIds: string[], s
             ? runtime.metadata.gatewaySessionId.trim()
             : "";
 
-    if (metadataSessionId && isUsableTaskSessionReference(metadataSessionId)) {
-      return extractExplicitSessionId(metadataSessionId) ?? metadataSessionId;
+    if (
+      metadataSessionId &&
+      !metadataSessionId.startsWith("agent:") &&
+      isUsableTaskSessionReference(metadataSessionId)
+    ) {
+      return metadataSessionId;
     }
   }
 
   for (const sessionId of sessionIds) {
-    const normalized = extractExplicitSessionId(sessionId) ?? sessionId.trim();
-    if (normalized) {
+    const normalized = sessionId.trim();
+    if (normalized && !normalized.startsWith("agent:")) {
       return normalized;
     }
   }
 
-  return extractExplicitSessionId(sessionKey) ?? null;
+  return null;
 }
 
 function resolveTaskContinuationConfidence(
@@ -759,21 +782,6 @@ function resolveTaskContinuationConfidence(
   }
 
   return provenance === "runtime-derived" ? "medium" : "high";
-}
-
-function extractExplicitSessionId(value: string | null | undefined) {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const marker = ":explicit:";
-  const markerIndex = normalized.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return normalized.slice(markerIndex + marker.length).trim() || null;
 }
 
 function isUsableTaskSessionReference(value: string) {
@@ -1071,4 +1079,14 @@ function normalizeOptionalValue(value: string | null | undefined) {
 
 function sortRuntimesByUpdatedAtDesc(left: RuntimeRecord, right: RuntimeRecord) {
   return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
+}
+
+function sortTaskRuntimesByCurrentExecution(left: RuntimeRecord, right: RuntimeRecord) {
+  const leftCurrent = left.metadata.currentExecution === true;
+  const rightCurrent = right.metadata.currentExecution === true;
+  if (leftCurrent !== rightCurrent) {
+    return leftCurrent ? -1 : 1;
+  }
+
+  return sortRuntimesByUpdatedAtDesc(left, right);
 }

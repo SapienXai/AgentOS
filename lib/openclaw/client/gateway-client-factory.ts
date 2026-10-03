@@ -67,6 +67,10 @@ export function createOpenClawGatewayClient(
     password: options.password !== undefined
       ? options.password
       : resolveGatewayCredential("password", "AGENTOS_OPENCLAW_GATEWAY_PASSWORD", "OPENCLAW_GATEWAY_PASSWORD"),
+    // OpenClaw's idempotent sessions.create requires either an authenticated
+    // principal or device identity. Reuse its existing identity alongside
+    // explicit token/password auth; identity creation remains opt-in.
+    includeDeviceIdentityWithExplicitAuth: options.includeDeviceIdentityWithExplicitAuth ?? true,
     stateDir,
     sharedStateMode: options.sharedStateMode ?? "managed-write",
     clientName: options.clientName as GatewayClientName | undefined,

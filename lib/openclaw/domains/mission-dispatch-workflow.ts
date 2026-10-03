@@ -268,7 +268,10 @@ async function submitMissionDispatchOnce(
           payloads: [],
           meta: { executionMode, worktree: created.worktree ?? null }
         },
-        error: createdStatus === "stalled" ? "OpenClaw could not start the isolated worktree session." : null
+        error: createdStatus === "stalled" ? "OpenClaw could not start the isolated worktree session." : null,
+        initialAdmissionError: createdStatus === "stalled"
+          ? "OpenClaw could not start the isolated worktree session."
+          : dispatchRecord.initialAdmissionError ?? null
       };
       await writeMissionDispatchRecord(dispatchRecord);
     }
@@ -362,7 +365,10 @@ async function submitMissionDispatchOnce(
           ...payload,
           sessionKey: payload.sessionKey ?? canonicalSessionKey
         },
-        error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null
+        error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null,
+        initialAdmissionError: nextStatus === "stalled"
+          ? resolveGatewayMissionDispatchError(payload)
+          : dispatchRecord.initialAdmissionError ?? null
       };
       await writeMissionDispatchRecord(dispatchRecord);
 
@@ -390,6 +396,9 @@ async function submitMissionDispatchOnce(
       admissionState: admissionUnknown ? "unknown" : admissionConfirmed
         ? dispatchRecord.admissionState ?? "accepted"
         : "rejected",
+      initialAdmissionError: admissionUnknown || admissionConfirmed
+        ? dispatchRecord.initialAdmissionError ?? null
+        : dispatchRecord.initialAdmissionError ?? message,
       updatedAt: new Date().toISOString(),
       error: admissionConfirmed
         ? dispatchRecord.error
