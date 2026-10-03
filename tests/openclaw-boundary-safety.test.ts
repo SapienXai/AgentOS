@@ -604,7 +604,7 @@ test("sidebar exposes config-driven mission and admin navigation routes", () => 
   assert.ok(navigationSource.includes('id: "home", label: "Home", href: "/dashboard"'));
   assert.ok(navigationSource.includes('id: "mission-control", label: "Mission Control", href: "/"'));
   assert.ok(navigationSource.includes('id: "agents", label: "Agents", href: "/agents", icon: Bot, section: "operate"'));
-  assert.ok(navigationSource.includes('id: "missions", label: "Missions", href: "/missions", icon: ClipboardList, section: "operate"'));
+  assert.ok(navigationSource.includes('id: "missions", label: "Tasks", href: "/missions", icon: ClipboardList, section: "operate"'));
   assert.ok(navigationSource.includes('id: "human-control", label: "Human Control", href: "/human-control", icon: ShieldAlert, section: "operate"'));
   assert.ok(navigationSource.includes('id: "channels", label: "Channels", href: "/channels", icon: MessageCircle, section: "connect"'));
   assert.ok(navigationSource.includes('id: "accounts", label: "Accounts", href: "/accounts", icon: KeyRound, section: "connect"'));

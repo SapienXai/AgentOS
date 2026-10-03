@@ -1,18 +1,9 @@
 import type { MissionControlSnapshot, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
+import type { TaskReviewResolution, TaskReviewStateMap, TaskReviewStatus } from "@/lib/agentos/workforce/task-review";
 
 export const taskReviewStateStorageKey = "mission-control-task-review-state-v1";
 
-export type TaskReviewStatus = "accepted" | "continued" | "retried" | "dismissed";
-
-export type TaskReviewResolution = {
-  taskId: string;
-  taskKey: string;
-  status: TaskReviewStatus;
-  action: string;
-  reviewedAt: string;
-};
-
-export type TaskReviewStateMap = Record<string, TaskReviewResolution>;
+export type { TaskReviewResolution, TaskReviewStateMap, TaskReviewStatus };
 
 export const taskReviewContinuationGraceMs = 2 * 60_000;
 
@@ -22,10 +13,13 @@ export type TaskReviewDisplayOptions = {
   latestEvidenceAt?: string | null;
 };
 
-export function resolveTaskReviewKey(task: Pick<WorkItemRecord, "id" | "key" | "dispatchId">) {
-  const key = typeof task.key === "string" ? task.key.trim() : "";
+export function resolveTaskReviewKey(task: Pick<WorkItemRecord, "id" | "key" | "dispatchId"> & { metadata?: Record<string, unknown> }) {
   const dispatchId = typeof task.dispatchId === "string" ? task.dispatchId.trim() : "";
-  return key || dispatchId || task.id;
+  if (dispatchId) return dispatchId;
+  const nativeTaskId = typeof task.metadata?.openClawTaskId === "string" ? task.metadata.openClawTaskId.trim() : "";
+  if (nativeTaskId) return nativeTaskId;
+  const key = typeof task.key === "string" ? task.key.trim() : "";
+  return key || task.id;
 }
 
 export function createTaskReviewResolution(

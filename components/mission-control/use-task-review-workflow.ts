@@ -4,18 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 
 import { toast } from "@/components/ui/sonner";
 import {
-  createTaskReviewResolution,
   parseTaskReviewState,
   resolveTaskReviewKey,
-  taskReviewStateStorageKey,
   type TaskReviewStateMap,
   type TaskReviewStatus
 } from "@/components/mission-control/task-review-state";
 import { resolveTaskPrompt } from "@/components/mission-control/mission-control-shell.utils";
 import type { WorkItemRecord } from "@/lib/agentos/contracts";
+import type { TaskReviewResolution } from "@/lib/agentos/workforce/task-review";
 import { buildTaskReviewContinuationPrompt } from "@/lib/openclaw/domains/task-review-continuation";
 
-type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
+type InspectorTabId = "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw";
 
 export type TaskReviewRequest = {
   requestId: string;
@@ -60,21 +59,21 @@ export function useTaskReviewWorkflow({
 }: UseTaskReviewWorkflowInput) {
   const [taskReviewRequest, setTaskReviewRequest] = useState<TaskReviewRequest | null>(null);
   const [taskReviewState, setTaskReviewState] = useState<TaskReviewStateMap>({});
-  const [hasHydratedTaskReviewState, setHasHydratedTaskReviewState] = useState(false);
 
   useEffect(() => {
-    const storedTaskReviewState = globalThis.localStorage?.getItem(taskReviewStateStorageKey);
-    setTaskReviewState(parseTaskReviewState(storedTaskReviewState ?? null));
-    setHasHydratedTaskReviewState(true);
+    let cancelled = false;
+    void fetch("/api/task-reviews", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as { reviews?: unknown } | null;
+        if (!response.ok || !payload?.reviews) return;
+        const parsed = parseTaskReviewState(JSON.stringify(payload.reviews));
+        if (!cancelled) setTaskReviewState(parsed);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    if (!hasHydratedTaskReviewState) {
-      return;
-    }
-
-    globalThis.localStorage?.setItem(taskReviewStateStorageKey, JSON.stringify(taskReviewState));
-  }, [hasHydratedTaskReviewState, taskReviewState]);
 
   const clearTaskReviewState = () => {
     setTaskReviewState({});
@@ -82,7 +81,7 @@ export function useTaskReviewWorkflow({
 
   const openTaskReview = useCallback(
     (task: WorkItemRecord) => {
-      selectNode(task.id, "output");
+      selectNode(task.id, "result");
       setTaskReviewRequest({
         requestId: `task-review:${task.id}:${Date.now()}`,
         taskId: task.id,
@@ -94,14 +93,24 @@ export function useTaskReviewWorkflow({
   );
 
   const recordTaskReviewResolution = useCallback(
-    (task: WorkItemRecord, status: TaskReviewStatus, action: string) => {
-      const resolution = createTaskReviewResolution(task, status, action);
+    async (task: WorkItemRecord, status: TaskReviewStatus, action: string) => {
+      const response = await fetch("/api/task-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          dispatchId: task.dispatchId ?? null,
+          status,
+          action
+        })
+      });
+      const payload = await response.json().catch(() => null) as { error?: string; review?: TaskReviewResolution } | null;
+      if (!response.ok || !payload?.review) {
+        throw new Error(payload?.error || "Unable to save the task review decision.");
+      }
 
-      setTaskReviewState((current) => ({
-        ...current,
-        [resolution.taskKey]: resolution
-      }));
-
+      const resolution = payload.review;
+      setTaskReviewState((current) => ({ ...current, [resolution.taskKey]: resolution }));
       return resolution;
     },
     []
@@ -112,23 +121,35 @@ export function useTaskReviewWorkflow({
   }, []);
 
   const acceptTaskReview = useCallback(
-    (task: WorkItemRecord) => {
-      recordTaskReviewResolution(task, "accepted", "Marked evidence accepted");
-      closeTaskReview();
-      toast.success("Captured evidence accepted.", {
-        description: "This browser now marks the review as handled; it does not re-verify OpenClaw delivery."
-      });
+    async (task: WorkItemRecord) => {
+      try {
+        await recordTaskReviewResolution(task, "accepted", "Marked evidence accepted");
+        closeTaskReview();
+        toast.success("Captured evidence accepted.", {
+          description: "The operator decision is saved with the task. The original warning remains in task evidence."
+        });
+      } catch (error) {
+        toast.error("Unable to save the review decision.", {
+          description: error instanceof Error ? error.message : "Review decision was not saved."
+        });
+      }
     },
     [closeTaskReview, recordTaskReviewResolution]
   );
 
   const dismissTaskReview = useCallback(
-    (task: WorkItemRecord) => {
-      recordTaskReviewResolution(task, "dismissed", "Acknowledged review");
-      closeTaskReview();
-      toast.message("Task review acknowledged.", {
-        description: "This browser stores the acknowledgement; the warning remains in task evidence."
-      });
+    async (task: WorkItemRecord) => {
+      try {
+        await recordTaskReviewResolution(task, "dismissed", "Acknowledged review");
+        closeTaskReview();
+        toast.message("Task review acknowledged.", {
+          description: "The warning remains in task evidence."
+        });
+      } catch (error) {
+        toast.error("Unable to save the review decision.", {
+          description: error instanceof Error ? error.message : "Review decision was not saved."
+        });
+      }
     },
     [closeTaskReview, recordTaskReviewResolution]
   );
@@ -160,8 +181,17 @@ export function useTaskReviewWorkflow({
           throw new Error(payload?.error || "Unable to continue this task.");
         }
 
-        recordTaskReviewResolution(task, "continued", operatorMessage?.trim() ? "Sent operator reply" : "Accepted continuation");
-        selectNode(task.id, "output");
+        const continuationReview = (payload as { review?: TaskReviewResolution } | null)?.review;
+        if (continuationReview) {
+          setTaskReviewState((current) => ({ ...current, [continuationReview.taskKey]: continuationReview }));
+        } else {
+          const reviewResponse = await fetch("/api/task-reviews", { cache: "no-store" });
+          const reviewPayload = await reviewResponse.json().catch(() => null) as { reviews?: unknown } | null;
+          if (reviewResponse.ok && reviewPayload?.reviews) {
+            setTaskReviewState(parseTaskReviewState(JSON.stringify(reviewPayload.reviews)));
+          }
+        }
+      selectNode(task.id, "result");
         setIsInspectorOpen(true);
         closeTaskReview();
         void refreshSnapshot({ force: true });
@@ -174,12 +204,19 @@ export function useTaskReviewWorkflow({
         });
       }
     },
-    [closeTaskReview, recordTaskReviewResolution, refreshSnapshot, selectNode, setIsInspectorOpen]
+    [closeTaskReview, refreshSnapshot, selectNode, setIsInspectorOpen]
   );
 
   const retryTaskReview = useCallback(
-    (task: WorkItemRecord) => {
-      recordTaskReviewResolution(task, "retried", "Drafted retry");
+    async (task: WorkItemRecord) => {
+      try {
+        await recordTaskReviewResolution(task, "retried", "Drafted retry");
+      } catch (error) {
+        toast.error("Unable to save the review decision.", {
+          description: error instanceof Error ? error.message : "Review decision was not saved."
+        });
+        return;
+      }
       setComposeIntent({
         id: `review-retry:${task.id}:${Date.now()}`,
         mission: buildTaskReviewRetryPrompt(task),

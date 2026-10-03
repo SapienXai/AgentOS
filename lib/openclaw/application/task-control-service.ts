@@ -198,7 +198,6 @@ async function continueTaskSession(
     includeHidden: true
   }).catch(() => null);
   const dispatchId = taskDetail.task.dispatchId ?? null;
-  const sessionId = target.sessionId ?? target.sessionKey ?? undefined;
   const idempotencyKey = resolveContinuationIdempotencyKey({
     taskId: taskDetail.task.id,
     dispatchId,
@@ -208,15 +207,18 @@ async function continueTaskSession(
   const result = await adapter.runAgentTurn(
     {
       agentId: target.agentId,
-      sessionId: sessionId ?? undefined,
+      sessionKey: target.sessionKey ?? undefined,
+      sessionId: target.sessionId ?? undefined,
       message,
       thinking: "medium",
       timeoutSeconds: 45,
       workspace: resolveTaskWorkspacePath(taskDetail, snapshot),
       dispatchId,
-      idempotencyKey
+      idempotencyKey,
+      admissionOnly: true,
+      sessionAlreadyPrepared: true
     },
-    { ...gatewayOptions, timeoutMs: 60_000 }
+    { ...gatewayOptions, timeoutMs: 30_000, allowCliFallback: false }
   );
 
   return result as Record<string, unknown>;

@@ -22,7 +22,7 @@ export type AgentModelRequest = {
   agentId: string;
 };
 
-type SelectNode = (nodeId: string | null, tab?: "overview" | "chat" | "output" | "files" | "raw", agentDetailFocus?: AgentDetailFocus | null) => void;
+type SelectNode = (nodeId: string | null, tab?: "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw", agentDetailFocus?: AgentDetailFocus | null) => void;
 
 export function useMissionControlAgentActions({
   agents,

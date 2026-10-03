@@ -143,7 +143,7 @@ export type TaskNodeData = Record<string, unknown> & {
   pendingCreation?: boolean;
   justCreated?: boolean;
   locked?: boolean;
-  onInspect?: (task: WorkItemRecord, target: "overview" | "output" | "files", activeCard?: TaskCardInspectorContext | null) => void;
+  onInspect?: (task: WorkItemRecord, target: "overview" | "direction" | "output" | "result" | "files", activeCard?: TaskCardInspectorContext | null) => void;
   onActiveCardChange?: (task: WorkItemRecord, activeCard: TaskCardInspectorContext | null) => void;
   onReviewTask?: (task: WorkItemRecord) => void;
   onReply?: (task: WorkItemRecord) => void;

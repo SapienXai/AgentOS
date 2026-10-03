@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 
 import type { AgentDetailFocus, TaskCardInspectorContext } from "@/components/mission-control/canvas-types";
 
-export type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
+export type InspectorTabId = "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw";
 
 export function useMissionControlSelection(initialWorkspaceId: string | null) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(initialWorkspaceId);

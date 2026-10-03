@@ -3,6 +3,7 @@ import type { WorkforceMissionState } from "@/lib/agentos/workforce/types";
 
 export type WorkforceMissionStateInput = {
   dispatchStatus?: "queued" | "running" | "completed" | "stalled" | "cancelled" | null;
+  admissionState?: "preparing" | "session-created" | "accepted" | "unknown" | "rejected" | null;
   runnerStarted?: boolean;
   rootStatus?: RuntimeStatus | null;
   childStatuses?: RuntimeStatus[];
@@ -48,7 +49,10 @@ export function resolveWorkforceMissionState(input: WorkforceMissionStateInput):
   if (input.connection === "reconnecting") return "reconnecting";
   if (hasActiveChild && !hasActiveRoot && !hasActiveRuntime) return "waiting-worker";
   if (hasActiveRoot || hasActiveRuntime) return "running";
-  if (input.dispatchStatus === "running" || input.runnerStarted) return "starting";
+  if (
+    input.dispatchStatus === "running" || input.runnerStarted ||
+    input.admissionState === "preparing" || input.admissionState === "session-created" || input.admissionState === "unknown"
+  ) return "starting";
   return "queued";
 }
 
@@ -61,7 +65,7 @@ export function workforceMissionStateLabel(state: WorkforceMissionState) {
     case "queued": return "Queued";
     case "running": return "Running";
     case "blocked": return "Blocked";
-    case "completed": return "Completed";
+    case "completed": return "Done";
     case "failed": return "Failed";
     case "cancelled": return "Cancelled";
   }
@@ -69,7 +73,7 @@ export function workforceMissionStateLabel(state: WorkforceMissionState) {
 
 export function deriveMissionTitle(goal: string) {
   const normalized = goal.replace(/\s+/g, " ").trim();
-  if (!normalized) return "Untitled mission";
+  if (!normalized) return "Untitled task";
   return normalized.length <= 72 ? normalized : `${normalized.slice(0, 69).trimEnd()}…`;
 }
 

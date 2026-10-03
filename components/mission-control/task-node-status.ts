@@ -51,13 +51,19 @@ export function resolveTaskBadgeLabel(
     return hasRuntimeOutputEvidence ? "needs review" : "waiting output";
   }
 
+  if (status === "completed") {
+    return "done";
+  }
+
   if (!isPendingCreation || !bootstrapStage) {
     return status;
   }
 
   switch (bootstrapStage) {
     case "submitting":
-      return "submitting";
+      return "starting";
+    case "admission-unknown":
+      return "starting · admission unconfirmed";
     case "accepted":
       return "accepted";
     case "waiting-for-heartbeat":
@@ -67,7 +73,7 @@ export function resolveTaskBadgeLabel(
     case "runtime-observed":
       return hasRuntimeOutputEvidence ? status : "waiting output";
     case "completed":
-      return "completed";
+      return "done";
     default:
       return status;
   }

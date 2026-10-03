@@ -60,7 +60,10 @@ export async function POST(
       ? visibleSnapshot.workspaces.some((workspace) => workspace.id === dispatchCandidate.workspaceId)
       : visibleSnapshot.agents.some((agent) => agent.id === dispatchCandidate.agentId)
   ));
-  if (!visibleTask && !visibleDispatch) {
+  const targetMatches = visibleTask
+    ? !parseResult.data.dispatchId || visibleSnapshot.tasks.find((task) => task.id === taskId)?.dispatchId === parseResult.data.dispatchId
+    : Boolean(dispatchCandidate && dispatchCandidate.id === taskId);
+  if ((!visibleTask && !visibleDispatch) || !targetMatches) {
     return NextResponse.json({ error: "Task was not found." }, { status: 404 });
   }
 
@@ -73,7 +76,7 @@ export async function POST(
     );
     return NextResponse.json(redactSecrets({
       result
-    }));
+    }), { status: result.cancellationStatus === "confirmed" ? 200 : 202 });
   } catch (error) {
     return NextResponse.json(
       {

@@ -14,7 +14,6 @@ import {
   FolderGit2,
   FolderKanban,
   Lock,
-  MessageSquareText,
   MoreHorizontal,
   Radar,
   RotateCcw,
@@ -36,6 +35,7 @@ import { AgentRuntimeSummaryPanel } from "@/components/mission-control/inspector
 import { OverviewGatewaySummaryPanel } from "@/components/mission-control/inspector/overview-panel";
 import { RuntimeEvidencePanel } from "@/components/mission-control/inspector/runtime-panel";
 import { TaskSessionTruthPanel } from "@/components/mission-control/inspector/task-panel";
+import { TaskFollowUpComposer } from "@/components/mission-control/task-follow-up";
 import {
   buildInspectorAgentRuntimeView,
   buildInspectorRuntimeEvidenceView,
@@ -56,6 +56,7 @@ import {
 } from "@/components/mission-control/use-inspector-panel-data";
 import { useModelCatalog } from "@/hooks/use-model-catalog";
 import { isSelectableModel } from "@/lib/openclaw/domains/model-management";
+import { resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge as UiBadge, type BadgeProps } from "@/components/ui/badge";
@@ -109,8 +110,8 @@ type InspectorPanelProps = {
   detailExpanded: boolean;
   onExpandDetail: () => void;
   onSelectScope: (scope: InspectorScopeShortcut) => void;
-  activeTab: "overview" | "chat" | "output" | "files" | "raw";
-  onActiveTabChange: (tab: "overview" | "chat" | "output" | "files" | "raw") => void;
+  activeTab: "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw";
+  onActiveTabChange: (tab: "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw") => void;
   onBackFromChat?: () => void;
 };
 
@@ -128,7 +129,7 @@ const STEER_SUGGESTIONS = [
   "Continue from the latest failure"
 ] as const;
 
-type RunningTaskControlMode = "steer" | "inject";
+type RunningTaskControlMode = "steer";
 
 function Badge({ className, ...props }: BadgeProps) {
   return <UiBadge {...props} className={cn(INSPECTOR_BADGE_CLASS_NAME, className)} />;
@@ -217,14 +218,20 @@ function InspectorPanelContent({
   const runtimeOutputLoading =
     Boolean(selectedRuntimeId) && !resolvedRuntimeOutput && !resolvedRuntimeOutputError;
   const showChatTab = Boolean(selectedAgent);
+  const showDirectionTab = Boolean(selectedTask);
+  const showResultTab = Boolean(selectedTask);
   const showOutputTab = Boolean(selectedRuntime || selectedTask);
   const showFilesTab = Boolean(selectedRuntime || selectedTask);
   const visibleActiveTab =
     activeTab === "chat" && !showChatTab
       ? "overview"
-      : activeTab === "output" && !showOutputTab
+      : activeTab === "direction" && !showDirectionTab
         ? "overview"
-        : activeTab === "files" && !showFilesTab
+        : activeTab === "output" && !showOutputTab
+          ? "overview"
+          : activeTab === "result" && !showResultTab
+            ? "overview"
+            : activeTab === "files" && !showFilesTab
           ? "overview"
           : activeTab === "raw" && !detailExpanded
             ? "overview"
@@ -256,13 +263,15 @@ function InspectorPanelContent({
   const detailTabs = useMemo(
     () =>
       [
-        { id: "overview", label: "Summary", enabled: true },
+        { id: "overview", label: selectedTask ? "Overview" : "Summary", enabled: true },
         { id: "chat", label: "Chat", enabled: showChatTab },
         { id: "output", label: selectedTask ? "Activity" : outputTabLabel, enabled: showOutputTab },
+        { id: "direction", label: "Direction", enabled: showDirectionTab },
+        { id: "result", label: "Result", enabled: showResultTab },
         { id: "files", label: "Files", enabled: showFilesTab },
-        { id: "raw", label: "Debug", enabled: detailExpanded && activeTab === "raw" }
+        { id: "raw", label: "Technical details", enabled: detailExpanded && activeTab === "raw" }
       ] satisfies Array<{ id: InspectorPanelTab; label: string; enabled: boolean }>,
-    [activeTab, detailExpanded, outputTabLabel, selectedTask, showChatTab, showFilesTab, showOutputTab]
+    [activeTab, detailExpanded, outputTabLabel, selectedTask, showChatTab, showDirectionTab, showFilesTab, showOutputTab, showResultTab]
   );
   const visibleDetailTabs = useMemo(() => detailTabs.filter((item) => item.enabled), [detailTabs]);
   const scopeItems = [
@@ -426,7 +435,7 @@ function InspectorPanelContent({
                   {!isChatView ? (
                     <button
                     type="button"
-                    aria-label="Open debug data"
+                    aria-label="Open technical details"
                     onClick={() => {
                       if (!detailExpanded) onExpandDetail();
                       onActiveTabChange("raw");
@@ -529,7 +538,11 @@ function InspectorPanelContent({
                         taskDetail={effectiveTaskDetail}
                         runtimeOutput={resolvedRuntimeOutput}
                         runtimeOutputLoading={runtimeOutputLoading}
-                        onOpenActivity={() => onActiveTabChange("output")}
+                        onOpenActivity={() => onActiveTabChange(
+                          selectedTask && (selectedTask.status === "completed" || selectedTask.status === "stalled")
+                            ? "result"
+                            : "output"
+                        )}
                         onOpenChat={() => onActiveTabChange("chat")}
                         onOpenDetail={onExpandDetail}
                         onReviewTask={onReviewTask}
@@ -547,17 +560,6 @@ function InspectorPanelContent({
                               onConfigureAgentCapabilities={onConfigureAgentCapabilities}
                             />
                           ) : null}
-                          {selectedTask ? (
-                            <TaskContent
-                              snapshot={snapshot}
-                              task={selectedTask}
-                              taskId={selectedTask.id}
-                              taskDetail={effectiveTaskDetail}
-                              taskDetailLoading={taskDetailLoading}
-                              taskDetailError={resolvedTaskDetailError}
-                              taskDetailNotice={resolvedTaskDetailNotice}
-                            />
-                          ) : null}
                           {selectedRuntime ? (
                             <RuntimeContent
                               snapshot={snapshot}
@@ -572,6 +574,22 @@ function InspectorPanelContent({
                           {selectedModel ? <ModelContent snapshot={snapshot} modelId={selectedModel.id} /> : null}
                           {!selectedEntity ? <GatewayOverview snapshot={snapshot} lastMission={lastMission} /> : null}
                         </>
+                      ) : null}
+                      {selectedTask ? (
+                        <details className="rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                          <summary className="cursor-pointer text-sm font-medium">Technical details</summary>
+                          <div className="mt-3 space-y-3">
+                            <TaskContent
+                              snapshot={snapshot}
+                              task={selectedTask}
+                              taskId={selectedTask.id}
+                              taskDetail={effectiveTaskDetail}
+                              taskDetailLoading={taskDetailLoading}
+                              taskDetailError={resolvedTaskDetailError}
+                              taskDetailNotice={resolvedTaskDetailNotice}
+                            />
+                          </div>
+                        </details>
                       ) : null}
                     </>
                   ) : null}
@@ -616,6 +634,21 @@ function InspectorPanelContent({
                       runtimeOutput={resolvedRuntimeOutput}
                       runtimeOutputLoading={runtimeOutputLoading}
                       runtimeOutputError={resolvedRuntimeOutputError}
+                    />
+                  ) : null}
+
+                  {visibleActiveTab === "direction" && selectedTask ? (
+                    <TaskDirectionContent
+                      task={effectiveTaskDetail?.task ?? selectedTask}
+                      onControlComplete={onRefresh}
+                    />
+                  ) : null}
+
+                  {visibleActiveTab === "result" && selectedTask ? (
+                    <TaskResultContent
+                      task={selectedTask}
+                      taskDetail={effectiveTaskDetail}
+                      basePath={resolveTaskWorkspacePath(snapshot, selectedTask, effectiveTaskDetail?.runs)}
                     />
                   ) : null}
 
@@ -1942,7 +1975,7 @@ function TaskContent({
 
   return (
     <>
-      <InfoCard icon={FolderGit2} title="Mission" value={isAborted ? "aborted" : selectedTask.status}>
+      <InfoCard icon={FolderGit2} title="Task" value={isAborted ? "cancelled" : selectedTask.status}>
         <TaskTextPanel label="Original prompt" text={originalPrompt} basePath={workspacePath} />
         <TaskTextPanel
           label="Sent to OpenClaw"
@@ -2277,11 +2310,11 @@ function RunningTaskControlBar({
   const [message, setMessage] = useState("");
   const [pendingMode, setPendingMode] = useState<RunningTaskControlMode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const isRunning = isTaskControlAvailable(task);
+  const isRunning = task.status === "running" || task.liveRunCount > 0;
   const canAbortTask = Boolean(onAbortTask) && isTaskAbortable(task);
   const trimmedMessage = message.trim();
 
-  if (!isRunning) {
+  if (!isRunning && !canAbortTask) {
     return null;
   }
 
@@ -2316,15 +2349,15 @@ function RunningTaskControlBar({
       }
 
       const transportNotice = readControlTransportNotice(payload);
-      toast.success(
-        transportNotice?.title ?? (mode === "steer" ? "Steer request sent." : "Context added to session."),
-        transportNotice?.description ? { description: transportNotice.description } : undefined
-      );
+      toast.message(transportNotice?.title ?? "Direction accepted.", {
+        description: transportNotice?.description ??
+          "OpenClaw accepted the instruction. AgentOS will check task activity for the result."
+      });
       setMode(null);
       setMessage("");
       void onControlComplete?.();
     } catch (error) {
-      toast.error(mode === "steer" ? "Steer request failed." : "Context injection failed.", {
+      toast.error("Direction could not be sent.", {
         description: error instanceof Error ? error.message : "Unknown control error."
       });
     } finally {
@@ -2336,7 +2369,7 @@ function RunningTaskControlBar({
     <div className={cn("rounded-[12px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,20,34,0.72),rgba(5,13,25,0.7))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]", compact ? "p-0" : "p-3")}>
       {compact ? (
         <div className="relative flex gap-1.5">
-          <Button
+          {isRunning ? <Button
             type="button"
             variant={mode === "steer" ? "default" : "secondary"}
             size="sm"
@@ -2349,8 +2382,8 @@ function RunningTaskControlBar({
             onClick={() => openMode("steer")}
           >
             <Pencil className="h-3.5 w-3.5" />
-            Steer task
-          </Button>
+            Give direction
+          </Button> : null}
           <button
             type="button"
             aria-label="More task controls"
@@ -2362,17 +2395,6 @@ function RunningTaskControlBar({
           </button>
           {menuOpen ? (
             <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[156px] rounded-[10px] border border-white/[0.1] bg-slate-950/96 p-1 shadow-[0_14px_32px_rgba(0,0,0,0.34)]">
-              <button
-                type="button"
-                onClick={() => {
-                  openMode("inject");
-                  setMenuOpen(false);
-                }}
-                className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[11px] text-slate-200 hover:bg-white/[0.06]"
-              >
-                <MessageSquareText className="h-3.5 w-3.5 text-sky-200" />
-                Inject context
-              </button>
               <button
                 type="button"
                 disabled={!canAbortTask}
@@ -2390,8 +2412,8 @@ function RunningTaskControlBar({
       ) : (
         <>
           <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-200/60">Quick actions</p>
-          <div className="grid gap-2 sm:grid-cols-3">
-        <Button
+          <div className={cn("grid gap-2", isRunning && canAbortTask ? "sm:grid-cols-2" : "sm:grid-cols-1")}>
+        {canAbortTask ? <Button
           type="button"
           variant="destructive"
           size="sm"
@@ -2407,8 +2429,8 @@ function RunningTaskControlBar({
         >
           <AlertTriangle className="h-3.5 w-3.5" />
           Stop
-        </Button>
-        <Button
+        </Button> : null}
+        {isRunning ? <Button
           type="button"
           variant={mode === "steer" ? "default" : "secondary"}
           size="sm"
@@ -2421,23 +2443,8 @@ function RunningTaskControlBar({
           onClick={() => openMode("steer")}
         >
           <Pencil className="h-3.5 w-3.5" />
-          Steer
-        </Button>
-        <Button
-          type="button"
-          variant={mode === "inject" ? "default" : "secondary"}
-          size="sm"
-          className={cn(
-            "h-11 justify-start gap-2 rounded-[14px] border px-3 text-[12px]",
-            mode === "inject"
-              ? "border-sky-100/[0.18] bg-sky-200/[0.12] text-sky-50 shadow-[0_0_18px_rgba(125,211,252,0.1)]"
-              : "border-sky-100/[0.08] bg-white/[0.045] text-slate-100 hover:bg-white/[0.08]"
-          )}
-          onClick={() => openMode("inject")}
-        >
-          <MessageSquareText className="h-3.5 w-3.5" />
-          Add context
-        </Button>
+          Give direction
+        </Button> : null}
           </div>
         </>
       )}
@@ -2450,9 +2457,7 @@ function RunningTaskControlBar({
             rows={3}
             maxLength={4000}
             placeholder={
-              mode === "steer"
-                ? "Focus on tests"
-                : "Inject this note/reference into the running session"
+              "What should change in the current task?"
             }
             className="min-h-[86px] rounded-[14px] border-sky-100/[0.08] bg-slate-950/40 px-3 py-2.5 text-[12px] leading-5 text-slate-100 placeholder:text-slate-500"
             onChange={(event) => setMessage(event.target.value)}
@@ -2494,7 +2499,7 @@ function RunningTaskControlBar({
               className="h-8 rounded-[10px] px-2.5 text-[11px]"
               onClick={() => void submitControl()}
             >
-              {pendingMode ? "Sending..." : mode === "steer" ? "Send steer" : "Add context"}
+              {pendingMode ? "Sending..." : "Send direction"}
             </Button>
           </div>
         </div>
@@ -2784,6 +2789,88 @@ function readOperationRunHistory(task: MissionControlSnapshot["tasks"][number]):
   return [...byId.values()]
     .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
     .slice(0, 24);
+}
+
+function TaskDirectionContent({
+  task,
+  onControlComplete
+}: {
+  task: WorkItemRecord;
+  onControlComplete?: () => Promise<void> | void;
+}) {
+  const availability = resolveTaskFollowUpAvailability(task);
+  const isRunning = task.status === "running" || task.liveRunCount > 0;
+  const canContinue = (task.status === "completed" || task.status === "stalled") && availability.available;
+
+  if (isRunning) {
+    return (
+      <InfoCard icon={Pencil} title="Give direction" value="OpenClaw session active">
+        <p>Send an instruction to the current OpenClaw run. Acceptance confirms delivery to the session; task activity will show what happened next.</p>
+        <RunningTaskControlBar task={task} onControlComplete={onControlComplete} compact={false} />
+      </InfoCard>
+    );
+  }
+
+  if (canContinue) {
+    return (
+      <InfoCard icon={Pencil} title="Continue task" value="Existing session">
+        <p>Continue in the task’s existing OpenClaw session. The original goal remains unchanged.</p>
+        {availability.warning ? <p className="text-amber-700 dark:text-amber-200">{availability.warning}</p> : null}
+        <TaskFollowUpComposer
+          task={task}
+          latestResult={readTaskResultPreview(task)}
+          latestResultLabel="Latest task result"
+          outputSummary={task.subtitle}
+          placeholder="What should the agent do next?"
+          intentLabel="Task continuation"
+          submitLabel="Continue task"
+          onControlComplete={onControlComplete}
+        />
+      </InfoCard>
+    );
+  }
+
+  return (
+    <InfoCard icon={Pencil} title="Direction unavailable" value={task.status}>
+      <p>{availability.reason || "Direction becomes available after OpenClaw confirms the task session."}</p>
+      <p>Use Activity to check the latest runtime evidence and refresh the task state.</p>
+    </InfoCard>
+  );
+}
+
+function TaskResultContent({
+  task,
+  taskDetail,
+  basePath
+}: {
+  task: WorkItemRecord;
+  taskDetail: TaskDetailRecord | null;
+  basePath?: string | null;
+}) {
+  const result = readTaskResultPreview(taskDetail?.task ?? task);
+  const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
+  const stateLabel = task.status === "completed"
+    ? "Done"
+    : task.status === "stalled"
+      ? "Review"
+      : task.status;
+
+  return (
+    <InfoCard icon={FileJson} title="Task result" value={stateLabel}>
+      {result ? (
+        <TaskTextPanel label="Latest result" text={result} basePath={basePath} />
+      ) : (
+        <p>No activity captured yet.</p>
+      )}
+      {integrity.issues.length > 0 ? (
+        <div className="rounded-[12px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-900 dark:text-amber-100">
+          <p className="font-medium">Result needs review</p>
+          <p className="mt-1">{integrity.issues[0]?.detail}</p>
+        </div>
+      ) : null}
+      {task.warningCount > 0 && integrity.issues.length === 0 ? <p>Captured result includes runtime warnings. Review Activity for details.</p> : null}
+    </InfoCard>
+  );
 }
 
 function TaskFilesContent({
@@ -3135,10 +3222,6 @@ function isTaskAbortable(task: MissionControlSnapshot["tasks"][number]) {
 
   const runtimeStatus = task.status as string;
   return runtimeStatus === "running" || runtimeStatus === "queued";
-}
-
-function isTaskControlAvailable(task: MissionControlSnapshot["tasks"][number]) {
-  return isTaskAbortable(task) || task.liveRunCount > 0;
 }
 
 function readControlError(payload: unknown) {

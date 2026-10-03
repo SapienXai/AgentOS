@@ -18,6 +18,61 @@ type SurfaceTheme = "dark" | "light";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider" | "verify";
 const workspaceSelectionStorageKeyPrefix = "mission-control-active-workspace-id";
 const workspaceSelectionStorageAllValue = "__all__";
+const pendingMissionRequestsStorageKey = "mission-control-pending-task-requests:v1";
+
+export type PendingMissionRequest = {
+  requestId: string;
+  mission: string;
+  agentId: string;
+  workspaceId: string | null;
+  submittedAt: number;
+};
+
+export function readPendingMissionRequests(): PendingMissionRequest[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(pendingMissionRequestsStorageKey);
+    const parsed = raw ? JSON.parse(raw) as unknown : null;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const item = entry as Record<string, unknown>;
+      if (
+        typeof item.requestId !== "string" || !item.requestId.trim() ||
+        typeof item.mission !== "string" || !item.mission.trim() ||
+        typeof item.agentId !== "string" || !item.agentId.trim() ||
+        typeof item.submittedAt !== "number" || !Number.isFinite(item.submittedAt)
+      ) return [];
+      return [{
+        requestId: item.requestId.trim(),
+        mission: item.mission,
+        agentId: item.agentId.trim(),
+        workspaceId: typeof item.workspaceId === "string" && item.workspaceId.trim() ? item.workspaceId.trim() : null,
+        submittedAt: item.submittedAt
+      }];
+    }).filter((entry) => Date.now() - entry.submittedAt <= 30 * 24 * 60 * 60 * 1000);
+  } catch {
+    return [];
+  }
+}
+
+export function writePendingMissionRequest(request: PendingMissionRequest) {
+  try {
+    const current = readPendingMissionRequests().filter((entry) => entry.requestId !== request.requestId);
+    globalThis.localStorage?.setItem(pendingMissionRequestsStorageKey, JSON.stringify([...current, request].slice(-50)));
+  } catch {
+    // Keep task submission available when browser storage is unavailable.
+  }
+}
+
+export function removePendingMissionRequest(requestId: string) {
+  try {
+    const current = readPendingMissionRequests().filter((entry) => entry.requestId !== requestId);
+    if (current.length === 0) globalThis.localStorage?.removeItem(pendingMissionRequestsStorageKey);
+    else globalThis.localStorage?.setItem(pendingMissionRequestsStorageKey, JSON.stringify(current));
+  } catch {
+    // Keep task interaction available when browser storage is unavailable.
+  }
+}
 
 export type OptimisticMissionTask = {
   requestId: string;
@@ -59,7 +114,6 @@ type MissionDispatchStart = {
   agentId: string;
   workspaceId: string | null;
   submittedAt: number;
-  abortController: AbortController;
 };
 
 export function resolveUpdateDialogTitle(runState: UpdateRunState, mode: UpdateMode = "recommended") {
@@ -366,7 +420,7 @@ export function createOptimisticMissionTaskRecord(
     id: `optimistic:${event.requestId}:submitted`,
     kind: "user",
     timestamp: submittedAtIso,
-    title: "Mission submitted",
+    title: "Task submitted",
     detail: summarizeTaskTitle(event.mission, 220),
     agentId: event.agentId
   };
@@ -379,7 +433,7 @@ export function createOptimisticMissionTaskRecord(
       key: `optimistic:${event.requestId}`,
       title: summarizeTaskTitle(event.mission, 86),
       mission: event.mission,
-      subtitle: "Sending mission to AgentOS. Waiting for a dispatch id.",
+      subtitle: "Starting — confirming session and run admission with OpenClaw.",
       status: "queued",
       updatedAt: event.submittedAt,
       ageMs: 0,

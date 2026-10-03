@@ -1,4 +1,5 @@
 import { getTaskDetail } from "@/lib/agentos/control-plane";
+import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import type { TaskDetailRecord, TaskDetailStreamEvent } from "@/lib/agentos/contracts";
 import {
   getOpenClawEventBridgeStreamStatus,
@@ -6,6 +7,7 @@ import {
 } from "@/lib/openclaw/application/event-bridge-service";
 import type { OpenClawGatewayEventFrame } from "@/lib/openclaw/client/gateway-client";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +34,21 @@ export async function GET(
   let closed = false;
   let taskRequest: Promise<void> | null = null;
   const relatedIds = new Set([taskId, dispatchId].filter((value): value is string => Boolean(value)));
+
+  const authorization = await requireAgentOsProductPermission(request, "tasks.use");
+  if ("response" in authorization) return authorization.response;
+
+  const visibleSnapshot = await getMissionControlSnapshot({ includeHidden: false });
+  const visibleTask = visibleSnapshot.tasks.find((candidate) =>
+    candidate.id === taskId || (dispatchId && candidate.dispatchId === dispatchId)
+  );
+  if (
+    !visibleTask ||
+    (dispatchId && visibleTask.dispatchId !== dispatchId) ||
+    (!visibleTask.dispatchId && taskId !== visibleTask.id)
+  ) {
+    return Response.json({ error: "Task was not found." }, { status: 404 });
+  }
 
   const stream = new ReadableStream({
     async start(controller) {

@@ -1734,6 +1734,8 @@ export interface MissionAbortResponse {
   runnerPid: number | null;
   childPid: number | null;
   abortedAt: string;
+  cancellationStatus?: "requested" | "unknown" | "confirmed";
+  requestedAt?: string;
 }
 
 export type OpenClawUpdateStreamEvent =

@@ -10,12 +10,9 @@ import {
   ChevronDown,
   Copy,
   CornerDownLeft,
-  Coins,
-  Cpu,
   EyeOff,
   Lock,
   LockOpen,
-  History,
   MessageSquare,
   MoreHorizontal,
   Pause,
@@ -173,9 +170,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [mergedFeed]
   );
   const displayTask = mergeLocalTaskReviewMetadata(detail?.task, data.task);
-  const operationRunCount = readNonNegativeMetric(displayTask.metadata.operationRunCount);
-  const taskRunCount = operationRunCount ?? displayTask.runtimeCount;
-  const taskTokenCount = displayTask.tokenUsage?.total;
   const persistedFollowUps = useMemo(
     () => readTaskFollowUpsFromMetadata(displayTask.metadata),
     [displayTask.metadata]
@@ -192,16 +186,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     typeof displayTask.metadata.dispatchSubmittedAt === "string"
       ? displayTask.metadata.dispatchSubmittedAt
       : null;
-  const observedModelId =
-    typeof displayTask.metadata.modelId === "string" && displayTask.metadata.modelId.trim()
-      ? displayTask.metadata.modelId.trim()
-      : null;
-  const requestedModelId =
-    typeof displayTask.metadata.requestedModelId === "string" && displayTask.metadata.requestedModelId.trim()
-      ? displayTask.metadata.requestedModelId.trim()
-      : null;
-  const taskModelId = observedModelId ?? requestedModelId;
-  const taskRunReference = formatTaskRunReference(displayTask.dispatchId, displayTask.runIds[0]);
   const isPendingCreation = detail
     ? isPendingTaskBootstrapStage(bootstrapStage)
     : Boolean(data.pendingCreation || isPendingTaskBootstrapStage(bootstrapStage));
@@ -712,32 +696,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           <div className={cn("mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[9px]", isCompactMonitor && "hidden", surfaceTone.mutedText)}>
             {dispatchSubmittedAt ? (
               <span title={new Date(dispatchSubmittedAt).toLocaleString()}>
-                Started <span className={surfaceTone.text}>{formatTimelineDate(dispatchSubmittedAt)}</span>
+                {isLiveTask ? "Elapsed" : "Started"} <span className={surfaceTone.text}>{isLiveTask
+                  ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
+                  : formatTimelineDate(dispatchSubmittedAt)}</span>
               </span>
             ) : null}
-            {taskModelId ? (
-              <span className="inline-flex min-w-0 items-center gap-1" title={`${observedModelId ? "Runtime model" : "Requested model (runtime did not confirm usage)"}: ${taskModelId}`}>
-                <Cpu className="h-3 w-3 shrink-0" />
-                <span className="max-w-[160px] truncate text-current">
-                  {observedModelId ? "Model" : "Requested"} <span className={surfaceTone.text}>{taskModelId}</span>
-                </span>
-              </span>
-            ) : (
-              <span title="OpenClaw did not expose a model for this run.">Model unavailable</span>
-            )}
-            {taskRunReference ? (
-              <span title={displayTask.dispatchId ?? displayTask.runIds[0] ?? undefined}>
-                Run <span className={cn("font-mono", surfaceTone.text)}>{taskRunReference}</span>
-              </span>
-            ) : null}
-            <span className="inline-flex items-center gap-1" title={`${taskRunCount} OpenClaw run${taskRunCount === 1 ? "" : "s"} observed for this task`}>
-              <History className="h-3 w-3 shrink-0" />
-              <span className={surfaceTone.text}>{formatCompactTaskMetric(taskRunCount)}</span> run{taskRunCount === 1 ? "" : "s"}
-            </span>
-            <span className="inline-flex items-center gap-1" title={typeof taskTokenCount === "number" ? `${taskTokenCount.toLocaleString()} tokens reported by OpenClaw` : "OpenClaw did not report token usage for this task"}>
-              <Coins className="h-3 w-3 shrink-0" />
-              {typeof taskTokenCount === "number" ? <><span className={surfaceTone.text}>{formatCompactTaskMetric(taskTokenCount)}</span> tokens</> : "Tokens not reported"}
-            </span>
           </div>
 
           <div className={cn("mt-2 flex flex-wrap items-center gap-1.5", isCompactMonitor && "mt-1")}>
@@ -751,15 +714,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 <Sparkles className="h-3 w-3" />
                 new
               </Badge>
-            ) : null}
-            {followUps.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setExpanded(true)}
-                className={cn("nodrag nopan rounded-[7px] border px-1.5 py-1 text-[9px] font-medium", surfaceTone.subtleButton)}
-              >
-                {followUps.length} follow-up{followUps.length === 1 ? "" : "s"}
-              </button>
             ) : null}
             {operationSchedule ? (
               <span className={cn("inline-flex max-w-full items-center gap-1 rounded-[8px] border px-2 py-1 text-[9px]", isCompactMonitor && "rounded-[6px] px-1.5 py-0.5 text-[8px]", surfaceTone.subtleButton)} title={operationSchedule}>
@@ -794,7 +748,15 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   return;
                 }
 
-                data.onInspect?.(data.task, primaryAction === "view-details" ? "overview" : "output", activeInspectorContext);
+                data.onInspect?.(
+                  data.task,
+                  primaryAction === "view-details"
+                    ? "overview"
+                    : primaryAction === "view-result"
+                      ? "result"
+                      : "output",
+                  activeInspectorContext
+                );
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
@@ -810,15 +772,17 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               )}
               onClick={(event) => {
                 event.stopPropagation();
-                setExpanded(true);
-                setComposerExpanded(true);
-                requestAnimationFrame(() => composerInputRef.current?.focus());
+                if (data.onInspect) {
+                  data.onInspect(data.task, "direction", activeInspectorContext);
+                } else {
+                  setExpanded(true);
+                  setComposerExpanded(true);
+                  requestAnimationFrame(() => composerInputRef.current?.focus());
+                }
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
-              {reviewPresentation.deliveryUnconfirmed && !activeFollowUp
-                ? reviewPresentation.followUpLabel
-                : "Follow up"}
+              {displayTask.status === "running" ? "Give direction" : "Continue task"}
             </button> : null}
             {!isCompactMonitor && operationSchedule && operationJobId ? (
               <OperationScheduleControl
@@ -1145,6 +1109,7 @@ function tabStatusDotClassName(status: string) {
 function isPendingTaskBootstrapStage(bootstrapStage: string | null) {
   return (
     bootstrapStage === "submitting" ||
+    bootstrapStage === "admission-unknown" ||
     bootstrapStage === "accepted" ||
     bootstrapStage === "waiting-for-heartbeat" ||
     bootstrapStage === "waiting-for-runtime" ||
@@ -1159,7 +1124,9 @@ function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: num
 
   switch (bootstrapStage) {
     case "submitting":
-      return "contacting dispatcher";
+      return "confirming session and run admission";
+    case "admission-unknown":
+      return "admission unconfirmed · refresh before retrying";
     case "accepted":
       return "dispatch accepted";
     case "waiting-for-heartbeat":
@@ -1700,16 +1667,6 @@ function formatTimelineDate(value: string) {
   return Number.isNaN(date.getTime()) ? "unknown time" : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function formatTaskRunReference(dispatchId: string | undefined, runId: string | undefined) {
-  const value = dispatchId?.trim() || runId?.trim();
-
-  if (!value) {
-    return null;
-  }
-
-  return value.replace(/^dispatch-/, "").slice(0, 8);
-}
-
 function OperationScheduleControl({ jobId, label, cronExpression, timezone, scheduleKind, triggerAt, intervalMs, surfaceTheme, onSaved }: {
   jobId: string; label: string; cronExpression: string | null; timezone: string | null; scheduleKind: "at" | "every" | "cron" | null; triggerAt: string | null; intervalMs: number | null; surfaceTheme: "dark" | "light"; onSaved: () => void;
 }) {
@@ -1830,17 +1787,6 @@ function TaskMenuButton({
       <span>{label}</span>
     </button>
   );
-}
-
-function readNonNegativeMetric(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function formatCompactTaskMetric(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    notation: value >= 1_000 ? "compact" : "standard",
-    maximumFractionDigits: value >= 1_000 ? 1 : 0
-  }).format(value);
 }
 
 function resolveTaskDispatchStatus(task: TaskFlowNode["data"]["task"]) {

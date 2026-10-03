@@ -15,6 +15,8 @@ export interface OpenClawCommandOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   forceCli?: boolean;
+  /** Prevent mutation requests from silently moving to a different CLI target. */
+  allowCliFallback?: boolean;
   /** Expected config snapshot hash for a server-side optimistic mutation. */
   baseHash?: string;
   /** Exact array paths whose removal is intentional for a native config mutation. */
@@ -1721,6 +1723,10 @@ export interface OpenClawAgentTurnInput {
   workspace?: string | null;
   dispatchId?: string | null;
   idempotencyKey?: string | null;
+  /** Return after OpenClaw confirms admission instead of waiting for execution. */
+  admissionOnly?: boolean;
+  /** The caller created and persisted this session before submitting the turn. */
+  sessionAlreadyPrepared?: boolean;
   local?: boolean;
 }
 
@@ -1783,9 +1789,9 @@ export type OpenClawTaskSuggestionAcceptMode = "worktree" | "local" | "cloud" | 
 
 export interface OpenClawSessionCreateInput {
   agentId: string;
-  task: string;
-  cwd: string;
-  worktree: true;
+  task?: string;
+  cwd?: string;
+  worktree?: boolean;
   key?: string;
   idempotencyKey?: string;
   label?: string;

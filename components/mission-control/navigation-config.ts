@@ -43,7 +43,7 @@ export const navigationItems: readonly NavigationItem[] = [
   { id: "home", label: "Home", href: "/dashboard", icon: Inbox, section: "operate", rail: true },
   { id: "mission-control", label: "Mission Control", href: "/", icon: Gauge, section: "operate", rail: true },
   { id: "agents", label: "Agents", href: "/agents", icon: Bot, section: "operate", rail: true },
-  { id: "missions", label: "Missions", href: "/missions", icon: ClipboardList, section: "operate", rail: true },
+  { id: "missions", label: "Tasks", href: "/missions", icon: ClipboardList, section: "operate", rail: true },
   { id: "human-control", label: "Human Control", href: "/human-control", icon: ShieldAlert, section: "operate", rail: true },
   { id: "channels", label: "Channels", href: "/channels", icon: MessageCircle, section: "connect", rail: true },
   { id: "accounts", label: "Accounts", href: "/accounts", icon: KeyRound, section: "connect", rail: true },

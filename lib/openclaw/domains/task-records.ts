@@ -862,6 +862,7 @@ function isBootstrapOnlyTaskRuntime(runtime: RuntimeRecord) {
 
   return (
     bootstrapStage === "accepted" ||
+    bootstrapStage === "starting" ||
     bootstrapStage === "waiting-for-heartbeat" ||
     bootstrapStage === "waiting-for-runtime" ||
     bootstrapStage === "runtime-observed"

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CalendarClock,
   ChevronDown,
   LoaderCircle,
   SendHorizontal,
@@ -15,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { shouldPreserveComposerOnBlur } from "@/components/mission-control/command-bar.utils";
+import { removePendingMissionRequest, writePendingMissionRequest } from "@/components/mission-control/mission-control-shell.utils";
 import type { MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,14 @@ type ComposerSuggestion = {
 type DraftRecord = {
   mission: string;
   thinking: ThinkingLevel;
+  executionMode: NonNullable<MissionSubmission["executionMode"]>;
+  scheduleMode: ScheduleMode;
+  cronExpression: string;
+  recurrence: "weekdays" | "daily" | "weekly" | "custom";
+  recurrenceTime: string;
+  intervalMinutes: string;
+  runAt: string;
+  timezone: string;
 };
 type MissionDispatchStart = {
   requestId: string;
@@ -45,7 +53,6 @@ type MissionDispatchStart = {
   agentId: string;
   workspaceId: string | null;
   submittedAt: number;
-  abortController: AbortController;
 };
 type ScheduledOperationStart = { jobId: string; mission: string; agentId: string; workspaceId: string | null; scheduleLabel: string };
 type RecentPrompt = {
@@ -74,6 +81,7 @@ export function CommandBar({
   onRefresh,
   onMissionDispatchStart,
   onMissionDispatchFailure,
+  onMissionDispatchUncertain,
   onMissionResponse,
   onOperationScheduled
 }: {
@@ -89,12 +97,14 @@ export function CommandBar({
   onRefresh: () => Promise<void>;
   onMissionDispatchStart: (event: MissionDispatchStart) => void;
   onMissionDispatchFailure: (requestId: string, message: string) => void;
+  onMissionDispatchUncertain: (requestId: string, message: string) => void;
   onMissionResponse: (result: MissionResponse, context: { requestId: string }) => void;
   onOperationScheduled?: (event: ScheduledOperationStart) => void;
 }) {
   const [mission, setMission] = useState("");
   const [targetAgentId, setTargetAgentId] = useState<string>("");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
+  const [executionMode, setExecutionMode] = useState<NonNullable<MissionSubmission["executionMode"]>>("standard");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
   const [cronExpression, setCronExpression] = useState("0 9 * * 1-5");
   const [recurrence, setRecurrence] = useState<"weekdays" | "daily" | "weekly" | "custom">("weekdays");
@@ -104,7 +114,6 @@ export function CommandBar({
   const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [isCompactAfterSubmit, setIsCompactAfterSubmit] = useState(false);
@@ -132,12 +141,11 @@ export function CommandBar({
   }));
   const draftScopeKey = buildDraftScopeKey(targetWorkspace?.id ?? activeWorkspaceId ?? null, effectiveTargetAgentId);
   const canSubmit = Boolean(mission.trim() && effectiveTargetAgentId && !isSubmitting);
-  const dynamicPlaceholder = selectedAgentLabel ? `Compose for ${selectedAgentLabel}...` : "Compose a mission...";
+  const dynamicPlaceholder = "What should this agent accomplish?";
   const isLightTheme = surfaceTheme === "light";
   const isComposerEmpty =
     !isComposerActive &&
     !isAdvancedOpen &&
-    !isScheduleOpen &&
     mission.trim().length === 0 &&
     composeSuggestion === null;
   const shouldForceCollapsedComposer =
@@ -210,6 +218,14 @@ export function CommandBar({
     skipDraftSaveRef.current = true;
     setMission(storedDraft?.mission ?? "");
     setThinking(storedDraft?.thinking ?? "medium");
+    setExecutionMode(storedDraft?.executionMode ?? "standard");
+    setScheduleMode(storedDraft?.scheduleMode ?? "now");
+    setCronExpression(storedDraft?.cronExpression ?? "0 9 * * 1-5");
+    setRecurrence(storedDraft?.recurrence ?? "weekdays");
+    setRecurrenceTime(storedDraft?.recurrenceTime ?? "09:00");
+    setIntervalMinutes(storedDraft?.intervalMinutes ?? "60");
+    setRunAt(storedDraft?.runAt ?? "");
+    setTimezone(storedDraft?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"));
     setComposeSuggestion(null);
   }, [draftScopeKey]);
 
@@ -225,9 +241,17 @@ export function CommandBar({
 
     writeComposerDraft(draftScopeKey, {
       mission,
-      thinking
+      thinking,
+      executionMode,
+      scheduleMode,
+      cronExpression,
+      recurrence,
+      recurrenceTime,
+      intervalMinutes,
+      runAt,
+      timezone
     });
-  }, [draftScopeKey, mission, thinking]);
+  }, [draftScopeKey, mission, thinking, executionMode, scheduleMode, cronExpression, recurrence, recurrenceTime, intervalMinutes, runAt, timezone]);
 
   useEffect(() => {
     if (!isComposerActive || isSubmitting) {
@@ -329,7 +353,6 @@ export function CommandBar({
     const resolvedAgentId = payload.agentId || effectiveTargetAgentId;
     const submittedAt = Date.now();
     const requestId = globalThis.crypto?.randomUUID?.() || `dispatch:${submittedAt}`;
-    const abortController = new AbortController();
 
     skipDraftSaveRef.current = true;
     setMission("");
@@ -339,36 +362,43 @@ export function CommandBar({
     onComposerActiveChange?.(false);
 
     if (resolvedAgentId) {
-      onMissionDispatchStart({
+      const pendingRequest = {
         requestId,
         mission: submittedMission,
         agentId: resolvedAgentId,
         workspaceId: targetWorkspace?.id ?? activeWorkspaceId ?? null,
-        submittedAt,
-        abortController
-      });
+        submittedAt
+      };
+      writePendingMissionRequest(pendingRequest);
+      onMissionDispatchStart(pendingRequest);
     }
 
+    let postResponseReceived = false;
+    let postResponseStatus: number | null = null;
+    let postResponseParsed = false;
     try {
       const response = await fetch("/api/mission", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        signal: abortController.signal,
         body: JSON.stringify({
           ...payload,
           requestId,
           mission: submittedMission
         })
       });
+      postResponseReceived = true;
+      postResponseStatus = response.status;
 
       const result = (await response.json()) as MissionResponse & { error?: string };
+      postResponseParsed = true;
 
       if (!response.ok || result.error) {
-        throw new Error(result.error || "OpenClaw rejected the mission.");
+        throw new Error(result.error || "OpenClaw rejected the task.");
       }
 
+      removePendingMissionRequest(requestId);
       onMissionResponse(result, { requestId });
 
       if (draftScopeKey && typeof globalThis.localStorage !== "undefined") {
@@ -393,13 +423,18 @@ export function CommandBar({
           : `${result.status} via ${result.agentId}`;
       const waitingForTranscriptOutput =
         result.status === "stalled" && isMissingTranscriptActivityMessage(result.summary);
+      const admissionUnconfirmed = result.meta?.admissionState === "unknown";
 
       if (result.status === "stalled" && !waitingForTranscriptOutput) {
-        toast.error("Mission could not start.", {
+        toast.error("Task could not start.", {
           description: result.summary || resultDescription
         });
+      } else if (admissionUnconfirmed) {
+        toast.message("Task admission is unconfirmed.", {
+          description: "The saved request remains visible. Reopen Mission Control to reconcile it before sending the goal again."
+        });
       } else {
-        toast.success(waitingForTranscriptOutput ? "Mission is running silently." : "Mission queued in OpenClaw.", {
+        toast.success(waitingForTranscriptOutput ? "Task is running without captured output yet." : "Task admitted by OpenClaw.", {
           description: waitingForTranscriptOutput
             ? "AgentOS is waiting for the first transcript update."
             : resultDescription
@@ -407,13 +442,33 @@ export function CommandBar({
       }
       void onRefresh().catch(() => null);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
+      const errorMessage = error instanceof Error ? error.message : "Unknown task admission error.";
+      if (!postResponseReceived || !postResponseParsed || (postResponseStatus !== null && postResponseStatus >= 500)) {
+        try {
+          const response = await fetch(`/api/mission?requestId=${encodeURIComponent(requestId)}`, { cache: "no-store" });
+          const result = await response.json() as MissionResponse & { error?: string };
+          if (response.ok && result.dispatchId) {
+            removePendingMissionRequest(requestId);
+            onMissionResponse(result, { requestId });
+            toast.message("Task admission was reconciled.", { description: "OpenClaw recorded this request; AgentOS is refreshing its task state." });
+            void onRefresh().catch(() => null);
+            return;
+          }
+        } catch {
+          // The task stays pending until a read-only lookup can confirm its admission.
+        }
+
+        onMissionDispatchUncertain(requestId, errorMessage);
+        toast.message("Task admission is unconfirmed.", {
+          description: "The submitted task remains visible. Refresh or reopen Mission Control to reconcile it before submitting the goal again."
+        });
         return;
       }
 
+      removePendingMissionRequest(requestId);
       onMissionDispatchFailure(
         requestId,
-        error instanceof Error ? error.message : "Unknown mission error."
+        errorMessage
       );
       setMission(submittedMission);
       setComposeSuggestion(previousComposeSuggestion);
@@ -425,8 +480,8 @@ export function CommandBar({
         textareaRef.current?.focus();
         textareaRef.current?.setSelectionRange(submittedMission.length, submittedMission.length);
       });
-      toast.error("Mission dispatch failed.", {
-        description: error instanceof Error ? error.message : "Unknown mission error."
+      toast.error("Task dispatch failed.", {
+        description: errorMessage
       });
     } finally {
       setIsSubmitting(false);
@@ -436,7 +491,13 @@ export function CommandBar({
   const submitTask = async () => {
     if (!effectiveTargetAgentId || !mission.trim()) return;
     if (scheduleMode === "now") {
-      await submitMission({ mission, agentId: effectiveTargetAgentId, workspaceId: activeWorkspaceId ?? undefined, thinking });
+      await submitMission({ mission, agentId: effectiveTargetAgentId, workspaceId: targetWorkspace?.id ?? activeWorkspaceId ?? undefined, thinking, executionMode });
+      return;
+    }
+    if (executionMode === "isolated-worktree") {
+      toast.error("Isolated worktree execution is available for tasks started now.", {
+        description: "Schedules use OpenClaw's configured execution mode for each separate run."
+      });
       return;
     }
     const invalid = (scheduleMode === "cron" && !cronExpression.trim()) ||
@@ -459,7 +520,7 @@ export function CommandBar({
       if (!result.jobId) throw new Error("OpenClaw did not return a scheduled job id.");
       onOperationScheduled?.({ jobId: result.jobId, mission: mission.trim(), agentId: effectiveTargetAgentId, workspaceId: targetWorkspace?.id ?? activeWorkspaceId, scheduleLabel: formatScheduleButtonLabel({ mode: scheduleMode, recurrence, recurrenceTime, intervalMinutes, runAt }) });
       toast.success("Scheduled task created in OpenClaw.");
-      setMission(""); setIsAdvancedOpen(false); setIsScheduleOpen(false); setIsCompactAfterSubmit(true); await onRefresh();
+      setMission(""); setIsAdvancedOpen(false); setIsCompactAfterSubmit(true); await onRefresh();
     } catch (error) {
       toast.error("Scheduled task was not created.", { description: error instanceof Error ? error.message : "Unknown error." });
     } finally { setIsSubmitting(false); }
@@ -493,8 +554,8 @@ export function CommandBar({
     <>
       <PikoLoader
         open={isSubmitting}
-        title="Submitting task"
-        description="Sending the task to OpenClaw and preparing its run."
+        title={scheduleMode === "now" ? "Starting task" : "Creating schedule"}
+        description={scheduleMode === "now" ? "Sending the goal to OpenClaw and confirming session admission." : "Saving the schedule in OpenClaw."}
       />
       <div
         ref={commandBarRef}
@@ -532,9 +593,8 @@ export function CommandBar({
           }
 
           setIsAdvancedOpen(false);
-          setIsScheduleOpen(false);
           onComposerActiveChange?.(false);
-          if (!isDesktopLayout && mission.trim().length === 0 && !isAdvancedOpen && !isScheduleOpen && composeSuggestion === null) {
+          if (!isDesktopLayout && mission.trim().length === 0 && !isAdvancedOpen && composeSuggestion === null) {
             setIsDockHovered(false);
           }
         }}
@@ -589,7 +649,7 @@ export function CommandBar({
                 "min-w-0 flex-1 truncate text-[13px]",
                 isLightTheme ? "text-[#9b8373]" : "text-slate-400"
               )}>
-                {isSubmitting ? "Creating task..." : dynamicPlaceholder}
+                {isSubmitting ? "Starting task..." : dynamicPlaceholder}
               </p>
               <span className={cn(
                 "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
@@ -679,10 +739,11 @@ export function CommandBar({
                     surfaceTheme={surfaceTheme}
                   />
                 ) : (
-                  <SubtlePill surfaceTheme={surfaceTheme}>No agent</SubtlePill>
+                  <SubtlePill surfaceTheme={surfaceTheme}>Select an agent</SubtlePill>
                 )}
 
-                <span className={cn("ml-auto text-[10px]", isLightTheme ? "text-[#9b8373]" : "text-slate-500")}>Task draft</span>
+                {targetWorkspace?.name ? <span className={cn("ml-auto max-w-[120px] truncate text-[10px]", isLightTheme ? "text-[#9b8373]" : "text-slate-500")}>{targetWorkspace.name}</span> : null}
+                <span className={cn("text-[10px]", isLightTheme ? "text-[#9b8373]" : "text-slate-500")}>Draft</span>
               </div>
 
               <div className="px-2.5 pt-0.5">
@@ -716,32 +777,24 @@ export function CommandBar({
                 <div className="flex min-w-0 items-center gap-1.5">
                   <button
                     type="button"
-                    aria-label="Thinking level"
-                    title="Choose thinking level"
-                    onClick={() => { setIsAdvancedOpen((current) => !current); setIsScheduleOpen(false); }}
+                    aria-label="Task options"
+                    title="Reasoning, execution, and schedule options"
+                    onClick={() => setIsAdvancedOpen((current) => !current)}
                     className={cn("inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors", isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200")}
                   >
                     <SlidersHorizontal className="h-3 w-3" />
-                    {thinking === "medium" ? "Balanced" : `Thinking: ${thinking}`}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Task schedule"
-                    title="Choose when this task runs"
-                    onClick={() => { setIsScheduleOpen((current) => !current); setIsAdvancedOpen(false); }}
-                    className={cn("inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors", scheduleMode !== "now" && (isLightTheme ? "border-[#cfad96] bg-[#f8f0ea] text-[#654735]" : "border-cyan-300/25 bg-cyan-300/[0.08] text-cyan-100"), isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200")}
-                  >
-                    <CalendarClock className="h-3 w-3" />
-                    {formatScheduleButtonLabel({ mode: scheduleMode, recurrence, recurrenceTime, intervalMinutes, runAt })}
+                    Options
+                    {scheduleMode !== "now" ? <span className="max-w-[76px] truncate opacity-75">· {formatScheduleButtonLabel({ mode: scheduleMode, recurrence, recurrenceTime, intervalMinutes, runAt })}</span> : null}
+                    <ChevronDown className={cn("h-3 w-3 transition-transform", isAdvancedOpen && "rotate-180")} />
                   </button>
                 </div>
                 <span className={cn("hidden text-[10px] sm:inline", isLightTheme ? "text-[#a18978]" : "text-slate-500")}>⌘↵ to send</span>
                 <button
                   type="button"
-                  aria-label="Create task"
-                  title="Create task"
+                  aria-label={scheduleMode === "now" ? "Start task" : "Create schedule"}
+                  title={scheduleMode === "now" ? "Start task" : "Create schedule"}
                   className={cn(
-                    "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40",
+                    "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[10px] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40",
                     isLightTheme ? "bg-[#332720] text-white hover:bg-[#4a382d]" : "bg-white text-slate-950 hover:bg-slate-100"
                   )}
                   disabled={!canSubmit}
@@ -756,7 +809,7 @@ export function CommandBar({
                   {isSubmitting ? (
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <SendHorizontal className="h-3.5 w-3.5" />
+                    <><SendHorizontal className="h-3.5 w-3.5" />{scheduleMode === "now" ? "Start task" : "Schedule"}</>
                   )}
                 </button>
               </div>
@@ -776,12 +829,14 @@ export function CommandBar({
                       ? "border-[#dfcfc3] bg-[#fffcf9]"
                       : "border-white/[0.08] bg-white/[0.025]"
                   )}>
-                    <span className={cn("mr-1 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Thinking</span>
+                    <span className={cn("mr-1 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Reasoning</span>
                     {(["off", "minimal", "low", "medium", "high"] as ThinkingLevel[]).map((level) => <button key={level} type="button" onClick={() => setThinking(level)} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", thinking === level ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{level === "medium" ? "Balanced" : level}</button>)}
+                    <span className={cn("ml-2 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Execution</span>
+                    {([ ["Standard", "standard"], ["Isolated worktree", "isolated-worktree"] ] as const).map(([label, value]) => <button key={value} type="button" onClick={() => setExecutionMode(value)} aria-pressed={executionMode === value} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", executionMode === value ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{label}</button>)}
                   </div>
+                  <SchedulePopover mode={scheduleMode} recurrence={recurrence} recurrenceTime={recurrenceTime} cronExpression={cronExpression} timezone={timezone} intervalMinutes={intervalMinutes} runAt={runAt} surfaceTheme={surfaceTheme} onModeChange={setScheduleMode} onRecurrenceChange={setRecurrence} onRecurrenceTimeChange={setRecurrenceTime} onCronChange={setCronExpression} onTimezoneChange={setTimezone} onIntervalChange={setIntervalMinutes} onRunAtChange={setRunAt} />
                 </motion.div>
               ) : null}
-              {isScheduleOpen ? <SchedulePopover mode={scheduleMode} recurrence={recurrence} recurrenceTime={recurrenceTime} cronExpression={cronExpression} timezone={timezone} intervalMinutes={intervalMinutes} runAt={runAt} surfaceTheme={surfaceTheme} onModeChange={setScheduleMode} onRecurrenceChange={setRecurrence} onRecurrenceTimeChange={setRecurrenceTime} onCronChange={setCronExpression} onTimezoneChange={setTimezone} onIntervalChange={setIntervalMinutes} onRunAtChange={setRunAt} /> : null}
             </AnimatePresence>
           </motion.div>
         )}
@@ -941,7 +996,17 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 
     return {
       mission: parsed.mission,
-      thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "medium"
+      thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "medium",
+      executionMode: parsed.executionMode === "isolated-worktree" ? "isolated-worktree" : "standard",
+      scheduleMode: isScheduleMode(parsed.scheduleMode) ? parsed.scheduleMode : "now",
+      cronExpression: typeof parsed.cronExpression === "string" ? parsed.cronExpression : "0 9 * * 1-5",
+      recurrence: isRecurrence(parsed.recurrence) ? parsed.recurrence : "weekdays",
+      recurrenceTime: typeof parsed.recurrenceTime === "string" ? parsed.recurrenceTime : "09:00",
+      intervalMinutes: typeof parsed.intervalMinutes === "string" ? parsed.intervalMinutes : "60",
+      runAt: typeof parsed.runAt === "string" ? parsed.runAt : "",
+      timezone: typeof parsed.timezone === "string" && parsed.timezone.trim()
+        ? parsed.timezone
+        : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
     };
   } catch {
     return null;
@@ -950,7 +1015,13 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 
 function writeComposerDraft(scopeKey: string, draft: DraftRecord) {
   try {
-    if (!draft.mission.trim() && draft.thinking === "medium") {
+    if (
+      !draft.mission.trim() && draft.thinking === "medium" && draft.executionMode === "standard" &&
+      draft.scheduleMode === "now" && draft.cronExpression === "0 9 * * 1-5" &&
+      draft.recurrence === "weekdays" && draft.recurrenceTime === "09:00" &&
+      draft.intervalMinutes === "60" && !draft.runAt &&
+      draft.timezone === (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
+    ) {
       globalThis.localStorage.removeItem(scopeKey);
       return;
     }
@@ -1041,4 +1112,12 @@ function mergeMissionText(current: string, next: string) {
 
 function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high";
+}
+
+function isScheduleMode(value: unknown): value is ScheduleMode {
+  return value === "now" || value === "cron" || value === "every" || value === "at";
+}
+
+function isRecurrence(value: unknown): value is DraftRecord["recurrence"] {
+  return value === "weekdays" || value === "daily" || value === "weekly" || value === "custom";
 }

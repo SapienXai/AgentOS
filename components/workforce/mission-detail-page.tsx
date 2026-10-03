@@ -52,7 +52,7 @@ export function MissionDetailPage({
 
   async function cancelMission() {
     if (!mission.availableActions.canCancel || actionPending) return;
-    if (!window.confirm("Stop this mission and its current runtime work?")) return;
+    if (!window.confirm("Stop this task and its current runtime work?")) return;
     const targetId = mission.rootTaskId ?? mission.dispatchId;
     if (!targetId) return;
     setActionPending(true);
@@ -64,11 +64,11 @@ export function MissionDetailPage({
         body: JSON.stringify({ dispatchId: mission.dispatchId, reason: "Stopped from Workforce mission control." })
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok || result.error) throw new Error(result.error || "The mission could not be stopped.");
+      if (!response.ok || result.error) throw new Error(result.error || "The task could not be stopped.");
       await refresh();
       await loadMission();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The mission could not be stopped.");
+      setError(reason instanceof Error ? reason.message : "The task could not be stopped.");
     } finally {
       setActionPending(false);
     }
@@ -90,11 +90,11 @@ export function MissionDetailPage({
         })
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok || result.error) throw new Error(result.error || "The mission could not be resumed.");
+      if (!response.ok || result.error) throw new Error(result.error || "The task could not be continued.");
       await refresh();
       await loadMission();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The mission could not be resumed.");
+      setError(reason instanceof Error ? reason.message : "The task could not be continued.");
     } finally {
       setActionPending(false);
     }
@@ -104,14 +104,14 @@ export function MissionDetailPage({
     <div className="flex min-w-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <Link href="/missions" className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Workforce
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Tasks
         </Link>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => void loadMission()} disabled={loading} className="h-9 rounded-lg px-2.5 text-xs">
             <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} aria-hidden="true" /> Refresh
           </Button>
-          {mission.availableActions.canResume ? <Button variant="secondary" size="sm" onClick={() => void resumeMission()} disabled={actionPending} className="h-9 rounded-lg px-2.5 text-xs"><Play className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> {actionPending ? "Resuming…" : "Resume"}</Button> : null}
-          {mission.availableActions.canCancel ? <Button variant="secondary" size="sm" onClick={() => void cancelMission()} disabled={actionPending} className="h-9 rounded-lg px-2.5 text-xs text-[hsl(var(--status-danger-foreground))]"><Ban className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> {actionPending ? "Stopping…" : "Stop"}</Button> : null}
+          {mission.availableActions.canResume ? <Button variant="secondary" size="sm" onClick={() => void resumeMission()} disabled={actionPending} className="h-9 rounded-lg px-2.5 text-xs"><Play className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> {actionPending ? "Continuing…" : "Continue task"}</Button> : null}
+          {mission.availableActions.canCancel ? <Button variant="secondary" size="sm" onClick={() => void cancelMission()} disabled={actionPending} className="h-9 rounded-lg px-2.5 text-xs text-[hsl(var(--status-danger-foreground))]"><Ban className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> {actionPending ? "Requesting stop…" : "Stop task"}</Button> : null}
         </div>
       </div>
 
@@ -147,7 +147,7 @@ export function MissionDetailPage({
             {mission.workTree.length > 0 ? <div className="divide-y divide-border">{mission.workTree.map((item) => <div key={item.id} className="flex min-w-0 items-center gap-3 px-3 py-3"><div className={cn("h-2 w-2 shrink-0 rounded-full", item.relationship === "delegated" ? "bg-[hsl(var(--agentos-operational-accent))]" : "bg-primary")} aria-hidden="true" /><div className="min-w-0 flex-1"><p className={cn("truncate text-sm font-medium text-foreground", item.relationship === "delegated" && "pl-3")}>{item.title}</p><p className="mt-1 truncate text-xs text-muted-foreground">{item.agentName}{item.relationship === "delegated" ? " · delegated" : " · primary"}</p></div><StatusBadge label={item.state === "waiting-worker" ? "Waiting" : item.state} tone={stateTone(item.state)} /></div>)}</div> : <div className="p-3"><EmptyState title="Work tree is still forming" description="OpenClaw has not returned child-work evidence for this mission yet." /></div>}
           </SectionCard>
 
-          <SectionCard title="Timeline">
+          <SectionCard title="Activity">
             {mission.timeline.length > 0 ? <div className="divide-y divide-border">{mission.timeline.map((event) => <TimelineRow key={event.id} event={event} />)}</div> : <div className="p-3"><EmptyState title="No timeline events yet" description="Confirmed runtime and human-control events will appear here." /></div>}
           </SectionCard>
         </div>
@@ -163,7 +163,7 @@ export function MissionDetailPage({
             <div className="px-3 py-1"><KeyValue label="Started" value={formatDate(mission.startedAt)} /><KeyValue label="Duration" value={formatDuration(mission.durationMs)} /><KeyValue label="Worker" value={mission.primaryAgentName} /><KeyValue label="Runtime state" value={mission.connection === "reconnecting" ? "Reconnecting" : mission.stateLabel} /></div>
           </SectionCard>
           <details className="rounded-lg border border-border bg-card/45 p-3">
-            <summary className="cursor-pointer list-none text-xs font-semibold text-foreground">Advanced runtime provenance</summary>
+            <summary className="cursor-pointer list-none text-xs font-semibold text-foreground">Technical details</summary>
             <div className="mt-3 space-y-1.5 text-[0.68rem] text-muted-foreground"><p>Mission reference: <span className="font-mono text-foreground">{mission.id}</span></p><p>Dispatch: <span className="font-mono text-foreground">{mission.runtime.dispatchId ?? "Not bound"}</span></p><p>Tasks: <span className="font-mono text-foreground">{mission.runtime.taskIds.join(", ") || "None"}</span></p><p>Sessions: <span className="font-mono text-foreground">{mission.runtime.sessionIds.join(", ") || "None"}</span></p><p>Runtimes: <span className="font-mono text-foreground">{mission.runtime.runtimeIds.join(", ") || "None"}</span></p></div>
           </details>
         </div>
@@ -180,11 +180,11 @@ function currentStateTitle(mission: WorkforceMissionProjection) {
   if (mission.state === "waiting-human") return "Waiting for your decision";
   if (mission.state === "waiting-worker") return "Waiting for a delegated worker";
   if (mission.state === "reconnecting") return "OpenClaw is reconnecting";
-  if (mission.state === "failed") return "Mission needs recovery";
-  if (mission.state === "blocked") return "Mission is blocked";
-  if (mission.state === "completed") return "Mission completed";
-  if (mission.state === "queued") return "Mission queued";
-  if (mission.state === "starting") return "Mission is starting";
+  if (mission.state === "failed") return "Task needs recovery";
+  if (mission.state === "blocked") return "Task is blocked";
+  if (mission.state === "completed") return "Task done";
+  if (mission.state === "queued") return "Task queued";
+  if (mission.state === "starting") return "Task is starting";
   return `${mission.primaryAgentName} is working`;
 }
 

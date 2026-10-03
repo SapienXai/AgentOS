@@ -28,6 +28,27 @@ export type MissionDispatchRecordLike = {
   status: MissionDispatchStatus | string;
   agentId: string;
   sessionId: string | null;
+  /** OpenClaw session key requested or returned for this dispatch. */
+  sessionKey?: string | null;
+  admissionState?: "preparing" | "session-created" | "accepted" | "unknown" | "rejected";
+  cancellation?: {
+    status: "requested" | "unknown" | "confirmed";
+    requestedAt: string;
+    confirmedAt: string | null;
+    reason: string;
+    detail: string | null;
+  } | null;
+  operatorHistory?: Array<{
+    id: string;
+    idempotencyKey: string | null;
+    kind: "steer" | "continue" | "inject";
+    message: string;
+    requestedAt: string;
+    acceptedAt: string;
+    sessionKey: string | null;
+    sessionId: string | null;
+    runId: string | null;
+  }>;
   mission: string;
   routedMission: string;
   thinking: NonNullable<MissionSubmission["thinking"]>;
@@ -64,7 +85,6 @@ export type MissionDispatchRecordLike = {
 };
 
 const missionDispatchHeartbeatStallMs = 5 * 60_000;
-const missionDispatchQueuedStallMs = 2 * 60_000;
 
 export function extractMissionDispatchSessionId(record: MissionDispatchRecordLike) {
   return (
@@ -206,8 +226,7 @@ export function resolveMissionDispatchRuntimeStatus(
       : "running";
   }
 
-  const queuedAt = Date.parse(record.submittedAt);
-  return !Number.isNaN(queuedAt) && nowMs - queuedAt > missionDispatchQueuedStallMs ? "stalled" : "queued";
+  return "queued";
 }
 
 export function resolveMissionDispatchBootstrapStage(
@@ -224,6 +243,10 @@ export function resolveMissionDispatchBootstrapStage(
 
   if (status === "stalled") {
     return "stalled";
+  }
+
+  if (record.admissionState === "preparing" || record.admissionState === "session-created" || record.admissionState === "unknown") {
+    return "starting";
   }
 
   if (record.observation.runtimeId || record.observation.observedAt) {
@@ -265,6 +288,14 @@ export function resolveMissionDispatchSubtitle(
     return "Working silently while AgentOS waits for the first OpenClaw runtime.";
   }
 
+  if (record.admissionState === "unknown") {
+    return "OpenClaw admission is unconfirmed. Refresh to reconcile before retrying.";
+  }
+
+  if (record.admissionState === "preparing" || record.admissionState === "session-created") {
+    return "Starting — confirming session and run admission with OpenClaw.";
+  }
+
   const bootstrapStage = resolveMissionDispatchBootstrapStage(record, status);
 
   if (bootstrapStage === "runtime-observed") {
@@ -279,7 +310,7 @@ export function resolveMissionDispatchSubtitle(
     return "Dispatch runner started. Waiting for the first heartbeat.";
   }
 
-  return "Mission accepted. Starting the OpenClaw dispatch runner.";
+  return "Task accepted by OpenClaw.";
 }
 
 export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: MissionDispatchRecordLike): TaskRecord {
@@ -308,12 +339,15 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       bootstrapStage,
       clientRequestId: record.clientRequestId ?? null,
       dispatchStatus: record.status,
+      admissionState: record.admissionState ?? null,
       requestedModelId: extractMissionDispatchRequestedModelId(record),
       dispatchSubmittedAt: record.submittedAt,
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchCancellation: record.cancellation ?? null,
+      operatorHistory: record.operatorHistory ?? [],
       browserAccountId: record.browserBinding?.accountId ?? null,
       browserProfileName: record.browserBinding?.profileName ?? null,
       browserBindingStatus: record.browserBinding?.status ?? null,

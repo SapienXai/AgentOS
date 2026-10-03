@@ -239,7 +239,10 @@ export function TaskFollowUpComposer({
   createdFiles,
   outputSummary,
   placeholder,
+  intentLabel = "Follow-up",
+  submitLabel = "Send follow-up",
   onSubmitted,
+  onControlComplete,
   onExpandRequest,
   textareaRef,
   expanded = false,
@@ -253,7 +256,10 @@ export function TaskFollowUpComposer({
   createdFiles?: RuntimeCreatedFile[];
   outputSummary?: string | null;
   placeholder?: string;
+  intentLabel?: string;
+  submitLabel?: string;
   onSubmitted?: (followUp: SubmittedTaskFollowUp) => Promise<void> | void;
+  onControlComplete?: () => Promise<void> | void;
   onExpandRequest?: () => void;
   textareaRef?: Ref<HTMLTextAreaElement>;
   expanded?: boolean;
@@ -319,13 +325,14 @@ export function TaskFollowUpComposer({
         status: continuation.status,
         summary: continuation.summary
       };
-      toast.success("Follow-up accepted.", {
+      toast.success(`${intentLabel} accepted.`, {
         description: continuation.warning ||
           "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
       });
       await onSubmitted?.(followUp);
+      await onControlComplete?.();
     } catch (error) {
-      toast.error("Follow-up failed.", {
+      toast.error(`${intentLabel} failed.`, {
         description: error instanceof Error ? error.message : "Unknown task continuation error."
       });
     } finally {
@@ -385,7 +392,8 @@ export function TaskFollowUpComposer({
           type="button"
           size="icon"
           disabled={disabled}
-          title={disabledReason ?? "Send follow-up"}
+          title={disabledReason ?? submitLabel}
+          aria-label={submitLabel}
           className={cn(
             "shrink-0 border border-primary/20 bg-primary text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.16)] hover:bg-primary/90 dark:border-cyan-200/16 dark:bg-slate-800 dark:text-emerald-200 dark:shadow-[0_0_24px_rgba(45,212,191,0.08)] dark:hover:bg-slate-700 dark:hover:text-emerald-100",
             dense ? "h-9 w-9 rounded-[10px]" : "h-11 w-11 rounded-[13px]",

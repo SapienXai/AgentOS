@@ -63,7 +63,7 @@ type TaskReviewDialogProps = {
   ) => Promise<void> | void;
   onRetry: (task: WorkItemRecord) => Promise<void> | void;
   onDismiss: (task: WorkItemRecord) => Promise<void> | void;
-  onOpenEvidence: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
+  onOpenEvidence: (task: WorkItemRecord, target: "overview" | "output" | "result" | "files") => void;
   onOperationComplete?: () => Promise<void> | void;
 };
 type TaskReviewPendingAction = "accept" | "continue" | "retry" | "run" | "pause" | "resume" | "dismiss" | null;
@@ -276,7 +276,7 @@ export function TaskReviewDialog({
                 <span>Status: <strong className={isLight ? "text-slate-800" : "text-slate-200"}>{operationPaused ? "paused" : currentTask?.status ?? "unknown"}</strong></span>
                 <span>{nextRunAt ? `Next: ${new Date(nextRunAt).toLocaleString()}` : operationPaused ? "No future runs while paused" : "Next run unavailable"}</span>
               </div>
-              <button type="button" className="text-[11px] font-semibold text-primary hover:underline" onClick={() => currentTask && onOpenEvidence(currentTask, "output")}>Open full evidence</button>
+              <button type="button" className="text-[11px] font-semibold text-primary hover:underline" onClick={() => currentTask && onOpenEvidence(currentTask, "result")}>Open full evidence</button>
             </div>
           </div>
 

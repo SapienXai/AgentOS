@@ -3,6 +3,7 @@ import {
   prepareMissionOutputPlan
 } from "@/lib/openclaw/domains/mission-routing";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
+import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { renderWorkspaceSurfaceCoordinationMarkdownForAgent } from "@/lib/openclaw/surface-coordination";
@@ -97,7 +98,6 @@ async function submitMissionDispatchOnce(
   }
 
   const missionAgent = snapshot.agents.find((entry) => entry.id === agentId);
-  const sessionKey = buildAgentSessionKey(agentId);
   const missionWorkspace =
     snapshot.workspaces.find((entry) => entry.id === (input.workspaceId || missionAgent?.workspaceId)) ??
     (missionAgent
@@ -158,6 +158,13 @@ async function submitMissionDispatchOnce(
     executionMode
   });
 
+  const sessionKey = executionMode === "standard"
+    ? buildAgentSessionKey(agentId, dispatchRecord.id)
+    : null;
+  if (sessionKey) {
+    dispatchRecord = { ...dispatchRecord, sessionKey };
+  }
+
   await writeMissionDispatchRecord(dispatchRecord);
 
   if (readinessError) {
@@ -186,6 +193,8 @@ async function submitMissionDispatchOnce(
     };
   }
 
+  let admissionMutationStarted = false;
+  let admissionConfirmed = false;
   try {
     const capabilityMatrix = await getOpenClawCapabilityMatrix().catch(() => null);
 
@@ -216,6 +225,7 @@ async function submitMissionDispatchOnce(
       if (!eligibility.eligible) {
         throw new Error(`${eligibility.reason} Standard execution was not selected automatically.`);
       }
+      admissionMutationStarted = true;
       const created = await adapter.createSession(
         {
           agentId,
@@ -227,6 +237,7 @@ async function submitMissionDispatchOnce(
         },
         { ...gatewayOptions, timeoutMs: 60_000 }
       );
+      admissionConfirmed = true;
       const now = new Date().toISOString();
       const createdStatus: MissionDispatchStatus = created.status === "completed"
         ? "completed"
@@ -234,6 +245,8 @@ async function submitMissionDispatchOnce(
       dispatchRecord = {
         ...dispatchRecord,
         sessionId: created.sessionId ?? dispatchRecord.sessionId,
+        sessionKey: created.key ?? created.sessionKey ?? dispatchRecord.sessionKey,
+        admissionState: createdStatus === "stalled" ? "rejected" : "accepted",
         status: createdStatus,
         updatedAt: now,
         runner: {
@@ -266,7 +279,7 @@ async function submitMissionDispatchOnce(
         workspaceId: missionWorkspace?.id ?? input.workspaceId ?? "",
         agentId,
         dispatchId: dispatchRecord.id,
-        openClawSessionKey: sessionKey,
+        openClawSessionKey: sessionKey ?? buildAgentSessionKey(agentId),
         openClawSessionId: null
       });
       dispatchRecord = {
@@ -283,29 +296,56 @@ async function submitMissionDispatchOnce(
       await writeMissionDispatchRecord(dispatchRecord);
     }
 
-    if (executionMode === "standard" && capabilityMatrix?.nativeMissionDispatch !== "unsupported") {
-      const payload = await getOpenClawAdapter().runAgentTurn(
+    if (executionMode === "standard") {
+      const adapter = getOpenClawAdapter();
+      if (!sessionKey || !adapter.createSession) {
+        throw new Error("OpenClaw independent session creation is unavailable. The task was not sent to the agent's shared session.");
+      }
+
+      admissionMutationStarted = true;
+      const createdSession = await adapter.createSession(
         {
           agentId,
-          sessionKey,
+          key: sessionKey,
+          idempotencyKey: dispatchRecord.id,
+          label: mission.slice(0, 60)
+        },
+        { ...gatewayOptions, timeoutMs: 30_000, allowCliFallback: false }
+      );
+      const canonicalSessionKey = createdSession.key?.trim() || createdSession.sessionKey?.trim() || sessionKey;
+      dispatchRecord = {
+        ...dispatchRecord,
+        sessionKey: canonicalSessionKey,
+        admissionState: "session-created",
+        sessionId: createdSession.sessionId ?? dispatchRecord.sessionId,
+        updatedAt: new Date().toISOString()
+      };
+      await writeMissionDispatchRecord(dispatchRecord);
+
+      const payload = await adapter.runAgentTurn(
+        {
+          agentId,
+          sessionKey: canonicalSessionKey,
+          sessionId: dispatchRecord.sessionId ?? undefined,
           message: routedMission,
           thinking,
           timeoutSeconds: 45,
           workspace: missionWorkspace?.path ?? null,
-          dispatchId: dispatchRecord.id
+          dispatchId: dispatchRecord.id,
+          idempotencyKey: dispatchRecord.id,
+          admissionOnly: true,
+          sessionAlreadyPrepared: true
         },
-        { ...gatewayOptions, timeoutMs: 60_000 }
+        { ...gatewayOptions, timeoutMs: 30_000, allowCliFallback: false }
       );
+      admissionConfirmed = true;
       const now = new Date().toISOString();
-      // OpenClaw documents agent.wait as a bounded observation call: a wait timeout
-      // does not stop the underlying agent run. gateway_draining is therefore not
-      // a terminal mission failure; later Gateway/session evidence owns completion.
-      const nextStatus = isGatewayWaitOnlyTimeout(payload)
-        ? "running"
-        : resolveGatewayMissionDispatchStatus(payload.status);
+      const nextStatus = resolveGatewayMissionDispatchStatus(payload.status);
       dispatchRecord = {
         ...dispatchRecord,
         sessionId: payload.sessionId ?? dispatchRecord.sessionId,
+        sessionKey: payload.sessionKey ?? canonicalSessionKey,
+        admissionState: nextStatus === "stalled" ? "rejected" : "accepted",
         status: nextStatus,
         updatedAt: now,
         runner: {
@@ -318,69 +358,17 @@ async function submitMissionDispatchOnce(
           runtimeId: payload.runId ? `runtime:gateway:${payload.runId}` : dispatchRecord.observation.runtimeId,
           observedAt: now
         },
-        // The Gateway's bounded agent.wait response may omit the session key
-        // even though the native turn was addressed to this exact key. Keep
-        // the immutable request identity alongside the authoritative Gateway
-        // payload; never synthesize a session id that OpenClaw did not return.
         result: {
           ...payload,
-          sessionKey: payload.sessionKey ?? sessionKey
+          sessionKey: payload.sessionKey ?? canonicalSessionKey
         },
         error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null
       };
       await writeMissionDispatchRecord(dispatchRecord);
 
-      if (dispatchRecord.sessionId) {
-        // OpenClaw 2026.9.x stores the authoritative transcript in its native
-        // session store. Reuse the normal reconciliation path immediately
-        // after admission so a fast native completion is persisted before the
-        // product mutation returns, without creating a second execution path.
-        // The native history commit can trail the bounded agent.wait response
-        // by a few milliseconds, so repeat only the read/reconcile operation;
-        // never submit another turn.
-        const observedRuntime = {
-          id: dispatchRecord.observation.runtimeId ?? `runtime:gateway:${dispatchRecord.id}`,
-          source: "turn",
-          key: sessionKey,
-          title: dispatchRecord.mission.slice(0, 80) || "Mission runtime",
-          subtitle: "OpenClaw Gateway mission runtime",
-          status: "running",
-          updatedAt: Date.parse(dispatchRecord.updatedAt),
-          ageMs: 0,
-          agentId: dispatchRecord.agentId,
-          workspaceId: dispatchRecord.workspaceId ?? undefined,
-          workspacePath: dispatchRecord.workspacePath ?? undefined,
-          sessionId: dispatchRecord.sessionId,
-          runId: payload.runId,
-          metadata: {
-            dispatchId: dispatchRecord.id,
-            mission: dispatchRecord.mission,
-            routedMission: dispatchRecord.routedMission,
-            dispatchSubmittedAt: dispatchRecord.submittedAt,
-            sessionKey
-          }
-        } satisfies RuntimeRecord;
-
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          await reconcileMissionDispatchRuntimeState(dispatchRecord, observedRuntime);
-          dispatchRecord = (await readMissionDispatchRecordById(dispatchRecord.id)) ?? dispatchRecord;
-
-          if (
-            dispatchRecord.status !== "completed" ||
-            extractMissionCommandPayloads(dispatchRecord.result).length > 0
-          ) {
-            break;
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-      }
-
       if (isMissionDispatchTerminalStatus(dispatchRecord.status) && dispatchRecord.browserBinding) {
         dispatchRecord = await finalizeDispatchBrowserBinding(dispatchRecord);
       }
-    } else if (executionMode === "standard") {
-      dispatchRecord = await launchMissionDispatchRunner(dispatchRecord);
     }
   } catch (error) {
     if (dispatchRecord.browserBinding?.status === "active") {
@@ -393,24 +381,35 @@ async function submitMissionDispatchOnce(
         }
       }));
     }
+    const message = stringifyCommandFailure(error) || "OpenClaw task admission could not be confirmed.";
+    const admissionUnknown = admissionMutationStarted && !admissionConfirmed &&
+      classifyNativeMutationError(error).disposition === "ambiguous-outcome";
     dispatchRecord = {
       ...dispatchRecord,
-      status: "stalled",
+      status: admissionUnknown ? "queued" : (admissionConfirmed ? dispatchRecord.status : "stalled"),
+      admissionState: admissionUnknown ? "unknown" : admissionConfirmed
+        ? dispatchRecord.admissionState ?? "accepted"
+        : "rejected",
       updatedAt: new Date().toISOString(),
-      error: stringifyCommandFailure(error) || "Mission dispatch runner could not be started."
+      error: admissionConfirmed
+        ? dispatchRecord.error
+        : admissionUnknown
+          ? `OpenClaw admission is unconfirmed. Refresh to reconcile before retrying. ${message}`
+          : message
     };
     await writeMissionDispatchRecord(dispatchRecord);
     deps.invalidateMissionControlCaches();
-    throw new Error(dispatchRecord.error ?? "Mission dispatch runner could not be started.");
+    return missionResponseFromDispatchRecord(dispatchRecord);
   }
 
   deps.invalidateMissionControlCaches();
 
   const payloads = extractMissionCommandPayloads(dispatchRecord.result);
-  const summary =
+  const summary = dispatchRecord.error || (
     dispatchRecord.status === "completed" || dispatchRecord.status === "stalled" || dispatchRecord.status === "cancelled"
       ? resolveMissionDispatchCompletionDetail(dispatchRecord)
-      : dispatchRecord.result?.summary || "Mission accepted and queued for OpenClaw execution.";
+      : dispatchRecord.result?.summary || "Task accepted by OpenClaw."
+  );
 
   return {
     dispatchId: dispatchRecord.id,
@@ -421,7 +420,8 @@ async function submitMissionDispatchOnce(
     payloads,
     meta: {
       executionMode,
-      sessionKey: dispatchRecord.result?.sessionKey ?? null,
+      admissionState: dispatchRecord.admissionState ?? "unknown",
+      sessionKey: dispatchRecord.sessionKey ?? dispatchRecord.result?.sessionKey ?? null,
       outputDir: outputPlan?.absoluteOutputDir,
       outputDirRelative: outputPlan?.relativeOutputDir,
       notesDirRelative: outputPlan?.notesDirRelative
@@ -431,9 +431,11 @@ async function submitMissionDispatchOnce(
 
 function missionResponseFromDispatchRecord(dispatchRecord: MissionDispatchRecord): MissionResponse {
   const payloads = extractMissionCommandPayloads(dispatchRecord.result);
-  const summary = dispatchRecord.status === "completed" || dispatchRecord.status === "stalled" || dispatchRecord.status === "cancelled"
-    ? resolveMissionDispatchCompletionDetail(dispatchRecord)
-    : dispatchRecord.result?.summary || "Mission accepted and queued for OpenClaw execution.";
+  const summary = dispatchRecord.error || (
+    dispatchRecord.status === "completed" || dispatchRecord.status === "stalled" || dispatchRecord.status === "cancelled"
+      ? resolveMissionDispatchCompletionDetail(dispatchRecord)
+      : dispatchRecord.result?.summary || "Task accepted by OpenClaw."
+  );
   return {
     dispatchId: dispatchRecord.id,
     runId: dispatchRecord.result?.runId ?? null,
@@ -443,7 +445,8 @@ function missionResponseFromDispatchRecord(dispatchRecord: MissionDispatchRecord
     payloads,
     meta: {
       executionMode: dispatchRecord.executionMode,
-      sessionKey: dispatchRecord.result?.sessionKey ?? null,
+      admissionState: dispatchRecord.admissionState ?? "unknown",
+      sessionKey: dispatchRecord.sessionKey ?? dispatchRecord.result?.sessionKey ?? null,
       outputDir: dispatchRecord.outputDir,
       outputDirRelative: dispatchRecord.outputDirRelative,
       notesDirRelative: dispatchRecord.notesDirRelative,
@@ -488,21 +491,22 @@ export async function abortMissionDispatchTask(
       reason: terminalRecord.error,
       runnerPid: terminalRecord.runner.pid,
       childPid: terminalRecord.runner.childPid,
-      abortedAt: terminalRecord.runner.finishedAt ?? terminalRecord.updatedAt
+      abortedAt: terminalRecord.runner.finishedAt ?? terminalRecord.updatedAt,
+      ...(terminalRecord.status === "cancelled" ? { cancellationStatus: "confirmed" as const } : {})
     };
   }
 
   const abortedAt = new Date().toISOString();
   const abortReason = normalizeMissionAbortReason(reason);
-  const nextRecord = {
+  let nextRecord: MissionDispatchRecord = {
     ...dispatchRecord,
-    status: "cancelled" as const,
     updatedAt: abortedAt,
-    error: abortReason,
-    runner: {
-      ...dispatchRecord.runner,
-      finishedAt: abortedAt,
-      lastHeartbeatAt: abortedAt
+    cancellation: {
+      status: "requested",
+      requestedAt: abortedAt,
+      confirmedAt: null,
+      reason: abortReason,
+      detail: null
     }
   };
 
@@ -510,45 +514,91 @@ export async function abortMissionDispatchTask(
   deps.invalidateMissionControlCaches();
 
   let killedChildPid: number | null = null;
+  let confirmed = false;
+  const failures: string[] = [];
   const runId = dispatchRecord.result?.runId ?? null;
   const adapter = getOpenClawAdapter();
 
   for (const gatewayTaskId of resolveGatewayTaskCancelIds(task, dispatchRecord)) {
-    await adapter.cancelTask({
-      taskId: gatewayTaskId,
-      reason: abortReason
-    }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
+    try {
+      const result = await adapter.cancelTask({
+        taskId: gatewayTaskId,
+        reason: abortReason
+      }, { ...gatewayOptions, timeoutMs: 15_000, allowCliFallback: false });
+      confirmed ||= isMissionAbortConfirmed(result);
+    } catch (error) {
+      failures.push(stringifyCommandFailure(error));
+    }
   }
 
   const sessionKey = readDispatchSessionKey(dispatchRecord);
   if (runId || dispatchRecord.sessionId || sessionKey) {
-    await adapter.abortAgentTurn({
-      runId,
-      sessionId: dispatchRecord.sessionId,
-      sessionKey,
-      agentId: dispatchRecord.agentId,
-      reason: abortReason
-    }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
+    try {
+      if (!adapter.abortAgentTurn) throw new Error("OpenClaw session abort is unavailable.");
+      const result = await adapter.abortAgentTurn({
+        runId,
+        sessionId: dispatchRecord.sessionId,
+        sessionKey,
+        agentId: dispatchRecord.agentId,
+        reason: abortReason
+      }, { ...gatewayOptions, timeoutMs: 15_000, allowCliFallback: false });
+      confirmed ||= isMissionAbortConfirmed(result);
+    } catch (error) {
+      failures.push(stringifyCommandFailure(error));
+    }
   }
 
-  killedChildPid = await stopMissionDispatchChildProcess(nextRecord);
-  if (nextRecord.browserBinding?.status === "active") {
-    await finalizeDispatchBrowserBinding(nextRecord);
+  if (nextRecord.runner.pid || nextRecord.runner.childPid) {
+    killedChildPid = await stopMissionDispatchChildProcess(nextRecord);
+  }
+
+  const finishedAt = new Date().toISOString();
+  const cancellationDetail = confirmed
+    ? "OpenClaw confirmed the task stop request."
+    : failures.find(Boolean) || "OpenClaw has not confirmed that the task stopped. Refresh task activity to reconcile its state.";
+  nextRecord = {
+    ...nextRecord,
+    status: confirmed ? "cancelled" : dispatchRecord.status,
+    updatedAt: finishedAt,
+    cancellation: {
+      status: confirmed ? "confirmed" : "unknown",
+      requestedAt: abortedAt,
+      confirmedAt: confirmed ? finishedAt : null,
+      reason: abortReason,
+      detail: cancellationDetail
+    },
+    ...(confirmed ? {
+      runner: {
+        ...nextRecord.runner,
+        finishedAt,
+        lastHeartbeatAt: finishedAt
+      }
+    } : {})
+  };
+  await writeMissionDispatchRecord(nextRecord);
+  deps.invalidateMissionControlCaches();
+
+  if (confirmed && nextRecord.browserBinding?.status === "active") {
+    nextRecord = await finalizeDispatchBrowserBinding(nextRecord);
   }
 
   return {
     taskId,
     dispatchId: nextRecord.id,
     status: nextRecord.status,
-    summary: abortReason,
-    reason: abortReason,
+    summary: cancellationDetail,
+    reason: confirmed ? abortReason : cancellationDetail,
     runnerPid: nextRecord.runner.pid,
     childPid: killedChildPid ?? nextRecord.runner.childPid,
-    abortedAt
+    abortedAt: confirmed ? finishedAt : abortedAt,
+    requestedAt: abortedAt,
+    cancellationStatus: confirmed ? "confirmed" : "unknown"
   };
 }
 
 function readDispatchSessionKey(record: MissionDispatchRecordLike) {
+  const directSessionKey = typeof record.sessionKey === "string" ? record.sessionKey.trim() : "";
+  if (directSessionKey) return directSessionKey;
   const result = record.result;
   if (!result || typeof result !== "object") {
     return null;
@@ -609,15 +659,21 @@ async function abortNativeGatewayTask(
   }
 
   if (task.status === "completed" || task.status === "stalled" || task.status === "cancelled") {
+    const status: MissionDispatchStatus = task.status === "completed"
+      ? "completed"
+      : task.status === "cancelled" ? "cancelled" : "stalled";
     return {
       taskId,
       dispatchId: null,
-      status: task.status,
-      summary: task.subtitle || "Task is already terminal.",
+      status,
+      summary: task.status === "cancelled"
+        ? task.subtitle || "Task is already cancelled."
+        : "Task is already terminal; no stop request was sent.",
       reason: null,
       runnerPid: null,
       childPid: null,
-      abortedAt: new Date().toISOString()
+      abortedAt: new Date().toISOString(),
+      ...(task.status === "cancelled" ? { cancellationStatus: "confirmed" as const } : {})
     };
   }
 
@@ -629,10 +685,25 @@ async function abortNativeGatewayTask(
   }
 
   for (const gatewayTaskId of gatewayTaskIds) {
-    await getOpenClawAdapter().cancelTask({
+    const result = await getOpenClawAdapter().cancelTask({
       taskId: gatewayTaskId,
       reason: abortReason
-    }, { ...gatewayOptions, timeoutMs: 15_000 });
+    }, { ...gatewayOptions, timeoutMs: 15_000, allowCliFallback: false });
+    if (!isMissionAbortConfirmed(result)) {
+      const requestedAt = new Date().toISOString();
+      return {
+        taskId,
+        dispatchId: null,
+        status: task.status === "idle" ? "queued" : task.status,
+        summary: "OpenClaw accepted the stop request but has not confirmed cancellation.",
+        reason: "Refresh task activity to reconcile its state.",
+        runnerPid: null,
+        childPid: null,
+        abortedAt: requestedAt,
+        requestedAt,
+        cancellationStatus: "unknown"
+      };
+    }
   }
 
   deps.invalidateMissionControlCaches();
@@ -645,8 +716,17 @@ async function abortNativeGatewayTask(
     reason: abortReason,
     runnerPid: null,
     childPid: null,
-    abortedAt: new Date().toISOString()
+    abortedAt: new Date().toISOString(),
+    cancellationStatus: "confirmed"
   };
+}
+
+function isMissionAbortConfirmed(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const payload = value as Record<string, unknown>;
+  const status = typeof payload.status === "string" ? payload.status.trim().toLowerCase() : "";
+  return payload.aborted === true || payload.cancelled === true || payload.canceled === true ||
+    status === "aborted" || status === "cancelled" || status === "canceled" || status === "stopped";
 }
 
 function readGatewayTaskId(value: unknown) {

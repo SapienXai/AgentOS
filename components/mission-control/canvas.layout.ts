@@ -6,9 +6,20 @@ const justCreatedTaskDurationMs = 12000;
 
 export function mergeNodePositions(previousNodes: CanvasNode[], nextNodes: CanvasNode[]) {
   const previousById = new Map(previousNodes.map((node) => [node.id, node]));
+  const previousTasksByRequestId = new Map(
+    previousNodes.flatMap((node) => {
+      if (node.type !== "task") return [];
+      const requestId = readTaskRequestId(node.data.task);
+      return requestId ? [[requestId, node] as const] : [];
+    })
+  );
 
   return nextNodes.map((node) => {
-    const previous = previousById.get(node.id);
+    const previous = previousById.get(node.id) ?? (
+      node.type === "task"
+        ? previousTasksByRequestId.get(readTaskRequestId(node.data.task) ?? "")
+        : undefined
+    );
 
     if (!previous || previous.type !== node.type) {
       return node;
@@ -38,6 +49,15 @@ export function mergeNodePositions(previousNodes: CanvasNode[], nextNodes: Canva
       zIndex
     };
   });
+}
+
+function readTaskRequestId(task: unknown): string | null {
+  if (!task || typeof task !== "object") return null;
+  const metadata = (task as { metadata?: unknown }).metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const values = metadata as Record<string, unknown>;
+  const requestId = values.clientRequestId ?? values.optimisticRequestId;
+  return typeof requestId === "string" && requestId.trim() ? requestId.trim() : null;
 }
 
 export function resolveNodeZIndex(

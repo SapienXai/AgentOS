@@ -17,7 +17,7 @@ export function useMissionControlTaskActions({
 }: {
   selectedNodeId: string | null;
   setActiveTaskCardContext: (context: TaskCardInspectorContext | null) => void;
-  selectNode: (nodeId: string | null, tab?: "overview" | "chat" | "output" | "files" | "raw") => void;
+  selectNode: (nodeId: string | null, tab?: "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw") => void;
   setIsInspectorOpen: (open: boolean) => void;
 }) {
   const [recentDispatchId, setRecentDispatchId] = useState<string | null>(null);

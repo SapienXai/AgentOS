@@ -64,6 +64,7 @@ export async function GET(request: Request) {
       meta: {
         clientRequestId: record.clientRequestId,
         sessionKey: record.sessionKey ?? record.result?.sessionKey ?? null,
+        admissionState: record.admissionState ?? "unknown",
         executionMode: record.executionMode,
         cancellation: record.cancellation ?? null,
         reconciled: true
@@ -124,15 +125,15 @@ export async function POST(request: Request) {
   const chatAuthorization = input.executionMode === "isolated-worktree"
     ? openClawAuthorization
     : await requireAgentOsOpenClawPreflight(request, {
-    operation: "mission.dispatch",
-    method: "chat.send",
-    params: { agentId: input.agentId ?? "resolved-by-agentos" },
-    targetKind: "agent-session",
-    targetId: input.agentId ?? null,
-    securityClass: "privileged-mutation",
-    executionPath: "gateway-native",
-    productPermission: "missions.use"
-    });
+        operation: "mission.dispatch",
+        method: "chat.send",
+        params: { agentId: input.agentId ?? "resolved-by-agentos" },
+        targetKind: "agent-session",
+        targetId: input.agentId ?? null,
+        securityClass: "privileged-mutation",
+        executionPath: "gateway-native",
+        productPermission: "missions.use"
+      });
   if ("response" in chatAuthorization) {
     for (const [name, value] of Object.entries(browserAccountResponseHeaders())) {
       chatAuthorization.response.headers.set(name, value);

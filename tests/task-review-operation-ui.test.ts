@@ -10,14 +10,13 @@ test("needs-review task badge opens the review workflow", async () => {
   assert.match(source, /badgeLabel === "needs review"/);
 });
 
-test("task cards show observed run and reported token metrics", async () => {
+test("collapsed task cards keep runtime metrics out of the primary presentation", async () => {
   const source = await readFile("components/mission-control/nodes/task-node.tsx", "utf8");
 
-  assert.match(source, /operationRunCount/);
-  assert.match(source, /taskTokenCount/);
-  assert.match(source, /OpenClaw run/);
-  assert.match(source, /tokens reported by OpenClaw/);
-  assert.match(source, /Tokens not reported/);
+  assert.doesNotMatch(source, /taskTokenCount|taskRunCount|tokens reported by OpenClaw|Tokens not reported/);
+  assert.match(source, /Elapsed/);
+  assert.match(source, /Give direction/);
+  assert.match(source, /Continue task/);
 });
 
 test("scheduled task review uses real OpenClaw operation actions", async () => {

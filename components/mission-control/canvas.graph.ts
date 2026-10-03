@@ -352,6 +352,7 @@ export function buildCanvasGraph(
         const bootstrapStage = typeof task.metadata.bootstrapStage === "string" ? task.metadata.bootstrapStage : null;
         const isBootstrapTask =
           bootstrapStage === "submitting" ||
+          bootstrapStage === "admission-unknown" ||
           bootstrapStage === "accepted" ||
           bootstrapStage === "waiting-for-heartbeat" ||
           bootstrapStage === "waiting-for-runtime" ||

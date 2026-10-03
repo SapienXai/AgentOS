@@ -781,8 +781,7 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
       mission: "Ship the change",
       agentId: "agent-1",
       workspaceId: "workspace-1",
-      submittedAt: 1_700_000_000_000,
-      abortController: new AbortController()
+      submittedAt: 1_700_000_000_000
     },
     emptySnapshot
   );

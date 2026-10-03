@@ -17,6 +17,7 @@ import {
   startOpenClawEventBridge
 } from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   OPENCLAW_GATEWAY_BASELINE_VERSION,
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
@@ -276,13 +277,18 @@ test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async (
 
 test("mission dispatch uses native chat when capability matrix supports it", async () => {
   const calls: string[] = [];
+  const sessionCalls: Array<{ key?: string; idempotencyKey?: string }> = [];
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,
     methods: ["chat.send"]
   }));
   setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      sessionCalls.push({ key: input.key, idempotencyKey: input.idempotencyKey });
+      return { key: input.key, sessionId: "session-native-1" };
+    },
     async runAgentTurn(input) {
-      calls.push(`run:${input.agentId}:${input.dispatchId ?? "none"}`);
+      calls.push(`run:${input.agentId}:${input.dispatchId ?? "none"}:${input.sessionKey ?? "none"}:${String(input.admissionOnly)}`);
       return {
         runId: "run-native-1",
         status: "running",
@@ -300,20 +306,28 @@ test("mission dispatch uses native chat when capability matrix supports it", asy
 
   assert.equal(response.runId, "run-native-1");
   assert.equal(response.status, "running");
-  assert.deepEqual(calls, [`run:agent-1:${response.dispatchId}`]);
+  assert.deepEqual(sessionCalls, [{
+    key: `agent:agent-1:explicit:${response.dispatchId}`,
+    idempotencyKey: response.dispatchId
+  }]);
+  assert.deepEqual(calls, [`run:agent-1:${response.dispatchId}:agent:agent-1:explicit:${response.dispatchId}:true`]);
 });
 
-test("mission dispatch keeps running when only the Gateway observation wait expires", async () => {
+test("mission dispatch returns after Gateway admission without waiting for execution", async () => {
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,
     methods: ["chat.send", "agent.wait"]
   }));
   setOpenClawAdapterForTesting(createContractAdapter({
-    async runAgentTurn() {
+    async createSession(input) {
+      return { key: input.key, sessionId: "session-timeout-1" };
+    },
+    async runAgentTurn(input) {
+      assert.equal(input.admissionOnly, true);
       return {
         runId: "run-timeout-1",
-        status: "timeout",
-        timeoutPhase: "gateway_draining"
+        status: "running",
+        summary: "Accepted by OpenClaw"
       } as unknown as Awaited<ReturnType<OpenClawAdapter["runAgentTurn"]>>;
     }
   }));
@@ -327,13 +341,47 @@ test("mission dispatch keeps running when only the Gateway observation wait expi
 
   assert.equal(response.runId, "run-timeout-1");
   assert.equal(response.status, "running");
-  assert.match(response.summary, /accepted and queued/i);
+  assert.match(response.summary, /accepted by OpenClaw/i);
+});
+
+test("ambiguous independent-session creation is retained for request reconciliation", async () => {
+  let sessionCreateCalls = 0;
+  let turnCalls = 0;
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession() {
+      sessionCreateCalls += 1;
+      throw new OpenClawGatewayClientError("Gateway connection closed after sending sessions.create.", "timeout");
+    },
+    async runAgentTurn() {
+      turnCalls += 1;
+      return { runId: "must-not-send", status: "running" };
+    }
+  }));
+
+  const deps = {
+    getMissionControlSnapshot: async () => createSnapshot(),
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  };
+  const first = await submitMissionDispatch({ mission: "Reconcile me", workspaceId: "workspace-1", requestId: "ambiguous-session-create" }, deps);
+  const replay = await submitMissionDispatch({ mission: "Reconcile me", workspaceId: "workspace-1", requestId: "ambiguous-session-create" }, deps);
+  trackMissionDispatch(first.dispatchId);
+
+  assert.equal(first.status, "queued");
+  assert.match(first.summary, /admission is unconfirmed/i);
+  assert.equal(replay.dispatchId, first.dispatchId);
+  assert.equal(sessionCreateCalls, 1);
+  assert.equal(turnCalls, 0);
 });
 
 test("mission dispatch converges duplicate client request identities", async () => {
   let calls = 0;
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
   setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      return { key: input.key, sessionId: "session-idempotent-1" };
+    },
     async runAgentTurn() {
       calls += 1;
       return { runId: "run-idempotent-1", status: "running", summary: "Accepted once" };
@@ -359,6 +407,9 @@ test("mission dispatch still attempts Gateway-first path when capabilities are u
     methods: []
   }));
   setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      return { key: input.key, sessionId: "session-unknown-1" };
+    },
     async runAgentTurn(input) {
       calls.push(`run:${input.agentId}:${input.dispatchId ?? "none"}`);
       return {
@@ -410,7 +461,7 @@ test("task abort cancels native Gateway tasks without requiring dispatch records
   setOpenClawAdapterForTesting(createContractAdapter({
     async cancelTask(input) {
       calls.push(input);
-      return { ok: true };
+      return { status: "cancelled" };
     }
   }));
 
@@ -422,6 +473,7 @@ test("task abort cancels native Gateway tasks without requiring dispatch records
 
   assert.equal(response.dispatchId, null);
   assert.equal(response.status, "cancelled");
+  assert.equal(response.cancellationStatus, "confirmed");
   assert.deepEqual(calls, [{ taskId: "gateway-task-1", reason: "stop it" }]);
 });
 

@@ -2598,6 +2598,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   private async prepareNativeSession(input: OpenClawAgentTurnInput, sessionKey: string, options: OpenClawCommandOptions) {
+    if (input.sessionAlreadyPrepared) {
+      return {
+        sessionKey,
+        sessionId: input.sessionId ?? null
+      };
+    }
+
     if (!input.sessionId && !input.dispatchId) {
       return null;
     }
@@ -3484,6 +3491,10 @@ function isGatewayAgentNotFoundError(error: unknown, agentId: string) {
 }
 
 function shouldWaitForNativeAgentTurn(input: OpenClawAgentTurnInput, payload: MissionCommandPayload) {
+  if (input.admissionOnly) {
+    return false;
+  }
+
   if (!payload.runId) {
     return false;
   }

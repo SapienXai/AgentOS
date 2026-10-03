@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { controlRunningTaskSession } from "@/lib/agentos/control-plane";
+import { writeTaskReview } from "@/lib/agentos/application/task-review-service";
+import { appendMissionDispatchOperatorInstruction } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
@@ -52,22 +54,61 @@ export async function POST(
     targetKind: "task-session",
     targetId: taskId,
     securityClass: "privileged-mutation",
-    executionPath: parseResult.data.action === "continue"
-      ? "gateway-or-verified-cli"
-      : "gateway-native",
+    executionPath: "gateway-native",
     productPermission: "tasks.use"
   });
   if ("response" in authorization) return authorization.response;
 
   const visibleSnapshot = await getMissionControlSnapshot();
-  if (!visibleSnapshot.tasks.some((task) => task.id === taskId)) {
+  const visibleTask = visibleSnapshot.tasks.find((task) => task.id === taskId);
+  if (!visibleTask) {
     return NextResponse.json({ error: "Task was not found." }, { status: 404 });
+  }
+  if (parseResult.data.dispatchId && parseResult.data.dispatchId !== visibleTask.dispatchId) {
+    return NextResponse.json({ error: "The task identity does not match the requested dispatch." }, { status: 409 });
   }
 
   try {
     const result = await controlRunningTaskSession(taskId, parseResult.data, {}, authorization.commandOptions);
+    let review = null;
+    let historyPersistenceWarning: string | null = null;
+    if (visibleTask.dispatchId) {
+      try {
+        const runId = typeof result.result.runId === "string" ? result.result.runId : null;
+        await appendMissionDispatchOperatorInstruction({
+          dispatchId: visibleTask.dispatchId,
+          idempotencyKey: parseResult.data.idempotencyKey,
+          kind: parseResult.data.action,
+          message: parseResult.data.message,
+          sessionKey: result.target.sessionKey,
+          sessionId: result.target.sessionId,
+          runId
+        });
+      } catch {
+        historyPersistenceWarning = "OpenClaw accepted the instruction, but AgentOS could not save its task history receipt.";
+      }
+    }
+    if (parseResult.data.action === "continue") {
+      const nativeTaskId = typeof visibleTask.metadata.openClawTaskId === "string"
+        ? visibleTask.metadata.openClawTaskId.trim()
+        : "";
+      const taskKey = (visibleTask.dispatchId ?? nativeTaskId) || visibleTask.key || visibleTask.id;
+      try {
+        review = await writeTaskReview({
+          actorId: authorization.actor.actorId,
+          taskId: visibleTask.id,
+          taskKey,
+          status: "continued",
+          action: "Continued the task in its existing OpenClaw session"
+        });
+      } catch {
+        historyPersistenceWarning = "OpenClaw accepted the continuation, but AgentOS could not save its operator review receipt.";
+      }
+    }
     return NextResponse.json(redactSecrets({
-      result
+      result,
+      review,
+      historyPersistenceWarning
     }));
   } catch (error) {
     return NextResponse.json(

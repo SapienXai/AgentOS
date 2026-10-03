@@ -206,6 +206,7 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
   );
   const state = resolveWorkforceMissionState({
     dispatchStatus: seed.record?.status === "stalled" ? "stalled" : seed.record?.status ?? null,
+    admissionState: seed.record?.admissionState ?? null,
     runnerStarted: Boolean(seed.record?.runner.startedAt || seed.record?.runner.pid),
     rootStatus: derivedRootStatus,
     childStatuses: childTasks.map((task) => task.status),

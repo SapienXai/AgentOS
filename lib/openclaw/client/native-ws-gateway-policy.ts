@@ -82,7 +82,7 @@ export function resolveGatewayRequestPolicy(method: string, options: OpenClawCom
   return {
     safety,
     timeoutMs: options.timeoutMs,
-    allowCliFallback: true,
+    allowCliFallback: options.allowCliFallback ?? true,
     allowReadCliFallbackOnNativeFailure: method === "update.status",
     allowMutationFallbackOnUnsupported: safety === "mutation"
   };

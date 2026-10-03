@@ -827,7 +827,7 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
   });
 
   return (
-    <SectionCard title="Recent Activity" action={<Button asChild variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem]"><Link href="/missions">View missions</Link></Button>}>
+    <SectionCard title="Recent Activity" action={<Button asChild variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem]"><Link href="/missions">View tasks</Link></Button>}>
       {rows.length === 0 ? (
         <EmptyState title="No runtime activity" description="No agent runtime events were reported in the current AgentOS snapshot." />
       ) : (

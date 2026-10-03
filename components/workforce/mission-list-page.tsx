@@ -44,7 +44,7 @@ export function MissionListPage({
 }) {
   const [payload, setPayload] = useState(initial);
   const [search, setSearch] = useState("");
-  const [newMissionOpen, setNewMissionOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -70,18 +70,21 @@ export function MissionListPage({
 
   const sections = useMemo(() => {
     const needsYou = payload.missions.filter((mission) => ["waiting-human", "blocked", "failed"].includes(mission.state));
-    const running = payload.missions.filter((mission) => ["starting", "running", "waiting-worker", "reconnecting"].includes(mission.state));
+    const active = payload.missions.filter((mission) => ["starting", "running", "waiting-worker", "reconnecting"].includes(mission.state));
     const queued = payload.missions.filter((mission) => mission.state === "queued");
-    const completed = payload.missions.filter((mission) => mission.state === "completed").slice(0, 8);
-    return { needsYou, running, queued, completed };
+    const history = payload.missions.filter((mission) => ["completed", "cancelled"].includes(mission.state));
+    return { needsYou, active, queued, history };
   }, [payload.missions]);
+  const eligibleAgentCount = snapshot.agents.filter((agent) =>
+    agent.status !== "offline" && (!activeWorkspaceId || agent.workspaceId === activeWorkspaceId)
+  ).length;
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <PageHeader
-        title="Missions"
-        subtitle="Set the goal-level work here. Tasks are individual runtime actions; Operations is the technical job and cron surface."
-        primaryAction={{ label: "New mission", icon: Plus, onClick: () => setNewMissionOpen(true), disabled: snapshot.agents.length === 0, title: snapshot.agents.length === 0 ? "Connect an eligible agent before starting a mission." : undefined }}
+        title="Tasks"
+        subtitle="Each task is one goal, its activity, workers, and result. Schedules create separate task executions."
+        primaryAction={{ label: "Create task", icon: Plus, onClick: () => setNewTaskOpen(true), disabled: eligibleAgentCount === 0, title: eligibleAgentCount === 0 ? "Connect an available agent in this workspace before starting a task." : undefined }}
       />
 
       <div className="rounded-lg border border-border bg-card/55 px-3 py-2.5 text-xs text-muted-foreground">
@@ -93,7 +96,7 @@ export function MissionListPage({
         <StatCard label="Needs you" value={String(payload.summary.needsYou)} detail="Approvals, blockers, failures" icon={ShieldAlert} tone="warning" />
         <StatCard label="Running" value={String(payload.summary.running)} detail="Workers with active work" icon={Users} tone="info" />
         <StatCard label="Queued" value={String(payload.summary.queued)} detail="Accepted, not started" icon={Clock3} tone="purple" />
-        <StatCard label="Completed" value={String(payload.summary.completed)} detail="Recent mission results" icon={CheckCircle2} tone="success" />
+        <StatCard label="Done" value={String(payload.summary.completed)} detail="Recent task results" icon={CheckCircle2} tone="success" />
       </StatGrid>
 
       <div className="flex items-center gap-2 rounded-lg border border-border bg-card/45 px-3 py-2">
@@ -101,25 +104,25 @@ export function MissionListPage({
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search missions, workers, or workspaces"
+          placeholder="Search tasks, workers, or workspaces"
           className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          aria-label="Search missions"
+          aria-label="Search tasks"
         />
-        {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Refreshing missions" /> : null}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Refreshing tasks" /> : null}
       </div>
 
-      {sections.needsYou.length > 0 ? <MissionSection title="Needs you" detail="These missions cannot safely continue without an operator." missions={sections.needsYou} tone="warning" /> : null}
-      {sections.running.length > 0 ? <MissionSection title="Running" detail="Active work reconstructed from OpenClaw runtime evidence." missions={sections.running} tone="info" /> : null}
-      {sections.queued.length > 0 ? <MissionSection title="Queued" detail="Accepted missions waiting for runtime start." missions={sections.queued} tone="purple" /> : null}
-      {sections.completed.length > 0 ? <MissionSection title="Recently completed" detail="Final results remain available with their runtime provenance." missions={sections.completed} tone="success" /> : null}
+      {sections.needsYou.length > 0 ? <MissionSection title="Needs you" detail="These tasks need an operator decision or recovery." missions={sections.needsYou} tone="warning" /> : null}
+      {sections.active.length > 0 ? <MissionSection title="Active" detail="Current task state follows confirmed OpenClaw runtime evidence." missions={sections.active} tone="info" /> : null}
+      {sections.queued.length > 0 ? <MissionSection title="Queued" detail="Tasks admitted and waiting for runtime start." missions={sections.queued} tone="purple" /> : null}
+      {sections.history.length > 0 ? <MissionSection title="History" detail="Completed and cancelled tasks remain available with their captured evidence." missions={sections.history} tone="muted" /> : null}
 
       {payload.missions.length === 0 ? (
-        <EmptyState title="No missions yet" description="Give your workforce a goal to get started." />
+        <EmptyState title="No tasks yet" description="Choose an agent and give it a goal to get started." />
       ) : null}
 
       <NewMissionDialog
-        open={newMissionOpen}
-        onOpenChange={setNewMissionOpen}
+        open={newTaskOpen}
+        onOpenChange={setNewTaskOpen}
         snapshot={snapshot}
         activeWorkspaceId={activeWorkspaceId}
         onSubmitted={async (missionId) => {
@@ -131,7 +134,7 @@ export function MissionListPage({
   );
 }
 
-function MissionSection({ title, detail, missions, tone }: { title: string; detail: string; missions: WorkforceMissionProjection[]; tone: "warning" | "info" | "purple" | "success" }) {
+function MissionSection({ title, detail, missions, tone }: { title: string; detail: string; missions: WorkforceMissionProjection[]; tone: "warning" | "info" | "purple" | "success" | "muted" }) {
   return (
     <SectionCard title={title} action={<span className="text-[0.65rem] text-muted-foreground">{missions.length}</span>}>
       <p className="border-b border-border px-3 py-2 text-xs leading-5 text-muted-foreground">{detail}</p>
@@ -142,7 +145,7 @@ function MissionSection({ title, detail, missions, tone }: { title: string; deta
   );
 }
 
-function MissionCard({ mission, tone }: { mission: WorkforceMissionProjection; tone: "warning" | "info" | "purple" | "success" }) {
+function MissionCard({ mission, tone }: { mission: WorkforceMissionProjection; tone: "warning" | "info" | "purple" | "success" | "muted" }) {
   const activeWorkerCount = mission.activeWorkers.length;
   return (
     <article className="flex min-w-0 flex-col rounded-xl border border-border bg-background/35 p-3 transition-colors hover:bg-accent/35">
@@ -167,7 +170,7 @@ function MissionCard({ mission, tone }: { mission: WorkforceMissionProjection; t
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5">
         <span className="text-[0.68rem] text-muted-foreground">{formatAge(mission.updatedAt ?? mission.createdAt)}</span>
         <Link href={`/missions/${encodeURIComponent(mission.id)}`} className="group inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-          {mission.humanControlItems.length > 0 ? "Review" : "Open"}
+          {mission.humanControlItems.length > 0 ? "Answer" : mission.state === "completed" ? "View result" : "Open task"}
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </Link>
       </div>
@@ -180,7 +183,7 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
   const [agentId, setAgentId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const eligibleAgents = snapshot.agents.filter((agent) => agent.status !== "offline");
+  const eligibleAgents = snapshot.agents.filter((agent) => agent.status !== "offline" && (!activeWorkspaceId || agent.workspaceId === activeWorkspaceId));
 
   useEffect(() => {
     if (!open) return;
@@ -192,11 +195,15 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
   async function submit() {
     const mission = goal.trim();
     if (!mission) {
-      setError("Describe what you want your workforce to accomplish.");
+      setError("Describe what you want this agent to accomplish.");
       return;
     }
     if (eligibleAgents.length === 0) {
-      setError("No eligible agent is currently available.");
+      setError("Select an available agent in the current workspace.");
+      return;
+    }
+    if (!agentId || !eligibleAgents.some((agent) => agent.id === agentId)) {
+      setError("Choose an agent for this task.");
       return;
     }
     setSubmitting(true);
@@ -207,18 +214,18 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mission,
-          requestId: `mission:${crypto.randomUUID()}`,
-          ...(agentId ? { agentId } : {}),
-          ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {})
+          requestId: `task:${crypto.randomUUID()}`,
+          agentId,
+          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === agentId)?.workspaceId
         })
       });
       const result = (await response.json()) as { dispatchId?: string; error?: string };
-      if (!response.ok || result.error) throw new Error(result.error || "Mission could not be started.");
-      if (!result.dispatchId) throw new Error("OpenClaw accepted the request without returning a mission reference.");
+      if (!response.ok || result.error) throw new Error(result.error || "Task could not be started.");
+      if (!result.dispatchId) throw new Error("OpenClaw accepted the request without returning a task reference.");
       onOpenChange(false);
       await onSubmitted(result.dispatchId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Mission could not be started.");
+      setError(reason instanceof Error ? reason.message : "Task could not be started.");
     } finally {
       setSubmitting(false);
     }
@@ -228,28 +235,28 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl rounded-[18px] p-4 sm:p-5">
         <DialogHeader>
-          <DialogTitle>New mission</DialogTitle>
-          <DialogDescription>What do you want your workforce to accomplish?</DialogDescription>
+          <DialogTitle>Create task</DialogTitle>
+          <DialogDescription>What should this agent accomplish?</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-1">
           <div>
-            <Label htmlFor="mission-goal">Goal</Label>
+            <Label htmlFor="mission-goal">Task goal</Label>
             <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-sm" disabled={submitting} />
           </div>
           <div>
-            <Label htmlFor="mission-agent">Initial worker</Label>
+            <Label htmlFor="mission-agent">Agent</Label>
             <select id="mission-agent" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-              <option value="">Auto assign an eligible worker</option>
+              <option value="">Choose an agent</option>
               {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} ({agent.status})</option>)}
             </select>
-            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Auto assign uses the existing deterministic AgentOS selection policy. It does not run a separate planner.</p>
+            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only agents in the current workspace are available here.</p>
           </div>
           {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>OpenClaw is not fully ready. Start will validate the live Gateway before creating runtime work.</span></div> : null}
           {error ? <p className="text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}</p> : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-end">
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={submitting || eligibleAgents.length === 0}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start mission</Button>
+          <Button onClick={() => void submit()} disabled={submitting || eligibleAgents.length === 0 || !agentId}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

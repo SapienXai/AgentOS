@@ -52,3 +52,25 @@ test("workspace measurement remains stable across graph refreshes", () => {
   assert.deepEqual(mergedWorkspace.measured, { width: 1200, height: 900 });
   assert.equal(mergedWorkspace.selected, true);
 });
+
+test("optimistic task position and selection transfer to its canonical projection", () => {
+  const optimisticTask = {
+    id: "optimistic-task:req-1",
+    type: "task",
+    position: { x: 620, y: 340 },
+    selected: true,
+    data: { task: { metadata: { optimisticRequestId: "req-1" } } }
+  } as unknown as CanvasNode;
+  const canonicalTask = {
+    id: "task:dispatch-1",
+    type: "task",
+    position: { x: 300, y: 220 },
+    selected: false,
+    data: { task: { metadata: { clientRequestId: "req-1" } } }
+  } as unknown as CanvasNode;
+
+  const [mergedTask] = mergeNodePositions([optimisticTask], [canonicalTask]);
+
+  assert.deepEqual(mergedTask.position, { x: 620, y: 340 });
+  assert.equal(mergedTask.selected, true);
+});

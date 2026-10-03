@@ -80,6 +80,8 @@ import {
   createOptimisticMissionTaskRecord,
   createOptimisticScheduledTaskRecord,
   findReplacementTaskForOptimisticTask,
+  readPendingMissionRequests,
+  removePendingMissionRequest,
   buildLaunchpadWorkspaceHandoffProgress,
   hasCompleteAgentOSWorkspaceSnapshot,
   hasAgentOSWorkspaceSetup,
@@ -275,6 +277,7 @@ export function MissionControlShell({
   const [composerViewportResetNonce, setComposerViewportResetNonce] = useState(0);
   const [lastMission, setLastMission] = useState<MissionResponse | null>(null);
   const [composeIntent, setComposeIntent] = useState<ComposeIntent | null>(null);
+  const reconciledPendingTaskIdsRef = useRef(new Set<string>());
   const {
     surfaceTheme,
     setSurfaceTheme,
@@ -308,7 +311,6 @@ export function MissionControlShell({
     };
   }, [surfaceTheme]);
 
-  const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const [pendingWorkspaceCreations, setPendingWorkspaceCreations] = useState<PendingWorkspaceMenuEntry[]>([]);
@@ -336,7 +338,7 @@ export function MissionControlShell({
   }, []);
 
   const handleInspectorTabChange = useCallback(
-    (tab: "overview" | "chat" | "output" | "files" | "raw") => {
+    (tab: "overview" | "chat" | "direction" | "output" | "result" | "files" | "raw") => {
       if (tab === "chat") {
         inspectorChatEntryPointRef.current = "inspector";
       }
@@ -635,6 +637,102 @@ export function MissionControlShell({
     const mergedSnapshot = mergeSnapshotWithOptimisticTasks(snapshot, optimisticMissionTasks);
     return applyTaskReviewStateToSnapshot(mergedSnapshot, taskReviewState);
   }, [snapshot, optimisticMissionTasks, taskReviewState]);
+
+  useEffect(() => {
+    const visibleRequestIds = new Set(snapshot.tasks.map((task) =>
+      typeof task.metadata.clientRequestId === "string" ? task.metadata.clientRequestId : null
+    ).filter((requestId): requestId is string => Boolean(requestId)));
+    const pendingRequests = readPendingMissionRequests();
+    for (const requestId of visibleRequestIds) removePendingMissionRequest(requestId);
+    const unresolvedRequests = pendingRequests.filter((request) =>
+      !visibleRequestIds.has(request.requestId) && !reconciledPendingTaskIdsRef.current.has(request.requestId)
+    );
+    if (unresolvedRequests.length === 0) return;
+
+    const restoredTasks = unresolvedRequests.map((request) => createOptimisticMissionTaskRecord(request, snapshot));
+    for (const request of unresolvedRequests) reconciledPendingTaskIdsRef.current.add(request.requestId);
+    setOptimisticMissionTasks((current) => [
+      ...restoredTasks.filter((restored) => !current.some((entry) => entry.requestId === restored.requestId)),
+      ...current
+    ]);
+    const selectedRequest = restoredTasks[0];
+    if (selectedRequest) {
+      if (selectedRequest.task.workspaceId) setActiveWorkspaceId(selectedRequest.task.workspaceId);
+      if (!selectedNodeId) {
+        selectNode(selectedRequest.task.id);
+        setIsInspectorOpen(true);
+      }
+    }
+
+    for (const request of unresolvedRequests) {
+      void fetch(`/api/mission?requestId=${encodeURIComponent(request.requestId)}`, { cache: "no-store" })
+        .then(async (response) => ({ response, payload: await response.json().catch(() => null) as {
+          dispatchId?: string;
+          status?: string;
+          summary?: string;
+          meta?: { admissionState?: string };
+        } | null }))
+        .then(({ response, payload }) => {
+          if (response.ok && payload?.dispatchId) {
+            const status = payload.status === "running" || payload.status === "completed" || payload.status === "stalled" || payload.status === "cancelled"
+              ? payload.status
+              : "queued";
+            const workItemStatus: WorkItemRecord["status"] = status;
+            const bootstrapStage = status === "completed" ? "completed"
+              : status === "stalled" ? "stalled"
+                : status === "cancelled" ? "cancelled"
+                  : payload.meta?.admissionState === "unknown" ? "admission-unknown"
+                    : payload.meta?.admissionState === "preparing" || payload.meta?.admissionState === "session-created" ? "submitting" : "accepted";
+            setOptimisticMissionTasks((current) => current.map((entry) => entry.requestId !== request.requestId
+              ? entry
+              : {
+                  ...entry,
+                  dispatchId: payload.dispatchId ?? entry.dispatchId,
+                  task: updateOptimisticMissionTask(entry.task, {
+                    dispatchId: payload.dispatchId,
+                    status: workItemStatus,
+                    subtitle: payload.summary || "Task admission was found; refreshing OpenClaw activity.",
+                    bootstrapStage,
+                    feedEvent: {
+                      id: `${entry.task.id}:reconciled:${payload.dispatchId}`,
+                      kind: "status",
+                      timestamp: new Date().toISOString(),
+                      title: "Task admission reconciled",
+                      detail: payload.summary || "The saved request was found. AgentOS did not resubmit it.",
+                      isError: false
+                    }
+                  })
+                }
+            ));
+            setRecentDispatchId(payload.dispatchId);
+            removePendingMissionRequest(request.requestId);
+            void refreshSnapshot({ force: true });
+          } else {
+            setOptimisticMissionTasks((current) => current.map((entry) => entry.requestId !== request.requestId
+              ? entry
+              : {
+                  ...entry,
+                  task: updateOptimisticMissionTask(entry.task, {
+                    status: "queued",
+                    subtitle: "Admission is still unconfirmed. This request was not resubmitted; reopen Mission Control to check again.",
+                    bootstrapStage: "admission-unknown",
+                    feedEvent: {
+                      id: `${entry.task.id}:reconciliation-unknown`,
+                      kind: "status",
+                      timestamp: new Date().toISOString(),
+                      title: "Admission not confirmed",
+                      detail: "No new runtime request was sent during reload reconciliation.",
+                      isError: false
+                    }
+                  })
+                }
+            ));
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [refreshSnapshot, selectNode, selectedNodeId, setActiveWorkspaceId, setIsInspectorOpen, setOptimisticMissionTasks, setRecentDispatchId, snapshot]);
+
   const selectedWorkspace = selectedNodeId
     ? uiSnapshot.workspaces.find((workspace) => workspace.id === selectedNodeId) ?? null
     : null;
@@ -1845,54 +1943,29 @@ export function MissionControlShell({
         ? taskAbortRequest.dispatchId
         : optimisticTaskEntry?.dispatchId ?? null;
 
-    if (optimisticRequestId && !resolvedDispatchId) {
-      missionDispatchAbortControllersRef.current.get(optimisticRequestId)?.abort();
-      missionDispatchAbortControllersRef.current.delete(optimisticRequestId);
-
-      setOptimisticMissionTasks((current) =>
-        current.map((entry) =>
-          entry.requestId === optimisticRequestId
-            ? {
-                ...entry,
-                task: updateOptimisticMissionTask(entry.task, {
-                  status: "cancelled",
-                  subtitle: "Mission submission cancelled before dispatch.",
-                  bootstrapStage: "cancelled",
-                  feedEvent: {
-                    id: `${entry.task.id}:cancelled:${Date.now()}`,
-                    kind: "warning",
-                    timestamp: new Date().toISOString(),
-                    title: "Dispatch cancelled",
-                    detail: "Mission submission cancelled before dispatch.",
-                    isError: false
-                  }
-                })
-              }
-            : entry
-        )
-      );
-
-      toast.success("Mission submission cancelled.", {
-        description: taskAbortRequest.title
-      });
-      setTaskAbortRequest(null);
-      setTaskAbortRunState("idle");
-      setTaskAbortMessage(null);
-      return;
-    }
-
     setTaskAbortRunState("running");
     setTaskAbortMessage(null);
 
     try {
-      const response = await fetch(`/api/tasks/${encodeURIComponent(taskAbortRequest.id)}/abort`, {
+      let dispatchId = resolvedDispatchId;
+      if (optimisticRequestId && !dispatchId) {
+        const reconciliation = await fetch(`/api/mission?requestId=${encodeURIComponent(optimisticRequestId)}`, { cache: "no-store" });
+        const reconciled = (await reconciliation.json().catch(() => null)) as { dispatchId?: string; error?: string } | null;
+        if (!reconciliation.ok || !reconciled?.dispatchId) {
+          throw new Error("Task admission is still being reconciled. No stop was confirmed; check again after OpenClaw records the task.");
+        }
+        dispatchId = reconciled.dispatchId;
+      }
+
+      const abortTargetId = dispatchId ?? taskAbortRequest.id;
+      const response = await fetch(`/api/tasks/${encodeURIComponent(abortTargetId)}/abort`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
           reason: "Aborted from AgentOS.",
-          dispatchId: resolvedDispatchId
+          dispatchId
         })
       });
       const payload = (await response.json().catch(() => null)) as
@@ -1900,6 +1973,7 @@ export function MissionControlShell({
             error?: string;
             message?: string;
             summary?: string;
+            result?: { cancellationStatus?: "requested" | "unknown" | "confirmed"; summary?: string };
           }
         | null;
 
@@ -1909,9 +1983,15 @@ export function MissionControlShell({
         );
       }
 
-      toast.success("Task abort requested.", {
-        description: taskAbortRequest.title
-      });
+      if (payload?.result?.cancellationStatus === "confirmed") {
+        toast.success("Task stopped.", { description: taskAbortRequest.title });
+      } else if (payload?.result?.summary?.includes("no stop request was sent")) {
+        toast.message("Task is already terminal.", { description: payload.result.summary });
+      } else {
+        toast.message("Stop status is unconfirmed.", {
+          description: payload?.result?.summary || "OpenClaw has not confirmed that the task stopped. Its current state is preserved."
+        });
+      }
       setTaskAbortRequest(null);
       setTaskAbortRunState("idle");
       await refresh();
@@ -1926,7 +2006,6 @@ export function MissionControlShell({
   }, [
     optimisticMissionTasks,
     refresh,
-    setOptimisticMissionTasks,
     setTaskAbortMessage,
     setTaskAbortRequest,
     setTaskAbortRunState,
@@ -5222,8 +5301,6 @@ export function MissionControlShell({
             onComposerActiveChange={handleComposerActiveChange}
             onRefresh={refresh}
             onMissionDispatchStart={(event) => {
-              missionDispatchAbortControllersRef.current.set(event.requestId, event.abortController);
-
               const optimisticTask = createOptimisticMissionTaskRecord(event, snapshot);
 
               setOptimisticMissionTasks((current) => [
@@ -5239,8 +5316,7 @@ export function MissionControlShell({
               setIsInspectorOpen(true);
             }}
             onMissionDispatchFailure={(requestId, message) => {
-              missionDispatchAbortControllersRef.current.delete(requestId);
-
+              removePendingMissionRequest(requestId);
               setOptimisticMissionTasks((current) =>
                 current.map((entry) =>
                   entry.requestId === requestId
@@ -5264,6 +5340,27 @@ export function MissionControlShell({
                 )
               );
             }}
+            onMissionDispatchUncertain={(requestId, message) => {
+              setOptimisticMissionTasks((current) => current.map((entry) => entry.requestId !== requestId
+                ? entry
+                : {
+                    ...entry,
+                    task: updateOptimisticMissionTask(entry.task, {
+                      status: "queued",
+                      subtitle: "Admission is unconfirmed. Refresh before sending this goal again.",
+                      bootstrapStage: "admission-unknown",
+                      feedEvent: {
+                        id: `${entry.task.id}:admission-unknown:${Date.now()}`,
+                        kind: "status",
+                        timestamp: new Date().toISOString(),
+                        title: "Admission unconfirmed",
+                        detail: message,
+                        isError: false
+                      }
+                    })
+                  }
+              ));
+            }}
             onOperationScheduled={(event) => {
               const optimisticTask = createOptimisticScheduledTaskRecord({ ...event, snapshot });
               setOptimisticMissionTasks((current) => [optimisticTask, ...current.filter((entry) => entry.operationJobId !== event.jobId)]);
@@ -5272,10 +5369,11 @@ export function MissionControlShell({
               setIsInspectorOpen(true);
             }}
             onMissionResponse={(result, context) => {
-              missionDispatchAbortControllersRef.current.delete(context.requestId);
+              removePendingMissionRequest(context.requestId);
               setLastMission(result);
               const waitingForTranscriptOutput =
                 result.status === "stalled" && isMissingTranscriptActivityMessage(result.summary);
+              const admissionUnconfirmed = result.meta?.admissionState === "unknown";
 
               setOptimisticMissionTasks((current) =>
                 current.map((entry) =>
@@ -5305,7 +5403,9 @@ export function MissionControlShell({
                                 ? "cancelled"
                                 : result.status === "completed"
                                   ? "completed"
-                                : "accepted",
+                                : result.meta?.admissionState === "unknown"
+                                  ? "admission-unknown"
+                                  : "accepted",
                           feedEvent: {
                             id: `${entry.task.id}:response:${Date.now()}`,
                             kind:
@@ -5315,19 +5415,23 @@ export function MissionControlShell({
                                 : "status",
                             timestamp: new Date().toISOString(),
                             title:
-                              waitingForTranscriptOutput
+                              admissionUnconfirmed
+                                ? "Admission unconfirmed"
+                                : waitingForTranscriptOutput
                                 ? "Waiting for output"
                                 : result.status === "stalled"
-                                ? "Dispatch blocked"
+                                ? "Task blocked"
                                 : result.status === "cancelled"
-                                  ? "Dispatch cancelled"
+                                  ? "Task cancelled"
                                   : result.status === "completed"
-                                    ? "Mission finished"
-                                  : "Mission accepted",
+                                    ? "Task done"
+                                  : "Task accepted",
                             detail:
-                              waitingForTranscriptOutput
+                              admissionUnconfirmed
+                                ? result.summary || "OpenClaw has not confirmed whether the task was admitted."
+                                : waitingForTranscriptOutput
                                 ? "The runtime is live, but AgentOS has not captured transcript output yet."
-                                : result.summary || "Mission accepted and queued for OpenClaw execution.",
+                                : result.summary || "Task accepted and queued for OpenClaw execution.",
                             isError:
                               result.status === "cancelled" ||
                               (result.status === "stalled" && !waitingForTranscriptOutput)

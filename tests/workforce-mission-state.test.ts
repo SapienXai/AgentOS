@@ -10,6 +10,8 @@ test("workforce mission state derives running work from active runtime evidence"
   assert.equal(resolveWorkforceMissionState({ rootStatus: "running", connection: "live" }), "running");
   assert.equal(resolveWorkforceMissionState({ dispatchStatus: "running", runnerStarted: true, connection: "live" }), "starting");
   assert.equal(resolveWorkforceMissionState({ dispatchStatus: "queued", connection: "live" }), "queued");
+  assert.equal(resolveWorkforceMissionState({ dispatchStatus: "queued", admissionState: "unknown", connection: "live" }), "starting");
+  assert.equal(resolveWorkforceMissionState({ dispatchStatus: "queued", admissionState: "session-created", connection: "live" }), "starting");
 });
 
 test("human control takes precedence over running presentation", () => {
@@ -49,6 +51,6 @@ test("terminal failure and cancellation remain explicit", () => {
 
 test("mission titles are deterministic and bounded", () => {
   assert.equal(deriveMissionTitle("  Prepare   the launch brief  "), "Prepare the launch brief");
-  assert.equal(deriveMissionTitle(""), "Untitled mission");
+  assert.equal(deriveMissionTitle(""), "Untitled task");
   assert.equal(deriveMissionTitle("a".repeat(100)).length, 70);
 });

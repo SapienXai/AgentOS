@@ -209,6 +209,9 @@ function createContextAdapter(state: ReturnType<typeof createAdapterState>): Ope
         status: "completed",
         summary: "Context probe accepted"
       };
+    },
+    async createSession(input) {
+      return { key: input.key, sessionId: `session-${input.agentId}` };
     }
   } as OpenClawAdapter;
 }

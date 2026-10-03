@@ -202,14 +202,23 @@ export function MissionControlShellDialogs({
               : "border-white/10 bg-slate-950/94 text-slate-100"
           )}
         >
+          {(() => {
+            const pendingAdmission = Boolean(
+              taskAbortRequest?.metadata.optimisticRequestId && !taskAbortRequest.dispatchId
+            );
+            return (
           <DialogHeader>
             <DialogTitle className={surfaceTheme === "light" ? "text-[#3f2f24]" : "text-white"}>
-              Abort task?
+              Stop task?
             </DialogTitle>
             <DialogDescription className={surfaceTheme === "light" ? "text-[#7e6555]" : "text-slate-400"}>
-              This stops the current OpenClaw dispatch for the selected task. It does not delete captured evidence or files.
+              {pendingAdmission
+                ? "AgentOS will look up this request, then ask OpenClaw to stop it if admission is recorded. A browser request ending does not stop runtime work."
+                : "This asks OpenClaw to stop the selected task. Captured evidence and files remain available."}
             </DialogDescription>
           </DialogHeader>
+            );
+          })()}
 
           {taskAbortRequest ? (
             <div
@@ -263,7 +272,7 @@ export function MissionControlShellDialogs({
                   Aborting...
                 </>
               ) : (
-                "Abort task"
+                taskAbortMessage ? "Try again" : taskAbortRequest?.metadata.optimisticRequestId && !taskAbortRequest.dispatchId ? "Check admission and stop" : "Stop task"
               )}
             </Button>
           </DialogFooter>

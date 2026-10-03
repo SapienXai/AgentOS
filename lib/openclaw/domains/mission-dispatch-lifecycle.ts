@@ -90,7 +90,7 @@ const missionDispatchRunnerPath = path.join(
   "scripts",
   "openclaw-mission-dispatch-runner.mjs"
 );
-const missionDispatchRetentionMs = 3 * 24 * 60 * 60 * 1000;
+const missionDispatchLogRetentionMs = 30 * 24 * 60 * 60 * 1000;
 const missionDispatchAgentTimeoutSeconds = 45;
 
 const execFileAsync = promisify(execFile);
@@ -107,6 +107,10 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     // OpenClaw owns session identity. A dispatch record starts without a
     // session id and is enriched only after the native Gateway returns one.
     sessionId: null,
+    sessionKey: null,
+    admissionState: "preparing",
+    cancellation: null,
+    operatorHistory: [],
     mission: payload.mission,
     routedMission: payload.routedMission,
     thinking: payload.thinking,
@@ -948,12 +952,8 @@ export async function readMissionDispatchRecords(): Promise<MissionDispatchRecor
             return null;
           }
 
-          if (shouldPruneMissionDispatchRecord(record, nowMs)) {
-            await rm(filePath, { force: true });
-            if (record.runner.logPath) {
-              await rm(record.runner.logPath, { force: true });
-            }
-            return null;
+          if (shouldPruneMissionDispatchLog(record, nowMs) && record.runner.logPath) {
+            await rm(record.runner.logPath, { force: true });
           }
 
           return record;
@@ -998,6 +998,10 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
       status,
       agentId: parsed.agentId,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,
+      sessionKey: typeof parsed.sessionKey === "string" ? parsed.sessionKey : null,
+      admissionState: normalizeMissionAdmissionState(parsed.admissionState),
+      cancellation: normalizeMissionCancellation(parsed.cancellation),
+      operatorHistory: normalizeMissionOperatorHistory(parsed.operatorHistory),
       mission: parsed.mission,
       routedMission: parsed.routedMission,
       thinking: normalizeMissionThinking(parsed.thinking),
@@ -1027,6 +1031,93 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
   } catch {
     return null;
   }
+}
+
+function normalizeMissionCancellation(value: unknown): MissionDispatchRecord["cancellation"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.status !== "requested" && candidate.status !== "unknown" && candidate.status !== "confirmed") ||
+    typeof candidate.requestedAt !== "string" ||
+    typeof candidate.reason !== "string"
+  ) return null;
+  return {
+    status: candidate.status,
+    requestedAt: candidate.requestedAt,
+    confirmedAt: typeof candidate.confirmedAt === "string" ? candidate.confirmedAt : null,
+    reason: candidate.reason,
+    detail: typeof candidate.detail === "string" ? candidate.detail : null
+  };
+}
+
+function normalizeMissionAdmissionState(value: unknown): MissionDispatchRecord["admissionState"] {
+  return value === "preparing" || value === "session-created" || value === "accepted" || value === "unknown" || value === "rejected"
+    ? value
+    : undefined;
+}
+
+function normalizeMissionOperatorHistory(value: unknown): NonNullable<MissionDispatchRecord["operatorHistory"]> {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-50).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const candidate = entry as Record<string, unknown>;
+    if (
+      typeof candidate.id !== "string" ||
+      (candidate.kind !== "steer" && candidate.kind !== "continue" && candidate.kind !== "inject") ||
+      typeof candidate.message !== "string" ||
+      typeof candidate.requestedAt !== "string" ||
+      typeof candidate.acceptedAt !== "string"
+    ) return [];
+    return [{
+      id: candidate.id,
+      idempotencyKey: typeof candidate.idempotencyKey === "string" ? candidate.idempotencyKey : null,
+      kind: candidate.kind,
+      message: candidate.message.slice(0, 12_000),
+      requestedAt: candidate.requestedAt,
+      acceptedAt: candidate.acceptedAt,
+      sessionKey: typeof candidate.sessionKey === "string" ? candidate.sessionKey : null,
+      sessionId: typeof candidate.sessionId === "string" ? candidate.sessionId : null,
+      runId: typeof candidate.runId === "string" ? candidate.runId : null
+    }];
+  });
+}
+
+export async function appendMissionDispatchOperatorInstruction(input: {
+  dispatchId: string;
+  idempotencyKey?: string | null;
+  kind: "steer" | "continue" | "inject";
+  message: string;
+  sessionKey?: string | null;
+  sessionId?: string | null;
+  runId?: string | null;
+}) {
+  const record = await readMissionDispatchRecordById(input.dispatchId);
+  if (!record) return null;
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const existing = idempotencyKey
+    ? record.operatorHistory?.find((entry) => entry.idempotencyKey === idempotencyKey)
+    : null;
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const instruction = {
+    id: `instruction-${randomUUID()}`,
+    idempotencyKey,
+    kind: input.kind,
+    message: input.message.trim().slice(0, 12_000),
+    requestedAt: now,
+    acceptedAt: now,
+    sessionKey: input.sessionKey?.trim() || record.sessionKey || null,
+    sessionId: input.sessionId?.trim() || record.sessionId || null,
+    runId: input.runId?.trim() || null
+  } satisfies NonNullable<MissionDispatchRecord["operatorHistory"]>[number];
+  const nextRecord = {
+    ...record,
+    updatedAt: now,
+    operatorHistory: [...(record.operatorHistory ?? []), instruction].slice(-50)
+  };
+  await writeMissionDispatchRecord(nextRecord);
+  return instruction;
 }
 
 export function isMissionDispatchTerminalStatus(status: string) {
@@ -1065,14 +1156,14 @@ function maxIsoTimestamp(left: string | null | undefined, right: string | null |
   return leftMs >= rightMs ? (left ?? new Date().toISOString()) : right!;
 }
 
-function shouldPruneMissionDispatchRecord(record: MissionDispatchRecord, nowMs: number) {
+function shouldPruneMissionDispatchLog(record: MissionDispatchRecord, nowMs: number) {
   const updatedAt = Date.parse(record.updatedAt);
 
-  if (Number.isNaN(updatedAt)) {
+  if (Number.isNaN(updatedAt) || !isMissionDispatchTerminalStatus(record.status)) {
     return false;
   }
 
-  return nowMs - updatedAt > missionDispatchRetentionMs;
+  return nowMs - updatedAt > missionDispatchLogRetentionMs;
 }
 
 function timestampFromUnix(value: number | null | undefined) {
