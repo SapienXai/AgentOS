@@ -10,7 +10,7 @@ AgentOS publishes an official, thin OpenClaw code plugin as `@sapienx/openclaw-a
 - AgentOS responsibility: a small compatibility bridge only.
 - Source of truth: OpenClaw owns plugin/runtime state; AgentOS owns its own CLI and application state.
 - Fallback: the bridge resolves a separately installed AgentOS executable from `AGENTOS_BIN`, the installed package, or `PATH`. Missing AgentOS is an explicit exit-127 diagnostic.
-- Compatibility target: OpenClaw `2026.9.4`, the repository's recommended/native certified contract.
+- Compatibility target: OpenClaw `2026.9.4`, the minimum plugin API/build version pinned by this published plugin release. AgentOS's current recommended runtime version advances independently.
 
 The plugin intentionally has no runtime dependency on `@sapienx/agentos`; it must not embed a second copy of the AgentOS application. OpenClaw is not called from React or API routes, and the bridge does not create a parallel runtime, Gateway, task engine, or skill engine.
 
@@ -32,7 +32,7 @@ Validate the exact artifact and install it into a disposable OpenClaw profile be
 
 ```bash
 clawhub package validate packages/openclaw-agentos --openclaw-version 2026.9.4 --json
-openclaw plugins install npm-pack:/absolute/path/to/openclaw-agentos-0.1.0.tgz --force
+openclaw plugins install npm-pack:/absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz --force
 openclaw plugins inspect agentos --runtime --json
 ```
 
@@ -43,7 +43,7 @@ After installation, verify the command surface with `openclaw agentos version`, 
 Use the authenticated `sapienx` publisher and the exact ClawPack artifact:
 
 ```bash
-clawhub package publish /absolute/path/to/openclaw-agentos-0.1.0.tgz \
+clawhub package publish /absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz \
   --family code-plugin \
   --owner sapienx \
   --wait
@@ -52,13 +52,13 @@ clawhub package publish /absolute/path/to/openclaw-agentos-0.1.0.tgz \
 Run a dry-run immediately before the real publish and stop if validation or security scanning is blocked:
 
 ```bash
-clawhub package publish /absolute/path/to/openclaw-agentos-0.1.0.tgz \
+clawhub package publish /absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz \
   --family code-plugin \
   --owner sapienx \
   --dry-run
 ```
 
-The manifest declares one active category, `other`. The certified OpenClaw `2026.9.4` manifest taxonomy and the current ClawHub taxonomy do not share a more specific control-plane category, so this is the honest compatibility intersection; do not pass `--categories` for plugin publication. After the first normal token-authenticated publish, configure trusted publishing against `SapienXai/AgentOS` and this workflow filename:
+The manifest declares one active category, `other`. The OpenClaw `2026.9.4` manifest taxonomy and the current ClawHub taxonomy do not share a more specific control-plane category, so this is the honest compatibility intersection; do not pass `--categories` for plugin publication. If trusted publishing has not already been configured, set it against `SapienXai/AgentOS` and this workflow filename:
 
 ```bash
 clawhub package trusted-publisher set @sapienx/openclaw-agentos \
