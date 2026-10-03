@@ -22,6 +22,10 @@ const REQUIRED_NODE_ENGINE = ">=24.16.0 <25 || >=26.1.0";
 const REQUIRED_NODE_RUNTIME_COPY = "Node.js 24.16.0+ or 26.1.0+";
 const REQUIRED_NODE_WORKFLOW_VERSION = "24.20.0";
 const OPENCLAW_VERSIONS_FILE = "lib/openclaw/versions.ts";
+const DESKTOP_CONFIG_FILE = "apps/desktop/src-tauri/tauri.conf.json";
+const DESKTOP_CARGO_FILE = "apps/desktop/src-tauri/Cargo.toml";
+const DESKTOP_RELEASE_WORKFLOW = ".github/workflows/desktop-release.yml";
+const DESKTOP_ASSET_FINALIZER = "scripts/desktop/finalize-release-assets.mjs";
 const RELEASE_ASSETS = [
   "agentos-darwin-arm64.tgz",
   "agentos-darwin-x64.tgz",
@@ -53,7 +57,12 @@ export function checkReleaseConsistency(options = {}) {
   const installPs1 = readText(context, "install.ps1");
   const ciWorkflow = readText(context, ".github/workflows/ci.yml");
   const workflow = readText(context, ".github/workflows/release-agentos.yml");
+  const desktopReleaseWorkflow = readText(context, DESKTOP_RELEASE_WORKFLOW);
+  const desktopAssetFinalizer = readText(context, DESKTOP_ASSET_FINALIZER);
+  const desktopCargo = readText(context, DESKTOP_CARGO_FILE);
+  const desktopConfig = readJson(context, DESKTOP_CONFIG_FILE);
   const launcher = readText(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`);
+  const updateDiscovery = readText(context, `${AGENTOS_PACKAGE_DIR}/bin/update.js`);
   const prepareBundle = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`);
   const runPrepack = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`);
   const smokePackage = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
@@ -71,7 +80,7 @@ export function checkReleaseConsistency(options = {}) {
     supportedBaseline: readTypeScriptStringConstant(openClawVersions, "OPENCLAW_SUPPORTED_BASELINE_VERSION")
   };
   validateAgentosPackage(context, agentosPackage);
-  validateLauncher(context, launcher, agentosPackage);
+  validateLauncher(context, launcher, updateDiscovery, agentosPackage);
   validateInstallers(context, installSh, installPs1);
   validateReadmes(context, readme, packageReadme, agentosPackage, openClawVersionPolicy);
   validateSecurityDocs(context, security, cleanInstallChecklist, openClawVersionPolicy);
@@ -79,6 +88,7 @@ export function checkReleaseConsistency(options = {}) {
   validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage, missionControlSmoke);
   validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
+  validateDesktopReleaseContract(context, agentosPackage, desktopCargo, desktopConfig, desktopReleaseWorkflow, desktopAssetFinalizer);
 
   return buildResult(context, agentosPackage);
 }
@@ -228,7 +238,7 @@ function validateOpenClawVersions(context, openClawVersions) {
   }
 }
 
-function validateLauncher(context, launcher, agentosPackage) {
+function validateLauncher(context, launcher, updateDiscovery, agentosPackage) {
   if (!launcher) {
     return;
   }
@@ -238,8 +248,9 @@ function validateLauncher(context, launcher, agentosPackage) {
   expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`, launcher, 'const packageJsonPath = path.join(packageRoot, "package.json");');
   expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`, launcher, "console.log(packageJson.version);");
   expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`, launcher, "${packageJson.name}@${packageJson.version}");
-  expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`, launcher, "registry.npmjs.org");
   expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`, launcher, "releases/download/agentos-v${latestVersion}");
+  expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/bin/update.js`, updateDiscovery, "registry.npmjs.org");
+  expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/bin/update.js`, updateDiscovery, "api.github.com/repos/");
 
   if (launcher.includes(`${AGENTOS_PACKAGE_NAME}@${agentosPackage.version}`)) {
     addIssue(
@@ -431,6 +442,8 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const packageDir = path.resolve(scriptDir, "..");');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const repoRoot = path.resolve(packageDir, "..", "..");');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const bundleDir = path.join(packageDir, "bundle");');
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'path.join(packageDir, "bin", "update.js")');
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'path.join(runtimeBinDir, "update.js")');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'await rm(path.join(dir, ".env.local"), { force: true });');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, "Prepared AgentOS bundle");
   }
@@ -513,6 +526,11 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm smoke:mission-control");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "mission-control-release-smoke");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Smoke AgentOS CLI package");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "build-desktop-assets:");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "./.github/workflows/desktop-release.yml");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "- build-desktop-assets");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "scripts/desktop/finalize-release-assets.mjs");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "fail_on_unmatched_files: true");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "packages/agentos/scripts/smoke-package.mjs --tarball");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "require('./packages/agentos/package.json').version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Ensure tag matches package version");
@@ -545,6 +563,40 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
       optional: true
     }
   ]);
+}
+
+function validateDesktopReleaseContract(context, agentosPackage, desktopCargo, desktopConfig, workflow, finalizer) {
+  if (!desktopConfig) return;
+  const cargoVersion = /^version\s*=\s*"([^"]+)"/m.exec(desktopCargo)?.[1] ?? null;
+  expectEqual(context, DESKTOP_CARGO_FILE, "version", cargoVersion, agentosPackage.version);
+  expectEqual(context, DESKTOP_CONFIG_FILE, "version", desktopConfig.version, agentosPackage.version);
+  expectEqual(context, DESKTOP_CONFIG_FILE, "bundle.createUpdaterArtifacts", desktopConfig.bundle?.createUpdaterArtifacts, true);
+  if (!desktopConfig.plugins?.updater?.pubkey || !desktopConfig.plugins?.updater?.endpoints?.some((endpoint) => endpoint.includes("latest.json"))) {
+    addIssue(context, DESKTOP_CONFIG_FILE, "Desktop update discovery must use the configured signed latest.json feed and public key.");
+  }
+
+  expectIncludes(context, DESKTOP_RELEASE_WORKFLOW, workflow, "workflow_call:");
+  expectIncludes(context, DESKTOP_RELEASE_WORKFLOW, workflow, "pnpm exec tauri build --config apps/desktop/src-tauri/tauri.conf.json");
+  expectIncludes(context, DESKTOP_RELEASE_WORKFLOW, workflow, "TAURI_SIGNING_PRIVATE_KEY");
+  expectIncludes(context, DESKTOP_RELEASE_WORKFLOW, workflow, "TAURI_SIGNING_PRIVATE_KEY_PASSWORD");
+  expectIncludes(context, DESKTOP_RELEASE_WORKFLOW, workflow, "actions/upload-artifact@v6");
+  if (workflow.includes("tauri-apps/tauri-action")) {
+    addIssue(context, DESKTOP_RELEASE_WORKFLOW, "Desktop artifact builds must not finalize or publish GitHub Releases independently.");
+  }
+
+  for (const target of [
+    "darwin-aarch64-app",
+    "windows-x86_64-nsis",
+    "linux-x86_64-appimage",
+    "linux-x86_64-deb",
+    "linux-x86_64-rpm"
+  ]) {
+    expectIncludes(context, DESKTOP_ASSET_FINALIZER, finalizer, target);
+  }
+  for (const asset of RELEASE_ASSETS) expectIncludes(context, DESKTOP_ASSET_FINALIZER, finalizer, asset);
+  expectIncludes(context, DESKTOP_ASSET_FINALIZER, finalizer, "signature: true");
+  expectIncludes(context, DESKTOP_ASSET_FINALIZER, finalizer, "latest.json");
+  expectIncludes(context, DESKTOP_ASSET_FINALIZER, finalizer, "createHash(\"sha256\")");
 }
 
 function expectVersionReferences(context, file, source, expectedVersion, checks) {

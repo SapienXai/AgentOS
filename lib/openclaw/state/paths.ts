@@ -3,7 +3,9 @@ import "server-only";
 import os from "node:os";
 import path from "node:path";
 
-export const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
+import { resolveAgentOsMissionControlRoot } from "@/lib/agentos/runtime-storage";
+
+export const missionControlRootPath = resolveAgentOsMissionControlRoot(process.env, /*turbopackIgnore: true*/ process.cwd());
 export const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
 
 export function getOpenClawStateRootPath() {

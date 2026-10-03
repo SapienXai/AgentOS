@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-check-agentos-update"
+description = "Enables the check_agentos_update command without any pre-configured scope."
+commands.allow = ["check_agentos_update"]
+
+[[permission]]
+identifier = "deny-check-agentos-update"
+description = "Denies the check_agentos_update command without any pre-configured scope."
+commands.deny = ["check_agentos_update"]

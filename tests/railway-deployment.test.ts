@@ -127,6 +127,8 @@ test("deployment capabilities separate local desktop actions from Railway headle
   const railway = resolveAgentOsDeploymentCapabilities({ AGENTOS_DEPLOYMENT_PLATFORM: "railway" }, "linux");
   assert.deepEqual(railway, {
     platform: "railway",
+    applicationUpdateOwner: "deployment",
+    desktopBundle: "unknown",
     gatewayLifecycle: "external-supervisor",
     gatewayConfigOwnership: "agentos-managed",
     terminalAccess: "unavailable",

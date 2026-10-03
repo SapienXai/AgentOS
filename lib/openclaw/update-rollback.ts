@@ -6,9 +6,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import type { OpenClawUpdateDecision, OpenClawUpdateSafetyReport } from "@/lib/openclaw/types";
 
-const rollbackDir = path.join(process.cwd(), ".mission-control", "openclaw-update");
+const rollbackDir = path.join(missionControlRootPath, "openclaw-update");
 const rollbackSnapshotPath = path.join(rollbackDir, "last-working-openclaw.json");
 
 export type OpenClawRollbackSnapshot = {

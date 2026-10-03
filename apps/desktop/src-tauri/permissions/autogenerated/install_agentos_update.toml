@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-install-agentos-update"
+description = "Enables the install_agentos_update command without any pre-configured scope."
+commands.allow = ["install_agentos_update"]
+
+[[permission]]
+identifier = "deny-install-agentos-update"
+description = "Denies the install_agentos_update command without any pre-configured scope."
+commands.deny = ["install_agentos_update"]

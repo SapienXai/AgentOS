@@ -64,6 +64,8 @@ test("AgentOS migrates only omitted security values and preserves explicit opera
     adapter,
     deploymentCapabilities: {
       platform: "local",
+      applicationUpdateOwner: "unknown",
+      desktopBundle: "unknown",
       gatewayLifecycle: "agentos-managed",
       gatewayConfigOwnership: "agentos-managed",
       terminalAccess: "unavailable",
@@ -97,6 +99,8 @@ test("AgentOS does not patch omitted values on an externally managed Gateway", a
     adapter,
     deploymentCapabilities: {
       platform: "railway",
+      applicationUpdateOwner: "deployment",
+      desktopBundle: "unknown",
       gatewayLifecycle: "external-supervisor",
       gatewayConfigOwnership: "external",
       terminalAccess: "unavailable",
@@ -128,6 +132,8 @@ test("AgentOS refuses to guess an omitted allowlist beside explicit broad access
     adapter,
     deploymentCapabilities: {
       platform: "local",
+      applicationUpdateOwner: "unknown",
+      desktopBundle: "unknown",
       gatewayLifecycle: "agentos-managed",
       gatewayConfigOwnership: "agentos-managed",
       terminalAccess: "unavailable",
@@ -158,6 +164,8 @@ test("AgentOS blocks invalid explicit security values fail-closed", async () => 
     adapter,
     deploymentCapabilities: {
       platform: "local",
+      applicationUpdateOwner: "unknown",
+      desktopBundle: "unknown",
       gatewayLifecycle: "agentos-managed",
       gatewayConfigOwnership: "agentos-managed",
       terminalAccess: "unavailable",
@@ -191,6 +199,8 @@ test("managed Gateway bootstrap reconciles omitted values once and verifies the 
   } as unknown as OpenClawAdapter;
   const capabilities = {
     platform: "local" as const,
+    applicationUpdateOwner: "unknown" as const,
+    desktopBundle: "unknown" as const,
     gatewayLifecycle: "agentos-managed" as const,
     gatewayConfigOwnership: "agentos-managed" as const,
     terminalAccess: "unavailable" as const,

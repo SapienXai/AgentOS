@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { matchesMissionText } from "@/lib/openclaw/runtime-matching";
 import {
   buildMissionDispatchTranscriptRuntime as buildMissionDispatchTranscriptRuntimeFromRuntime
@@ -1045,13 +1046,8 @@ function missionDispatchRunnerLogPath(dispatchId: string) {
   return path.join(missionDispatchesRootPath(), `${dispatchId}.log.jsonl`);
 }
 
-function missionControlRootPath() {
-  const configuredRoot = process.env.AGENTOS_MISSION_CONTROL_ROOT?.trim();
-  return path.resolve(configuredRoot || path.join(process.cwd(), ".mission-control"));
-}
-
 function missionDispatchesRootPath() {
-  return path.join(missionControlRootPath(), "dispatches");
+  return path.join(missionControlRootPath, "dispatches");
 }
 
 function maxIsoTimestamp(left: string | null | undefined, right: string | null | undefined): string {

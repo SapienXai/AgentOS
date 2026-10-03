@@ -9,6 +9,12 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import {
+  compareStableVersions,
+  discoverLatestAgentOsVersion,
+  fetchRegistryLatest,
+  normalizeStableVersion
+} from "./update.js";
 import { createTerminalBoot, renderDoctorReport, renderStatusDashboard } from "./terminal-boot.js";
 import { isSupportedAgentOsNodeVersion } from "./node-runtime.js";
 
@@ -175,6 +181,7 @@ async function startServer(rawArgs) {
   removeBundleRuntimeEnvFiles();
 
   const options = parseStartArgs(rawArgs);
+  const installation = inspectInstallation();
   const runtimeStatePath = resolveRuntimeStatePath(options.port);
   const trackedState = readRuntimeState(runtimeStatePath);
   const openClawCheck = detectOpenClaw();
@@ -249,6 +256,12 @@ async function startServer(rawArgs) {
       HOSTNAME: options.host,
       AGENTOS_PACKAGE_RUNTIME: "1",
       AGENTOS_LAUNCHER_PID: String(process.pid),
+      AGENTOS_INSTALLATION_OWNER: installation.kind === "release"
+        ? "release-launcher"
+        : installation.kind === "package-manager"
+          ? "package-manager"
+          : "source",
+      ...(installation.packageManager ? { AGENTOS_PACKAGE_MANAGER: installation.packageManager } : {}),
       AGENTOS_RUNTIME_DIR: runtimeInstallRoot,
       AGENTOS_API_TOKEN: apiToken,
       AGENTOS_BUNDLE_DIR: bundleDir
@@ -695,6 +708,12 @@ async function runUpdate(rawArgs) {
 
   if (!status.updateAvailable) {
     console.log(`AgentOS is already up to date (${status.currentVersion}).`);
+    return;
+  }
+
+  if (install.kind === "release" && status.expectedAsset?.available !== true) {
+    console.error(`AgentOS ${status.latestVersion} is available, but the CLI archive for ${process.platform} ${process.arch} is missing from the release. Update from the host; automatic application handoff is unavailable.`);
+    process.exitCode = 1;
     return;
   }
 
@@ -1940,7 +1959,11 @@ function printUpdateStatus(status, options = {}) {
 
     if (options.includeInstallInstructions) {
       if (status.install.kind === "release") {
-        console.log('Run "agentos update" to install it.');
+        if (status.expectedAsset?.available === true) {
+          console.log('Run "agentos update" from the host to install it.');
+        } else {
+          console.log(`The CLI archive for ${process.platform} ${process.arch} is missing from this release. Update from the host; automatic application handoff is unavailable.`);
+        }
       } else if (status.install.kind === "package-manager") {
         printPackageManagerUpdateGuidance();
       }
@@ -1959,7 +1982,11 @@ function printPassiveUpdateWarning(status) {
     return;
   }
 
-  console.warn(`Update available: ${status.currentVersion} -> ${status.latestVersion}. Run "agentos update".`);
+  if (status.expectedAsset?.available !== true) {
+    console.warn(`Update available: ${status.currentVersion} -> ${status.latestVersion}, but the CLI archive for ${process.platform} ${process.arch} is missing. Update from the host; automatic application handoff is unavailable.`);
+    return;
+  }
+  console.warn(`Update available: ${status.currentVersion} -> ${status.latestVersion}. Run "agentos update" from the host.`);
 }
 
 function printPackageManagerUpdateGuidance() {
@@ -2097,6 +2124,8 @@ async function getUpdateStatus({ install, forceRefresh, timeoutMs, fallbackToCac
       currentVersion: packageJson.version,
       latestVersion: latestVersionInfo.latestVersion,
       downloadBaseUrl: latestVersionInfo.downloadBaseUrl || null,
+      releaseUrl: latestVersionInfo.releaseUrl || null,
+      expectedAsset: latestVersionInfo.expectedAsset || null,
       updateAvailable,
       sourceId: getUpdateSourceId(install),
       cachedCheckedAt: new Date().toISOString(),
@@ -2133,6 +2162,8 @@ function buildUpdateStatusFromCache(cache, install) {
     currentVersion: packageJson.version,
     latestVersion: cache.latestVersion,
     downloadBaseUrl: cache.downloadBaseUrl || null,
+    releaseUrl: cache.releaseUrl || null,
+    expectedAsset: cache.expectedAsset || null,
     installKind: install.kind,
     updateAvailable,
     sourceId: getUpdateSourceId(install),
@@ -2162,11 +2193,31 @@ async function fetchLatestVersionInfo(install, timeoutMs) {
   }
 
   if (install.kind === "release") {
-    return fetchGitHubLatestVersion(timeoutMs);
+    const repo = process.env.AGENTOS_REPO || "SapienXai/AgentOS";
+    const discovery = await discoverLatestAgentOsVersion({
+      owner: "release-launcher",
+      currentVersion: packageJson.version,
+      repo,
+      platform: process.platform,
+      arch: process.arch,
+      timeoutMs
+    });
+    return {
+      latestVersion: discovery.latestVersion,
+      downloadBaseUrl: `https://github.com/${repo}/releases/download/agentos-v${discovery.latestVersion}`,
+      releaseUrl: discovery.releaseUrl,
+      expectedAsset: discovery.expectedAsset
+    };
   }
 
   if (install.kind === "package-manager") {
-    return fetchNpmLatestVersion(timeoutMs);
+    try {
+      return await fetchNpmLatestVersionFromRegistry(timeoutMs);
+    } catch (error) {
+      const fallback = fetchNpmLatestVersionWithPackageManager(timeoutMs);
+      if (fallback.ok) return { latestVersion: fallback.latestVersion, downloadBaseUrl: null };
+      throw new Error(`npm registry fetch failed (${formatErrorMessage(error)}); package manager fallback failed (${fallback.errorMessage})`);
+    }
   }
 
   throw new Error("Update checks are not supported for source checkouts.");
@@ -2188,49 +2239,14 @@ function readSmokeTestLatestVersionOverride(install) {
     downloadBaseUrl:
       install.kind === "release"
         ? `https://github.com/${process.env.AGENTOS_REPO || "SapienXai/AgentOS"}/releases/download/agentos-v${latestVersion}`
-        : null
+        : null,
+    releaseUrl: install.kind === "release"
+      ? `https://github.com/${process.env.AGENTOS_REPO || "SapienXai/AgentOS"}/releases/tag/agentos-v${latestVersion}`
+      : null,
+    expectedAsset: install.kind === "release"
+      ? { name: `agentos-${process.platform}-${process.arch}.tgz`, available: true }
+      : null
   };
-}
-
-async function fetchGitHubLatestVersion(timeoutMs) {
-  const repo = process.env.AGENTOS_REPO || "SapienXai/AgentOS";
-  const response = await fetchJsonWithTimeout(`https://api.github.com/repos/${repo}/releases/latest`, timeoutMs, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "AgentOS"
-    }
-  });
-
-  const tagName = typeof response.tag_name === "string" ? response.tag_name : "";
-  const latestVersion = normalizeVersion(tagName);
-
-  if (!latestVersion) {
-    throw new Error("GitHub release metadata did not include a valid version.");
-  }
-
-  return {
-    latestVersion,
-    downloadBaseUrl: `https://github.com/${repo}/releases/download/agentos-v${latestVersion}`
-  };
-}
-
-async function fetchNpmLatestVersion(timeoutMs) {
-  try {
-    return await fetchNpmLatestVersionFromRegistry(timeoutMs);
-  } catch (error) {
-    const fallback = fetchNpmLatestVersionWithPackageManager(timeoutMs);
-
-    if (fallback.ok) {
-      return {
-        latestVersion: fallback.latestVersion,
-        downloadBaseUrl: null
-      };
-    }
-
-    throw new Error(
-      `npm registry fetch failed (${formatErrorMessage(error)}); package manager fallback failed (${fallback.errorMessage})`
-    );
-  }
 }
 
 async function fetchNpmLatestVersionFromRegistry(timeoutMs) {
@@ -2238,23 +2254,8 @@ async function fetchNpmLatestVersionFromRegistry(timeoutMs) {
     throw new Error("forced npm registry fetch failure");
   }
 
-  const response = await fetchJsonWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageJson.name)}/latest`, timeoutMs, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "AgentOS"
-    }
-  });
-
-  const latestVersion = normalizeVersion(response.version);
-
-  if (!latestVersion) {
-    throw new Error("npm registry metadata did not include a valid version.");
-  }
-
-  return {
-    latestVersion,
-    downloadBaseUrl: null
-  };
+  const release = await fetchRegistryLatest({ packageName: packageJson.name, timeoutMs });
+  return { latestVersion: release.version, downloadBaseUrl: null };
 }
 
 function fetchNpmLatestVersionWithPackageManager(timeoutMs) {
@@ -2337,75 +2338,13 @@ function formatErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function fetchJsonWithTimeout(url, timeoutMs, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}.`);
-    }
-
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function normalizeVersion(value) {
-  if (!value || typeof value !== "string") {
-    return null;
-  }
-
-  const match = value.trim().match(/(?:agentos-v|v)?(\d+)\.(\d+)\.(\d+)/i);
-
-  if (!match) {
-    return null;
-  }
-
-  return `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`;
+  const normalized = typeof value === "string" ? value.trim().replace(/^(?:agentos-v|v)/i, "") : value;
+  return normalizeStableVersion(normalized);
 }
 
 function compareVersions(a, b) {
-  const left = parseVersion(a);
-  const right = parseVersion(b);
-
-  if (!left || !right) {
-    return 0;
-  }
-
-  if (left.major !== right.major) {
-    return left.major - right.major;
-  }
-
-  if (left.minor !== right.minor) {
-    return left.minor - right.minor;
-  }
-
-  return left.patch - right.patch;
-}
-
-function parseVersion(value) {
-  const normalized = normalizeVersion(value);
-
-  if (!normalized) {
-    return null;
-  }
-
-  const parts = normalized.split(".").map(Number);
-
-  return {
-    major: parts[0],
-    minor: parts[1],
-    patch: parts[2]
-  };
+  return compareStableVersions(a, b) ?? 0;
 }
 
 async function installReleaseUpdate(status) {
@@ -2674,8 +2613,14 @@ function inspectInstallation() {
   }
 
   if (packageRoot.includes(`${path.sep}node_modules${path.sep}`) || packageRoot.includes(`${path.sep}.pnpm${path.sep}`)) {
+    const managerContext = `${process.env.npm_config_user_agent ?? ""} ${process.env.npm_execpath ?? ""}`.toLowerCase();
     return {
-      kind: "package-manager"
+      kind: "package-manager",
+      packageManager: packageRoot.includes(`${path.sep}.pnpm${path.sep}`) || /\bpnpm\b/.test(managerContext)
+        ? "pnpm"
+        : /\bnpm\b/.test(managerContext)
+          ? "npm"
+          : null
     };
   }
 

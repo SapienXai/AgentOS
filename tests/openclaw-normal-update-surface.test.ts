@@ -19,10 +19,13 @@ test("canonical Updates page reads native status and runs native update.run", ()
   assert.match(source, /Community release intelligence is advisory/);
   assert.match(source, /Community confidence never decides whether OpenClaw is up to date or whether an update runs/);
   assert.match(source, /const shouldPollNativeUpdate = awaitingNativeVerification \|\| durableUpdateRunning \|\| actionState === "running"/);
-  assert.match(source, /const showPikoLoader = isRefreshing/);
+  assert.doesNotMatch(source, /const showPikoLoader = isRefreshing/);
+  assert.match(source, /<div id="agentos-update"><AgentOsUpdateCard \/><\/div>/);
+  assert.match(source, /!native && isRefreshing \?/);
   assert.match(source, /run\.steps\.find\(\(step\) => step\.status === "in_progress"\)/);
   assert.match(source, /setInterval\(\(\) => \{/);
-  assert.match(source, /open=\{showPikoLoader\}/);
+  assert.match(source, /open=\{isOpen\}/);
+  assert.match(source, /!native && isRefreshing \?/);
   assert.match(source, /previousRunIds\.includes\(run\.runId\)/);
   assert.match(source, /OpenClaw's native update \$\{state\}/);
   assert.doesNotMatch(source, /OpenClaw update verification pending/);

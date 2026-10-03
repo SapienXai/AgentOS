@@ -345,6 +345,42 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the check_agentos_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-check-agentos-update",
+          "markdownDescription": "Enables the check_agentos_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the install_agentos_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-install-agentos-update",
+          "markdownDescription": "Enables the install_agentos_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_external_auth_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-external-auth-url",
+          "markdownDescription": "Enables the open_external_auth_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check_agentos_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-check-agentos-update",
+          "markdownDescription": "Denies the check_agentos_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the install_agentos_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-install-agentos-update",
+          "markdownDescription": "Denies the install_agentos_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_external_auth_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-external-auth-url",
+          "markdownDescription": "Denies the open_external_auth_url command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

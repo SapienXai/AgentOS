@@ -229,6 +229,16 @@ deployment documentation in the same change. OpenClaw remains the owner of
 runtime updates, migrations, restart, backup, rollback, and recovery; this image
 pin is the Railway deployment contract, not a second update mechanism.
 
+## Updating the AgentOS application
+
+Railway owns the AgentOS application image. The Updates page can report a newer
+stable AgentOS release and link to its release notes, but it cannot replace the
+running container or update files inside `/agentos`. Build and deploy the
+updated image through the existing Railway deployment workflow. After the new
+instance starts, authenticate to it and confirm the running AgentOS version in
+the Updates page. A container-local package change would disappear on the next
+image replacement and is not a deployment update.
+
 ## Published one-click template
 
 The official AgentOS template is published in the Railway marketplace:

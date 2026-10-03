@@ -58,6 +58,10 @@ AGENTOS_TRUSTED_OPERATOR_ORIGINS=https://agentos.example.com
 
 If AgentOS was installed with `pnpm` or `npm`, update commands only print the matching package manager command instead of changing files in place.
 
+The Updates page keeps application ownership explicit. Supported AgentOS Desktop builds (macOS ARM64, Windows NSIS x64, and Linux AppImage x64) can install a newer signed Desktop release from the native shell. Debian and RPM Desktop builds show package-manager guidance. Release CLI, npm/pnpm, source-checkout, and hosted updates remain with their installation or deployment owner; the browser never runs a package manager, installer, or CLI updater.
+
+The first Desktop release with in-product updating must be installed manually over earlier Desktop versions. Back up existing AgentOS workspace and sidecar data before that initial upgrade, then confirm it is present after launch. AgentOS preserves the known legacy sidecar when it can verify the migration; conflicting or unreadable storage blocks Desktop update admission.
+
 `agentos uninstall` removes a release-installer copy. If the package was installed with `pnpm` or `npm`, remove it with your package manager instead.
 
 AgentOS is designed to work with a local OpenClaw installation. If OpenClaw is missing, AgentOS still starts and guides onboarding in the UI.

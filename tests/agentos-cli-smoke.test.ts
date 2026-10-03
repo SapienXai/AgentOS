@@ -13,6 +13,7 @@ const rootDir = process.cwd();
 const realCliPath = path.join(rootDir, "packages", "agentos", "bin", "agentos.js");
 const realNodeRuntimePath = path.join(rootDir, "packages", "agentos", "bin", "node-runtime.js");
 const realTerminalBootPath = path.join(rootDir, "packages", "agentos", "bin", "terminal-boot.js");
+const realUpdateDiscoveryPath = path.join(rootDir, "packages", "agentos", "bin", "update.js");
 const realPackageJsonPath = path.join(rootDir, "packages", "agentos", "package.json");
 const packageJson = JSON.parse(readFileSync(realPackageJsonPath, "utf8")) as {
   name: string;
@@ -501,6 +502,7 @@ async function createCliFixture(options: { packageDir?: string } = {}) {
   await cp(realCliPath, cliPath);
   await cp(realNodeRuntimePath, path.join(packageDir, "bin", "node-runtime.js"));
   await cp(realTerminalBootPath, path.join(packageDir, "bin", "terminal-boot.js"));
+  await cp(realUpdateDiscoveryPath, path.join(packageDir, "bin", "update.js"));
   await writeFile(path.join(packageDir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
   await writeFile(path.join(packageDir, "bundle", "server.js"), renderStubServer(), "utf8");
 

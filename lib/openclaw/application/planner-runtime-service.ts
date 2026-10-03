@@ -6,6 +6,7 @@ import path from "node:path";
 import { redactSecretText } from "@/lib/security/redaction";
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 import { createAgent } from "@/lib/openclaw/application/agent-service";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import { createWorkspaceProject } from "@/lib/openclaw/application/workspace-service";
 import {
@@ -23,8 +24,7 @@ import type {
 } from "@/lib/openclaw/types";
 
 export const PLANNER_RUNTIME_WORKSPACE_PATH = path.join(
-  /*turbopackIgnore: true*/ process.cwd(),
-  ".mission-control",
+  missionControlRootPath,
   "planner",
   "runtime-workspace"
 );

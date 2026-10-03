@@ -12,6 +12,7 @@ const runtimeRoot = path.join(desktopRoot, "runtime");
 const configPath = path.join(desktopRoot, "src-tauri", "tauri.conf.json");
 const capabilityPath = path.join(desktopRoot, "src-tauri", "capabilities", "default.json");
 const cargoPath = path.join(desktopRoot, "src-tauri", "Cargo.toml");
+const buildPath = path.join(desktopRoot, "src-tauri", "build.rs");
 const packagePath = path.join(repoRoot, "packages", "agentos", "package.json");
 const targetPlatform = resolveTargetPlatform();
 const nodeBinaryPath = targetPlatform === "win32"
@@ -22,6 +23,7 @@ const config = JSON.parse(await readFile(configPath, "utf8"));
 const capabilities = JSON.parse(await readFile(capabilityPath, "utf8"));
 const packageMetadata = JSON.parse(await readFile(packagePath, "utf8"));
 const cargoManifest = await readFile(cargoPath, "utf8");
+const buildManifest = await readFile(buildPath, "utf8");
 const bootstrapHtml = await readFile(path.join(desktopRoot, "bootstrap", "index.html"), "utf8");
 if (!bootstrapHtml.includes("agentos-splash.mp4") || bootstrapHtml.includes("pikoLoader")) {
   throw new Error("Desktop bootstrap must use the AgentOS splash video and must not reference Piko loader assets.");
@@ -36,6 +38,7 @@ const requiredPaths = [
   path.join(desktopRoot, "src-tauri", "src", "main.rs"),
   path.join(runtimeRoot, "agentos", "server.js"),
   path.join(runtimeRoot, "agentos", "agentos-desktop-server.cjs"),
+  path.join(runtimeRoot, "agentos", "agentos-build.json"),
   path.join(runtimeRoot, "agentos", ".next", "static"),
   path.join(runtimeRoot, "agentos", "public"),
   nodeBinaryPath
@@ -51,6 +54,17 @@ const cargoVersion = /^version\s*=\s*"([^"]+)"/m.exec(cargoManifest)?.[1];
 if (!cargoVersion || cargoVersion !== packageMetadata.version || config.version !== packageMetadata.version) {
   throw new Error(
     `Desktop version drift detected: package=${packageMetadata.version}, Cargo=${cargoVersion ?? "missing"}, Tauri=${config.version ?? "missing"}.`
+  );
+}
+
+const packagedAgentOsBuild = JSON.parse(await readFile(path.join(runtimeRoot, "agentos", "agentos-build.json"), "utf8"));
+if (
+  !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(packageMetadata.version)
+  || packagedAgentOsBuild.version !== packageMetadata.version
+  || runtimeMetadata.agentosVersion !== packageMetadata.version
+) {
+  throw new Error(
+    `Desktop AgentOS build metadata is missing or stale: package=${packageMetadata.version}, payload=${packagedAgentOsBuild.version ?? "missing"}, runtime=${runtimeMetadata.agentosVersion ?? "missing"}.`
   );
 }
 
@@ -74,6 +88,28 @@ if (
   throw new Error(
     "The AgentOS desktop WebView may only keep the native window interaction permissions enabled."
   );
+}
+
+for (const command of ["open_external_auth_url", "check_agentos_update", "install_agentos_update"]) {
+  if (!buildManifest.includes(`"${command}"`)) {
+    throw new Error(`Desktop application command ${command} is missing from the generated-command manifest.`);
+  }
+}
+if (!buildManifest.includes("tauri_build::AppManifest::new().commands") || !buildManifest.includes("tauri_build::Attributes::new().app_manifest")) {
+  throw new Error("Desktop native commands must be explicitly permissioned through the Tauri application manifest.");
+}
+
+const mainSource = await readFile(path.join(desktopRoot, "src-tauri", "src", "main.rs"), "utf8");
+for (const required of [
+  '.windows(["main"])',
+  '.remote(format!("http://127.0.0.1:{port}/*"))',
+  '.permission("allow-check-agentos-update")',
+  '.permission("allow-install-agentos-update")'
+]) {
+  if (!mainSource.includes(required)) throw new Error(`Desktop update capability is missing its narrow scope: ${required}`);
+}
+if (mainSource.match(/\.permission\("(?:updater|shell|fs|process):/)) {
+  throw new Error("Desktop update capability must not grant broad updater, shell, filesystem, or process permissions.");
 }
 
 await auditTree(runtimeRoot);

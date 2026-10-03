@@ -1,0 +1,30 @@
+export type AgentOsUpdateOwner = "release-launcher" | "package-manager" | "deployment" | "source" | "unknown";
+export type AgentOsUpdateDiscovery = {
+  currentVersion: string;
+  latestVersion: string;
+  newer: boolean;
+  sourceId: string;
+  releaseUrl: string | null;
+  expectedAsset: { name: string; available: boolean } | null;
+  checkedAt: string;
+};
+export const UPDATE_CHECK_TIMEOUT_MS: number;
+export const UPDATE_CACHE_TTL_MS: number;
+export const MAX_UPDATE_METADATA_BYTES: number;
+export function normalizeStableVersion(value: unknown): string | null;
+export function compareStableVersions(left: unknown, right: unknown): number | null;
+export function updateCacheIdentity(input: { owner: string; currentVersion: string; sourceId: string }): string;
+export function requiredCliAssetName(platform: string, arch: string): string | null;
+export function discoverLatestAgentOsVersion(options: {
+  owner: AgentOsUpdateOwner;
+  currentVersion: string;
+  packageName?: string;
+  repo?: string;
+  platform?: string;
+  arch?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<AgentOsUpdateDiscovery>;
+export function fetchGithubLatest(options?: { repo?: string; timeoutMs?: number; fetchImpl?: typeof fetch }): Promise<{ version: string; assets: string[] }>;
+export function fetchRegistryLatest(options?: { packageName?: string; timeoutMs?: number; fetchImpl?: typeof fetch }): Promise<{ version: string; assets: string[] }>;
+export function fetchJsonBounded(url: string, timeoutMs: number, headers: Record<string, string>, fetchImpl?: typeof fetch): Promise<unknown>;

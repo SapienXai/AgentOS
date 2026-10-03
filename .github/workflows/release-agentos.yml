@@ -222,10 +222,16 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  build-desktop-assets:
+    needs: validate-release
+    uses: ./.github/workflows/desktop-release.yml
+    secrets: inherit
+
   create-release:
     needs:
       - validate-release
       - build-release-assets
+      - build-desktop-assets
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -237,6 +243,9 @@ jobs:
           pattern: agentos-*
           merge-multiple: true
           path: release-assets
+
+      - name: Validate complete release assets and build signed updater manifest
+        run: node scripts/desktop/finalize-release-assets.mjs --root release-assets --version "${{ needs.validate-release.outputs.version }}"
 
       - name: Write release notes
         shell: bash
@@ -314,6 +323,8 @@ jobs:
           - \`agentos-darwin-x64.tgz\`
           - \`agentos-linux-x64.tgz\`
           - \`agentos-win32-x64.tgz\`
+          - Signed Tauri updater assets for macOS ARM64, Windows x64, Linux AppImage, Debian and RPM.
+          - macOS DMG, Windows NSIS, Linux AppImage, Debian and RPM installers.
           EOF
 
       - uses: softprops/action-gh-release@v2
@@ -321,7 +332,10 @@ jobs:
           name: AgentOS ${{ needs.validate-release.outputs.version }}
           body_path: release-notes.md
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             install.sh
             install.ps1
-            release-assets/*
+            release-assets/agentos-*
+            release-assets/AgentOS-*
+            release-assets/latest.json

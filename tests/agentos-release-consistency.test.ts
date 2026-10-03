@@ -18,10 +18,15 @@ const releaseCheckFiles = [
   "install.ps1",
   ".github/workflows/ci.yml",
   ".github/workflows/release-agentos.yml",
+  ".github/workflows/desktop-release.yml",
+  "apps/desktop/src-tauri/Cargo.toml",
+  "apps/desktop/src-tauri/tauri.conf.json",
+  "scripts/desktop/finalize-release-assets.mjs",
   "scripts/mission-control-browser-smoke.mjs",
   "packages/agentos/package.json",
   "packages/agentos/README.md",
   "packages/agentos/bin/agentos.js",
+  "packages/agentos/bin/update.js",
   "packages/agentos/scripts/check-release-consistency.mjs",
   "packages/agentos/scripts/prepare-bundle.mjs",
   "packages/agentos/scripts/run-prepack.mjs",
@@ -70,6 +75,19 @@ test("AgentOS release check rejects missing root Node engine", async () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /package\.json: engines\.node is undefined, expected ">=24\.16\.0 <25 \|\| >=26\.1\.0"/);
+});
+
+test("AgentOS release check rejects Desktop version drift before packaging", async () => {
+  const tempRoot = await copyReleaseCheckFixture();
+  const configPath = path.join(tempRoot, "apps/desktop/src-tauri/tauri.conf.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as { version: string };
+  config.version = "9.9.9";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const result = runReleaseCheck(tempRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /tauri\.conf\.json: version is "9\.9\.9", expected "0\.8\.0"/);
 });
 
 test("AgentOS release check rejects vague README Node prerequisites", async () => {

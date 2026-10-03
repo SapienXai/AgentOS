@@ -4,6 +4,7 @@ import path from "node:path";
 
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { RuntimeRecord } from "@/lib/openclaw/types";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
 export type AgentChatSessionOrigin = "agent-chat";
 
@@ -21,7 +22,6 @@ type AgentChatSessionRegistry = {
   sessions: AgentChatSessionRecord[];
 };
 
-const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const agentChatSessionsPath = path.join(missionControlRootPath, "agent-chat-sessions.json");
 const maxAgentChatSessionRecords = 200;
 const maxAgentChatSessionAgeMs = 14 * 24 * 60 * 60 * 1000;

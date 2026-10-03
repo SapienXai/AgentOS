@@ -24,6 +24,8 @@ test("central product policy separates owner controls from member runtime access
   assert.equal(canAgentOsActorUseProductPermission(owner, "users.manage"), true);
   assert.equal(canAgentOsActorUseProductPermission(owner, "gateway.manage"), true);
   assert.equal(canAgentOsActorUseProductPermission(owner, "automations.manage"), true);
+  assert.equal(canAgentOsActorUseProductPermission(owner, "updates.manage"), true);
+  assert.equal(canAgentOsActorUseProductPermission(desktop, "updates.manage"), true);
   assert.equal(canAgentOsActorUseProductPermission(member, "runtime.use"), true);
   assert.equal(canAgentOsActorUseProductPermission(member, "sessions.use"), true);
   assert.equal(canAgentOsActorUseProductPermission(owner, "sessions.collaborate"), true);
@@ -37,6 +39,7 @@ test("central product policy separates owner controls from member runtime access
   assert.equal(canAgentOsActorUseProductPermission(member, "secrets.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "models.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "automations.manage"), false);
+  assert.equal(canAgentOsActorUseProductPermission(member, "updates.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(service, "users.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(service, "gateway.manage"), true);
   assert.equal(canAgentOsActorUseProductPermission(service, "lifecycle.manage"), false);

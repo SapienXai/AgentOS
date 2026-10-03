@@ -1,34 +1,29 @@
-name: AgentOS Desktop Release
+name: AgentOS Desktop Release Assets
 
 on:
-  push:
-    tags:
-      - "agentos-v*"
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: Existing or new release tag, for example agentos-v0.8.0
-        required: true
-        type: string
+  workflow_call:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
+          - name: Linux x64
+            platform: linux
             os: ubuntu-22.04
-          - name: macOS
+          - name: macOS ARM64
+            platform: macos-arm64
             os: macos-14
-          - name: Windows
+          - name: Windows x64
+            platform: windows-x64
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
@@ -49,36 +44,37 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils rpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare and audit packaged AgentOS
-        run: pnpm desktop:prepare && pnpm desktop:audit
-
-      - name: Build and upload desktop release
-        uses: tauri-apps/tauri-action@v0
+      - name: Require updater signing credentials
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: apps/desktop/src-tauri
-          tauriScript: pnpm exec tauri
-          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-          releaseName: AgentOS Desktop __VERSION__
-          releaseBody: |-
-            macOS Developer ID signing/notarization and Windows Authenticode signing are not configured for this release. Tauri updater metadata is signed with the configured updater key.
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
-          retryAttempts: 3
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
-      - name: Verify macOS app bundle signature
+      - name: Prepare and audit packaged AgentOS
+        run: pnpm desktop:prepare && pnpm desktop:audit && pnpm desktop:check
+
+      - name: Build signed Desktop bundles
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm exec tauri build --config apps/desktop/src-tauri/tauri.conf.json
+
+      - name: Verify macOS app bundle seal
         if: runner.os == 'macOS'
         shell: bash
-        run: |
-          app_path="apps/desktop/src-tauri/target/release/bundle/macos/AgentOS.app"
-          test -d "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
+        run: codesign --verify --deep --strict --verbose=2 apps/desktop/src-tauri/target/release/bundle/macos/AgentOS.app
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: agentos-desktop-${{ matrix.platform }}
+          path: apps/desktop/src-tauri/target/release/bundle
+          if-no-files-found: error

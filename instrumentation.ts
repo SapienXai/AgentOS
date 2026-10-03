@@ -3,6 +3,9 @@ export async function register() {
     return;
   }
 
+  const { prepareAgentOsRuntimeStorage } = await import("@/lib/agentos/runtime-storage");
+  await prepareAgentOsRuntimeStorage();
+
   const { bootstrapInitialInstanceProtection } = await import(
     "@/lib/security/initial-instance-bootstrap"
   );

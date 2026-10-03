@@ -160,7 +160,9 @@ test("manual fallback can reopen the same session URL after the first attempt se
 test("Tauri navigation keeps the general external opener separate from the auth command", async () => {
   const source = await readFile(join(process.cwd(), "apps/desktop/src-tauri/src/main.rs"), "utf8");
 
-  assert.match(source, /generate_handler!\[open_external_auth_url\]/);
+  assert.match(source, /product_update::check_agentos_update/);
+  assert.match(source, /product_update::install_agentos_update/);
+  assert.match(source, /generate_handler!\[\s*open_external_auth_url,/);
   assert.match(source, /tauri_plugin_opener::open_url\(parsed\.as_str\(\), None::<&str>\)/);
   assert.match(source, /Only the OpenAI authorization endpoint may be opened automatically/);
   assert.match(source, /fn is_external_web_url\(url: &tauri::Url\)/);

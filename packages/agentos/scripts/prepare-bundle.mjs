@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,12 +11,20 @@ const staticDir = path.join(repoRoot, ".next", "static");
 const publicDir = path.join(repoRoot, "public");
 const bundleDir = path.join(packageDir, "bundle");
 const bundleNodeModulesDir = path.join(bundleDir, "node_modules");
+const packageMetadataPath = path.join(packageDir, "package.json");
+const discoverySourcePath = path.join(packageDir, "bin", "update.js");
 
 await rm(bundleDir, { recursive: true, force: true });
 await mkdir(bundleDir, { recursive: true });
 
 await copyDirectoryContents(standaloneDir, bundleDir);
 await materializeBundleNodeModules(bundleNodeModulesDir);
+const packageMetadata = JSON.parse(await readFile(packageMetadataPath, "utf8"));
+const runtimePackageDir = path.join(bundleDir, "packages", "agentos");
+const runtimeBinDir = path.join(runtimePackageDir, "bin");
+await mkdir(runtimeBinDir, { recursive: true });
+await writeFile(path.join(runtimePackageDir, "package.json"), `${JSON.stringify(packageMetadata)}\n`);
+await cp(discoverySourcePath, path.join(runtimeBinDir, "update.js"));
 await cp(staticDir, path.join(bundleDir, ".next", "static"), {
   recursive: true,
   dereference: true

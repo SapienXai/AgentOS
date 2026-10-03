@@ -21,6 +21,7 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 #[cfg(target_os = "macos")]
 use tauri::LogicalPosition;
@@ -31,8 +32,7 @@ use tauri::{
     AppHandle, LogicalSize, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
-#[cfg(not(debug_assertions))]
-use uuid::Uuid;
+mod product_update;
 
 #[cfg(not(debug_assertions))]
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -60,6 +60,8 @@ struct DesktopState {
     quitting: AtomicBool,
     restarting: AtomicBool,
     main_ready: AtomicBool,
+    launch_id: String,
+    update_running: AtomicBool,
 }
 
 impl DesktopState {
@@ -76,6 +78,8 @@ impl DesktopState {
             quitting: AtomicBool::new(false),
             restarting: AtomicBool::new(false),
             main_ready: AtomicBool::new(false),
+            launch_id: Uuid::new_v4().to_string(),
+            update_running: AtomicBool::new(false),
         }
     }
 }
@@ -85,7 +89,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Keep external opening in this trusted Rust boundary. Do not expose
         // the opener plugin commands or its automatic WebView link hook.
-        .invoke_handler(tauri::generate_handler![open_external_auth_url])
+        .invoke_handler(tauri::generate_handler![
+            open_external_auth_url,
+            product_update::check_agentos_update,
+            product_update::install_agentos_update
+        ])
         .setup(|app| {
             app.manage(DesktopState::new());
             let window = build_main_window(app)?;
@@ -101,6 +109,7 @@ pub fn run() {
             #[cfg(debug_assertions)]
             {
                 set_allowed_port(&app.state::<DesktopState>(), Some(3000));
+                register_product_update_capability(app.handle(), 3000)?;
                 let _ = window;
             }
 
@@ -515,6 +524,8 @@ fn spawn_agentos_server_once(
         .map_err(|error| format!("could not create AgentOS data directory: {error}"))?;
 
     let api_token = Uuid::new_v4().to_string();
+    register_product_update_capability(app, port)
+        .map_err(|_| "could not register the Desktop update origin".to_string())?;
     let mut child = Command::new(node_path)
         .arg(server_wrapper_path)
         .current_dir(&server_root)
@@ -523,6 +534,15 @@ fn spawn_agentos_server_once(
         .env("PORT", port.to_string())
         .env("AGENTOS_PACKAGE_RUNTIME", "1")
         .env("AGENTOS_DESKTOP", "1")
+        .env(
+            "AGENTOS_DESKTOP_BUNDLE",
+            product_update::desktop_bundle_name(),
+        )
+        .env(
+            "AGENTOS_DESKTOP_VERSION",
+            app.package_info().version.to_string(),
+        )
+        .env("AGENTOS_DESKTOP_LAUNCH_ID", &state.launch_id)
         .env("AGENTOS_RUNTIME_DIR", &runtime_dir)
         .env("AGENTOS_API_TOKEN", &api_token)
         .stdin(Stdio::piped())
@@ -576,6 +596,7 @@ fn spawn_agentos_server_once(
             .and_then(|client| client.get(&readiness_url).send().ok())
             .is_some_and(|response| response.status().is_success());
         if ready {
+            product_update::clear_completed_install_lock(&runtime_dir, &state.launch_id);
             let output = state
                 .output
                 .lock()
@@ -587,6 +608,26 @@ fn spawn_agentos_server_once(
     }
 
     Err("the packaged AgentOS server did not become ready within 60 seconds".to_string())
+}
+
+fn register_product_update_capability(
+    app: &AppHandle,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::ipc::CapabilityBuilder;
+
+    app.add_capability(
+        CapabilityBuilder::new(format!("agentos-update-origin-{port}"))
+            .windows(["main"])
+            .local(false)
+            .remote(format!("http://127.0.0.1:{port}/*"))
+            .permission("core:event:allow-listen")
+            .permission("core:event:allow-unlisten")
+            .permission("allow-open-external-auth-url")
+            .permission("allow-check-agentos-update")
+            .permission("allow-install-agentos-update"),
+    )?;
+    Ok(())
 }
 
 #[cfg_attr(not(test), allow(dead_code))]

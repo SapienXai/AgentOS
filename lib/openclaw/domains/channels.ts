@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { listChannelGroups } from "@/lib/openclaw/application/channel-directory-service";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { parseDiscordRouteId } from "@/lib/openclaw/domains/discord-route";
 import { buildChannelRouteIdentity, serializeRouteToOpenClawBindingMatch } from "@/lib/openclaw/domains/channel-center";
 import { readOpenClawSurfaceAccounts } from "@/lib/openclaw/surface-adapters";
@@ -23,7 +24,6 @@ export function resolveChannelAccountId(account: Pick<ChannelAccountRecord, "id"
   return account.accountId?.trim() || account.id;
 }
 
-const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
 
 export type ManagedDiscordBinding = {

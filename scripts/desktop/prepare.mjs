@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream, statSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
@@ -31,6 +31,9 @@ const bootstrapAssetRoot = path.join(bootstrapRoot, "assets");
 const cacheRoot = path.join(repoRoot, ".desktop-cache");
 const targetPlatform = resolveTargetPlatform();
 const targetArch = resolveTargetArch();
+const agentosPackageMetadata = JSON.parse(
+  await readFile(path.join(repoRoot, "packages", "agentos", "package.json"), "utf8")
+);
 
 await rm(runtimeRoot, { recursive: true, force: true });
 
@@ -45,6 +48,11 @@ await rm(runtimeRoot, { recursive: true, force: true });
 await mkdir(agentosRuntimeRoot, { recursive: true });
 await copyDirectoryContents(path.join(repoRoot, "packages", "agentos", "bundle"), agentosRuntimeRoot);
 await cp(serverWrapperSource, serverWrapperTarget);
+await writeFile(
+  path.join(agentosRuntimeRoot, "agentos-build.json"),
+  `${JSON.stringify({ version: agentosPackageMetadata.version, source: "packages/agentos/package.json" })}\n`,
+  { mode: 0o644 }
+);
 await removeRuntimeEnvironmentFiles(agentosRuntimeRoot);
 await prepareBootstrapAssets();
 
@@ -67,6 +75,7 @@ await writeFile(
     nodeVersion: DESKTOP_NODE_VERSION,
     platform: targetPlatform,
     arch: targetArch,
+    agentosVersion: agentosPackageMetadata.version,
     nodeSource: nodeRuntime.source,
     nodeSha256: nodeRuntime.sha256 ?? null
   }, null, 2)}\n`

@@ -23,6 +23,7 @@ import {
   ToolbarButton,
   type StatusTone
 } from "@/components/operations/operations-ui";
+import { AgentOsUpdateCard } from "@/components/operations/updates/agentos-update-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,7 +33,6 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
-import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type {
@@ -422,18 +422,11 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     setActionMessage("OpenClaw reports a terminal update run, but AgentOS has not verified the final runtime state. Refresh and review the Gateway status before treating the update as complete.");
   }, [awaitingNativeVerification, durableUpdateRunning, native?.update.lastRun, updateAttempt]);
 
-  const showPikoLoader = isRefreshing;
-
   return (
     <>
-      <PikoLoader
-        open={showPikoLoader}
-        title="Checking OpenClaw updates"
-        description="Reading the authoritative native update status."
-      />
       <PageHeader
-        title="OpenClaw Updates"
-        subtitle="Keep the OpenClaw runtime up to date using its native update system."
+        title="Updates"
+        subtitle="Manage AgentOS application updates and OpenClaw runtime updates independently."
         actions={(
           <ToolbarButton
             icon={RefreshCw}
@@ -447,7 +440,15 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
       <OperationsPageLayout
         main={(
           <div className="space-y-3">
-            <PrimaryUpdateCard
+            <div id="agentos-update"><AgentOsUpdateCard /></div>
+            {!native && isRefreshing ? (
+              <SectionCard title="OpenClaw update status">
+                <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground" role="status" aria-live="polite">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Checking OpenClaw update status from the Gateway.
+                </div>
+              </SectionCard>
+            ) : <PrimaryUpdateCard
               currentVersion={currentVersion}
               availableVersion={availableVersion}
               agentOsDecision={policy?.agentOsDecision ?? null}
@@ -470,7 +471,7 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
               onOpenControlUi={() => void openControlUi()}
               isOpeningControlUi={isOpeningControlUi}
               onRefresh={() => void refreshAll()}
-            />
+            />}
 
             {native ? (
               <SectionCard title="Update details">
@@ -687,6 +688,7 @@ function PrimaryUpdateCard({
               <div>
                 <p className="font-medium text-foreground">Update AgentOS before OpenClaw.</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">This OpenClaw target requires a newer AgentOS release. The native OpenClaw updater stays unavailable until that prerequisite is met.</p>
+                <a href="#agentos-update" className="mt-2 inline-flex min-h-9 items-center font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Review AgentOS updates</a>
               </div>
             </div>
           </div>
@@ -770,8 +772,8 @@ function PrimaryUpdateCard({
           ) : null}
           {state === "available-fallback" || state === "blocked" || state === "available-agentos-required" ? (
             <Button asChild type="button" variant="secondary" className="min-h-11 sm:min-h-9">
-              <Link href="/settings#developer">
-                {state === "blocked" ? "View compatibility tools" : state === "available-agentos-required" ? "View AgentOS update options" : "Open in-app update tools"}
+                  <Link href={state === "available-agentos-required" ? "/updates#agentos-update" : "/settings#developer"}>
+                {state === "blocked" ? "View compatibility tools" : state === "available-agentos-required" ? "View AgentOS updates" : "Open in-app update tools"}
               </Link>
             </Button>
           ) : null}

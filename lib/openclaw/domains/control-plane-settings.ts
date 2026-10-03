@@ -8,13 +8,13 @@ import type {
   OpenClawSmokeTestCheck
 } from "@/lib/agentos/contracts";
 import type { RuntimeIssueState } from "@/lib/openclaw/runtime-issues";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import {
   buildOpenAiAuthLoginCommand,
   isOpenAiAuthFailure,
   resolveOpenAiAuthRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 
-const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const missionControlSettingsPath = path.join(missionControlRootPath, "settings.json");
 const runtimeSmokeTestTtlMs = 12 * 60 * 60 * 1000;
 const providerAuthSmokeTestTtlMs = 5 * 60 * 1000;

@@ -10,8 +10,9 @@ import type {
 } from "@/lib/openclaw/compatibility-lab/types";
 import type { OpenClawCertificationScorecardReport } from "@/lib/openclaw/types";
 import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
-const compatibilityLabRoot = path.join(process.cwd(), ".mission-control", "openclaw-compatibility-lab");
+const compatibilityLabRoot = path.join(missionControlRootPath, "openclaw-compatibility-lab");
 const reportsDir = path.join(compatibilityLabRoot, "reports");
 const fixBundlesDir = path.join(compatibilityLabRoot, "fix-bundles");
 const scorecardsDir = path.join(compatibilityLabRoot, "scorecards");

@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
@@ -19,7 +20,7 @@ type GatewayEventFrame = OpenClawGatewayEventFrame;
 
 export { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
 
-const eventBridgeRoot = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control", "gateway-events");
+const eventBridgeRoot = path.join(missionControlRootPath, "gateway-events");
 const maxBridgeRecords = 500;
 let subscription: OpenClawGatewayEventSubscription | null = null;
 let starting: Promise<void> | null = null;

@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { canAgentOsActorUseProductPermission } from "@/lib/security/agentos-product-authorization";
 import type { AgentOsActorContext } from "@/lib/security/agentos-actor";
 import {
@@ -72,11 +73,7 @@ import type {
   WorkspacePlanDeployResult
 } from "@/lib/openclaw/types";
 
-const plannerRootPath = path.join(
-  /*turbopackIgnore: true*/ process.cwd(),
-  ".mission-control",
-  "planner"
-);
+const plannerRootPath = path.join(missionControlRootPath, "planner");
 const plansRootPath = path.join(plannerRootPath, "plans");
 const WEBSITE_INSPECTION_TIMEOUT_MS = 3500;
 const WEBSITE_FOLLOWUP_TIMEOUT_MS = 1800;
