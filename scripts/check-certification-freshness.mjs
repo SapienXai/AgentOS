@@ -6,9 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Only documentation and evidence paths may follow a certified code commit.
- * Everything else is conservatively treated as behavior-affecting, including
- * workflows, lockfiles, configuration, tests, and desktop/runtime files.
+ * AgentOS runtime changes require fresh certification. Documentation and the
+ * independently validated OpenClaw CLI package have separate validation
+ * boundaries; all other paths remain conservatively behavior-affecting.
  */
 export const CERTIFICATION_DOCUMENTATION_PATH_RULES = [
   /^docs(?:\/|$)/i,
@@ -17,18 +17,55 @@ export const CERTIFICATION_DOCUMENTATION_PATH_RULES = [
   /^SECURITY\.md$/i
 ];
 
+export const CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES = [
+  /^packages\/openclaw-agentos(?:\/|$)/i,
+  /^\.github\/workflows\/openclaw-agentos-(?:package|skill)-publish\.yml$/i
+];
+
+export const CERTIFICATION_POLICY_TOOLING_PATH_RULES = [
+  /^scripts\/check-certification-freshness\.mjs$/i,
+  /^tests\/certification-freshness\.test\.ts$/i
+];
+
 export function isCertificationDocumentationPath(filePath) {
   return CERTIFICATION_DOCUMENTATION_PATH_RULES.some((rule) => rule.test(filePath));
+}
+
+function matchesAnyRule(filePath, rules) {
+  return rules.some((rule) => rule.test(filePath));
 }
 
 export function classifyCertificationChangedPaths(changedPaths) {
   const uniquePaths = [...new Set(changedPaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0))];
   const documentationOnlyPaths = uniquePaths.filter(isCertificationDocumentationPath);
-  const meaningfulPaths = uniquePaths.filter((filePath) => !isCertificationDocumentationPath(filePath));
+  const independentPackagePaths = uniquePaths.filter((filePath) => matchesAnyRule(filePath, CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES));
+  const certificationPolicyPaths = uniquePaths.filter((filePath) => matchesAnyRule(filePath, CERTIFICATION_POLICY_TOOLING_PATH_RULES));
+  const hasIndependentPackageSource = uniquePaths.some((filePath) => /^packages\/openclaw-agentos(?:\/|$)/i.test(filePath));
+  const hasOnlyIndependentPackageChanges = uniquePaths.every((filePath) =>
+    isCertificationDocumentationPath(filePath) ||
+    matchesAnyRule(filePath, CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES) ||
+    matchesAnyRule(filePath, CERTIFICATION_POLICY_TOOLING_PATH_RULES) ||
+    (filePath === "pnpm-lock.yaml" && hasIndependentPackageSource)
+  );
+  const runtimeNeutralCertificationPolicyPaths = hasIndependentPackageSource && hasOnlyIndependentPackageChanges
+    ? certificationPolicyPaths
+    : [];
+  const packageLockPaths = hasIndependentPackageSource && hasOnlyIndependentPackageChanges
+    ? uniquePaths.filter((filePath) => filePath === "pnpm-lock.yaml")
+    : [];
+  const runtimeNeutralPackagePaths = [...independentPackagePaths, ...packageLockPaths];
+  const meaningfulPaths = uniquePaths.filter((filePath) =>
+    !isCertificationDocumentationPath(filePath) &&
+    !matchesAnyRule(filePath, CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES) &&
+    !runtimeNeutralCertificationPolicyPaths.includes(filePath) &&
+    !packageLockPaths.includes(filePath)
+  );
 
   return {
     changedPaths: uniquePaths,
     documentationOnlyPaths,
+    independentPackagePaths: runtimeNeutralPackagePaths,
+    certificationPolicyPaths,
     meaningfulPaths
   };
 }
@@ -76,12 +113,26 @@ export function evaluateCertificationFreshness({
   }
 
   if (certifiedCodeHead === currentHead || classification.meaningfulPaths.length === 0) {
+    const independentPackageChanged = classification.independentPackagePaths.length > 0;
+    const certificationPolicyChanged = classification.certificationPolicyPaths.length > 0;
+    const documentationOnly = !independentPackageChanged && !certificationPolicyChanged;
+
     return {
       ok: true,
-      status: certifiedCodeHead === currentHead ? "fresh" : "fresh-documentation-only",
+      status: certifiedCodeHead === currentHead
+        ? "fresh"
+        : documentationOnly
+          ? "fresh-documentation-only"
+          : independentPackageChanged
+            ? "fresh-independent-package-only"
+            : "fresh-certification-policy-only",
       reason: certifiedCodeHead === currentHead
         ? "Current HEAD is the certified code HEAD."
-        : "Only documentation/evidence paths changed after the certified code HEAD.",
+        : independentPackageChanged
+          ? "Only documentation, certification tooling, and the independently validated OpenClaw CLI package changed after AgentOS runtime certification."
+          : certificationPolicyChanged
+            ? "Only documentation/evidence and certification policy tooling paths changed after the certified code HEAD."
+            : "Only documentation/evidence paths changed after the certified code HEAD.",
       certifiedCodeHead,
       currentHead,
       ...classification
@@ -278,6 +329,8 @@ export function checkCertificationFreshness({
       currentHead,
       changedPaths: [],
       documentationOnlyPaths: [],
+      independentPackagePaths: [],
+      certificationPolicyPaths: [],
       meaningfulPaths: [],
       expectedVersion: certificationVersion || null,
       actualVersion: typeof actualVersion === "string" ? actualVersion : null,
@@ -333,6 +386,14 @@ function formatResult(result, evidencePath) {
 
   if (result.documentationOnlyPaths.length > 0) {
     lines.push("Documentation/evidence-only paths allowed after certification:", ...result.documentationOnlyPaths.map((filePath) => `- ${filePath}`));
+  }
+
+  if (result.independentPackagePaths.length > 0) {
+    lines.push("Independently validated OpenClaw plugin package paths:", ...result.independentPackagePaths.map((filePath) => `- ${filePath}`));
+  }
+
+  if (result.certificationPolicyPaths.length > 0) {
+    lines.push("Certification policy tooling paths:", ...result.certificationPolicyPaths.map((filePath) => `- ${filePath}`));
   }
 
   if (!result.ok && result.status === "recertification-required") {

@@ -1,0 +1,77 @@
+# AgentOS OpenClaw plugin release
+
+AgentOS publishes an official, thin OpenClaw code plugin as `@sapienx/openclaw-agentos` under the `sapienx` ClawHub publisher. The plugin id is `agentos` and its bundled skill is `skills/agentos`.
+
+## Ownership decision
+
+- User outcome: open, start, inspect, and diagnose AgentOS from the native OpenClaw CLI.
+- OpenClaw ownership: plugin discovery, plugin loading, CLI registration, Gateway/runtime state, and skill execution.
+- AgentOS ownership: the canonical `agentos` CLI and the operator control plane it starts and diagnoses.
+- AgentOS responsibility: a small compatibility bridge only.
+- Source of truth: OpenClaw owns plugin/runtime state; AgentOS owns its own CLI and application state.
+- Fallback: the bridge resolves a separately installed AgentOS executable from `AGENTOS_BIN`, the installed package, or `PATH`. Missing AgentOS is an explicit exit-127 diagnostic.
+- Compatibility target: OpenClaw `2026.9.4`, the minimum plugin API/build version pinned by this published plugin release. AgentOS's current recommended runtime version advances independently.
+- Certification boundary: AgentOS application/Gateway certification is separate from this standalone plugin. The plugin has its own build, tests, exact OpenClaw API validation, and ClawHub dry-run; mixed changes to the AgentOS runtime still require fresh runtime certification.
+
+The plugin intentionally has no runtime dependency on `@sapienx/agentos`; it must not embed a second copy of the AgentOS application. OpenClaw is not called from React or API routes, and the bridge does not create a parallel runtime, Gateway, task engine, or skill engine.
+
+## Local release flow
+
+From the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter @sapienx/openclaw-agentos build
+pnpm --filter @sapienx/openclaw-agentos validate
+pnpm --filter @sapienx/openclaw-agentos test
+pnpm --filter @sapienx/openclaw-agentos pack:clawhub
+```
+
+The ClawPack artifact is created in `/tmp/agentos-openclaw-artifacts` by default. Set `OPENCLAW_AGENTOS_PACK_DESTINATION` to use another disposable output directory.
+
+Validate the exact artifact and install it into a disposable OpenClaw profile before publishing:
+
+```bash
+clawhub package validate packages/openclaw-agentos --openclaw-version 2026.9.4 --json
+openclaw plugins install npm-pack:/absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz --force
+openclaw plugins inspect agentos --runtime --json
+```
+
+After installation, verify the command surface with `openclaw agentos version`, `openclaw agentos status`, and `openclaw agentos doctor --deep` against a separately installed AgentOS CLI.
+
+## ClawHub publication
+
+Use the authenticated `sapienx` publisher and the exact ClawPack artifact:
+
+```bash
+clawhub package publish /absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz \
+  --family code-plugin \
+  --owner sapienx \
+  --wait
+```
+
+Run a dry-run immediately before the real publish and stop if validation or security scanning is blocked:
+
+```bash
+clawhub package publish /absolute/path/to/sapienx-openclaw-agentos-0.1.2.tgz \
+  --family code-plugin \
+  --owner sapienx \
+  --dry-run
+```
+
+The manifest declares one active category, `other`. The OpenClaw `2026.9.4` manifest taxonomy and the current ClawHub taxonomy do not share a more specific control-plane category, so this is the honest compatibility intersection; do not pass `--categories` for plugin publication. If trusted publishing has not already been configured, set it against `SapienXai/AgentOS` and this workflow filename:
+
+```bash
+clawhub package trusted-publisher set @sapienx/openclaw-agentos \
+  --repository SapienXai/AgentOS \
+  --workflow-filename openclaw-agentos-package-publish.yml
+```
+
+The workflow keeps pull requests dry-run-only and limits real publication to a manual dispatch or an `openclaw-agentos-v*` tag. The standalone skill uses the official `skill-publish.yml` workflow and is published manually under the same `sapienx` publisher.
+
+## Security contract
+
+- `CLAWHUB_TOKEN` is read only by the local release command or the GitHub Actions secret store; it must never be committed or printed.
+- The plugin uses `spawn(..., { shell: false })` and forwards only known AgentOS options.
+- Missing AgentOS fails closed with an actionable nonzero result.
+- No OpenClaw credentials, browser profiles, cookies, Gateway tokens, or AgentOS runtime state are stored by the plugin.
