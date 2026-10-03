@@ -55,6 +55,7 @@ export type MissionDispatchRecordLike = {
   thinking: NonNullable<MissionSubmission["thinking"]>;
   requestedModelId?: string | null;
   workspaceId: string | null;
+  browserAccountId?: string | null;
   workspacePath: string | null;
   executionMode?: "standard" | "isolated-worktree";
   submittedAt: string;

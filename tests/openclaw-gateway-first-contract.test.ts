@@ -344,6 +344,112 @@ test("mission dispatch returns after Gateway admission without waiting for execu
   assert.match(response.summary, /accepted by OpenClaw/i);
 });
 
+test("unrelated Task admissions proceed concurrently while a slow admission is in flight", async () => {
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
+  let releaseSlowAdmission!: () => void;
+  const slowAdmissionGate = new Promise<void>((resolve) => { releaseSlowAdmission = resolve; });
+  const slowAdmissionEntered = deferred<void>();
+  const fastAdmissionEntered = deferred<void>();
+  const sessionKeys: string[] = [];
+  let activeAdmissions = 0;
+  let peakAdmissions = 0;
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      const key = input.key ?? "missing-session-key";
+      sessionKeys.push(key);
+      return { key, sessionId: `session-${sessionKeys.length}` };
+    },
+    async runAgentTurn(input) {
+      activeAdmissions += 1;
+      peakAdmissions = Math.max(peakAdmissions, activeAdmissions);
+      if (input.message.includes("Slow admission")) {
+        slowAdmissionEntered.resolve();
+        await slowAdmissionGate;
+      } else {
+        fastAdmissionEntered.resolve();
+      }
+      activeAdmissions -= 1;
+      return { runId: `run-${sessionKeys.indexOf(input.sessionKey ?? "") + 1}`, status: "running", summary: "Accepted once" };
+    }
+  }));
+
+  const deps = {
+    getMissionControlSnapshot: async () => createSnapshot(),
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  };
+  const slowTask = submitMissionDispatch({ mission: "Slow admission", workspaceId: "workspace-1", requestId: "concurrent-slow-admission" }, deps);
+  await withTimeout(slowAdmissionEntered.promise);
+  const fastTask = submitMissionDispatch({ mission: "Fast admission", workspaceId: "workspace-1", requestId: "concurrent-fast-admission" }, deps);
+  let fastEnteredBeforeRelease = false;
+  try {
+    fastEnteredBeforeRelease = await Promise.race([
+      fastAdmissionEntered.promise.then(() => true),
+      delay(300).then(() => false)
+    ]);
+  } finally {
+    releaseSlowAdmission();
+  }
+
+  const [slowResponse, fastResponse] = await Promise.all([slowTask, fastTask]);
+  trackMissionDispatch(slowResponse.dispatchId);
+  trackMissionDispatch(fastResponse.dispatchId);
+
+  assert.equal(fastEnteredBeforeRelease, true);
+  assert.equal(peakAdmissions, 2);
+  assert.notEqual(slowResponse.dispatchId, fastResponse.dispatchId);
+  assert.notEqual(sessionKeys[0], sessionKeys[1]);
+  assert.equal(slowResponse.status, "running");
+  assert.equal(fastResponse.status, "running");
+});
+
+test("concurrent replay of one requestId is serialized before dispatch lookup", async () => {
+  let releaseSnapshot!: () => void;
+  const snapshotGate = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+  const firstSnapshotStarted = deferred<void>();
+  let snapshotCalls = 0;
+  let sessionCreateCalls = 0;
+  let turnCalls = 0;
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      sessionCreateCalls += 1;
+      return { key: input.key, sessionId: "session-same-request" };
+    },
+    async runAgentTurn() {
+      turnCalls += 1;
+      return { runId: "run-same-request", status: "running", summary: "Accepted once" };
+    }
+  }));
+  const deps = {
+    getMissionControlSnapshot: async () => {
+      snapshotCalls += 1;
+      if (snapshotCalls === 1) {
+        firstSnapshotStarted.resolve();
+        await snapshotGate;
+      }
+      return createSnapshot();
+    },
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  };
+
+  const first = submitMissionDispatch({ mission: "One logical task", workspaceId: "workspace-1", requestId: "same-request-concurrent" }, deps);
+  await withTimeout(firstSnapshotStarted.promise);
+  const replay = submitMissionDispatch({ mission: "One logical task", workspaceId: "workspace-1", requestId: "same-request-concurrent" }, deps);
+  await delay(30);
+  const snapshotCallsWhileFirstOwnsRequest = snapshotCalls;
+  releaseSnapshot();
+  const [firstResponse, replayResponse] = await Promise.all([first, replay]);
+  trackMissionDispatch(firstResponse.dispatchId);
+
+  assert.equal(snapshotCallsWhileFirstOwnsRequest, 1);
+  assert.equal(firstResponse.dispatchId, replayResponse.dispatchId);
+  assert.equal(replayResponse.meta?.idempotentReplay, true);
+  assert.equal(sessionCreateCalls, 1);
+  assert.equal(turnCalls, 1);
+});
+
 test("ambiguous independent-session creation is retained for request reconciliation", async () => {
   let sessionCreateCalls = 0;
   let turnCalls = 0;
@@ -398,6 +504,24 @@ test("mission dispatch converges duplicate client request identities", async () 
   assert.equal(calls, 1);
   assert.equal(replay.dispatchId, first.dispatchId);
   assert.equal(replay.meta?.idempotentReplay, true);
+
+  const secondTarget = createSnapshotWithSecondTarget();
+  await assert.rejects(
+    submitMissionDispatch({ mission: "Idempotent mission", workspaceId: "workspace-2", agentId: "agent-2", requestId: "same-request" }, {
+      getMissionControlSnapshot: async () => secondTarget,
+      resolveAgentForMission: () => "agent-2",
+      invalidateMissionControlCaches: () => {}
+    }),
+    /request identity is already in use/i
+  );
+  await assert.rejects(
+    submitMissionDispatch({ mission: "Idempotent mission", workspaceId: "workspace-unknown", agentId: "agent-1", requestId: "same-request" }, deps),
+    /request identity is already in use/i
+  );
+  await assert.rejects(
+    submitMissionDispatch({ mission: "Idempotent mission", workspaceId: "workspace-1", thinking: "high", requestId: "same-request" }, deps),
+    /request identity is already in use/i
+  );
 });
 
 test("mission dispatch still attempts Gateway-first path when capabilities are unknown", async () => {
@@ -1348,4 +1472,55 @@ function createSnapshot(): MissionControlSnapshot {
       issues: []
     }
   };
+}
+
+function createSnapshotWithSecondTarget(): MissionControlSnapshot {
+  const snapshot = createSnapshot();
+  const workspace = snapshot.workspaces[0]!;
+  const agent = snapshot.agents[0]!;
+  snapshot.workspaces.push({
+    ...workspace,
+    id: "workspace-2",
+    name: "Workspace Two",
+    slug: "workspace-two",
+    path: "/tmp/agentos-contract-workspace-two",
+    agentIds: ["agent-2"]
+  });
+  snapshot.agents.push({
+    ...agent,
+    id: "agent-2",
+    name: "Agent Two",
+    workspaceId: "workspace-2",
+    workspacePath: "/tmp/agentos-contract-workspace-two",
+    isDefault: false
+  });
+  return snapshot;
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function delay(durationMs: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs = 1_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("Timed out waiting for the mission dispatch test barrier.")), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }

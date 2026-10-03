@@ -92,12 +92,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
-  const basePersistedFollowUps = useMemo(
-    () => readTaskFollowUpsFromMetadata(data.task.metadata),
-    [data.task.metadata]
-  );
-  const baseBootstrapStage =
-    typeof data.task.metadata.bootstrapStage === "string" ? data.task.metadata.bootstrapStage : null;
   const operationSchedule =
     typeof data.task.metadata.scheduleLabel === "string" ? data.task.metadata.scheduleLabel : null;
   const operationJobId =
@@ -109,15 +103,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       ? data.task.metadata.systemOwnedMonitor
       : null;
   const shouldStreamFeed =
-    expanded ||
-    selected ||
-    localFollowUps.length > 0 ||
-    basePersistedFollowUps.length > 0 ||
-    activeFollowUpIndex !== null ||
-    Boolean(data.pendingCreation || isPendingTaskBootstrapStage(baseBootstrapStage)) ||
-    data.task.status === "running" ||
-    data.task.status === "stalled" ||
-    data.task.liveRunCount > 0;
+    expanded || selected;
 
   const optimisticFeed = useMemo(
     () => readTaskFeedEvents(data.task.metadata.optimisticEvents),

@@ -49,16 +49,41 @@ export type MissionDispatchWorkflowDependencies = {
   invalidateMissionControlCaches: () => void;
 };
 
-let missionSubmissionQueue: Promise<void> = Promise.resolve();
+const missionSubmissionLocks = new Map<string, Promise<void>>();
 
 export async function submitMissionDispatch(
   input: MissionSubmission,
   deps: MissionDispatchWorkflowDependencies,
   gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<MissionResponse> {
-  const run = missionSubmissionQueue.then(() => submitMissionDispatchOnce(input, deps, gatewayOptions));
-  missionSubmissionQueue = run.then(() => undefined, () => undefined);
-  return run;
+  const requestId = input.requestId?.trim() || null;
+  return withRequestIdSubmissionLock(requestId, () => submitMissionDispatchOnce(input, deps, gatewayOptions));
+}
+
+async function withRequestIdSubmissionLock<T>(requestId: string | null, operation: () => Promise<T>): Promise<T> {
+  if (!requestId) {
+    return operation();
+  }
+
+  // This process-local critical section protects the sidecar read/create/write path for one request ID.
+  // It does not provide cross-process idempotency; OpenClaw remains authoritative for session and run creation.
+  const previous = missionSubmissionLocks.get(requestId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => current);
+  missionSubmissionLocks.set(requestId, tail);
+  await previous;
+
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (missionSubmissionLocks.get(requestId) === tail) {
+      missionSubmissionLocks.delete(requestId);
+    }
+  }
 }
 
 async function submitMissionDispatchOnce(
@@ -75,20 +100,6 @@ async function submitMissionDispatchOnce(
 
   const snapshot = await deps.getMissionControlSnapshot({ includeHidden: true });
   const requestId = input.requestId?.trim() || null;
-  if (requestId) {
-    const existing = (await readMissionDispatchRecords()).find((record) => record.clientRequestId === requestId) ?? null;
-    if (existing) {
-      const visibleSnapshot = await deps.getMissionControlSnapshot({ includeHidden: false });
-      const visible = Boolean(
-        visibleSnapshot.agents.some((agent) => agent.id === existing.agentId) ||
-        (existing.workspaceId && visibleSnapshot.workspaces.some((workspace) => workspace.id === existing.workspaceId))
-      );
-      if (!visible || (input.workspaceId && input.workspaceId !== existing.workspaceId) || (input.agentId && input.agentId !== existing.agentId) || existing.mission !== mission) {
-        throw new Error("This mission request identity is already in use.");
-      }
-      return missionResponseFromDispatchRecord(existing);
-    }
-  }
   const agentId = input.agentId || deps.resolveAgentForMission(snapshot, input.workspaceId);
 
   if (!agentId) {
@@ -106,6 +117,31 @@ async function submitMissionDispatchOnce(
           path: missionAgent.workspacePath
         }
       : null);
+  if (requestId) {
+    const existing = (await readMissionDispatchRecords()).find((record) => record.clientRequestId === requestId) ?? null;
+    if (existing) {
+      const requestedBrowserAccountId =
+        input.browserAccount?.accountId.trim() || input.browserAccountId?.trim() || null;
+      const existingBrowserAccountId = existing.browserAccountId ?? existing.browserBinding?.accountId ?? null;
+      const sameIntent =
+        existing.mission === mission &&
+        existing.agentId === agentId &&
+        existing.workspaceId === (missionWorkspace?.id ?? null) &&
+        (!input.workspaceId || input.workspaceId === existing.workspaceId) &&
+        existing.thinking === (input.thinking ?? "medium") &&
+        (existing.executionMode ?? "standard") === executionMode &&
+        existingBrowserAccountId === requestedBrowserAccountId;
+      const visibleSnapshot = await deps.getMissionControlSnapshot({ includeHidden: false });
+      const visible = Boolean(
+        visibleSnapshot.agents.some((agent) => agent.id === existing.agentId) ||
+        (existing.workspaceId && visibleSnapshot.workspaces.some((workspace) => workspace.id === existing.workspaceId))
+      );
+      if (!sameIntent || !visible) {
+        throw new Error("This mission request identity is already in use.");
+      }
+      return missionResponseFromDispatchRecord(existing);
+    }
+  }
   if (
     input.browserAccount &&
     (
@@ -152,6 +188,7 @@ async function submitMissionDispatchOnce(
     requestedModelId: missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null,
     workspaceId: missionWorkspace?.id ?? null,
     workspacePath: missionWorkspace?.path ?? null,
+    browserAccountId: input.browserAccount?.accountId.trim() || input.browserAccountId?.trim() || null,
     outputDir: outputPlan?.absoluteOutputDir ?? null,
     outputDirRelative: outputPlan?.relativeOutputDir ?? null,
     notesDirRelative: outputPlan?.notesDirRelative ?? null,

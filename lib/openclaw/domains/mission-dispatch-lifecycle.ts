@@ -66,6 +66,7 @@ export type MissionDispatchPayload = {
   requestedModelId: string | null;
   workspaceId: string | null;
   workspacePath: string | null;
+  browserAccountId?: string | null;
   executionMode?: NonNullable<MissionSubmission["executionMode"]>;
   outputDir: string | null;
   outputDirRelative: string | null;
@@ -118,6 +119,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     requestedModelId: payload.requestedModelId,
     workspaceId: payload.workspaceId,
     workspacePath: payload.workspacePath,
+    browserAccountId: payload.browserAccountId ?? null,
     executionMode: payload.executionMode,
     submittedAt: now,
     updatedAt: now,

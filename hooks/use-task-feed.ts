@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TaskDetailRecord, TaskFeedEvent, TaskDetailStreamEvent } from "@/lib/agentos/contracts";
+import { subscribeTaskFeedStream } from "@/hooks/task-feed-stream";
 
 const EMPTY_TASK_FEED: TaskFeedEvent[] = [];
 
@@ -43,7 +44,6 @@ export function useTaskFeed(
       searchParams.set("dispatchId", dispatchId);
     }
     const streamUrl = `/api/tasks/${encodeURIComponent(taskId)}/stream${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`;
-    const eventSource = new EventSource(streamUrl);
 
     const handleTask = (event: MessageEvent) => {
       try {
@@ -59,7 +59,7 @@ export function useTaskFeed(
       }
     };
 
-    const handleError = (event: MessageEvent) => {
+    const handleError = (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data);
         setErrorState({ taskId, message: data.error || "Unknown error" });
@@ -68,7 +68,7 @@ export function useTaskFeed(
       }
     };
 
-    const handleReady = (event: MessageEvent) => {
+    const handleReady = (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data) as TaskDetailStreamEvent;
         if (data.type !== "ready") {
@@ -86,24 +86,18 @@ export function useTaskFeed(
       }
     };
 
-    eventSource.addEventListener("task", handleTask as EventListener);
-    eventSource.addEventListener("task-error", handleError as EventListener);
-    eventSource.addEventListener("ready", handleReady as EventListener);
-
-    eventSource.onerror = () => {
-      setErrorState((current) =>
-        current.taskId === taskId && current.message
-          ? current
-          : { taskId, message: "Task feed disconnected. Reconnecting…" }
-      );
-    };
-
-    return () => {
-      eventSource.close();
-      eventSource.removeEventListener("task", handleTask as EventListener);
-      eventSource.removeEventListener("task-error", handleError as EventListener);
-      eventSource.removeEventListener("ready", handleReady as EventListener);
-    };
+    return subscribeTaskFeedStream(streamUrl, {
+      onTask: handleTask,
+      onError: handleError,
+      onReady: handleReady,
+      onDisconnect: () => {
+        setErrorState((current) =>
+          current.taskId === taskId && current.message
+            ? current
+            : { taskId, message: "Task feed disconnected. Reconnecting…" }
+        );
+      }
+    });
   }, [taskId, enabled, dispatchId, optimisticFeed]);
 
   const feed = optimisticFeed ?? (feedState.taskId === taskId ? feedState.feed : []);

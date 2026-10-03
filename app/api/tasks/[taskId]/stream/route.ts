@@ -8,6 +8,7 @@ import {
 import type { OpenClawGatewayEventFrame } from "@/lib/openclaw/client/gateway-client";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+import { createTaskDetailStreamRefreshController } from "@/lib/agentos/application/task-detail-stream-refresh";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,11 +29,11 @@ export async function GET(
   const taskHistoryLimit = parsedTaskHistoryLimit !== undefined && Number.isFinite(parsedTaskHistoryLimit)
     ? parsedTaskHistoryLimit
     : undefined;
-  let interval: ReturnType<typeof setInterval> | undefined;
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
-  let taskRequest: Promise<void> | null = null;
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let refreshController: ReturnType<typeof createTaskDetailStreamRefreshController> | null = null;
+  let unsubscribeGatewayEvents: (() => void) | undefined;
+  let abortListener: (() => void) | undefined;
   const relatedIds = new Set([taskId, dispatchId].filter((value): value is string => Boolean(value)));
 
   const authorization = await requireAgentOsProductPermission(request, "tasks.use");
@@ -50,113 +51,95 @@ export async function GET(
     return Response.json({ error: "Task was not found." }, { status: 404 });
   }
 
+  const cleanup = () => {
+    refreshController?.close();
+    refreshController = null;
+    unsubscribeGatewayEvents?.();
+    unsubscribeGatewayEvents = undefined;
+    if (abortListener) {
+      request.signal.removeEventListener("abort", abortListener);
+      abortListener = undefined;
+    }
+  };
+
+  const closeStream = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    cleanup();
+    try {
+      streamController?.close();
+    } catch {
+      // The stream may already be closed by the response consumer.
+    }
+  };
+
+  const sendEvent = (event: string, data: TaskDetailStreamEvent) => {
+    if (closed || !streamController) {
+      return false;
+    }
+    try {
+      streamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(redactSecrets(data))}\n\n`));
+      return true;
+    } catch {
+      closeStream();
+      return false;
+    }
+  };
+
+  const sendHeartbeat = () => {
+    if (closed || !streamController) {
+      return;
+    }
+    try {
+      streamController.enqueue(encoder.encode(": keep-alive\n\n"));
+    } catch {
+      closeStream();
+    }
+  };
+
   const stream = new ReadableStream({
     async start(controller) {
-      const handleAbort = () => {
-        close();
-      };
-
-      const cleanup = () => {
-        if (interval) {
-          clearInterval(interval);
-          interval = undefined;
-        }
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = undefined;
-        }
-        unsubscribeGatewayEvents?.();
-        unsubscribeGatewayEvents = undefined;
-
-        request.signal.removeEventListener("abort", handleAbort);
-      };
-
-      const sendEvent = (event: string, data: TaskDetailStreamEvent) => {
-        if (closed) {
-          return false;
-        }
-
-        try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(redactSecrets(data))}\n\n`));
-          return true;
-        } catch {
-          close();
-          return false;
-        }
-      };
-
-      const close = () => {
-        if (closed) {
-          return;
-        }
-
-        closed = true;
-        cleanup();
-
-        try {
-          controller.close();
-        } catch {
-          // Stream may already be closed.
-        }
-      };
-
-      request.signal.addEventListener("abort", handleAbort);
+      streamController = controller;
+      abortListener = closeStream;
+      request.signal.addEventListener("abort", abortListener, { once: true });
+      if (request.signal.aborted) {
+        closeStream();
+        return;
+      }
 
       const sendTask = async () => {
         if (closed) {
           return;
         }
-
-        if (taskRequest) {
-          return taskRequest;
+        try {
+          const detail = await getTaskDetail(taskId, {
+            dispatchId,
+            taskHistoryCursor,
+            taskHistoryLimit
+          });
+          indexTaskDetailIds(detail, relatedIds);
+          sendEvent("task", { type: "task", detail });
+        } catch (error) {
+          sendEvent("task-error", {
+            type: "error",
+            error: redactErrorMessage(error, "Unable to load task detail.")
+          });
         }
-
-        taskRequest = (async () => {
-          try {
-            const detail = await getTaskDetail(taskId, {
-              dispatchId,
-              taskHistoryCursor,
-              taskHistoryLimit
-            });
-            indexTaskDetailIds(detail, relatedIds);
-            sendEvent("task", { type: "task", detail });
-          } catch (error) {
-            sendEvent("task-error", {
-              type: "error",
-              error: redactErrorMessage(error, "Unable to load task detail.")
-            });
-          } finally {
-            taskRequest = null;
-          }
-        })();
-
-        return taskRequest;
       };
 
-      const scheduleTaskRefresh = (delayMs: number) => {
-        if (closed) {
-          return;
-        }
-
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-
-        debounceTimer = setTimeout(() => {
-          debounceTimer = undefined;
-          void sendTask();
-        }, delayMs);
-      };
-
-      await sendTask();
+      refreshController = createTaskDetailStreamRefreshController(sendTask, { onHeartbeat: sendHeartbeat });
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents((frame) => {
         if (gatewayEventMatchesTask(frame, relatedIds)) {
-          scheduleTaskRefresh(150);
+          refreshController?.scheduleEventRefresh();
         }
       });
-      interval = setInterval(() => {
-        void sendTask();
-      }, 3000);
+      await refreshController.refreshNow();
+      if (closed) {
+        return;
+      }
+      refreshController.start();
       sendEvent("ready", {
         type: "ready",
         ok: true,
@@ -164,15 +147,7 @@ export async function GET(
       });
     },
     cancel() {
-      closed = true;
-
-      if (interval) {
-        clearInterval(interval);
-      }
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      unsubscribeGatewayEvents?.();
+      closeStream();
     }
   });
 

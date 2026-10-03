@@ -6,6 +6,7 @@ export const REQUIRED_WORKFORCE_PRODUCT_CHECKS = [
   "product-path-api-detail",
   "mission-basic",
   "product-path-idempotency",
+  "concurrent-task-admission",
   "result-projection",
   "approval-resolution",
   "gateway-reconnect",

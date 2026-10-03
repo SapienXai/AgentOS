@@ -9,7 +9,8 @@ import { promisify } from "node:util";
 
 import { getWorkforceMissionDetail, getWorkforceMissionList } from "@/lib/agentos/application/workforce-service";
 import { clearMissionControlCaches, getMissionControlSnapshot, submitMission } from "@/lib/agentos/control-plane";
-import { setOpenClawAdapterForTesting } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { getOpenClawAdapter, setOpenClawAdapterForTesting } from "@/lib/openclaw/adapter/openclaw-adapter";
+import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resetOpenClawGatewayClient, setOpenClawGatewayClientForTesting } from "@/lib/openclaw/client/gateway-client-factory";
 import { readMissionDispatchRecordById, readMissionDispatchRecords } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import type { MissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
@@ -68,7 +69,7 @@ async function main() {
     "OPENCLAW_STATE_DIR",
     "OPENCLAW_BIN"
   ]);
-  const cleanupRefs = { questionIds: [] as string[], approvalId: null as string | null };
+  const cleanupRefs = { questionIds: [] as string[], sessionKeys: [] as string[], approvalId: null as string | null };
   const evidence = createEvidence(identity, await readGitHead());
 
   try {
@@ -212,8 +213,13 @@ async function main() {
     evidence.checks["mission-basic"] = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Real AgentOS submission reached one native session/run and completed with authoritative output." };
 
     const completionCountBeforeReplay = fixture.stats.completionCount;
-    const replay = await submitMission({ mission: "WORKFORCE_ACCEPTANCE_FIRST", requestId, agentId: "main", thinking: "off" }, mutationOptions());
+    const replayInput = { mission: "WORKFORCE_ACCEPTANCE_FIRST", requestId, agentId: "main", thinking: "off" as const };
+    const [replay, concurrentReplay] = await Promise.all([
+      submitMission(replayInput, mutationOptions()),
+      submitMission(replayInput, mutationOptions())
+    ]);
     assert.equal(replay.dispatchId, productMission.dispatchId);
+    assert.equal(concurrentReplay.dispatchId, productMission.dispatchId);
     assert.equal(fixture.stats.completionCount, completionCountBeforeReplay);
     await assert.rejects(
       submitMission({ mission: "WORKFORCE_ACCEPTANCE_DIFFERENT", requestId, agentId: "main", thinking: "off" }, mutationOptions()),
@@ -221,8 +227,50 @@ async function main() {
     );
     const persistedRecords = await readMissionDispatchRecords();
     assert.equal(persistedRecords.filter((record) => record.clientRequestId === requestId).length, 1);
-    evidence.checks["product-path-idempotency"] = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Replay returned the same persisted dispatch without a second native model completion; altered request identity failed closed." };
+    evidence.checks["product-path-idempotency"] = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Concurrent replay returned the same persisted dispatch without another native model completion; altered request identity failed closed." };
     evidence.checks["result-projection"] = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Final output came from the native Gateway result persisted by the canonical Mission workflow and reconstructed in Mission detail." };
+
+    const admissionBarrier = createConcurrentAdmissionBarrier(2);
+    try {
+      setOpenClawAdapterForTesting(withConcurrentAdmissionBarrier(getOpenClawAdapter(), admissionBarrier));
+      const concurrentRequests = [
+        { mission: "WORKFORCE_ACCEPTANCE_CONCURRENT_A", requestId: `workforce-concurrent-a-${Date.now()}`, agentId: "main", thinking: "off" as const },
+        { mission: "WORKFORCE_ACCEPTANCE_CONCURRENT_B", requestId: `workforce-concurrent-b-${Date.now()}`, agentId: "main", thinking: "off" as const }
+      ];
+      const concurrentTasks = await Promise.all(concurrentRequests.map((input) => submitMission(input, mutationOptions())));
+      const concurrentRecords = await Promise.all(concurrentTasks.map(async (task) => {
+        assert.ok(task.dispatchId);
+        const record = await readMissionDispatchRecordById(task.dispatchId);
+        assert.ok(record);
+        assert.equal(record.admissionState, "accepted");
+        assert.ok(record.sessionKey);
+        assert.ok(record.sessionId);
+        assert.ok(record.result?.runId);
+        cleanupRefs.sessionKeys.push(record.sessionKey);
+        return record;
+      }));
+      assert.notEqual(concurrentRecords[0]?.id, concurrentRecords[1]?.id);
+      assert.notEqual(concurrentRecords[0]?.sessionKey, concurrentRecords[1]?.sessionKey);
+      assert.notEqual(concurrentRecords[0]?.sessionId, concurrentRecords[1]?.sessionId);
+      assert.notEqual(concurrentRecords[0]?.result?.runId, concurrentRecords[1]?.result?.runId);
+      evidence.concurrentAdmission = {
+        unrelatedRequestCount: concurrentRecords.length,
+        concurrentAdapterAdmissions: admissionBarrier.arrivalCount,
+        sameAgent: concurrentRecords.every((record) => record.agentId === "main"),
+        distinctDispatchIds: new Set(concurrentRecords.map((record) => record.id)).size === concurrentRecords.length,
+        distinctSessionKeys: new Set(concurrentRecords.map((record) => record.sessionKey)).size === concurrentRecords.length,
+        distinctSessionIds: new Set(concurrentRecords.map((record) => record.sessionId)).size === concurrentRecords.length,
+        distinctRunIds: new Set(concurrentRecords.map((record) => record.result?.runId)).size === concurrentRecords.length
+      };
+      evidence.checks["concurrent-task-admission"] = {
+        status: "PASS",
+        evidence: ["APPLICATION_PATH", "OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS],
+        detail: "Two different requests reached native admission concurrently for one agent and OpenClaw returned distinct dispatch-correlated session keys, session IDs, and run IDs."
+      };
+    } finally {
+      admissionBarrier.close();
+      setOpenClawAdapterForTesting(null);
+    }
 
     const artifactRequestId = `workforce-artifact-${Date.now()}`;
     const artifactMission = await submitMission({
@@ -333,7 +381,9 @@ async function main() {
     if (client && cleanupRefs.approvalId) await client.callNative("exec.approval.resolve", { id: cleanupRefs.approvalId, decision: "deny" }, mutationOptions()).catch(() => {});
     if (client) {
       for (const id of cleanupRefs.questionIds) await client.callNative("question.resolve", { id, cancel: true }, mutationOptions()).catch(() => {});
-      if (sessionKey) await client.callNative("sessions.delete", { key: sessionKey, deleteTranscript: true }, mutationOptions()).catch(() => {});
+      for (const key of new Set([sessionKey, ...cleanupRefs.sessionKeys].filter((value): value is string => Boolean(value)))) {
+        await client.callNative("sessions.delete", { key, deleteTranscript: true }, mutationOptions()).catch(() => {});
+      }
       client.close("workforce acceptance cleanup");
     }
     setOpenClawAdapterForTesting(null);
@@ -420,6 +470,7 @@ function createEvidence(identity: { version: string; sourceCommit: string; build
     modelAuthSetup: null as Record<string, unknown> | null,
     modelReadiness: null as Record<string, unknown> | null,
     productPath: null as Record<string, unknown> | null,
+    concurrentAdmission: null as Record<string, unknown> | null,
     checks: {} as Record<string, { status: CheckStatus; evidence: string | string[]; detail?: string }>,
     runtimeTaskLedger: null as Record<string, unknown> | null,
     cleanup: null as Record<string, unknown> | null,
@@ -488,6 +539,45 @@ async function writeConfig(configPath: string, workspaceDir: string, fixtureBase
 
 function createClient(port: number, token: string, clientVersion: string) { return createOfficialBackedOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"], timeoutMs: TIMEOUT_MS, clientName: "gateway-client", clientVersion, sharedStateMode: "read-only" }); }
 function mutationOptions() { return { timeoutMs: TIMEOUT_MS, safety: "mutation" as const }; }
+function createConcurrentAdmissionBarrier(expected: number) {
+  let arrivals = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let resolveGate!: () => void;
+  let rejectGate!: (error: Error) => void;
+  const gate = new Promise<void>((resolve, reject) => { resolveGate = resolve; rejectGate = reject; });
+  timer = setTimeout(() => rejectGate(new Error(`Concurrent admission barrier timed out after ${arrivals}/${expected} arrivals.`)), TIMEOUT_MS);
+  return {
+    async wait() {
+      arrivals += 1;
+      if (arrivals >= expected) {
+        if (timer) clearTimeout(timer);
+        resolveGate();
+      }
+      await gate;
+    },
+    get arrivalCount() {
+      return arrivals;
+    },
+    close() {
+      if (timer) clearTimeout(timer);
+      resolveGate();
+    },
+  };
+}
+function withConcurrentAdmissionBarrier(adapter: OpenClawAdapter, barrier: ReturnType<typeof createConcurrentAdmissionBarrier>): OpenClawAdapter {
+  return new Proxy(adapter, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property === "runAgentTurn" && typeof value === "function") {
+        return async (...args: Parameters<OpenClawAdapter["runAgentTurn"]>) => {
+          if (args[0].message.includes("WORKFORCE_ACCEPTANCE_CONCURRENT_")) await barrier.wait();
+          return value.apply(target, args);
+        };
+      }
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
 function readOptions() { return { timeoutMs: TIMEOUT_MS, safety: "read" as const }; }
 function summarizeChecks(checks: Record<string, { status: CheckStatus }>) { return Object.values(checks).reduce((summary, check) => { if (check.status === "PASS") summary.passed += 1; else if (check.status === "FAIL") summary.failed += 1; else summary.skipped += 1; return summary; }, { passed: 0, skipped: 0, failed: 0 }); }
 async function readPackageIdentity(packageRoot: string) { const pkg = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as { version?: string }; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as { commit?: string; buildId?: string }; const hash = createHash("sha256"); for (const file of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(file); hash.update(await readFile(path.join(packageRoot, file))); } return { version: pkg.version ?? "", sourceCommit: buildInfo.commit ?? "", buildId: buildInfo.buildId ?? "", packageHash: hash.digest("hex") }; }
