@@ -11,6 +11,7 @@ AgentOS publishes an official, thin OpenClaw code plugin as `@sapienx/openclaw-a
 - Source of truth: OpenClaw owns plugin/runtime state; AgentOS owns its own CLI and application state.
 - Fallback: the bridge resolves a separately installed AgentOS executable from `AGENTOS_BIN`, the installed package, or `PATH`. Missing AgentOS is an explicit exit-127 diagnostic.
 - Compatibility target: OpenClaw `2026.9.4`, the minimum plugin API/build version pinned by this published plugin release. AgentOS's current recommended runtime version advances independently.
+- Certification boundary: AgentOS application/Gateway certification is separate from this standalone plugin. The plugin has its own build, tests, exact OpenClaw API validation, and ClawHub dry-run; mixed changes to the AgentOS runtime still require fresh runtime certification.
 
 The plugin intentionally has no runtime dependency on `@sapienx/agentos`; it must not embed a second copy of the AgentOS application. OpenClaw is not called from React or API routes, and the bridge does not create a parallel runtime, Gateway, task engine, or skill engine.
 
@@ -20,10 +21,10 @@ From the repository root:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm build:openclaw-agentos
-pnpm validate:openclaw-agentos
-pnpm test:openclaw-agentos
-pnpm pack:openclaw-agentos
+pnpm --filter @sapienx/openclaw-agentos build
+pnpm --filter @sapienx/openclaw-agentos validate
+pnpm --filter @sapienx/openclaw-agentos test
+pnpm --filter @sapienx/openclaw-agentos pack:clawhub
 ```
 
 The ClawPack artifact is created in `/tmp/agentos-openclaw-artifacts` by default. Set `OPENCLAW_AGENTOS_PACK_DESTINATION` to use another disposable output directory.

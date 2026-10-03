@@ -1,17 +1,31 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 
-import {
+const compiledSourceDir = mkdtempSync(path.join(os.tmpdir(), "agentos-plugin-source-test-"));
+const source = readFileSync(new URL("../src/launcher.ts", import.meta.url), "utf8");
+const compiledSource = ts.transpileModule(source, {
+  compilerOptions: {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.ES2022
+  }
+}).outputText;
+const compiledSourcePath = path.join(compiledSourceDir, "launcher.mjs");
+writeFileSync(compiledSourcePath, compiledSource);
+const {
   buildAgentOsDoctorArgs,
   buildAgentOsStartArgs,
   buildAgentOsStatusArgs,
   resolveAgentOsTarget,
   runAgentOsCommand
-} from "../dist/launcher.js";
+} = await import(pathToFileURL(compiledSourcePath).href);
+
+test.after(() => rmSync(compiledSourceDir, { recursive: true, force: true }));
 
 test("builds only the supported AgentOS start arguments", () => {
   assert.deepEqual(buildAgentOsStartArgs({ port: "3100", host: "127.0.0.1", plain: true }, true), [

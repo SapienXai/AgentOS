@@ -110,6 +110,45 @@ test("certification freshness allows documentation and evidence commits after co
   assert.equal(result.documentationOnlyPaths.length, 3);
 });
 
+test("certification freshness treats the separately validated OpenClaw CLI package as runtime-neutral", () => {
+  const result = evaluateCertificationFreshness({
+    certifiedCodeHead,
+    currentHead,
+    changedPaths: [
+      "README.md",
+      "docs/openclaw-agentos-plugin-release.md",
+      ".github/workflows/openclaw-agentos-package-publish.yml",
+      "packages/openclaw-agentos/src/index.ts",
+      "packages/openclaw-agentos/tests/launcher.test.mjs",
+      "packages/openclaw-agentos/.gitignore",
+      "pnpm-lock.yaml",
+      "scripts/check-certification-freshness.mjs",
+      "tests/certification-freshness.test.ts"
+    ]
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "fresh-independent-package-only");
+  assert.deepEqual(result.meaningfulPaths, []);
+});
+
+test("plugin-scoped lockfile changes do not hide AgentOS runtime changes", () => {
+  const result = evaluateCertificationFreshness({
+    certifiedCodeHead,
+    currentHead,
+    changedPaths: [
+      "pnpm-lock.yaml",
+      "packages/openclaw-agentos/src/index.ts",
+      "lib/openclaw/application/chatgpt-provider-auth-service.ts"
+    ]
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "recertification-required");
+  assert.ok(result.meaningfulPaths.includes("pnpm-lock.yaml"));
+  assert.ok(result.meaningfulPaths.includes("lib/openclaw/application/chatgpt-provider-auth-service.ts"));
+});
+
 test("certification freshness fails and reports meaningful paths after code certification", () => {
   const result = evaluateCertificationFreshness({
     certifiedCodeHead,

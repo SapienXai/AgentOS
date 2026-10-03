@@ -42,6 +42,9 @@ jobs:
       - name: Validate plugin
         run: pnpm --filter @sapienx/openclaw-agentos validate
 
+      - name: Validate current stable OpenClaw plugin API
+        run: clawhub package validate "$GITHUB_WORKSPACE/packages/openclaw-agentos" --openclaw-version 2026.9.8 --json
+
       - name: Create ClawPack artifact
         run: |
           mkdir -p clawhub-package-artifact
