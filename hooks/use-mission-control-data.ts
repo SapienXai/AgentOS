@@ -175,10 +175,11 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     };
   }, [setSafeSnapshot]);
 
-  const refreshSnapshot = useCallback(async (options: { force?: boolean } = {}) => {
+  const refreshSnapshot = useCallback(async (options: { force?: boolean; signal?: AbortSignal } = {}) => {
     const url = options.force ? "/api/snapshot?force=true" : "/api/snapshot";
     const response = await fetch(url, {
-      cache: "no-store"
+      cache: "no-store",
+      signal: options.signal
     });
     const nextSnapshot = (await response.json()) as ControlPlaneSnapshot;
     const snapshotPending = response.headers.get("X-AgentOS-Snapshot-Pending") === "true";

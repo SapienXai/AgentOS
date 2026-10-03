@@ -12,12 +12,11 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { MissionControlDialogShell } from "@/components/mission-control/mission-control-dialog-shell";
 import { Button } from "@/components/ui/button";
 import {
   resolveUpdateDialogDescription,
   resolveUpdateDialogTitle,
-  resolveUpdateResultIconWrapClassName,
-  resolveUpdateResultPanelClassName
 } from "@/components/mission-control/mission-control-shell.utils";
 import type {
   MissionControlSnapshot,
@@ -31,7 +30,7 @@ import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
 type TaskAbortState = "idle" | "running" | "error";
-type UpdateRunState = "idle" | "running" | "success" | "error";
+type UpdateRunState = "idle" | "running" | "success" | "error" | "unknown";
 type UpdateMode = "recommended" | "candidate" | "advanced";
 
 export function MissionControlShellDialogs({
@@ -82,7 +81,7 @@ export function MissionControlShellDialogs({
   onRunOpenClawUpdate: (action?: "update" | "rollback" | "certify-round-trip") => void;
 }) {
   const isUpdateRunning = updateRunState === "running";
-  const isUpdateFinished = updateRunState === "success" || updateRunState === "error";
+  const isUpdateFinished = updateRunState === "success" || updateRunState === "error" || updateRunState === "unknown";
   const updateDialogTitle = resolveUpdateDialogTitle(updateRunState, updateMode);
   const updateDialogDescription = resolveUpdateDialogDescription(updateRunState, updateMode);
   const [isOpeningUpdateTerminal, setIsOpeningUpdateTerminal] = useState(false);
@@ -94,7 +93,7 @@ export function MissionControlShellDialogs({
     snapshot.diagnostics.latestVersion ||
     snapshot.diagnostics.version ||
     "unknown";
-  const selectedTargetLabel = selectedTargetVersion.startsWith("v")
+  const selectedTargetLabel = selectedTargetVersion === "unknown" ? "Not confirmed" : selectedTargetVersion.startsWith("v")
     ? selectedTargetVersion
     : `v${selectedTargetVersion}`;
   const updateModeLabel =
@@ -305,438 +304,69 @@ export function MissionControlShellDialogs({
         </div>
       )}
 
-      <Dialog
+      <MissionControlDialogShell
         open={updateDialogOpen}
-        onOpenChange={(open) => {
-          if (isUpdateRunning) {
-            return;
-          }
-
-          onUpdateDialogOpenChange(open);
-        }}
-      >
-        <DialogContent
-          className={cn(
-            "max-h-[calc(100vh-48px)] w-[calc(100vw-32px)] max-w-[468px] gap-5 overflow-x-hidden overflow-y-auto p-5 sm:p-6",
-            surfaceTheme === "light"
-              ? "border-[#d7c5b7] bg-[rgba(252,247,241,0.98)] text-[#4a382c] shadow-[0_30px_80px_rgba(161,125,101,0.2)]"
-              : "border-white/10 bg-slate-950/94 text-slate-100"
-          )}
-        >
-          <DialogHeader className="min-w-0">
-            <DialogTitle className={cn("max-w-full break-words", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-white")}>
-              {updateDialogTitle}
-            </DialogTitle>
-            <DialogDescription className={cn("max-w-full break-words", surfaceTheme === "light" ? "text-[#7e6555]" : "text-slate-400")}>
-              {updateDialogDescription}
-            </DialogDescription>
-          </DialogHeader>
-
-          {isUpdateFinished ? (
-            <div
-              className={cn(
-                "min-w-0 space-y-4",
-                surfaceTheme === "light" ? "text-[#4f3d31]" : "text-slate-200"
-              )}
-            >
-              <div
-                className={cn(
-                  "rounded-[24px] border px-4 py-5",
-                  resolveUpdateResultPanelClassName(updateRunState, surfaceTheme)
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
-                      resolveUpdateResultIconWrapClassName(updateRunState, surfaceTheme)
-                    )}
-                  >
-                    {updateRunState === "success" ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <AlertTriangle className="h-5 w-5" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-display text-[1.05rem] leading-6">
-                      {updateRunState === "success" ? "OpenClaw is up to date" : "Update needs attention"}
-                    </p>
-                    <p className="mt-1 text-sm leading-6">
-                      {updateResultMessage ||
-                        (updateRunState === "success"
-                          ? "The update finished successfully."
-                          : "The update did not finish cleanly.")}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
-                  <div
-                    className={cn(
-                      "min-w-0 rounded-[18px] border px-3 py-3",
-                      surfaceTheme === "light" ? "border-white/70 bg-white/70" : "border-white/10 bg-slate-950/30"
-                    )}
-                  >
-                    <p className={surfaceTheme === "light" ? "text-[10px] uppercase tracking-[0.22em] text-[#8d725f]" : "text-[10px] uppercase tracking-[0.22em] text-slate-500"}>
-                      Installed version
-                    </p>
-                    <p className="mt-2 break-words font-display text-lg text-inherit">
-                      v{snapshot.diagnostics.version || snapshot.diagnostics.latestVersion || "unknown"}
-                    </p>
-                  </div>
-                  <div
-                    className={cn(
-                      "min-w-0 rounded-[18px] border px-3 py-3",
-                      surfaceTheme === "light" ? "border-white/70 bg-white/70" : "border-white/10 bg-slate-950/30"
-                    )}
-                  >
-                    <p className={surfaceTheme === "light" ? "text-[10px] uppercase tracking-[0.22em] text-[#8d725f]" : "text-[10px] uppercase tracking-[0.22em] text-slate-500"}>
-                      Latest reported
-                    </p>
-                    <p className="mt-2 break-words font-display text-lg text-inherit">
-                      {selectedTargetLabel}
-                    </p>
-                  </div>
-                  <div
-                    className={cn(
-                      "min-w-0 rounded-[18px] border px-3 py-3",
-                      surfaceTheme === "light" ? "border-white/70 bg-white/70" : "border-white/10 bg-slate-950/30"
-                    )}
-                  >
-                    <p className={surfaceTheme === "light" ? "text-[10px] uppercase tracking-[0.22em] text-[#8d725f]" : "text-[10px] uppercase tracking-[0.22em] text-slate-500"}>
-                      Detected install
-                    </p>
-                    <p className="mt-2 break-words text-sm font-medium text-inherit">{updateInstallSummary.label}</p>
-                    <p className={surfaceTheme === "light" ? "mt-1 break-words text-xs text-[#8b7262]" : "mt-1 break-words text-xs text-slate-400"}>
-                      {updateInstallSummary.detail}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <CertificationScorecardPanel
-                scorecard={updateCertificationScorecard}
-                diff={updateCapabilityDiff}
-                updateMode={updateMode}
-                surfaceTheme={surfaceTheme}
-              />
-
-              {updateRunState === "error" ? (
-                <div
-                  className={cn(
-                    "rounded-[20px] border px-4 py-3",
-                    surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6]"
-                      : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <p className={surfaceTheme === "light" ? "text-sm leading-6 text-[#705b4d]" : "text-sm leading-6 text-slate-300"}>
-                    OpenClaw owns the native updater and its failure details. Open its Control UI to inspect the authoritative recovery state.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void openControlUi()}
-                    disabled={isOpeningControlUi}
-                    className={cn("mt-3", surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : "")}
-                  >
-                    {isOpeningControlUi ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="mr-1.5 h-3.5 w-3.5" />}
-                    {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
-                  </Button>
-                </div>
-              ) : null}
-
-              <div
-                className={cn(
-                  "rounded-[20px] border",
-                  surfaceTheme === "light"
-                    ? "border-[#e3d4c8] bg-[#fffaf6]"
-                    : "border-white/8 bg-white/[0.03]"
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex items-center justify-between border-b px-4 py-3",
-                    surfaceTheme === "light" ? "border-[#eadccf]" : "border-white/8"
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "text-[10px] uppercase tracking-[0.24em]",
-                      surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500"
-                    )}
-                  >
-                    Update log
-                  </p>
-                  <span className={surfaceTheme === "light" ? "text-xs text-[#8b7262]" : "text-xs text-slate-400"}>
-                    {updateRunState === "success" ? "Completed" : "Failed"}
-                  </span>
-                </div>
-                <pre
-                  className={cn(
-                    "max-h-[180px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-5 [overflow-wrap:anywhere]",
-                    surfaceTheme === "light" ? "text-[#4f3d31]" : "text-slate-200"
-                  )}
-                >
-                  {updateLog || "No command output was captured."}
-                </pre>
-              </div>
-
-              {updateManualCommand ? (
-                <div
-                  className={cn(
-                    "rounded-[20px] border px-4 py-3",
-                    surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6]"
-                      : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "text-[10px] uppercase tracking-[0.24em]",
-                      surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500"
-                    )}
-                  >
-                    {canOpenUpdateTerminal ? "Terminal" : "Manual"}
-                  </p>
-                  {canOpenUpdateTerminal ? (
-                    <p
-                      className={cn(
-                        "mt-1 text-sm leading-6",
-                        surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400"
-                      )}
-                    >
-                      Open Terminal and run this command to confirm the update.
-                    </p>
-                  ) : null}
-                  <p
-                    className={cn(
-                      "mt-2 break-all font-mono text-[11px] leading-5",
-                      surfaceTheme === "light" ? "text-[#4f3d31]" : "text-slate-200"
-                    )}
-                  >
-                    {updateManualCommand}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        void copyUpdateCommand();
-                      }}
-                      className={surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : ""}
-                    >
-                      <Copy className="mr-1.5 h-3 w-3" />
-                      Copy command
-                    </Button>
-                    {canOpenUpdateTerminal ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          void openUpdateTerminal();
-                        }}
-                        disabled={isOpeningUpdateTerminal}
-                        className={surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : ""}
-                      >
-                        {isOpeningUpdateTerminal ? (
-                          <>
-                            <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
-                            Opening...
-                          </>
-                        ) : (
-                          <>
-                            <SquareTerminal className="mr-1.5 h-3 w-3" />
-                            Open Terminal
-                          </>
-                        )}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <>
-              <div
-                className={cn(
-                  "grid min-w-0 gap-3 sm:grid-cols-2",
-                  surfaceTheme === "light" ? "text-[#4f3d31]" : "text-slate-200"
-                )}
-              >
-                <div
-                  className={cn(
-                    "min-w-0 rounded-[20px] border px-4 py-4",
-                    surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6]"
-                      : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "text-[10px] uppercase tracking-[0.24em]",
-                      surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500"
-                    )}
-                  >
-                    Version target
-                  </p>
-                  <p className="mt-2 break-words font-display text-[1.1rem] leading-6 text-inherit">
-                    {selectedTargetLabel}
-                  </p>
-                  <p className={surfaceTheme === "light" ? "mt-1 text-xs text-[#8b7262]" : "mt-1 text-xs text-slate-400"}>
-                    Current: v{snapshot.diagnostics.version || "unknown"}
-                  </p>
-                  <p className={surfaceTheme === "light" ? "mt-2 text-xs text-[#8b7262]" : "mt-2 text-xs text-slate-400"}>
-                    {updateModeLabel}
-                  </p>
-                </div>
-
-                <div
-                  className={cn(
-                    "min-w-0 rounded-[20px] border px-4 py-4",
-                    surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6]"
-                      : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "text-[10px] uppercase tracking-[0.24em]",
-                      surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500"
-                    )}
-                  >
-                    Detected install
-                  </p>
-                  <p className="mt-2 break-words text-sm font-medium leading-6 text-inherit">
-                    {updateInstallSummary.label}
-                  </p>
-                  <p className={surfaceTheme === "light" ? "mt-1 break-words text-xs text-[#8b7262]" : "mt-1 break-words text-xs text-slate-400"}>
-                    {updateInstallSummary.detail}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  "rounded-[20px] border px-4 py-3 text-sm",
-                  activeRuntimeCount > 0
-                    ? surfaceTheme === "light"
-                      ? "border-rose-300/80 bg-rose-50 text-rose-800"
-                      : "border-rose-300/25 bg-rose-300/10 text-rose-100"
-                    : surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6] text-[#745e4f]"
-                      : "border-white/8 bg-white/[0.03] text-slate-300"
-                )}
-              >
-                {activeRuntimeCount > 0
-                  ? `${activeRuntimeCount} running or queued runtime${activeRuntimeCount === 1 ? "" : "s"} may be interrupted during the update.`
-                  : updateMode === "advanced"
-                    ? "This installs an unclassified OpenClaw version, then runs post-update compatibility checks and a runtime smoke test. If verification fails, AgentOS keeps the target installed and shows manual recovery."
-                    : "No running runtimes are currently tracked, so the update risk is lower."}
-              </div>
-
-              {isUpdateRunning ? (
-                <div
-                  className={cn(
-                    "rounded-[20px] border",
-                    surfaceTheme === "light"
-                      ? "border-[#e3d4c8] bg-[#fffaf6]"
-                      : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex items-center gap-3 border-b px-4 py-3",
-                      surfaceTheme === "light" ? "border-[#eadccf]" : "border-white/8"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-2xl border",
-                        surfaceTheme === "light"
-                          ? "border-[#dcc6b6] bg-[#f4e8dd] text-[#7b6453]"
-                          : "border-white/10 bg-white/[0.05] text-slate-200"
-                      )}
-                    >
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={surfaceTheme === "light" ? "text-sm font-medium text-[#4a382c]" : "text-sm font-medium text-white"}>
-                        Update in progress
-                      </p>
-                      <p className={surfaceTheme === "light" ? "text-xs text-[#8b7262]" : "text-xs text-slate-400"}>
-                        {updateStatusMessage || "Streaming OpenClaw output..."}
-                      </p>
-                    </div>
-                  </div>
-                  <pre
-                    className={cn(
-                      "max-h-[180px] min-h-[120px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-5 [overflow-wrap:anywhere]",
-                      surfaceTheme === "light" ? "text-[#4f3d31]" : "text-slate-200"
-                    )}
-                  >
-                    {updateLog || "Waiting for command output..."}
-                  </pre>
-                </div>
-              ) : null}
-            </>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                onUpdateDialogOpenChange(false);
-              }}
-              className={surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : ""}
-            >
-              {isUpdateRunning ? "Run in background" : isUpdateFinished ? "Done" : "Cancel"}
+        onOpenChange={onUpdateDialogOpenChange}
+        title={updateDialogTitle}
+        description={updateDialogDescription}
+        surfaceTheme={surfaceTheme}
+        variant="quiet"
+        contentClassName={cn("sm:w-[min(92vw,600px)] sm:h-[min(calc(100dvh-72px),640px)]", surfaceTheme === "light" && "mission-shell--light")}
+        bodyClassName="space-y-6 p-5 sm:p-6"
+        footer={
+          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => onUpdateDialogOpenChange(false)}>
+              {isUpdateRunning ? "Continue in background" : isUpdateFinished ? "Done" : "Cancel"}
             </Button>
-            {isUpdateFinished ? null : (
+            {updateRunState === "unknown" ? (
+              <Button asChild><a href="/updates">Check update status</a></Button>
+            ) : !isUpdateFinished ? (
               <>
-                {updateMode === "advanced" ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onRunOpenClawUpdate("certify-round-trip")}
-                    disabled={isUpdateRunning}
-                    className={surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : ""}
-                  >
-                    Certify round-trip
-                  </Button>
+                {updateMode === "advanced" && !isUpdateRunning ? (
+                  <Button variant="secondary" onClick={() => onRunOpenClawUpdate("certify-round-trip")}>Certify round-trip</Button>
                 ) : null}
-                <Button
-                  type="button"
-                  onClick={() => onRunOpenClawUpdate("update")}
-                  disabled={isUpdateRunning}
-                  className={cn(
-                    snapshot.diagnostics.updateAvailable
-                      ? "bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20 hover:bg-amber-300"
-                      : "",
-                    surfaceTheme === "light" && !snapshot.diagnostics.updateAvailable
-                      ? "bg-[#c8946f] text-white shadow-[0_12px_28px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
-                      : ""
-                  )}
-                >
-                  {isUpdateRunning ? (
-                    <>
-                      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    updateMode === "advanced" ? "Install and verify" : "Update now"
-                  )}
+                <Button disabled={isUpdateRunning} onClick={() => onRunOpenClawUpdate("update")}>
+                  {isUpdateRunning ? <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" />Updating…</> : "Update OpenClaw"}
                 </Button>
               </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            ) : null}
+          </div>
+        }
+      >
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-[hsl(var(--agentos-border-subtle))] bg-[hsl(var(--agentos-surface-inset))] p-5">
+          <div><p className="text-xs text-[hsl(var(--agentos-text-muted))]">Installed</p><p className="mt-1 text-xl font-semibold">{snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Not confirmed"}</p></div>
+          <span aria-hidden="true" className="text-[hsl(var(--agentos-text-muted))]">→</span>
+          <div className="text-right"><p className="text-xs text-[hsl(var(--agentos-text-muted))]">Target</p><p className="mt-1 text-xl font-semibold">{selectedTargetLabel}</p></div>
+        </div>
+        <div role="status" aria-live="polite" className="flex items-start gap-3">
+          {isUpdateRunning ? <LoaderCircle className="mt-1 h-5 w-5 shrink-0 animate-spin" /> : updateRunState === "success" ? <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-emerald-500" /> : isUpdateFinished ? <AlertTriangle className={cn("mt-1 h-5 w-5 shrink-0", updateRunState === "error" ? "text-rose-500" : "text-amber-500")} /> : null}
+          <div className="min-w-0 space-y-2">
+            <p className="font-medium">{isUpdateRunning ? (updateStatusMessage?.startsWith("Reconnecting") ? "Reconnecting to OpenClaw" : "Update in progress") : updateRunState === "unknown" ? "Result not yet confirmed" : updateRunState === "success" ? "Update complete" : updateRunState === "error" ? "Update needs attention" : "Ready to update"}</p>
+            <p className="break-words text-sm leading-6 text-[hsl(var(--agentos-text-muted))]">
+              {isUpdateFinished ? updateResultMessage : isUpdateRunning ? "OpenClaw handles installation and restart. Keep this window open while AgentOS waits for the result." : updateMode === "advanced" || updateMode === "candidate" ? "This exact release has not yet been verified by AgentOS. Continue only if you accept this and the brief interruption during restart." : "OpenClaw will install the selected version and restart if needed."}
+            </p>
+            {!isUpdateRunning && !isUpdateFinished && activeRuntimeCount > 0 ? <p className="text-sm text-amber-600">{activeRuntimeCount} active or queued runs may be interrupted.</p> : null}
+          </div>
+        </div>
+        {updateCertificationScorecard && updateCertificationScorecard.hardBlockers.length > 0 ? (
+          <p className="text-sm text-rose-600">Compatibility checks found {updateCertificationScorecard.hardBlockers.length} blocking issue(s). Review Technical details before continuing.</p>
+        ) : null}
+        {isUpdateFinished && updateRunState !== "success" ? (
+          <Button variant="secondary" onClick={() => void openControlUi()} disabled={isOpeningControlUi}>
+            <ExternalLink className="mr-2 h-4 w-4" />Open OpenClaw Control UI
+          </Button>
+        ) : null}
+        <details className="border-t border-[hsl(var(--agentos-border-subtle))] pt-4">
+          <summary className="cursor-pointer text-sm font-medium">Technical details</summary>
+          <div className="mt-4 space-y-4 text-sm text-[hsl(var(--agentos-text-muted))]">
+            <p>{updateModeLabel} · {updateInstallSummary.label}<br />{updateInstallSummary.detail}</p>
+            <p>OpenClaw owns the native updater and its failure details. A disconnected stream alone does not establish failure or success.</p>
+            {updateCertificationScorecard ? <CertificationScorecardPanel scorecard={updateCertificationScorecard} diff={updateCapabilityDiff} updateMode={updateMode} surfaceTheme={surfaceTheme} /> : null}
+            {updateLog ? <pre className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-xl bg-[hsl(var(--agentos-surface-inset))] p-4 text-xs leading-5">{updateLog}</pre> : <p>No update output yet.</p>}
+            {updateManualCommand ? <div className="space-y-3"><code className="block break-words">{updateManualCommand}</code><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void copyUpdateCommand()}><Copy className="mr-2 h-4 w-4" />Copy command</Button>{canOpenUpdateTerminal ? <Button variant="secondary" disabled={isOpeningUpdateTerminal} onClick={() => void openUpdateTerminal()}><SquareTerminal className="mr-2 h-4 w-4" />Open Terminal</Button> : null}</div></div> : null}
+          </div>
+        </details>
+      </MissionControlDialogShell>
     </>
   );
 }

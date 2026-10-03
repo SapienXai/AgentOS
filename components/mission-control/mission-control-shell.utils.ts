@@ -12,7 +12,7 @@ import type {
   WorkItemRecord
 } from "@/lib/agentos/contracts";
 
-type UpdateRunState = "idle" | "running" | "success" | "error";
+type UpdateRunState = "idle" | "running" | "success" | "error" | "unknown";
 type UpdateMode = "recommended" | "candidate" | "advanced";
 type SurfaceTheme = "dark" | "light";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider" | "verify";
@@ -67,6 +67,8 @@ export function resolveUpdateDialogTitle(runState: UpdateRunState, mode: UpdateM
     return "Updating OpenClaw";
   }
 
+  if (runState === "unknown") return "Check update result";
+
   if (runState === "success") {
     return "Update complete";
   }
@@ -88,11 +90,13 @@ export function resolveUpdateDialogTitle(runState: UpdateRunState, mode: UpdateM
 
 export function resolveUpdateDialogDescription(runState: UpdateRunState, mode: UpdateMode = "recommended") {
   if (runState === "running") {
-    return "OpenClaw is being updated now. Local gateway activity may pause briefly while the CLI is replaced.";
+    return "OpenClaw is applying the update. A brief disconnect during restart is expected. You can leave this window open or continue in the background.";
   }
 
+  if (runState === "unknown") return "The connection was interrupted. The update may still have completed; check the runtime before trying again.";
+
   if (runState === "success") {
-    return "The CLI update finished. Review the result below, then close this panel when you are done.";
+    return "OpenClaw finished the update and returned its verification result.";
   }
 
   if (runState === "error") {

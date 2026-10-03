@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { resolveUpdateDialogTitle, resolveUpdateDialogDescription } from "@/components/mission-control/mission-control-shell.utils";
 
 function read(relativePath: string) {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -91,4 +92,38 @@ test("legacy update API remains available for advanced exact-version workflows",
   assert.match(source, /buildOpenClawUpdateArgs/);
   assert.match(source, /rollbackPolicy/);
   assert.match(source, /certificationScorecard/);
+});
+
+
+test("advanced update interruption is reconciled without retrying the mutation", () => {
+  const source = read("components/mission-control/mission-control-shell.tsx");
+  const flow = source.slice(source.indexOf("const runOpenClawUpdate = async"), source.indexOf("const runOpenClawOnboarding"));
+  assert.match(flow, /if \(sawDone\) return/);
+  assert.match(flow, /isExpectedRuntimeShutdownError\(error\)/);
+  assert.match(flow, /await refreshSnapshot\(\{ force: true, signal: AbortSignal.timeout\(10_000\) \}\)/);
+  assert.match(flow, /setUpdateRunState\("unknown"\)/);
+  assert.equal((flow.match(/fetch\("\/api\/update"/g) ?? []).length, 1);
+  const reconciliation = flow.slice(flow.indexOf("// A dropped stream"));
+  assert.doesNotMatch(reconciliation, /setUpdateRunState\("success"\)/);
+});
+
+test("advanced update dialog keeps technical output optional and verification actionable", () => {
+  const source = read("components/mission-control/mission-control-shell.dialogs.tsx");
+  assert.match(source, /<MissionControlDialogShell/);
+  assert.match(source, /<details/);
+  assert.match(source, /Technical details/);
+  assert.match(source, /href="\/updates">Check update status/);
+  assert.match(source, /Result not yet confirmed/);
+  assert.match(source, /updateCertificationScorecard \? <CertificationScorecardPanel/);
+  assert.doesNotMatch(source, /snapshot.diagnostics.version \|\| snapshot.diagnostics.latestVersion/);
+});
+
+
+test("update copy distinguishes interrupted verification from native failure", () => {
+  assert.equal(resolveUpdateDialogTitle("unknown"), "Check update result");
+  assert.match(resolveUpdateDialogDescription("unknown"), /may still have completed/);
+  assert.doesNotMatch(resolveUpdateDialogDescription("unknown"), /failed|successful/);
+  assert.equal(resolveUpdateDialogTitle("error"), "Update failed");
+  assert.equal(resolveUpdateDialogTitle("success"), "Update complete");
+  assert.match(resolveUpdateDialogDescription("running"), /disconnect during restart is expected/);
 });

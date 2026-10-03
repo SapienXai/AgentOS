@@ -177,7 +177,8 @@ type ComposeIntent = {
   sourceLabel?: string;
 };
 
-type UpdateRunState = "idle" | "running" | "success" | "error";
+type OperationRunState = "idle" | "running" | "success" | "error";
+type UpdateRunState = OperationRunState | "unknown";
 type OnboardingWizardStage = "system" | "models";
 type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider" | "verify";
@@ -442,7 +443,7 @@ export function MissionControlShell({
     setResetConfirmText,
     resetResetDialogState
   } = useMissionControlResetState();
-  const [launchpadWorkspaceCreateRunState, setLaunchpadWorkspaceCreateRunState] = useState<UpdateRunState>("idle");
+  const [launchpadWorkspaceCreateRunState, setLaunchpadWorkspaceCreateRunState] = useState<OperationRunState>("idle");
   const [launchpadWorkspaceCreateProgress, setLaunchpadWorkspaceCreateProgress] =
     useState<OperationProgressSnapshot | null>(null);
   const [launchpadWorkspaceCreateTarget, setLaunchpadWorkspaceCreateTarget] =
@@ -468,7 +469,7 @@ export function MissionControlShell({
     useState<OpenClawCertificationScorecardReport | null>(null);
   const [updateTargetVersion, setUpdateTargetVersion] = useState<string | null>(null);
   const [updateMode, setUpdateMode] = useState<"recommended" | "candidate" | "advanced">("recommended");
-  const [onboardingRunState, setOnboardingRunState] = useState<UpdateRunState>("idle");
+  const [onboardingRunState, setOnboardingRunState] = useState<OperationRunState>("idle");
   const [onboardingPhase, setOnboardingPhase] = useState<OpenClawOnboardingPhase | null>(null);
   const [onboardingStatusMessage, setOnboardingStatusMessage] = useState<string | null>(null);
   const [onboardingResultMessage, setOnboardingResultMessage] = useState<string | null>(null);
@@ -529,7 +530,7 @@ export function MissionControlShell({
   const [selectedOnboardingModelId, setSelectedOnboardingModelId] = useState<string>("");
   const [selectedOnboardingThinking, setSelectedOnboardingThinking] = useState<OpenClawThinkingLevel>(ONBOARDING_DEFAULT_THINKING);
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModelCandidate[]>([]);
-  const [modelOnboardingRunState, setModelOnboardingRunState] = useState<UpdateRunState>("idle");
+  const [modelOnboardingRunState, setModelOnboardingRunState] = useState<OperationRunState>("idle");
   const [modelOnboardingPhase, setModelOnboardingPhase] = useState<OpenClawModelOnboardingPhase | null>(null);
   const [modelOnboardingStatusMessage, setModelOnboardingStatusMessage] = useState<string | null>(null);
   const [modelOnboardingResultMessage, setModelOnboardingResultMessage] = useState<string | null>(null);
@@ -2054,6 +2055,7 @@ export function MissionControlShell({
           : "Starting OpenClaw update..."
     );
 
+    let sawDone = false;
     try {
       const response = await fetch("/api/update", {
         method: "POST",
@@ -2085,7 +2087,6 @@ export function MissionControlShell({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let sawDone = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -2165,10 +2166,38 @@ export function MissionControlShell({
         throw new Error("OpenClaw update stream ended unexpectedly.");
       }
     } catch (error) {
-      setUpdateRunState("error");
-      setUpdateStatusMessage(null);
-      setUpdateResultMessage(error instanceof Error ? error.message : "OpenClaw update failed.");
-      completeUpdateToast(false, error instanceof Error ? error.message : "Unknown update error.");
+      // A dropped stream is not a native update failure. Never repeat the mutation.
+      if (sawDone) return;
+      const message = error instanceof Error ? error.message : "Unknown update error.";
+      appendUpdateLog(`\n> Connection detail: ${message}\n`);
+      if (isExpectedRuntimeShutdownError(error) || message === "OpenClaw update stream ended unexpectedly.") {
+        setUpdateStatusMessage("Reconnecting to OpenClaw and checking the installed version…");
+        updateUpdateToast("Connection interrupted. Checking the runtime; the update will not be retried.");
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 5000));
+          try {
+            await refreshSnapshot({ force: true, signal: AbortSignal.timeout(10_000) });
+          } catch {
+            // Restart can temporarily make the read-only runtime probe unavailable.
+          }
+        }
+        setUpdateRunState("unknown");
+        setUpdateStatusMessage(null);
+        const attention = "The connection was interrupted before AgentOS received the final result. OpenClaw may have completed the update. Check update status before trying again.";
+        setUpdateResultMessage(attention);
+        toast.warning("Check OpenClaw update result", {
+          id: updateOperationToastIdRef.current ?? undefined,
+          description: attention,
+          duration: 10000,
+          action: { label: "View", onClick: () => setIsUpdateDialogOpen(true) }
+        });
+        updateOperationToastIdRef.current = null;
+      } else {
+        setUpdateRunState("error");
+        setUpdateStatusMessage(null);
+        setUpdateResultMessage(message);
+        completeUpdateToast(false, message);
+      }
     }
   };
 

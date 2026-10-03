@@ -636,9 +636,11 @@ test("update dialog keeps OpenClaw output and certification scorecard inside the
     "utf8"
   );
 
-  assert.match(dialogSource, /overflow-x-hidden overflow-y-auto/);
-  assert.match(dialogSource, /w-\[calc\(100vw-32px\)\] max-w-\[468px\]/);
-  assert.match(dialogSource, /whitespace-pre-wrap break-all/);
+  const shellSource = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-dialog-shell.tsx"), "utf8");
+  assert.match(shellSource, /min-h-0 overflow-y-auto/);
+  assert.match(dialogSource, /<MissionControlDialogShell/);
+  assert.match(dialogSource, /sm:w-\[min\(92vw,600px\)\]/);
+  assert.match(dialogSource, /whitespace-pre-wrap break-words/);
   assert.match(dialogSource, /\[overflow-wrap:anywhere\]/);
   assert.match(dialogSource, /sm:grid-cols-\[minmax\(0,1fr\)_minmax\(0,10rem\)\]/);
   assert.match(dialogSource, /Certification scorecard/);

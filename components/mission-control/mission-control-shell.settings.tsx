@@ -45,7 +45,7 @@ export type MissionControlShellSettingsPanelProps = {
   isSavingGateway: boolean;
   isSavingWorkspaceRoot: boolean;
   isCheckingForUpdates: boolean;
-  updateRunState: UpdateRunState;
+  updateRunState: UpdateRunState | "unknown";
   updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
   updateCertificationScorecard: OpenClawCertificationScorecardReport | null;
   selectedModelId: string;
