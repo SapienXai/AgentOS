@@ -180,9 +180,40 @@ async function main() {
     sessionKey = dispatchRecord.result.sessionKey ?? null;
     assert.ok(sessionKey);
     let productSnapshot = await getMissionControlSnapshot({ force: true });
-    dispatchRecord = await waitForDispatchTerminal(productMission.dispatchId, async () => {
-      productSnapshot = await getMissionControlSnapshot({ force: true });
-    });
+    try {
+      dispatchRecord = await waitForDispatchTerminal(productMission.dispatchId, async () => {
+        productSnapshot = await getMissionControlSnapshot({ force: true });
+      });
+    } catch (error) {
+      const latestRecord = await readMissionDispatchRecordById(productMission.dispatchId).catch(() => null);
+      const diagnosticSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => productSnapshot);
+      const history = client && sessionKey
+        ? await readHistory(client, sessionKey, 1).catch(() => [])
+        : [];
+      const relatedRunId = latestRecord?.result?.runId ?? null;
+      evidence.reconciliationDiagnostic = {
+        dispatchStatus: latestRecord?.status ?? null,
+        admissionState: latestRecord?.admissionState ?? null,
+        hasSessionKey: Boolean(latestRecord?.sessionKey),
+        hasSessionId: Boolean(latestRecord?.sessionId),
+        hasRunId: Boolean(relatedRunId),
+        hasFixtureCompletion: fixture.stats.completionCount > 0,
+        expectedReplyInNativeHistory: history.includes("AGENTOS_FIXTURE_FIRST_REPLY"),
+        matchingRuntimeStatuses: diagnosticSnapshot.runtimes
+          .filter((runtime) => Boolean(
+            (latestRecord?.sessionId && runtime.sessionId === latestRecord.sessionId) ||
+            (relatedRunId && runtime.runId === relatedRunId)
+          ))
+          .map((runtime) => ({
+            source: runtime.source,
+            status: runtime.status,
+            hasSessionId: Boolean(runtime.sessionId),
+            hasRunId: Boolean(runtime.runId)
+          })),
+        timeout: sanitizeText(error instanceof Error ? error.message : "Task completion was not observed.")
+      };
+      throw error;
+    }
     const missionList = await getWorkforceMissionList({ snapshot: productSnapshot });
     const listedMission = missionList.missions.find((mission) => mission.id === productMission.dispatchId);
     assert.ok(listedMission);
@@ -472,6 +503,7 @@ function createEvidence(identity: { version: string; sourceCommit: string; build
     modelReadiness: null as Record<string, unknown> | null,
     productPath: null as Record<string, unknown> | null,
     concurrentAdmission: null as Record<string, unknown> | null,
+    reconciliationDiagnostic: null as Record<string, unknown> | null,
     checks: {} as Record<string, { status: CheckStatus; evidence: string | string[]; detail?: string }>,
     runtimeTaskLedger: null as Record<string, unknown> | null,
     cleanup: null as Record<string, unknown> | null,
