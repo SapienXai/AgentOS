@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-workforce-acceptance",
+  "generatedAt": "2026-10-03T17:03:30.355Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosCommit": "ab5b272b601ac139e21c246c6bae1b955b34f496",
+    "openClaw": {
+      "version": "2026.9.8",
+      "sourceCommit": "fc23bc864e4553c2d215e479eeec47b67a0bf943",
+      "buildId": "2026.9.8-release-fc23bc864e45-2026-10-02T18-22-33.858Z",
+      "packageHash": "e5d65aa89ad23a26cf59614c16e62c28393a64214221240deff14bc82b500ebc"
+    },
+    "evidenceClasses": [
+      "LIVE_DISPOSABLE_2026_9_8",
+      "DETERMINISTIC_NATIVE_FIXTURE"
+    ]
+  },
+  "runtime": {
+    "version": "2026.9.8",
+    "protocol": 4,
+    "authenticated": true,
+    "grantedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.questions"
+    ],
+    "deviceIdentity": "canonical OpenClaw identity created inside the disposable state directory",
+    "loopback": true,
+    "isolatedState": true,
+    "securityDefaults": "tools.sessions.visibility=tree; tools.agentToAgent.enabled=false; tools.agentToAgent.allow=[]"
+  },
+  "modelAuthSetup": {
+    "method": "models.authSetApiKey",
+    "scope": "operator.admin",
+    "provider": "openai",
+    "profileId": "openai:manual",
+    "warning": null,
+    "credentialLocation": "isolated disposable OpenClaw agent profile"
+  },
+  "modelReadiness": {
+    "selectedModel": "openai/workforce-check-model",
+    "readiness": {
+      "ready": true,
+      "defaultModel": "openai/workforce-check-model",
+      "resolvedDefaultModel": "openai/workforce-check-model",
+      "defaultModelReady": true,
+      "recommendedModelId": "openai/workforce-check-model",
+      "preferredLoginProvider": null,
+      "totalModelCount": 1,
+      "availableModelCount": 1,
+      "localModelCount": 0,
+      "remoteModelCount": 1,
+      "missingModelCount": 0,
+      "authProviders": [
+        {
+          "provider": "openai",
+          "authMethod": "api-key",
+          "availableAuthMethods": [
+            "api-key",
+            "chatgpt-oauth"
+          ],
+          "connected": true,
+          "canLogin": true,
+          "detail": "1 auth profile"
+        }
+      ],
+      "issues": []
+    },
+    "models": [
+      {
+        "key": "openai/workforce-check-model",
+        "provider": "openai",
+        "available": true,
+        "local": null
+      }
+    ],
+    "defaultModel": "openai/workforce-check-model",
+    "resolvedDefault": "openai/workforce-check-model",
+    "allowed": [
+      "openai/workforce-check-model"
+    ],
+    "authProviders": [
+      {
+        "provider": "openai",
+        "kind": "api-key",
+        "profileCount": 1,
+        "apiKeyProfiles": 1,
+        "tokenProfiles": 0
+      }
+    ],
+    "missingProvidersInUse": [],
+    "fallbackCounts": {}
+  },
+  "productPath": null,
+  "concurrentAdmission": null,
+  "checks": {
+    "runtime-identity": {
+      "status": "PASS",
+      "evidence": "LIVE_DISPOSABLE_2026_9_8"
+    },
+    "disposable-model-auth": {
+      "status": "PASS",
+      "evidence": [
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "OpenClaw stored the fixture-only API key in the disposable main-agent profile through its administrator-authorized native Gateway method."
+    },
+    "product-path-mission-create": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "product-path-api-list": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "product-path-api-detail": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "mission-basic": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "product-path-idempotency": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "concurrent-task-admission": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "result-projection": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "approval-resolution": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "gateway-reconnect": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    },
+    "agentos-restart-projection": {
+      "status": "FAIL",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_9_8"
+      ],
+      "detail": "A required disposable AgentOS product-path check did not complete successfully."
+    }
+  },
+  "runtimeTaskLedger": null,
+  "cleanup": {
+    "disposableRootRemoved": true,
+    "gatewayStopped": true,
+    "productionGatewayTouched": false
+  },
+  "certification": {
+    "status": "INCOMPLETE",
+    "capabilityRoutingReady": false,
+    "skippedLiveChecks": []
+  },
+  "failure": "Mission dispatch dispatch-f3a71d91-a39f-400e-a070-f7620586daf7 did not reach a terminal state before the acceptance timeout.",
+  "summary": {
+    "passed": 2,
+    "skipped": 0,
+    "failed": 10
+  }
+}
