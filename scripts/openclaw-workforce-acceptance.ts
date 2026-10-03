@@ -77,7 +77,7 @@ async function main() {
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
     await writeConfig(configPath, workspaceDir, fixture.baseUrl, fixture.modelId, token);
     gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
-    client = createClient(port, token, "0.1.0-agentos-workforce-acceptance");
+    client = createClient(port, token, "0.1.0-agentos-workforce-acceptance", stateDir);
     process.env.AGENTOS_MISSION_CONTROL_ROOT = path.join(disposableRoot, "mission-control");
     process.env.AGENTOS_OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${port}`;
     process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = token;
@@ -101,6 +101,7 @@ async function main() {
       protocol: handshake.protocol ?? null,
       authenticated: operatorIdentity.authenticated,
       grantedScopes: operatorIdentity.grantedScopes,
+      deviceIdentity: "canonical OpenClaw identity created inside the disposable state directory",
       loopback: true,
       isolatedState: true,
       securityDefaults: "tools.sessions.visibility=tree; tools.agentToAgent.enabled=false; tools.agentToAgent.allow=[]"
@@ -356,7 +357,7 @@ async function main() {
     client = null;
     await stopProcess(gateway);
     gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
-    client = createClient(port, token, "0.1.0-agentos-workforce-acceptance-reconnect");
+    client = createClient(port, token, "0.1.0-agentos-workforce-acceptance-reconnect", stateDir);
     setOpenClawGatewayClientForTesting(client);
     setOpenClawAdapterForTesting(null);
     clearMissionControlCaches();
@@ -537,7 +538,7 @@ async function writeConfig(configPath: string, workspaceDir: string, fixtureBase
   await writeFile(configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, agents: { defaults: { workspace: workspaceDir, model: { primary: `openai/${fixtureModelId}` } }, list: [{ id: "main", workspace: workspaceDir }] }, models: { mode: "merge", providers: { openai: { baseUrl: fixtureBaseUrl, api: "openai-completions", apiKey: { source: "env", provider: "default", id: "OPENAI_API_KEY" }, timeoutSeconds: 30, models: [{ id: fixtureModelId, name: "AgentOS Workforce Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }] } } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
 }
 
-function createClient(port: number, token: string, clientVersion: string) { return createOfficialBackedOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"], timeoutMs: TIMEOUT_MS, clientName: "gateway-client", clientVersion, sharedStateMode: "read-only" }); }
+function createClient(port: number, token: string, clientVersion: string, stateDir: string) { return createOfficialBackedOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"], timeoutMs: TIMEOUT_MS, clientName: "gateway-client", clientVersion, stateDir, ensureDeviceIdentity: true, includeDeviceIdentityWithExplicitAuth: true, sharedStateMode: "read-only" }); }
 function mutationOptions() { return { timeoutMs: TIMEOUT_MS, safety: "mutation" as const }; }
 function createConcurrentAdmissionBarrier(expected: number) {
   let arrivals = 0;
