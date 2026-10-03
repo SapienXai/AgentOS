@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
     if (request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data")) {
       const body = await readWorkspaceCreationRequestBodyWithinLimit(request, WORKSPACE_CREATION_UPLOAD_LIMITS.maxRequestBytes);
-      const formData = await new Request(request.url, { method: request.method, headers: request.headers, body }).formData();
+      const formData = await new Request(request.url, { method: request.method, headers: request.headers, body: new Uint8Array(body) }).formData();
       draftContextId = z.string().uuid().nullable().optional().parse(formData.get("draftContextId") || undefined);
       sources = z.array(z.unknown()).max(24).parse(JSON.parse(String(formData.get("sources") ?? "[]")));
       const manifest = z.array(uploadManifestSchema).max(WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles, "Too many files selected.").parse(JSON.parse(String(formData.get("uploadManifest") ?? "[]")));

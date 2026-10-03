@@ -1,6 +1,3 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-
 export type AgentOsDeploymentPlatform = "local" | "railway" | "unknown";
 export type AgentOsApplicationUpdateOwner = "desktop" | "release-launcher" | "package-manager" | "deployment" | "source" | "unknown";
 export type AgentOsDesktopBundle = "macos" | "windows-nsis" | "linux-appimage" | "linux-package" | "unknown";
@@ -33,13 +30,12 @@ export const unknownDeploymentCapabilities: AgentOsDeploymentCapabilities = {
 
 export function resolveAgentOsDeploymentCapabilities(
   env: Readonly<Record<string, string | undefined>> = process.env,
-  platform = process.platform,
-  cwd = process.cwd()
+  platform = process.platform
 ): AgentOsDeploymentCapabilities {
   const deploymentPlatform = env.AGENTOS_DEPLOYMENT_PLATFORM?.trim().toLowerCase();
   const supervisorMode = env.OPENCLAW_SUPERVISOR_MODE?.trim().toLowerCase();
   const configuredConfigOwnership = env.AGENTOS_GATEWAY_CONFIG_OWNERSHIP?.trim().toLowerCase();
-  const applicationUpdateOwner = resolveAgentOsApplicationUpdateOwner(env, platform, cwd);
+  const applicationUpdateOwner = resolveAgentOsApplicationUpdateOwner(env, platform);
   const desktopBundle = resolveAgentOsDesktopBundle(env, platform);
 
   if (deploymentPlatform && deploymentPlatform !== "local" && deploymentPlatform !== "railway") {
@@ -95,8 +91,7 @@ export function resolveAgentOsDeploymentCapabilities(
 
 export function resolveAgentOsApplicationUpdateOwner(
   env: Readonly<Record<string, string | undefined>> = process.env,
-  platform = process.platform,
-  cwd = process.cwd()
+  platform = process.platform
 ): AgentOsApplicationUpdateOwner {
   const deploymentPlatform = env.AGENTOS_DEPLOYMENT_PLATFORM?.trim().toLowerCase();
   if (deploymentPlatform === "railway" || Boolean(env.RAILWAY_ENVIRONMENT_ID)) return "deployment";
@@ -107,8 +102,7 @@ export function resolveAgentOsApplicationUpdateOwner(
   }
   if (env.AGENTOS_PACKAGE_RUNTIME === "1" && env.AGENTOS_LAUNCHER_PID) return "release-launcher";
 
-  const inSourceCheckout = existsAgentOsSourceLayout(cwd);
-  if (inSourceCheckout && env.AGENTOS_PACKAGE_RUNTIME !== "1") return "source";
+  if (env.NODE_ENV === "development" && env.AGENTOS_PACKAGE_RUNTIME !== "1") return "source";
 
   const packageManager = `${env.npm_config_user_agent ?? ""} ${env.npm_execpath ?? ""}`.toLowerCase();
   if (/\bpnpm\b/.test(packageManager)) return "package-manager";
@@ -130,16 +124,4 @@ export function resolveAgentOsDesktopBundle(
   if (platform === "win32") return "windows-nsis";
   if (platform === "linux") return env.APPIMAGE ? "linux-appimage" : "unknown";
   return "unknown";
-}
-
-function existsAgentOsSourceLayout(cwd: string) {
-  try {
-    return requireSourcePackage(path.join(cwd, "packages", "agentos", "package.json"));
-  } catch {
-    return false;
-  }
-}
-
-function requireSourcePackage(packagePath: string) {
-  return existsSync(packagePath);
 }

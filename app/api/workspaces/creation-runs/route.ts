@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     const uploads: WorkspaceCreationUpload[] = [];
     if (request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data")) {
       const body = await readWorkspaceCreationRequestBodyWithinLimit(request, WORKSPACE_CREATION_UPLOAD_LIMITS.maxRequestBytes);
-      const formData = await new Request(request.url, { method: request.method, headers: request.headers, body }).formData();
+      const formData = await new Request(request.url, { method: request.method, headers: request.headers, body: new Uint8Array(body) }).formData();
       const manifest = z.array(manifestEntry).max(WORKSPACE_CREATION_UPLOAD_LIMITS.maxFiles, "Too many files selected.").parse(JSON.parse(String(formData.get("uploadManifest") ?? "[]")));
       const files = formData.getAll("files");
       if (files.some((value) => !(value instanceof File))) throw new Error("Uploaded project context contains an invalid file.");

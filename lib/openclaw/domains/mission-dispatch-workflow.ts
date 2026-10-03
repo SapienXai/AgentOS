@@ -10,11 +10,9 @@ import {
   createMissionDispatchRecord,
   findMissionDispatchRecordForTask,
   isMissionDispatchTerminalStatus,
-  launchMissionDispatchRunner,
   normalizeMissionAbortReason,
   readMissionDispatchRecords,
   readMissionDispatchRecordById,
-  reconcileMissionDispatchRuntimeState,
   stopMissionDispatchChildProcess,
   writeMissionDispatchRecord
 } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
@@ -32,7 +30,6 @@ import type {
   MissionResponse,
   MissionSubmission
 } from "@/lib/openclaw/types";
-import type { RuntimeRecord } from "@/lib/openclaw/types";
 import {
   finalizeBrowserTaskBinding,
   prepareBrowserTaskBinding
@@ -689,13 +686,6 @@ function resolveGatewayMissionDispatchStatus(status: string | undefined): Missio
   }
 
   return "running";
-}
-
-function isGatewayWaitOnlyTimeout(payload: { status?: string; timeoutPhase?: string }) {
-  const status = payload.status?.trim().toLowerCase();
-  const timeoutPhase = payload.timeoutPhase?.trim().toLowerCase();
-
-  return (status === "timeout" || status === "timed_out") && timeoutPhase === "gateway_draining";
 }
 
 function resolveGatewayMissionDispatchError(payload: { status?: string; summary?: string }) {

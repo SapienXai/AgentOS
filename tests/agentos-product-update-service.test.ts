@@ -38,8 +38,7 @@ test("release launcher reports missing platform archives without advertising bro
       canManageUpdates: true,
       forceRefresh: true,
       env,
-      platform: "linux",
-      cwd: runtimeDir
+      platform: "linux"
     });
     assert.equal(snapshot.owner, "release-launcher");
     assert.equal(snapshot.availability, "available");
@@ -74,8 +73,7 @@ test("failed refresh retains stale release evidence and marks the check unavaila
       canManageUpdates: true,
       forceRefresh: true,
       env,
-      platform: "linux",
-      cwd: runtimeDir
+      platform: "linux"
     });
     assert.equal(snapshot.latestVersion, "0.9.0");
     assert.equal(snapshot.availability, "available");
@@ -107,8 +105,7 @@ test("Railway ownership takes precedence over package layout and update requests
       canManageUpdates: true,
       forceRefresh: true,
       env,
-      platform: "linux",
-      cwd: runtimeDir
+      platform: "linux"
     });
     assert.equal(snapshot.owner, "deployment");
     assert.equal(snapshot.action, "deployment-guidance");
@@ -148,13 +145,13 @@ test("Desktop installation requires fresh native evidence bound to the embedded 
   await writeFile(path.join(updatesDir, "native-check.json"), `${JSON.stringify(nativeCheck)}\n`, { mode: 0o600 });
 
   try {
-    const ready = await getAgentOsProductUpdateSnapshot({ canManageUpdates: true, env, cwd: runtimeDir, platform: "darwin" });
+    const ready = await getAgentOsProductUpdateSnapshot({ canManageUpdates: true, env, platform: "darwin" });
     assert.equal(ready.owner, "desktop");
     assert.equal(ready.availability, "available");
     assert.equal(ready.canInstall, true);
 
     await writeFile(path.join(updatesDir, "native-check.json"), `${JSON.stringify({ ...nativeCheck, currentVersion: "0.7.9" })}\n`, { mode: 0o600 });
-    const mismatch = await getAgentOsProductUpdateSnapshot({ canManageUpdates: true, env, cwd: runtimeDir, platform: "darwin" });
+    const mismatch = await getAgentOsProductUpdateSnapshot({ canManageUpdates: true, env, platform: "darwin" });
     assert.equal(mismatch.availability, "unavailable");
     assert.equal(mismatch.evidence, "unavailable");
     assert.equal(mismatch.canInstall, false);

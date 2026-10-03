@@ -236,6 +236,7 @@ export function MissionSidebar({
 }: MissionSidebarProps) {
   void onToggleTheme;
   const pathname = usePathname();
+  const currentPathname = pathname ?? "/";
   const hasUpdateNotice = hasDiscoverableOpenClawUpdate(snapshot);
   const [activeHash, setActiveHash] = useState("");
   const [isEditAgentOpen, setIsEditAgentOpen] = useState(false);
@@ -571,7 +572,7 @@ export function MissionSidebar({
       {collapsed ? (
         <CollapsedSidebar
           activeHash={activeHash}
-          pathname={pathname}
+          pathname={currentPathname}
           surfaceTheme={surfaceTheme}
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
           workspaceDetail={activeWorkspaceId === null ? `${workspaceCount} workspaces` : activePendingWorkspace ? "Creating workspace" : "Workspace"}
@@ -645,7 +646,7 @@ export function MissionSidebar({
                   <SidebarSectionGroup
                     key={section.id}
                     activeHash={activeHash}
-                    pathname={pathname}
+                    pathname={currentPathname}
                     section={section}
                     updateNotice={hasUpdateNotice}
                     onNavigate={handleNavigate}

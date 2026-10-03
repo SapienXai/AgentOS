@@ -398,7 +398,11 @@ function readMissionDispatchSessionKey(record: MissionDispatchRecordLike) {
   const value = record.result && typeof record.result === "object"
     ? (record.result as Record<string, unknown>).sessionKey
     : null;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : typeof record.sessionKey === "string" && record.sessionKey.trim()
+      ? record.sessionKey.trim()
+      : null;
 }
 
 export function createMissionDispatchRuntime(
@@ -450,6 +454,7 @@ export function createMissionDispatchRuntime(
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchCancellation: record.cancellation ?? null,
       ...(integrityWarning ? { warnings: [integrityWarning], warningSummary: integrityWarning } : {})
     }
   };

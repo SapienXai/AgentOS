@@ -51,7 +51,7 @@ export function ProtectedLogin() {
   useEffect(() => {
     if (loading || !status) return;
     if (!status.protectionEnabled || status.authenticated) {
-      router.replace(safeReturnTo(searchParams.get("returnTo")));
+      router.replace(safeReturnTo(searchParams?.get("returnTo") ?? null));
       return;
     }
     if (status.username) setUsername(status.username);
@@ -74,7 +74,7 @@ export function ProtectedLogin() {
       }
       applyStatus(payload);
       broadcastAuthChange();
-      router.replace(safeReturnTo(searchParams.get("returnTo")));
+      router.replace(safeReturnTo(searchParams?.get("returnTo") ?? null));
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Invalid username or password.");
@@ -88,7 +88,7 @@ export function ProtectedLogin() {
     return <AuthSplash />;
   }
 
-  const returnTo = safeReturnTo(searchParams.get("returnTo"));
+  const returnTo = safeReturnTo(searchParams?.get("returnTo") ?? null);
 
   return (
     <>

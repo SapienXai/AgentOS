@@ -44,14 +44,12 @@ export async function getAgentOsProductUpdateSnapshot(input: {
   forceRefresh?: boolean;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
-  cwd?: string;
 }): Promise<AgentOsProductUpdateSnapshot> {
   const env = input.env ?? process.env;
   const platform = input.platform ?? process.platform;
-  const cwd = input.cwd ?? process.cwd();
   const currentVersion = await resolveAgentOsVersion();
-  const owner = resolveAgentOsApplicationUpdateOwner(env, platform, cwd);
-  const deployment = resolveAgentOsDeploymentCapabilities(env, platform, cwd);
+  const owner = resolveAgentOsApplicationUpdateOwner(env, platform);
+  const deployment = resolveAgentOsDeploymentCapabilities(env, platform);
   const desktopBundle = resolveAgentOsDesktopBundle(env, platform);
   const operation = await reconcileProductUpdateReceipt(currentVersion, env);
   const storage = owner === "desktop" ? await readAgentOsStoragePreparation(env) : null;
@@ -174,12 +172,10 @@ export async function prepareAgentOsProductUpdate(input: {
   actor: Pick<AgentOsActorContext, "actorId" | "authenticationMethod">;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
-  cwd?: string;
 }): Promise<AgentOsProductUpdateReceipt> {
   const env = input.env ?? process.env;
   const platform = input.platform ?? process.platform;
-  const cwd = input.cwd ?? process.cwd();
-  const capabilities = resolveAgentOsDeploymentCapabilities(env, platform, cwd);
+  const capabilities = resolveAgentOsDeploymentCapabilities(env, platform);
   const currentVersion = await resolveAgentOsVersion();
   const targetVersion = normalizeStableVersion(input.targetVersion);
   const nativeCheck: AgentOsNativeUpdateCheck | null = await readNativeAgentOsUpdateCheck(env);
