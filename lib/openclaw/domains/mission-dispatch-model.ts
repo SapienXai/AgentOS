@@ -86,6 +86,26 @@ export type MissionDispatchRecordLike = {
   } | null;
 };
 
+export function resolveMissionDispatchCurrentExecution(record: MissionDispatchRecordLike) {
+  const latestContinuation = [...(record.operatorHistory ?? [])]
+    .filter((entry) => entry.kind === "continue")
+    .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0];
+
+  if (latestContinuation) {
+    return {
+      kind: "continuation" as const,
+      runId: latestContinuation.runId?.trim() || null,
+      startedAt: latestContinuation.acceptedAt
+    };
+  }
+
+  return {
+    kind: "initial" as const,
+    runId: record.result?.runId?.trim() || null,
+    startedAt: record.submittedAt
+  };
+}
+
 const missionDispatchHeartbeatStallMs = 5 * 60_000;
 
 export function extractMissionDispatchSessionId(record: MissionDispatchRecordLike) {

@@ -18,6 +18,7 @@ import { resolveMissionDispatchResultText } from "@/lib/openclaw/domains/mission
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
+import { parseRuntimeOutputFromSessionHistory } from "@/lib/openclaw/domains/runtime-transcript";
 import { projectApprovalRecords, projectQuestionRecords } from "@/lib/openclaw/application/human-control-inbox-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
@@ -190,6 +191,23 @@ async function main() {
       const history = client && sessionKey
         ? await readHistory(client, sessionKey, 1).catch(() => [])
         : [];
+      const historyLifecycle = client && sessionKey
+        ? await readHistoryLifecycleEvidence(client, sessionKey, latestRecord).catch(() => ({
+            assistantMessageCount: 0,
+            expectedReplyHasStopReason: false,
+            expectedReplyStopReason: "unavailable",
+            latestAssistantHasStopReason: false,
+            latestAssistantStopReason: "unavailable",
+            parsedOutput: null
+          }))
+        : {
+            assistantMessageCount: 0,
+            expectedReplyHasStopReason: false,
+            expectedReplyStopReason: "unavailable",
+            latestAssistantHasStopReason: false,
+            latestAssistantStopReason: "unavailable",
+            parsedOutput: null
+          };
       const relatedRunId = latestRecord?.result?.runId ?? null;
       evidence.reconciliationDiagnostic = {
         dispatchStatus: latestRecord?.status ?? null,
@@ -199,6 +217,7 @@ async function main() {
         hasRunId: Boolean(relatedRunId),
         hasFixtureCompletion: fixture.stats.completionCount > 0,
         expectedReplyInNativeHistory: history.includes("AGENTOS_FIXTURE_FIRST_REPLY"),
+        historyLifecycle,
         matchingRuntimeStatuses: diagnosticSnapshot.runtimes
           .filter((runtime) => Boolean(
             (latestRecord?.sessionId && runtime.sessionId === latestRecord.sessionId) ||
@@ -208,7 +227,10 @@ async function main() {
             source: runtime.source,
             status: runtime.status,
             hasSessionId: Boolean(runtime.sessionId),
-            hasRunId: Boolean(runtime.runId)
+            hasRunId: Boolean(runtime.runId),
+            sessionIdMatchesDispatch: Boolean(latestRecord?.sessionId && runtime.sessionId === latestRecord.sessionId),
+            matchesAcceptedRunId: Boolean(relatedRunId && runtime.runId === relatedRunId),
+            matchesDispatchMetadata: runtime.metadata.dispatchId === latestRecord?.id
           })),
         timeout: sanitizeText(error instanceof Error ? error.message : "Task completion was not observed.")
       };
@@ -527,6 +549,72 @@ async function readHistory(client: GatewayClient, sessionKey: string, minimum: n
     await wait(250);
   }
   return [];
+}
+
+async function readHistoryLifecycleEvidence(
+  client: GatewayClient,
+  sessionKey: string,
+  dispatchRecord: MissionDispatchRecord | null
+) {
+  const payload = await client.callNative<{ messages?: unknown[] }>("chat.history", { sessionKey, limit: 50 }, readOptions());
+  const assistantMessages = (payload.messages ?? []).flatMap((entry) => {
+    const record = asRecord(entry);
+    const message = asRecord(record?.message) ?? record;
+    return message?.role === "assistant" ? [message] : [];
+  });
+  const expectedReply = assistantMessages.find((message) => {
+    if (typeof message.content === "string") return message.content.includes("AGENTOS_FIXTURE_FIRST_REPLY");
+    return Array.isArray(message.content) && message.content.some((part) =>
+      (typeof asRecord(part)?.text === "string" ? asRecord(part)?.text as string : "").includes("AGENTOS_FIXTURE_FIRST_REPLY")
+    );
+  });
+  const latestAssistant = assistantMessages.at(-1);
+  const stopReason = (message: Record<string, unknown> | undefined) => {
+    const value = typeof message?.stopReason === "string" ? message.stopReason : "";
+    if (!value) return "missing";
+    if (value === "stop" || value === "length" || value === "toolUse" || value === "error" || value === "aborted") return value;
+    return "other";
+  };
+
+  const parsedOutput = dispatchRecord
+    ? parseRuntimeOutputFromSessionHistory({
+        id: `runtime:${dispatchRecord.sessionId ?? "unknown"}:${dispatchRecord.result?.runId ?? "unknown"}`,
+        source: "turn",
+        key: sessionKey,
+        title: "Acceptance diagnostic",
+        subtitle: "Acceptance diagnostic",
+        status: "running",
+        updatedAt: Date.now(),
+        ageMs: 0,
+        agentId: dispatchRecord.agentId,
+        sessionId: dispatchRecord.sessionId ?? undefined,
+        runId: dispatchRecord.result?.runId ?? undefined,
+        metadata: {
+          mission: dispatchRecord.mission,
+          routedMission: dispatchRecord.routedMission,
+          dispatchSubmittedAt: dispatchRecord.submittedAt,
+          sessionKey
+        }
+      }, payload, dispatchRecord.workspacePath ?? undefined)
+    : null;
+
+  return {
+    assistantMessageCount: assistantMessages.length,
+    expectedReplyHasStopReason: Boolean(expectedReply && stopReason(expectedReply) !== "missing"),
+    expectedReplyStopReason: stopReason(expectedReply),
+    latestAssistantHasStopReason: Boolean(latestAssistant && stopReason(latestAssistant) !== "missing"),
+    latestAssistantStopReason: stopReason(latestAssistant),
+    parsedOutput: parsedOutput
+      ? {
+          status: parsedOutput.status,
+          hasFinalTimestamp: Boolean(parsedOutput.finalTimestamp),
+          stopReason: parsedOutput.stopReason,
+          hasError: Boolean(parsedOutput.errorMessage),
+          itemCount: parsedOutput.items.length,
+          hasFinalText: Boolean(parsedOutput.finalText?.trim())
+        }
+      : null
+  };
 }
 
 async function waitForDispatchTerminal(

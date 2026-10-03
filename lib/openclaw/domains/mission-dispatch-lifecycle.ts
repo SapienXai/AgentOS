@@ -19,7 +19,8 @@ import {
   isMissionCommandPayload,
   normalizeMissionDispatchStatus,
   normalizeMissionThinking,
-  resolveMissionDispatchResultText
+  resolveMissionDispatchResultText,
+  resolveMissionDispatchCurrentExecution
 } from "@/lib/openclaw/domains/mission-dispatch-model";
 import {
   extractTranscriptTurns as extractTranscriptTurnsFromTranscript,
@@ -275,6 +276,10 @@ export async function persistMissionDispatchObservation(record: MissionDispatchR
 }
 
 export async function reconcileMissionDispatchRuntimeState(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {
+  if (isMissionDispatchRuntimeFromOlderExecution(record, runtime)) {
+    return;
+  }
+
   if (isMissionDispatchTerminalStatus(record.status)) {
     return reconcileTerminalMissionDispatchRecordFromRuntime(record, runtime);
   }
@@ -288,6 +293,22 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
 
     const finishedAt = timestampFromUnix(runtime.updatedAt);
     const nextStatus = normalizeRuntimeTerminalStatus(runtime.status);
+    const outputRuntime = {
+      ...runtime,
+      agentId: runtime.agentId ?? latestRecord.agentId,
+      sessionId: runtime.sessionId ?? extractMissionDispatchSessionId(latestRecord) ?? undefined
+    } satisfies RuntimeRecord;
+    const terminalOutput = outputRuntime.agentId && outputRuntime.sessionId
+      ? await readRuntimeOutputForMissionDispatchRecord(latestRecord, outputRuntime)
+      : null;
+    const terminalOutputResult = terminalOutput && (
+      Boolean(terminalOutput.finalText?.trim()) || hasMeaningfulTokenUsage(terminalOutput.tokenUsage)
+    )
+      ? createMissionDispatchResultFromRuntimeOutput(outputRuntime, terminalOutput)
+      : null;
+    const terminalResult = nextStatus === "completed"
+      ? createMissionDispatchResultFromTerminalRuntime(runtime)
+      : null;
 
     const nextRecord = {
       ...latestRecord,
@@ -302,10 +323,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
         runtimeId: runtime.id,
         observedAt: finishedAt
       },
-      result:
-        nextStatus === "completed"
-          ? latestRecord.result ?? createMissionDispatchResultFromTerminalRuntime(runtime)
-          : latestRecord.result,
+      result: terminalOutputResult && latestRecord.result
+        ? mergeMissionDispatchResult(latestRecord.result, terminalOutputResult)
+        : terminalOutputResult ?? latestRecord.result ?? terminalResult,
       error:
         nextStatus === "stalled"
           ? latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
@@ -316,11 +336,15 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     return nextRecord;
   }
 
-  if (!runtime.agentId || !runtime.sessionId) {
+  const sessionId = runtime.sessionId ?? extractMissionDispatchSessionId(record);
+  if (!runtime.agentId || !sessionId) {
     return;
   }
 
-  const output = await readRuntimeOutputForMissionDispatchRecord(record, runtime);
+  const output = await readRuntimeOutputForMissionDispatchRecord(record, {
+    ...runtime,
+    sessionId
+  });
 
   if (!output) {
     return;
@@ -342,6 +366,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
 
   const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt);
   const nextStatus = stalledFromTranscript ? "stalled" : "completed";
+  const runtimeResult = output.finalText?.trim() || hasMeaningfulTokenUsage(output.tokenUsage)
+    ? createMissionDispatchResultFromRuntimeOutput(runtime, output)
+    : null;
 
   const nextRecord = {
     ...latestRecord,
@@ -352,10 +379,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
       finishedAt,
       lastHeartbeatAt: finishedAt
     },
-    result:
-      nextStatus === "completed"
-        ? latestRecord.result ?? createMissionDispatchResultFromRuntimeOutput(runtime, output)
-        : latestRecord.result,
+    result: runtimeResult && latestRecord.result
+      ? mergeMissionDispatchResult(latestRecord.result, runtimeResult)
+      : runtimeResult ?? latestRecord.result,
     error:
       nextStatus === "stalled"
         ? output.errorMessage || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
@@ -429,7 +455,7 @@ function mergeMissionDispatchResult(
   return {
     ...current,
     ...next,
-    runId: current.runId ?? next.runId,
+    runId: next.runId ?? current.runId,
     sessionKey: current.sessionKey ?? next.sessionKey,
     sessionId: current.sessionId ?? next.sessionId,
     meta: {
@@ -873,8 +899,42 @@ function missionDispatchRuntimeMatchesRecord(record: MissionDispatchRecordLike, 
   const runtimeDispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
+  const currentExecution = resolveMissionDispatchCurrentExecution(record);
 
-  return runtimeDispatchId === record.id || runtimeRunId === record.id;
+  if (runtimeRunId && currentExecution.runId) {
+    return runtimeRunId === currentExecution.runId;
+  }
+
+  if (runtimeRunId && currentExecution.kind === "continuation") {
+    return false;
+  }
+
+  if (runtimeRunId === record.id) {
+    return true;
+  }
+
+  if (runtimeDispatchId !== record.id) {
+    return false;
+  }
+
+  const executionStartedAt = Date.parse(currentExecution.startedAt);
+  return (
+    !Number.isNaN(executionStartedAt) &&
+    typeof runtime.updatedAt === "number" &&
+    runtime.updatedAt >= executionStartedAt - 1500
+  );
+}
+
+function isMissionDispatchRuntimeFromOlderExecution(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {
+  const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
+  if (!runtimeRunId) {
+    return false;
+  }
+
+  const currentExecution = resolveMissionDispatchCurrentExecution(record);
+  return currentExecution.kind === "continuation"
+    ? !currentExecution.runId || runtimeRunId !== currentExecution.runId
+    : Boolean(currentExecution.runId && runtimeRunId !== currentExecution.runId);
 }
 
 function isTerminalRuntimeStatus(status: RuntimeRecord["status"]) {

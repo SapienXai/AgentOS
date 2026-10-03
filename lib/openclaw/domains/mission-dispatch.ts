@@ -27,6 +27,13 @@ type MissionDispatchRecord = {
   updatedAt: string;
   status: string;
   sessionId?: string | null;
+  sessionKey?: string | null;
+  operatorHistory?: Array<{
+    kind: "steer" | "continue" | "inject";
+    acceptedAt: string;
+    runId: string | null;
+    sessionKey: string | null;
+  }>;
   workspaceId?: string | null;
   workspacePath?: string | null;
   outputDir?: string | null;
@@ -427,8 +434,20 @@ function missionDispatchRuntimeMatchesRecord(record: MissionDispatchRecord, runt
   const runtimeDispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const runtimeRunId = runtime.runId?.trim() || "";
+  const latestContinuation = [...(record.operatorHistory ?? [])]
+    .filter((entry) => entry.kind === "continue")
+    .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0];
+  const currentRunId = latestContinuation
+    ? latestContinuation.runId?.trim() || ""
+    : extractMissionDispatchString(getMissionDispatchResult(record), "runId") || "";
 
-  return runtimeDispatchId === record.id || runtimeRunId === record.id;
+  if (runtimeRunId) {
+    if (currentRunId) return runtimeRunId === currentRunId;
+    if (latestContinuation) return false;
+    return runtimeDispatchId === record.id || runtimeRunId === record.id;
+  }
+
+  return runtimeDispatchId === record.id;
 }
 
 async function inspectMissionDispatchOutputDir(outputDir: string | null) {

@@ -11,7 +11,8 @@ import {
   resolveMissionDispatchIntegrityWarning,
   resolveMissionDispatchOutputFile,
   resolveMissionDispatchRuntimeStatus,
-  resolveMissionDispatchSubtitle
+  resolveMissionDispatchSubtitle,
+  resolveMissionDispatchCurrentExecution
 } from "@/lib/openclaw/domains/mission-dispatch-model";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { MissionDispatchRecordLike } from "@/lib/openclaw/domains/mission-dispatch-model";
@@ -210,8 +211,17 @@ export function scoreMissionDispatchRuntimeMatch(
   const runtimeDispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
+  const currentExecution = resolveMissionDispatchCurrentExecution(record);
 
   if (runtimeDispatchId && runtimeDispatchId !== record.id) {
+    return null;
+  }
+
+  if (runtimeRunId && currentExecution.runId && runtimeRunId !== currentExecution.runId) {
+    return null;
+  }
+
+  if (runtimeRunId && currentExecution.kind === "continuation" && !currentExecution.runId) {
     return null;
   }
 
@@ -223,7 +233,12 @@ export function scoreMissionDispatchRuntimeMatch(
     return 12_000;
   }
 
-  if (runtimeRunId === record.id) {
+  if (runtimeRunId && currentExecution.runId && runtimeRunId === currentExecution.runId) {
+    const sessionKeyPenalty = isGatewayRequestedSessionKey(runtime.sessionId, record.agentId) ? 120 : 0;
+    return (isTerminalRuntimeStatus(runtime.status) ? 11_000 : 9_000) - sessionKeyPenalty;
+  }
+
+  if (runtimeRunId === record.id && !currentExecution.runId && currentExecution.kind === "initial") {
     const sessionKeyPenalty = isGatewayRequestedSessionKey(runtime.sessionId, record.agentId) ? 120 : 0;
     return (isTerminalRuntimeStatus(runtime.status) ? 11_000 : 9_000) - sessionKeyPenalty;
   }
@@ -429,12 +444,16 @@ function matchesAcceptedContinuationRuntime(runtime: RuntimeRecord, record: Miss
     return false;
   }
 
-  const instructions = (record.operatorHistory ?? []).filter((entry) => entry.kind === "continue");
-  if (instructions.length === 0) {
+  const currentExecution = resolveMissionDispatchCurrentExecution(record);
+  if (currentExecution.kind !== "continuation") {
     return false;
   }
 
   const runtimeRunId = runtime.runId?.trim() || "";
+  if (currentExecution.runId) {
+    return runtimeRunId === currentExecution.runId;
+  }
+
   const runtimeSessionKey =
     readRuntimeMetadataString(runtime, "sessionKey") ||
     readRuntimeMetadataString(runtime, "openClawSessionKey") ||
@@ -442,19 +461,17 @@ function matchesAcceptedContinuationRuntime(runtime: RuntimeRecord, record: Miss
     (runtime.key.trim().startsWith("agent:") ? runtime.key.trim() : "") ||
     (runtime.sessionId?.trim().startsWith("agent:") ? runtime.sessionId.trim() : "");
 
-  return instructions.some((entry) => {
-    if (entry.runId?.trim()) {
-      return runtimeRunId === entry.runId.trim();
-    }
+  const expectedSessionKey =
+    [...(record.operatorHistory ?? [])]
+      .filter((entry) => entry.kind === "continue")
+      .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0]
+      ?.sessionKey?.trim() || record.sessionKey?.trim() || "";
+  if (!expectedSessionKey || runtimeSessionKey !== expectedSessionKey) {
+    return false;
+  }
 
-    const expectedSessionKey = entry.sessionKey?.trim() || record.sessionKey?.trim() || "";
-    if (!expectedSessionKey || runtimeSessionKey !== expectedSessionKey) {
-      return false;
-    }
-
-    const acceptedAt = Date.parse(entry.acceptedAt);
-    return !Number.isNaN(acceptedAt) && (runtime.updatedAt ?? 0) >= acceptedAt - 1500;
-  });
+  const acceptedAt = Date.parse(currentExecution.startedAt);
+  return !Number.isNaN(acceptedAt) && (runtime.updatedAt ?? 0) >= acceptedAt - 1500;
 }
 
 function isCurrentAcceptedContinuationRuntime(runtime: RuntimeRecord, record: MissionDispatchRecordLike) {
@@ -462,19 +479,20 @@ function isCurrentAcceptedContinuationRuntime(runtime: RuntimeRecord, record: Mi
     return false;
   }
 
-  const latestInstruction = [...(record.operatorHistory ?? [])]
-    .filter((entry) => entry.kind === "continue")
-    .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0];
-  if (!latestInstruction) {
+  const currentExecution = resolveMissionDispatchCurrentExecution(record);
+  if (currentExecution.kind !== "continuation") {
     return false;
   }
 
   const runtimeRunId = runtime.runId?.trim() || "";
-  if (latestInstruction.runId?.trim()) {
-    return runtimeRunId === latestInstruction.runId.trim();
+  if (currentExecution.runId) {
+    return runtimeRunId === currentExecution.runId;
   }
 
-  const expectedSessionKey = latestInstruction.sessionKey?.trim() || record.sessionKey?.trim() || "";
+  const latestInstruction = [...(record.operatorHistory ?? [])]
+    .filter((entry) => entry.kind === "continue")
+    .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0];
+  const expectedSessionKey = latestInstruction?.sessionKey?.trim() || record.sessionKey?.trim() || "";
   const runtimeSessionKey =
     readRuntimeMetadataString(runtime, "sessionKey") ||
     readRuntimeMetadataString(runtime, "openClawSessionKey") ||
@@ -485,7 +503,7 @@ function isCurrentAcceptedContinuationRuntime(runtime: RuntimeRecord, record: Mi
     return false;
   }
 
-  const acceptedAt = Date.parse(latestInstruction.acceptedAt);
+  const acceptedAt = Date.parse(currentExecution.startedAt);
   return !Number.isNaN(acceptedAt) && (runtime.updatedAt ?? 0) >= acceptedAt - 1500;
 }
 
