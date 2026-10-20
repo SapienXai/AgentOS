@@ -1,4 +1,5 @@
 import {
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
@@ -96,9 +97,16 @@ export const LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST: OpenClawCompatibilityManifes
       version: OPENCLAW_RECOMMENDED_VERSION,
       status: "certified",
       minRequiredAgentOsVersion: "0.7.2",
-      notes: "Recommended stable OpenClaw version for AgentOS Gateway-first operation.",
-      reason: "Recommended for current AgentOS compatibility diagnostics and runtime smoke coverage."
-    }
+      notes: "Last certified stable OpenClaw version for AgentOS Gateway-first operation.",
+      reason: "Retained as the default until a newer target completes final certification."
+    },
+    ...(String(OPENCLAW_NATIVE_CONTRACT_VERSION) === String(OPENCLAW_RECOMMENDED_VERSION) ? [] : [{
+      version: OPENCLAW_NATIVE_CONTRACT_VERSION,
+      status: "candidate" as const,
+      minRequiredAgentOsVersion: "0.7.2",
+      notes: "Exact 10.5 native contract target; final native update lifecycle certification is pending.",
+      reason: "Candidate updates require explicit opt-in and compatibility preflight until final certification passes."
+    }])
   ]
 };
 

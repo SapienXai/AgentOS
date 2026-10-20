@@ -201,6 +201,16 @@ test("offline mode uses local fallback manifest", () => {
     ),
     true
   );
+  const candidateTarget = snapshot.candidateVersions.find((entry) => entry.version === "2026.10.5");
+  const candidateDecision = resolveOpenClawUpdateDecision({
+    manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
+    agentOsVersion: "0.8.0",
+    targetVersion: "2026.10.5",
+    mode: "recommended"
+  });
+  assert.equal(candidateTarget?.status, "candidate");
+  assert.equal(candidateDecision.allowed, false);
+  assert.equal(candidateDecision.requiresExplicitOptIn, true);
 });
 
 test("an older local override cannot hide a newer shipped compatibility entry", () => {
