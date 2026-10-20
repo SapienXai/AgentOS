@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.9.7-to-2026.10.5-migration-certification",
+  "generatedAt": "2026-10-20T07:51:47.126Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosStartingHead": "9c330b76eaa10cfbf3961c19d4b9f69c86132c05",
+    "source": {
+      "version": "2026.9.7",
+      "commit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+      "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z"
+    },
+    "target": {
+      "version": "2026.10.5",
+      "commit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+      "buildId": "2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z"
+    },
+    "protocol": 4,
+    "stateSchema": "19 -> 20",
+    "agentSchema": "24 -> 25",
+    "runtimeMode": "isolated disposable packages, state, HOME, config, workspace, and loopback ports",
+    "sourcePackage": {
+      "version": "2026.9.7",
+      "sourceCommit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+      "buildId": "2026.9.7-release-c074824a27c9-2026-09-29T23-33-45.013Z",
+      "packageHash": "6698423f66bdb3d8c0c827c9d448c8bc34384c2e5b6560442cb621acaed95921",
+      "stateSchema": 19,
+      "agentSchema": 24
+    },
+    "targetPackage": {
+      "version": "2026.10.5",
+      "sourceCommit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+      "buildId": "2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z",
+      "packageHash": "735bdba9c5e350728d2ea630dce70187820418cfda06a15f7101e0b9b2cf4ddd",
+      "stateSchema": 20,
+      "agentSchema": 25
+    }
+  },
+  "fixture": {
+    "kind": "real-package-upgrade",
+    "sourceState": "OpenClaw 2026.9.7 initialized and exercised through the official Gateway",
+    "targetState": "OpenClaw 2026.10.5 migrated through native Doctor/runtime startup and reconnected through official gateway-client",
+    "representativeState": [
+      "agents",
+      "sessions",
+      "session lineage",
+      "assistant transcript",
+      "provider/auth-shaped config",
+      "channel/account config",
+      "workspace/project marker",
+      "skill marker",
+      "memory marker",
+      "cron state",
+      "update status",
+      "native identity seed",
+      "explicit AgentOS session and agent-to-agent security policy"
+    ],
+    "productionGatewayTouched": false,
+    "productionStateTouched": false,
+    "productionConfigTouched": false
+  },
+  "source": null,
+  "migration": null,
+  "target": null,
+  "recovery": null,
+  "errorPhase": "source-root-session-create",
+  "checks": {},
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessesStopped": true,
+    "disposableRootRemoved": true
+  },
+  "success": false,
+  "error": "SessionMutationFactsUnavailableError: Session access facts are unavailable; retry after session storage is ready."
+}
