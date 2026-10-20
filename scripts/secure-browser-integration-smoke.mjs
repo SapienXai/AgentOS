@@ -50,11 +50,15 @@ try {
   await waitForWorker();
   await control({ action: "create-profile", profileId });
   const first = await control({ action: "start-session", profileId, initialUrl: fixtureUrl });
-  await evaluate(first.cdpUrl, `
-    document.cookie = "agentos_smoke=present; path=/";
+  const initialState = await evaluate(first.cdpUrl, `
+    document.cookie = "agentos_smoke=present; Max-Age=3600; path=/; SameSite=Lax";
     localStorage.setItem("agentos-smoke", "present");
-    true
+    ({ cookiePresent: document.cookie.includes("agentos_smoke=present"), localStoragePresent: localStorage.getItem("agentos-smoke") === "present" })
   `);
+  if (initialState?.cookiePresent !== true || initialState?.localStoragePresent !== true) {
+    throw new Error("Chromium did not retain the browser smoke fixture state before profile persistence.");
+  }
+  await control({ action: "persist-profile", sessionId: first.sessionId, profileId });
   await control({ action: "stop-session", sessionId: first.sessionId });
 
   const second = await control({ action: "start-session", profileId, initialUrl: fixtureUrl });
@@ -100,12 +104,16 @@ async function assertPersisted(cdpUrl) {
     localStoragePresent: localStorage.getItem("agentos-smoke") === "present"
   })`);
   if (value?.cookiePresent !== true || value?.localStoragePresent !== true) {
-    throw new Error("Authenticated browser profile state did not survive restart.");
+    throw new Error(
+      `Authenticated browser profile state did not survive restart (cookie=${value?.cookiePresent === true}, localStorage=${value?.localStoragePresent === true}).`
+    );
   }
 }
 
 async function evaluate(cdpUrl, expression) {
+  const workerHeaders = { "x-agentos-browser-worker-token": workerToken };
   const targets = await fetch(`${cdpUrl}/json/list`, {
+    headers: workerHeaders,
     signal: AbortSignal.timeout(3_000)
   }).then((response) => response.json());
   const target = Array.isArray(targets)
@@ -113,7 +121,7 @@ async function evaluate(cdpUrl, expression) {
     : null;
   if (!target) throw new Error("Chromium did not expose a page target.");
   return await new Promise((resolve, reject) => {
-    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    const socket = new WebSocket(target.webSocketDebuggerUrl, { headers: workerHeaders });
     const timeout = setTimeout(() => finish(new Error("CDP smoke command timed out.")), 5_000);
     let settled = false;
     const finish = (error, value) => {
@@ -159,7 +167,8 @@ async function control(request) {
       const response = JSON.parse(buffer.slice(0, lineEnd));
       socket.destroy();
       if (response.ok !== true) {
-        reject(new Error("Secure Browser worker rejected the smoke operation."));
+        const detail = typeof response.error === "string" ? response.error.slice(0, 240) : "unknown worker error";
+        reject(new Error(`Secure Browser worker rejected the smoke operation: ${detail}`));
         return;
       }
       resolve(response.result);

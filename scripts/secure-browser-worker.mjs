@@ -431,6 +431,7 @@ async function startBrowserSession(input) {
     cdpPort,
     state: "starting",
     expiresAt: Date.now() + input.sessionTtlMs,
+    browserProcess: null,
     processes: []
   };
   let startupPhase = "virtual display";
@@ -485,6 +486,7 @@ async function startBrowserSession(input) {
       "--start-maximized",
       initialUrl
     ], childEnvironment);
+    session.browserProcess = chromium;
     session.processes.push(chromium);
     await waitForManagedCondition(
       chromium,
@@ -565,6 +567,13 @@ async function persistProfile(input) {
     throw new Error("The browser profile could not be persisted.");
   }
   await sendCdpCommand(browserWebSocketUrl, "Browser.close", {}, 5_000);
+  const browserClosed = await Promise.race([
+    childExit(session.browserProcess).then(() => true),
+    wait(10_000).then(() => false)
+  ]);
+  if (!browserClosed) {
+    throw new Error("The browser did not finish persisting profile state.");
+  }
   return { sessionId, profileId, persistent: true };
 }
 

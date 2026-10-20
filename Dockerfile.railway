@@ -8,14 +8,23 @@ RUN corepack enable
 WORKDIR /build
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/agentos/package.json ./packages/agentos/package.json
+COPY packages/openclaw-agentos/package.json ./packages/openclaw-agentos/package.json
 RUN pnpm install --frozen-lockfile
-RUN mkdir -p /runtime-extras/node_modules && \
-    cp -LR node_modules/ws /runtime-extras/node_modules/ws
+RUN mkdir -p /runtime-extras/node_modules/.pnpm && \
+    cp -LR node_modules/ws /runtime-extras/node_modules/ws && \
+    for ws_package in node_modules/.pnpm/ws@*/node_modules/ws; do \
+      if [ ! -d "$ws_package" ]; then continue; fi; \
+      ws_store="${ws_package%/node_modules/ws}"; \
+      ws_store="${ws_store##*/}"; \
+      mkdir -p "/runtime-extras/node_modules/.pnpm/$ws_store/node_modules"; \
+      cp -LR "$ws_package" "/runtime-extras/node_modules/.pnpm/$ws_store/node_modules/ws"; \
+    done
 
 COPY . .
 RUN pnpm build
 
-FROM ghcr.io/openclaw/openclaw:2026.9.7@sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc
+FROM ghcr.io/openclaw/openclaw:2026.10.5@sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5
 
 USER root
 
@@ -37,7 +46,7 @@ COPY --from=agentos-build --chown=node:node /build/.next/standalone ./
 COPY --from=agentos-build --chown=node:node /build/.next/static ./.next/static
 COPY --from=agentos-build --chown=node:node /build/public ./public
 COPY --from=agentos-build --chown=node:node /runtime-extras/node_modules/ws ./node_modules/ws
-COPY --from=agentos-build --chown=node:node /build/node_modules/.pnpm/ws@8.21.3/node_modules/ws ./node_modules/.pnpm/ws@8.21.3/node_modules/ws
+COPY --from=agentos-build --chown=node:node /runtime-extras/node_modules/.pnpm ./node_modules/.pnpm
 COPY --chown=node:node scripts/railway-supervisor.mjs ./scripts/railway-supervisor.mjs
 COPY --chown=node:node scripts/railway-public-proxy.mjs ./scripts/railway-public-proxy.mjs
 COPY --chown=node:node scripts/secure-browser-worker.mjs ./scripts/secure-browser-worker.mjs

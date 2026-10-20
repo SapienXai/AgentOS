@@ -1,20 +1,22 @@
 # Deploy AgentOS on Railway
 
-The Railway application image packages AgentOS with OpenClaw `2026.9.7` in the
+The Railway application image packages AgentOS with OpenClaw `2026.10.5` in the
 public application service; interactive Chromium runs in a separate private
 browser worker service. OpenClaw remains the runtime and source of truth;
 AgentOS connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS
 is exposed through Railway's HTTPS domain.
 
-The image is pinned to the official OpenClaw `2026.9.7` multi-architecture
-index `sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc`.
+The candidate image in this branch is pinned to the official OpenClaw
+`2026.10.5` multi-architecture index
+`sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5`.
 Railway selects the platform-specific manifest at deployment time; the
 verified manifests are `linux/amd64`
-(`sha256:b9e8a44f6df68cf08baec914bf0306dde96459c3d1be383fa0d70d2eca8bc154`)
+(`sha256:0be6e07c5c99cdd4466dc9186dc89ebbf68ca8e045c44b4cc496c441a9af1a9e`)
 and `linux/arm64`
-(`sha256:8a7a35b764127368b19534b3c4aa8ca040e5aa76aa6261209113255bb0fdac35`).
-The amd64 image reports OpenClaw `2026.9.7` with source prefix `c074824`,
-matching the source commit recorded in AgentOS's exact-release certification.
+(`sha256:31a4b7eb2bb9574527a1e46b2208e1b653f060753dd36fe3da444f79a7d03f0c`).
+The amd64 image reports OpenClaw `2026.10.5` with source prefix `1b58cb9`,
+matching the source commit recorded in AgentOS's exact-release identity
+contract. This repository change has not been deployed to Railway.
 
 ## What the template creates
 
@@ -213,19 +215,22 @@ After building the Railway image, run the credential-free browser lifecycle
 smoke in a disposable container:
 
 ```bash
-docker run --rm --shm-size=256m --user node:node --entrypoint node agentos-railway \
+docker run --rm --shm-size=256m --user node:node \
+  -e AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX=1 --entrypoint node agentos-railway \
   /agentos/scripts/secure-browser-integration-smoke.mjs
 ```
 
-This verifies real Chromium cookie/localStorage persistence, worker
+The explicit sandbox flag matches the dedicated Railway browser-worker policy
+for this disposable smoke container. This verifies real Chromium
+cookie/localStorage persistence, worker
 process-group crash recovery, profile reuse, and revoke cleanup. It does not
 prove compatibility with a third-party website and does not use real login
 credentials.
 
-OpenClaw is pinned in `Dockerfile.railway`. The current pin is the exact
-`2026.9.7` multi-architecture index recorded above. Upgrade it only together
-with AgentOS compatibility checks and update the pin, recommended version, and
-deployment documentation in the same change. OpenClaw remains the owner of
+OpenClaw is pinned in `Dockerfile.railway`. This branch's candidate pin is the
+exact `2026.10.5` multi-architecture index recorded above. Upgrade it only
+together with AgentOS compatibility checks and update the pin, recommended
+version, and deployment documentation in the same change. OpenClaw remains the owner of
 runtime updates, migrations, restart, backup, rollback, and recovery; this image
 pin is the Railway deployment contract, not a second update mechanism.
 
