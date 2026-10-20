@@ -5,9 +5,10 @@ Date: 2026-05-02
 Latest production-readiness validation update: 2026-05-16.
 
 > Historical migration record. This migration was first certified against
-> OpenClaw `2026.9.4`; current `main` recommends and certifies `2026.9.7` with
+> OpenClaw `2026.9.4`; the 2026.10.5 compatibility branch recommends and certifies
+> `2026.10.5` with
 > `2026.9.1` as the supported baseline. See the
-> [2026.9.7 compatibility audit](./openclaw-2026.9.7-compatibility-audit.md)
+> [2026.10.5 compatibility and upgrade record](./openclaw-2026.10.5-upgrade-plan.md)
 > and [`openclaw-official-gateway-transport.md`](./openclaw-official-gateway-transport.md)
 > for the current official-client architecture. The dated narrative below is
 > retained for migration provenance.
@@ -23,7 +24,7 @@ The OpenClaw CLI remains the bounded fallback implementation. The original
 2026.9.4 migration consumed the public
 `@openclaw/gateway-protocol@2026.9.4` package for protocol constants and
 capability names, and the official `@openclaw/gateway-client@2026.9.4` owned
-the production transport at that time. Current pins are 2026.9.7. AgentOS
+the production transport at that time. Current pins are 2026.10.5. AgentOS
 retains application-level request policy, normalized payload projections,
 fallback policy, and diagnostics.
 

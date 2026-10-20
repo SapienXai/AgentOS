@@ -6,9 +6,9 @@ authentication, availability, selection, fallback execution, and runtime
 resolution. AgentOS does not create a model registry, provider registry,
 credential store, fallback engine, or session-model lifecycle.
 
-Current AgentOS recommendation is OpenClaw `2026.9.7`; the 2026.9.7 identity,
+Current AgentOS recommendation is OpenClaw `2026.10.5`; identity,
 authorization, and runtime evidence is indexed in
-[`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md).
+[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
 The Phase 4 details below preserve the original exact 2026.9.4 contract review.
 
 ## Original exact 2026.9.4 contract

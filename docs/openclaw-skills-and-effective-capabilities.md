@@ -37,7 +37,9 @@ The effective capability projection is not persisted as mutable authority.
 
 ## Native Skills Library integration
 
-The promoted OpenClaw 2026.9.7 library contract includes:
+The OpenClaw 2026.10.5 contract retains the library methods verified against
+the 2026.9.7 baseline and also adds native Skill Workshop methods. AgentOS
+continues to consume only its existing Skills Library surface:
 
 | Method | Scope | Phase 2 use |
 | --- | --- | --- |
@@ -158,7 +160,7 @@ is used for `skills.library.*`, `tools.catalog`, or `tools.effective`.
 The product integration registry remains granular: only
 `skills.library.list`, `skills.library.read`, and `skills.library.activate`
 are marked as consumed for this phase. The remaining library methods remain
-discovery-only even though their exact 2026.9.7 contracts are audited.
+discovery-only even though their exact native contracts are audited.
 
 ## Phase 2.1 hardening
 
@@ -171,7 +173,7 @@ an unsuccessful selection read leaves activation unknown. The latest revision
 never replaces the session revision.
 
 The runtime certification harness may seed one disposable skill through the
-official native `skills.library.save` method in an isolated exact 2026.9.7
+official native `skills.library.save` method in an isolated exact 2026.10.5
 Gateway. This is certification-only fixture setup; save, mutate, import, and
 upload remain discovery-only product methods. The fixture is removed through
 the official native mutation contract, and no OpenClaw internal storage is

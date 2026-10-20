@@ -1,10 +1,11 @@
 # AgentOS / OpenClaw Ownership Matrix
 
 Status: repository decision record, originally aligned to the locally certified
-OpenClaw `2026.9.4` target as of `2026-09-13`. Current `main` promotes OpenClaw
-`2026.9.7` with supported baseline `2026.9.1`; see the
-[2026.9.7 compatibility audit](openclaw-2026.9.7-compatibility-audit.md) and
-[final certification artifact](evidence/openclaw-2026.9.7-pre-merge-final-certification.json).
+OpenClaw `2026.9.4` target as of `2026-09-13`. This branch promotes OpenClaw
+`2026.10.5` as the recommended/native contract while retaining supported
+baseline `2026.9.1`; see the
+[2026.10.5 upgrade and audit report](openclaw-2026.10.5-upgrade-plan.md) and
+its versioned evidence under `docs/evidence/`.
 This is a bounded ownership index, not a replacement for the compatibility
 audit or live Gateway status.
 

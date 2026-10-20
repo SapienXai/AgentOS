@@ -4,7 +4,7 @@
 
 Phase 1 establishes the operator-facing projection for OpenClaw-managed worktrees, task suggestions, and session ownership. The implementation is intentionally additive: Mission remains AgentOS product intent, while OpenClaw remains authoritative for sessions, task suggestions, worktrees, runtime state, ownership, visibility, and collaboration evidence.
 
-The current recommended contract is OpenClaw `2026.9.7`; existing `2026.9.1` deployments remain the supported minimum when the explicit AgentOS security settings are present. The original Phase 1 implementation and its first certification targeted `2026.9.4`; current package and runtime evidence is recorded in [`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md). The exact AgentOS package versions are pinned in `package.json`.
+The current recommended contract is OpenClaw `2026.10.5`; existing `2026.9.1` deployments remain the supported minimum when the explicit AgentOS security settings are present. The original Phase 1 implementation and its first certification targeted `2026.9.4`; current package and runtime evidence is recorded in [`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md). The exact AgentOS package versions are pinned in `package.json`.
 
 ## Phase 1.1 hardening
 
@@ -22,7 +22,7 @@ existing ownership route using one `session.members.list` call and one
 become local ownership state.
 
 The AgentOS authorization preflight maps the integrated Native Work methods to
-the promoted OpenClaw 2026.9.7 descriptor scopes. OpenClaw remains the final
+the promoted OpenClaw 2026.10.5 descriptor scopes. OpenClaw remains the final
 authorization authority for method and target policy. The 2026.9.6 change to
 `sessions.github.publish` is handled through the native scope and capability
 projection; it does not create a broader AgentOS feature surface.
@@ -44,7 +44,7 @@ AgentOS does not create a parallel worktree registry, task suggestion store, ses
 
 ## Managed worktrees
 
-The typed client preserves the 2026.9.7 `WorktreeRecord` contract: `id`, bounded `name`, `repoFingerprint`, `repoRoot`, `path`, `branch`, `baseRef`, `ownerKind`, optional `ownerId`, timestamps, and run-end cleanup outcome. The transport-independent projection is `ManagedWorktreeProjection` and is marked `sourceOfTruth: "openclaw"`.
+The typed client preserves the 2026.10.5 `WorktreeRecord` contract: `id`, bounded `name`, `repoFingerprint`, `repoRoot`, `path`, `branch`, `baseRef`, `ownerKind`, optional `ownerId`, timestamps, and run-end cleanup outcome. The transport-independent projection is `ManagedWorktreeProjection` and is marked `sourceOfTruth: "openclaw"`.
 
 The mission execution mode `isolated-worktree` first calls `worktrees.branches` with the selected workspace path and `includeRepositoryStatus: true`. It is eligible only when:
 
@@ -129,18 +129,18 @@ Other OpenClaw methods remain discovery-only or unsupported as defined by the co
 The original Phase 1 contract and runtime certification used a disposable OpenClaw
 `2026.9.4` source/runtime and an isolated temporary repository. Current runtime,
 identity, multi-user, native-work, and compatibility evidence for the promoted
-`2026.9.7` contract is linked from
-[`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md).
+`2026.10.5` contract is linked from
+[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
 Both certification sets use isolated state and do not touch a user's Gateway
 checkout.
 
 The historical Phase 1 evidence remains at
-`docs/evidence/openclaw-2026.9.1-native-work-hardening.json`. The 2026.9.4
-runtime record and contract diff are historical; 2026.9.7 is the current
-promoted contract. The documented event-name typo `session.evidence` remains
-historical, and the correct current event is `session.sharing.evidence`.
+`docs/evidence/openclaw-2026.9.1-native-work-hardening.json`. The 2026.9.4 and
+2026.9.7 runtime records and contract diffs are historical. The documented
+event-name typo `session.evidence` remains historical, and the current event is
+`session.sharing.evidence`.
 
-The 2026.9.7 promotion's implementation and certification gates passed on the
+The 2026.9.7 promotion's implementation and certification gates passed on its
 recorded certified code HEAD. This compatibility evidence does not assert that
 AgentOS or an OpenClaw production deployment was released or updated.
 

@@ -3,11 +3,11 @@
 Status: Phase 0 complete
 
 Current compatibility status (2026-10-01): AgentOS's recommended and native
-contract is OpenClaw `2026.9.7`; `2026.9.1` remains the supported baseline.
+contract is OpenClaw `2026.10.5`; `2026.9.1` remains the supported baseline.
 This is a historical Phase 0 decision record, so the provenance below retains
 the exact `2026.9.4` release and workspace sources inspected when that phase was
 completed. Current certification is documented in
-[`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md).
+[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
 
 This document is the canonical AgentOS workspace-foundation decision record. It
 covers only alignment with the OpenClaw workspace contract; website ingestion,
