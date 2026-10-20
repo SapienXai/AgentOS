@@ -541,7 +541,7 @@ async function startGateway(input: {
     gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } },
     agents: {
       defaults: { workspace: input.workspaceDir, model: { primary: `agentos-fixture/${input.fixtureModelId}` } },
-      list: [{ id: "main", workspace: input.workspaceDir }]
+      entries: { main: { workspace: input.workspaceDir } }
     },
     models: {
       mode: "merge",

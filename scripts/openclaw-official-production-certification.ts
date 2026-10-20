@@ -603,7 +603,7 @@ async function provisionState(input: {
   await mkdir(input.workspaceDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({
     gateway: { mode: "local", bind: "loopback", auth: { mode: "token" } },
-    agents: { defaults: { workspace: input.workspaceDir }, list: [{ id: "main", workspace: input.workspaceDir }] },
+    agents: { defaults: { workspace: input.workspaceDir }, entries: { main: { workspace: input.workspaceDir } } },
     cron: { enabled: false }
   }, null, 2)}\n`, { mode: 0o600 });
   const dbPath = path.join(input.stateDir, "state", "openclaw.sqlite");

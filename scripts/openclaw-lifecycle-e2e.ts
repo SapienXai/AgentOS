@@ -563,7 +563,7 @@ async function proveSupervisorRejectsInvalidCommand(socketPath: string) {
 
 async function provisionRuntimeConfig(configPath: string) {
   await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
-  await writeFile(configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback" }, agents: { defaults: { workspace: path.dirname(configPath) }, list: [{ id: "dev", workspace: path.dirname(configPath) }] }, cron: { enabled: true } }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback" }, agents: { defaults: { workspace: path.dirname(configPath) }, entries: { dev: { workspace: path.dirname(configPath) } } }, cron: { enabled: true } }, null, 2)}\n`, { mode: 0o600 });
 }
 
 async function readPackageIdentity(packageRoot: string) {

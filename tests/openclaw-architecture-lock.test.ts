@@ -109,6 +109,19 @@ test("OpenClaw 10.5 client pins stay separate from the promoted runtime policy",
   assert.deepEqual(OPENCLAW_GATEWAY_PROTOCOL_RANGE, { min: 4, max: 4 });
 });
 
+test("candidate runtime certification fixtures use keyed OpenClaw agent entries", async () => {
+  const fixtures = await Promise.all([
+    "scripts/openclaw-official-production-certification.ts",
+    "scripts/openclaw-official-gateway-lifecycle-certification.ts",
+    "scripts/openclaw-fresh-baseline-e2e.ts"
+  ].map(source));
+
+  for (const fixture of fixtures) {
+    assert.match(fixture, /entries:\s*\{\s*(?:main|dev):/);
+    assert.doesNotMatch(fixture, /list:\s*\[\{\s*id:/);
+  }
+});
+
 test("current entrypoints use the factory and keep CLI fallback separate", async () => {
   const currentEntryPoints = await Promise.all([
     "scripts/openclaw-runtime-certification.ts",

@@ -72,7 +72,7 @@ async function main() {
     await mkdir(resources.workspaceDir, { recursive: true, mode: 0o700 });
     await writeFile(resources.configPath, `${JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: resources.token } },
-      agents: { defaults: { workspace: resources.workspaceDir }, list: [{ id: "main", workspace: resources.workspaceDir }] },
+      agents: { defaults: { workspace: resources.workspaceDir }, entries: { main: { workspace: resources.workspaceDir } } },
       cron: { enabled: false }
     }, null, 2)}\n`, { mode: 0o600 });
     gateway = await startGateway({ packageRoot: PACKAGE_ROOT, ...resources });

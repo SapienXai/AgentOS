@@ -345,7 +345,7 @@ async function startGateway(input: { packageRoot: string; stateDir: string; work
   await mkdir(homeDir, { recursive: true, mode: 0o700 });
   await mkdir(input.workspaceDir, { recursive: true, mode: 0o700 });
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
-  await writeFile(input.configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } }, agents: { defaults: { workspace: input.workspaceDir }, list: [{ id: "main", workspace: input.workspaceDir }] }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(input.configPath, `${JSON.stringify({ gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } }, agents: { defaults: { workspace: input.workspaceDir }, entries: { main: { workspace: input.workspaceDir } } }, tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }, cron: { enabled: false } }, null, 2)}\n`, { mode: 0o600 });
   const child = spawn(process.execPath, [path.join(input.packageRoot, "openclaw.mjs"), "gateway", "run", "--port", String(input.port), "--bind", "loopback", "--allow-unconfigured", "--auth", "token", "--token", input.token, "--ws-log", "compact"], { cwd: input.workspaceDir, env: createDisposableOpenClawEnvironment({ homeDir, overrides: { OPENCLAW_STATE_DIR: input.stateDir, OPENCLAW_CONFIG_PATH: input.configPath, OPENCLAW_GATEWAY_TOKEN: input.token } }), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });

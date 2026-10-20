@@ -80,7 +80,7 @@ async function main() {
       gateway: { mode: "local", bind: "loopback" },
       agents: {
         defaults: { workspace: workspacePath },
-        list: [{ id: "dev", workspace: workspacePath }]
+        entries: { dev: { workspace: workspacePath } }
       },
       cron: { enabled: true }
     }, null, 2)}\n`, { mode: 0o600 });

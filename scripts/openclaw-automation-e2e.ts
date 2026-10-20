@@ -264,7 +264,7 @@ async function startGateway(input: { packageRoot: string; stateDir: string; work
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({
     gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } },
-    agents: { defaults: { workspace: input.workspaceDir, model: { primary: `agentos-fixture/${input.fixtureModelId}` } }, list: [{ id: "main", workspace: input.workspaceDir }] },
+    agents: { defaults: { workspace: input.workspaceDir, model: { primary: `agentos-fixture/${input.fixtureModelId}` } }, entries: { main: { workspace: input.workspaceDir } } },
     models: { mode: "merge", providers: { "agentos-fixture": { baseUrl: input.fixtureBaseUrl, api: "openai-completions", apiKey: "agentos-automation-fixture", timeoutSeconds: 30, models: [{ id: input.fixtureModelId, name: "AgentOS Automation Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }] } } },
     cron: { enabled: true }
   }, null, 2)}\n`, { mode: 0o600 });

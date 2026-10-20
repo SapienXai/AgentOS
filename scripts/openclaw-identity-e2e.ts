@@ -506,7 +506,7 @@ async function startGateway(input: {
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({
     gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } },
-    agents: { defaults: { workspace: input.workspaceDir }, list: [{ id: "main", workspace: input.workspaceDir }] },
+    agents: { defaults: { workspace: input.workspaceDir }, entries: { main: { workspace: input.workspaceDir } } },
     cron: { enabled: false }
   }, null, 2)}\n`, { mode: 0o600 });
 

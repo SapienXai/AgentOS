@@ -261,7 +261,7 @@ async function main() {
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: resources.token } },
       agents: {
         defaults: { workspace: resources.workspaceDir, model: { primary: `agentos-fixture/${fixture.modelId}` } },
-        list: [{ id: "main", workspace: resources.workspaceDir }]
+        entries: { main: { workspace: resources.workspaceDir } }
       },
       models: {
         mode: "merge",

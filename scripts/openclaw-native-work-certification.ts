@@ -189,7 +189,7 @@ async function main() {
     await initializeGitWorkspace(resources.workspaceDir);
     await writeFile(resources.configPath, `${JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: resources.token } },
-      agents: { defaults: { workspace: resources.workspaceDir, model: { primary: `agentos-fixture/${fixture.modelId}` } }, list: [{ id: "main", workspace: resources.workspaceDir }] },
+      agents: { defaults: { workspace: resources.workspaceDir, model: { primary: `agentos-fixture/${fixture.modelId}` } }, entries: { main: { workspace: resources.workspaceDir } } },
       models: { mode: "merge", providers: { "agentos-fixture": { baseUrl: fixture.baseUrl, api: "openai-completions", apiKey: "agentos-native-work-fixture", timeoutSeconds: 30, models: [{ id: fixture.modelId, name: "AgentOS Native Work Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }] } } },
       cron: { enabled: false }
     }, null, 2)}\n`, { mode: 0o600 });
