@@ -1,0 +1,579 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-cumulative-contract-diff",
+  "status": "UNKNOWN",
+  "generatedAt": "2026-10-20T09:22:15.246Z",
+  "comparison": {
+    "sourceVersion": "2026.9.7",
+    "targetVersion": "2026.10.5",
+    "transitions": 7
+  },
+  "provenance": {
+    "source": {
+      "version": "2026.9.7",
+      "recommendedPolicy": "2026.9.7"
+    },
+    "target": {
+      "version": "2026.10.5",
+      "tag": "v2026.10.5",
+      "tagObject": "9171d0a427738902efd811c648325cf54116743c",
+      "sourceCommit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+      "buildId": "2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z",
+      "protocol": 4,
+      "stateSchema": 20,
+      "agentSchema": 25,
+      "packageIntegrity": "sha512-9rCuXMweqVKZIK3KBtGcLzesz9G6+FmQ30lvwomRhmcNWDcOtlBoqdLbPditoJMuTP55jPqXpt1AA0L8tSzFHg==",
+      "gatewayClientPackage": {
+        "packageName": "@openclaw/gateway-client",
+        "version": "2026.10.5",
+        "integrity": "sha512-9RM+TOeJy6r3twq+gBfL0igYc6qkx3b3ubO4gxYlYdEW61zHFfFW9CXekUZ+nOSbCiM1FcAPXvAjwbbOhlaGhg=="
+      },
+      "gatewayProtocolPackage": {
+        "packageName": "@openclaw/gateway-protocol",
+        "version": "2026.10.5",
+        "integrity": "sha512-6HPtIzR9TijDNsvVwWZNxbRXDBmEiO7YSd+Ei+y01Lmj7Kmh14SxJSdBQo6MiCfNbP3EppbJKFkmzwUemjITwQ=="
+      },
+      "releaseWatcherIdentityStatus": "incomplete",
+      "releaseWatcherMissingEvidence": [
+        "Git tag commit"
+      ],
+      "tagRefEvidence": {
+        "path": "docs/evidence/openclaw-release-watch-2026.10.5/openclaw-2026.10.5-tag-ref.txt",
+        "sha256": "786776a522ecd6c2d88238ece07e4d9901845aaf15c4337c2b5ad270a5fad68c",
+        "peeledCommit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+        "peeledCommitMatchesRuntimeBuild": true
+      }
+    },
+    "evidenceCommit": "72d8c99cc3e3aa40e250be6930f520d84e38a88e"
+  },
+  "summary": {
+    "methodsAdded": 32,
+    "methodsRemoved": 0,
+    "addedMethodNames": [
+      "backup.status",
+      "catalog.browse",
+      "catalog.searchKeywords",
+      "claws.removalJournal",
+      "mcp.app.discover",
+      "mcp.app.formResource",
+      "mcp.app.launch",
+      "mcp.app.mention",
+      "mcp.app.modelContext",
+      "mcp.app.onboard",
+      "mcp.app.openFile",
+      "mcp.app.removeModelContext",
+      "mcp.app.settings",
+      "mcp.app.subscribeResource",
+      "mcp.app.unsubscribeResource",
+      "mcp.app.writeResource",
+      "memory.get",
+      "memory.status",
+      "session.reactions.list",
+      "session.reactions.set",
+      "sessions.catalog.import",
+      "sessions.files.assets",
+      "sessions.processes.list",
+      "sessions.processes.stop",
+      "skills.workshop.archive",
+      "skills.workshop.changes",
+      "skills.workshop.list",
+      "skills.workshop.restore",
+      "storage.locations.list",
+      "storage.locations.probe",
+      "worktrees.recoverRemoval",
+      "worktrees.retireSnapshot"
+    ],
+    "removedMethodNames": [],
+    "policyObservationCount": 20,
+    "warningCount": 15,
+    "unknownCount": 5,
+    "blockerCount": 0,
+    "serverMethodFileChangeObservations": 1510,
+    "protocolFileChangeObservations": 157,
+    "evidenceGapCount": 0,
+    "unknownReadSharingPolicies": [
+      {
+        "transition": "2026.10.4 -> 2026.10.5",
+        "method": "chat.metadata",
+        "status": "unknown",
+        "message": "chat.metadata changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+        "targetLifetime": null,
+        "targetReadSharing": {
+          "shareKey": "operatorReadShareKey",
+          "shareMaxAgeMs": 1000,
+          "shareInvalidationEvents": [
+            "chat.metadata.changed",
+            "sessions.changed"
+          ]
+        }
+      },
+      {
+        "transition": "2026.10.4 -> 2026.10.5",
+        "method": "cron.list",
+        "status": "unknown",
+        "message": "cron.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+        "targetLifetime": null,
+        "targetReadSharing": {
+          "shareKey": "cronListShareKey",
+          "shareMaxAgeMs": 1000,
+          "shareInvalidationEvents": [
+            "cron",
+            "sessions.changed"
+          ]
+        }
+      },
+      {
+        "transition": "2026.10.4 -> 2026.10.5",
+        "method": "cron.status",
+        "status": "unknown",
+        "message": "cron.status changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+        "targetLifetime": null,
+        "targetReadSharing": {
+          "shareKey": "operatorReadShareKey",
+          "shareMaxAgeMs": 1000,
+          "shareInvalidationEvents": [
+            "cron"
+          ]
+        }
+      },
+      {
+        "transition": "2026.10.4 -> 2026.10.5",
+        "method": "models.list",
+        "status": "unknown",
+        "message": "models.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+        "targetLifetime": null,
+        "targetReadSharing": {
+          "shareKey": "modelsListShareKey",
+          "shareMaxAgeMs": 1000,
+          "shareInvalidationEvents": [
+            "chat.metadata.changed",
+            "sessions.changed"
+          ]
+        }
+      },
+      {
+        "transition": "2026.10.4 -> 2026.10.5",
+        "method": "sessions.list",
+        "status": "unknown",
+        "message": "sessions.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+        "targetLifetime": null,
+        "targetReadSharing": {
+          "shareKey": "operatorReadShareKey",
+          "shareMaxAgeMs": 1000,
+          "shareInvalidationEvents": [
+            "sessions.changed",
+            "chat.metadata.changed"
+          ]
+        }
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "sourceVersion": "2026.9.7",
+      "targetVersion": "2026.9.8",
+      "watcherStatus": "warning",
+      "summary": "0 method contract change(s), 0 blocker(s), 2 warning(s), 0 unknown(s), 13 server-method file change(s), and 1 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "fc23bc864e4553c2d215e479eeec47b67a0bf943",
+        "missingEvidence": [],
+        "intakeHash": "1a6520e5315a9aa36b99cab85aa200f89881653d49007ad7147419c81ec15ce1"
+      },
+      "methodsAdded": [],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "13 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "1 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 2,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 13,
+      "changedProtocolFileCount": 1,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "11a588284466fdaed3d11a9892a65fc3b12508e041ebfe4f0c9efdd8c9810e0d",
+        "contractDiffSha256": "d74a8e7d2b748d343f45218dbfbc82cb38709d51eb68cbaa705d0ad5b1b0d2fd"
+      }
+    },
+    {
+      "sourceVersion": "2026.9.8",
+      "targetVersion": "2026.9.9",
+      "watcherStatus": "warning",
+      "summary": "0 method contract change(s), 0 blocker(s), 2 warning(s), 0 unknown(s), 7 server-method file change(s), and 1 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "bcfc88812a35243893585dbeca87ca41b48272ca",
+        "missingEvidence": [],
+        "intakeHash": "5b1f1bb0496f9493d7cf111841c643d47c598795c7cb0e0d9d9a7bd01c827641"
+      },
+      "methodsAdded": [],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "7 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "1 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 2,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 7,
+      "changedProtocolFileCount": 1,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "b503babf845fb027c1c9c0571de06d9d449ee559e54a660f1e698eac780344b2",
+        "contractDiffSha256": "a7a84869d35380141830cd475964914d5d1458aac912570070d0b82733d3b48c"
+      }
+    },
+    {
+      "sourceVersion": "2026.9.9",
+      "targetVersion": "2026.10.1",
+      "watcherStatus": "warning",
+      "summary": "25 method contract change(s), 0 blocker(s), 4 warning(s), 0 unknown(s), 757 server-method file change(s), and 89 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "e178c39e9aae3fa440735217f9aef9574f286677",
+        "missingEvidence": [],
+        "intakeHash": "cfc94da63d7bb6a1faa105ec0fc55adecf7ace29ea73fcd352c350a7da70c90c"
+      },
+      "methodsAdded": [
+        "backup.status",
+        "mcp.app.discover",
+        "mcp.app.formResource",
+        "mcp.app.launch",
+        "mcp.app.mention",
+        "mcp.app.modelContext",
+        "mcp.app.onboard",
+        "mcp.app.openFile",
+        "mcp.app.removeModelContext",
+        "mcp.app.settings",
+        "mcp.app.subscribeResource",
+        "mcp.app.unsubscribeResource",
+        "mcp.app.writeResource",
+        "memory.get",
+        "memory.status",
+        "session.reactions.list",
+        "session.reactions.set",
+        "sessions.catalog.import",
+        "sessions.files.assets",
+        "storage.locations.list",
+        "storage.locations.probe",
+        "worktrees.recoverRemoval",
+        "worktrees.retireSnapshot"
+      ],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "sessions.describe",
+          "status": "warning",
+          "message": "sessions.describe lifetime changes from unspecified to observation; OpenClaw cancels this observation when the requester disconnects or restart drain begins.",
+          "targetLifetime": "observation",
+          "targetReadSharing": null
+        },
+        {
+          "method": "sessions.get",
+          "status": "warning",
+          "message": "sessions.get lifetime changes from unspecified to observation; OpenClaw cancels this observation when the requester disconnects or restart drain begins.",
+          "targetLifetime": "observation",
+          "targetReadSharing": null
+        },
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "757 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "89 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 4,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 757,
+      "changedProtocolFileCount": 89,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "6ccc68235629c753541c6eb82966b2913dbb287825ebec5dadfb32b7d53d9ec3",
+        "contractDiffSha256": "b2d03afbb5ac3faf0791f276e44671388c3976bb19f8b77c13acacae398a1929"
+      }
+    },
+    {
+      "sourceVersion": "2026.10.1",
+      "targetVersion": "2026.10.2",
+      "watcherStatus": "warning",
+      "summary": "0 method contract change(s), 0 blocker(s), 2 warning(s), 0 unknown(s), 16 server-method file change(s), and 1 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "b8952d477f0c932d8ddc6da5c89cab5a169b6ff1",
+        "missingEvidence": [],
+        "intakeHash": "13ba42969cd3707060b1223733883ae3a7868222d476da1fbc0f2869afe03a7d"
+      },
+      "methodsAdded": [],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "16 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "1 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 2,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 16,
+      "changedProtocolFileCount": 1,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "06fe7099cb7997c167f0fbe8f5bc8819f6c695b235e5f1164969c17ed88072da",
+        "contractDiffSha256": "33c7da2473075cb9e5f03ce73f9000c82503683952eb4a5b4896f2111c3ca18c"
+      }
+    },
+    {
+      "sourceVersion": "2026.10.2",
+      "targetVersion": "2026.10.3",
+      "watcherStatus": "warning",
+      "summary": "0 method contract change(s), 0 blocker(s), 2 warning(s), 0 unknown(s), 3 server-method file change(s), and 1 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "59cb44796b0f1f0daa0e37af8b1495abb45d9bc1",
+        "missingEvidence": [],
+        "intakeHash": "5e492d6ee2d9f01c50ba46a92abebf0a5ddec96643e717523032c1b022a1633f"
+      },
+      "methodsAdded": [],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "3 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "1 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 2,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 3,
+      "changedProtocolFileCount": 1,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "8bf4273a909bd30803bfab4d2375222dbc9d876f46a828ce38b4665f13202200",
+        "contractDiffSha256": "b1d32cec1992423263ffe4374dee040a20088386567802713b55d3f9c868734c"
+      }
+    },
+    {
+      "sourceVersion": "2026.10.3",
+      "targetVersion": "2026.10.4",
+      "watcherStatus": "warning",
+      "summary": "0 method contract change(s), 0 blocker(s), 1 warning(s), 0 unknown(s), 0 server-method file change(s), and 1 protocol file change(s).",
+      "identity": {
+        "status": "verified",
+        "sourceCommit": "383c124cc32ffee3f8e56f549b88da94d269a4af",
+        "missingEvidence": [],
+        "intakeHash": "022efea4b736683d2ba51611ab20115f904004cfc9cfb8b819dd026b1238a288"
+      },
+      "methodsAdded": [],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "1 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 1,
+      "unknownCount": 0,
+      "changedServerMethodFileCount": 0,
+      "changedProtocolFileCount": 1,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "399e02892125dc26a97903519e3d6f5d5f2543c4baf0378e843186210340b903",
+        "contractDiffSha256": "d28af02699ccf845788dd4c891999613539779e56ae50048bf85cdec822c7658"
+      }
+    },
+    {
+      "sourceVersion": "2026.10.4",
+      "targetVersion": "2026.10.5",
+      "watcherStatus": "unknown",
+      "summary": "14 method contract change(s), 0 blocker(s), 2 warning(s), 5 unknown(s), 714 server-method file change(s), and 63 protocol file change(s).",
+      "identity": {
+        "status": "incomplete",
+        "sourceCommit": null,
+        "missingEvidence": [
+          "Git tag commit"
+        ],
+        "intakeHash": "1c4b605f6390cacb0cfa740f1b9eee0caab567121081dc0b153627ee126e27df"
+      },
+      "methodsAdded": [
+        "catalog.browse",
+        "catalog.searchKeywords",
+        "claws.removalJournal",
+        "sessions.processes.list",
+        "sessions.processes.stop",
+        "skills.workshop.archive",
+        "skills.workshop.changes",
+        "skills.workshop.list",
+        "skills.workshop.restore"
+      ],
+      "methodsRemoved": [],
+      "policyChanges": [
+        {
+          "method": "chat.metadata",
+          "status": "unknown",
+          "message": "chat.metadata changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+          "targetLifetime": null,
+          "targetReadSharing": {
+            "shareKey": "operatorReadShareKey",
+            "shareMaxAgeMs": 1000,
+            "shareInvalidationEvents": [
+              "chat.metadata.changed",
+              "sessions.changed"
+            ]
+          }
+        },
+        {
+          "method": "cron.list",
+          "status": "unknown",
+          "message": "cron.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+          "targetLifetime": null,
+          "targetReadSharing": {
+            "shareKey": "cronListShareKey",
+            "shareMaxAgeMs": 1000,
+            "shareInvalidationEvents": [
+              "cron",
+              "sessions.changed"
+            ]
+          }
+        },
+        {
+          "method": "cron.status",
+          "status": "unknown",
+          "message": "cron.status changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+          "targetLifetime": null,
+          "targetReadSharing": {
+            "shareKey": "operatorReadShareKey",
+            "shareMaxAgeMs": 1000,
+            "shareInvalidationEvents": [
+              "cron"
+            ]
+          }
+        },
+        {
+          "method": "models.list",
+          "status": "unknown",
+          "message": "models.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+          "targetLifetime": null,
+          "targetReadSharing": {
+            "shareKey": "modelsListShareKey",
+            "shareMaxAgeMs": 1000,
+            "shareInvalidationEvents": [
+              "chat.metadata.changed",
+              "sessions.changed"
+            ]
+          }
+        },
+        {
+          "method": "sessions.list",
+          "status": "unknown",
+          "message": "sessions.list changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.",
+          "targetLifetime": null,
+          "targetReadSharing": {
+            "shareKey": "operatorReadShareKey",
+            "shareMaxAgeMs": 1000,
+            "shareInvalidationEvents": [
+              "sessions.changed",
+              "chat.metadata.changed"
+            ]
+          }
+        },
+        {
+          "method": "__server_method_implementations__",
+          "status": "warning",
+          "message": "714 server-method implementation file(s) changed; postflight runtime verification remains required.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        },
+        {
+          "method": "__protocol_schemas__",
+          "status": "warning",
+          "message": "63 Gateway protocol/schema file(s) changed; payload compatibility requires runtime shape checks.",
+          "targetLifetime": null,
+          "targetReadSharing": null
+        }
+      ],
+      "blockerCount": 0,
+      "warningCount": 2,
+      "unknownCount": 5,
+      "changedServerMethodFileCount": 714,
+      "changedProtocolFileCount": 63,
+      "evidenceGapCount": 0,
+      "inputHashes": {
+        "intakeSha256": "c1a4b780b059cc369fc1546e1b1ecadb467a2787dfb831e9639912b44122f0ce",
+        "contractDiffSha256": "6eff63ba5b8da958d64804a87359383061fb48dd3843c1884b4c4931d1c24ff3"
+      }
+    }
+  ],
+  "checks": {
+    "allSevenStableTransitionsPresent": true,
+    "noMethodRemovalsInAnalyzedTransitions": true,
+    "noStaticBlockersInAnalyzedTransitions": true,
+    "noStaticEvidenceGapsInAnalyzedTransitions": true,
+    "upstreamTagMatchesVerifiedRuntimeBuildCommit": true,
+    "targetReleaseIdentityCompleteInReleaseWatcher": false,
+    "allUnknownReadSharingPoliciesRuntimeVerified": false
+  },
+  "failures": [
+    "targetReleaseIdentityCompleteInReleaseWatcher",
+    "allUnknownReadSharingPoliciesRuntimeVerified"
+  ],
+  "success": false
+}
