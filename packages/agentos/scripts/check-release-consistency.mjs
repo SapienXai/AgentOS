@@ -77,7 +77,8 @@ export function checkReleaseConsistency(options = {}) {
   validateOpenClawVersions(context, openClawVersions);
   const openClawVersionPolicy = {
     recommended: readTypeScriptStringConstant(openClawVersions, "OPENCLAW_RECOMMENDED_VERSION"),
-    supportedBaseline: readTypeScriptStringConstant(openClawVersions, "OPENCLAW_SUPPORTED_BASELINE_VERSION")
+    supportedBaseline: readTypeScriptStringConstant(openClawVersions, "OPENCLAW_SUPPORTED_BASELINE_VERSION"),
+    nativeContract: readTypeScriptStringConstant(openClawVersions, "OPENCLAW_NATIVE_CONTRACT_VERSION")
   };
   validateAgentosPackage(context, agentosPackage);
   validateLauncher(context, launcher, updateDiscovery, agentosPackage);
@@ -222,6 +223,7 @@ function validateOpenClawVersions(context, openClawVersions) {
 
   const recommended = readTypeScriptStringConstant(openClawVersions, "OPENCLAW_RECOMMENDED_VERSION");
   const supportedBaseline = readTypeScriptStringConstant(openClawVersions, "OPENCLAW_SUPPORTED_BASELINE_VERSION");
+  const nativeContract = readTypeScriptStringConstant(openClawVersions, "OPENCLAW_NATIVE_CONTRACT_VERSION");
 
   if (!recommended) {
     context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_RECOMMENDED_VERSION`);
@@ -231,9 +233,19 @@ function validateOpenClawVersions(context, openClawVersions) {
     context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_SUPPORTED_BASELINE_VERSION`);
   }
 
+  if (!nativeContract) {
+    context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_NATIVE_CONTRACT_VERSION`);
+  }
+
   if (recommended && supportedBaseline && compareVersionStrings(recommended, supportedBaseline) < 0) {
     context.issues.push(
       `${OPENCLAW_VERSIONS_FILE}: OPENCLAW_RECOMMENDED_VERSION (${recommended}) must be greater than or equal to OPENCLAW_SUPPORTED_BASELINE_VERSION (${supportedBaseline})`
+    );
+  }
+
+  if (nativeContract && supportedBaseline && compareVersionStrings(nativeContract, supportedBaseline) < 0) {
+    context.issues.push(
+      `${OPENCLAW_VERSIONS_FILE}: OPENCLAW_NATIVE_CONTRACT_VERSION (${nativeContract}) must be greater than or equal to OPENCLAW_SUPPORTED_BASELINE_VERSION (${supportedBaseline})`
     );
   }
 }
@@ -314,7 +326,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage, openCla
     expectIncludes(context, "README.md", readme, `- ${REQUIRED_NODE_RUNTIME_COPY}`);
     if (recommendedCopy) expectIncludes(context, "README.md", readme, recommendedCopy);
     if (supportedMinimumCopy) expectIncludes(context, "README.md", readme, supportedMinimumCopy);
-    if (openClawVersionPolicy.recommended) expectIncludes(context, "README.md", readme, `Native contract target: \`${openClawVersionPolicy.recommended}\``);
+    if (openClawVersionPolicy.nativeContract) expectIncludes(context, "README.md", readme, "Native contract target: `" + openClawVersionPolicy.nativeContract + "` (candidate; certification pending).");
     expectIncludes(context, "README.md", readme, "CLI fallback remains explicit and visible");
     expectIncludes(context, "README.md", readme, "Accounts and browser profiles are an MVP bridge");
     expectIncludes(context, "README.md", readme, "OpenClaw does not yet expose typed browser-profile dispatch");
@@ -355,7 +367,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage, openCla
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1");
     if (packageRecommendedCopy) expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, packageRecommendedCopy);
     if (packageSupportedMinimumCopy) expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, packageSupportedMinimumCopy);
-    if (openClawVersionPolicy.recommended) expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, `Native contract target: OpenClaw ${openClawVersionPolicy.recommended}`);
+    if (openClawVersionPolicy.nativeContract) expectIncludes(context, AGENTOS_PACKAGE_DIR + "/README.md", packageReadme, "Native contract target: OpenClaw " + openClawVersionPolicy.nativeContract + " (candidate; certification pending).");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Gateway-first transport by default, with explicit CLI fallback");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Account-target browser-profile dispatch is an MVP bridge");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "`requires_approval` rules remain blocked until approval dispatch exists");
@@ -376,7 +388,7 @@ function validateSecurityDocs(context, security, cleanInstallChecklist, openClaw
     if (openClawVersionPolicy.recommended && openClawVersionPolicy.supportedBaseline) {
       expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `recommended OpenClaw ${openClawVersionPolicy.recommended}`);
       expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `supported minimum is OpenClaw ${openClawVersionPolicy.supportedBaseline}`);
-      expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `native contract target is ${openClawVersionPolicy.recommended}`);
+      if (openClawVersionPolicy.nativeContract) expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "OpenClaw " + openClawVersionPolicy.nativeContract + " is the candidate native contract target");
     }
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "agentos doctor --deep");
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "physical operator machine");

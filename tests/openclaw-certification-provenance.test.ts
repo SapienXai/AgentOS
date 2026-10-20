@@ -24,7 +24,10 @@ import {
   OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA,
   OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
-import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_RECOMMENDED_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
 
 const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 
@@ -101,7 +104,7 @@ test("final certification keeps code, evidence, package, runtime, and production
   assert.notEqual(report.provenance.certifiedCodeHead, report.provenance.evidenceCommit);
   assert.equal(report.provenance.exactArtifact, "disposable-exact-openclaw-package");
   assert.equal(report.versionRoles.supportedMinimum.version, "2026.9.1");
-  assert.equal(report.versionRoles.recommended.version, TARGET_VERSION);
+  assert.equal(report.versionRoles.recommended.version, OPENCLAW_RECOMMENDED_VERSION);
   assert.equal(report.versionRoles.nativeContract.version, TARGET_VERSION);
   assert.equal(report.versionRoles.packageVersions.gatewayClient.version, TARGET_VERSION);
   assert.equal(report.versionRoles.deploymentPin.version, TARGET_VERSION);

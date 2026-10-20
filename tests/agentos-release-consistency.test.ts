@@ -102,6 +102,25 @@ test("AgentOS release check rejects vague README Node prerequisites", async () =
   assert.match(result.stderr, /README\.md: Expected to find "- Node\.js 24\.16\.0\+ or 26\.1\.0\+"/);
 });
 
+test("AgentOS release check validates the native contract independently from the recommendation", async () => {
+  const tempRoot = await copyReleaseCheckFixture();
+  const nativeVersion = readNativeOpenClawContractVersion();
+  const recommendedVersion = readRecommendedOpenClawVersion();
+  assert.notEqual(nativeVersion, recommendedVersion);
+
+  const readmePath = path.join(tempRoot, "README.md");
+  const contents = await readFile(readmePath, "utf8");
+  const tick = String.fromCharCode(96);
+  const nativeCopy = "Native contract target: " + tick + nativeVersion + tick + " (candidate; certification pending).";
+  const staleCopy = "Native contract target: " + tick + recommendedVersion + tick + " (candidate; certification pending).";
+  assert.ok(contents.includes(nativeCopy));
+  await writeFile(readmePath, contents.replace(nativeCopy, staleCopy), "utf8");
+
+  const result = runReleaseCheck(tempRoot);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Native contract target/);
+});
+
 test("AgentOS release check keeps recommended and supported OpenClaw versions distinct", async () => {
   const tempRoot = await copyReleaseCheckFixture();
   const recommendedOpenClawVersion = readRecommendedOpenClawVersion();
@@ -131,6 +150,13 @@ function readRecommendedOpenClawVersion() {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/versions.ts"), "utf8");
   const version = source.match(/OPENCLAW_RECOMMENDED_VERSION:\s*string\s*=\s*"([^"]+)"/)?.[1];
   assert.ok(version, "OpenClaw recommended version should be declared in the version policy");
+  return version;
+}
+
+function readNativeOpenClawContractVersion() {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/versions.ts"), "utf8");
+  const version = source.match(/OPENCLAW_NATIVE_CONTRACT_VERSION:\s*string\s*=\s*"([^"]+)"/)?.[1];
+  assert.ok(version, "OpenClaw native contract version should be declared in the version policy");
   return version;
 }
 
