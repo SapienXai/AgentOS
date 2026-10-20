@@ -52,6 +52,7 @@ export type OpenClawReleaseWatchOptions = {
   recommendedVersion?: string;
   supportedBaselineVersion?: string;
   nativeContractVersion?: string;
+  compatibilityManifest?: OpenClawCompatibilityManifest;
   showHelp?: boolean;
 };
 
@@ -96,6 +97,7 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     options.nativeContractVersion ?? OPENCLAW_NATIVE_CONTRACT_VERSION,
     "Native OpenClaw contract version"
   );
+  const compatibilityManifest = options.compatibilityManifest ?? LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST;
   const targetVersion = options.targetVersion ? assertValidOpenClawReleaseVersion(options.targetVersion, "Target OpenClaw version") : null;
   const discovery = await discoverOfficialOpenClawReleases({
     currentRecommendedVersion: recommendedVersion,
@@ -110,7 +112,7 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     return { status: "discovery-failed", discovery, intakes: [], productionConfig, message: discovery.error ?? "Official discovery failed." };
   }
 
-  const releasesForIntake = selectOpenClawReleasesForIntake(discovery.releases, LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST);
+  const releasesForIntake = selectOpenClawReleasesForIntake(discovery.releases, compatibilityManifest);
   if (releasesForIntake.length === 0) {
     const message = `OpenClaw upstream check\nAgentOS recommended: ${recommendedVersion}\nLatest official stable: ${discovery.latestStableVersion ?? "unknown"}\nStatus: current`;
     await writeWatcherSummary(`## OpenClaw Release Watch\n\n${message.replaceAll("\n", "\n\n")}`, options);
@@ -149,7 +151,7 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
       identity: verification.identity,
       contractDiff,
       releaseNotes: verification.releaseNotes,
-      manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST
+      manifest: compatibilityManifest
     });
     const certifiedEvidence = await loadOpenClawCertifiedEvidence({
       version: release.version,

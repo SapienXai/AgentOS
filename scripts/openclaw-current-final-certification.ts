@@ -578,7 +578,7 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
       change.targetLifetime !== "observation"
     );
     if (expectedObservationMethods.some((method) => !observationMethods.includes(method)) || unknownLifetimes.length > 0) {
-      failures.push("runtime static contract evidence did not preserve the five 2026.9.7 observation lifetimes or contains an unknown lifetime");
+      failures.push("runtime static contract evidence did not preserve the five 2026.10.5 observation lifetimes or contains an unknown lifetime");
     }
   } else if (name === "workforce") {
     const summary = asRecord(artifact.summary);
@@ -623,14 +623,14 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
   } else if (name === "native-update") {
     const target = asRecord(artifact.target);
     const update = asRecord(artifact.update);
-    const nativeRun = asRecord(update.nativeCliRun);
+    const nativeRun = asRecord(update.nativeGatewayRun);
     const runtime = asRecord(artifact.runtime);
     const restart = asRecord(update.restart);
     if (artifact.artifactType !== `openclaw-${TARGET_VERSION}-native-update-lifecycle-certification` || target.version !== TARGET_VERSION || target.sourceCommit !== TARGET_COMMIT || target.buildId !== TARGET_BUILD || target.gatewayProtocol !== TARGET_PROTOCOL || target.stateSchema !== TARGET_STATE_SCHEMA || target.agentSchema !== TARGET_AGENT_SCHEMA) {
       failures.push("native update evidence does not identify the exact target package contract");
     }
-    if (update.mutationOwner !== "OpenClaw native updater" || update.agentOsInvokedUpdateMutation !== false || nativeRun.status !== "succeeded" || nativeRun.target !== TARGET_VERSION || nativeRun.after !== TARGET_VERSION || nativeRun.recoveryVersion !== TARGET_VERSION) {
-      failures.push("native update evidence does not establish a successful OpenClaw-owned update and recovery record");
+    if (update.mutationOwner !== "OpenClaw native updater" || update.agentOsInvokedUpdateMutation !== false || nativeRun.trigger !== "api" || nativeRun.status !== "succeeded" || nativeRun.target !== TARGET_VERSION || nativeRun.after !== TARGET_VERSION || nativeRun.recoveryVersion !== TARGET_VERSION) {
+      failures.push("native update evidence does not establish a successful OpenClaw Gateway API update and recovery record");
     }
     if (runtime.health !== "PASS" || runtime.installedVersion !== TARGET_VERSION || runtime.updateStatus !== "current" || runtime.activeUpdateRun !== false || runtime.configuration !== "valid" || restart.gatewayFreshlyReconnected !== true) {
       failures.push("native update post-restart runtime verification is incomplete");

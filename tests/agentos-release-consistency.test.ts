@@ -104,6 +104,7 @@ test("AgentOS release check rejects vague README Node prerequisites", async () =
 
 test("AgentOS release check keeps recommended and supported OpenClaw versions distinct", async () => {
   const tempRoot = await copyReleaseCheckFixture();
+  const recommendedOpenClawVersion = readRecommendedOpenClawVersion();
   const paths = [
     "README.md",
     "packages/agentos/README.md",
@@ -114,9 +115,9 @@ test("AgentOS release check keeps recommended and supported OpenClaw versions di
     const filePath = path.join(tempRoot, relativePath);
     const contents = await readFile(filePath, "utf8");
     await writeFile(filePath, contents
-      .replaceAll("Recommended OpenClaw: `2026.9.7`", "OpenClaw 2026.9.7 or newer")
-      .replaceAll("Recommended OpenClaw: 2026.9.7", "OpenClaw 2026.9.7 or newer")
-      .replaceAll("recommended OpenClaw 2026.9.7", "OpenClaw 2026.9.7 or newer"), "utf8");
+      .replaceAll(`Recommended OpenClaw: \`${recommendedOpenClawVersion}\``, `OpenClaw ${recommendedOpenClawVersion} or newer`)
+      .replaceAll(`Recommended OpenClaw: ${recommendedOpenClawVersion}`, `OpenClaw ${recommendedOpenClawVersion} or newer`)
+      .replaceAll(`recommended OpenClaw ${recommendedOpenClawVersion}`, `OpenClaw ${recommendedOpenClawVersion} or newer`), "utf8");
   }
 
   const result = runReleaseCheck(tempRoot);
@@ -125,6 +126,13 @@ test("AgentOS release check keeps recommended and supported OpenClaw versions di
   assert.match(result.stderr, /Recommended OpenClaw/);
   assert.doesNotMatch(result.stderr, /Supported minimum:.*2026\.9\.2/);
 });
+
+function readRecommendedOpenClawVersion() {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/versions.ts"), "utf8");
+  const version = source.match(/OPENCLAW_RECOMMENDED_VERSION:\s*string\s*=\s*"([^"]+)"/)?.[1];
+  assert.ok(version, "OpenClaw recommended version should be declared in the version policy");
+  return version;
+}
 
 function runReleaseCheck(repoRoot: string) {
   return spawnSync(process.execPath, [releaseCheckScript, "--repo-root", repoRoot], {

@@ -18,7 +18,8 @@ const execFileAsync = promisify(execFile);
 const TARGET_VERSION = OPENCLAW_CERTIFICATION_TARGET_VERSION;
 const TARGET_COMMIT = OPENCLAW_CERTIFICATION_TARGET_COMMIT;
 const TARGET_BUILD = OPENCLAW_CERTIFICATION_TARGET_BUILD;
-const SOURCE_VERSION = process.env.OPENCLAW_NATIVE_UPDATE_SOURCE_VERSION?.trim() || "2026.9.4";
+const SOURCE_VERSION = process.env.OPENCLAW_NATIVE_UPDATE_SOURCE_VERSION?.trim() || "2026.9.7";
+const UPDATE_RUN_ID = process.env.OPENCLAW_NATIVE_UPDATE_RUN_ID?.trim() || null;
 const PACKAGE_ROOT = process.env.OPENCLAW_NATIVE_UPDATE_PACKAGE?.trim();
 const GATEWAY_URL = process.env.OPENCLAW_NATIVE_UPDATE_GATEWAY_URL?.trim();
 const GATEWAY_TOKEN = process.env.OPENCLAW_NATIVE_UPDATE_GATEWAY_TOKEN?.trim();
@@ -82,27 +83,56 @@ async function main() {
   }
 
   const runs = Array.isArray(updateRuns.runs) ? updateRuns.runs.map(asRecord) : [];
-  const cliRun = runs.find((run) => run.trigger === "cli" && run.status === "succeeded" && asRecord(run.target).version === TARGET_VERSION && asRecord(run.before).version === SOURCE_VERSION && asRecord(run.after).version === TARGET_VERSION);
-  const apiHandoffSkip = runs.find((run) => run.trigger === "api" && run.status === "skipped" && run.reason === "managed-service-handoff-unavailable");
-  const cliRunSteps = new Set(Array.isArray(cliRun?.steps) ? cliRun.steps.map((step) => String(asRecord(step).step)) : []);
-  const completedSteps = new Set(Array.isArray(cliRun?.steps) ? cliRun.steps.filter((step) => asRecord(step).status === "completed").map((step) => String(asRecord(step).step)) : []);
-  const recovery = asRecord(asRecord(cliRun?.verification).recovery);
-  const lastRun = asRecord(updateStatus.lastRun);
+  const nativeRun = UPDATE_RUN_ID
+    ? runs.find((run) => run.runId === UPDATE_RUN_ID)
+    : runs.find((run) => run.trigger === "api" && asRecord(run.target).version === TARGET_VERSION && asRecord(run.before).version === SOURCE_VERSION && asRecord(run.after).version === TARGET_VERSION);
+  const repairRun = runs.find((run) => run.trigger === "cli" && run.status === "succeeded" && asRecord(run.target).version === TARGET_VERSION && completedRunStep(run, "finalize:repair-continuation"));
+  const nativeRunSteps = new Set(Array.isArray(nativeRun?.steps) ? nativeRun.steps.map((step) => String(asRecord(step).step)) : []);
+  const completedNativeSteps = new Set(Array.isArray(nativeRun?.steps) ? nativeRun.steps.filter((step) => asRecord(step).status === "completed").map((step) => String(asRecord(step).step)) : []);
+  const completedRepairSteps = new Set(Array.isArray(repairRun?.steps) ? repairRun.steps.filter((step) => asRecord(step).status === "completed").map((step) => String(asRecord(step).step)) : []);
+  const nativeVerification = asRecord(nativeRun?.verification);
+  const failedNativeSteps = Array.isArray(nativeRun?.steps)
+    ? nativeRun.steps.map(asRecord).filter((step) => step.status === "failed")
+    : [];
+  const recovery = asRecord(nativeVerification.recovery);
   const activeRun = asRecord(updateStatus.activeRun);
   const runtimeVersion = typeof status.runtimeVersion === "string" ? status.runtimeVersion : null;
   const healthOkay = health.ok === true && asRecord(health.eventLoop).degraded !== true && asRecord(health.plugins).errors instanceof Array && (asRecord(health.plugins).errors as unknown[]).length === 0;
+  const targetGatewayReady = runtimeVersion === TARGET_VERSION && healthOkay;
+  const candidateAdmissionStep = Array.isArray(nativeRun?.steps)
+    ? nativeRun.steps.map(asRecord).find((step) => step.step === "candidate-admission")
+    : undefined;
+  const admissionChecks = parseJsonArray(candidateAdmissionStep?.detail);
+  const databaseAdmissionPassed = admissionChecks.some((check) => check.name === "database-schema" && check.status === "ok");
+  const candidateValidationGroups = [
+    ["candidate-admission", "candidate migration rehearsal"],
+    ["candidate-doctor-lint", "candidate doctor lint"],
+    ["candidate-config", "candidate config validation"],
+    ["candidate-plugins", "candidate plugin resolution"],
+    ["candidate-recovery", "candidate migration continuation"],
+    ["candidate-gateway-startup", "candidate gateway canary"]
+  ];
+  const candidateValidationPassed = databaseAdmissionPassed && candidateValidationGroups.every((group) => group.some((step) => completedNativeSteps.has(step)));
+  const packageSwapCompleted = ["package-swap", "global install swap"].some((step) => completedNativeSteps.has(step));
+  const directRecoveryVerified = recovery.version === TARGET_VERSION && recovery.serviceRestartSafe === true;
+  const repairRecoveryVerified = repairRun?.status === "succeeded" &&
+    ["finalize:doctor", "finalize:plugins", "finalize:targetConfigConvergence"].every((step) => completedRepairSteps.has(step)) &&
+    targetGatewayReady;
+  const postUpdateRecoveryVerified = directRecoveryVerified || repairRecoveryVerified;
+  const nativeApiHandoffRecorded = nativeRun?.trigger === "api" && completedNativeSteps.has("managed-service update handoff");
   const checks = {
     exactTargetPackage: Boolean(packageIdentity && packageIdentity.version === TARGET_VERSION && packageIdentity.sourceCommit === TARGET_COMMIT && packageIdentity.buildId === TARGET_BUILD),
-    nativePackageUpdateCompleted: cliRun?.status === "succeeded" && asRecord(cliRun?.target).kind === "package" && asRecord(cliRun?.target).channel === "stable" && asRecord(cliRun?.target).version === TARGET_VERSION,
-    sourceToTargetRecorded: asRecord(cliRun?.before).version === SOURCE_VERSION && asRecord(cliRun?.after).version === TARGET_VERSION && asRecord(cliRun?.after).buildId === TARGET_BUILD,
-    migrationAndValidationRehearsed: ["candidate migration rehearsal", "candidate doctor lint", "candidate config validation", "candidate plugin resolution", "candidate migration continuation", "candidate gateway canary"].every((step) => cliRunSteps.has(step) && completedSteps.has(step)),
-    installationSwapCompleted: cliRunSteps.has("global install swap") && completedSteps.has("global install swap"),
-    nativePostUpdateRecoveryVerified: recovery.version === TARGET_VERSION && recovery.serviceRestartSafe === true && cliRunSteps.has("post-update verification") && completedSteps.has("post-update verification"),
-    gatewayReconnectedAtTarget: runtimeVersion === TARGET_VERSION && healthOkay,
+    gatewayApiHandoffRecorded: nativeApiHandoffRecorded,
+    nativePackageUpdateCompleted: nativeRun?.status === "succeeded" && asRecord(nativeRun.target).kind === "package" && asRecord(nativeRun.target).version === TARGET_VERSION,
+    sourceToTargetRecorded: asRecord(nativeRun?.before).version === SOURCE_VERSION && asRecord(nativeRun?.after).version === TARGET_VERSION && asRecord(nativeRun?.after).buildId === TARGET_BUILD,
+    migrationAndValidationRehearsed: candidateValidationPassed,
+    installationSwapCompleted: packageSwapCompleted,
+    nativePostUpdateRecoveryVerified: postUpdateRecoveryVerified,
+    gatewayReconnectedAtTarget: targetGatewayReady,
     nativeUpdateStatusIsCurrent: updateStatus.effectiveChannel === "stable" && updateStatus.updateAvailable === null && activeRun.status !== "running",
-    nativeRunHistoryIsTerminal: lastRun.runId === cliRun?.runId && lastRun.status === "succeeded" && lastRun.phase === "finished",
+    nativeRunHistoryIsTerminal: nativeRun?.phase === "finished" && ["succeeded", "failed", "skipped"].includes(String(nativeRun.status)),
     configurationRemainsInterpretable: configValidation.valid === true,
-    foregroundGatewayHandoffWasSafelySkipped: apiHandoffSkip?.status === "skipped" && apiHandoffSkip.reason === "managed-service-handoff-unavailable"
+    nativeUpdateRunSucceeded: nativeRun?.status === "succeeded"
   };
   for (const [name, passed] of Object.entries(checks)) {
     if (!passed) failures.push(`${name} did not pass against fresh native Gateway evidence.`);
@@ -126,32 +156,44 @@ async function main() {
     migration: {
       sourceVersion: SOURCE_VERSION,
       targetVersion: TARGET_VERSION,
-      runId: typeof cliRun?.runId === "string" ? cliRun.runId : null,
-      steps: Array.from(cliRunSteps).filter((step) => step.includes("migration") || step.includes("doctor") || step.includes("gateway canary") || step.includes("post-update verification") || step.includes("global install swap")),
+      runId: typeof nativeRun?.runId === "string" ? nativeRun.runId : null,
+      steps: Array.from(nativeRunSteps).filter((step) => step.includes("migration") || step.includes("doctor") || step.includes("gateway") || step.includes("package-swap") || step.includes("install swap")),
       successful: checks.migrationAndValidationRehearsed && checks.installationSwapCompleted && checks.nativePostUpdateRecoveryVerified
     },
     update: {
       mutationOwner: "OpenClaw native updater",
       agentOsInvokedUpdateMutation: false,
-      nativeApiRunStatus: apiHandoffSkip?.status ?? "not-observed",
-      nativeApiRunReason: apiHandoffSkip?.reason ?? null,
-      nativeCliRun: cliRun ? {
-        runId: cliRun.runId,
-        trigger: cliRun.trigger,
-        status: cliRun.status,
-        phase: cliRun.phase,
-        channel: asRecord(cliRun.target).channel,
-        target: asRecord(cliRun.target).version,
-        before: asRecord(cliRun.before).version,
-        after: asRecord(cliRun.after).version,
-        finished: typeof cliRun.finishedAtMs === "number",
-        recoveryVersion: recovery.version,
-        serviceRestartSafe: recovery.serviceRestartSafe === true
+      nativeApiRunStatus: nativeRun?.trigger === "api" ? nativeRun.status : "not-observed",
+      nativeApiRunReason: nativeRun?.trigger === "api" ? nativeRun.reason ?? null : null,
+      nativeGatewayRun: nativeRun ? {
+        runId: nativeRun.runId,
+        trigger: nativeRun.trigger,
+        status: nativeRun.status,
+        phase: nativeRun.phase,
+        reason: nativeRun.reason ?? null,
+        channel: asRecord(nativeRun.target).channel,
+        target: asRecord(nativeRun.target).version,
+        before: asRecord(nativeRun.before).version,
+        after: asRecord(nativeRun.after).version,
+        finished: typeof nativeRun.finishedAtMs === "number",
+        recoveryVersion: runtimeVersion,
+        serviceRestartSafe: recovery.serviceRestartSafe === true,
+        failedStep: failedNativeSteps.at(-1)?.step ?? null,
+        failureDetail: typeof failedNativeSteps.at(-1)?.detail === "string" ? String(failedNativeSteps.at(-1)?.detail).slice(0, 500) : null
+      } : null,
+      repairRun: repairRun ? {
+        runId: repairRun.runId,
+        status: repairRun.status,
+        phase: repairRun.phase,
+        repairOnly: true,
+        doctorCompleted: completedRepairSteps.has("finalize:doctor"),
+        pluginConvergenceCompleted: completedRepairSteps.has("finalize:plugins")
       } : null,
       restart: {
         gatewayFreshlyReconnected: checks.gatewayReconnectedAtTarget,
         runtimeVersion,
-        nativeForegroundHandoffUnavailable: checks.foregroundGatewayHandoffWasSafelySkipped
+        nativeGatewayHandoffRecorded: checks.gatewayApiHandoffRecorded,
+        postUpdateRecoveryVerified: checks.nativePostUpdateRecoveryVerified
       }
     },
     runtime: {
@@ -210,6 +252,20 @@ async function gitHead() {
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function completedRunStep(run: JsonRecord, stepName: string) {
+  return Array.isArray(run.steps) && run.steps.some((step) => asRecord(step).step === stepName && asRecord(step).status === "completed");
+}
+
+function parseJsonArray(value: unknown): JsonRecord[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map(asRecord) : [];
+  } catch {
+    return [];
+  }
 }
 
 main().catch((error) => {

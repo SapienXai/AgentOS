@@ -29,7 +29,7 @@ function validArtifact() {
     update: {
       mutationOwner: "OpenClaw native updater",
       agentOsInvokedUpdateMutation: false,
-      nativeCliRun: { status: "succeeded", target: TARGET_VERSION, after: TARGET_VERSION, recoveryVersion: TARGET_VERSION },
+      nativeGatewayRun: { trigger: "api", status: "succeeded", target: TARGET_VERSION, after: TARGET_VERSION, recoveryVersion: TARGET_VERSION },
       restart: { gatewayFreshlyReconnected: true }
     },
     runtime: {
@@ -43,11 +43,17 @@ function validArtifact() {
   };
 }
 
-test("final certification requires OpenClaw-owned update execution and fresh post-restart truth", () => {
+test("final certification requires a successful native Gateway API update and fresh post-restart truth", () => {
   assert.equal(assessOpenClawCertificationArtifact("native-update", validArtifact()).status, "PASS");
   const agentOsUpdater = validArtifact();
   agentOsUpdater.update.agentOsInvokedUpdateMutation = true;
   assert.equal(assessOpenClawCertificationArtifact("native-update", agentOsUpdater).status, "FAIL");
+  const failedNativeUpdate = validArtifact();
+  failedNativeUpdate.update.nativeGatewayRun.status = "failed";
+  assert.equal(assessOpenClawCertificationArtifact("native-update", failedNativeUpdate).status, "FAIL");
+  const cliOnlyUpdate = validArtifact();
+  cliOnlyUpdate.update.nativeGatewayRun.trigger = "cli";
+  assert.equal(assessOpenClawCertificationArtifact("native-update", cliOnlyUpdate).status, "FAIL");
   const staleRuntime = validArtifact();
   staleRuntime.runtime.installedVersion = OPENCLAW_SUPPORTED_BASELINE_VERSION;
   assert.equal(assessOpenClawCertificationArtifact("native-update", staleRuntime).status, "FAIL");

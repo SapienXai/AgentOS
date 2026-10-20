@@ -10,14 +10,14 @@ import {
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
 
-test("OpenClaw 2026.9.7 is the recommended fresh baseline while 9.1 remains supported", () => {
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
+test("OpenClaw 2026.10.5 is the recommended fresh baseline while 9.1 remains supported", () => {
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.10.5");
   assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.9.7");
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.10.5");
   assert.deepEqual(
-    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.9.7"),
+    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.10.5"),
     {
-      version: "2026.9.7",
+      version: "2026.10.5",
       status: "certified",
       minRequiredAgentOsVersion: "0.7.2",
       notes: "Recommended stable OpenClaw version for AgentOS Gateway-first operation.",

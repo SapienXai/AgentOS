@@ -50,7 +50,6 @@ test("cumulative contract audit does not reinterpret upstream warnings or blocke
 function baseInput() {
   const releases = RELEASES.map((version, index) => {
     const sourceVersion = index === 0 ? "2026.9.4" : RELEASES[index - 1];
-    const sourceCommit = index === 0 ? SOURCE_COMMIT : RELEASE_COMMITS[index - 1];
     const targetCommit = RELEASE_COMMITS[index];
     const removed = index === 2 ? METHODS_REMOVED : index === 1
       ? ["sessions.compaction.branch", "sessions.compaction.list", "sessions.compaction.restore"]

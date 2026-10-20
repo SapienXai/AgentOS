@@ -510,6 +510,33 @@ test("runner keeps fully parsed unknown policies reviewable and not certified", 
   assert.equal(intake.lifecycle.stages.find((stage) => stage.id === "certification")?.status, "pending");
 });
 
+test("release watcher can replay intake selection with an explicit historical manifest", async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-historical-manifest-"));
+  const historicalManifest = {
+    ...LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
+    recommendedVersion: "2026.9.3",
+    versions: [
+      { version: "2026.9.3", status: "certified" as const },
+      { version: "2026.9.5", status: "certified" as const }
+    ]
+  };
+  const result = await runOpenClawReleaseWatch({
+    mode: "manual",
+    targetVersion: "2026.9.5",
+    recommendedVersion: "2026.9.3",
+    nativeContractVersion: "2026.9.3",
+    compatibilityManifest: historicalManifest,
+    dryRun: true,
+    outputDir,
+    agentosCommit: repositoryHead,
+    agentosVersion: "0.8.0",
+    fetchImpl: releaseWatchUnknownPolicyFetch("2026.9.5")
+  });
+
+  assert.equal(result.status, "current");
+  assert.equal(result.intakes.length, 0);
+});
+
 test("release-watch dry-run reconciles certified evidence and repository pin without mutating issue state", async () => {
   const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-reconcile-"));
   const evidenceDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-evidence-"));

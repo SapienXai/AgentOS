@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { access, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -51,7 +51,7 @@ async function main() {
       protocol: 4,
       stateSchema: `${SOURCE_STATE_SCHEMA} -> ${TARGET_STATE_SCHEMA}`,
       agentSchema: `${SOURCE_AGENT_SCHEMA} -> ${TARGET_AGENT_SCHEMA}`,
-      runtimeMode: "isolated disposable packages, state, HOME, config, workspace, and loopback ports"
+      runtimeMode: "exact source and target packages swapped at one isolated install path; disposable state, HOME, config, workspace, and loopback ports"
     },
     fixture: {
       kind: "real-package-upgrade",
@@ -70,6 +70,7 @@ async function main() {
     migration: null,
     target: null,
     recovery: null,
+    errorPhase: null,
     checks: {},
     cleanup: { status: "pending", gatewayProcessesStopped: false, disposableRootRemoved: false },
     success: false
@@ -78,7 +79,10 @@ async function main() {
   let fixtureRoot: string | null = null;
   let sourceGateway: GatewayProcess | null = null;
   let targetGateway: GatewayProcess | null = null;
+  let sourceClient: ReturnType<typeof createClient> | null = null;
+  let targetClient: ReturnType<typeof createClient> | null = null;
   let provider: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>> | null = null;
+  let phase = "package-identity";
 
   try {
     if (!SOURCE_PACKAGE || !TARGET_PACKAGE) {
@@ -90,10 +94,12 @@ async function main() {
     assertIdentity(targetIdentity, { version: TARGET_VERSION, commit: TARGET_COMMIT, build: TARGET_BUILD, state: TARGET_STATE_SCHEMA, agent: TARGET_AGENT_SCHEMA });
     evidence.provenance = { ...(evidence.provenance as Record<string, unknown>), sourcePackage: sourceIdentity, targetPackage: targetIdentity };
 
+    phase = "prepare-source-state";
     fixtureRoot = await mkdtemp(path.join(os.tmpdir(), `agentos-openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-`));
     const stateDir = path.join(fixtureRoot, "state");
     const homeDir = path.join(fixtureRoot, "home");
     const workspaceDir = path.join(fixtureRoot, "workspace");
+    const runtimePackagePath = path.join(fixtureRoot, "runtime", "node_modules", "openclaw");
     const configPath = path.join(fixtureRoot, "config", "openclaw.json");
     const sourcePort = await reservePort();
     const targetPort = await reservePort();
@@ -128,27 +134,49 @@ async function main() {
       tools: { sessions: { visibility: "tree" }, agentToAgent: { enabled: false, allow: [] } }
     }, null, 2)}\n`, { mode: 0o600 });
 
+    phase = "install-source-package";
+    await installRuntimePackage(path.resolve(SOURCE_PACKAGE), runtimePackagePath);
+    assertIdentity(await readPackageIdentity(runtimePackagePath), { version: SOURCE_VERSION, commit: SOURCE_COMMIT, build: SOURCE_BUILD, state: SOURCE_STATE_SCHEMA, agent: SOURCE_AGENT_SCHEMA });
+
     provider = await createOpenClawRuntimeProviderFixture();
     const config = JSON.parse(await readFileText(configPath));
     config.models.providers["agentos-fixture"].baseUrl = provider.baseUrl;
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 
-    sourceGateway = await startGateway(path.resolve(SOURCE_PACKAGE), stateDir, homeDir, configPath, token, sourcePort);
-    const sourceClient = createClient(sourcePort, token, stateDir);
+    phase = "start-source-gateway";
+    sourceGateway = await startGateway(runtimePackagePath, stateDir, homeDir, configPath, token, sourcePort);
+    sourceClient = createClient(sourcePort, token, stateDir);
+    phase = "source-handshake";
     const sourceHandshake = await sourceClient.probeNativeHandshake({ timeoutMs: 10_000 });
+    phase = "source-session-storage-readiness";
+    await waitForSessionStorageReadiness(sourceClient);
+    phase = "source-agent-create";
     const sourceAgent = await sourceClient.callNative<Record<string, unknown>>("agents.create", { name: "Migration Worker", workspace: path.join(workspaceDir, "worker") }, mutationPolicy());
     const sourceAgentId = readString(sourceAgent.agentId) ?? "worker";
+    phase = "source-agent-session-storage-readiness";
+    await waitForSessionStorageReadiness(sourceClient);
     const rootSessionKey = "agent:main:agentos-migration-fixture";
     const childSessionKey = `agent:${sourceAgentId}:agentos-migration-child`;
+    phase = "source-root-session-create";
     await sourceClient.callNative("sessions.create", { key: rootSessionKey, agentId: "main", label: "AgentOS migration fixture" }, mutationPolicy());
+    phase = "source-child-session-create";
     await sourceClient.callNative("sessions.create", { key: childSessionKey, agentId: sourceAgentId, label: "AgentOS migration child", parentSessionKey: rootSessionKey, spawnDepth: 1 }, mutationPolicy()).catch(() => null);
+    phase = "source-chat-turn";
     await sourceClient.callNative("chat.send", { sessionKey: rootSessionKey, message: `AGENTOS_MIGRATION_${SOURCE_VERSION}_FIRST_PROMPT`, idempotencyKey: `agentos-migration-${SOURCE_VERSION}-first` }, mutationPolicy());
+    phase = "source-transcript-readiness";
     await waitForHistory(sourceClient, rootSessionKey, 1);
+    phase = "source-native-surface-reads";
     const sourceReads = await readNativeSurfaces(sourceClient, rootSessionKey);
     sourceClient.close(`${SOURCE_VERSION} migration fixture source capture`);
+    sourceClient = null;
     await sourceGateway.stop();
     sourceGateway = null;
 
+    phase = "install-target-package";
+    await installRuntimePackage(path.resolve(TARGET_PACKAGE), runtimePackagePath);
+    assertIdentity(await readPackageIdentity(runtimePackagePath), { version: TARGET_VERSION, commit: TARGET_COMMIT, build: TARGET_BUILD, state: TARGET_STATE_SCHEMA, agent: TARGET_AGENT_SCHEMA });
+
+    phase = "inspect-pre-migration-state";
     const before = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: sourceIdentity.agentSchema });
     evidence.source = {
       package: sourceIdentity,
@@ -160,7 +188,9 @@ async function main() {
       state: before
     };
 
-    const doctor = await runCommand(path.join(path.resolve(TARGET_PACKAGE), "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
+    phase = "native-doctor-migration";
+    const doctor = await runCommand(path.join(runtimePackagePath, "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
+    phase = "inspect-post-doctor-state";
     const afterDoctor = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.migration = {
       officialPath: `OpenClaw ${TARGET_VERSION} native Doctor/runtime migration path`,
@@ -171,9 +201,12 @@ async function main() {
       noSilentDataLoss: sameRepresentativeState(before, afterDoctor)
     };
 
-    targetGateway = await startGateway(path.resolve(TARGET_PACKAGE), stateDir, homeDir, configPath, token, targetPort);
-    const targetClient = createClient(targetPort, token, stateDir);
+    phase = "start-target-gateway";
+    targetGateway = await startGateway(runtimePackagePath, stateDir, homeDir, configPath, token, targetPort);
+    targetClient = createClient(targetPort, token, stateDir);
+    phase = "target-handshake";
     const targetHandshake = await targetClient.probeNativeHandshake({ timeoutMs: 10_000 });
+    phase = "target-native-surface-reads";
     const targetConfig = await targetClient.callNative<Record<string, unknown>>("config.get", {}, readPolicy());
     const targetAgents = await targetClient.callNative<Record<string, unknown>>("agents.list", {}, readPolicy());
     const targetSessions = await targetClient.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy());
@@ -199,10 +232,13 @@ async function main() {
       state: afterRuntime
     };
     targetClient.close(`${TARGET_VERSION} migration fixture target capture`);
+    targetClient = null;
     await targetGateway.stop();
     targetGateway = null;
 
-    const recoveryDoctor = await runCommand(path.join(path.resolve(TARGET_PACKAGE), "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
+    phase = "native-doctor-recovery";
+    const recoveryDoctor = await runCommand(path.join(runtimePackagePath, "openclaw.mjs"), ["doctor", "--fix", "--non-interactive"], { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir });
+    phase = "inspect-post-recovery-state";
     const afterRecovery = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.recovery = {
       doctor: summarizeCommand(recoveryDoctor),
@@ -239,12 +275,21 @@ async function main() {
     evidence.success = Object.values(evidence.checks as Record<string, boolean>).every(Boolean);
   } catch (error) {
     evidence.error = sanitizeError(error);
+    evidence.errorPhase = phase;
   } finally {
-    if (sourceGateway) await sourceGateway.stop().catch(() => {});
-    if (targetGateway) await targetGateway.stop().catch(() => {});
+    sourceClient?.close(`${SOURCE_VERSION} migration fixture cleanup`);
+    targetClient?.close(`${TARGET_VERSION} migration fixture cleanup`);
+    let gatewayProcessesStopped = true;
+    if (sourceGateway) {
+      try { await sourceGateway.stop(); sourceGateway = null; } catch { gatewayProcessesStopped = false; }
+    }
+    if (targetGateway) {
+      try { await targetGateway.stop(); targetGateway = null; } catch { gatewayProcessesStopped = false; }
+    }
     await provider?.close().catch(() => {});
     if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }).catch(() => {});
-    evidence.cleanup = { status: "complete", gatewayProcessesStopped: !sourceGateway && !targetGateway, disposableRootRemoved: fixtureRoot ? !(await pathExists(fixtureRoot)) : false };
+    const disposableRootRemoved = fixtureRoot ? !(await pathExists(fixtureRoot)) : false;
+    evidence.cleanup = { status: gatewayProcessesStopped && disposableRootRemoved ? "complete" : "failed", gatewayProcessesStopped, disposableRootRemoved };
   }
 
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
@@ -274,10 +319,17 @@ function createClient(port: number, token: string, stateDir: string) {
 }
 
 async function readNativeSurfaces(client: ReturnType<typeof createClient>, sessionKey: string) {
-  const methods = ["update.status", "channels.list", "plugins.list", "memory.status", "cron.list", "tasks.list"];
+  const methods = [
+    { method: "update.status", params: {} },
+    { method: "channels.status", params: {} },
+    { method: "plugins.list", params: {} },
+    { method: "memory.status", params: { agentId: "main" } },
+    { method: "cron.list", params: {} },
+    { method: "sessions.processes.list", params: { key: sessionKey, agentId: "main" } }
+  ];
   const result: Record<string, { status: "PASS" | "SKIPPED"; shape: string }> = {};
-  for (const method of methods) {
-    try { const payload = await client.callNative(method, method === "tasks.list" ? { sessionKey } : {}, readPolicy()); result[method] = { status: "PASS", shape: Array.isArray(payload) ? "array" : typeof payload === "object" && payload !== null ? "object" : typeof payload }; }
+  for (const { method, params } of methods) {
+    try { const payload = await client.callNative(method, params, readPolicy()); result[method] = { status: "PASS", shape: Array.isArray(payload) ? "array" : typeof payload === "object" && payload !== null ? "object" : typeof payload }; }
     catch (error) { result[method] = { status: "SKIPPED", shape: sanitizeError(error).slice(0, 180) }; }
   }
   return result;
@@ -352,6 +404,22 @@ function readPath(value: unknown, segments: string[]): unknown { let current = v
 function countRecords(value: Record<string, unknown>, key: string) { return Array.isArray(value[key]) ? value[key].length : 0; }
 function countAssistantMessages(value: Record<string, unknown>) { return (Array.isArray(value.messages) ? value.messages : []).filter((message) => message && typeof message === "object" && (message as Record<string, unknown>).role === "assistant").length; }
 async function waitForHistory(client: ReturnType<typeof createClient>, sessionKey: string, minimum: number) { for (let attempt = 0; attempt < 40; attempt += 1) { const history = await client.callNative<Record<string, unknown>>("chat.history", { sessionKey, limit: 20 }, readPolicy()); if (countAssistantMessages(history) >= minimum) return history; await new Promise((resolve) => setTimeout(resolve, 250)); } throw new Error(`The ${SOURCE_VERSION} migration fixture did not persist an assistant transcript.`); }
+async function waitForSessionStorageReadiness(client: ReturnType<typeof createClient>, timeoutMs = 20_000) {
+  const startedAt = Date.now();
+  let lastError: unknown = new Error("The Gateway has not completed session-store startup.");
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await client.callNative("health", {}, readPolicy());
+      await client.callNative("agents.list", {}, readPolicy());
+      await client.callNative("sessions.list", { agentId: "main", limit: 1 }, readPolicy());
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw new Error(`Gateway session storage did not become ready: ${sanitizeError(lastError)}`);
+}
 async function runCommand(command: string, args: string[], env: Record<string, string>) {
   return await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
     const child = spawn(command, args, {
@@ -367,11 +435,23 @@ async function runCommand(command: string, args: string[], env: Record<string, s
     child.once("close", (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
   });
 }
-function summarizeCommand(result: { code: number | null; stdout: string; stderr: string }) { return { exitCode: result.code, completed: result.code === 0, outputPresent: Boolean(result.stdout.trim() || result.stderr.trim()), outputContainsSecret: /agentos-migration-fixture|token|api[_-]?key|password/i.test(`${result.stdout}\n${result.stderr}`), sanitizedOutputExcerpt: sanitizeError(`${result.stdout}\n${result.stderr}`).slice(-3000) }; }
+function summarizeCommand(result: { code: number | null; stdout: string; stderr: string }) { return { exitCode: result.code, completed: result.code === 0, outputPresent: Boolean(result.stdout.trim() || result.stderr.trim()), sanitizedOutputExcerpt: sanitizeError(`${result.stdout}\n${result.stderr}`).slice(-3000) }; }
 async function waitForPort(port: number, child: ChildProcess, timeoutMs: number) { const started = Date.now(); while (Date.now() - started < timeoutMs) { if (child.exitCode !== null) throw new Error(`Gateway exited before listening (${child.exitCode}).`); const connected = await new Promise<boolean>((resolve) => { const socket = net.createConnection({ host: "127.0.0.1", port }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => { socket.destroy(); resolve(false); }); }); if (connected) return; await new Promise((resolve) => setTimeout(resolve, 100)); } throw new Error(`Timed out waiting for disposable Gateway port ${port}.`); }
 async function stopChild(child: ChildProcess) { if (child.exitCode !== null) return; child.kill("SIGTERM"); await new Promise<void>((resolve) => { const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 5_000); child.once("close", () => { clearTimeout(timer); resolve(); }); }); }
 async function reservePort() { const server = net.createServer(); await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); }); const address = server.address(); const port = typeof address === "object" && address ? address.port : 0; await new Promise<void>((resolve) => server.close(() => resolve())); return port; }
 async function pathExists(filePath: string) { try { await access(filePath); return true; } catch { return false; } }
+async function installRuntimePackage(sourcePackagePath: string, runtimePackagePath: string) {
+  const runtimeNodeModules = path.dirname(runtimePackagePath);
+  await rm(runtimeNodeModules, { recursive: true, force: true });
+  await mkdir(runtimeNodeModules, { recursive: true, mode: 0o700 });
+  await cp(sourcePackagePath, runtimePackagePath, { recursive: true, dereference: false });
+  const sourceNodeModules = path.dirname(sourcePackagePath);
+  const entries = await readdir(sourceNodeModules, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === path.basename(sourcePackagePath)) continue;
+    await symlink(path.join(sourceNodeModules, entry.name), path.join(runtimeNodeModules, entry.name), process.platform === "win32" ? "junction" : undefined);
+  }
+}
 async function hashFile(filePath: string) { try { return createHash("sha256").update(await readFileText(filePath, "buffer")).digest("hex"); } catch { return null; } }
 async function gitHead() { const result = await runCommand("git", ["rev-parse", "HEAD"], {}); return result.stdout.trim() || null; }
 async function readFileText(filePath: string, mode: "buffer"): Promise<Buffer>; async function readFileText(filePath: string, mode?: "text"): Promise<string>; async function readFileText(filePath: string, mode: "buffer" | "text" = "text"): Promise<Buffer | string> { return mode === "buffer" ? await readFile(filePath) : await readFile(filePath, "utf8"); }

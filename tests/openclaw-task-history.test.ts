@@ -56,31 +56,31 @@ test("capability discovery is authoritative for newer runtimes while version def
   const newerInventory = resolveOpenClawCompatibilityMethods({
     advertisedMethods: ["sessions.list", "tasks.list"],
     advertisedEvents: [],
-    installedVersion: "2026.9.7",
+    installedVersion: "2026.10.6",
     source: "gateway-discovery"
   });
   const currentDefault = resolveOpenClawCompatibilityMethods({
     advertisedMethods: [],
     advertisedEvents: [],
-    installedVersion: "2026.9.7",
+    installedVersion: "2026.10.5",
     source: "unavailable"
   });
   const currentHandshake = resolveOpenClawCompatibilityMethods({
     advertisedMethods: ["sessions.list"],
     advertisedEvents: [],
-    installedVersion: "2026.9.7",
+    installedVersion: "2026.10.5",
     source: "gateway-advertised"
   });
   const newerHandshake = resolveOpenClawCompatibilityMethods({
     advertisedMethods: ["sessions.list", "tasks.list"],
     advertisedEvents: [],
-    installedVersion: "2026.9.8",
+    installedVersion: "2026.10.6",
     source: "gateway-advertised"
   });
   const futureWithoutEvidence = resolveOpenClawCompatibilityMethods({
     advertisedMethods: [],
     advertisedEvents: [],
-    installedVersion: "2026.9.8",
+    installedVersion: "2026.10.6",
     source: "unavailable"
   });
 
