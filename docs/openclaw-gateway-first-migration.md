@@ -5,9 +5,9 @@ Date: 2026-05-02
 Latest production-readiness validation update: 2026-05-16.
 
 > Historical migration record. This migration was first certified against
-> OpenClaw `2026.9.4`; the 2026.10.5 compatibility branch recommends and certifies
-> `2026.10.5` with
-> `2026.9.1` as the supported baseline. See the
+> OpenClaw `2026.9.4`; the 2026.10.5 compatibility branch targets
+> `2026.10.5` as its native contract candidate, keeps `2026.9.7` as the
+> certified recommendation, and retains `2026.9.1` as the supported baseline. See the
 > [2026.10.5 compatibility and upgrade record](./openclaw-2026.10.5-upgrade-plan.md)
 > and [`openclaw-official-gateway-transport.md`](./openclaw-official-gateway-transport.md)
 > for the current official-client architecture. The dated narrative below is

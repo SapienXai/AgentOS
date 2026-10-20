@@ -2,7 +2,7 @@
 
 ## Scope and verified target
 
-Upgrade AgentOS' recommended and native Gateway contract from OpenClaw `2026.9.7` to the official stable `2026.10.5`, while keeping the supported minimum at `2026.9.1`. Work is isolated on `codex/openclaw-2026-10-5-compatibility`, based on the requested starting commit `7dcb7fc8f9dfe32af21b9379f4caceb43f4f81b7`.
+Upgrade the AgentOS native Gateway contract and package target from OpenClaw `2026.9.7` to official stable `2026.10.5`, while keeping `2026.9.7` as the certified default recommendation and `2026.9.1` as the supported minimum until final certification passes. Work is isolated on `codex/openclaw-2026-10-5-compatibility`, based on the requested starting commit `7dcb7fc8f9dfe32af21b9379f4caceb43f4f81b7`.
 
 The official `v2026.10.5` tag and published package agree on source commit `1b58cb9a1b4f4353e1add63c8506db4d890962e8`. The package reports build ID `2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z`, protocol 4, state schema 20, and agent schema 25. npm integrity is `sha512-9rCuXMweqVKZIK3KBtGcLzesz9G6+FmQ30lvwomRhmcNWDcOtlBoqdLbPditoJMuTP55jPqXpt1AA0L8tSzFHg==`. The official multi-architecture image index is `sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5`.
 

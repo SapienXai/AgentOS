@@ -5,7 +5,7 @@ Use this checklist before publishing or announcing an AgentOS release. It is man
 ## Prerequisites
 
 - Use Node.js 24.16.0+ or 26.1.0+.
-- Use the recommended OpenClaw 2026.10.5. The supported minimum is OpenClaw 2026.9.1 after explicit session-security reconciliation; the native contract target is 2026.10.5.
+- Use the recommended OpenClaw 2026.9.7. The supported minimum is OpenClaw 2026.9.1 after explicit session-security reconciliation. OpenClaw 2026.10.5 is the candidate native contract target until certification passes. Explicit opt-in and compatibility preflight are required to test it.
 - Start the OpenClaw Gateway on loopback.
 - Confirm `openclaw gateway status --deep --json` reports protocol v4, reachable RPC, and operator auth.
 

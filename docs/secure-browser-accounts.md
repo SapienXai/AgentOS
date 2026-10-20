@@ -108,7 +108,7 @@ through AgentOS HTTP.
 2. AgentOS authenticates the operator and checks owner, workspace, account,
    agent, verification, revocation, provider capability, and lease state.
 3. AgentOS creates the mission dispatch and uses its explicit OpenClaw session
-   ID to derive the exact session key expected by the OpenClaw `2026.10.5` recommended contract.
+   ID to derive the exact session key expected by the OpenClaw `2026.10.5` native contract.
 4. A ten-minute durable lease and fencing token are acquired. The worker starts
    the persistent Chromium profile and returns its stable loopback Browser
    Gateway route over the authenticated private control channel.
@@ -331,8 +331,9 @@ maintenance deployment, not while production browser sessions are active.
 The repository's Railway image configuration is pinned to OpenClaw
 `2026.10.5`; this is configuration evidence, not proof of a live deployment.
 The 0.7.9 local compatibility record for OpenClaw `2026.9.4` is historical.
-AgentOS recommends and certifies `2026.10.5` on the compatibility branch; no
-production deployment was changed. Native OpenClaw documentation
+The branch targets `2026.10.5` as a candidate native contract; `2026.9.7`
+remains the certified recommendation pending final native update certification.
+No production deployment was changed. Native OpenClaw documentation
 describes managed profiles, `profile` selection, `cdpUrl`,
 `attachOnly`, browser-node proxying, manual login, and the native
 `openclaw`/`existing-session`/`extension` driver boundary:

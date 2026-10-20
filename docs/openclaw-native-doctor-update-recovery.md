@@ -3,10 +3,11 @@
 AgentOS presents operational OpenClaw state without becoming a second runtime or
 repair engine. OpenClaw remains authoritative for health, configuration
 application, updates, restart coordination, suspension, authorization, and
-reconnect behavior. This branch certifies OpenClaw 2026.10.5 as its tested and
-recommended contract. Certification records tested confidence; it is not an
-installation allowlist. The runtime updater can expose a newer unverified stable
-release when current native facts and safety policy allow it.
+reconnect behavior. This branch targets OpenClaw 2026.10.5 as its exact native contract. The
+certified default recommendation remains 2026.9.7 until final certification
+passes; 10.5 is available only through the candidate path with explicit opt-in
+and compatibility preflight. Certification records tested confidence; it is not
+an installation allowlist.
 AgentOS normalizes native facts for the existing Settings, Diagnostics,
 Gateway, and Updates surfaces.
 
@@ -174,7 +175,8 @@ refreshed the existing 2026.9.7 intake with complete identity, tree, descriptor,
 and contract-diff evidence; the earlier local HTTP 403 did not produce
 compatibility evidence. The disposable 2026.9.4-to-2026.9.7 migration and
 runtime certification matrix subsequently passed. This history is retained for
-provenance; this branch's recommendation and native contract are 2026.10.5. See
+provenance; this branch keeps the 2026.9.7 recommendation and targets the
+2026.10.5 native contract candidate. See
 [`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md)
 and the generated final certification artifact for the recorded evidence.
 
@@ -292,7 +294,7 @@ claim verification that the reconnecting Gateway has not provided.
 
 The historical 2026.9.4 certification is recorded in
 [`openclaw-2026.9.4-compatibility-audit.md`](./openclaw-2026.9.4-compatibility-audit.md).
-The current 2026.10.5 upgrade and certification records are linked from
+The current 2026.10.5 upgrade and candidate validation records are linked from
 [`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md)
 and its versioned evidence under `docs/evidence/`. The 2026.9.7 certification
 remains historical provenance.
