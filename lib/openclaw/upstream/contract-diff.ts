@@ -92,8 +92,8 @@ export function adaptOpenClawServerMethodContractDiff(
   ]);
   const eventsAdded = unique(supplement.eventsAdded ?? []);
   const eventsRemoved = unique(supplement.eventsRemoved ?? []);
-  const requestSchemasChanged = unique(supplement.requestSchemasChanged ?? inferSchemaFiles(report.changedProtocolFiles, "request"));
-  const responseSchemasChanged = unique(supplement.responseSchemasChanged ?? inferSchemaFiles(report.changedProtocolFiles, "response"));
+  const requestSchemasChanged = unique(supplement.requestSchemasChanged ?? []);
+  const responseSchemasChanged = unique(supplement.responseSchemasChanged ?? []);
   const protocolChanged = report.changedProtocolFiles.length > 0 || eventsAdded.length > 0 || eventsRemoved.length > 0;
   const updateContractChanged = inferredDomains.includes("updates") || contractSourceFiles.some((file) => /update|doctor|rollback|recovery/i.test(file));
   const sessionContractChanged = inferredDomains.includes("sessions") || contractSourceFiles.some((file) => /session|transcript|conversation/i.test(file));
@@ -214,10 +214,6 @@ function inferSecuritySensitiveChanges(input: { methods: string[]; files: string
   return unique(values
     .filter((value) => /auth|permission|scope|session|transcript|visibility|agent-to-agent|security|secret|approval|device|identity|exec|config/i.test(value))
     .map((value) => `Security-sensitive contract evidence changed: ${value}`));
-}
-
-function inferSchemaFiles(files: string[], kind: "request" | "response") {
-  return files.filter((file) => new RegExp(`schema|${kind}|protocol`, "i").test(file));
 }
 
 function unique(values: string[]) {

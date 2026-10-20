@@ -168,6 +168,38 @@ test("official identity verification fails closed when npm and GitHub disagree",
   assert.equal(incomplete.identity.missingEvidence.includes("npm package version"), true);
 });
 
+test("official identity verification prefers the immutable changelog for publication-wrapper releases", async () => {
+  const version = "2026.10.5";
+  const changelogUrl = `https://raw.githubusercontent.com/openclaw/openclaw/v${version}/CHANGELOG/${version}.md`;
+  const releaseUrl = `https://api.github.com/repos/openclaw/openclaw/releases/tags/v${version}`;
+  const baseFetch = identityFetch({ packageVersion: version });
+  const fetchImpl = async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === releaseUrl) {
+      return jsonResponse({
+        tag_name: `v${version}`,
+        html_url: `https://github.com/openclaw/openclaw/releases/tag/v${version}`,
+        published_at: "2026-10-18T00:00:00.000Z",
+        body: "<!-- openclaw-release-publication:docs-v1 -->\n\nThanks to all contributors."
+      });
+    }
+    if (url === changelogUrl) {
+      return new Response("# OpenClaw 2026.10.5\n\n## Tool approval hooks\nTrusted inline approvals now preserve their final parameters.", {
+        status: 200,
+        headers: { "content-type": "text/plain" }
+      });
+    }
+    return baseFetch(input);
+  };
+
+  const verified = await verifyOfficialOpenClawRelease({ version, fetchImpl });
+
+  assert.equal(verified.identity.status, "verified");
+  assert.equal(verified.releaseNotes.sourceUrl, changelogUrl);
+  assert.match(verified.releaseNotes.excerpt, /Tool approval hooks/i);
+  assert.doesNotMatch(verified.releaseNotes.excerpt, /openclaw-release-publication/i);
+});
+
 test("release notes are bounded evidence and cannot inject workflow commands", () => {
   const notes = buildOpenClawReleaseNotesEvidence({
     body: "$(rm -rf /)\n::set-output name=x::bad\n<script>alert(1)</script>\nsecurity session update",
@@ -274,6 +306,23 @@ test("complete evidence permits the normal low-risk or no-impact classification"
   assert.equal(impact.classifications.includes("LOW_RISK_ADDITIVE"), true);
   assert.equal(impact.classifications.includes("NO_KNOWN_AGENTOS_IMPACT"), true);
   assert.equal(impact.severity, "low");
+});
+
+test("protocol source file changes alone are reviewable but are not classified as breaking", () => {
+  const changedProtocolFile = "packages/gateway-protocol/src/catalog.schema.ts";
+  const impact = classifyOpenClawReleaseImpact({
+    ...impactInput(),
+    contractDiff: contractDiffFixture({
+      status: "warning",
+      protocolChanged: true,
+      changedFiles: [changedProtocolFile],
+      changedProtocolFiles: [changedProtocolFile],
+      domainsChanged: ["protocol"]
+    })
+  });
+
+  assert.equal(impact.classifications.includes("COMPATIBILITY_REVIEW"), true);
+  assert.equal(impact.classifications.includes("BREAKING"), false);
 });
 
 test("identity incompleteness remains independent from complete contract evidence", () => {

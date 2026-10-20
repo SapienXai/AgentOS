@@ -16,6 +16,7 @@ import type {
 
 const MAX_RESPONSE_BYTES = 4_000_000;
 const MAX_BUILD_INFO_BYTES = 32_000;
+const MAX_RELEASE_NOTES_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export type OpenClawReleaseVerification = {
@@ -64,6 +65,11 @@ export async function verifyOfficialOpenClawRelease(input: {
   const buildId = readString(buildRecord?.buildId);
   const buildVersion = readString(buildRecord?.version);
   const buildCommit = readString(buildRecord?.commit);
+  const releaseNotesBody = readString(githubRecord?.body);
+  const changelogUrl = `https://raw.githubusercontent.com/${OPENCLAW_UPSTREAM_REPOSITORY}/${tag}/CHANGELOG/${version}.md`;
+  const taggedReleaseNotes = releaseNotesBody?.includes("openclaw-release-publication:")
+    ? await fetchOptionalText(changelogUrl, fetchImpl)
+    : null;
 
   if (packageVersion && packageVersion !== version) {
     mismatches.push(`npm package version is ${packageVersion ?? "missing"}, expected ${version}.`);
@@ -122,8 +128,8 @@ export async function verifyOfficialOpenClawRelease(input: {
   return {
     identity,
     releaseNotes: buildOpenClawReleaseNotesEvidence({
-      body: readString(githubRecord?.body),
-      sourceUrl: releaseUrl
+      body: taggedReleaseNotes ?? releaseNotesBody,
+      sourceUrl: taggedReleaseNotes ? changelogUrl : releaseUrl
     })
   };
 }
@@ -198,6 +204,28 @@ async function fetchOptionalJson(
     if (error instanceof Error && /HTTP 404/.test(error.message)) return null;
     if (url.startsWith(OPENCLAW_NPM_REGISTRY_URL) || url.includes("releases/tags") || url.includes("dist/build-info.json") || url.includes("git/ref") || url.includes("git/tags/")) return null;
     throw error;
+  }
+}
+
+async function fetchOptionalText(url: string, fetchImpl: ReleaseWatcherFetch) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      cache: "no-store",
+      headers: {
+        Accept: "text/plain",
+        "User-Agent": "AgentOS-OpenClaw-Release-Watcher"
+      }
+    });
+    if (!response.ok) return null;
+    const text = await response.text();
+    return Buffer.byteLength(text, "utf8") <= MAX_RELEASE_NOTES_BYTES ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

@@ -82,11 +82,10 @@ export function classifyOpenClawReleaseImpact(input: {
     input.contractDiff.enumValuesRemoved.length > 0 ||
     input.contractDiff.configKeysRemoved.length > 0 ||
     input.contractDiff.status === "blocker" ||
-    input.contractDiff.scopesChanged.length > 0 ||
-    input.contractDiff.protocolChanged
+    input.contractDiff.scopesChanged.length > 0
   ) {
     classifications.add("BREAKING");
-    rationale.push("Required Gateway methods, scopes, schemas, enums, config, or protocol evidence changed.");
+    rationale.push("Required Gateway methods, scopes, fields, enums, or config entries were removed or changed incompatibly.");
   }
 
   if (

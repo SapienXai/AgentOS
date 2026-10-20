@@ -562,8 +562,8 @@ test("release evidence retains method policy changes and scopes inference to Gat
   assert.deepEqual(diff.methodChanges, methodChanges);
   assert.deepEqual(diff.changedServerMethodFiles, ["src/gateway/server-methods/sessions.ts"]);
   assert.deepEqual(diff.changedProtocolFiles, ["packages/gateway-protocol/sessions.schema.ts"]);
-  assert.deepEqual(diff.requestSchemasChanged, ["packages/gateway-protocol/sessions.schema.ts"]);
-  assert.deepEqual(diff.responseSchemasChanged, ["packages/gateway-protocol/sessions.schema.ts"]);
+  assert.deepEqual(diff.requestSchemasChanged, []);
+  assert.deepEqual(diff.responseSchemasChanged, []);
   assert.equal(diff.securitySensitiveChanges.some((change) => change.includes("ui/src/pages")), false);
   assert.equal(diff.domainsChanged.includes("security"), true);
   assert.equal(diff.sessionContractChanged, true);
