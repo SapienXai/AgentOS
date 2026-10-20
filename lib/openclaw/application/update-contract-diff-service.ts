@@ -5,6 +5,7 @@ import {
   type OpenClawGatewayCompatibilityOperationDefinition
 } from "@/lib/openclaw/client/gateway-compatibility";
 import type {
+  OpenClawGatewayReadSharingContract,
   OpenClawGatewaySessionAccessContract,
   OpenClawServerMethodContractChange,
   OpenClawServerMethodContractDiffReport,
@@ -14,6 +15,10 @@ import type {
 const OPENCLAW_REPOSITORY = "openclaw/openclaw";
 const CORE_DESCRIPTOR_PATH = "src/gateway/methods/core-descriptors.ts";
 const SERVER_METHODS_PREFIX = "src/gateway/server-methods/";
+const GATEWAY_CONTRACT_TREE_PATHS = [
+  "src/gateway/server-methods",
+  "packages/gateway-protocol"
+] as const;
 const PROTOCOL_PATH_PREFIXES = [
   "packages/gateway-protocol/",
   "src/gateway/protocol/"
@@ -22,7 +27,11 @@ const REQUEST_TIMEOUT_MS = 4_000;
 const GITHUB_TREE_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_SOURCE_BYTES = 2_000_000;
 const MAX_GITHUB_TREE_BYTES = 24_000_000;
+const MAX_SCOPED_TREE_ENTRIES = 20_000;
 const MAX_DESCRIPTOR_ROWS = 2_000;
+const MAX_POLICY_CONSTANTS = 64;
+const MAX_POLICY_CONSTANT_BYTES = 8_192;
+const MAX_READ_SHARING_EVENTS = 64;
 const MAX_COMPARE_PAGES = 10;
 const COMPARE_PAGE_SIZE = 100;
 const MAX_COMPARE_FILES = 300;
@@ -46,6 +55,7 @@ export type OpenClawCoreMethodSpec = {
   /** Unknown lifetime literals are retained as evidence and never treated as supported. */
   lifetime?: string | null;
   sessionAccess?: OpenClawGatewaySessionAccessContract | null;
+  readSharing?: OpenClawGatewayReadSharingContract | null;
 };
 
 type GitHubCompareFile = {
@@ -73,6 +83,12 @@ type GitHubTreeSnapshot = {
   truncated: boolean;
 };
 
+type ChangedFilesEvidence = {
+  files: string[];
+  truncated: boolean;
+  scope: "complete-repository" | "gateway-contract-paths" | "incomplete";
+};
+
 type ContractDiffOptions = {
   fetchImpl?: FetchLike;
   now?: () => Date;
@@ -84,6 +100,7 @@ const reportCache = new Map<string, {
   value: Promise<OpenClawServerMethodContractDiffReport>;
 }>();
 let releaseTreeCache = new WeakMap<FetchLike, Map<string, Promise<GitHubTreeSnapshot>>>();
+let scopedReleaseTreeCache = new WeakMap<FetchLike, Map<string, Promise<GitHubTreeSnapshot>>>();
 
 export async function getOpenClawServerMethodContractDiff(
   input: { currentVersion: string; targetVersion: string },
@@ -178,7 +195,8 @@ export function parseOpenClawCoreMethodSpecs(source: string): OpenClawCoreMethod
     throw new Error("OpenClaw core Gateway method descriptor table exceeded the safe row limit.");
   }
 
-  const specs = rows.map((row, index) => parseCoreMethodRow(row, index + 1));
+  const constants = extractSharedPolicyConstants(source, declaration.index);
+  const specs = rows.map((row, index) => parseCoreMethodRow(row, index + 1, constants));
   const seen = new Set<string>();
   for (const spec of specs) {
     if (seen.has(spec.name)) {
@@ -190,21 +208,32 @@ export function parseOpenClawCoreMethodSpecs(source: string): OpenClawCoreMethod
   return specs;
 }
 
-function parseCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMethodSpec {
+function parseCoreMethodRow(
+  row: string,
+  rowNumber: number,
+  constants: Map<string, string>
+): OpenClawCoreMethodSpec {
   const trimmed = row.trim();
   if (trimmed.startsWith("{")) {
-    return parseLegacyCoreMethodRow(trimmed, rowNumber);
+    return parseLegacyCoreMethodRow(trimmed, rowNumber, constants);
   }
   if (trimmed.startsWith("[")) {
-    return parseTupleCoreMethodRow(trimmed, rowNumber);
+    return parseTupleCoreMethodRow(trimmed, rowNumber, constants);
   }
 
   throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an unsupported shape.`);
 }
 
-function parseLegacyCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMethodSpec {
+function parseLegacyCoreMethodRow(
+  row: string,
+  rowNumber: number,
+  constants: Map<string, string>
+): OpenClawCoreMethodSpec {
   const fields = parseObjectFields(row, rowNumber);
-  assertAllowedFields(fields, ["name", "scope", "advertise", "startup", "controlPlaneWrite", "lifetime", "sessionAccess"], rowNumber);
+  assertAllowedFields(fields, [
+    "name", "scope", "advertise", "startup", "controlPlaneWrite", "lifetime", "sessionAccess",
+    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents"
+  ], rowNumber);
 
   const name = parseMethodName(fields.get("name"), rowNumber);
   const scope = parseScope(fields.get("scope"), rowNumber);
@@ -219,11 +248,16 @@ function parseLegacyCoreMethodRow(row: string, rowNumber: number): OpenClawCoreM
     compatibilityRestored: false,
     description: null,
     lifetime: parseLifetimeField(fields, rowNumber),
-    sessionAccess: parseSessionAccessField(fields, rowNumber)
+    sessionAccess: parseSessionAccessField(fields, rowNumber, constants),
+    readSharing: parseReadSharingPolicy(fields, rowNumber)
   };
 }
 
-function parseTupleCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMethodSpec {
+function parseTupleCoreMethodRow(
+  row: string,
+  rowNumber: number,
+  constants: Map<string, string>
+): OpenClawCoreMethodSpec {
   if (!row.endsWith("]")) {
     throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid tuple.`);
   }
@@ -238,9 +272,12 @@ function parseTupleCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMe
   const family = familyValue === "null" ? null : parseStringLiteral(familyValue, "family", rowNumber);
   const scope = parseScope(values[2], rowNumber);
   const since = parseSince(values[3], rowNumber);
-  const policy = values[4] ? parsePolicyObject(values[4], rowNumber) : new Map<string, string>();
+  const policy = values[4] ? parsePolicyObject(values[4], rowNumber, constants) : new Map<string, string>();
 
-  assertAllowedFields(policy, ["advertise", "startup", "controlPlaneWrite", "compatibilityRestored", "description", "lifetime", "sessionAccess"], rowNumber);
+  assertAllowedFields(policy, [
+    "advertise", "startup", "controlPlaneWrite", "compatibilityRestored", "description", "lifetime", "sessionAccess",
+    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents"
+  ], rowNumber);
   return {
     name,
     family,
@@ -254,7 +291,8 @@ function parseTupleCoreMethodRow(row: string, rowNumber: number): OpenClawCoreMe
       ? parseStringLiteral(policy.get("description"), "description", rowNumber)
       : null,
     lifetime: parseLifetimeField(policy, rowNumber),
-    sessionAccess: parseSessionAccessField(policy, rowNumber)
+    sessionAccess: parseSessionAccessField(policy, rowNumber, constants),
+    readSharing: parseReadSharingPolicy(policy, rowNumber)
   };
 }
 
@@ -263,9 +301,17 @@ function parseLifetimeField(fields: Map<string, string>, rowNumber: number): str
   return parseStringLiteral(fields.get("lifetime"), "lifetime", rowNumber);
 }
 
-function parseSessionAccessField(fields: Map<string, string>, rowNumber: number): OpenClawGatewaySessionAccessContract | null {
+function parseSessionAccessField(
+  fields: Map<string, string>,
+  rowNumber: number,
+  constants: Map<string, string>
+): OpenClawGatewaySessionAccessContract | null {
   if (!fields.has("sessionAccess")) return null;
-  const value = fields.get("sessionAccess")?.trim() ?? "";
+  let value = fields.get("sessionAccess")?.trim() ?? "";
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value)) {
+    const sessionPolicy = parsePolicyObject(value, rowNumber, constants);
+    value = sessionPolicy.get("sessionAccess")?.trim() ?? "";
+  }
   if (!value.startsWith("{") || !value.endsWith("}")) {
     throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid sessionAccess object.`);
   }
@@ -291,15 +337,187 @@ function parseSessionAccessField(fields: Map<string, string>, rowNumber: number)
   };
 }
 
-function parsePolicyObject(value: string, rowNumber: number) {
+function parseReadSharingPolicy(
+  fields: Map<string, string>,
+  rowNumber: number
+): OpenClawGatewayReadSharingContract | null {
+  const hasReadSharing = ["shareKey", "shareMaxAgeMs", "shareInvalidationEvents"].some((field) => fields.has(field));
+  if (!hasReadSharing) return null;
+
+  const rawShareKey = fields.get("shareKey")?.trim();
+  let shareKey: string | null = null;
+  if (rawShareKey !== undefined && rawShareKey !== "null") {
+    if (rawShareKey.startsWith('"') || rawShareKey.startsWith("'")) {
+      shareKey = parseStringLiteral(rawShareKey, "shareKey", rowNumber);
+    } else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(rawShareKey)) {
+      shareKey = rawShareKey;
+    } else {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid shareKey reference.`);
+    }
+  }
+
+  const rawMaxAge = fields.get("shareMaxAgeMs");
+  let shareMaxAgeMs: number | null = null;
+  if (rawMaxAge !== undefined && rawMaxAge !== "null") {
+    if (!/^\d(?:_?\d)*$/.test(rawMaxAge)) {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid shareMaxAgeMs value.`);
+    }
+    shareMaxAgeMs = Number(rawMaxAge.replaceAll("_", ""));
+    if (!Number.isSafeInteger(shareMaxAgeMs) || shareMaxAgeMs < 1 || shareMaxAgeMs > 60_000) {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an out-of-range shareMaxAgeMs value.`);
+    }
+  }
+
+  const rawEvents = fields.get("shareInvalidationEvents");
+  const shareInvalidationEvents = rawEvents === undefined
+    ? []
+    : parseStringArrayLiteral(rawEvents, "shareInvalidationEvents", rowNumber);
+  if (shareInvalidationEvents.length > MAX_READ_SHARING_EVENTS || shareInvalidationEvents.some((event) =>
+    event.length === 0 || event.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(event)
+  )) {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has invalid share invalidation metadata.`);
+  }
+
+  return { shareKey, shareMaxAgeMs, shareInvalidationEvents };
+}
+
+function parseStringArrayLiteral(value: string, field: string, rowNumber: number) {
   const trimmed = value.trim();
-  if (trimmed === "CONTROL_PLANE_WRITE") {
-    return new Map([["controlPlaneWrite", "true"]]);
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid ${field} array.`);
+  }
+  const entries = splitTopLevel(trimmed.slice(1, -1));
+  if (entries.length > MAX_READ_SHARING_EVENTS) {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} exceeded the ${field} item limit.`);
+  }
+  return entries.map((entry) => parseStringLiteral(entry, field, rowNumber));
+}
+
+function parsePolicyObject(
+  value: string,
+  rowNumber: number,
+  constants: Map<string, string>,
+  resolving = new Set<string>()
+): Map<string, string> {
+  const trimmed = value.trim();
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(trimmed)) {
+    if (resolving.has(trimmed)) {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} contains a cyclic shared policy constant.`);
+    }
+    const expression = constants.get(trimmed);
+    if (expression === undefined) {
+      if (trimmed === "CONTROL_PLANE_WRITE") return new Map([["controlPlaneWrite", "true"]]);
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} references an unsupported shared policy constant.`);
+    }
+    resolving.add(trimmed);
+    const resolved: Map<string, string> = parsePolicyObject(expression, rowNumber, constants, resolving);
+    resolving.delete(trimmed);
+    return resolved;
   }
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
     throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid policy object.`);
   }
-  return parseObjectFields(trimmed, rowNumber);
+
+  const fields = new Map<string, string>();
+  for (const field of splitTopLevel(trimmed.slice(1, -1))) {
+    const spread = /^\.\.\.([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(field.trim());
+    if (spread) {
+      const expanded = parsePolicyObject(spread[1] ?? "", rowNumber, constants, resolving);
+      for (const [key, fieldValue] of expanded) {
+        if (fields.has(key)) {
+          throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} contains duplicate shared policy metadata.`);
+        }
+        fields.set(key, fieldValue);
+      }
+      continue;
+    }
+
+    const separator = field.indexOf(":");
+    if (separator <= 0) {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid policy field.`);
+    }
+    const key = field.slice(0, separator).trim();
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(key) || fields.has(key)) {
+      throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has an invalid or duplicate policy field.`);
+    }
+    fields.set(key, field.slice(separator + 1).trim());
+  }
+  return fields;
+}
+
+function extractSharedPolicyConstants(source: string, descriptorIndex: number) {
+  const prefix = source.slice(0, descriptorIndex);
+  const masked = maskJavaScriptCommentsAndStrings(prefix);
+  const constants = new Map<string, string>();
+  let braces = 0;
+  let brackets = 0;
+  let parentheses = 0;
+
+  for (let index = 0; index < masked.length; index += 1) {
+    if (braces === 0 && brackets === 0 && parentheses === 0 && isIdentifierAt(masked, index, "const")) {
+      const declaration = /^const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/.exec(masked.slice(index));
+      if (declaration) {
+        const name = declaration[1] ?? "";
+        const equalsIndex = index + declaration[0].lastIndexOf("=");
+        const objectIndex = findNextNonCommentCharacter(source, equalsIndex + 1, "{");
+        if (objectIndex >= 0 && objectIndex < descriptorIndex) {
+          const closeIndex = findMatchingDelimiter(source, objectIndex, "{", "}");
+          const statementEnd = /^\s*(?:as\s+const\s*)?;/.exec(masked.slice(closeIndex + 1));
+          if (statementEnd) {
+            if (constants.size >= MAX_POLICY_CONSTANTS) {
+              throw new Error("OpenClaw shared Gateway policy constants exceeded the safe count limit.");
+            }
+            const expression = source.slice(objectIndex, closeIndex + 1);
+            if (expression.length > MAX_POLICY_CONSTANT_BYTES || constants.has(name)) {
+              throw new Error("OpenClaw shared Gateway policy constant exceeded a safe size or uniqueness limit.");
+            }
+            constants.set(name, expression);
+            index = closeIndex + statementEnd[0].length;
+            continue;
+          }
+        }
+      }
+    }
+
+    const character = masked[index];
+    if (character === "{") braces += 1;
+    else if (character === "}") braces = Math.max(0, braces - 1);
+    else if (character === "[") brackets += 1;
+    else if (character === "]") brackets = Math.max(0, brackets - 1);
+    else if (character === "(") parentheses += 1;
+    else if (character === ")") parentheses = Math.max(0, parentheses - 1);
+  }
+
+  return constants;
+}
+
+function isIdentifierAt(source: string, index: number, identifier: string) {
+  return source.slice(index, index + identifier.length) === identifier &&
+    !/[A-Za-z0-9_$]/.test(source[index - 1] ?? "") &&
+    !/[A-Za-z0-9_$]/.test(source[index + identifier.length] ?? "");
+}
+
+function maskJavaScriptCommentsAndStrings(source: string) {
+  const commentsMasked = stripJavaScriptComments(source);
+  let result = "";
+  let quote: string | null = null;
+  let escaped = false;
+  for (const character of commentsMasked) {
+    if (quote) {
+      result += character === "\n" ? "\n" : " ";
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      result += " ";
+    } else {
+      result += character;
+    }
+  }
+  return result;
 }
 
 function parseObjectFields(value: string, rowNumber: number) {
@@ -535,6 +753,7 @@ function stripJavaScriptComments(source: string) {
 export function resetOpenClawServerMethodContractDiffCache() {
   reportCache.clear();
   releaseTreeCache = new WeakMap();
+  scopedReleaseTreeCache = new WeakMap();
 }
 
 async function buildContractDiff(input: {
@@ -566,10 +785,11 @@ async function buildContractDiff(input: {
   try {
     const currentSpecs = parseOpenClawCoreMethodSpecs(currentResult.value);
     const targetSpecs = parseOpenClawCoreMethodSpecs(targetResult.value);
-    let compareFiles = compareResult.status === "fulfilled"
+    let compareFiles: ChangedFilesEvidence = compareResult.status === "fulfilled"
       ? compareResult.value
-      : { files: [], truncated: false };
+      : { files: [], truncated: false, scope: "complete-repository" };
     let completeFileEvidence = compareResult.status === "fulfilled" && !compareFiles.truncated;
+    let fileEvidenceScope: ChangedFilesEvidence["scope"] = completeFileEvidence ? compareFiles.scope : "incomplete";
     let fileEvidenceError: string | null = compareResult.status === "rejected"
       ? readErrorMessage(compareResult.reason, "GitHub changed-file evidence could not be loaded.")
       : null;
@@ -583,6 +803,7 @@ async function buildContractDiff(input: {
         if (!treeFiles.truncated) {
           compareFiles = treeFiles;
           completeFileEvidence = true;
+          fileEvidenceScope = treeFiles.scope;
           fileEvidenceError = null;
         } else {
           fileEvidenceError = "GitHub reported a truncated recursive tag tree.";
@@ -632,10 +853,10 @@ async function buildContractDiff(input: {
     const unknownCount = allChanges.filter((change) => change.status === "unknown").length;
     const status: OpenClawServerMethodContractDiffStatus = blockerCount > 0
       ? "blocker"
-      : warningCount > 0
-        ? "warning"
-        : unknownCount > 0
-          ? "unknown"
+      : unknownCount > 0
+        ? "unknown"
+        : warningCount > 0
+          ? "warning"
           : "safe";
 
     return {
@@ -648,6 +869,7 @@ async function buildContractDiff(input: {
       targetMethodCount: targetSpecs.filter((spec) => spec.advertise).length,
       currentRegisteredMethodCount: currentSpecs.length,
       targetRegisteredMethodCount: targetSpecs.length,
+      fileEvidenceScope: completeFileEvidence ? fileEvidenceScope : "incomplete",
       changedFiles,
       changedServerMethodFiles,
       changedProtocolFiles,
@@ -700,6 +922,8 @@ export function compareOpenClawCoreMethodSpecs(
         targetLifetime: target.lifetime ?? null,
         currentSessionAccess: null,
         targetSessionAccess: target.sessionAccess ?? null,
+        currentReadSharing: null,
+        targetReadSharing: target.readSharing ?? null,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} is added with ${target.scope} scope; descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
@@ -722,6 +946,8 @@ export function compareOpenClawCoreMethodSpecs(
         targetLifetime: null,
         currentSessionAccess: current.sessionAccess ?? null,
         targetSessionAccess: null,
+        currentReadSharing: current.readSharing ?? null,
+        targetReadSharing: null,
         affectedOperations,
         message: affectedOperations.length
           ? `${method} is removed${replacement ? ` with explicit replacement evidence for ${replacement.replacementMethod}` : ""} and affects ${affectedOperations.join(", ")}.`
@@ -738,6 +964,8 @@ export function compareOpenClawCoreMethodSpecs(
     const targetLifetime = target.lifetime ?? null;
     const currentSessionAccess = current.sessionAccess ?? null;
     const targetSessionAccess = target.sessionAccess ?? null;
+    const currentReadSharing = current.readSharing ?? null;
+    const targetReadSharing = target.readSharing ?? null;
     const targetLifetimeUnknown = targetLifetime !== null && targetLifetime !== "observation";
     if (currentLifetime !== targetLifetime || targetLifetimeUnknown) {
       changes.push({
@@ -749,6 +977,10 @@ export function compareOpenClawCoreMethodSpecs(
         targetScope: target.scope,
         currentLifetime,
         targetLifetime,
+        currentSessionAccess,
+        targetSessionAccess,
+        currentReadSharing,
+        targetReadSharing,
         affectedOperations,
         message: targetLifetimeUnknown
           ? `${method} declares unrecognized lifetime ${JSON.stringify(targetLifetime)}; AgentOS retained the value, but its disconnect and restart semantics require review.`
@@ -767,10 +999,30 @@ export function compareOpenClawCoreMethodSpecs(
         targetScope: target.scope,
         currentSessionAccess,
         targetSessionAccess,
+        currentReadSharing,
+        targetReadSharing,
         affectedOperations,
         message: widened
           ? `${method} changes session-scoped write authority in a way that may broaden access; AgentOS retained the descriptor policy and requires runtime authorization review.`
           : `${method} session-scoped access policy changes from ${formatSessionAccess(currentSessionAccess)} to ${formatSessionAccess(targetSessionAccess)}.`
+      });
+    }
+
+    if (JSON.stringify(currentReadSharing) !== JSON.stringify(targetReadSharing)) {
+      const shareKeyChanged = currentReadSharing?.shareKey !== targetReadSharing?.shareKey;
+      changes.push({
+        method,
+        kind: "policy-changed",
+        status: shareKeyChanged ? "unknown" : "warning",
+        authorizationEvidence: "runtime-required",
+        currentScope: current.scope,
+        targetScope: target.scope,
+        currentReadSharing,
+        targetReadSharing,
+        affectedOperations,
+        message: shareKeyChanged
+          ? `${method} changes its read-sharing key policy; caller isolation and cache invalidation require live runtime verification.`
+          : `${method} changes read-sharing cache metadata; verify freshness and invalidation behavior against the live Gateway.`
       });
     }
 
@@ -788,6 +1040,8 @@ export function compareOpenClawCoreMethodSpecs(
         targetLifetime: target.lifetime ?? null,
         currentSessionAccess: current.sessionAccess ?? null,
         targetSessionAccess: target.sessionAccess ?? null,
+        currentReadSharing,
+        targetReadSharing,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} scope changes from ${current.scope} to ${target.scope}; authorization depends on request parameters or runtime state and requires live runtime verification.`
@@ -817,6 +1071,10 @@ export function compareOpenClawCoreMethodSpecs(
         targetScope: target.scope,
         currentLifetime: current.lifetime ?? null,
         targetLifetime: target.lifetime ?? null,
+        currentSessionAccess: currentSessionAccess,
+        targetSessionAccess: targetSessionAccess,
+        currentReadSharing,
+        targetReadSharing,
         affectedOperations,
         message: dynamicAuthorization
           ? `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}); descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
@@ -914,7 +1172,8 @@ function formatPolicy(spec: OpenClawCoreMethodSpec) {
     spec.controlPlaneWrite ? "control-plane-write" : "standard-write",
     spec.compatibilityRestored ? "compatibility-restored" : "standard-compatibility",
     `lifetime=${spec.lifetime ?? "unspecified"}`,
-    `session-access=${formatSessionAccess(spec.sessionAccess ?? null)}`
+    `session-access=${formatSessionAccess(spec.sessionAccess ?? null)}`,
+    `read-sharing=${JSON.stringify(spec.readSharing ?? null)}`
   ].join(", ");
 }
 
@@ -977,7 +1236,7 @@ function summarizeDiff(input: {
   return `${methodChanges.length} method contract change(s), ${blockers} blocker(s), ${warnings} warning(s), ${unknowns} unknown(s), ${input.changedServerMethodFiles.length} server-method file change(s), and ${input.changedProtocolFiles.length} protocol file change(s).`;
 }
 
-async function fetchCompareFiles(currentVersion: string, targetVersion: string, fetchImpl: FetchLike) {
+async function fetchCompareFiles(currentVersion: string, targetVersion: string, fetchImpl: FetchLike): Promise<ChangedFilesEvidence> {
   const baseUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/compare/v${encodeURIComponent(currentVersion)}...v${encodeURIComponent(targetVersion)}`;
   const files: GitHubCompareFile[] = [];
   let truncated = false;
@@ -1009,7 +1268,8 @@ async function fetchCompareFiles(currentVersion: string, targetVersion: string, 
     files: [...new Set(files
       .flatMap((file) => [file.filename, file.previous_filename])
       .filter((file): file is string => typeof file === "string" && file.length > 0))].sort(),
-    truncated
+    truncated,
+    scope: truncated ? "incomplete" : "complete-repository"
   };
 }
 
@@ -1017,18 +1277,38 @@ async function fetchChangedFilesFromReleaseTrees(
   currentVersion: string,
   targetVersion: string,
   fetchImpl: FetchLike
-) {
+): Promise<ChangedFilesEvidence> {
   const [currentTree, targetTree] = await Promise.all([
     getReleaseTree(currentVersion, fetchImpl),
     getReleaseTree(targetVersion, fetchImpl)
   ]);
+  if (currentTree.truncated || targetTree.truncated) {
+    const [currentScopedTrees, targetScopedTrees] = await Promise.all([
+      Promise.all(GATEWAY_CONTRACT_TREE_PATHS.map((path) => getScopedReleaseTree(currentVersion, path, fetchImpl))),
+      Promise.all(GATEWAY_CONTRACT_TREE_PATHS.map((path) => getScopedReleaseTree(targetVersion, path, fetchImpl)))
+    ]);
+    if (currentScopedTrees.some((tree) => tree.truncated) || targetScopedTrees.some((tree) => tree.truncated)) {
+      return { files: [], truncated: true, scope: "incomplete" };
+    }
+    const currentEntries = mergeTreeSnapshots(currentScopedTrees);
+    const targetEntries = mergeTreeSnapshots(targetScopedTrees);
+    const scopedPaths = new Set([...currentEntries.keys(), ...targetEntries.keys()]);
+    return {
+      files: [...scopedPaths]
+        .filter((path) => currentEntries.get(path) !== targetEntries.get(path))
+        .sort(),
+      truncated: false,
+      scope: "gateway-contract-paths"
+    };
+  }
   const paths = new Set([...currentTree.entries.keys(), ...targetTree.entries.keys()]);
   const files = [...paths]
     .filter((path) => currentTree.entries.get(path) !== targetTree.entries.get(path))
     .sort();
   return {
     files,
-    truncated: currentTree.truncated || targetTree.truncated
+    truncated: false,
+    scope: "complete-repository"
   };
 }
 
@@ -1046,6 +1326,107 @@ function getReleaseTree(version: string, fetchImpl: FetchLike): Promise<GitHubTr
   return snapshot;
 }
 
+function getScopedReleaseTree(version: string, repoPath: string, fetchImpl: FetchLike): Promise<GitHubTreeSnapshot> {
+  let cache = scopedReleaseTreeCache.get(fetchImpl);
+  if (!cache) {
+    cache = new Map();
+    scopedReleaseTreeCache.set(fetchImpl, cache);
+  }
+  const key = `${version}:${repoPath}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const snapshot = fetchScopedReleaseTree(version, repoPath, fetchImpl);
+  cache.set(key, snapshot);
+  return snapshot;
+}
+
+async function fetchScopedReleaseTree(version: string, repoPath: string, fetchImpl: FetchLike): Promise<GitHubTreeSnapshot> {
+  const commitUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/commits/v${encodeURIComponent(version)}`;
+  const commit = await fetchJson<GitHubCommitPayload>(commitUrl, fetchImpl, MAX_SOURCE_BYTES);
+  let treeSha = commit.commit?.tree?.sha;
+  if (typeof treeSha !== "string" || !/^[a-f0-9]{40}$/i.test(treeSha)) {
+    throw new Error(`GitHub did not return a valid tree identity for OpenClaw ${version}.`);
+  }
+
+  const segments = repoPath.split("/");
+  for (const segment of segments) {
+    const payload = await fetchJson<GitHubTreePayload>(
+      `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/git/trees/${treeSha}`,
+      fetchImpl,
+      MAX_GITHUB_TREE_BYTES,
+      GITHUB_TREE_REQUEST_TIMEOUT_MS
+    );
+    const entries = parseGitHubTreeEntries(payload, version);
+    if (payload.truncated !== false) {
+      throw new Error(`GitHub returned a truncated non-recursive tree while resolving ${repoPath} for OpenClaw ${version}.`);
+    }
+    const directory = entries.find((entry) => entry.path === segment && entry.type === "tree");
+    if (!directory) {
+      return { entries: new Map(), truncated: false };
+    }
+    treeSha = directory.sha;
+  }
+
+  const payload = await fetchJson<GitHubTreePayload>(
+    `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/git/trees/${treeSha}?recursive=1`,
+    fetchImpl,
+    MAX_GITHUB_TREE_BYTES,
+    GITHUB_TREE_REQUEST_TIMEOUT_MS
+  );
+  const entries = parseGitHubTreeEntries(payload, version);
+  if (payload.truncated !== false || entries.length > MAX_SCOPED_TREE_ENTRIES) {
+    return { entries: new Map(), truncated: true };
+  }
+  const prefix = `${repoPath}/`;
+  return {
+    entries: new Map(entries
+      .filter((entry) => entry.type !== "tree")
+      .map((entry) => [`${prefix}${entry.path}`, `${entry.type}:${entry.sha}:${entry.mode}`])),
+    truncated: false
+  };
+}
+
+function parseGitHubTreeEntries(payload: GitHubTreePayload, version: string) {
+  if (!Array.isArray(payload.tree)) {
+    throw new Error(`GitHub returned an unsupported tree shape for OpenClaw ${version}.`);
+  }
+  return payload.tree.map((item) => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      throw new Error(`GitHub returned an invalid tree entry for OpenClaw ${version}.`);
+    }
+    const entry = item as Record<string, unknown>;
+    if (
+      typeof entry.path !== "string" ||
+      !entry.path ||
+      typeof entry.type !== "string" ||
+      typeof entry.sha !== "string" ||
+      typeof entry.mode !== "string"
+    ) {
+      throw new Error(`GitHub returned an unsupported tree entry for OpenClaw ${version}.`);
+    }
+    return {
+      path: entry.path,
+      type: entry.type,
+      sha: entry.sha,
+      mode: entry.mode
+    };
+  });
+}
+
+function mergeTreeSnapshots(snapshots: GitHubTreeSnapshot[]) {
+  const entries = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    for (const [path, value] of snapshot.entries) {
+      if (entries.has(path)) {
+        throw new Error(`Gateway contract tree snapshots overlapped at ${path}.`);
+      }
+      entries.set(path, value);
+    }
+  }
+  return entries;
+}
+
 async function fetchReleaseTree(version: string, fetchImpl: FetchLike): Promise<GitHubTreeSnapshot> {
   const commitUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/commits/v${encodeURIComponent(version)}`;
   const commit = await fetchJson<GitHubCommitPayload>(commitUrl, fetchImpl, MAX_SOURCE_BYTES);
@@ -1056,30 +1437,14 @@ async function fetchReleaseTree(version: string, fetchImpl: FetchLike): Promise<
 
   const treeUrl = `https://api.github.com/repos/${OPENCLAW_REPOSITORY}/git/trees/${treeSha}?recursive=1`;
   const payload = await fetchJson<GitHubTreePayload>(treeUrl, fetchImpl, MAX_GITHUB_TREE_BYTES, GITHUB_TREE_REQUEST_TIMEOUT_MS);
-  if (!Array.isArray(payload.tree) || typeof payload.truncated !== "boolean") {
+  if (typeof payload.truncated !== "boolean") {
     throw new Error(`GitHub returned an unsupported recursive tree shape for OpenClaw ${version}.`);
   }
 
-  const entries = new Map<string, string>();
-  for (const item of payload.tree) {
-    if (typeof item !== "object" || item === null || Array.isArray(item)) {
-      throw new Error(`GitHub returned an invalid recursive tree entry for OpenClaw ${version}.`);
-    }
-    const entry = item as Record<string, unknown>;
-    if (entry.type === "tree") continue;
-    if (
-      typeof entry.path !== "string" ||
-      !entry.path ||
-      typeof entry.type !== "string" ||
-      typeof entry.sha !== "string" ||
-      typeof entry.mode !== "string"
-    ) {
-      throw new Error(`GitHub returned an unsupported recursive tree entry for OpenClaw ${version}.`);
-    }
-    entries.set(entry.path, `${entry.type}:${entry.sha}:${entry.mode}`);
-  }
-
-  return { entries, truncated: payload.truncated };
+  const entries = parseGitHubTreeEntries(payload, version)
+    .filter((entry) => entry.type !== "tree")
+    .map((entry) => [entry.path, `${entry.type}:${entry.sha}:${entry.mode}`] as const);
+  return { entries: new Map(entries), truncated: payload.truncated };
 }
 
 async function fetchJson<T>(url: string, fetchImpl: FetchLike, maxBytes: number, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
@@ -1106,13 +1471,18 @@ async function fetchTextWithLimit(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const githubToken = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
+    const headers: Record<string, string> = {
+      Accept: accept,
+      "User-Agent": "AgentOS-OpenClaw-Contract-Diff"
+    };
+    if (url.startsWith("https://api.github.com/") && githubToken) {
+      headers.Authorization = `Bearer ${githubToken}`;
+    }
     const response = await fetchImpl(url, {
       signal: controller.signal,
       cache: "no-store",
-      headers: {
-        Accept: accept,
-        "User-Agent": "AgentOS-OpenClaw-Contract-Diff"
-      }
+      headers
     });
     if (!response.ok) {
       throw new Error(`OpenClaw contract source returned HTTP ${response.status}.`);

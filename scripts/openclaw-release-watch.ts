@@ -192,7 +192,7 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     if (
       reconciliation.status === "blocked" ||
       intake.identity.status !== "verified" ||
-      intake.contractDiff.status === "unknown" ||
+      intake.contractDiff.source === "unavailable" ||
       intake.contractDiff.evidenceGaps.length > 0
     ) {
       blockedIntakeCount += 1;

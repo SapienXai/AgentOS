@@ -53,6 +53,10 @@ export function adaptOpenClawServerMethodContractDiff(
     ...report.changedServerMethodFiles,
     ...report.changedProtocolFiles
   ]);
+  const contractSourceFiles = unique([
+    ...report.changedServerMethodFiles,
+    ...report.changedProtocolFiles
+  ]);
   const supplementalDomainEvidence = [
     ...(supplement.eventsAdded ?? []),
     ...(supplement.eventsRemoved ?? []),
@@ -63,27 +67,36 @@ export function adaptOpenClawServerMethodContractDiff(
     ...(supplement.configDefaultsChanged ?? []),
     ...(supplement.securitySensitiveChanges ?? [])
   ];
+  const securitySensitiveChanges = unique([
+    ...inferSecuritySensitiveChanges({
+      methods: report.changes.map((change) => change.method),
+      files: contractSourceFiles
+    }),
+    ...(supplement.securitySensitiveChanges ?? [])
+  ]);
   const inferredDomains = unique([
     ...inferDomains({
-      methods: [...methodsAdded, ...methodsRemoved, ...scopesChanged, ...supplementalDomainEvidence],
-      files: changedFiles
+      methods: [
+        ...report.changes.map((change) => change.method),
+        ...methodsAdded,
+        ...methodsRemoved,
+        ...scopesChanged,
+        ...supplementalDomainEvidence
+      ],
+      files: contractSourceFiles
     }),
-    ...(supplement.securitySensitiveChanges?.length ? ["security"] : []),
+    ...(securitySensitiveChanges.length ? ["security"] : []),
     ...(supplement.configDefaultsChanged?.length || supplement.configKeysAdded?.length || supplement.configKeysRemoved?.length ? ["config"] : []),
     ...((supplement.eventsAdded ?? []).some((event) => /update|restart|lifecycle/i.test(event)) ? ["updates"] : []),
     ...((supplement.eventsAdded ?? []).some((event) => /session|transcript/i.test(event)) ? ["sessions"] : [])
   ]);
-  const securitySensitiveChanges = unique([
-    ...inferSecuritySensitiveChanges({ methods: [...methodsAdded, ...methodsRemoved, ...scopesChanged], files: changedFiles }),
-    ...(supplement.securitySensitiveChanges ?? [])
-  ]);
   const eventsAdded = unique(supplement.eventsAdded ?? []);
   const eventsRemoved = unique(supplement.eventsRemoved ?? []);
-  const requestSchemasChanged = unique(supplement.requestSchemasChanged ?? inferSchemaFiles(changedFiles, "request"));
-  const responseSchemasChanged = unique(supplement.responseSchemasChanged ?? inferSchemaFiles(changedFiles, "response"));
+  const requestSchemasChanged = unique(supplement.requestSchemasChanged ?? inferSchemaFiles(report.changedProtocolFiles, "request"));
+  const responseSchemasChanged = unique(supplement.responseSchemasChanged ?? inferSchemaFiles(report.changedProtocolFiles, "response"));
   const protocolChanged = report.changedProtocolFiles.length > 0 || eventsAdded.length > 0 || eventsRemoved.length > 0;
-  const updateContractChanged = inferredDomains.includes("updates") || changedFiles.some((file) => /update|doctor|rollback|recovery/i.test(file));
-  const sessionContractChanged = inferredDomains.includes("sessions") || changedFiles.some((file) => /session|transcript|conversation/i.test(file));
+  const updateContractChanged = inferredDomains.includes("updates") || contractSourceFiles.some((file) => /update|doctor|rollback|recovery/i.test(file));
+  const sessionContractChanged = inferredDomains.includes("sessions") || contractSourceFiles.some((file) => /session|transcript|conversation/i.test(file));
   const evidenceGaps = report.source === "unavailable"
     ? [report.error || "Core Gateway method contract evidence is unavailable."]
     : report.changes.some((change) => change.method === "__comparison_truncated__")
@@ -102,7 +115,11 @@ export function adaptOpenClawServerMethodContractDiff(
     source: report.source === "unavailable" ? "unavailable" : "agentos-server-method-diff",
     fromVersion: report.currentVersion,
     targetVersion: report.targetVersion,
+    ...(report.fileEvidenceScope ? { fileEvidenceScope: report.fileEvidenceScope } : {}),
     changedFiles,
+    changedServerMethodFiles: unique(report.changedServerMethodFiles),
+    changedProtocolFiles: unique(report.changedProtocolFiles),
+    methodChanges: report.changes,
     methodsAdded,
     methodsRemoved,
     eventsAdded,
@@ -140,11 +157,18 @@ export function buildFixtureContractDiff(input: {
     source: "github-static",
     currentVersion: input.fromVersion,
     targetVersion: input.targetVersion,
-    status: changes.some((change) => change.status === "blocker") ? "blocker" : changes.length > 0 ? "warning" : "safe",
+    status: changes.some((change) => change.status === "blocker")
+      ? "blocker"
+      : changes.some((change) => change.status === "unknown")
+        ? "unknown"
+        : changes.length > 0
+          ? "warning"
+          : "safe",
     currentMethodCount: input.currentSpecs.filter((spec) => spec.advertise).length,
     targetMethodCount: input.targetSpecs.filter((spec) => spec.advertise).length,
     currentRegisteredMethodCount: input.currentSpecs.length,
     targetRegisteredMethodCount: input.targetSpecs.length,
+    fileEvidenceScope: "complete-repository",
     changedFiles: [],
     changedServerMethodFiles: [],
     changedProtocolFiles: [],

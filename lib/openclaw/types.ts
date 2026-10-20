@@ -519,6 +519,13 @@ export interface OpenClawGatewaySessionAccessContract {
   requiredTool?: string;
 }
 
+export interface OpenClawGatewayReadSharingContract {
+  /** Symbolic upstream callback name; it is recorded, never evaluated. */
+  shareKey: string | null;
+  shareMaxAgeMs: number | null;
+  shareInvalidationEvents: string[];
+}
+
 export interface OpenClawServerMethodContractChange {
   method: string;
   kind: "added" | "removed" | "renamed" | "replaced" | "scope-changed" | "policy-changed";
@@ -532,6 +539,9 @@ export interface OpenClawServerMethodContractChange {
   /** Session-scoped authorization metadata is retained without flattening it into scope. */
   currentSessionAccess?: OpenClawGatewaySessionAccessContract | null;
   targetSessionAccess?: OpenClawGatewaySessionAccessContract | null;
+  /** Read-cache sharing policy is retained as static evidence without running its callback. */
+  currentReadSharing?: OpenClawGatewayReadSharingContract | null;
+  targetReadSharing?: OpenClawGatewayReadSharingContract | null;
   affectedOperations: string[];
   message: string;
 }
@@ -546,6 +556,7 @@ export interface OpenClawServerMethodContractDiffReport {
   targetMethodCount: number | null;
   currentRegisteredMethodCount: number | null;
   targetRegisteredMethodCount: number | null;
+  fileEvidenceScope?: "complete-repository" | "gateway-contract-paths" | "incomplete";
   changedFiles: string[];
   changedServerMethodFiles: string[];
   changedProtocolFiles: string[];

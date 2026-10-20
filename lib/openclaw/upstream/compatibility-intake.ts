@@ -125,7 +125,7 @@ function buildReleaseLifecycle(input: {
   contractDiff: OpenClawReleaseContractDiff;
 }): OpenClawReleaseLifecycle {
   const certificationBlocked = input.identity.status !== "verified" ||
-    input.contractDiff.status === "unknown" ||
+    input.contractDiff.source === "unavailable" ||
     input.contractDiff.evidenceGaps.length > 0;
 
   return {
@@ -141,7 +141,9 @@ function buildReleaseLifecycle(input: {
         status: certificationBlocked ? "blocked" : "pending",
         evidence: certificationBlocked
           ? ["Certification is blocked until identity and contract evidence is complete."]
-          : ["Certification remains an explicit human-reviewed Compatibility Lab decision."]
+          : input.contractDiff.status === "unknown"
+            ? ["Static contract evidence is available; exact-runtime policy verification and human-reviewed certification remain pending."]
+            : ["Certification remains an explicit human-reviewed Compatibility Lab decision."]
       },
       { id: "promotion", label: "Promotion", status: "pending", evidence: ["No manifest promotion was performed by intake."] },
       { id: "intake-certified-closed", label: "Intake certified/closed", status: "pending", evidence: ["The intake remains open until certification and promotion are complete."] },
@@ -194,6 +196,13 @@ export function renderOpenClawCompatibilityIssueAutoSection(
         "**Static evidence incomplete — certification blocked.**",
         "A verified release identity does not prove that compatibility contract evidence is complete. Resolve the outstanding identity or contract evidence before certification."
       ].join("\n")
+    : intake.impact.classifications.includes("RUNTIME_REVIEW_REQUIRED")
+      ? [
+          "## Evidence status",
+          "",
+          "**Static contract evidence is available; runtime policy verification is pending.**",
+          "The release remains NOT CERTIFIED until the exact target Gateway passes the required runtime checks and Compatibility Lab review."
+        ].join("\n")
     : "";
 
   return [
@@ -238,13 +247,16 @@ export function renderOpenClawCompatibilityIssueAutoSection(
     "## Contract evidence",
     `- Methods added: ${formatValues(intake.contractDiff.methodsAdded)}`,
     `- Methods removed: ${formatValues(intake.contractDiff.methodsRemoved)}`,
+    `- Gateway server-method source files changed: ${intake.contractDiff.changedServerMethodFiles.length}`,
+    `- Gateway protocol source files changed: ${intake.contractDiff.changedProtocolFiles.length}`,
+    ...renderMethodChanges(intake.contractDiff.methodChanges),
     `- Scope changes: ${formatValues(intake.contractDiff.scopesChanged)}`,
     `- Request/response schema changes: ${formatValues([...intake.contractDiff.requestSchemasChanged, ...intake.contractDiff.responseSchemasChanged])}`,
     `- Config/default changes: ${formatValues([...intake.contractDiff.configKeysAdded, ...intake.contractDiff.configKeysRemoved, ...intake.contractDiff.configDefaultsChanged])}`,
     `- Protocol changed: **${intake.contractDiff.protocolChanged ? "yes" : "no"}**`,
     `- Durable/update contract changed: **${intake.contractDiff.updateContractChanged ? "yes" : "no"}**`,
     `- Session contract changed: **${intake.contractDiff.sessionContractChanged ? "yes" : "no"}**`,
-    `- Changed files observed: ${intake.contractDiff.changedFiles.length}`,
+    `- Full repository diff paths retained: ${intake.contractDiff.changedFiles.length}`,
     ...(intake.contractDiff.evidenceGaps.length > 0 ? ["- Evidence gaps:", ...intake.contractDiff.evidenceGaps.map((value) => `  - ${sanitizeIssueText(value)}`)] : []),
     evidenceWarning,
     "",
@@ -272,6 +284,18 @@ export function renderOpenClawCompatibilityIssueAutoSection(
     drift,
     "<!-- agentos-intake:auto:end -->"
   ].join("\n");
+}
+
+function renderMethodChanges(changes: OpenClawCompatibilityIntake["contractDiff"]["methodChanges"]) {
+  if (changes.length === 0) return ["- Method-level contract changes: none."];
+  const rendered = ["- Method-level contract changes:", ...changes.slice(0, 40).map((change) => {
+    const readSharing = change.targetReadSharing
+      ? `; read sharing: key=${change.targetReadSharing.shareKey ?? "none"}, max age=${change.targetReadSharing.shareMaxAgeMs ?? "none"} ms, invalidation events=${formatValues(change.targetReadSharing.shareInvalidationEvents)}`
+      : "";
+    return `  - \`${sanitizeIssueText(change.method)}\` (${change.kind}, ${change.status}): ${sanitizeIssueText(change.message)}${sanitizeIssueText(readSharing)}`;
+  })];
+  if (changes.length > 40) rendered.push(`  - ${changes.length - 40} additional method changes are retained in the JSON intake.`);
+  return rendered;
 }
 
 function identityRoleStatus(status: OpenClawReleaseIdentity["status"]): "verified" | "unverified" | "mismatch" {

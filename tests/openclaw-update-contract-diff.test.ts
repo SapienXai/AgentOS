@@ -7,7 +7,10 @@ import {
   parseOpenClawCoreMethodSpecs,
   resetOpenClawServerMethodContractDiffCache
 } from "@/lib/openclaw/application/update-contract-diff-service";
-import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
+import {
+  adaptOpenClawServerMethodContractDiff,
+  getOpenClawReleaseContractDiff
+} from "@/lib/openclaw/upstream/contract-diff";
 import { OPENCLAW_2026_9_7_CORE_DESCRIPTOR_FIXTURE } from "./fixtures/openclaw-2026.9.7-core-descriptors";
 
 const currentDescriptor = `
@@ -78,6 +81,61 @@ test("tuple descriptors accept the pinned OpenClaw shared mutation policy consta
 
   assert.equal(methods[0]?.name, "config.apply");
   assert.equal(methods[0]?.controlPlaneWrite, true);
+});
+
+test("OpenClaw 2026.10 descriptor constants and read-sharing metadata remain structured evidence", () => {
+  const methods = parseOpenClawCoreMethodSpecs(`
+    const OBSERVATION = { lifetime: "observation" } as const;
+    const SESSION_WRITE = { sessionAccess: { mode: "write" } } as const;
+    const PORTAL_SESSION_WRITE = {
+      sessionAccess: { mode: "write", allowOwnSessionScope: true, requiredTool: "portal" },
+    } as const;
+    const SHARED_READ = { shareMaxAgeMs: 1_000, shareInvalidationEvents: ["sessions.changed"] } as const;
+    const CORE_GATEWAY_METHOD_SPECS = [
+      ["sessions.describe", "sessions", "operator.read", "<=2026.7", OBSERVATION],
+      ["sessions.create", "sessions", "operator.write", "<=2026.7", SESSION_WRITE],
+      ["portal.session.open", "portals", "operator.write", "2026.9", PORTAL_SESSION_WRITE],
+      ["models.list", "models", "operator.read", "<=2026.7", { ...SHARED_READ, shareKey: modelsListShareKey }],
+    ] as const;
+  `);
+
+  assert.equal(methods.find((method) => method.name === "sessions.describe")?.lifetime, "observation");
+  assert.deepEqual(methods.find((method) => method.name === "sessions.create")?.sessionAccess, { mode: "write" });
+  assert.deepEqual(methods.find((method) => method.name === "portal.session.open")?.sessionAccess, {
+    mode: "write",
+    allowOwnSessionScope: true,
+    requiredTool: "portal"
+  });
+  assert.deepEqual(methods.find((method) => method.name === "models.list")?.readSharing, {
+    shareKey: "modelsListShareKey",
+    shareMaxAgeMs: 1_000,
+    shareInvalidationEvents: ["sessions.changed"]
+  });
+  assert.throws(
+    () => parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+      ["models.list", "models", "operator.read", "<=2026.7", UNKNOWN_READ_POLICY],
+    ] as const;`),
+    /unsupported shared policy constant/
+  );
+});
+
+test("changing read-sharing keys is runtime-required evidence, not silently accepted", () => {
+  const current = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+    ["models.list", "models", "operator.read", "<=2026.7"],
+  ] as const;`);
+  const target = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
+    ["models.list", "models", "operator.read", "<=2026.7", {
+      shareKey: modelsListShareKey,
+      shareMaxAgeMs: 1_000,
+      shareInvalidationEvents: ["models.changed"],
+    }],
+  ] as const;`);
+  const change = compareOpenClawCoreMethodSpecs(current, target).find((entry) => entry.method === "models.list");
+
+  assert.equal(change?.status, "unknown");
+  assert.equal(change?.authorizationEvidence, "runtime-required");
+  assert.equal(change?.targetReadSharing?.shareKey, "modelsListShareKey");
+  assert.match(change?.message ?? "", /live runtime verification/i);
 });
 
 test("OpenClaw 2026.9.7 observation lifetimes are preserved in compatibility evidence", () => {
@@ -204,7 +262,7 @@ test("required method removal and privilege escalation block update preflight ev
   assert.equal(report.changes.some((change) => change.method === "models.list" && change.kind === "scope-changed"), true);
 });
 
-test("scope changes use warning and unknown evidence instead of a privilege ladder", async () => {
+test("scope changes preserve unknown evidence above ordinary warnings without a privilege ladder", async () => {
   const report = await getOpenClawServerMethodContractDiff(
     { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
     {
@@ -229,7 +287,7 @@ test("scope changes use warning and unknown evidence instead of a privilege ladd
     }
   );
 
-  assert.equal(report.status, "warning");
+  assert.equal(report.status, "unknown");
   assert.equal(report.unknownCount, 1);
   assert.equal(report.changes.find((change) => change.method === "sessions.create")?.status, "unknown");
   assert.equal(report.changes.find((change) => change.method === "sessions.create")?.authorizationEvidence, "runtime-required");
@@ -344,11 +402,29 @@ test("explicit replacement evidence prevents a required-loss blocker", () => {
   assert.equal(changes.find((change) => change.method === "required.primary")?.status, "warning");
 });
 
-test("truncated compare evidence is completed from immutable release tag trees", async () => {
+test("truncated compare evidence falls back to complete Gateway contract subtrees", async () => {
   resetOpenClawServerMethodContractDiffCache();
   const oldSha = "1".repeat(40);
   const sharedSha = "2".repeat(40);
   const newSha = "3".repeat(40);
+  const currentTreeShas = new Map([
+    ["src", "s".repeat(40)],
+    ["src-gateway", "g".repeat(40)],
+    ["src-methods", "m".repeat(40)],
+    ["packages", "p".repeat(40)],
+    ["packages-protocol", "q".repeat(40)]
+  ]);
+  const targetTreeShas = new Map([
+    ["src", "S".repeat(40)],
+    ["src-gateway", "G".repeat(40)],
+    ["src-methods", "M".repeat(40)],
+    ["packages", "P".repeat(40)],
+    ["packages-protocol", "Q".repeat(40)]
+  ]);
+  const schemaOldSha = "4".repeat(40);
+  const schemaNewSha = "5".repeat(40);
+  const fileEntry = (path: string, sha: string) => ({ path, type: "blob", sha, mode: "100644" });
+  const treeEntry = (path: string, sha: string) => ({ path, type: "tree", sha, mode: "040000" });
   const report = await getOpenClawServerMethodContractDiff(
     { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
     {
@@ -362,26 +438,45 @@ test("truncated compare evidence is completed from immutable release tag trees",
             files: Array.from({ length: 300 }, (_, index) => ({ filename: `partial/file-${index}` }))
           });
         }
-        if (url.includes("/commits/v2026.6.8")) {
-          return jsonResponse({ commit: { tree: { sha: "a".repeat(40) } } });
-        }
-        if (url.includes("/commits/v2026.7.1")) {
-          return jsonResponse({ commit: { tree: { sha: "b".repeat(40) } } });
+        if (url.includes("/commits/")) {
+          const target = url.includes("2026.7.1");
+          return jsonResponse({ commit: { tree: { sha: target ? "b".repeat(40) : "a".repeat(40) } } });
         }
         if (url.includes("/git/trees/")) {
-          const isCurrent = url.includes("a".repeat(40));
-          const entries = isCurrent
-            ? [
-                { path: "src/gateway/server-methods/old.ts", type: "blob", sha: oldSha, mode: "100644" },
-                { path: "src/gateway/server-methods/shared.ts", type: "blob", sha: sharedSha, mode: "100644" },
-                { path: "package.json", type: "blob", sha: oldSha, mode: "100644" }
-              ]
-            : [
-                { path: "src/gateway/server-methods/shared.ts", type: "blob", sha: sharedSha, mode: "100644" },
-                { path: "src/gateway/server-methods/new.ts", type: "blob", sha: newSha, mode: "100644" },
-                { path: "package.json", type: "blob", sha: newSha, mode: "100644" }
-              ];
-          return jsonResponse({ tree: entries, truncated: false });
+          const sha = url.split("/git/trees/")[1]?.split("?")[0] ?? "";
+          const target = sha === "b".repeat(40) || [...targetTreeShas.values()].includes(sha);
+          if (url.includes("?recursive=1") && (sha === "a".repeat(40) || sha === "b".repeat(40))) {
+            return jsonResponse({ tree: [], truncated: true });
+          }
+          if (sha === "a".repeat(40) || sha === "b".repeat(40)) {
+            const trees = target ? targetTreeShas : currentTreeShas;
+            return jsonResponse({
+              tree: [treeEntry("src", trees.get("src")!), treeEntry("packages", trees.get("packages")!)],
+              truncated: false
+            });
+          }
+          if (sha === (target ? targetTreeShas.get("src") : currentTreeShas.get("src"))) {
+            return jsonResponse({ tree: [treeEntry("gateway", target ? targetTreeShas.get("src-gateway")! : currentTreeShas.get("src-gateway")!)], truncated: false });
+          }
+          if (sha === (target ? targetTreeShas.get("src-gateway") : currentTreeShas.get("src-gateway"))) {
+            return jsonResponse({ tree: [treeEntry("server-methods", target ? targetTreeShas.get("src-methods")! : currentTreeShas.get("src-methods")!)], truncated: false });
+          }
+          if (sha === (target ? targetTreeShas.get("src-methods") : currentTreeShas.get("src-methods"))) {
+            const entries = target
+              ? [fileEntry("shared.ts", sharedSha), fileEntry("new.ts", newSha)]
+              : [fileEntry("old.ts", oldSha), fileEntry("shared.ts", sharedSha)];
+            return jsonResponse({ tree: entries, truncated: false });
+          }
+          if (sha === (target ? targetTreeShas.get("packages") : currentTreeShas.get("packages"))) {
+            return jsonResponse({ tree: [treeEntry("gateway-protocol", target ? targetTreeShas.get("packages-protocol")! : currentTreeShas.get("packages-protocol")!)], truncated: false });
+          }
+          if (sha === (target ? targetTreeShas.get("packages-protocol") : currentTreeShas.get("packages-protocol"))) {
+            return jsonResponse({
+              tree: [fileEntry("schema.ts", target ? schemaNewSha : schemaOldSha)],
+              truncated: false
+            });
+          }
+          return jsonResponse({ tree: [], truncated: false });
         }
         if (url.includes("v2026.6.8")) return new Response(currentDescriptor);
         return new Response(currentDescriptor);
@@ -391,10 +486,11 @@ test("truncated compare evidence is completed from immutable release tag trees",
 
   assert.equal(report.status, "warning");
   assert.deepEqual(report.changedFiles, [
-    "package.json",
+    "packages/gateway-protocol/schema.ts",
     "src/gateway/server-methods/new.ts",
     "src/gateway/server-methods/old.ts"
   ]);
+  assert.equal(report.fileEvidenceScope, "gateway-contract-paths");
   assert.deepEqual(report.changedServerMethodFiles, [
     "src/gateway/server-methods/new.ts",
     "src/gateway/server-methods/old.ts"
@@ -418,7 +514,89 @@ test("live release contract evidence keeps its upstream-diff provenance", async 
   });
 
   assert.equal(report.source, "agentos-server-method-diff");
+  assert.equal(report.fileEvidenceScope, "complete-repository");
   assert.deepEqual(report.evidenceGaps, []);
+});
+
+test("release evidence retains method policy changes and scopes inference to Gateway contract files", () => {
+  const methodChanges = [{
+    method: "sessions.list",
+    kind: "policy-changed" as const,
+    status: "unknown" as const,
+    authorizationEvidence: "runtime-required" as const,
+    currentScope: "operator.read",
+    targetScope: "operator.read",
+    currentReadSharing: null,
+    targetReadSharing: {
+      shareKey: "operatorReadShareKey",
+      shareMaxAgeMs: 12_000,
+      shareInvalidationEvents: ["sessions.changed"]
+    },
+    affectedOperations: ["session-list"],
+    message: "Read sharing requires caller isolation review."
+  }];
+  const diff = adaptOpenClawServerMethodContractDiff({
+    generatedAt: "fixture",
+    source: "github-static",
+    currentVersion: "2026.10.4",
+    targetVersion: "2026.10.5",
+    status: "unknown",
+    currentMethodCount: 1,
+    targetMethodCount: 1,
+    currentRegisteredMethodCount: 1,
+    targetRegisteredMethodCount: 1,
+    fileEvidenceScope: "complete-repository",
+    changedFiles: ["ui/src/pages/sessions/view.ts", "docs/reference/schema-history.md"],
+    changedServerMethodFiles: ["src/gateway/server-methods/sessions.ts"],
+    changedProtocolFiles: ["packages/gateway-protocol/sessions.schema.ts"],
+    changes: methodChanges,
+    blockerCount: 0,
+    warningCount: 0,
+    unknownCount: 1,
+    renamedCount: 0,
+    replacedCount: 0,
+    summary: "1 method contract change, 1 unknown.",
+    error: null
+  });
+
+  assert.deepEqual(diff.methodChanges, methodChanges);
+  assert.deepEqual(diff.changedServerMethodFiles, ["src/gateway/server-methods/sessions.ts"]);
+  assert.deepEqual(diff.changedProtocolFiles, ["packages/gateway-protocol/sessions.schema.ts"]);
+  assert.deepEqual(diff.requestSchemasChanged, ["packages/gateway-protocol/sessions.schema.ts"]);
+  assert.deepEqual(diff.responseSchemasChanged, ["packages/gateway-protocol/sessions.schema.ts"]);
+  assert.equal(diff.securitySensitiveChanges.some((change) => change.includes("ui/src/pages")), false);
+  assert.equal(diff.domainsChanged.includes("security"), true);
+  assert.equal(diff.sessionContractChanged, true);
+});
+
+test("runtime-required unknown policies outrank ordinary warnings in the aggregate status", async () => {
+  resetOpenClawServerMethodContractDiffCache();
+  const report = await getOpenClawServerMethodContractDiff(
+    { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
+    {
+      bypassCache: true,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/compare/")) return jsonResponse({ status: "ahead", total_commits: 1, files: [] });
+        if (url.includes("v2026.6.8")) {
+          return new Response(`const CORE_GATEWAY_METHOD_SPECS = [
+            ["models.list", "models", "operator.read", "<=2026.7"],
+          ] as const;`);
+        }
+        return new Response(`const CORE_GATEWAY_METHOD_SPECS = [
+          ["models.list", "models", "operator.read", "<=2026.7", {
+            lifetime: "observation",
+            shareKey: modelsListShareKey,
+            shareMaxAgeMs: 1_000,
+          }],
+        ] as const;`);
+      }
+    }
+  );
+
+  assert.equal(report.warningCount, 1);
+  assert.equal(report.unknownCount, 1);
+  assert.equal(report.status, "unknown");
 });
 
 test("diverged compare evidence remains incomplete when complete tag trees are unavailable", async () => {

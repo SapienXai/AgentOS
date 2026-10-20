@@ -47,7 +47,8 @@ export function classifyOpenClawReleaseImpact(input: {
   const changedDomains = new Set(input.contractDiff.domainsChanged);
   const noteSignals = new Set(input.releaseNotes.signals);
   const identityEvidenceIncomplete = input.identity.status === "incomplete";
-  const contractEvidenceIncomplete = input.contractDiff.status === "unknown" || input.contractDiff.evidenceGaps.length > 0;
+  const contractEvidenceIncomplete = input.contractDiff.source === "unavailable" || input.contractDiff.evidenceGaps.length > 0;
+  const runtimeReviewRequired = input.contractDiff.status === "unknown" && !contractEvidenceIncomplete;
 
   if (input.identity.status === "identity-mismatch") {
     classifications.add("IDENTITY_MISMATCH");
@@ -62,6 +63,11 @@ export function classifyOpenClawReleaseImpact(input: {
   if (contractEvidenceIncomplete) {
     classifications.add("DISCOVERY_INCOMPLETE");
     rationale.push("Contract evidence is incomplete; the release cannot be promoted from static intake alone.");
+  }
+
+  if (runtimeReviewRequired) {
+    classifications.add("RUNTIME_REVIEW_REQUIRED");
+    rationale.push("Static contract sources were parsed, but one or more policies require exact-runtime verification before certification.");
   }
 
   if (input.contractDiff.securitySensitiveChanges.length > 0 || changedDomains.has("security") || noteSignals.has("security")) {
@@ -228,6 +234,19 @@ export function buildCertificationPlan(input: {
     });
   }
 
+  if (classifications.has("RUNTIME_REVIEW_REQUIRED")) {
+    add({
+      id: "runtime-contract-review",
+      label: "Verify unknown Gateway policies against the exact target runtime",
+      reason: "Static evidence is available, but policy behavior or cache isolation requires live Gateway verification before certification.",
+      commands: [
+        "pnpm openclaw:official-transport-cert",
+        "pnpm openclaw:multi-user-e2e",
+        "pnpm openclaw:official-production-cert"
+      ]
+    });
+  }
+
   return [...checks.values()];
 }
 
@@ -235,6 +254,7 @@ function resolveSeverity(classifications: Set<OpenClawReleaseImpact["classificat
   if (classifications.has("IDENTITY_MISMATCH") || classifications.has("UPSTREAM_RELEASE_IDENTITY_DRIFT") || classifications.has("SECURITY_CRITICAL")) return "critical" as const;
   if (classifications.has("BREAKING")) return "high" as const;
   if (classifications.has("DISCOVERY_INCOMPLETE")) return "unknown" as const;
+  if (classifications.has("RUNTIME_REVIEW_REQUIRED")) return "high" as const;
   if (classifications.has("BEHAVIOR_CHANGE") || classifications.has("COMPATIBILITY_REVIEW")) return "medium" as const;
   return "low" as const;
 }

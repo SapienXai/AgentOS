@@ -221,15 +221,36 @@ test("the historical 2026.9.1 to 2026.9.2 fixture detects security, behavior, an
   );
 });
 
-test("verified identity does not clear unknown contract evidence", () => {
+test("verified identity does not clear unavailable contract evidence", () => {
   const impact = classifyOpenClawReleaseImpact({
     ...impactInput(),
-    contractDiff: contractDiffFixture({ status: "unknown", evidenceGaps: [] })
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      source: "unavailable",
+      evidenceGaps: ["Core Gateway method contract source is unavailable."]
+    })
   });
 
   assert.equal(impact.classifications.includes("DISCOVERY_INCOMPLETE"), true);
   assert.equal(impact.severity, "unknown");
   assert.equal(impact.requiredChecks.some((check) => check.id === "evidence-completion"), true);
+});
+
+test("complete static evidence keeps unknown policies in runtime review instead of discovery incomplete", () => {
+  const impact = classifyOpenClawReleaseImpact({
+    ...impactInput(),
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      source: "agentos-server-method-diff",
+      evidenceGaps: []
+    })
+  });
+
+  assert.equal(impact.classifications.includes("DISCOVERY_INCOMPLETE"), false);
+  assert.equal(impact.classifications.includes("RUNTIME_REVIEW_REQUIRED"), true);
+  assert.equal(impact.severity, "high");
+  assert.equal(impact.requiredChecks.some((check) => check.id === "runtime-contract-review"), true);
+  assert.equal(impact.requiredChecks.some((check) => check.id === "evidence-completion"), false);
 });
 
 test("verified identity does not override a contract evidence gap", () => {
@@ -278,7 +299,11 @@ test("identity and contract incompleteness remain visible together", () => {
       status: "incomplete",
       missingEvidence: ["npm package integrity"]
     },
-    contractDiff: contractDiffFixture({ status: "unknown", evidenceGaps: [] })
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      source: "unavailable",
+      evidenceGaps: ["Core Gateway method contract source is unavailable."]
+    })
   });
 
   assert.equal(impact.classifications.includes("DISCOVERY_INCOMPLETE"), true);
@@ -305,7 +330,11 @@ test("identity mismatch remains a distinct critical fail-closed classification",
 test("incomplete evidence cannot be made low risk by release-note reassurance", () => {
   const impact = classifyOpenClawReleaseImpact({
     ...impactInput(),
-    contractDiff: contractDiffFixture({ status: "unknown", evidenceGaps: [] }),
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      source: "unavailable",
+      evidenceGaps: ["Core Gateway method contract source is unavailable."]
+    }),
     releaseNotes: buildOpenClawReleaseNotesEvidence({
       body: "No breaking changes are expected.",
       sourceUrl: "https://github.com/openclaw/openclaw/releases/tag/v2026.9.3"
@@ -323,7 +352,8 @@ test("security-critical evidence remains critical when contract evidence is inco
     ...impactInput(),
     contractDiff: contractDiffFixture({
       status: "unknown",
-      evidenceGaps: [],
+      source: "unavailable",
+      evidenceGaps: ["Core Gateway method contract source is unavailable."],
       securitySensitiveChanges: ["session visibility default changed"],
       domainsChanged: ["security"]
     })
@@ -337,7 +367,11 @@ test("security-critical evidence remains critical when contract evidence is inco
 test("intake JSON and issue output agree when identity is verified but contract evidence is incomplete", () => {
   const intake = buildOpenClawCompatibilityIntake({
     ...intakeInput(),
-    contractDiff: contractDiffFixture({ status: "unknown", evidenceGaps: [] })
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      source: "unavailable",
+      evidenceGaps: ["Core Gateway method contract source is unavailable."]
+    })
   });
   const issue = renderOpenClawCompatibilityIssue(intake);
 
@@ -398,6 +432,33 @@ test("runner returns intake-blocked and writes incomplete evidence for an author
   assert.equal(intake.impact.classifications.includes("DISCOVERY_INCOMPLETE"), true);
   assert.equal(intake.certification.status, "not-certified");
   assert.equal(intake.certification.normalUpdateAllowed, false);
+});
+
+test("runner keeps fully parsed unknown policies reviewable and not certified", async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-watch-runtime-review-"));
+  const result = await runOpenClawReleaseWatch({
+    mode: "manual",
+    targetVersion: "2026.9.5",
+    recommendedVersion: "2026.9.3",
+    dryRun: true,
+    forceRefresh: true,
+    outputDir,
+    agentosCommit: repositoryHead,
+    agentosVersion: "0.8.0",
+    now: () => new Date("2026-09-06T00:00:00.000Z"),
+    fetchImpl: releaseWatchUnknownPolicyFetch("2026.9.5")
+  });
+
+  assert.equal(result.status, "intake-generated");
+  assert.equal(result.intakes.length, 1);
+  const intake = JSON.parse(readFileSync(result.intakes[0].intakePath!, "utf8")) as ReturnType<typeof buildOpenClawCompatibilityIntake>;
+  assert.equal(intake.contractDiff.status, "unknown");
+  assert.equal(intake.contractDiff.source, "agentos-server-method-diff");
+  assert.deepEqual(intake.contractDiff.evidenceGaps, []);
+  assert.equal(intake.impact.classifications.includes("DISCOVERY_INCOMPLETE"), false);
+  assert.equal(intake.impact.classifications.includes("RUNTIME_REVIEW_REQUIRED"), true);
+  assert.equal(intake.certification.status, "not-certified");
+  assert.equal(intake.lifecycle.stages.find((stage) => stage.id === "certification")?.status, "pending");
 });
 
 test("release-watch dry-run reconciles certified evidence and repository pin without mutating issue state", async () => {
@@ -629,6 +690,38 @@ test("issue rendering is deduplicated across open and closed issues and surfaces
   assert.match(renderOpenClawCompatibilityIssue(driftIntake, { identityDrift: true }), /IDENTITY_DRIFT/);
 });
 
+test("release review issue retains read-sharing policy identities for runtime review", () => {
+  const intake = buildOpenClawCompatibilityIntake({
+    ...intakeInput(),
+    identity: identityFor("2026.10.5"),
+    contractDiff: contractDiffFixture({
+      status: "unknown",
+      methodChanges: [{
+        method: "models.list",
+        kind: "policy-changed",
+        status: "unknown",
+        authorizationEvidence: "runtime-required",
+        currentScope: "operator.read",
+        targetScope: "operator.read",
+        currentReadSharing: null,
+        targetReadSharing: {
+          shareKey: "modelsListShareKey",
+          shareMaxAgeMs: 12_000,
+          shareInvalidationEvents: ["models.changed"]
+        },
+        affectedOperations: [],
+        message: "Caller cache isolation requires live runtime verification."
+      }]
+    })
+  });
+  const issue = renderOpenClawCompatibilityIssue(intake);
+
+  assert.match(issue, /Method-level contract changes/);
+  assert.match(issue, /`models\.list` \(policy-changed, unknown\)/);
+  assert.match(issue, /read sharing: key=modelsListShareKey, max age=12000 ms/);
+  assert.match(issue, /invalidation events=`models\.changed`/);
+});
+
 test("unmanifested releases remain unverified in compatibility evidence and watcher has no mutation path", () => {
   const decision = resolveOpenClawUpdateDecision({
     targetVersion: "2026.9.5",
@@ -858,6 +951,36 @@ function releaseWatchIncompleteContractFetch(version: string) {
     if (url.includes("/src/gateway/methods/core-descriptors.ts") || url.includes(`/compare/v2026.9.3...v${version}`)) {
       return new Response(null, { status: 404 });
     }
+    return verifiedSource(input);
+  };
+}
+
+function releaseWatchUnknownPolicyFetch(version: string) {
+  const verifiedSource = identityFetch({ packageVersion: version });
+  const currentDescriptor = `const CORE_GATEWAY_METHOD_SPECS = [
+    ["models.list", "models", "operator.read", "<=2026.7"],
+  ] as const;`;
+  const targetDescriptor = `const CORE_GATEWAY_METHOD_SPECS = [
+    ["models.list", "models", "operator.read", "<=2026.7", {
+      shareKey: modelsListShareKey,
+      shareMaxAgeMs: 1_000,
+      shareInvalidationEvents: ["models.changed"],
+    }],
+  ] as const;`;
+  return async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === npmDistTagsEndpoint) return jsonResponse({ latest: version });
+    if (url === npmPackumentEndpoint) {
+      return jsonResponse({
+        versions: { "2026.9.2": {}, [version]: {} },
+        time: { [version]: "2026-09-03T00:00:00.000Z" }
+      });
+    }
+    if (url === releaseEndpoint) return jsonResponse([releaseRecord(version)]);
+    if (url.includes("/src/gateway/methods/core-descriptors.ts")) {
+      return new Response(url.includes(`/v${version}/`) ? targetDescriptor : currentDescriptor, { status: 200 });
+    }
+    if (url.includes("/compare/v2026.9.3...v")) return jsonResponse({ files: [] });
     return verifiedSource(input);
   };
 }

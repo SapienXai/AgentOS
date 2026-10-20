@@ -1,4 +1,5 @@
 import type { OpenClawVersionRoles } from "@/lib/openclaw/versions";
+import type { OpenClawServerMethodContractChange } from "@/lib/openclaw/types";
 
 export type OpenClawReleaseMode = "scheduled" | "manual";
 
@@ -89,7 +90,11 @@ export type OpenClawReleaseContractDiff = {
   source: "agentos-server-method-diff" | "fixture" | "unavailable";
   fromVersion: string;
   targetVersion: string;
+  fileEvidenceScope?: "complete-repository" | "gateway-contract-paths" | "incomplete";
   changedFiles: string[];
+  changedServerMethodFiles: string[];
+  changedProtocolFiles: string[];
+  methodChanges: OpenClawServerMethodContractChange[];
   methodsAdded: string[];
   methodsRemoved: string[];
   eventsAdded: string[];
@@ -123,6 +128,7 @@ export type OpenClawReleaseImpactClassification =
   | "NO_KNOWN_AGENTOS_IMPACT"
   | "IDENTITY_MISMATCH"
   | "UPSTREAM_RELEASE_IDENTITY_DRIFT"
+  | "RUNTIME_REVIEW_REQUIRED"
   | "DISCOVERY_INCOMPLETE";
 
 export type OpenClawReleaseImpact = {
