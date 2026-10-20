@@ -785,17 +785,25 @@ test("browser worker restart immediately fences active accounts and task binding
 });
 
 test("OpenClaw policy plugin binds by trusted session key and fails managed profiles closed", async () => {
-  const [source, packageJson] = await Promise.all([
+  const [source, packageJson, manifestText] = await Promise.all([
     readFile(path.join(process.cwd(), "openclaw-plugins/agentos-browser-policy/index.js"), "utf8"),
-    readFile(path.join(process.cwd(), "openclaw-plugins/agentos-browser-policy/package.json"), "utf8")
+    readFile(path.join(process.cwd(), "openclaw-plugins/agentos-browser-policy/package.json"), "utf8"),
+    readFile(path.join(process.cwd(), "openclaw-plugins/agentos-browser-policy/openclaw.plugin.json"), "utf8")
   ]);
+  const manifest = JSON.parse(manifestText) as { contracts?: { trustedToolPolicies?: string[] } };
   const metadata = JSON.parse(packageJson) as {
-    openclaw?: { build?: { openclawVersion?: string; pluginSdkVersion?: string }; compat?: { pluginApi?: string; minGatewayVersion?: string } }
+    openclaw?: {
+      build?: { openclawVersion?: string; pluginSdkVersion?: string };
+      compat?: { pluginApi?: string; minGatewayVersion?: string };
+      contracts?: { trustedToolPolicies?: string[] };
+    }
   };
-  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.9.4");
-  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.9.4");
+  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.10.5");
+  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.10.5");
   assert.equal(metadata.openclaw?.compat?.pluginApi, ">=2026.9.1");
   assert.equal(metadata.openclaw?.compat?.minGatewayVersion, "2026.9.1");
+  assert.deepEqual(metadata.openclaw?.contracts?.trustedToolPolicies, ["secure-browser-profile"]);
+  assert.deepEqual(manifest.contracts?.trustedToolPolicies, ["secure-browser-profile"]);
   assert.equal((source.match(/definePluginEntry\(/g) ?? []).length, 1);
   assert.equal((source.match(/register\(api\)/g) ?? []).length, 1);
   assert.match(source, /openclaw\/plugin-sdk\/plugin-entry/);
@@ -803,6 +811,9 @@ test("OpenClaw policy plugin binds by trusted session key and fails managed prof
   assert.match(source, /profile: binding\.openClawProfileName/);
   assert.match(source, /isAllowedUrl\(targetUrl, binding\.allowedDomains\)/);
   assert.match(source, /requireApproval/);
+  assert.match(source, /registerTrustedToolPolicy/);
+  assert.match(source, /matcher: \["browser"\]/);
+  assert.match(source, /api\.on\("before_tool_call", evaluateBrowserCall/);
   assert.match(source, /managed browser profiles require an active task binding/i);
   assert.match(source, /Arbitrary page evaluation is disabled/);
   assert.match(source, /AGENTOS_BROWSER_POLICY_TOKEN/);

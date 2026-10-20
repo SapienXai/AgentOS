@@ -145,7 +145,7 @@ pnpm --filter @sapienx/openclaw-agentos test
 pnpm --filter @sapienx/openclaw-agentos pack:clawhub
 ~~~
 
-The package targets the AgentOS repository's certified OpenClaw contract, <code>2026.9.4</code>. Compatibility metadata is explicit in both <code>package.json</code> and <code>openclaw.plugin.json</code>.
+The package is built and validated against the exact OpenClaw <code>2026.10.5</code> SDK. Its compatibility metadata retains the <code>2026.9.4</code> minimum Plugin API and Gateway version.
 
 <div align="center">
   <br />

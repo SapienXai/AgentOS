@@ -5,6 +5,9 @@
   "activation": {
     "onStartup": true
   },
+  "contracts": {
+    "trustedToolPolicies": ["secure-browser-profile"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

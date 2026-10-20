@@ -32,127 +32,134 @@ export default definePluginEntry({
       });
     });
 
-    api.on(
-      "before_tool_call",
-      async (event, ctx) => {
-        if (event.toolName !== "browser") return;
+    const evaluateBrowserCall = async (event, ctx) => {
+      if (event.toolName !== "browser") return;
 
-        const requestedProfile =
-          typeof event.params.profile === "string" ? event.params.profile.trim() : "";
-        const localBinding = await findBinding(ctx.sessionKey, ctx.agentId, true);
-        let binding = localBinding && isBindingCurrent(localBinding) ? localBinding : null;
+      const requestedProfile =
+        typeof event.params.profile === "string" ? event.params.profile.trim() : "";
+      const localBinding = await findBinding(ctx.sessionKey, ctx.agentId, true);
+      let binding = localBinding && isBindingCurrent(localBinding) ? localBinding : null;
 
-        if (hasPolicyHeartbeatChannel()) {
-          try {
-            binding = await heartbeatBinding(ctx.sessionKey, ctx.agentId);
-          } catch {
-            if (localBinding || managedProfilePattern.test(requestedProfile)) {
-              return {
-                block: true,
-                blockReason: "The AgentOS browser policy channel is unavailable; managed browser access is blocked."
-              };
-            }
-            return;
-          }
-        }
-
-        if (!binding) {
+      if (hasPolicyHeartbeatChannel()) {
+        try {
+          binding = await heartbeatBinding(ctx.sessionKey, ctx.agentId);
+        } catch {
           if (localBinding || managedProfilePattern.test(requestedProfile)) {
             return {
               block: true,
-              blockReason: localBinding
-                ? "The AgentOS managed browser task binding expired or was fenced."
-                : "AgentOS managed browser profiles require an active task binding."
+              blockReason: "The AgentOS browser policy channel is unavailable; managed browser access is blocked."
             };
           }
           return;
         }
+      }
 
-        const action = typeof event.params.action === "string" ? event.params.action : "";
-        const params = {
-          ...event.params,
-          target: "host",
-          profile: binding.openClawProfileName
-        };
-
-        if (
-          action === "profiles" ||
-          action === "doctor" ||
-          action === "status" ||
-          action === "start" ||
-          action === "stop" ||
-          action === "focus"
-        ) {
-          await appendPolicyAudit(binding, "sensitive_action_blocked");
+      if (!binding) {
+        if (localBinding || managedProfilePattern.test(requestedProfile)) {
           return {
             block: true,
-            blockReason: "This browser lifecycle action is not available inside an account-bound task."
+            blockReason: localBinding
+              ? "The AgentOS managed browser task binding expired or was fenced."
+              : "AgentOS managed browser profiles require an active task binding."
           };
         }
+        return;
+      }
 
-        if (action === "upload" || action === "pdf") {
-          await appendPolicyAudit(binding, "sensitive_action_blocked");
-          return {
-            block: true,
-            blockReason: "Browser file transfer is disabled for Secure Browser Accounts."
-          };
-        }
+      const action = typeof event.params.action === "string" ? event.params.action : "";
+      const params = {
+        ...event.params,
+        target: "host",
+        profile: binding.openClawProfileName
+      };
 
-        if (action === "act" && readActKind(params) === "evaluate") {
-          await appendPolicyAudit(binding, "sensitive_action_blocked");
-          return {
-            block: true,
-            blockReason: "Arbitrary page evaluation is disabled for Secure Browser Accounts."
-          };
-        }
-
-        if (navigationActions.has(action)) {
-          const targetUrl = readNavigationUrl(params);
-          if (!targetUrl || !isAllowedUrl(targetUrl, binding.allowedDomains)) {
-            await appendPolicyAudit(binding, "sensitive_action_blocked");
-            return {
-              block: true,
-              blockReason: "Navigation is outside this browser account's allowed domains."
-            };
-          }
-          return { params };
-        }
-
-        if (interactiveActions.has(action)) {
-          await appendPolicyAudit(binding, "sensitive_action_requested");
-          return {
-            params,
-            requireApproval: {
-              title: "Approve browser interaction",
-              description: `Allow ${action === "act" ? readActKind(params) : action} on ${binding.allowedDomains[0] ?? "the connected account"}?`,
-              severity: "warning",
-              allowedDecisions: ["allow-once", "deny"],
-              timeoutMs: 120_000,
-              timeoutBehavior: "deny",
-              onResolution: async (decision) => {
-                await appendPolicyAudit(
-                  binding,
-                  decision === "allow-once"
-                    ? "sensitive_action_approved"
-                    : "sensitive_action_blocked"
-                );
-              }
-            }
-          };
-        }
-
-        if (readOnlyActions.has(action) || lifecycleActions.has(action)) {
-          return { params };
-        }
-
+      if (
+        action === "profiles" ||
+        action === "doctor" ||
+        action === "status" ||
+        action === "start" ||
+        action === "stop" ||
+        action === "focus"
+      ) {
         await appendPolicyAudit(binding, "sensitive_action_blocked");
         return {
           block: true,
-          blockReason: "This browser action is not allowed by the Secure Browser Account policy."
+          blockReason: "This browser lifecycle action is not available inside an account-bound task."
         };
-      },
-      { priority: 1000, timeoutMs: 5_000 }
-    );
+      }
+
+      if (action === "upload" || action === "pdf") {
+        await appendPolicyAudit(binding, "sensitive_action_blocked");
+        return {
+          block: true,
+          blockReason: "Browser file transfer is disabled for Secure Browser Accounts."
+        };
+      }
+
+      if (action === "act" && readActKind(params) === "evaluate") {
+        await appendPolicyAudit(binding, "sensitive_action_blocked");
+        return {
+          block: true,
+          blockReason: "Arbitrary page evaluation is disabled for Secure Browser Accounts."
+        };
+      }
+
+      if (navigationActions.has(action)) {
+        const targetUrl = readNavigationUrl(params);
+        if (!targetUrl || !isAllowedUrl(targetUrl, binding.allowedDomains)) {
+          await appendPolicyAudit(binding, "sensitive_action_blocked");
+          return {
+            block: true,
+            blockReason: "Navigation is outside this browser account's allowed domains."
+          };
+        }
+        return { params };
+      }
+
+      if (interactiveActions.has(action)) {
+        await appendPolicyAudit(binding, "sensitive_action_requested");
+        return {
+          params,
+          requireApproval: {
+            title: "Approve browser interaction",
+            description: `Allow ${action === "act" ? readActKind(params) : action} on ${binding.allowedDomains[0] ?? "the connected account"}?`,
+            severity: "warning",
+            allowedDecisions: ["allow-once", "deny"],
+            timeoutMs: 120_000,
+            timeoutBehavior: "deny",
+            onResolution: async (decision) => {
+              await appendPolicyAudit(
+                binding,
+                decision === "allow-once"
+                  ? "sensitive_action_approved"
+                  : "sensitive_action_blocked"
+              );
+            }
+          }
+        };
+      }
+
+      if (readOnlyActions.has(action) || lifecycleActions.has(action)) {
+        return { params };
+      }
+
+      await appendPolicyAudit(binding, "sensitive_action_blocked");
+      return {
+        block: true,
+        blockReason: "This browser action is not allowed by the Secure Browser Account policy."
+      };
+    };
+
+    if (typeof api.registerTrustedToolPolicy === "function") {
+      api.registerTrustedToolPolicy({
+        id: "secure-browser-profile",
+        description: "Bind browser calls to the active AgentOS task profile and approval policy.",
+        matcher: ["browser"],
+        evaluate: evaluateBrowserCall
+      });
+    } else {
+      api.on("before_tool_call", evaluateBrowserCall, { priority: 1000, timeoutMs: 5_000 });
+    }
   }
 });
 

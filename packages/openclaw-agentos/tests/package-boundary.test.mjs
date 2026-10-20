@@ -13,7 +13,8 @@ test("keeps the bridge thin and shell-free", () => {
   assert.doesNotMatch(launcher, /from ["']@sapienx\/agentos/);
   assert.equal(packageJson.dependencies, undefined);
   assert.equal(packageJson.openclaw.compat.pluginApi, ">=2026.9.4");
-  assert.equal(packageJson.openclaw.build.openclawVersion, "2026.9.4");
+  assert.equal(packageJson.openclaw.build.openclawVersion, "2026.10.5");
+  assert.equal(packageJson.openclaw.build.pluginSdkVersion, "2026.10.5");
 });
 
 test("keeps the native manifest and package metadata aligned", () => {
