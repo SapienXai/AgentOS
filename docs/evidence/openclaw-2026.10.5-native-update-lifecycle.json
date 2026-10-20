@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.10.5-native-update-lifecycle-certification",
+  "generatedAt": "2026-10-20T09:06:52.852Z",
+  "agentosHead": "3e0b12c431625e3ffc90aa97e4228c0842f68f3a",
+  "target": {
+    "version": "2026.10.5",
+    "tag": "v2026.10.5",
+    "sourceCommit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+    "buildId": "2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z",
+    "packageHash": "735bdba9c5e350728d2ea630dce70187820418cfda06a15f7101e0b9b2cf4ddd",
+    "gatewayProtocol": 4,
+    "stateSchema": 20,
+    "agentSchema": 25
+  },
+  "migration": {
+    "sourceVersion": "2026.9.7",
+    "targetVersion": "2026.10.5",
+    "runId": "3b519c56-36af-456b-b83b-0891844874c3",
+    "steps": [
+      "candidate-doctor",
+      "candidate-doctor-lint",
+      "finalize:doctor-lint:candidate-doctor-lint",
+      "warning:candidate-doctor-lint",
+      "warning:candidate-doctor-lint:2",
+      "warning:candidate-doctor-lint:3",
+      "warning:candidate-doctor-lint:4",
+      "warning:candidate-doctor-lint:5",
+      "warning:candidate-doctor-lint:6",
+      "warning:candidate-doctor-lint:7",
+      "warning:candidate-doctor-lint:8",
+      "warning:candidate-doctor-lint:9",
+      "warning:candidate-doctor-lint:10",
+      "warning:candidate-doctor-lint:11",
+      "warning:candidate-doctor-lint:12",
+      "warning:candidate-doctor-lint:13",
+      "warning:candidate-doctor-lint:14",
+      "warning:candidate-doctor-lint:15",
+      "candidate-gateway-startup",
+      "package-swap",
+      "gateway recovery verification"
+    ],
+    "successful": true
+  },
+  "update": {
+    "mutationOwner": "OpenClaw native updater",
+    "agentOsInvokedUpdateMutation": false,
+    "nativeApiRunStatus": "failed",
+    "nativeApiRunReason": "state-migrated-no-rollback",
+    "nativeGatewayRun": {
+      "runId": "3b519c56-36af-456b-b83b-0891844874c3",
+      "trigger": "api",
+      "status": "failed",
+      "phase": "finished",
+      "reason": "state-migrated-no-rollback",
+      "channel": "stable",
+      "target": "2026.10.5",
+      "before": "2026.9.7",
+      "after": "2026.10.5",
+      "finished": true,
+      "recoveryVersion": "2026.10.5",
+      "serviceRestartSafe": false,
+      "failedStep": "post-install-verify",
+      "failureDetail": "Exit code: 1; This OpenClaw build cannot open your existing data."
+    },
+    "repairRun": {
+      "runId": "28fe254e-1f1f-484a-8048-1c8219506877",
+      "status": "succeeded",
+      "phase": "finished",
+      "repairOnly": true,
+      "doctorCompleted": true,
+      "pluginConvergenceCompleted": true
+    },
+    "restart": {
+      "gatewayFreshlyReconnected": true,
+      "runtimeVersion": "2026.10.5",
+      "nativeGatewayHandoffRecorded": true,
+      "postUpdateRecoveryVerified": true
+    }
+  },
+  "runtime": {
+    "health": "PASS",
+    "installedVersion": "2026.10.5",
+    "updateStatus": "current",
+    "activeUpdateRun": false,
+    "configuration": "valid"
+  },
+  "checks": {
+    "exactTargetPackage": true,
+    "gatewayApiHandoffRecorded": true,
+    "nativePackageUpdateCompleted": false,
+    "sourceToTargetRecorded": true,
+    "migrationAndValidationRehearsed": true,
+    "installationSwapCompleted": true,
+    "nativePostUpdateRecoveryVerified": true,
+    "gatewayReconnectedAtTarget": true,
+    "nativeUpdateStatusIsCurrent": true,
+    "nativeRunHistoryIsTerminal": true,
+    "configurationRemainsInterpretable": true,
+    "nativeUpdateRunSucceeded": false
+  },
+  "failures": [
+    "nativePackageUpdateCompleted did not pass against fresh native Gateway evidence.",
+    "nativeUpdateRunSucceeded did not pass against fresh native Gateway evidence."
+  ],
+  "success": false
+}
