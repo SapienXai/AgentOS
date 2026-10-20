@@ -200,15 +200,13 @@ export function getCurrentCertificationTarget(repoRoot) {
   if (!isOpenClawReleaseVersion(recommendedVersion) || !isOpenClawReleaseVersion(nativeContractVersion)) {
     throw new Error("Could not read valid recommended and native-contract OpenClaw versions from lib/openclaw/versions.ts.");
   }
-  if (recommendedVersion !== nativeContractVersion) {
-    throw new Error("Recommended and native-contract OpenClaw versions differ; the current certification target is ambiguous.");
-  }
   if (!phase || !/^[a-z0-9-]+$/.test(phase)) {
     throw new Error("Could not read a valid OpenClaw final certification phase from lib/openclaw/versions.ts.");
   }
 
   return {
     version: nativeContractVersion,
+    recommendedVersion,
     phase,
     evidencePath: getCertificationEvidencePathForVersion(nativeContractVersion, phase)
   };

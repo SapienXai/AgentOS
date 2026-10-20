@@ -31,30 +31,25 @@ async function withPolicyFixture(run: (root: string) => Promise<void>) {
   }
 }
 
-test("default certification freshness follows the promoted policy target, not the newest file", async () => {
+test("default certification freshness follows the native contract target and keeps recommendation separate", async () => {
   await withPolicyFixture(async (root) => {
+    const policyPath = path.join(root, "lib/openclaw/versions.ts");
+    const source = await readFile(policyPath, "utf8");
+    await writeFile(policyPath, source.replace("OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.9.7\"", "OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.10.5\""));
     await mkdir(path.join(root, "docs/evidence"), { recursive: true });
     await writeFile(path.join(root, "docs/evidence/openclaw-2026.9.8-pre-merge-final-certification.json"), "{}");
 
     assert.deepEqual(getCurrentCertificationTarget(root), {
-      version: "2026.9.7",
+      version: "2026.10.5",
+      recommendedVersion: "2026.9.7",
       phase: "pre-merge-final-certification",
-      evidencePath: "docs/evidence/openclaw-2026.9.7-pre-merge-final-certification.json"
+      evidencePath: "docs/evidence/openclaw-2026.10.5-pre-merge-final-certification.json"
     });
     assert.equal(getCertificationEvidencePathForVersion("2026.9.4"), "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json");
     assert.deepEqual(resolveCertificationEvidenceSelection({ repoRoot: root, version: "2026.9.4" }), {
       version: "2026.9.4",
       evidencePath: "docs/evidence/openclaw-2026.9.4-pre-merge-final-certification.json"
     });
-  });
-});
-
-test("certification freshness refuses ambiguous recommended and native targets", async () => {
-  await withPolicyFixture(async (root) => {
-    const policyPath = path.join(root, "lib/openclaw/versions.ts");
-    const source = await readFile(policyPath, "utf8");
-    await writeFile(policyPath, source.replace("OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.9.7\"", "OPENCLAW_NATIVE_CONTRACT_VERSION: string = \"2026.9.4\""));
-    assert.throws(() => getCurrentCertificationTarget(root), /differ/i);
   });
 });
 
