@@ -6,6 +6,8 @@ import { test } from "node:test";
 import { getOpenClawInstallCommand } from "@/lib/openclaw/install";
 import { LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST, resolveOpenClawUpdateDecision } from "@/lib/openclaw/update-compatibility";
 import {
+  OPENCLAW_INSTALL_TARGET_VERSION,
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
@@ -27,9 +29,10 @@ test("OpenClaw 2026.9.7 remains recommended while 10.6 is an explicit candidate 
   assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.10.6")?.status, "candidate");
 });
 
-test("fresh installer contract provisions the promoted baseline directly", () => {
+test("fresh installer contract targets the current native contract candidate directly", () => {
+  assert.equal(OPENCLAW_INSTALL_TARGET_VERSION, OPENCLAW_NATIVE_CONTRACT_VERSION);
   const command = getOpenClawInstallCommand();
-  assert.match(command, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
+  assert.match(command, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
   assert.doesNotMatch(command, /update\s+--tag/);
 });
 

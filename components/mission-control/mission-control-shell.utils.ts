@@ -1,8 +1,7 @@
 import { compactPath, formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { isOpenClawOnboardingSystemReady } from "@/lib/openclaw/readiness";
 import {
-  OPENCLAW_NATIVE_CONTRACT_VERSION,
-  OPENCLAW_RECOMMENDED_VERSION
+  OPENCLAW_INSTALL_TARGET_VERSION
 } from "@/lib/openclaw/versions";
 import type {
   MissionControlSnapshot,
@@ -703,7 +702,7 @@ export function resolveOnboardingAction(
   if (!cliInstalled) {
     return {
       label: "Install OpenClaw",
-      description: `Download the CLI and get AgentOS ready. Certified baseline: v${OPENCLAW_RECOMMENDED_VERSION}; native contract candidate: v${OPENCLAW_NATIVE_CONTRACT_VERSION}.`
+      description: `Install OpenClaw v${OPENCLAW_INSTALL_TARGET_VERSION} and get AgentOS ready. This candidate is not yet compatibility-certified by AgentOS.`
     };
   }
 

@@ -81,6 +81,7 @@ Compatibility:
 
 - Requires Node.js 24.22.1+ or 26.12.1+; Node.js 26.12.1+ is recommended.
 - Recommended OpenClaw: 2026.9.7.
+- Fresh setup install target: OpenClaw 2026.10.6 (candidate; final AgentOS certification pending).
 - Supported minimum: OpenClaw 2026.9.1 after explicit session-security reconciliation.
 - Native contract target: OpenClaw 2026.10.6 (candidate; certification pending).
 - Uses OpenClaw Gateway-first transport by default, with explicit CLI fallback for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.

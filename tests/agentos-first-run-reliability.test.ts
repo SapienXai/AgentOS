@@ -83,6 +83,7 @@ test("system onboarding keeps setup rows compact and the log collapsed", () => {
   assert.match(source, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);
   assert.match(source, /aria-controls="onboarding-setup-log-details"/);
   assert.match(source, /OpenClaw setup target:/);
+  assert.match(source, /Candidate target; final AgentOS compatibility certification is pending\./);
   assert.doesNotMatch(source, /What happens next\?/);
 });
 

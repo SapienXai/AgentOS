@@ -43,8 +43,7 @@ import {
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { hasAgentOSWorkspaceSetup } from "@/components/mission-control/mission-control-shell.utils";
 import {
-  OPENCLAW_NATIVE_CONTRACT_VERSION,
-  OPENCLAW_RECOMMENDED_VERSION
+  OPENCLAW_INSTALL_TARGET_VERSION
 } from "@/lib/openclaw/versions";
 import {
   LaunchpadStage,
@@ -1275,10 +1274,10 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
         </span>
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-muted-foreground">
-            Certified recommendation: OpenClaw <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
+            OpenClaw setup target: <span className="font-semibold text-primary">v{OPENCLAW_INSTALL_TARGET_VERSION}</span>
           </p>
           <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
-            Native contract target: v{OPENCLAW_NATIVE_CONTRACT_VERSION} (candidate; certification pending).
+            Candidate target; final AgentOS compatibility certification is pending.
           </p>
         </div>
       </div>

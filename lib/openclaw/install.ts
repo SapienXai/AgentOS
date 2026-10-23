@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_INSTALL_TARGET_VERSION } from "@/lib/openclaw/versions";
 
 export const OPENCLAW_INSTALL_DOCS_URL = "https://docs.openclaw.ai/install";
 
@@ -134,10 +134,10 @@ export async function repairOpenClawWindowsNpmShims(options: {
 
 export function getOpenClawInstallCommand() {
   if (process.platform === "win32") {
-    return `& ([scriptblock]::Create((iwr -useb ${OPENCLAW_INSTALL_POWERSHELL_URL}))) -Tag ${OPENCLAW_RECOMMENDED_VERSION} -NoOnboard`;
+    return `& ([scriptblock]::Create((iwr -useb ${OPENCLAW_INSTALL_POWERSHELL_URL}))) -Tag ${OPENCLAW_INSTALL_TARGET_VERSION} -NoOnboard`;
   }
 
-  return `set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 ${OPENCLAW_INSTALL_CLI_URL} | bash -s -- --prefix "$HOME/.openclaw" --version ${OPENCLAW_RECOMMENDED_VERSION} --no-onboard`;
+  return `set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 ${OPENCLAW_INSTALL_CLI_URL} | bash -s -- --prefix "$HOME/.openclaw" --version ${OPENCLAW_INSTALL_TARGET_VERSION} --no-onboard`;
 }
 
 export async function ensureOpenClawLocalBinOnPath(

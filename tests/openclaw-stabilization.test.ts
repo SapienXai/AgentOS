@@ -122,7 +122,7 @@ import {
   buildOpenClawRuntimeSmokeTestRecoveryCommand,
   classifyOpenClawRuntimeSmokeTestFailure
 } from "@/lib/openclaw/runtime-compatibility";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_INSTALL_TARGET_VERSION } from "@/lib/openclaw/versions";
 import {
   buildDirectAgentIdentityReply,
   isDirectAgentIdentityQuestion,
@@ -649,14 +649,14 @@ test("openclaw onboarding uses the official installer command", () => {
 
   if (process.platform === "win32") {
     assert.match(command, /install\.ps1/);
-    assert.match(command, new RegExp(`-Tag\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
+    assert.match(command, new RegExp(`-Tag\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
     assert.match(command, /-NoOnboard/);
     assert.doesNotMatch(command, /update\s+--tag/);
     return;
   }
 
   assert.match(command, /install-cli\.sh/);
-  assert.match(command, new RegExp(`--version\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
+  assert.match(command, new RegExp(`--version\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
   assert.match(command, /--no-onboard/);
   assert.match(command, /\$HOME\/\.openclaw/);
   assert.doesNotMatch(command, /update\s+--tag/);

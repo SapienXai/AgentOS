@@ -31,7 +31,7 @@ import {
   repairOpenClawWindowsNpmShims,
   resolveOpenClawSpawnInvocation
 } from "@/lib/openclaw/install";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_INSTALL_TARGET_VERSION } from "@/lib/openclaw/versions";
 import {
   buildOpenClawDowngradeConfigBlockerManualCommand,
   isOpenClawDowngradeConfigBlocker,
@@ -1088,8 +1088,8 @@ async function installOpenClawCli(
     type: "status",
     phase: "installing-cli",
     message: process.platform === "win32"
-      ? `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} with the official Windows installer...`
-      : `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} into ${getOpenClawLocalPrefix()}...`
+      ? `Installing OpenClaw v${OPENCLAW_INSTALL_TARGET_VERSION} with the official Windows installer...`
+      : `Installing OpenClaw v${OPENCLAW_INSTALL_TARGET_VERSION} into ${getOpenClawLocalPrefix()}...`
   });
 
   const installResult = process.platform === "win32"

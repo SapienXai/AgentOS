@@ -191,7 +191,8 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
   assert.match(routeSource, /statusContext\.connection\.connected/);
   assert.doesNotMatch(routeSource, /resolveOpenAiAuthHandoff|manualCommand:\s*authHandoff\.command/);
   assert.match(serviceSource, /readOpenClawCodexPluginReady/);
-  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"--accept-capabilities",\s*"@openclaw\/codex"\]/);
+  assert.match(serviceSource, /resolveExactOpenClawPluginSpec\("@openclaw\/codex", runtimeVersion\)/);
+  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"--accept-capabilities",\s*pluginSpec\]/);
   assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
   assert.match(serviceSource, /"openai"/);
   assert.match(serviceSource, /openclaw-cli-interactive/);

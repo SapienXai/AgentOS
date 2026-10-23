@@ -52,7 +52,7 @@ import {
   ONBOARDING_DEFAULT_THINKING
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { preserveMissionControlSnapshotCollections } from "@/hooks/use-mission-control-data";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_INSTALL_TARGET_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 
 const rootDir = process.cwd();
@@ -771,8 +771,8 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
 
   assert.equal(resolveGatewayDraft(gatewaySnapshot), "ws://127.0.0.1:18789");
   assert.equal(resolveOnboardingAction(onboardingSnapshot).label, "Install OpenClaw");
-  assert.match(resolveOnboardingAction(onboardingSnapshot).description, new RegExp(OPENCLAW_RECOMMENDED_VERSION));
-  assert.match(resolveOnboardingAction(onboardingSnapshot).description, /native contract candidate/);
+  assert.match(resolveOnboardingAction(onboardingSnapshot).description, new RegExp(OPENCLAW_INSTALL_TARGET_VERSION));
+  assert.match(resolveOnboardingAction(onboardingSnapshot).description, /candidate is not yet compatibility-certified/);
   assert.equal(
     resolveOnboardingAction(onboardingSnapshot, {
       cliInstalled: true,

@@ -341,6 +341,7 @@ Several operations spawn local processes, inspect transcript files, or write to 
 The current `0.8.0` package uses the following OpenClaw version policy:
 
 - Recommended OpenClaw: `2026.9.7`;
+- Fresh setup install target: `2026.10.6` (candidate; final AgentOS certification pending);
 - Supported minimum: `2026.9.1`, provided its security-sensitive session settings
   are explicit after AgentOS reconciliation;
 - Native contract target: `2026.10.6` (candidate; certification pending).

@@ -15,6 +15,7 @@ import {
 } from "@/lib/openclaw/client/gateway-compatibility";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
+  OPENCLAW_INSTALL_TARGET_VERSION,
   OPENCLAW_NATIVE_CONTRACT_VERSION,
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION
@@ -37,13 +38,15 @@ const staleBaselineCopyPattern = new RegExp([
 test("setup smoke uses the centralized OpenClaw baseline constants", () => {
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
   assert.equal(OPENCLAW_NATIVE_CONTRACT_VERSION, "2026.10.6");
+  assert.equal(OPENCLAW_INSTALL_TARGET_VERSION, "2026.10.6");
   assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
   assert.equal(compareVersionStrings(OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION) >= 0, true);
   assert.match(OPENCLAW_RECOMMENDED_VERSION, /^\d{4}\.\d+\.\d+$/);
   assert.equal(OPENCLAW_GATEWAY_BASELINE_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
 
   const installCommand = getOpenClawInstallCommand();
-  assert.match(installCommand, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
+  assert.match(installCommand, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
+  assert.doesNotMatch(installCommand, new RegExp(OPENCLAW_RECOMMENDED_VERSION));
   assert.doesNotMatch(installCommand, /update\s+--tag/);
 });
 
@@ -88,6 +91,7 @@ test("gateway status and probe smoke use documented CLI commands", () => {
   assert.match(cliClient, /\["gateway",\s*"probe",\s*"--json"\]/);
   assert.match(cliClient, /\["gateway",\s*action\]/);
   assert.match(onboardingRoute, /\["gateway",\s*"status",\s*"--json"\]/);
+  assert.match(onboardingRoute, /OPENCLAW_INSTALL_TARGET_VERSION/);
 });
 
 test("add ChatGPT/Codex model smoke uses the canonical OpenAI provider handoff", () => {
