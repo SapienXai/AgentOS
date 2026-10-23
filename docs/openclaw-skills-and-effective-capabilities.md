@@ -37,9 +37,12 @@ The effective capability projection is not persisted as mutable authority.
 
 ## Native Skills Library integration
 
-The OpenClaw 2026.10.5 contract retains the library methods verified against
-the 2026.9.7 baseline and also adds native Skill Workshop methods. AgentOS
-continues to consume only its existing Skills Library surface:
+The OpenClaw 2026.10.5 contract retained the library methods verified against
+the 2026.9.7 baseline and added native Skill Workshop methods. AgentOS
+continues to consume only its existing Skills Library surface. The current
+package target is 2026.10.6; this earlier runtime evidence does not certify
+that candidate. See the
+[`2026.10.6 upgrade record`](./openclaw-2026.10.6-upgrade-plan.md).
 
 | Method | Scope | Phase 2 use |
 | --- | --- | --- |

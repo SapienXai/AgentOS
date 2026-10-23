@@ -343,11 +343,11 @@ The current `0.8.0` package uses the following OpenClaw version policy:
 - Recommended OpenClaw: `2026.9.7`;
 - Supported minimum: `2026.9.1`, provided its security-sensitive session settings
   are explicit after AgentOS reconciliation;
-- Native contract target: `2026.10.5` (candidate; certification pending).
+- Native contract target: `2026.10.6` (candidate; certification pending).
 
 All supported installations also require:
 
-- Node.js 24.16.0+ or 26.1.0+;
+- Node.js 24.22.1+ or 26.12.1+ (Node 26.12.1+ is recommended);
 - a reachable Gateway with valid local authentication;
 - at least one ready model for real mission execution.
 
@@ -408,7 +408,7 @@ Some boundaries remain intentionally explicit:
 
 ### Prerequisites
 
-- Node.js 24.16.0+ or 26.1.0+
+- Node.js 24.22.1+ or 26.12.1+ (Node 26.12.1+ is recommended)
 - `pnpm`
 - OpenClaw installed locally and available on `PATH`
 

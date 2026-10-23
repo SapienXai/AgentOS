@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-static-tag-contract-review",
+  "generatedAt": "2026-10-22T23:03:11.000Z",
+  "status": "REVIEW_REQUIRED",
+  "source": {
+    "repository": "https://github.com/openclaw/openclaw",
+    "retrieval": "official Git tag checkout",
+    "from": {
+      "tag": "v2026.10.5",
+      "commit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8"
+    },
+    "target": {
+      "tag": "v2026.10.6",
+      "commit": "fe06181dc5ecc01cf8904abbfc26925925efefbc"
+    },
+    "agentOsParser": "lib/openclaw/application/update-contract-diff-service.ts"
+  },
+  "coreMethodDescriptors": {
+    "fromCount": 519,
+    "targetCount": 519,
+    "changes": []
+  },
+  "changedGatewayServerMethodFiles": [
+    "src/gateway/server-methods/chat-abort-handler.ts",
+    "src/gateway/server-methods/chat-abort-runtime.ts",
+    "src/gateway/server-methods/chat-metadata-handler.test.ts",
+    "src/gateway/server-methods/chat-metadata-handler.ts",
+    "src/gateway/server-methods/chat-send-request.test.ts",
+    "src/gateway/server-methods/chat-server-timing.ts",
+    "src/gateway/server-methods/control-ui.test.ts",
+    "src/gateway/server-methods/control-ui.ts",
+    "src/gateway/server-methods/cron-creator-session.test-support.ts",
+    "src/gateway/server-methods/cron-input-validation.ts",
+    "src/gateway/server-methods/cron.ts",
+    "src/gateway/server-methods/sessions.abort-retirement-recovery.test.ts",
+    "src/gateway/server-methods/sessions.abort-yielded.test.ts",
+    "src/gateway/server-methods/system-agent-approval.test.ts",
+    "src/gateway/server-methods/system-agent-approval.ts"
+  ],
+  "changedProtocolFiles": [
+    "packages/gateway-protocol/package.json",
+    "packages/gateway-protocol/src/client-info.ts"
+  ],
+  "reviewAreas": [
+    "Gateway update lifecycle and recovery",
+    "session abort and retirement recovery",
+    "system-agent approval",
+    "Gateway protocol client identity"
+  ],
+  "releaseWatchRefresh": {
+    "status": "BLOCKED",
+    "reason": "GitHub release metadata refresh returned HTTP 403; no current release-watch intake artifact was produced."
+  },
+  "limits": [
+    "This artifact records static tag and descriptor comparison only.",
+    "It does not claim complete runtime certification or release-watch reconciliation.",
+    "OpenAI/OpenRouter provider accounts and Telegram/Discord/WhatsApp external flows were not tested here."
+  ]
+}

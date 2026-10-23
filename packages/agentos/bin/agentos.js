@@ -16,7 +16,11 @@ import {
   normalizeStableVersion
 } from "./update.js";
 import { createTerminalBoot, renderDoctorReport, renderStatusDashboard } from "./terminal-boot.js";
-import { isSupportedAgentOsNodeVersion } from "./node-runtime.js";
+import {
+  isSupportedAgentOsNodeVersion,
+  MINIMUM_AGENTOS_NODE_VERSION,
+  RECOMMENDED_AGENTOS_NODE_VERSION
+} from "./node-runtime.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -467,7 +471,7 @@ async function runDoctor(rawArgs) {
     {
       state: isSupportedNodeVersion(process.versions.node) ? "ok" : "failed",
       label: "Node.js",
-      detail: `${process.version} (required 24.16.0+ or 26.1.0+)`
+      detail: `${process.version} (requires ${MINIMUM_AGENTOS_NODE_VERSION}+ or ${RECOMMENDED_AGENTOS_NODE_VERSION}+)`
     },
     {
       state: "ok",

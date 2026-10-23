@@ -145,7 +145,7 @@ pnpm --filter @sapienx/openclaw-agentos test
 pnpm --filter @sapienx/openclaw-agentos pack:clawhub
 ~~~
 
-The package is built and validated against the exact OpenClaw <code>2026.10.5</code> SDK. Its compatibility metadata retains the <code>2026.9.4</code> minimum Plugin API and Gateway version.
+The package is built and validated against the exact OpenClaw <code>2026.10.6</code> SDK. Its compatibility metadata retains the <code>2026.9.4</code> minimum Plugin API and Gateway version.
 
 <div align="center">
   <br />

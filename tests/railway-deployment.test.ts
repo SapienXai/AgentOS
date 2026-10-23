@@ -48,7 +48,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   const dockerfile = await read("Dockerfile.railway");
   const dockerignore = await read(".dockerignore");
 
-  assert.match(dockerfile, /ghcr\.io\/openclaw\/openclaw:2026\.10\.5@sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5/);
+  assert.match(dockerfile, /ghcr\.io\/openclaw\/openclaw:2026\.10\.6@sha256:7dbff0fe5f5359b1badefe90a23efa9f203cd0d3c36bee095f4896c7a1d3864b/);
   assert.match(dockerfile, /for ws_package in node_modules\/\.pnpm\/ws@\*\/node_modules\/ws/);
   assert.match(dockerfile, /runtime-extras\/node_modules\/\.pnpm \.\/node_modules\/\.pnpm/);
   assert.match(dockerfile, /COPY packages\/openclaw-agentos\/package\.json/);
@@ -74,10 +74,8 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /gosu/);
   assert.match(dockerfile, /mkdir -p \/home\/node\/\.cache[\s\S]*chown -R node:node \/home\/node\/\.cache/);
   const railwayGuide = await read("docs/deploy-on-railway.md");
-  assert.match(railwayGuide, /OpenClaw\s+`2026\.10\.5` multi-architecture index\s+`sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5`/);
-  assert.match(railwayGuide, /verified manifests are `linux\/amd64`\s+\(`sha256:0be6e07c5c99cdd4466dc9186dc89ebbf68ca8e045c44b4cc496c441a9af1a9e`\)/);
-  assert.match(railwayGuide, /and `linux\/arm64`\s+\(`sha256:31a4b7eb2bb9574527a1e46b2208e1b653f060753dd36fe3da444f79a7d03f0c`\)/);
-  assert.match(railwayGuide, /matching the source commit recorded in AgentOS's exact-release identity\s+contract/i);
+  assert.match(railwayGuide, /OpenClaw\s+`2026\.10\.6` multi-architecture index\s+`sha256:7dbff0fe5f5359b1badefe90a23efa9f203cd0d3c36bee095f4896c7a1d3864b`/);
+  assert.match(railwayGuide, /official image reports the Node\.js 24\.22\.1 runtime/i);
 });
 
 test("Railway supervisor keeps Gateway private, exposes a locked-down control socket, and excludes the bootstrap password", async () => {

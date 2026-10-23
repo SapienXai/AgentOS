@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24.20.0
+          node-version: 26.12.1
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable

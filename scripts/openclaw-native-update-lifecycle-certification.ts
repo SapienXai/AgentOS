@@ -119,7 +119,20 @@ async function main() {
     ["finalize:doctor", "finalize:plugins", "finalize:targetConfigConvergence"].every((step) => completedRepairSteps.has(step)) &&
     targetGatewayReady;
   const postUpdateRecoveryVerified = directRecoveryVerified || repairRecoveryVerified;
-  const nativeApiHandoffRecorded = nativeRun?.trigger === "api" && completedNativeSteps.has("managed-service update handoff");
+  const nativeRunOrigin = asRecord(nativeRun?.origin);
+  const nativeRunDriver = asRecord(nativeRunOrigin.driver);
+  const previousDrivers = Array.isArray(nativeRunOrigin.previousDrivers)
+    ? nativeRunOrigin.previousDrivers.map(asRecord)
+    : [];
+  const adoptedDriverHandoffRecorded = completedNativeSteps.has("driver:adopted") &&
+    typeof nativeRunDriver.pid === "number" &&
+    previousDrivers.some((driver) => typeof driver.pid === "number" && driver.pid !== nativeRunDriver.pid);
+  const nativeApiHandoffEvidence = completedNativeSteps.has("managed-service update handoff")
+    ? "managed-service update handoff"
+    : adoptedDriverHandoffRecorded
+      ? "driver:adopted with prior updater process recorded"
+      : null;
+  const nativeApiHandoffRecorded = nativeRun?.trigger === "api" && nativeApiHandoffEvidence !== null;
   const checks = {
     exactTargetPackage: Boolean(packageIdentity && packageIdentity.version === TARGET_VERSION && packageIdentity.sourceCommit === TARGET_COMMIT && packageIdentity.buildId === TARGET_BUILD),
     gatewayApiHandoffRecorded: nativeApiHandoffRecorded,
@@ -193,6 +206,7 @@ async function main() {
         gatewayFreshlyReconnected: checks.gatewayReconnectedAtTarget,
         runtimeVersion,
         nativeGatewayHandoffRecorded: checks.gatewayApiHandoffRecorded,
+        nativeGatewayHandoffEvidence: nativeApiHandoffEvidence,
         postUpdateRecoveryVerified: checks.nativePostUpdateRecoveryVerified
       }
     },

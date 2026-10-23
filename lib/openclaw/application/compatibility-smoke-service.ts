@@ -38,9 +38,9 @@ import type {
   OpenClawSmokeTestCheckStatus
 } from "@/lib/openclaw/types";
 
-export const AGENTOS_REQUIRED_NODE_VERSION = "24.16.0";
-export const OPENCLAW_REQUIRED_NODE_VERSION = "24.16.0 or 26.1.0";
-export const OPENCLAW_RECOMMENDED_NODE_VERSION = "24.20.0";
+export const AGENTOS_REQUIRED_NODE_VERSION = "24.22.1";
+export const OPENCLAW_REQUIRED_NODE_VERSION = "24.22.1 or 26.12.1";
+export const OPENCLAW_RECOMMENDED_NODE_VERSION = "26.12.1";
 export const OPENCLAW_REQUIRED_GATEWAY_PROTOCOL_VERSION = "4";
 
 const requiredNativeTimeoutMs = 5_000;
@@ -666,16 +666,17 @@ export function classifyOpenClawNodeVersion(version: string | null | undefined):
     };
   }
 
-  const [majorText, minorText] = normalized.split(".");
+  const [majorText] = normalized.split(".");
   const major = Number(majorText);
-  const minor = Number(minorText);
-  const supported = (major === 24 && minor >= 16) || (major >= 26 && compareVersionStrings(normalized, "26.1.0") >= 0);
+  const supported =
+    (major === 24 && compareVersionStrings(normalized, "24.22.1") >= 0) ||
+    (major >= 26 && compareVersionStrings(normalized, "26.12.1") >= 0);
 
   if (!supported) {
     return {
       status: "unsupported",
       summary: `Node.js ${normalized} is outside the supported AgentOS/OpenClaw runtime floors (${OPENCLAW_REQUIRED_NODE_VERSION}).`,
-      recovery: `Install Node.js ${AGENTOS_REQUIRED_NODE_VERSION}+ or Node.js 26.1.0+. Node ${OPENCLAW_RECOMMENDED_NODE_VERSION} is recommended.`
+      recovery: `Install Node.js ${AGENTOS_REQUIRED_NODE_VERSION}+ or Node.js ${OPENCLAW_RECOMMENDED_NODE_VERSION}+. Node ${OPENCLAW_RECOMMENDED_NODE_VERSION} is recommended.`
     };
   }
 

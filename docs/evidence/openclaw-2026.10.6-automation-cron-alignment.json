@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-22T22:49:49.551Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "codeCommitUnderTest": "cd85342d53e444b904db367cbacb19999a6e232d",
+    "evidenceCommit": null,
+    "openClawPackageVersion": "2026.10.6",
+    "openClawSourceCommit": "fe06181dc5ecc01cf8904abbfc26925925efefbc",
+    "openClawBuild": "2026.10.6-release-fe06181dc5ec-2026-10-22T08-54-27.830Z",
+    "openClawPackageHash": "dbc9f5f617d094b047a892a16f42a5b8a446505b93d9e6e26d707a1171bfb477"
+  },
+  "openClaw": {
+    "version": "2026.10.6",
+    "sourceCommit": "fe06181dc5ecc01cf8904abbfc26925925efefbc",
+    "build": "2026.10.6-release-fe06181dc5ec-2026-10-22T08-54-27.830Z",
+    "packageMode": "exact-npm-package-fixture",
+    "gatewayPortIsDisposable": true,
+    "noRealProviderCredentials": true
+  },
+  "connection": {
+    "requestedRole": "operator",
+    "grantedRole": "operator",
+    "requestedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.questions",
+      "operator.pairing",
+      "operator.talk"
+    ],
+    "grantedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.questions",
+      "operator.pairing",
+      "operator.talk"
+    ],
+    "connectionIdPresent": true,
+    "deviceIdentityPresent": false
+  },
+  "cronContract": {
+    "methods": [
+      "cron.status",
+      "cron.list",
+      "cron.get",
+      "cron.add",
+      "cron.update",
+      "cron.remove",
+      "cron.run",
+      "cron.runs"
+    ],
+    "runSemantics": "cron.run is enqueue-style; cron.runs is terminal history authority",
+    "canonicalJobField": "id",
+    "canonicalRunField": "runId",
+    "sessionIdentity": "exact run sessionKey/sessionId returned by cron.runs; no fabricated fallback"
+  },
+  "sourceOfTruthMatrix": [
+    {
+      "surface": "automation identity",
+      "source": "AgentOS automationId/declarationKey",
+      "projection": "AgentOS correlation and convergence metadata",
+      "authority": "OpenClaw cron job id"
+    },
+    {
+      "surface": "cron job",
+      "source": "OpenClaw cron.list/get",
+      "projection": "operations job card",
+      "authority": "OpenClaw"
+    },
+    {
+      "surface": "cron run",
+      "source": "OpenClaw cron.runs",
+      "projection": "operation run history",
+      "authority": "OpenClaw"
+    },
+    {
+      "surface": "task",
+      "source": "OpenClaw tasks.list/get when present",
+      "projection": "task card and cancellation",
+      "authority": "OpenClaw; no task id fabricated"
+    },
+    {
+      "surface": "dispatch",
+      "source": "AgentOS request/dispatch metadata",
+      "projection": "audit/recovery correlation",
+      "authority": "not runtime authority"
+    }
+  ],
+  "automationIdentity": {
+    "automationId": "agentos:automation:e2e",
+    "declarationKey": "agentos:automation:e2e",
+    "cronJobId": "97809130-9ff2-4c66-b2d2-e5015a9b1df7",
+    "cronRunIds": [
+      "manual:97809130-9ff2-4c66-b2d2-e5015a9b1df7:1792709393094:1",
+      "manual:97809130-9ff2-4c66-b2d2-e5015a9b1df7:1792709396494:2"
+    ],
+    "sessionKeys": [
+      "agent:main:cron:97809130-9ff2-4c66-b2d2-e5015a9b1df7:run:d33de823-c0dc-4999-b8cc-5028a875df7a",
+      "agent:main:cron:97809130-9ff2-4c66-b2d2-e5015a9b1df7:run:06f990c2-94bc-48f3-98af-472ad55335cc"
+    ],
+    "sessionIds": [
+      "d33de823-c0dc-4999-b8cc-5028a875df7a",
+      "06f990c2-94bc-48f3-98af-472ad55335cc"
+    ],
+    "provenance": "authoritative job + run identities; AgentOS key is correlated"
+  },
+  "controls": {
+    "add": "PASS",
+    "get": "PASS",
+    "update": "PASS",
+    "enableDisable": "PASS: disabled job rejected if-enabled run; owner control can update enabled",
+    "manualRun": "PASS: cron.run returned distinct enqueue runIds",
+    "runHistory": "PASS: terminal status observed through cron.runs by exact runId",
+    "remove": "PASS",
+    "duplicateDeclarationKey": "PASS: same declarationKey converged to one OpenClaw job",
+    "restartContinuity": "PASS: one job and exact run history survived Gateway restart"
+  },
+  "taskIntegration": {
+    "taskIds": [],
+    "taskGetChecks": [],
+    "taskCancelChecks": [],
+    "noTaskIdFabricated": true
+  },
+  "runChecks": [
+    {
+      "runId": "manual:97809130-9ff2-4c66-b2d2-e5015a9b1df7:1792709393094:1",
+      "status": "ok",
+      "completionStatus": "succeeded",
+      "sessionKeyPresent": true,
+      "sessionIdPresent": true,
+      "exactRunFilter": true
+    },
+    {
+      "runId": "manual:97809130-9ff2-4c66-b2d2-e5015a9b1df7:1792709396494:2",
+      "status": "ok",
+      "completionStatus": "succeeded",
+      "sessionKeyPresent": true,
+      "sessionIdPresent": true,
+      "exactRunFilter": true
+    }
+  ],
+  "cleanup": {
+    "status": "complete",
+    "disposableRootRemoved": true,
+    "gatewayProcessStopped": true
+  },
+  "gate": "OPENCLAW 2026.10.6 AUTOMATION/CRON ALIGNMENT GATE: PASS",
+  "success": true
+}

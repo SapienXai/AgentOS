@@ -5,12 +5,23 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  assertSupportedDesktopNodeVersion,
+  DESKTOP_NODE_VERSION,
   parseSha256Manifest,
   sha256File,
   verifySha256File
 } from "../scripts/desktop/runtime.mjs";
 
-const archiveName = "node-v24.20.0-darwin-arm64.tar.gz";
+const archiveName = "node-v26.12.1-darwin-arm64.tar.gz";
+
+test("desktop bundles a patched supported Node runtime by default", () => {
+  assert.equal(DESKTOP_NODE_VERSION, "26.12.1");
+  assert.equal(assertSupportedDesktopNodeVersion("24.22.1"), "24.22.1");
+  assert.equal(assertSupportedDesktopNodeVersion("26.12.1"), "26.12.1");
+  assert.throws(() => assertSupportedDesktopNodeVersion("24.22.0"), /unsupported/);
+  assert.throws(() => assertSupportedDesktopNodeVersion("26.12.0"), /unsupported/);
+  assert.throws(() => assertSupportedDesktopNodeVersion("25.0.0"), /unsupported/);
+});
 
 test("accepts a valid official checksum manifest entry", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-desktop-integrity-"));
@@ -44,7 +55,7 @@ test("rejects an invalid checksum", async () => {
 
 test("reports a missing checksum manifest entry", () => {
   assert.equal(
-  parseSha256Manifest(`${"a".repeat(64)}  node-v24.20.0-linux-x64.tar.gz\n`, archiveName),
+  parseSha256Manifest(`${"a".repeat(64)}  node-v26.12.1-linux-x64.tar.gz\n`, archiveName),
     null
   );
 });

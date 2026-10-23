@@ -4,7 +4,7 @@
 
 Phase 1 establishes the operator-facing projection for OpenClaw-managed worktrees, task suggestions, and session ownership. The implementation is intentionally additive: Mission remains AgentOS product intent, while OpenClaw remains authoritative for sessions, task suggestions, worktrees, runtime state, ownership, visibility, and collaboration evidence.
 
-The certified recommendation remains OpenClaw `2026.9.7`; this branch targets `2026.10.5` as the native contract candidate. Existing `2026.9.1` deployments remain the supported minimum when the explicit AgentOS security settings are present. The original Phase 1 implementation and its first certification targeted `2026.9.4`; current package and runtime evidence is recorded in [`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md). The exact AgentOS package versions are pinned in `package.json`.
+The certified recommendation remains OpenClaw `2026.9.7`; this branch targets `2026.10.6` as the native contract candidate. Existing `2026.9.1` deployments remain the supported minimum when the explicit AgentOS security settings are present. The original Phase 1 implementation and its first certification targeted `2026.9.4`; current package identity and pending certification are recorded in [`openclaw-2026.10.6-upgrade-plan.md`](./openclaw-2026.10.6-upgrade-plan.md). The exact AgentOS package versions are pinned in `package.json`.
 
 ## Phase 1.1 hardening
 
@@ -22,7 +22,7 @@ existing ownership route using one `session.members.list` call and one
 become local ownership state.
 
 The AgentOS authorization preflight maps the integrated Native Work methods to
-the candidate OpenClaw 2026.10.5 descriptor scopes. OpenClaw remains the final
+the candidate OpenClaw 2026.10.6 descriptor scopes. OpenClaw remains the final
 authorization authority for method and target policy. The 2026.9.6 change to
 `sessions.github.publish` is handled through the native scope and capability
 projection; it does not create a broader AgentOS feature surface.
@@ -129,8 +129,8 @@ Other OpenClaw methods remain discovery-only or unsupported as defined by the co
 The original Phase 1 contract and runtime certification used a disposable OpenClaw
 `2026.9.4` source/runtime and an isolated temporary repository. Current runtime,
 identity, multi-user, native-work, and compatibility evidence for the candidate
-`2026.10.5` contract is linked from
-[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
+`2026.10.6` candidate contract is linked from
+[`openclaw-2026.10.6-upgrade-plan.md`](./openclaw-2026.10.6-upgrade-plan.md).
 Both certification sets use isolated state and do not touch a user's Gateway
 checkout.
 

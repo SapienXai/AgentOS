@@ -20,7 +20,7 @@ Success question: did this system take a real workload from the owner today?
 Before implementing, inspect the relevant local surfaces:
 
 - Product and architecture: `README.md`, `docs/openclaw-sync-audit.md`, `docs/openclaw-gateway-first-migration.md`
-- Current OpenClaw contract and certification: `docs/openclaw-2026.10.5-upgrade-plan.md` (historical 2026.9.7 and 2026.9.4 evidence remains in its versioned audit documents)
+- Current OpenClaw contract and certification: `docs/openclaw-2026.10.6-upgrade-plan.md` (prior 2026.10.5 and historical 2026.9.7 / 2026.9.4 evidence remains in versioned audit documents)
 - Native workspace foundation: `docs/openclaw-native-workspace-foundation.md`
 - OpenClaw boundary: `lib/openclaw/client/`, `lib/openclaw/adapter/`, `lib/openclaw/application/`, `lib/openclaw/domains/`
 - AgentOS state/contracts: `lib/agentos/`, `hooks/use-mission-control-data.ts`, `hooks/use-task-feed.ts`

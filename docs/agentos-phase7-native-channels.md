@@ -4,10 +4,13 @@
 > contract supersedes workspace `agentIds` as a runtime routing authority;
 > those fields are retained only as workspace metadata compatibility.
 
-The readiness projection is aligned with the OpenClaw 2026.10.5 channel
-account-state contract: `running` is the native started state, while a
+The readiness projection was runtime-checked against the OpenClaw 2026.10.5
+channel account-state contract: `running` is the native started state, while a
 configured account with no running transport is stopped. WhatsApp linking is
 an authentication fact; it does not by itself claim a running listener.
+The current package target is 2026.10.6; channel runtime revalidation for this
+candidate remains pending in the
+[`upgrade record`](./openclaw-2026.10.6-upgrade-plan.md).
 
 Phase 7.1 activates the channel declarations recorded by Phase 6 without
 changing the immutable provisioning manifest. AgentOS reads the historical

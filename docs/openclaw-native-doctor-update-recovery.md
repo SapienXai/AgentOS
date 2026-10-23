@@ -3,18 +3,20 @@
 AgentOS presents operational OpenClaw state without becoming a second runtime or
 repair engine. OpenClaw remains authoritative for health, configuration
 application, updates, restart coordination, suspension, authorization, and
-reconnect behavior. This branch targets OpenClaw 2026.10.5 as its exact native contract. The
-certified default recommendation remains 2026.9.7 until final certification
-passes; 10.5 is available only through the candidate path with explicit opt-in
-and compatibility preflight. Certification records tested confidence; it is not
-an installation allowlist.
+reconnect behavior. This branch targets OpenClaw 2026.10.6 as its exact native
+contract candidate. The certified default recommendation remains 2026.9.7
+until final certification passes; 10.6 is available only through the candidate
+path with explicit opt-in and compatibility preflight. Runtime observations
+below were collected on earlier versions and do not certify 10.6. Certification
+records tested confidence; it is not an installation allowlist.
 AgentOS normalizes native facts for the existing Settings, Diagnostics,
 Gateway, and Updates surfaces.
 
 ## Native contract
 
 The online operational projection uses the official Gateway transport and these
-2026.10.5 methods:
+2026.10.5 methods (10.6 has no static method additions/removals; runtime
+recertification remains pending):
 
 | Surface | Native methods | AgentOS use |
 | --- | --- | --- |
@@ -176,7 +178,7 @@ and contract-diff evidence; the earlier local HTTP 403 did not produce
 compatibility evidence. The disposable 2026.9.4-to-2026.9.7 migration and
 runtime certification matrix subsequently passed. This history is retained for
 provenance; this branch keeps the 2026.9.7 recommendation and targets the
-2026.10.5 native contract candidate. See
+2026.10.6 native contract candidate. See
 [`openclaw-2026.9.7-compatibility-audit.md`](./openclaw-2026.9.7-compatibility-audit.md)
 and the generated final certification artifact for the recorded evidence.
 
@@ -294,8 +296,8 @@ claim verification that the reconnecting Gateway has not provided.
 
 The historical 2026.9.4 certification is recorded in
 [`openclaw-2026.9.4-compatibility-audit.md`](./openclaw-2026.9.4-compatibility-audit.md).
-The current 2026.10.5 upgrade and candidate validation records are linked from
-[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md)
+The current 2026.10.6 upgrade and candidate validation records are linked from
+[`openclaw-2026.10.6-upgrade-plan.md`](./openclaw-2026.10.6-upgrade-plan.md)
 and its versioned evidence under `docs/evidence/`. The 2026.9.7 certification
 remains historical provenance.
 The closeout also attempted the official native Git update in an isolated 9.1

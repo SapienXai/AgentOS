@@ -1,22 +1,16 @@
 # Deploy AgentOS on Railway
 
-The Railway application image packages AgentOS with OpenClaw `2026.10.5` in the
+The Railway application image packages AgentOS with OpenClaw `2026.10.6` in the
 public application service; interactive Chromium runs in a separate private
 browser worker service. OpenClaw remains the runtime and source of truth;
 AgentOS connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS
 is exposed through Railway's HTTPS domain.
 
 The candidate image in this branch is pinned to the official OpenClaw
-`2026.10.5` multi-architecture index
-`sha256:f40d1e66fd14d8c5b49c832f4100f83b53fdc01f5108f7db11de38fd0ee6dbe5`.
-Railway selects the platform-specific manifest at deployment time; the
-verified manifests are `linux/amd64`
-(`sha256:0be6e07c5c99cdd4466dc9186dc89ebbf68ca8e045c44b4cc496c441a9af1a9e`)
-and `linux/arm64`
-(`sha256:31a4b7eb2bb9574527a1e46b2208e1b653f060753dd36fe3da444f79a7d03f0c`).
-The amd64 image reports OpenClaw `2026.10.5` with source prefix `1b58cb9`,
-matching the source commit recorded in AgentOS's exact-release identity
-contract. This repository change has not been deployed to Railway.
+`2026.10.6` multi-architecture index
+`sha256:7dbff0fe5f5359b1badefe90a23efa9f203cd0d3c36bee095f4896c7a1d3864b`.
+The official image reports the Node.js 24.22.1 runtime required by OpenClaw.
+This repository change has not been deployed to Railway.
 
 ## What the template creates
 
@@ -228,7 +222,7 @@ prove compatibility with a third-party website and does not use real login
 credentials.
 
 OpenClaw is pinned in `Dockerfile.railway`. This branch's candidate pin is the
-exact `2026.10.5` multi-architecture index recorded above. Upgrade it only
+exact `2026.10.6` multi-architecture index recorded above. Upgrade it only
 together with AgentOS compatibility checks and update the pin, recommended
 version, and deployment documentation in the same change. OpenClaw remains the owner of
 runtime updates, migrations, restart, backup, rollback, and recovery; this image

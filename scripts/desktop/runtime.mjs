@@ -1,7 +1,22 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import {
+  isSupportedAgentOsNodeVersion,
+  MINIMUM_AGENTOS_NODE_VERSION,
+  RECOMMENDED_AGENTOS_NODE_VERSION
+} from "../../packages/agentos/bin/node-runtime.js";
 
-export const DESKTOP_NODE_VERSION = process.env.AGENTOS_DESKTOP_NODE_VERSION?.trim() || "24.20.0";
+export function assertSupportedDesktopNodeVersion(version) {
+  const normalized = String(version ?? "").trim();
+  if (!isSupportedAgentOsNodeVersion(normalized)) {
+    throw new Error(`Desktop Node.js ${normalized || "version"} is unsupported; use ${MINIMUM_AGENTOS_NODE_VERSION}+ on Node 24 or ${RECOMMENDED_AGENTOS_NODE_VERSION}+ on Node 26.`);
+  }
+  return normalized;
+}
+
+export const DESKTOP_NODE_VERSION = assertSupportedDesktopNodeVersion(
+  process.env.AGENTOS_DESKTOP_NODE_VERSION?.trim() || RECOMMENDED_AGENTOS_NODE_VERSION
+);
 
 export function resolveTargetPlatform(value = process.env.AGENTOS_DESKTOP_TARGET_PLATFORM || process.platform) {
   if (value === "darwin" || value === "linux" || value === "win32") return value;

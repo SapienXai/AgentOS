@@ -1,13 +1,15 @@
 import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream, statSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import {
   DESKTOP_NODE_VERSION,
+  assertSupportedDesktopNodeVersion,
   nodeArchiveName,
   nodeArchiveUrl,
   nodeExecutableName,
@@ -17,6 +19,8 @@ import {
   resolveTargetPlatform,
   verifySha256File
 } from "./runtime.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../..");
@@ -72,7 +76,7 @@ if (targetPlatform !== "win32") {
 await writeFile(
   path.join(runtimeRoot, "metadata.json"),
   `${JSON.stringify({
-    nodeVersion: DESKTOP_NODE_VERSION,
+    nodeVersion: nodeRuntime.version,
     platform: targetPlatform,
     arch: targetArch,
     agentosVersion: agentosPackageMetadata.version,
@@ -93,12 +97,22 @@ async function resolveNodeRuntime() {
   const explicitBinary = process.env.AGENTOS_DESKTOP_NODE_BINARY?.trim();
   if (explicitBinary) {
     assertFile(explicitBinary, "AGENTOS_DESKTOP_NODE_BINARY");
-    return { binary: explicitBinary, root: inferNodeRuntimeRoot(explicitBinary), source: "explicit-host" };
+    return {
+      binary: explicitBinary,
+      root: inferNodeRuntimeRoot(explicitBinary),
+      source: "explicit-host",
+      version: await readNodeRuntimeVersion(explicitBinary)
+    };
   }
 
   const hostMatchesTarget = process.platform === targetPlatform && process.arch === targetArch;
   if (process.env.AGENTOS_DESKTOP_USE_HOST_NODE === "1" && hostMatchesTarget) {
-    return { binary: process.execPath, root: inferNodeRuntimeRoot(process.execPath), source: "host" };
+    return {
+      binary: process.execPath,
+      root: inferNodeRuntimeRoot(process.execPath),
+      source: "host",
+      version: await readNodeRuntimeVersion(process.execPath)
+    };
   }
 
   if (process.env.AGENTOS_DESKTOP_USE_HOST_NODE === "1" && !hostMatchesTarget) {
@@ -160,7 +174,18 @@ async function downloadNodeRuntime() {
     ? path.join(extractedRoot, "node.exe")
     : path.join(extractedRoot, "bin", nodeExecutableName(targetPlatform));
   assertFile(executable, "downloaded Node runtime");
-  return { binary: executable, root: extractedRoot, source: "official", sha256: expectedChecksum };
+  return {
+    binary: executable,
+    root: extractedRoot,
+    source: "official",
+    sha256: expectedChecksum,
+    version: DESKTOP_NODE_VERSION
+  };
+}
+
+async function readNodeRuntimeVersion(binaryPath) {
+  const { stdout } = await execFileAsync(binaryPath, ["--version"], { encoding: "utf8", timeout: 5_000, maxBuffer: 1_000_000 });
+  return assertSupportedDesktopNodeVersion(stdout.trim().replace(/^v/, ""));
 }
 
 function inferNodeRuntimeRoot(binaryPath) {

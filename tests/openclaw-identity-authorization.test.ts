@@ -624,15 +624,15 @@ test("selected public OpenClaw mutation routes require preflight and pass server
   assert.match(mobilePairingSource, /device\.pair\.setup"\s*\+\s*"Code/);
 });
 
-test("identity inventory pins the exact 10.5 package contract and current AgentOS use", () => {
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.10.5");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG, "v2026.10.5");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT, "9171d0a427738902efd811c648325cf54116743c");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "1b58cb9a1b4f4353e1add63c8506db4d890962e8");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_BUILD, "2026.10.5-release-1b58cb9a1b4f-2026-10-18T17-23-40.943Z");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY, "sha512-9rCuXMweqVKZIK3KBtGcLzesz9G6+FmQ30lvwomRhmcNWDcOtlBoqdLbPditoJMuTP55jPqXpt1AA0L8tSzFHg==");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY, "sha512-9RM+TOeJy6r3twq+gBfL0igYc6qkx3b3ubO4gxYlYdEW61zHFfFW9CXekUZ+nOSbCiM1FcAPXvAjwbbOhlaGhg==");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY, "sha512-6HPtIzR9TijDNsvVwWZNxbRXDBmEiO7YSd+Ei+y01Lmj7Kmh14SxJSdBQo6MiCfNbP3EppbJKFkmzwUemjITwQ==");
+test("identity inventory pins the exact 10.6 package contract and current AgentOS use", () => {
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.10.6");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG, "v2026.10.6");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT, "3494baecba2366a89fa703158a2c2b5c9edcd6ba");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "fe06181dc5ecc01cf8904abbfc26925925efefbc");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_BUILD, "2026.10.6-release-fe06181dc5ec-2026-10-22T08-54-27.830Z");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY, "sha512-jSpQPa2Jw5rG0J2GC07j9+qHtVYIuoHjgccU88JeS+p7188sBCnvIJeuaiNPHj1zsWkuHcBv443QiEUh7qrxwA==");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY, "sha512-9CEcDipfyMelNnCeviiIzHpZqi78zI0IhOsgwlml040ev5j2FxtfhCOisrRzlsK3jfLKWtD5i9IZ5p11Qz8ZHg==");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY, "sha512-U7/rN80eVEAEkJIFjRCwntfSHrxE9mRH+zy9Bira9nkdbNsklq3C0SfN+WaDM8wPeh9GqYKKWksxGC1AljWy2w==");
   assert.equal(OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA, 20);
   assert.equal(OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA, 25);
   assert.deepEqual(OPENCLAW_CAPABILITY_SCOPES.canUseTalkSecrets, ["operator.talk.secrets"]);

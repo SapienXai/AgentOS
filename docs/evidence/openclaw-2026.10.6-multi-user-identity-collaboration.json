@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.10.6-multi-user-identity-collaboration-certification",
+  "generatedAt": "2026-10-22T22:48:18.059Z",
+  "certifiedCodeHead": "cd85342d53e444b904db367cbacb19999a6e232d",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "openClaw": {
+      "release": "2026.10.6",
+      "sourceCommit": "fe06181dc5ecc01cf8904abbfc26925925efefbc",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.10.6",
+      "gatewayProtocolPackage": "2026.10.6",
+      "buildId": "2026.10.6-release-fe06181dc5ec-2026-10-22T08-54-27.830Z",
+      "packageHash": "dbc9f5f617d094b047a892a16f42a5b8a446505b93d9e6e26d707a1171bfb477",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "descriptors": {
+    "source": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+    "methods": {
+      "users.list": "operator.read",
+      "users.self": "operator.read",
+      "users.setDisplayName": "operator.write",
+      "users.setAvatar": "operator.write",
+      "users.linkEmail": "operator.admin",
+      "users.setRole": "operator.admin",
+      "session.visibility.set": "operator.write",
+      "session.members.list": "operator.read",
+      "session.members.listEvidence": "operator.read",
+      "session.members.add": "operator.write",
+      "session.members.remove": "operator.write",
+      "sessions.assignOwner": "operator.write"
+    },
+    "usersCreate": "ABSENT",
+    "sourceSha256": "e928053dbda6016cf42891a6e2c0baee9a0cf1e942ec37eadad789c7e37c90b8"
+  },
+  "identity": {
+    "AgentOsPrincipal": "signed AgentOS actorId",
+    "AgentOsRoles": [
+      "owner",
+      "member"
+    ],
+    "nativePrincipal": "OpenClaw UserProfile when the native request context proves one",
+    "connection": "shared trusted AgentOS service Gateway credential",
+    "nativeAttribution": "shared service",
+    "nativeHumanIdentityVerified": false,
+    "association": "metadata-associated only; never authentication or authorization",
+    "heuristicMatching": "disabled",
+    "perHumanDelegation": "not implemented"
+  },
+  "sessionCollaboration": {
+    "owner": "OpenClaw native session owner",
+    "participants": "OpenClaw native session members",
+    "visibility": "OpenClaw native session visibility",
+    "membershipEvidence": "OpenClaw native session.members.listEvidence",
+    "productPermission": "sessions.collaborate",
+    "rootDashboardNewRpcCount": 0,
+    "perSessionFanout": false
+  },
+  "runtime": {
+    "usersList": "PASS",
+    "usersSelf": "EXPECTED-DENIAL",
+    "usersSetRole": "SKIPPED",
+    "sharedServiceAttribution": "PASS",
+    "associationDoesNotAuthenticate": "PASS",
+    "associationDoesNotAuthorize": "PASS",
+    "sessionMembersList": "PASS",
+    "sessionMembersListEvidence": "PASS",
+    "sessionMembersAdd": "SKIPPED",
+    "sessionMembersRemove": "SKIPPED",
+    "sessionVisibilitySet": "SKIPPED",
+    "agentOwnerAssignment": "EXPECTED-DENIAL",
+    "humanOwnerAssignment": "SKIPPED",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "userProfileCount": 0,
+    "usersSelfResult": "users.self requires an authenticated user",
+    "sessionVisibilityResult": "SessionMutationFactsUnavailableError: Session access facts are unavailable; retry after session storage is ready.",
+    "usersSetRoleReason": "exact disposable Gateway exposed no native profile; no profile was fabricated",
+    "humanProfileReason": "exact disposable Gateway exposed no native profile",
+    "agentOwnerReason": "sessions.assignOwner requires an identified caller"
+  },
+  "cleanup": {
+    "status": "complete",
+    "sessionDeleted": true,
+    "gatewayStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "exactPackage": true,
+    "exactSourceScopes": true,
+    "noUsersCreate": true,
+    "nativeOnly": true,
+    "noActorIdAsNativeProfileId": true,
+    "noHeuristicIdentityMapping": true,
+    "noLocalAcl": true,
+    "noPerHumanCredentialStore": true
+  },
+  "success": true,
+  "failure": null
+}

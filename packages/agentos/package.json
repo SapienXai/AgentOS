@@ -36,7 +36,7 @@
     "url": "https://github.com/SapienXai/AgentOS/issues"
   },
   "engines": {
-    "node": ">=24.16.0 <25 || >=26.1.0"
+    "node": ">=24.22.1 <25 || >=26.12.1"
   },
   "publishConfig": {
     "access": "public"

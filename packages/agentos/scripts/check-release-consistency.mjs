@@ -18,9 +18,9 @@ const RELEASE_NOTES_TEMPLATE = "docs/release-notes-agentos-template.md";
 const RELEASE_TAG_PREFIX = "agentos-v";
 const INSTALL_COMMAND = "curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | bash";
 const WINDOWS_INSTALL_COMMAND = "iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex";
-const REQUIRED_NODE_ENGINE = ">=24.16.0 <25 || >=26.1.0";
-const REQUIRED_NODE_RUNTIME_COPY = "Node.js 24.16.0+ or 26.1.0+";
-const REQUIRED_NODE_WORKFLOW_VERSION = "24.20.0";
+const REQUIRED_NODE_ENGINE = ">=24.22.1 <25 || >=26.12.1";
+const REQUIRED_NODE_RUNTIME_COPY = "Node.js 24.22.1+ or 26.12.1+";
+const REQUIRED_NODE_WORKFLOW_VERSION = "26.12.1";
 const OPENCLAW_VERSIONS_FILE = "lib/openclaw/versions.ts";
 const DESKTOP_CONFIG_FILE = "apps/desktop/src-tauri/tauri.conf.json";
 const DESKTOP_CARGO_FILE = "apps/desktop/src-tauri/Cargo.toml";
@@ -281,7 +281,8 @@ function validateInstallers(context, installSh, installPs1) {
     expectIncludes(context, "install.sh", installSh, 'ARTIFACT_NAME="agentos-${ASSET_PLATFORM}-${ASSET_ARCH}.tgz"');
     expectIncludes(context, "install.sh", installSh, 'CHECKSUM_NAME="${ARTIFACT_NAME}.sha256"');
     expectIncludes(context, "install.sh", installSh, 'REPO="${AGENTOS_REPO:-SapienXai/AgentOS}"');
-    expectIncludes(context, "install.sh", installSh, "major === 24 && minor >= 16");
+    expectIncludes(context, "install.sh", installSh, "major === 24 && meetsFloor(24, 22, 1)");
+    expectIncludes(context, "install.sh", installSh, "major >= 26 && meetsFloor(26, 12, 1)");
     expectIncludes(context, "install.sh", installSh, `AgentOS requires ${REQUIRED_NODE_RUNTIME_COPY}.`);
   }
 
@@ -292,7 +293,8 @@ function validateInstallers(context, installSh, installPs1) {
     expectIncludes(context, "install.ps1", installPs1, '$artifactName = "agentos-$assetPlatform-$assetArch.tgz"');
     expectIncludes(context, "install.ps1", installPs1, '$checksumUrl = "$artifactUrl.sha256"');
     expectIncludes(context, "install.ps1", installPs1, '"SapienXai/AgentOS"');
-    expectIncludes(context, "install.ps1", installPs1, "major === 24 && minor >= 16");
+    expectIncludes(context, "install.ps1", installPs1, "major === 24 && meetsFloor(24, 22, 1)");
+    expectIncludes(context, "install.ps1", installPs1, "major >= 26 && meetsFloor(26, 12, 1)");
     expectIncludes(context, "install.ps1", installPs1, `AgentOS requires ${REQUIRED_NODE_RUNTIME_COPY}.`);
   }
 }

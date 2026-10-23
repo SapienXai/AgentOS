@@ -40,7 +40,7 @@ test("agentos doctor prints deterministic package, install, node, platform, bund
   assert.match(result.stdout, /AGENTOS DOCTOR/);
   assert.match(result.stdout, new RegExp(`Package\\s+✓ OK\\s+${escapeRegExp(packageJson.name)}@${escapeRegExp(packageJson.version)}`));
   assert.match(result.stdout, /Install\s+✓ OK\s+source checkout/);
-  assert.match(result.stdout, /Node\.js\s+✓ OK\s+v\d+\.\d+\.\d+ \(required 24\.16\.0\+ or 26\.1\.0\+\)/);
+  assert.match(result.stdout, /Node\.js\s+✓ OK\s+v\d+\.\d+\.\d+ \(requires 24\.22\.1\+ or 26\.12\.1\+\)/);
   assert.match(result.stdout, /Platform\s+✓ OK\s+/);
   assert.match(result.stdout, /Bundle\s+✓ OK\s+ready at /);
   assert.match(result.stdout, /Target URL\s+✓ OK\s+http:\/\/localhost:3000/);

@@ -10,7 +10,7 @@ import {
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
 
-test("OpenClaw 2026.9.7 remains recommended while 10.5 is an explicit candidate and 9.1 stays supported", () => {
+test("OpenClaw 2026.9.7 remains recommended while 10.6 is an explicit candidate and 9.1 stays supported", () => {
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
   assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
   assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.9.7");
@@ -24,7 +24,7 @@ test("OpenClaw 2026.9.7 remains recommended while 10.5 is an explicit candidate 
       reason: "Retained as the default until a newer target completes final certification."
     }
   );
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.10.5")?.status, "candidate");
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.10.6")?.status, "candidate");
 });
 
 test("fresh installer contract provisions the promoted baseline directly", () => {

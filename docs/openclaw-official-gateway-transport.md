@@ -1,17 +1,17 @@
 # Official OpenClaw Gateway transport
 
 The AgentOS OpenClaw Gateway migration is complete. This branch builds its
-candidate native transport against the exact OpenClaw 2026.10.5 packages and
+candidate native transport against the exact OpenClaw 2026.10.6 packages and
 Gateway protocol v4:
 
-- `@openclaw/gateway-client@2026.10.5`
-- `@openclaw/gateway-protocol@2026.10.5`
-- OpenClaw source commit `1b58cb9a1b4f4353e1add63c8506db4d890962e8`
+- `@openclaw/gateway-client@2026.10.6`
+- `@openclaw/gateway-protocol@2026.10.6`
+- OpenClaw source commit `fe06181dc5ecc01cf8904abbfc26925925efefbc`
 - Gateway protocol range `{ min: 4, max: 4 }`
 
 The earlier transport migration was first certified against 2026.9.4; the
-exact 2026.10.5 package identity and current candidate certification status are
-recorded in [`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
+exact 2026.10.6 package identity and current candidate certification status are
+recorded in [`openclaw-2026.10.6-upgrade-plan.md`](./openclaw-2026.10.6-upgrade-plan.md).
 
 There is one native Gateway transport architecture. The custom AgentOS
 WebSocket transport, selector, socket lifecycle, request correlation, custom

@@ -578,7 +578,7 @@ export function assessOpenClawCertificationArtifact(name: string, artifact: Json
       change.targetLifetime !== "observation"
     );
     if (expectedObservationMethods.some((method) => !observationMethods.includes(method)) || unknownLifetimes.length > 0) {
-      failures.push("runtime static contract evidence did not preserve the five 2026.10.5 observation lifetimes or contains an unknown lifetime");
+      failures.push(`runtime static contract evidence for ${TARGET_VERSION} did not preserve the five observation lifetimes or contains an unknown lifetime`);
     }
   } else if (name === "workforce") {
     const summary = asRecord(artifact.summary);

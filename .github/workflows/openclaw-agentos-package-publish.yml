@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24.20.0
+          node-version: 26.12.1
           cache: pnpm
 
       - name: Install dependencies
@@ -43,7 +43,7 @@ jobs:
         run: pnpm --filter @sapienx/openclaw-agentos validate
 
       - name: Validate current stable OpenClaw plugin API
-        run: clawhub package validate "$GITHUB_WORKSPACE/packages/openclaw-agentos" --openclaw-version 2026.9.8 --json
+        run: clawhub package validate "$GITHUB_WORKSPACE/packages/openclaw-agentos" --openclaw-version 2026.10.6 --json
 
       - name: Create ClawPack artifact
         run: |

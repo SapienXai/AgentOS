@@ -7,9 +7,9 @@ resolution. AgentOS does not create a model registry, provider registry,
 credential store, fallback engine, or session-model lifecycle.
 
 The certified AgentOS recommendation remains OpenClaw `2026.9.7`. This branch
-targets the `2026.10.5` native contract candidate; identity, authorization,
+targets the `2026.10.6` native contract candidate; identity, authorization,
 and runtime evidence is indexed in
-[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
+[`openclaw-2026.10.6-upgrade-plan.md`](./openclaw-2026.10.6-upgrade-plan.md).
 The Phase 4 details below preserve the original exact 2026.9.4 contract review.
 
 ## Original exact 2026.9.4 contract

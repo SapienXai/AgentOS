@@ -115,8 +115,7 @@ async function main() {
     await writeFile(configPath, `${JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } },
       agents: {
-        defaults: { workspace: workspaceDir, model: { primary: "agentos-fixture/agentos-runtime-fixture" } },
-        list: [{ id: "main", workspace: workspaceDir }]
+        defaults: { workspace: workspaceDir, model: { primary: "agentos-fixture/agentos-runtime-fixture" } }
       },
       models: {
         mode: "merge",

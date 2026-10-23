@@ -1,8 +1,8 @@
-const MIN_NODE_24 = Object.freeze({ major: 24, minor: 16, patch: 0 });
-const MIN_NODE_26 = Object.freeze({ major: 26, minor: 1, patch: 0 });
+const MIN_NODE_24 = Object.freeze({ major: 24, minor: 22, patch: 1 });
+const MIN_NODE_26 = Object.freeze({ major: 26, minor: 12, patch: 1 });
 
-export const MINIMUM_AGENTOS_NODE_VERSION = "24.16.0";
-export const RECOMMENDED_AGENTOS_NODE_VERSION = "24.20.0";
+export const MINIMUM_AGENTOS_NODE_VERSION = "24.22.1";
+export const RECOMMENDED_AGENTOS_NODE_VERSION = "26.12.1";
 
 export function isSupportedAgentOsNodeVersion(version) {
   const parsed = parseNodeVersion(version);

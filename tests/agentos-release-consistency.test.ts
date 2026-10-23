@@ -74,7 +74,7 @@ test("AgentOS release check rejects missing root Node engine", async () => {
   const result = runReleaseCheck(tempRoot);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /package\.json: engines\.node is undefined, expected ">=24\.16\.0 <25 \|\| >=26\.1\.0"/);
+  assert.match(result.stderr, /package\.json: engines\.node is undefined, expected ">=24\.22\.1 <25 \|\| >=26\.12\.1"/);
 });
 
 test("AgentOS release check rejects Desktop version drift before packaging", async () => {
@@ -94,12 +94,12 @@ test("AgentOS release check rejects vague README Node prerequisites", async () =
   const tempRoot = await copyReleaseCheckFixture();
   const readmePath = path.join(tempRoot, "README.md");
   const readme = await readFile(readmePath, "utf8");
-  await writeFile(readmePath, readme.replaceAll("- Node.js 24.16.0+ or 26.1.0+", "- A recent Node.js runtime"), "utf8");
+  await writeFile(readmePath, readme.replaceAll("- Node.js 24.22.1+ or 26.12.1+", "- A recent Node.js runtime"), "utf8");
 
   const result = runReleaseCheck(tempRoot);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /README\.md: Expected to find "- Node\.js 24\.16\.0\+ or 26\.1\.0\+"/);
+  assert.match(result.stderr, /README\.md: Expected to find "- Node\.js 24\.22\.1\+ or 26\.12\.1\+"/);
 });
 
 test("AgentOS release check validates the native contract independently from the recommendation", async () => {

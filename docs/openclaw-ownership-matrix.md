@@ -2,9 +2,9 @@
 
 Status: repository decision record, originally aligned to the locally certified
 OpenClaw `2026.9.4` target as of `2026-09-13`. This branch targets OpenClaw
-`2026.10.5` as the native contract candidate, keeps `2026.9.7` as the certified
+`2026.10.6` as the native contract candidate, keeps `2026.9.7` as the certified
 recommendation, and retains supported baseline `2026.9.1`; see the
-[2026.10.5 upgrade and audit report](openclaw-2026.10.5-upgrade-plan.md) and
+[2026.10.6 upgrade and audit report](openclaw-2026.10.6-upgrade-plan.md) and
 its versioned evidence under `docs/evidence/`.
 This is a bounded ownership index, not a replacement for the compatibility
 audit or live Gateway status.

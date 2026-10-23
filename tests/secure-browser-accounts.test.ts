@@ -798,8 +798,8 @@ test("OpenClaw policy plugin binds by trusted session key and fails managed prof
       contracts?: { trustedToolPolicies?: string[] };
     }
   };
-  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.10.5");
-  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.10.5");
+  assert.equal(metadata.openclaw?.build?.openclawVersion, "2026.10.6");
+  assert.equal(metadata.openclaw?.build?.pluginSdkVersion, "2026.10.6");
   assert.equal(metadata.openclaw?.compat?.pluginApi, ">=2026.9.1");
   assert.equal(metadata.openclaw?.compat?.minGatewayVersion, "2026.9.1");
   assert.deepEqual(metadata.openclaw?.contracts?.trustedToolPolicies, ["secure-browser-profile"]);

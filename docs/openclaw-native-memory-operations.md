@@ -8,7 +8,10 @@ audit record.
 
 ## Native contract
 
-The product uses the pinned OpenClaw 2026.10.5 Gateway methods only:
+The product uses Gateway methods audited against OpenClaw 2026.10.5. The
+current package target is 2026.10.6; those earlier runtime observations do not
+certify the new candidate. See the
+[`2026.10.6 upgrade record`](./openclaw-2026.10.6-upgrade-plan.md).
 
 | Operation | Native method | Scope | Product use |
 | --- | --- | --- | --- |
@@ -70,8 +73,11 @@ show an honest unavailable state.
 
 The 2026.9.4 contract and deterministic adapter/projection tests are historical
 baseline evidence. The 2026.10.5 contract was checked in the disposable
-runtime certification and native-memory evidence linked from
-[`openclaw-2026.10.5-upgrade-plan.md`](./openclaw-2026.10.5-upgrade-plan.md).
+runtime certification and native-memory evidence linked from the historical
+2026.10.5 upgrade record. The 2026.10.6 disposable runtime check passed; see
+[`openclaw-2026.10.6-native-memory.json`](evidence/openclaw-2026.10.6-native-memory.json).
+Overall 2026.10.6 promotion remains gated by the upgrade record's outstanding
+final certification requirements.
 Live memory mutation certification is performed only with an isolated
 authenticated disposable runtime. If that fixture is not safely available,
 live provider-dependent cases remain explicitly skipped; the user Gateway and

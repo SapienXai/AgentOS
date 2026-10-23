@@ -32,10 +32,10 @@ function Require-Command {
 function Assert-NodeVersion {
   Require-Command "node"
 
-  & node -e 'const [major, minor] = process.versions.node.split(".").map(Number); const supported = (major === 24 && minor >= 16) || (major >= 26 && (major > 26 || minor >= 1)); process.exit(supported ? 0 : 1);'
+  & node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); const meetsFloor = (majorFloor, minorFloor, patchFloor) => major > majorFloor || (major === majorFloor && (minor > minorFloor || (minor === minorFloor && patch >= patchFloor))); const supported = (major === 24 && meetsFloor(24, 22, 1)) || (major >= 26 && meetsFloor(26, 12, 1)); process.exit(supported ? 0 : 1);'
 
   if ($LASTEXITCODE -ne 0) {
-    throw "AgentOS requires Node.js 24.16.0+ or 26.1.0+."
+    throw "AgentOS requires Node.js 24.22.1+ or 26.12.1+."
   }
 }
 

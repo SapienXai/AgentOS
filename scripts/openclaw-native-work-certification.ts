@@ -481,6 +481,10 @@ async function initializeGitWorkspace(workspaceDir: string) {
   await writeFile(path.join(workspaceDir, "README.md"), "# Native work certification\n");
   await execFileAsync("git", ["-C", workspaceDir, "add", "README.md"]);
   await execFileAsync("git", ["-C", workspaceDir, "commit", "-m", "certify native work workspace"]);
+  const originPath = path.join(path.dirname(workspaceDir), "origin.git");
+  await execFileAsync("git", ["init", "--bare", "--initial-branch", "main", originPath]);
+  await execFileAsync("git", ["-C", workspaceDir, "remote", "add", "origin", originPath]);
+  await execFileAsync("git", ["-C", workspaceDir, "push", "--set-upstream", "origin", "main"]);
 }
 
 async function readPackageIdentity(packageRoot: string): Promise<PackageIdentity> {

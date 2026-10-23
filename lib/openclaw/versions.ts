@@ -1,10 +1,10 @@
-// Keep the last certified recommendation until the 2026.10.5 native update
-// lifecycle passes final certification. The 10.5 Gateway contract remains the
-// candidate SDK/runtime target for this branch. Keep 9.1 as the supported
-// minimum for installations with explicit security-sensitive configuration.
+// Keep the last certified recommendation until the 2026.10.6 candidate passes
+// the required certification gates. OpenClaw 10.6 is the exact native
+// contract/package target; 9.7 remains the certified recommendation and 9.1
+// remains the supported minimum when security-sensitive settings are explicit.
 export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.7";
 export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.9.1";
-export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.10.5";
+export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.10.6";
 export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;
 
 export function getOpenClawFinalCertificationArtifactType(version: string) {

@@ -9,7 +9,7 @@ import { OPENCLAW_NATIVE_CONTRACT_VERSION, OPENCLAW_RECOMMENDED_VERSION } from "
 
 test("certification targets the candidate native contract before policy promotion", () => {
   assert.equal(OPENCLAW_CERTIFICATION_TARGET_VERSION, OPENCLAW_NATIVE_CONTRACT_VERSION);
-  assert.equal(OPENCLAW_CERTIFICATION_TARGET_VERSION, "2026.10.5");
+  assert.equal(OPENCLAW_CERTIFICATION_TARGET_VERSION, "2026.10.6");
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
 });
 

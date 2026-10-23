@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
+import { link, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { WorkspaceBlueprint } from "@/lib/agentos/domains/workspace-blueprint";
@@ -266,22 +266,26 @@ export async function createRunAtomically(rootPath: string, storageKey: string, 
     verifiedAt: null
   };
   const filePath = runPath(root, storageKey);
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   try {
-    const handle = await open(filePath, "wx", 0o600);
+    const handle = await open(temporaryPath, "wx", 0o600);
     try {
       await handle.writeFile(`${JSON.stringify(run, null, 2)}\n`, "utf8");
       await handle.sync();
     } finally {
       await handle.close();
     }
-    return { run, created: true };
-  } catch (error) {
-    if (isFileExistsError(error)) {
+    try {
+      await link(temporaryPath, filePath);
+    } catch (error) {
+      if (!isFileExistsError(error)) throw error;
       const existing = await readStoredRun(root, storageKey);
       if (!existing) throw new Error("Workspace provisioning run is unavailable or malformed.");
       return { run: existing, created: false };
     }
-    throw error;
+    return { run, created: true };
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
   }
 }
 

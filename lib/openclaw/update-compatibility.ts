@@ -104,7 +104,7 @@ export const LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST: OpenClawCompatibilityManifes
       version: OPENCLAW_NATIVE_CONTRACT_VERSION,
       status: "candidate" as const,
       minRequiredAgentOsVersion: "0.7.2",
-      notes: "Exact 10.5 native contract target; final native update lifecycle certification is pending.",
+      notes: `Exact ${OPENCLAW_NATIVE_CONTRACT_VERSION} native contract target; final certification is pending.`,
       reason: "Candidate updates require explicit opt-in and compatibility preflight until final certification passes."
     }])
   ]
