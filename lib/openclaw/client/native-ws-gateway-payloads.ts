@@ -348,7 +348,14 @@ export const pluginsPayloadSchema = z
           .passthrough()
       )
       .optional(),
-    descriptors: z.array(z.object({}).passthrough()).optional()
+    descriptors: z.array(z.object({}).passthrough()).optional(),
+    diagnostics: z.array(
+      z.object({
+        pluginId: z.string().optional(),
+        code: z.string().optional(),
+        message: z.string().optional()
+      }).passthrough()
+    ).optional()
   })
   .passthrough();
 
@@ -960,12 +967,17 @@ export function isUsableAuthProfile(value: unknown) {
 }
 
 export function normalizePluginsPayload(payload: unknown): OpenClawPluginListPayload {
-  const parsed = parseGatewayPayload<{ plugins?: Array<Record<string, unknown>>; descriptors?: Array<Record<string, unknown>> }>(
+  const parsed = parseGatewayPayload<{
+    plugins?: Array<Record<string, unknown>>;
+    descriptors?: Array<Record<string, unknown>>;
+    diagnostics?: Array<{ pluginId?: string; code?: string; message?: string }>;
+  }>(
     "plugins.uiDescriptors",
     pluginsPayloadSchema,
     payload
   );
   const source = parsed.plugins ?? parsed.descriptors ?? [];
+  const diagnostics = parsed.diagnostics ?? [];
 
   return {
     plugins: source.map((entry) => ({
@@ -988,7 +1000,22 @@ export function normalizePluginsPayload(payload: unknown): OpenClawPluginListPay
               ? entry.dependencyStatus.requiredInstalled
               : undefined
           }
-        : undefined
+        : undefined,
+      capabilityConsentRequired: diagnostics.some((diagnostic) => {
+        const diagnosticPluginId = readNonEmptyString(diagnostic.pluginId)?.toLowerCase();
+        const pluginIdentities = [
+          readNonEmptyString(entry.id),
+          readNonEmptyString(entry.pluginId),
+          readNonEmptyString(entry.name),
+          readNonEmptyString(entry.packageName)
+        ].filter((identity): identity is string => Boolean(identity)).map((identity) => identity.toLowerCase());
+        const diagnosticText = `${diagnostic.code ?? ""} ${diagnostic.message ?? ""}`.toLowerCase();
+
+        return Boolean(
+          diagnosticPluginId && pluginIdentities.includes(diagnosticPluginId) &&
+          /capability consent|plugin[-_]capability[-_]consent[-_]required/.test(diagnosticText)
+        );
+      }) || undefined
     }))
   };
 }

@@ -1228,6 +1228,26 @@ test("Codex plugin readiness rejects missing or failed registry entries", async 
   assert.equal(await readOpenClawCodexPluginReady(), false);
 });
 
+test("Codex plugin readiness rejects capability consent diagnostics even when loaded", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [
+          {
+            id: "codex",
+            name: "@openclaw/codex",
+            status: "loaded",
+            enabled: true,
+            capabilityConsentRequired: true
+          }
+        ]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await readOpenClawCodexPluginReady(), false);
+});
+
 test("adding provider models does not silently fall back to OpenClaw file writes after Gateway failure", async () => {
   const calls: string[] = [];
 

@@ -75,11 +75,20 @@ export function resolveChatGptProgressCopy(
   return statusMessage?.trim() || "Connecting your AI through OpenClaw.";
 }
 
-export function resolveChatGptRecoveryMessage(message?: string | null) {
+export function resolveChatGptRecoveryMessage(message?: string | null, progress?: string | null) {
   const normalized = message?.trim().toLowerCase() || "";
+  const normalizedProgress = progress?.trim().toLowerCase() || "";
 
-  if (/capability consent|requires capability|codex.*plugin|plugin.*codex|agent harness/.test(normalized)) {
+  if (/capability consent|plugin_capability_consent_required/.test(normalized)) {
     return "OpenClaw needs the official Codex plugin enabled with its required capability consent before ChatGPT sign-in can continue. Retry to repair the local OpenClaw setup.";
+  }
+
+  if (/requires plugin api|plugin api mismatch|runtime exposes\s+\d{4}\.\d+\.\d+/.test(normalized)) {
+    return "The Codex plugin does not match this OpenClaw version. Retry setup to install the matching plugin, then reconnect ChatGPT.";
+  }
+
+  if (/version could not be verified|un-pinned codex plugin|unpinned codex plugin/.test(normalized)) {
+    return "OpenClaw's version could not be verified, so Codex setup was stopped. Start the Gateway and retry ChatGPT sign-in.";
   }
 
   if (/macos|local agentos|oauth.*gateway|not available in this environment/.test(normalized)) {
@@ -88,6 +97,18 @@ export function resolveChatGptRecoveryMessage(message?: string | null) {
 
   if (/operator\.(?:admin|read|write|pairing)|device access|pending.*device/.test(normalized)) {
     return "OpenClaw's local device access needs operator scope. Repair Gateway device access in Settings, then retry ChatGPT sign-in.";
+  }
+
+  if (/econnreset|econnrefused|enotfound|eai_again|fetch failed|network error|npm.*network/.test(normalized)) {
+    return "OpenClaw could not reach the plugin package source. Check the network connection and retry the Codex plugin setup.";
+  }
+
+  if (/eacces|permission denied|not writable/.test(normalized)) {
+    return "OpenClaw could not write its local Codex plugin files. Fix the OpenClaw install permissions, then retry.";
+  }
+
+  if (/already installed/.test(normalized)) {
+    return "OpenClaw reports that the Codex plugin is already installed. Review its plugin status and retry ChatGPT sign-in.";
   }
 
   if (/auth refresh failed|could not refresh .* authentication|gateway auth refresh/i.test(normalized)) {
@@ -99,6 +120,10 @@ export function resolveChatGptRecoveryMessage(message?: string | null) {
   }
 
   if (/timed out|timeout/.test(normalized)) {
+    if (/plugin|openclaw version/.test(normalizedProgress)) {
+      return "OpenClaw plugin setup did not finish in time. Review the Codex plugin status in OpenClaw, then retry.";
+    }
+
     return "ChatGPT sign-in took too long. Close any stale sign-in tab and try again.";
   }
 
@@ -108,6 +133,26 @@ export function resolveChatGptRecoveryMessage(message?: string | null) {
 
   if (/expired|reconnect|stale|account.*again|sign-in.*again|reauthor/.test(normalized)) {
     return "ChatGPT needs to be connected again. Reconnect to continue.";
+  }
+
+  if (/could not install the codex plugin/.test(normalizedProgress)) {
+    return "OpenClaw could not install the Codex plugin. Review its plugin diagnostics and retry setup.";
+  }
+
+  if (/could not enable the codex plugin/.test(normalizedProgress)) {
+    return "OpenClaw could not enable the Codex plugin. Check its capability consent and plugin policy, then retry.";
+  }
+
+  if (/could not verify the codex plugin/.test(normalizedProgress)) {
+    return "OpenClaw still does not report the Codex plugin as ready. Review its plugin diagnostics, then retry.";
+  }
+
+  if (/version could not be verified/.test(normalizedProgress)) {
+    return "OpenClaw's version could not be verified, so the matching Codex plugin was not installed. Start the Gateway and retry.";
+  }
+
+  if (/could not start chatgpt sign-in|did not complete chatgpt sign-in/.test(normalizedProgress)) {
+    return "OpenClaw could not complete its local ChatGPT sign-in command. Check the recent OpenClaw command diagnostics, then retry.";
   }
 
   return "We couldn't finish connecting ChatGPT. Try again or use another provider.";

@@ -161,6 +161,37 @@ test("ChatGPT onboarding exposes a recoverable Codex plugin setup error", () => 
   );
 });
 
+test("ChatGPT onboarding explains a Codex plugin API mismatch without calling it capability consent", () => {
+  assert.match(
+    resolveChatGptRecoveryMessage("@openclaw/codex@2026.10.6 requires plugin API >=2026.10.6"),
+    /Codex plugin does not match this OpenClaw version/
+  );
+});
+
+test("ChatGPT onboarding explains when the OpenClaw runtime version cannot be verified", () => {
+  assert.match(
+    resolveChatGptRecoveryMessage("OpenClaw version could not be verified, so AgentOS will not install an unpinned Codex plugin."),
+    /version could not be verified, so Codex setup was stopped/
+  );
+});
+
+test("ChatGPT onboarding surfaces the failing plugin setup step and safe network guidance", () => {
+  assert.match(
+    resolveChatGptRecoveryMessage(
+      "OpenClaw command failed with exit code 1: ENOTFOUND registry.npmjs.org",
+      "OpenClaw could not install the Codex plugin."
+    ),
+    /could not reach the plugin package source/
+  );
+  assert.match(
+    resolveChatGptRecoveryMessage(
+      "OpenClaw command failed with exit code 1",
+      "OpenClaw could not enable the Codex plugin."
+    ),
+    /capability consent and plugin policy/
+  );
+});
+
 test("ChatGPT onboarding explains a post-auth model refresh failure", () => {
   assert.match(
     resolveChatGptRecoveryMessage(

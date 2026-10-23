@@ -293,10 +293,31 @@ export async function readOpenClawConfiguredProviderCredentialIds(): Promise<Add
   }
 }
 
-export async function readOpenClawCodexPluginReady(): Promise<boolean> {
-  const plugins = await getOpenClawAdapter().listPlugins({ timeoutMs: 5_000 });
+export type OpenClawCodexPluginSetupState = {
+  installed: boolean;
+  ready: boolean;
+  status: string | null;
+};
 
-  return plugins.plugins.some(isReadyCodexPlugin);
+export async function readOpenClawCodexPluginSetupState(): Promise<OpenClawCodexPluginSetupState> {
+  const plugins = await getOpenClawAdapter().listPlugins({ timeoutMs: 5_000 });
+  const plugin = plugins.plugins.find(isCodexPlugin);
+
+  if (!plugin) {
+    return { installed: false, ready: false, status: null };
+  }
+
+  const status = plugin.status?.trim().toLowerCase() || null;
+
+  return {
+    installed: !["missing", "uninstalled"].includes(status ?? ""),
+    ready: isReadyCodexPlugin(plugin),
+    status
+  };
+}
+
+export async function readOpenClawCodexPluginReady(): Promise<boolean> {
+  return (await readOpenClawCodexPluginSetupState()).ready;
 }
 
 export async function buildOpenClawFileBasedProviderConnectionStatus(
@@ -1669,13 +1690,24 @@ function resolveProviderFromModelIdForRuntime(modelId: string): AddModelsProvide
   return resolveProviderFromModelId(modelId);
 }
 
-function isReadyCodexPlugin(plugin: { id: string; name: string; status?: string }) {
+function isReadyCodexPlugin(plugin: {
+  id: string;
+  name: string;
+  status?: string;
+  enabled?: boolean;
+  capabilityConsentRequired?: boolean;
+}) {
+  const status = plugin.status?.trim().toLowerCase() ?? "";
+
+  return isCodexPlugin(plugin) && plugin.enabled !== false && plugin.capabilityConsentRequired !== true &&
+    !["disabled", "missing", "error", "failed", "blocked"].includes(status);
+}
+
+function isCodexPlugin(plugin: { id: string; name: string }) {
   const id = plugin.id.trim().toLowerCase();
   const name = plugin.name.trim().toLowerCase();
-  const status = plugin.status?.trim().toLowerCase() ?? "";
-  const isCodexPlugin = id === "codex" || id === "@openclaw/codex" || name === "codex" || name === "@openclaw/codex";
 
-  return isCodexPlugin && !["disabled", "missing", "error", "failed", "blocked"].includes(status);
+  return id === "codex" || id === "@openclaw/codex" || name === "codex" || name === "@openclaw/codex";
 }
 
 export function applyProviderEndpointConfig(

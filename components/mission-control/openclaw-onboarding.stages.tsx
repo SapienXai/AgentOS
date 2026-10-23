@@ -636,7 +636,13 @@ function ConnectAiStage({
           <div className="flex items-start gap-2">
             {browserAuthBusy ? <LoaderCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" /> : <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold">{browserAuthError ? "ChatGPT sign-in needs attention" : "Waiting for ChatGPT"}</p>
+              <p className="text-[11px] font-semibold">
+                {browserAuthError
+                  ? "ChatGPT sign-in needs attention"
+                  : chatGptBrowserAuth.state === "preparing"
+                    ? "Preparing ChatGPT sign-in"
+                    : "Waiting for ChatGPT"}
+              </p>
               <p className="mt-0.5 text-[10px] leading-4 opacity-75">{chatGptBrowserAuth.message}</p>
             </div>
           </div>
@@ -706,7 +712,9 @@ function ConnectAiStage({
           ) : null}
 
           {chatGptBrowserAuth.state === "error" && chatGptBrowserAuth.error ? (
-            <p className="mt-2 text-[10px] leading-4 text-rose-300">{resolveChatGptRecoveryMessage(chatGptBrowserAuth.error)}</p>
+            <p className="mt-2 text-[10px] leading-4 text-rose-300">
+              {resolveChatGptRecoveryMessage(chatGptBrowserAuth.error, chatGptBrowserAuth.message)}
+            </p>
           ) : null}
         </div>
       ) : null}

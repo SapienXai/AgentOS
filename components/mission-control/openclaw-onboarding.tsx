@@ -1271,7 +1271,7 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
           <Info className="h-3.5 w-3.5" />
         </span>
         <p className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
-          OpenClaw setup target: <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
+          Certified setup target: OpenClaw <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
         </p>
       </div>
     </div>

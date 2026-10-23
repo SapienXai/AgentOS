@@ -3125,7 +3125,8 @@ export function MissionControlShell({
             ? authFlow.error
             : error instanceof Error
               ? error.message
-              : "ChatGPT sign-in could not be completed."
+              : "ChatGPT sign-in could not be completed.",
+          authFlow?.state === "error" ? authFlow.message : null
         );
         setModelOnboardingRunState("error");
         setModelOnboardingPhase("authenticating");

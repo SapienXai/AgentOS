@@ -9,10 +9,16 @@ import {
   buildOpenClawSpawnEnv,
   resolveOpenClawSpawnInvocation
 } from "@/lib/openclaw/install";
-import { resolveOpenClawBin, runOpenClaw } from "@/lib/openclaw/cli";
+import { resolveOpenClawBin, resolveOpenClawVersion, runOpenClaw } from "@/lib/openclaw/cli";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  readOpenClawCodexPluginReady,
+  readOpenClawCodexPluginSetupState,
+  type OpenClawCodexPluginSetupState
+} from "@/lib/openclaw/application/model-provider-state-service";
+import { resolveExactOpenClawPluginSpec } from "@/lib/openclaw/application/channel-plugin-compat";
 import { validateOpenAiAuthorizationUrl } from "@/lib/openclaw/chatgpt-auth-url";
+import { redactErrorMessage } from "@/lib/security/redaction";
 import type {
   ChatGptBrowserAuthSnapshot
 } from "@/lib/agentos/contracts";
@@ -26,6 +32,8 @@ const openClawPtyRunnerPath = join(process.cwd(), "scripts", "openclaw-pty-runne
 export type ChatGptProviderAuthDependencies = {
   platform: NodeJS.Platform;
   readPluginReady: () => Promise<boolean>;
+  readPluginSetupState?: () => Promise<OpenClawCodexPluginSetupState>;
+  resolveRuntimeVersion?: () => Promise<string | null>;
   runSetupCommand: (args: string[], timeoutMs: number) => Promise<void>;
   resolveAuthAgentId?: (requestedAgentId?: string) => Promise<string | null | undefined>;
   runInteractiveLogin: (input: {
@@ -70,6 +78,8 @@ let authStartQueue: Promise<unknown> = Promise.resolve();
 const defaultDependencies: ChatGptProviderAuthDependencies = {
   platform: process.platform,
   readPluginReady: async () => await readOpenClawCodexPluginReady(),
+  readPluginSetupState: readOpenClawCodexPluginSetupState,
+  resolveRuntimeVersion: resolveOpenClawVersion,
   runSetupCommand: async (args, timeoutMs) => {
     await runOpenClaw(args, { timeoutMs });
   },
@@ -203,11 +213,18 @@ async function runBrowserAuthSession(
   force: boolean,
   dependencies: ChatGptProviderAuthDependencies
 ) {
+  let currentProgress = "Checking the OpenClaw Codex plugin...";
+  const updateProgress = (message: string) => {
+    currentProgress = message;
+    session.message = message;
+  };
+
   try {
-    await prepareChatGptProviderAuth(dependencies);
+    await prepareChatGptProviderAuth(dependencies, updateProgress);
     session.abortController.signal.throwIfAborted();
     session.state = "waiting-for-browser";
     session.message = "Open the ChatGPT sign-in page in the new browser tab.";
+    currentProgress = "Starting ChatGPT sign-in";
 
     await dependencies.runInteractiveLogin({
       agentId: session.agentId,
@@ -220,10 +237,12 @@ async function runBrowserAuthSession(
         session.browserUrl = browserUrl;
         session.state = "waiting-for-redirect";
         session.message = "Complete ChatGPT sign-in. If the callback page cannot load on this device, paste its full URL below.";
+        currentProgress = "Completing ChatGPT sign-in";
       },
       onManualInputRequired: () => {
         session.state = "waiting-for-redirect";
         session.message = "Paste the full redirect URL from the ChatGPT callback page to finish sign-in.";
+        currentProgress = "Completing ChatGPT sign-in";
       }
     });
 
@@ -232,29 +251,97 @@ async function runBrowserAuthSession(
     session.error = null;
   } catch (error) {
     session.state = "error";
-    session.message = "ChatGPT sign-in could not be completed.";
-    session.error = error instanceof Error
-      ? error.message
-      : "OpenClaw did not complete ChatGPT sign-in.";
+    session.message = resolveChatGptAuthFailureProgress(currentProgress);
+    session.error = redactErrorMessage(error, "OpenClaw did not complete ChatGPT sign-in.");
   } finally {
     session.child = null;
   }
 }
 
-export async function prepareChatGptProviderAuth(dependencies: ChatGptProviderAuthDependencies) {
+export async function prepareChatGptProviderAuth(
+  dependencies: ChatGptProviderAuthDependencies,
+  onProgress?: (message: string) => void
+) {
   // An unavailable Gateway is not evidence that a plugin is missing.
   // Let the canonical login command verify provider support in that case.
-  const pluginReady = await dependencies.readPluginReady().catch(() => null);
+  onProgress?.("Checking the OpenClaw Codex plugin...");
+  const pluginState = dependencies.readPluginSetupState
+    ? await dependencies.readPluginSetupState().catch(() => null)
+    : await dependencies.readPluginReady()
+      .then((ready) => ({ installed: ready, ready, status: null }))
+      .catch(() => null);
 
-  if (pluginReady === false) {
-    await dependencies.runSetupCommand(
-      ["plugins", "install", "--force", "--accept-capabilities", "@openclaw/codex"],
-      pluginSetupTimeoutMs
-    );
-    await dependencies.runSetupCommand(["gateway", "restart"], pluginSetupTimeoutMs);
+  if (!pluginState || pluginState.ready) {
+    return false;
   }
 
-  return pluginReady === false;
+  if (!pluginState.installed) {
+    onProgress?.("Checking the OpenClaw version...");
+    const runtimeVersion = await (dependencies.resolveRuntimeVersion ?? resolveOpenClawVersion)();
+    const pluginSpec = resolveExactOpenClawPluginSpec("@openclaw/codex", runtimeVersion);
+
+    if (!pluginSpec) {
+      throw new Error(
+        "OpenClaw version could not be verified, so AgentOS will not install an unpinned Codex plugin. Start the Gateway and retry ChatGPT sign-in."
+      );
+    }
+
+    onProgress?.(`Installing the Codex plugin for OpenClaw ${runtimeVersion}...`);
+    await dependencies.runSetupCommand(
+      ["plugins", "install", "--force", "--accept-capabilities", pluginSpec],
+      pluginSetupTimeoutMs
+    );
+  } else {
+    onProgress?.("Enabling the installed Codex plugin with required capabilities...");
+    await dependencies.runSetupCommand(
+      ["plugins", "enable", "codex", "--accept-capabilities"],
+      pluginSetupTimeoutMs
+    );
+  }
+
+  onProgress?.("Verifying the Codex plugin with OpenClaw...");
+  if (!(await dependencies.readPluginReady())) {
+    if (!pluginState.installed) {
+      onProgress?.("Accepting the installed Codex plugin capabilities...");
+      await dependencies.runSetupCommand(
+        ["plugins", "enable", "codex", "--accept-capabilities"],
+        pluginSetupTimeoutMs
+      );
+    }
+
+    onProgress?.("Verifying the Codex plugin with OpenClaw...");
+    if (!(await dependencies.readPluginReady())) {
+      throw new Error(
+        "OpenClaw did not report the Codex plugin as ready after setup. Review OpenClaw plugin diagnostics, then retry ChatGPT sign-in."
+      );
+    }
+  }
+
+  return !pluginState.installed;
+}
+
+function resolveChatGptAuthFailureProgress(progress: string) {
+  if (/installing the codex plugin/i.test(progress)) {
+    return "OpenClaw could not install the Codex plugin.";
+  }
+
+  if (/enabling the installed codex plugin|accepting the installed codex plugin/i.test(progress)) {
+    return "OpenClaw could not enable the Codex plugin.";
+  }
+
+  if (/verifying the codex plugin/i.test(progress)) {
+    return "OpenClaw could not verify the Codex plugin after setup.";
+  }
+
+  if (/checking the openclaw version/i.test(progress)) {
+    return "OpenClaw's version could not be verified.";
+  }
+
+  if (/completing chatgpt sign-in/i.test(progress)) {
+    return "OpenClaw did not complete ChatGPT sign-in.";
+  }
+
+  return "OpenClaw could not start ChatGPT sign-in.";
 }
 
 function toChatGptBrowserAuthSnapshot(session: ChatGptBrowserAuthSession): ChatGptBrowserAuthSnapshot {

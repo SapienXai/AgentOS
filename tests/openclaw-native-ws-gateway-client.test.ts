@@ -7,7 +7,10 @@ import {
   getRecentOpenClawGatewayFallbackDiagnostics,
   NativeWsOpenClawGatewayClient
 } from "@/lib/openclaw/client/native-ws-gateway-client";
-import { normalizeModelStatusPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
+import {
+  normalizeModelStatusPayload,
+  normalizePluginsPayload
+} from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { parseConfigPath } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import type {
   NativeHandshakePayload,
@@ -87,6 +90,25 @@ test("native model auth normalization keeps OpenAI API keys separate from ChatGP
   const connection = buildModelStatusConnectionStatus("openai", status, ["openai/gpt-5.5"]);
   assert.equal(connection?.connected, true);
   assert.equal(connection?.authMethod, "api-key");
+});
+
+test("native plugin normalization ties capability consent diagnostics to the matching plugin", () => {
+  const payload = normalizePluginsPayload({
+    plugins: [
+      { id: "codex", name: "@openclaw/codex", status: "loaded", enabled: true },
+      { id: "other", name: "Other", status: "loaded", enabled: true }
+    ],
+    diagnostics: [
+      {
+        pluginId: "codex",
+        level: "warn",
+        message: "Plugin \"codex\" requires capability consent before it can be enabled."
+      }
+    ]
+  });
+
+  assert.equal(payload.plugins.find((plugin) => plugin.id === "codex")?.capabilityConsentRequired, true);
+  assert.equal(payload.plugins.find((plugin) => plugin.id === "other")?.capabilityConsentRequired, undefined);
 });
 
 test("native model auth normalization recognizes only canonical OpenAI OAuth profiles", () => {

@@ -143,12 +143,14 @@ test("ChatGPT provider auth builds an explicit, force-capable OpenClaw login com
 
 test("ChatGPT provider auth installs the Codex plugin before login without device repair", async () => {
   const calls: string[] = [];
+  let readCount = 0;
 
   const result = await connectOpenClawChatGptProvider(
     { agentId: "test-agent" },
     {
       platform: "darwin",
-      readPluginReady: async () => false,
+      readPluginReady: async () => ++readCount > 1,
+      resolveRuntimeVersion: async () => "2026.9.7",
       runSetupCommand: async (args) => {
         calls.push(args.join(" "));
       },
@@ -159,11 +161,75 @@ test("ChatGPT provider auth installs the Codex plugin before login without devic
   );
 
   assert.deepEqual(calls, [
-    "plugins install --force --accept-capabilities @openclaw/codex",
-    "gateway restart",
+    "plugins install --force --accept-capabilities @openclaw/codex@2026.9.7",
     "login force=false"
   ]);
   assert.equal(result.pluginInstalled, true);
+});
+
+test("ChatGPT provider auth enables an installed Codex plugin without reinstalling or restarting OpenClaw", async () => {
+  const calls: string[] = [];
+
+  const result = await connectOpenClawChatGptProvider(
+    { agentId: "test-agent" },
+    {
+      platform: "darwin",
+      readPluginReady: async () => true,
+      readPluginSetupState: async () => ({ installed: true, ready: false, status: "disabled" }),
+      runSetupCommand: async (args) => {
+        calls.push(args.join(" "));
+      },
+      runInteractiveLogin: async () => {
+        calls.push("login");
+      }
+    }
+  );
+
+  assert.deepEqual(calls, ["plugins enable codex --accept-capabilities", "login"]);
+  assert.equal(result.pluginInstalled, false);
+});
+
+test("ChatGPT provider auth refuses an unpinned Codex install when the runtime version is unknown", async () => {
+  const calls: string[] = [];
+
+  await assert.rejects(
+    () => connectOpenClawChatGptProvider(
+      { agentId: "test-agent" },
+      {
+        platform: "darwin",
+        readPluginReady: async () => false,
+        resolveRuntimeVersion: async () => null,
+        runSetupCommand: async (args) => { calls.push(args.join(" ")); },
+        runInteractiveLogin: async () => { calls.push("login"); }
+      }
+    ),
+    /will not install an unpinned Codex plugin/
+  );
+
+  assert.deepEqual(calls, []);
+});
+
+test("ChatGPT provider auth does not continue when Codex plugin repair is not ready afterward", async () => {
+  const calls: string[] = [];
+
+  await assert.rejects(
+    () => connectOpenClawChatGptProvider(
+      { agentId: "test-agent" },
+      {
+        platform: "darwin",
+        readPluginReady: async () => false,
+        resolveRuntimeVersion: async () => "2026.9.7",
+        runSetupCommand: async (args) => { calls.push(args.join(" ")); },
+        runInteractiveLogin: async () => { calls.push("login"); }
+      }
+    ),
+    /did not report the Codex plugin as ready after setup/
+  );
+
+  assert.deepEqual(calls, [
+    "plugins install --force --accept-capabilities @openclaw/codex@2026.9.7",
+    "plugins enable codex --accept-capabilities"
+  ]);
 });
 
 test("ChatGPT OAuth preparation reaches the interactive login boundary with shared local auth", async () => {
@@ -230,6 +296,29 @@ test("ChatGPT browser auth progresses from preparation to redirect wait and comp
   release();
   await delay(0);
   assert.equal(getOpenClawChatGptBrowserAuth(started.sessionId).state, "completed");
+});
+
+test("ChatGPT browser auth reports which Codex setup step failed", async () => {
+  const started = await startOpenClawChatGptBrowserAuth(
+    { agentId: "test-agent" },
+    {
+      platform: "darwin",
+      readPluginReady: async () => false,
+      resolveRuntimeVersion: async () => "2026.9.7",
+      runSetupCommand: async () => {
+        throw new Error("OpenClaw command failed with exit code 1: ENOTFOUND registry.npmjs.org");
+      },
+      runInteractiveLogin: async () => {
+        assert.fail("ChatGPT sign-in must not start before plugin setup is ready.");
+      }
+    }
+  );
+
+  await delay(0);
+  const failed = getOpenClawChatGptBrowserAuth(started.sessionId);
+  assert.equal(failed.state, "error");
+  assert.equal(failed.message, "OpenClaw could not install the Codex plugin.");
+  assert.match(failed.error ?? "", /ENOTFOUND registry\.npmjs\.org/);
 });
 
 test("OpenClaw browser URL output is observed without a second AgentOS browser open", async () => {
@@ -469,6 +558,7 @@ test("ChatGPT browser auth preserves a recoverable preparation failure", async (
     {
       platform: "darwin",
       readPluginReady: async () => false,
+      resolveRuntimeVersion: async () => "2026.9.7",
       runSetupCommand: async () => {
         throw new Error("Codex plugin install failed");
       },
