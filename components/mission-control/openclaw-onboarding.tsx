@@ -42,7 +42,10 @@ import {
   type WizardStage
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { hasAgentOSWorkspaceSetup } from "@/components/mission-control/mission-control-shell.utils";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_NATIVE_CONTRACT_VERSION,
+  OPENCLAW_RECOMMENDED_VERSION
+} from "@/lib/openclaw/versions";
 import {
   LaunchpadStage,
   ModelStage,
@@ -1266,13 +1269,18 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
           : "border-primary/25 bg-slate-900 shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-start gap-2">
         <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Info className="h-3.5 w-3.5" />
         </span>
-        <p className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
-          Certified setup target: OpenClaw <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
-        </p>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-muted-foreground">
+            Certified recommendation: OpenClaw <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
+          </p>
+          <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+            Native contract target: v{OPENCLAW_NATIVE_CONTRACT_VERSION} (candidate; certification pending).
+          </p>
+        </div>
       </div>
     </div>
   );

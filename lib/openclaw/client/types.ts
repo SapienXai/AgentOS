@@ -860,6 +860,8 @@ export type OpenClawPluginListPayload = {
     name: string;
     status?: string;
     enabled?: boolean;
+    installed?: boolean;
+    runtimeState?: string;
     capabilityConsentRequired?: boolean;
     origin?: string;
     channelIds?: string[];

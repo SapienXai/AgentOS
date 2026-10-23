@@ -310,7 +310,7 @@ export async function readOpenClawCodexPluginSetupState(): Promise<OpenClawCodex
   const status = plugin.status?.trim().toLowerCase() || null;
 
   return {
-    installed: !["missing", "uninstalled"].includes(status ?? ""),
+    installed: plugin.installed ?? !["missing", "uninstalled", "not-installed"].includes(status ?? ""),
     ready: isReadyCodexPlugin(plugin),
     status
   };
@@ -1695,12 +1695,18 @@ function isReadyCodexPlugin(plugin: {
   name: string;
   status?: string;
   enabled?: boolean;
+  installed?: boolean;
+  runtimeState?: string;
   capabilityConsentRequired?: boolean;
 }) {
   const status = plugin.status?.trim().toLowerCase() ?? "";
+  const runtimeState = plugin.runtimeState?.trim().toLowerCase() ?? "";
+  const unavailableStates = ["disabled", "missing", "not-installed", "unloaded", "inactive", "error", "failed", "blocked"];
+  const runtimeIsReady = !runtimeState || ["active", "loaded", "ready"].includes(runtimeState);
 
-  return isCodexPlugin(plugin) && plugin.enabled !== false && plugin.capabilityConsentRequired !== true &&
-    !["disabled", "missing", "error", "failed", "blocked"].includes(status);
+  return isCodexPlugin(plugin) && plugin.installed !== false && plugin.enabled !== false &&
+    plugin.capabilityConsentRequired !== true && !unavailableStates.includes(status) &&
+    !unavailableStates.includes(runtimeState) && runtimeIsReady;
 }
 
 function isCodexPlugin(plugin: { id: string; name: string }) {

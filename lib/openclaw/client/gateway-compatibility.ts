@@ -424,7 +424,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     productIntegration: "discovery-only",
     productIntegratedMethods: ["tools.catalog", "tools.effective"]
   },
-  { id: "plugins", label: "Plugin inventory", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
+  { id: "plugins", label: "Plugin inventory", methods: ["plugins.list", "plugins.uiDescriptors"], baseline: "optional" },
   {
     id: "pluginCatalog",
     label: "Native plugin discovery catalog",

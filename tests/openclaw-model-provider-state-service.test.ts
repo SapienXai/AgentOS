@@ -17,6 +17,7 @@ import {
   readOpenClawProviderConfigSummary,
   readOpenClawProviderModelStatus,
   readOpenClawCodexPluginReady,
+  readOpenClawCodexPluginSetupState,
   removeOpenClawProviderCredential,
   removeOpenClawConfiguredModelFromConfig,
   setOpenClawDefaultModel,
@@ -1204,6 +1205,73 @@ test("Codex plugin readiness requires the plugin registry entry", async () => {
   } as unknown as OpenClawAdapter);
 
   assert.equal(await readOpenClawCodexPluginReady(), true);
+});
+
+test("Codex plugin readiness accepts the Gateway inventory shape without a status field", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [{
+          id: "codex",
+          name: "Codex",
+          version: "2026.9.7",
+          installed: true,
+          enabled: true,
+          runtimeState: "active",
+          origin: "global"
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.deepEqual(await readOpenClawCodexPluginSetupState(), {
+    installed: true,
+    ready: true,
+    status: null
+  });
+});
+
+test("Codex official catalog entries are not treated as installed plugins", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [{
+          id: "codex",
+          name: "Codex",
+          status: "not-installed",
+          installed: false,
+          enabled: false,
+          runtimeState: "unloaded",
+          origin: "official"
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.deepEqual(await readOpenClawCodexPluginSetupState(), {
+    installed: false,
+    ready: false,
+    status: "not-installed"
+  });
+});
+
+test("Codex is not ready while the Gateway reports a transitional runtime state", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [{
+          id: "codex",
+          name: "Codex",
+          installed: true,
+          enabled: true,
+          runtimeState: "starting",
+          origin: "global"
+        }]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await readOpenClawCodexPluginReady(), false);
 });
 
 test("Codex plugin readiness rejects missing or failed registry entries", async () => {

@@ -109,6 +109,23 @@ test("native plugin normalization ties capability consent diagnostics to the mat
 
   assert.equal(payload.plugins.find((plugin) => plugin.id === "codex")?.capabilityConsentRequired, true);
   assert.equal(payload.plugins.find((plugin) => plugin.id === "other")?.capabilityConsentRequired, undefined);
+
+  const officialCandidate = normalizePluginsPayload({
+    plugins: [{
+      id: "codex",
+      name: "Codex",
+      version: "2026.9.7",
+      state: "not-installed",
+      enabled: false,
+      installed: false,
+      runtime: { state: "unloaded" },
+      origin: "official"
+    }]
+  }).plugins[0];
+
+  assert.equal(officialCandidate?.status, "not-installed");
+  assert.equal(officialCandidate?.installed, false);
+  assert.equal(officialCandidate?.runtimeState, "unloaded");
 });
 
 test("native model auth normalization recognizes only canonical OpenAI OAuth profiles", () => {
@@ -826,6 +843,60 @@ test("native WS gateway client reads the 2026.9.4 plugin catalog without CLI fal
   ]);
   assert.deepEqual(sentFrames[1]?.params, { query: "calendar", category: "productivity", pageSize: 1 });
   assert.deepEqual(sentFrames[3]?.params, { id: "official_calendar", version: "1.2.0" });
+  assert.equal(fallback.calls.length, 0);
+});
+
+test("native plugin inventory prefers installed plugin state over UI descriptors", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload = frame.method === "connect"
+        ? { protocol: 4, methods: ["plugins.uiDescriptors", "plugins.list"] }
+        : frame.method === "plugins.list"
+          ? {
+              plugins: [{
+                id: "codex",
+                name: "Codex",
+                version: "2026.9.7",
+                state: "enabled",
+                enabled: true,
+                installed: true,
+                runtime: { state: "active" },
+                origin: "global"
+              }],
+              diagnostics: []
+            }
+          : { generation: 4, descriptors: [], diagnostics: [] };
+
+      socket.emitMessage({ type: "res", id: frame.id, ok: true, payload });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    transport,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.listPlugins();
+
+  assert.deepEqual(result.plugins, [{
+    id: "codex",
+    name: "Codex",
+    version: "2026.9.7",
+    state: "enabled",
+    enabled: true,
+    runtime: { state: "active" },
+    origin: "global",
+    status: "enabled",
+    installed: true,
+    runtimeState: "active",
+    channelIds: undefined,
+    toolNames: undefined,
+    dependencyStatus: undefined,
+    capabilityConsentRequired: undefined
+  }]);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "plugins.list"]);
   assert.equal(fallback.calls.length, 0);
 });
 

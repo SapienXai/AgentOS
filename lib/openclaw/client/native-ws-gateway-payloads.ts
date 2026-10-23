@@ -984,8 +984,12 @@ export function normalizePluginsPayload(payload: unknown): OpenClawPluginListPay
       ...entry,
       id: readNonEmptyString(entry.id) ?? readNonEmptyString(entry.pluginId) ?? readNonEmptyString(entry.name) ?? "unknown",
       name: readNonEmptyString(entry.name) ?? readNonEmptyString(entry.label) ?? readNonEmptyString(entry.id) ?? "Unknown plugin",
-      status: readNonEmptyString(entry.status) ?? undefined,
+      status: readNonEmptyString(entry.status) ?? readNonEmptyString(entry.state) ?? undefined,
       enabled: typeof entry.enabled === "boolean" ? entry.enabled : undefined,
+      installed: typeof entry.installed === "boolean" ? entry.installed : undefined,
+      runtimeState: isObjectRecord(entry.runtime)
+        ? readNonEmptyString(entry.runtime.state) ?? undefined
+        : undefined,
       origin: readNonEmptyString(entry.origin) ?? undefined,
       channelIds: Array.isArray(entry.channelIds)
         ? entry.channelIds.filter((channelId): channelId is string => typeof channelId === "string")
