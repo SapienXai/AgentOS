@@ -153,6 +153,28 @@ full test run found four stale 10.5/runtime expectations and three workspace
 provisioning races; these were corrected at their source, and the final full
 suite passed 2,205/2,205 tests.
 
+## Runtime state after updates
+
+OpenClaw remains responsible for package activation, state/config migration,
+sessions, and task recovery. AgentOS keeps its existing preflight and rollback
+snapshot, invokes OpenClaw's native updater, then clears its read caches and
+verifies the installed version, Gateway health, compatibility, and a live
+runtime smoke test. AgentOS must not delete or recreate OpenClaw task/session
+records as a substitute for migration.
+
+Workspace-context findings remain visible in diagnostics after restart. A
+finding on queued, running, or stalled work reduces runtime health and keeps
+the dispatch integrity guard in force. Findings limited to idle, completed, or
+cancelled records are historical data-quality warnings: they do not make a
+healthy live Gateway appear degraded, and they are not auto-cleaned. Runtime
+Inbox shows these diagnostic details and links to the diagnostics page even
+when there is no actionable runtime issue.
+
+Gateway event projections are AgentOS sidecars. Their writer uses unique
+temporary files, serializes writes per runtime record, and ignores older event
+timestamps so reconnect bursts cannot surface an `ENOENT` rename failure or
+replace a newer runtime state with stale data.
+
 The active local Gateway process was observed using its managed Node.js
 `24.21.0` executable on loopback port `18789`. It was left running and
 untouched. This is below the patched Node 24 floor; updating that live service

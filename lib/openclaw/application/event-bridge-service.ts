@@ -1,6 +1,5 @@
 import "server-only";
 
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -13,6 +12,7 @@ import type {
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/gateway-client";
 import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
+import { readGatewayRuntimeRecords, writeGatewayRuntimeRecord } from "@/lib/openclaw/application/gateway-event-store";
 import type { OpenClawEventBridgeStreamStatus, RuntimeRecord } from "@/lib/openclaw/types";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
@@ -174,21 +174,7 @@ export function subscribeOpenClawEventBridgeEvents(callback: (frame: GatewayEven
 }
 
 export async function readOpenClawEventBridgeRuntimes(): Promise<RuntimeRecord[]> {
-  try {
-    const entries = await readdir(eventBridgeRoot, { withFileTypes: true });
-    const records = await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-        .map((entry) => readBridgeRuntimeRecord(path.join(eventBridgeRoot, entry.name)))
-    );
-
-    return records
-      .filter((record): record is RuntimeRecord => Boolean(record))
-      .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
-      .slice(0, maxBridgeRecords);
-  } catch {
-    return [];
-  }
+  return readGatewayRuntimeRecords(eventBridgeRoot, maxBridgeRecords);
 }
 
 async function startEventBridge(generation: number) {
@@ -419,50 +405,7 @@ async function persistGatewayEvent(frame: GatewayEventFrame) {
   }
 
   lastEventAt = new Date(runtime.updatedAt ?? Date.now()).toISOString();
-  await mkdir(eventBridgeRoot, { recursive: true });
-  const filePath = path.join(eventBridgeRoot, `${safeFileName(runtime.id)}.json`);
-  const tempPath = `${filePath}.${process.pid}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(runtime, null, 2)}\n`, "utf8");
-  await rename(tempPath, filePath);
-}
-
-async function readBridgeRuntimeRecord(filePath: string): Promise<RuntimeRecord | null> {
-  try {
-    const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<RuntimeRecord>;
-    if (!parsed || typeof parsed.id !== "string" || typeof parsed.key !== "string") {
-      return null;
-    }
-
-    return {
-      id: parsed.id,
-      source: parsed.source === "session" || parsed.source === "cron" ? parsed.source : "turn",
-      key: parsed.key,
-      title: typeof parsed.title === "string" ? parsed.title : "Gateway runtime event",
-      subtitle: typeof parsed.subtitle === "string" ? parsed.subtitle : "OpenClaw Gateway event",
-      status: parsed.status ?? "running",
-      updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : null,
-      ageMs: typeof parsed.updatedAt === "number" ? Math.max(0, Date.now() - parsed.updatedAt) : null,
-      agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
-      workspaceId: typeof parsed.workspaceId === "string" ? parsed.workspaceId : undefined,
-      modelId: typeof parsed.modelId === "string" ? parsed.modelId : undefined,
-      sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
-      taskId: typeof parsed.taskId === "string" ? parsed.taskId : undefined,
-      runId: typeof parsed.runId === "string" ? parsed.runId : undefined,
-      toolNames: Array.isArray(parsed.toolNames) ? parsed.toolNames.filter((entry): entry is string => typeof entry === "string") : undefined,
-      tokenUsage: parsed.tokenUsage,
-      metadata: isRecord(parsed.metadata) ? parsed.metadata : {}
-    };
-  } catch {
-    return null;
-  }
-}
-
-function safeFileName(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  await writeGatewayRuntimeRecord(eventBridgeRoot, runtime);
 }
 
 export function resetOpenClawEventBridgeForTesting() {

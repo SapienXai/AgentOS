@@ -4,6 +4,7 @@ import {
   isGatewayFallbackDiagnosticCurrent,
   type GatewayFallbackDiagnosticLike
 } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
+import { isTransientOpenClawRefreshIssue } from "@/lib/openclaw/diagnostics/issue-classification";
 
 /**
  * The Mission Control snapshot cache is refreshed on a 30 second TTL. Keep the
@@ -161,11 +162,16 @@ export function presentOperatorRuntime(
     explanation = "Native OpenClaw Gateway RPC is ready and the current runtime snapshot has no blocking issues.";
   } else {
     state = "degraded";
+    const diagnosticWarningCount = (diagnostics.issues ?? []).filter(
+      (issue) => !isTransientOpenClawRefreshIssue(issue)
+    ).length;
     explanation = fallback.degradedOperationCount > 0
       ? "One or more core OpenClaw operations used CLI fallback, reducing native Gateway capability."
       : actionableIssues.length > 0
         ? "OpenClaw is available, but one or more runtime issues need operator attention."
-        : "OpenClaw is installed or loaded, but native runtime readiness is incomplete.";
+        : diagnosticWarningCount > 0
+          ? `OpenClaw is connected, but ${diagnosticWarningCount} diagnostic warning${diagnosticWarningCount === 1 ? " remains" : "s remain"}. Review the runtime diagnostics for details.`
+          : "OpenClaw is installed or loaded, but native runtime readiness is incomplete.";
   }
 
   const primaryRecovery = resolvePrimaryRecovery({

@@ -108,7 +108,7 @@ import {
   createMissionControlWorkspaceBindings,
   hydrateMissionControlWorkspaceGraph
 } from "@/lib/openclaw/application/mission-control/workspace-hydration";
-import { buildWorkspaceContextDiagnosticIssues } from "@/lib/openclaw/application/mission-control/workspace-context-diagnostics";
+import { buildWorkspaceContextDiagnostics } from "@/lib/openclaw/application/mission-control/workspace-context-diagnostics";
 import {
   createSnapshotPair,
   MISSION_CONTROL_GATEWAY_STATUS_STALE_GRACE_MS,
@@ -521,6 +521,12 @@ async function loadMissionControlSnapshots({
     const agentInbox = buildAgentInboxItems(tasks, runtimes, agents);
     const visibleAgentInbox = buildAgentInboxItems(visibleTasks, visibleRuntimes, visibleAgents);
     const runtimeDiagnostics = await runtimeDiagnosticsPromise;
+    const workspaceContextDiagnostics = buildWorkspaceContextDiagnostics({
+      workspaces,
+      agents,
+      runtimes,
+      tasks
+    });
     const diagnostics = await buildLiveMissionControlDiagnostics({
       profile,
       settings,
@@ -532,12 +538,8 @@ async function loadMissionControlSnapshots({
       updateStatus: resolvedUpdateStatus.value,
       hasOpenClawSignal,
       runtimeDiagnostics,
-      workspaceContextIssues: buildWorkspaceContextDiagnosticIssues({
-        workspaces,
-        agents,
-        runtimes,
-        tasks
-      }),
+      workspaceContextIssues: workspaceContextDiagnostics.issues,
+      workspaceContextHasActiveIssues: workspaceContextDiagnostics.hasActiveIssues,
       models,
       agents,
       modelStatus,

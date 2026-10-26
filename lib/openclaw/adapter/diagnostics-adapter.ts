@@ -7,6 +7,7 @@ import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
 import { getOpenClawGatewayOperationLabel } from "@/lib/openclaw/client/gateway-compatibility";
 import { filterActiveOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-diagnostic-activity";
 import { classifyGatewayFallbackImpact } from "@/lib/openclaw/diagnostics/gateway-fallback-policy";
+import { countHealthAffectingOpenClawIssues } from "@/lib/openclaw/diagnostics/issue-classification";
 import {
   collectIssues,
   compareVersionStrings,
@@ -208,6 +209,7 @@ export function buildGatewayDiagnostics(input: {
   transport?: MissionControlSnapshot["diagnostics"]["transport"];
   eventBridge?: MissionControlSnapshot["diagnostics"]["eventBridge"];
   runtimeIssueStates?: Record<string, RuntimeIssueState>;
+  workspaceContextHasActiveIssues?: boolean;
   issues: string[];
   versionDiagnostics: ReturnType<typeof buildVersionDiagnostics>;
   agentOsVersion?: string;
@@ -244,7 +246,7 @@ export function buildGatewayDiagnostics(input: {
         rpcOk: input.gatewayStatus?.rpc?.ok,
         warningCount: securityWarnings.length,
         runtimeIssueCount:
-          issues.filter((issue) => !isTransientRefreshIssue(issue)).length +
+          countHealthAffectingOpenClawIssues(issues, input.workspaceContextHasActiveIssues ?? false) +
           activeGatewayFallbackDiagnostics.filter((entry) => entry.impact !== "informational").length +
           (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
         hasOpenClawSignal: input.hasOpenClawSignal
@@ -295,7 +297,7 @@ export function buildGatewayDiagnostics(input: {
       rpcOk: input.gatewayStatus?.rpc?.ok,
       warningCount: securityWarnings.length,
       runtimeIssueCount:
-        issues.filter((issue) => !isTransientRefreshIssue(issue)).length +
+        countHealthAffectingOpenClawIssues(issues, input.workspaceContextHasActiveIssues ?? false) +
         activeGatewayFallbackDiagnostics.filter((entry) => entry.impact !== "informational").length +
         (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
       hasOpenClawSignal: input.hasOpenClawSignal
@@ -462,11 +464,4 @@ function describeCachedPayloadReuse(label: string, reusedCachedValue: boolean) {
   return reusedCachedValue
     ? `${label}: Reusing the last successful payload while a slow OpenClaw command refreshes in the background.`
     : null;
-}
-
-function isTransientRefreshIssue(issue: string) {
-  return (
-    issue.includes("Reusing the last successful payload while a slow OpenClaw command refreshes in the background.") ||
-    issue.includes("Reusing the last successful gateway status after a transient OpenClaw check failure.")
-  );
 }

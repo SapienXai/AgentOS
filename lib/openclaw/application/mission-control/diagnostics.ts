@@ -101,6 +101,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   hasOpenClawSignal: boolean;
   runtimeDiagnostics: MissionControlSnapshot["diagnostics"]["runtime"];
   workspaceContextIssues?: string[];
+  workspaceContextHasActiveIssues?: boolean;
   models: ModelsPayload["models"];
   agents: OpenClawAgent[];
   modelStatus?: ModelsStatusPayload;
@@ -209,6 +210,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     runtimeIssueStates: input.settings.runtimeIssues,
     versionDiagnostics,
     agentOsVersion: await resolveAgentOsVersion(),
+    workspaceContextHasActiveIssues: input.workspaceContextHasActiveIssues ?? false,
     issues: buildDiagnosticIssues({
       payloadResults: input.payloadResults,
       gatewayStatusRejectedWithCachedValue: input.gatewayStatusRejectedWithCachedValue,

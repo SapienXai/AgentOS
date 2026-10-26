@@ -25,6 +25,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } from "@/lib/agentos/contracts";
 import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
+import { isTransientOpenClawRefreshIssue } from "@/lib/openclaw/diagnostics/issue-classification";
 import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import { cn } from "@/lib/utils";
 import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
@@ -256,6 +257,9 @@ export function RuntimeInboxPanel({
     return typeof maxIssues === "number" ? visible.slice(0, maxIssues) : visible;
   }, [exitingIssueIds, hiddenIssueIds, maxIssues, snapshot.diagnostics.runtimeIssues]);
   const operatorRuntime = useMemo(() => presentOperatorRuntime(snapshot), [snapshot]);
+  const diagnosticMessages = (snapshot.diagnostics.issues ?? [])
+    .filter((issue) => !isTransientOpenClawRefreshIssue(issue))
+    .slice(0, 3);
 
   useEffect(() => () => {
     dismissTimersRef.current.forEach(clearTimeout);
@@ -308,9 +312,29 @@ export function RuntimeInboxPanel({
         <div className={cn("mt-3 rounded-[12px] border p-3", insetClassName(surfaceTheme))}>
           <div className="flex items-start gap-2.5">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <p className="text-xs leading-5 text-muted-foreground">
-              No actionable runtime issues. Current runtime state: {operatorRuntime.stateLabel.toLowerCase()}.
-            </p>
+            <div className="min-w-0 text-xs leading-5 text-muted-foreground">
+              <p>
+                No actionable runtime issues. Current runtime state: {operatorRuntime.stateLabel.toLowerCase()}.
+              </p>
+              {diagnosticMessages.length > 0 ? (
+                <div className="mt-2 space-y-2 border-t border-border/70 pt-2">
+                  <p className="font-medium text-current">Diagnostic details</p>
+                  <ul className="space-y-1.5">
+                    {diagnosticMessages.map((message) => (
+                      <li key={message} className="break-words">{message}</li>
+                    ))}
+                  </ul>
+                  <a
+                    href="/settings#diagnostics"
+                    className="inline-flex font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+                  >
+                    View diagnostics
+                  </a>
+                </div>
+              ) : operatorRuntime.state !== "ready" ? (
+                <p className="mt-2 border-t border-border/70 pt-2">{operatorRuntime.explanation}</p>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : (

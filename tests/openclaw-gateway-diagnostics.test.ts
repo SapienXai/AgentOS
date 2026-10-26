@@ -167,6 +167,20 @@ test("transient payload reuse stays visible without degrading Gateway health", (
   assert.match(diagnostics.issues[0] ?? "", /Reusing the last successful payload/);
 });
 
+test("historical workspace context findings stay visible without degrading Gateway health", () => {
+  const diagnostics = buildWorkspaceContextHealthDiagnostics(false);
+
+  assert.equal(diagnostics.health, "healthy");
+  assert.match(diagnostics.issues[0] ?? "", /workspaceContext:/);
+});
+
+test("active workspace context findings continue to degrade Gateway health", () => {
+  const diagnostics = buildWorkspaceContextHealthDiagnostics(true);
+
+  assert.equal(diagnostics.health, "degraded");
+  assert.match(diagnostics.issues[0] ?? "", /workspaceContext:/);
+});
+
 test("update availability fallback stays visible without degrading Gateway health", () => {
   const diagnostics = buildGatewayDiagnostics({
     gatewayStatus: {
@@ -339,3 +353,41 @@ test("version diagnostics expose update.status errors instead of reporting loadi
   assert.equal(diagnostics.updateError, "scope upgrade pending approval");
   assert.match(diagnostics.updateInfo ?? "", /Update registry check failed/);
 });
+
+function buildWorkspaceContextHealthDiagnostics(workspaceContextHasActiveIssues: boolean) {
+  return buildGatewayDiagnostics({
+    gatewayStatus: {
+      service: { loaded: true },
+      gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
+      rpc: { ok: true }
+    },
+    status: { version: "2026.10.6" },
+    configuredWorkspaceRoot: null,
+    workspaceRoot: "/tmp/workspace",
+    configuredGatewayUrl: null,
+    hasOpenClawSignal: true,
+    securityWarnings: [],
+    runtimeDiagnostics,
+    openClawBinarySelection,
+    modelReadiness,
+    eventBridge: {
+      mode: "live",
+      connected: true,
+      reconnecting: false,
+      reconnectAttempt: 0,
+      lastEventAt: null,
+      lastError: null,
+      message: null,
+      recovery: null
+    },
+    workspaceContextHasActiveIssues,
+    issues: ["workspaceContext: 1 task with missing workspace context (0 active records)."],
+    versionDiagnostics: {
+      currentVersion: "2026.10.6",
+      latestVersion: undefined,
+      updateAvailable: undefined,
+      updateError: undefined,
+      updateInfo: "Up to date"
+    }
+  });
+}
