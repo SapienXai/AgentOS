@@ -163,11 +163,12 @@ runtime smoke test. AgentOS must not delete or recreate OpenClaw task/session
 records as a substitute for migration.
 
 Workspace-context findings remain visible in diagnostics after restart. A
-finding on queued, running, or stalled work reduces runtime health and keeps
-the dispatch integrity guard in force. Findings limited to idle, completed, or
-cancelled records are historical data-quality warnings: they do not make a
-healthy live Gateway appear degraded, and they are not auto-cleaned. Runtime
-Inbox shows these diagnostic details and links to the diagnostics page even
+finding on queued or running work reduces runtime health and keeps the dispatch
+integrity guard in force. Findings limited to stalled, idle, completed, or
+cancelled records are historical or task-level data-quality warnings: they do
+not make a healthy live Gateway appear degraded, and they are not auto-cleaned.
+Unknown status values remain health-affecting until their liveness is known.
+Runtime Inbox shows diagnostic details and links to the diagnostics page even
 when there is no actionable runtime issue.
 
 Gateway event projections are AgentOS sidecars. Their writer uses unique

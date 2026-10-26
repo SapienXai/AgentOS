@@ -69,6 +69,32 @@ test("workspace context findings on queued work remain health-affecting", () => 
   assert.match(report.issues[0], /1 active record/);
 });
 
+test("workspace context findings on stalled work remain diagnostic without degrading live runtime health", () => {
+  const report = buildWorkspaceContextDiagnostics({
+    workspaces: [workspace("workspace-1")],
+    agents: [agent("agent-1", "workspace-1")],
+    runtimes: [runtime("runtime-stalled", "workspace-missing", "agent-1", "stalled")],
+    tasks: [task("task-stalled", "workspace-missing", ["runtime-stalled"], "stalled")]
+  });
+
+  assert.equal(report.hasActiveIssues, false);
+  assert.equal(report.issues.length, 3);
+  assert.equal(report.issues.every((issue) => /0 active records/.test(issue)), true);
+  assert.equal(report.issues.every((issue) => /No live/.test(issue)), true);
+});
+
+test("workspace context findings with unknown status remain health-affecting", () => {
+  const report = buildWorkspaceContextDiagnostics({
+    workspaces: [workspace("workspace-1")],
+    agents: [],
+    runtimes: [],
+    tasks: [task("task-unknown", "workspace-missing", [], "unknown" as TaskRecord["status"])]
+  });
+
+  assert.equal(report.hasActiveIssues, true);
+  assert.match(report.issues[0], /1 active record/);
+});
+
 function workspace(id: string): WorkspaceProject {
   return { id } as WorkspaceProject;
 }

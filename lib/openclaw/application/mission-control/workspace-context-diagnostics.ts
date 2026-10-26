@@ -5,7 +5,7 @@ import type {
   WorkspaceProject
 } from "@/lib/openclaw/types";
 
-const contextSensitiveStatuses = new Set(["queued", "running", "stalled"]);
+const nonLiveContextStatuses = new Set(["idle", "completed", "stalled", "cancelled"]);
 
 export type WorkspaceContextDiagnosticReport = {
   issues: string[];
@@ -66,25 +66,25 @@ export function buildWorkspaceContextDiagnostics(input: {
 
   if (runtimesMissingWorkspace.length > 0) {
     issues.push(
-      `workspaceContext: ${countLabel(runtimesMissingWorkspace.length, "runtime")} with missing workspace context (${countLabel(activeRuntimesMissingWorkspace.length, "active record")}). Refresh OpenClaw state before reviewing or continuing those runs.`
+      `workspaceContext: ${countLabel(runtimesMissingWorkspace.length, "runtime")} with missing workspace context (${countLabel(activeRuntimesMissingWorkspace.length, "active record")}). ${activeRuntimesMissingWorkspace.length > 0 ? "Refresh OpenClaw state before reviewing or continuing those runs." : "No live runs are affected; verify historical context before continuing any of them."}`
     );
   }
 
   if (tasksMissingWorkspace.length > 0) {
     issues.push(
-      `workspaceContext: ${countLabel(tasksMissingWorkspace.length, "task")} with missing workspace context (${countLabel(activeTasksMissingWorkspace.length, "active record")}). Refresh OpenClaw state before reviewing or continuing those tasks.`
+      `workspaceContext: ${countLabel(tasksMissingWorkspace.length, "task")} with missing workspace context (${countLabel(activeTasksMissingWorkspace.length, "active record")}). ${activeTasksMissingWorkspace.length > 0 ? "Refresh OpenClaw state before reviewing or continuing those tasks." : "No live tasks are affected; verify historical context before continuing any of them."}`
     );
   }
 
   if (runtimeAgentMismatches.length > 0) {
     issues.push(
-      `workspaceContext: ${countLabel(runtimeAgentMismatches.length, "runtime")} have workspace metadata that differs from their assigned agent (${countLabel(activeRuntimeAgentMismatches.length, "active record")}). Verify OpenClaw runtime metadata before continuing those runs.`
+      `workspaceContext: ${countLabel(runtimeAgentMismatches.length, "runtime")} ${runtimeAgentMismatches.length === 1 ? "has" : "have"} workspace metadata that differs from its assigned agent (${countLabel(activeRuntimeAgentMismatches.length, "active record")}). ${activeRuntimeAgentMismatches.length > 0 ? "Verify OpenClaw runtime metadata before continuing those runs." : "No live runs are affected; historical metadata remains available for diagnostics."}`
     );
   }
 
   if (taskRuntimeMismatches.length > 0) {
     issues.push(
-      `workspaceContext: ${countLabel(taskRuntimeMismatches.length, "task")} have runtime workspace metadata that differs from the task workspace (${countLabel(activeTaskRuntimeMismatches.length, "active record")}). Verify linked context before continuing active tasks.`
+      `workspaceContext: ${countLabel(taskRuntimeMismatches.length, "task")} have runtime workspace metadata that differs from the task workspace (${countLabel(activeTaskRuntimeMismatches.length, "active record")}). ${activeTaskRuntimeMismatches.length > 0 ? "Verify linked context before continuing active tasks." : "No live tasks are affected; historical metadata remains available for diagnostics."}`
     );
   }
 
@@ -109,9 +109,10 @@ export function buildWorkspaceContextDiagnosticIssues(input: {
 }
 
 function needsWorkspaceContextReview(status: string | undefined) {
-  // Unknown statuses remain conservative; terminal and idle records are kept
-  // visible as diagnostics but do not reduce live Gateway readiness.
-  return status === undefined || contextSensitiveStatuses.has(status);
+  // Only queued and running work reduces live Gateway readiness. Stalled and
+  // terminal records remain visible as diagnostics but are no longer live.
+  // Unknown statuses stay conservative because their liveness is unproven.
+  return status === undefined || !nonLiveContextStatuses.has(status.toLowerCase());
 }
 
 function countLabel(count: number, noun: string) {
