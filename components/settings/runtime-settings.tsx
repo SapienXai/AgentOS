@@ -39,7 +39,9 @@ export function RuntimeSettings({
   );
   const updateTarget = snapshot.diagnostics.updateProductState?.availableVersion || snapshot.diagnostics.latestVersion || null;
   const updateVisible = updateState !== "up-to-date" && updateState !== "unknown" && updateState !== "unavailable";
-  const updateDescription = snapshot.diagnostics.updateProductState?.reason || (
+  const updateDescription = snapshot.diagnostics.updateProductState?.availabilitySource === "openclaw-cli-fallback" && updateTarget
+    ? `Latest release v${updateTarget} was detected by a read-only OpenClaw status fallback. Review and install it with OpenClaw’s native updater on Updates.`
+    : snapshot.diagnostics.updateProductState?.reason || (
     updateTarget && updateVisible ? `OpenClaw v${updateTarget} is available.` : "OpenClaw update status could not be verified."
   );
   const gatewayAction = gatewayActionGuidance.action as GatewayControlAction | null;

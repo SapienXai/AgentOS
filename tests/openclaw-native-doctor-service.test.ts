@@ -9,6 +9,8 @@ import {
   consumeNativeUpdateConfirmation,
   executeNativeDoctorMutation,
   getNativeDoctorSnapshot,
+  isFreshChannelUpdateTarget,
+  isSameLocalUpdateDiscovery,
   issueNativeUpdateConfirmation,
   normalizeNativeUpdateRunOutcome,
   projectUpdateRun,
@@ -968,3 +970,23 @@ function postUpdateCapabilities() {
     }
   } as unknown as OpenClawCapabilityMatrix;
 }
+
+
+test("fresh package discovery requires matching local configuration, channel and an idle campaign", () => {
+  const input = { discovery: {version: "2026.10.9", source: "openclaw-cli-fallback", channel: "stable", installKind: "package"}, effectiveChannel: "stable", localityProven: true, hasCampaign: false, hasActiveRun: false };
+  assert.equal(isFreshChannelUpdateTarget(input), true);
+  assert.equal(isFreshChannelUpdateTarget({...input, localityProven: false}), false);
+  assert.equal(isFreshChannelUpdateTarget({...input, effectiveChannel: "beta"}), false);
+  assert.equal(isFreshChannelUpdateTarget({...input, hasCampaign: true}), false);
+  assert.equal(isFreshChannelUpdateTarget({...input, hasActiveRun: true}), false);
+  assert.equal(isFreshChannelUpdateTarget({...input, discovery: null}), false);
+});
+
+test("local update discovery cannot use a different profile, state root or remote Gateway", () => {
+  const identity = {gatewayUrl: "ws://127.0.0.1:18789", stateDir: "/tmp/openclaw", configPath: "/tmp/openclaw/config.json", profile: null, ownership: "agentos-managed", deploymentMode: "local", managementStrategy: "openclaw-service", supervisorEndpoint: null} as const;
+  assert.equal(isSameLocalUpdateDiscovery(identity, identity), true);
+  assert.equal(isSameLocalUpdateDiscovery(identity, {...identity, stateDir: "/tmp/other"}), false);
+  assert.equal(isSameLocalUpdateDiscovery(identity, {...identity, profile: "other"}), false);
+  assert.equal(isSameLocalUpdateDiscovery({...identity, gatewayUrl: "wss://remote.example"}, identity), false);
+  assert.equal(isSameLocalUpdateDiscovery(null, identity), false);
+});

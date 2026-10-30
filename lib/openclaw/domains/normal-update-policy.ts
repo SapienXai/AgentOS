@@ -113,7 +113,7 @@ export function resolveOpenClawProductUpdateState(input: {
     return buildProductUpdateProjection(input, "up-to-date", "none", "OpenClaw reports no update is currently available.");
   }
 
-  if (availabilitySource === "openclaw-cli-fallback" && input.availableVersion) {
+  if (availabilitySource === "openclaw-cli-fallback" && input.availableVersion && !input.normalNativeUpdateEligible) {
     return buildAvailableProductUpdateProjection(input, "available-fallback", "advanced");
   }
 
@@ -141,7 +141,9 @@ export function resolveNormalOpenClawUpdatePolicy(input: {
   const nativeAvailableVersion = normalizeVersion(input.snapshot.update.latestVersion);
   const discoveredAvailableVersion = normalizeVersion(input.snapshot.update.discoveredAvailableVersion);
   const availableVersion = nativeAvailableVersion || discoveredAvailableVersion;
-  const availabilitySource = nativeAvailableVersion
+  const availabilitySource = input.snapshot.update.channelTargetVerified === true
+    ? input.snapshot.update.availabilitySource ?? null
+    : nativeAvailableVersion
     ? "native-gateway" as const
     : input.snapshot.update.availabilitySource === "openclaw-cli-fallback"
       ? "openclaw-cli-fallback" as const
@@ -180,7 +182,8 @@ export function resolveNormalOpenClawUpdatePolicy(input: {
     input.snapshot.update.readStatus === "available" &&
     input.snapshot.update.status === "available" &&
     input.snapshot.update.updateAvailable === true &&
-    availabilitySource === "native-gateway" &&
+    (availabilitySource === "native-gateway" || input.snapshot.update.channelTargetVerified === true) &&
+    (!input.snapshot.update.channelDiscoveryRequired || input.snapshot.update.channelTargetVerified === true) &&
     Boolean(nativeAvailableVersion) &&
     stableChannel &&
     currentIsStableVersion &&
@@ -305,10 +308,11 @@ function normalUpdatePolicyReason(input: {
   if (input.state === "running") return "OpenClaw is applying an update through its native campaign lifecycle.";
   if (input.state === "held") return "OpenClaw has temporarily held the active update campaign.";
   if (input.state === "up-to-date") return "OpenClaw reports no update is currently available.";
+  if (input.update.channelDiscoveryRequired && !input.update.channelTargetVerified) return "Fresh OpenClaw channel availability could not be verified. Refresh before updating.";
   if (!input.nativeAvailableVersion) return "OpenClaw reported an update, but its exact target version is unknown.";
   if (input.decision?.status === "blocked") return input.decision.reason;
   if (input.decision?.requiresAgentOsUpdate) return input.decision.reason;
-  if (input.availabilitySource !== "native-gateway") return "The connected Gateway did not expose the exact native update target.";
+  if (input.availabilitySource !== "native-gateway" && input.update.channelTargetVerified !== true) return "The connected Gateway did not expose the exact native update target.";
   if (!input.stableChannel) return "The active OpenClaw channel is not a stable update channel.";
   if (!input.targetIsStableVersion || !input.currentIsStableVersion || !input.targetAdvancesRuntime) return "The installed version or exact update target is not a valid forward stable version transition.";
   if (!input.nativeAuthorizationAvailable) return "OpenClaw operator admin authorization for update.run could not be verified.";
@@ -342,7 +346,7 @@ function buildAvailableProductUpdateProjection(
   }
 
   if ((state === "available-certified" || state === "available-fallback") && input.agentOsDecision?.status === "certified" && input.agentOsDecision.allowed && input.agentOsDecision.defaultVisible) {
-    if (input.availabilitySource === "openclaw-cli-fallback") {
+    if (input.availabilitySource === "openclaw-cli-fallback" && !input.normalNativeUpdateEligible) {
       return buildProductUpdateProjection(
         input,
         "available-fallback",
@@ -361,7 +365,6 @@ function buildAvailableProductUpdateProjection(
 
   if (
     state === "available-uncertified" &&
-    input.availabilitySource === "native-gateway" &&
     input.normalNativeUpdateEligible === true &&
     input.agentOsDecision &&
     !input.agentOsDecision.requiresAgentOsUpdate

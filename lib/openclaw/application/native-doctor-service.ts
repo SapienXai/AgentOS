@@ -1,6 +1,8 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { resolveLocalCliRuntimeIdentity } from "@/lib/openclaw/client/memory-cli-locality";
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import {
@@ -9,6 +11,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import type {
+  OpenClawRuntimeIdentity,
   OpenClawCommandOptions,
   OpenClawGatewayClient,
   OpenClawGatewayRestartRequestInput,
@@ -91,7 +94,11 @@ export type NativeDoctorSnapshot = {
     updateAvailable: boolean | null;
     currentVersion: string | null;
     latestVersion: string | null;
-    /** A read-only OpenClaw CLI fallback used only when the Gateway omits a target. */
+    /** Fresh channel availability discovered through the explicit read-only fallback. */
+    gatewayLatestVersion?: string | null;
+    channelTargetVerified?: boolean;
+    channelDiscoveryRequired?: boolean;
+    channelDiscoveryReason?: string | null;
     discoveredAvailableVersion?: string | null;
     availabilitySource?: "native-gateway" | "openclaw-cli-fallback" | null;
     effectiveChannel: string | null;
@@ -245,12 +252,26 @@ export async function getNativeDoctorSnapshot(
   const nativeCurrentVersion = readNonEmptyString(updateAvailableRecord?.currentVersion)
     || readNonEmptyString(statusPayload?.runtimeVersion)
     || readNonEmptyString(statusPayload?.version);
-  const nativeLatestVersion = readNonEmptyString(updateAvailableRecord?.latestVersion);
-  const fallbackDiscovery = update.status === "available" && !nativeLatestVersion
-    ? await discoverOpenClawUpdateTarget(adapter, commandOptions, nativeCurrentVersion)
+  const gatewayLatestVersion = readNonEmptyString(updateAvailableRecord?.latestVersion);
+  const fallbackDiscovery = update.status === "available"
+    ? await discoverOpenClawUpdateTarget(adapter, commandOptions)
     : null;
-  const discoveredAvailableVersion = nativeLatestVersion || fallbackDiscovery?.version || null;
-  const availabilitySource = nativeLatestVersion
+  const client = adapter.getConnectionIdentity?.()?.client;
+  const sameLocalDiscovery = isSameLocalUpdateDiscovery(
+    client?.getRuntimeIdentity?.(), resolveLocalCliRuntimeIdentity()
+  );
+  const channelTargetVerified = isFreshChannelUpdateTarget({
+    discovery: fallbackDiscovery,
+    effectiveChannel: readNonEmptyString(updatePayload?.effectiveChannel),
+    localityProven: sameLocalDiscovery,
+    hasCampaign: isRecord(updatePayload?.schedule?.campaign),
+    hasActiveRun: isRecord(updatePayload?.activeRun) && updatePayload.activeRun.status === "running"
+  });
+  const channelDiscoveryRequired = sameLocalDiscovery && isRecord(updatePayload?.schedule?.install) && updatePayload.schedule.install.kind === "package" &&
+    !isRecord(updatePayload?.schedule?.campaign) && !(isRecord(updatePayload?.activeRun) && updatePayload.activeRun.status === "running");
+  const nativeLatestVersion = channelTargetVerified ? fallbackDiscovery!.version : gatewayLatestVersion;
+  const discoveredAvailableVersion = fallbackDiscovery?.version || nativeLatestVersion || null;
+  const availabilitySource = channelTargetVerified ? fallbackDiscovery!.source : nativeLatestVersion
     ? "native-gateway" as const
     : fallbackDiscovery?.version
       ? fallbackDiscovery.source
@@ -319,10 +340,14 @@ export async function getNativeDoctorSnapshot(
         ? "unavailable"
         : update.status !== "available"
           ? "unknown"
-          : updateAvailable
+          : channelTargetVerified ? (nativeCurrentVersion && compareVersionStrings(nativeLatestVersion!, nativeCurrentVersion) > 0 ? "available" : "current") : updateAvailable
             ? "available"
             : "current",
-      updateAvailable,
+      updateAvailable: channelTargetVerified ? Boolean(nativeCurrentVersion && compareVersionStrings(nativeLatestVersion!, nativeCurrentVersion) > 0) : updateAvailable,
+      gatewayLatestVersion,
+      channelTargetVerified,
+      channelDiscoveryRequired,
+      channelDiscoveryReason: !sameLocalDiscovery ? "Local CLI discovery does not match the connected Gateway configuration." : (fallbackDiscovery && fallbackDiscovery.channel !== updatePayload?.effectiveChannel ? "Discovery channel differs from the Gateway channel." : null),
       currentVersion: nativeCurrentVersion,
       latestVersion: nativeLatestVersion,
       discoveredAvailableVersion,
@@ -331,7 +356,9 @@ export async function getNativeDoctorSnapshot(
       schedule: projectUpdateSchedule(updatePayload?.schedule),
       activeRun: projectUpdateRun(updatePayload?.activeRun),
       lastRun: projectUpdateRun(updatePayload?.lastRun),
-      explanation: update.status === "available"
+      explanation: channelTargetVerified
+        ? "Latest channel release checked through OpenClaw CLI; installation uses the native Gateway updater."
+        : update.status === "available"
         ? updateAvailable
           ? "OpenClaw reports an update is available."
           : fallbackDiscovery?.version
@@ -923,10 +950,43 @@ function readConnectionGeneration(adapter: OpenClawAdapter): number | null {
     : null;
 }
 
+// Stable package status is cached by Gateway 10.6; refreshCheckout only refreshes
+// dev/immutable installs. Fresh CLI discovery can inform the native channel update
+// only for the proven same local runtime and matching channel, outside campaigns.
+// This only admits a read-only registry observation. It grants no mutation
+// authority: update.run still requires authenticated native admin authorization.
+export function isSameLocalUpdateDiscovery(
+  gateway: OpenClawRuntimeIdentity | null | undefined,
+  cli: OpenClawRuntimeIdentity | null | undefined
+) {
+  if (!gateway || !cli || gateway.deploymentMode !== "local" || cli.deploymentMode !== "local") return false;
+  try {
+    const url = new URL(gateway.gatewayUrl);
+    if (!["ws:", "wss:"].includes(url.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return false;
+    return url.href === new URL(cli.gatewayUrl).href && gateway.profile === cli.profile &&
+      path.resolve(gateway.stateDir) === path.resolve(cli.stateDir) &&
+      path.resolve(gateway.configPath) === path.resolve(cli.configPath);
+  } catch {
+    return false;
+  }
+}
+
+export function isFreshChannelUpdateTarget(input: {
+  discovery: { version: string; source: string; channel?: string | null; installKind?: string | null } | null;
+  effectiveChannel: string | null;
+  localityProven: boolean;
+  hasCampaign: boolean;
+  hasActiveRun: boolean;
+}) {
+  return Boolean(input.localityProven && !input.hasCampaign && !input.hasActiveRun &&
+    (input.discovery?.source === "openclaw-cli-fallback" || input.discovery?.source === "native-gateway") && input.discovery.installKind === "package" &&
+    input.discovery.channel === input.effectiveChannel &&
+    (input.effectiveChannel === "stable" || input.effectiveChannel === "extended-stable"));
+}
+
 async function discoverOpenClawUpdateTarget(
   adapter: OpenClawAdapter,
-  commandOptions: OpenClawCommandOptions,
-  currentVersion: string | null
+  commandOptions: OpenClawCommandOptions
 ) {
   if (!adapter.getUpdateStatus) {
     return null;
@@ -939,12 +999,14 @@ async function discoverOpenClawUpdateTarget(
     const payload = await adapter.getUpdateStatus(commandOptions);
     const afterFallbackCount = readUpdateStatusFallbackCount(client?.getDiagnostics?.());
     const version = readUpdateStatusTargetVersion(payload);
-    if (!version || (currentVersion && compareVersionStrings(version, currentVersion) <= 0)) {
+    if (!version) {
       return null;
     }
 
     return {
       version,
+      channel: isRecord(payload.channel) ? readNonEmptyString(payload.channel.value) : null,
+      installKind: isRecord(payload.update) ? readNonEmptyString(payload.update.installKind) : null,
       source: afterFallbackCount > beforeFallbackCount || !client?.getDiagnostics
         ? "openclaw-cli-fallback" as const
         : "native-gateway" as const

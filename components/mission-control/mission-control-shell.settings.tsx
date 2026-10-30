@@ -89,6 +89,7 @@ export function MissionControlShellSettingsPanel({
   const isOpenClawReady = isOpenClawOnboardingModelReady(snapshot);
   const certifiedVersion = snapshot.diagnostics.updateCompatibility?.recommendedVersion;
   const productUpdate = snapshot.diagnostics.updateProductState;
+  const updateIsFallback = productUpdate?.availabilitySource === "openclaw-cli-fallback";
   const updateSummary = productUpdate
     ? productUpdate.availableVersion && productUpdate.state !== "up-to-date"
       ? `${formatOpenClawProductUpdateStateLabel(productUpdate.state)}: v${productUpdate.availableVersion}`
@@ -193,11 +194,16 @@ export function MissionControlShellSettingsPanel({
             <p className={cn("mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
               {snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Version unknown"}
               {productUpdate?.availableVersion && productUpdate.state !== "up-to-date"
-                ? ` · Target v${productUpdate.availableVersion}`
+                ? ` · ${updateIsFallback ? "Latest reported" : "Target"} v${productUpdate.availableVersion}`
                 : certifiedVersion
                   ? ` · AgentOS certified version v${certifiedVersion}`
                   : " · AgentOS certification unavailable"}
             </p>
+            {updateIsFallback ? (
+              <p className={cn("mt-1 text-[10px] leading-4", mutedTextClassName(surfaceTheme))}>
+                Review and install this release on Updates.
+              </p>
+            ) : null}
             <div className="mt-2">
               <Button asChild type="button" size="sm" variant="secondary" className={cn("w-full px-2 text-[10px]", quickButtonClassName(surfaceTheme))}>
                 <Link href="/updates">Manage updates <span aria-hidden="true">→</span></Link>

@@ -68,7 +68,7 @@ export function formatOpenClawProductUpdateStateLabel(state: OpenClawProductUpda
     case "available-certified": return "Update available";
     case "available-agentos-required": return "AgentOS update required";
     case "available-uncertified": return "Update available — not yet verified";
-    case "available-fallback": return "Update found";
+    case "available-fallback": return "Latest release detected";
     case "blocked": return "Blocked by AgentOS policy";
     case "held": return "Update held";
     case "running": return "Updating OpenClaw";

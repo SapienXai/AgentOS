@@ -166,6 +166,19 @@ export function UpdatesPageContent({ snapshot, refresh }: UpdatesPageContentProp
     };
   }, [loadCommunity, loadNative, refresh]);
 
+  useEffect(() => {
+    if (confirmUpdate || actionState === "running" || awaitingNativeVerification) return;
+    const check = () => {
+      if (document.visibilityState === "visible") void loadNative();
+    };
+    const timer = window.setInterval(check, 60_000);
+    window.addEventListener("focus", check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", check);
+    };
+  }, [loadNative, confirmUpdate, actionState, awaitingNativeVerification]);
+
   const productUpdate = policy?.productUpdate ?? snapshot.diagnostics.updateProductState ?? null;
   const currentVersion = normalizeVersion(
     productUpdate?.currentVersion ||
@@ -628,7 +641,7 @@ function PrimaryUpdateCard({
         title: `OpenClaw could not update to ${availableVersion ? `v${availableVersion}` : "the available release"}`,
         description: "OpenClaw stopped its native update before the new runtime was verified. Review the reported failure and recovery state below."
       }
-    : resolvePrimaryCopy({ state, currentVersion, availableVersion, agentOsDecision, policyReason, nativeError });
+    : resolvePrimaryCopy({ state, currentVersion, availableVersion, availabilitySource, agentOsDecision, policyReason, nativeError });
   const tone = primaryTone(state, actionState);
   const hasFailedNativeRun = failedRun !== null;
   const showNativeReviewAction = (native?.update.lastRun?.status === "failed" || native?.update.lastRun?.status === "rolled-back") && !actionMessage;
@@ -655,8 +668,15 @@ function PrimaryUpdateCard({
         {availableVersion && (state === "available-certified" || state === "available-agentos-required" || state === "available-uncertified" || state === "available-fallback" || state === "blocked" || state === "running") ? (
           <div className="mt-5 grid grid-cols-2 gap-2 sm:max-w-md">
             <VersionTile label="Current" value={currentVersion ? `v${currentVersion}` : "Unknown"} />
-            <VersionTile label="Available" value={`v${availableVersion}`} accent />
+            <VersionTile label={"Available"} value={`v${availableVersion}`} accent />
           </div>
+        ) : null}
+
+        {native?.update.channelTargetVerified ? (
+          <p className="mt-4 text-xs leading-5 text-muted-foreground" role="status">
+            Latest release checked with OpenClaw CLI. Installation uses OpenClaw’s native updater for the {channel} channel.
+            The target is checked again before updating, and the running version is verified after restart.
+          </p>
         ) : null}
 
         {activeNativeUpdateRun ? <ActiveUpdateRun run={activeNativeUpdateRun} /> : null}
@@ -669,7 +689,7 @@ function PrimaryUpdateCard({
           />
         ) : null}
 
-        {state === "available-uncertified" && availabilitySource === "native-gateway" ? (
+        {state === "available-uncertified" ? (
           <div className="mt-4 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-sm">
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--status-warning-foreground))]" />
@@ -743,7 +763,7 @@ function PrimaryUpdateCard({
               {isOpeningControlUi ? "Opening…" : "Open OpenClaw Control UI"}
             </Button>
           ) : null}
-          {state === "available-certified" || (state === "available-uncertified" && availabilitySource === "native-gateway") ? (
+          {state === "available-certified" || (state === "available-uncertified") ? (
             <Button
               type="button"
               onClick={onRequestUpdate}
@@ -1003,6 +1023,7 @@ function resolvePrimaryCopy(input: {
   state: OpenClawProductUpdateState;
   currentVersion: string | null;
   availableVersion: string | null;
+  availabilitySource: NormalOpenClawUpdatePolicy["productUpdate"]["availabilitySource"];
   agentOsDecision: NormalOpenClawUpdatePolicy["agentOsDecision"];
   policyReason: string | null;
   nativeError: string | null;
@@ -1028,8 +1049,8 @@ function resolvePrimaryCopy(input: {
       };
     case "available-fallback":
       return {
-        statusLabel: "Update found",
-        title: `OpenClaw ${input.availableVersion ? `v${input.availableVersion}` : "update"} is available`,
+        statusLabel: "Latest release detected",
+        title: `Latest OpenClaw release ${input.availableVersion ? `v${input.availableVersion}` : "detected"}`,
         description: input.policyReason || "AgentOS found an update through OpenClaw's read-only status fallback. The normal native action remains gated until the Gateway exposes the exact target."
       };
     case "available-uncertified":

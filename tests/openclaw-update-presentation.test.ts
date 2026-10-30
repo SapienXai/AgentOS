@@ -668,3 +668,18 @@ test("normal update gate requires native availability and exact target evidence"
   assert.equal(result.allowed, false);
   if (!result.allowed) assert.equal(result.code, "NATIVE_UPDATE_STATUS_UNAVAILABLE");
 });
+
+
+test("fresh same-channel CLI discovery enables native update but retains authorization and freshness gates", () => {
+  const snapshot = policySnapshot({...policyUpdate("2026.10.9"), availabilitySource: "openclaw-cli-fallback", channelTargetVerified: true, channelDiscoveryRequired: true});
+  const policy = resolveNormalOpenClawUpdatePolicy({snapshot, agentOsVersion: "0.8.0"});
+  assert.equal(policy.nativeAvailableVersion, "2026.10.9");
+  assert.equal(policy.canRunNormalUpdate, true);
+  assert.equal(policy.productUpdate.state, "available-uncertified");
+  assert.equal(policy.productUpdate.availabilitySource, "openclaw-cli-fallback");
+  assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: true}).allowed, false);
+  assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: true, unverifiedAcknowledged: true}).allowed, true);
+  assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: false, unverifiedAcknowledged: true}).allowed, false);
+  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, identity: {...snapshot.identity, updateAuthorized: false}}, agentOsVersion: "0.8.0"}).canRunNormalUpdate, false);
+  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, update: {...snapshot.update, channelTargetVerified: false}}, agentOsVersion: "0.8.0"}).canRunNormalUpdate, false);
+});
