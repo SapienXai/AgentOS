@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS } from "@/lib/openclaw/client/gateway-compatibility";
 import path from "node:path";
 import { resolveLocalCliRuntimeIdentity } from "@/lib/openclaw/client/memory-cli-locality";
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -193,7 +194,7 @@ export function claimNativeUpdateRunAdmission(): (() => void) | null {
 }
 
 export async function getNativeDoctorSnapshot(
-  options: { adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions; probe?: boolean; refreshCheckout?: boolean } = {}
+  options: { adapter?: OpenClawAdapter; commandOptions?: OpenClawCommandOptions; probe?: boolean; refreshCheckout?: boolean; discoverAvailability?: boolean } = {}
 ): Promise<NativeDoctorSnapshot> {
   const adapter = options.adapter ?? getOpenClawAdapter();
   const commandOptions = {
@@ -253,7 +254,7 @@ export async function getNativeDoctorSnapshot(
     || readNonEmptyString(statusPayload?.runtimeVersion)
     || readNonEmptyString(statusPayload?.version);
   const gatewayLatestVersion = readNonEmptyString(updateAvailableRecord?.latestVersion);
-  const fallbackDiscovery = update.status === "available"
+  const fallbackDiscovery = options.discoverAvailability !== false && update.status === "available"
     ? await discoverOpenClawUpdateTarget(adapter, commandOptions)
     : null;
   const client = adapter.getConnectionIdentity?.()?.client;
@@ -710,6 +711,31 @@ export function verifyFreshUpdateState(
   if (!hasFreshAuthenticatedGeneration(before, after, generation)) {
     return unknownVerification("OpenClaw returned after the update, but AgentOS could not verify the intended native Gateway identity.", generation);
   }
+  return verifyUpdateStateEvidence(before.update.latestVersion, after, generation, capabilityMatrix);
+}
+
+/** Reconcile a durable native run after a page reload or a lost POST response. */
+export function verifyCompletedUpdateState(
+  after: NativeDoctorSnapshot,
+  capabilityMatrix: OpenClawCapabilityMatrix | null
+): NativeDoctorVerification {
+  const run = after.update.lastRun;
+  const target = normalizeVersion(run?.targetVersion);
+  if (!after.identity.connectionId || after.identity.connectionGeneration === null ||
+      !run || run.status !== "succeeded" || !target || !run.finishedAtMs ||
+      run.verification?.booted !== true || run.verification?.serviceRunning !== true ||
+      run.verification?.versionMatch !== true || normalizeVersion(run.verification.runningVersion) !== target) {
+    return unknownVerification("Waiting for OpenClaw's completed run and restart verification.");
+  }
+  return verifyUpdateStateEvidence(target, after, after.identity.connectionGeneration, capabilityMatrix);
+}
+
+function verifyUpdateStateEvidence(
+  target: string | null,
+  after: NativeDoctorSnapshot,
+  generation: number | null,
+  capabilityMatrix: OpenClawCapabilityMatrix | null
+): NativeDoctorVerification {
   if (after.runtime.status !== "healthy" || after.status.readStatus !== "available" || after.update.readStatus !== "available") {
     return unknownVerification("OpenClaw may have applied the update, but fresh native health, status, or update evidence is incomplete.", generation);
   }
@@ -722,12 +748,12 @@ export function verifyFreshUpdateState(
   if (after.identity.authenticated !== true || after.identity.grantedScopesKnown !== true || after.identity.updateAuthorized !== true) {
     return unknownVerification("OpenClaw reconnected, but native authorization evidence is unavailable or no longer includes operator admin access.", generation);
   }
-  const expectedVersion = normalizeVersion(before.update.latestVersion);
+  const expectedVersion = normalizeVersion(target);
   if (!expectedVersion) {
     return unknownVerification("AgentOS could not verify the exact native target that was confirmed before the update.", generation);
   }
   const installedVersion = normalizeVersion(
-    after.update.currentVersion || after.status.runtimeVersion || after.status.version
+    after.status.runtimeVersion || after.status.version || after.update.currentVersion
   );
   if (installedVersion !== expectedVersion) {
     return unknownVerification(
@@ -756,14 +782,13 @@ export function verifyFreshUpdateState(
 
 function hasPostUpdateCapabilities(matrix: OpenClawCapabilityMatrix) {
   const methodContract = matrix.compatibility?.methodContract;
-  const requiredSessions = ["sessions.list", "sessions.get", "sessions.send", "agent.wait"];
   const methods = new Set(matrix.supportedMethods);
   return matrix.compatibility?.protocol.status === "compatible" &&
     matrix.updates === "supported" &&
     methodContract !== undefined &&
     (methodContract.status === "advertised" || methodContract.status === "verified") &&
     (methodContract.missingRequiredMethods?.length ?? 0) === 0 &&
-    requiredSessions.every((method) => methods.has(method)) &&
+    OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS.every((method) => methods.has(method)) &&
     Array.isArray(matrix.authScopes) &&
     openClawScopesAllow(matrix.authScopes, ["operator.admin"]);
 }
@@ -1222,7 +1247,7 @@ function projectStability(value: Record<string, unknown>) {
 function projectMutationResult(method: string, value: Record<string, unknown>) {
   const safe: Record<string, unknown> = {};
   const keys = method === "update.run"
-    ? ["ok", "status", "reason", "durationMs", "result", "restart", "handoff"]
+    ? ["runId", "ok", "status", "reason", "durationMs", "result", "restart", "handoff"]
     : method === "gateway.suspend.prepare" || method === "gateway.suspend.status"
       ? ["status", "suspensionId", "retryAfterMs", "expiresAtMs", "blockers"]
       : ["ok", "status", "resumed", "reason"];

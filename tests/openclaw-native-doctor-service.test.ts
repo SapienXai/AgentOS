@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS } from "@/lib/openclaw/client/gateway-compatibility";
 import { test } from "node:test";
 
 import {
@@ -16,7 +17,8 @@ import {
   projectUpdateRun,
   reconcileNativeDoctorMutation,
   verifyFreshRestartState,
-  verifyFreshUpdateState
+  verifyFreshUpdateState,
+  verifyCompletedUpdateState
 } from "@/lib/openclaw/application/native-doctor-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
@@ -961,7 +963,7 @@ test("fresh update verification requires the native contract and authorization e
 
 function postUpdateCapabilities() {
   return {
-    supportedMethods: ["sessions.list", "sessions.get", "sessions.send", "agent.wait"],
+    supportedMethods: [...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS],
     authScopes: ["operator.admin"],
     updates: "supported",
     compatibility: {
@@ -989,4 +991,35 @@ test("local update discovery cannot use a different profile, state root or remot
   assert.equal(isSameLocalUpdateDiscovery(identity, {...identity, profile: "other"}), false);
   assert.equal(isSameLocalUpdateDiscovery({...identity, gatewayUrl: "wss://remote.example"}, identity), false);
   assert.equal(isSameLocalUpdateDiscovery(null, identity), false);
+});
+
+
+test("durable completion can recover after reload without requiring optional sessions.get", async () => {
+  const after = await getNativeDoctorSnapshot({adapter: createAdapter({
+    async getNativeStatus() { return {runtimeVersion: "2026.10.9"}; },
+    async getNativeUpdateStatus() { return {updateAvailable: null, lastRun: {
+      runId: "durable-completion", trigger: "api", createdAtMs: 1, updatedAtMs: 20, finishedAtMs: 20,
+      status: "succeeded", phase: "finished", target: {version: "2026.10.9"},
+      before: {version: "2026.10.6"}, verification: {booted: true, serviceRunning: true, runningVersion: "2026.10.9", versionMatch: true}
+    }} as never; }
+  })});
+  const capabilities = postUpdateCapabilities();
+  assert.equal(capabilities.supportedMethods.includes("sessions.get"), false);
+  assert.equal(verifyCompletedUpdateState(after, capabilities).status, "verified");
+  assert.equal(verifyCompletedUpdateState(after, null).status, "unknown");
+  assert.equal(verifyCompletedUpdateState({...after, runtime: {...after.runtime, status: "degraded"}}, capabilities).status, "unknown");
+  assert.equal(verifyCompletedUpdateState({...after, identity: {...after.identity, updateAuthorized: false}}, capabilities).status, "unknown");
+  assert.equal(verifyCompletedUpdateState({...after, status: {...after.status, runtimeVersion: "2026.10.6"}}, capabilities).status, "unknown");
+  assert.equal(verifyCompletedUpdateState({...after, config: {...after.config, application: "restart-required"}}, capabilities).status, "unknown");
+  assert.equal(verifyCompletedUpdateState({...after, update: {...after.update, lastRun: {...after.update.lastRun!, verification: null}}}, capabilities).status, "unknown");
+  assert.equal(verifyCompletedUpdateState(after, {...capabilities, supportedMethods: capabilities.supportedMethods.filter(x => x !== "sessions.list")}).status, "unknown");
+});
+
+
+test("progress observation never repeats CLI release discovery", async () => {
+  let discoveryReads = 0;
+  await getNativeDoctorSnapshot({discoverAvailability: false, adapter: createAdapter({
+    async getUpdateStatus() { discoveryReads += 1; return {latestVersion: "2026.10.9"}; }
+  })});
+  assert.equal(discoveryReads, 0);
 });

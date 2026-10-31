@@ -41,6 +41,7 @@ export function OperatorScopeFreshness({
   compact?: boolean;
   className?: string;
 }) {
+  const freshnessLabel = projection.transport.state === "connecting" ? "Connecting" : projection.freshness.label;
   return (
     <div
       className={cn(
@@ -48,7 +49,7 @@ export function OperatorScopeFreshness({
         compact ? "max-w-[min(52vw,260px)]" : "max-w-full",
         className
       )}
-      title={`${projection.scope.detail}. ${projection.freshness.label}.`}
+      title={`${projection.scope.detail}. ${freshnessLabel}.`}
     >
       <span className="min-w-0 truncate">
         <span className="font-medium text-foreground">{projection.scope.label}</span>
@@ -56,7 +57,7 @@ export function OperatorScopeFreshness({
         <span>{projection.scope.detail}</span>
       </span>
       <span aria-hidden="true" className="opacity-40">·</span>
-      <span className="shrink-0 whitespace-nowrap">{projection.freshness.label}</span>
+      <span className="shrink-0 whitespace-nowrap">{freshnessLabel}</span>
     </div>
   );
 }

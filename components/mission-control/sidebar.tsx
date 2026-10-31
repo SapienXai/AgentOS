@@ -332,7 +332,7 @@ export function MissionSidebar({
     }
   });
   const statusTone = resolveOperatorStatusTone(operatorRuntime.tone);
-  const statusLabel = `${operatorRuntime.stateLabel} · ${operatorRuntime.freshness.state === "live" ? "Live" : operatorRuntime.freshness.label}`;
+  const statusLabel = connectionState === "connecting" ? "Connecting to OpenClaw" : `${operatorRuntime.stateLabel} · ${operatorRuntime.freshness.state === "live" ? "Live" : operatorRuntime.freshness.label}`;
   const handleNavigate = useCallback((item: SidebarItem) => {
     setActiveHash(item.hash ?? "");
   }, []);
