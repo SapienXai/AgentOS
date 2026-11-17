@@ -109,6 +109,7 @@ Direct CLI usage is guarded by boundary tests. Current allowed files are fallbac
 | status / health | `openclaw status --json` | `status` | Gateway-first typed RPC | Yes, for auth/unreachable/malformed failures | Low |
 | gateway readiness / probe | `openclaw gateway status/probe --json` | `health`, `status` | Gateway-first typed RPC for reads; CLI `gateway probe` remains for broader reachability diagnostics | Yes; gateway process control cannot call itself | Low |
 | gateway start/stop/restart | `openclaw gateway start/stop/restart --json` | Not applicable for controlling the process | CLI | Yes | Low |
+| offline custom Gateway bind recovery | `openclaw gateway status --json --no-probe`, guarded `openclaw config set gateway.customBindHost` | `config.get` and `config.patch` require a reachable Gateway | Explicit local owner confirmation in Mission Control or Gateway settings. OpenClaw owns service status and config; AgentOS matches host interfaces and verifies the result. | Yes, only when the local service port is free and the configured private address is absent. | Medium |
 | models status/list/scan | `openclaw models ... --json` | `models.authStatus`, `models.list`; no confirmed `models.scan` Gateway method | Gateway-first typed RPC for status/list; scan remains CLI | Yes | Low |
 | plugins / skills list | `openclaw plugins/skills list --json` | `plugins.uiDescriptors`, `skills.status` | Gateway-first typed RPC | Yes | Low |
 | agents list | `openclaw agents list --json` | `agents.list` | Gateway-first typed RPC, merged with local config for AgentOS fields | Yes | Medium |
@@ -122,6 +123,8 @@ Direct CLI usage is guarded by boundary tests. Current allowed files are fallbac
 | planner/reset/update/onboarding | direct OpenClaw command workflows | Not a stable AgentOS Gateway contract | CLI/transitional routes | Yes | High |
 
 ## Gateway-First Changes
+
+For offline bind recovery, AgentOS offers a replacement only when the CLI and installed service refer to the same config, exactly one private interface address matches the old subnet, and token or password mode can be confirmed. The repair changes the single address with an expected-current guard, restarts through the lifecycle service, and checks both listeners and native `status`. Unprotected development can display the warning. Viewing or confirming the addresses requires an authenticated AgentOS owner or desktop operator.
 
 `NativeWsOpenClawGatewayClient` now attempts Gateway RPC first for the supported typed read/probe operations, native mission dispatch, agent lifecycle operations, event subscription, and safe config mutations listed above. Payloads are normalized at the client boundary with Zod schemas:
 

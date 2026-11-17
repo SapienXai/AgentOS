@@ -530,6 +530,17 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return runOpenClawJson<GatewayStatusPayload>(["gateway", "status", "--json"], options);
   }
 
+  getGatewayServiceStatusForBindRecovery(options: OpenClawCommandOptions = {}) {
+    return runOpenClawJson<unknown>(["gateway", "status", "--json", "--no-probe"], options);
+  }
+
+  replaceGatewayCustomBindHost(previousAddress: string, nextAddress: string, options: OpenClawCommandOptions = {}) {
+    return runOpenClaw([
+      "config", "set", "gateway.customBindHost", JSON.stringify(nextAddress),
+      "--strict-json", "--expect-current-json", JSON.stringify(previousAddress)
+    ], options);
+  }
+
   getModelStatus(options: OpenClawCommandOptions = {}) {
     return runOpenClawJson<ModelsStatusPayload>(["models", "status", "--json"], options);
   }

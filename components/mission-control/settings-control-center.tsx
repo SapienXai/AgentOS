@@ -60,6 +60,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PikoLoader } from "@/components/ui/piko-loader";
+import { GatewayBindRecovery, useGatewayBindRecovery } from "@/components/mission-control/gateway-bind-recovery";
 import { GatewayProductSurfacePanel } from "@/components/mission-control/gateway-surface-panel";
 import { NativeDoctorPanel } from "@/components/mission-control/native-doctor-panel";
 import { OpenClawAppConnectDialog } from "@/components/mission-control/openclaw-app-connect-dialog";
@@ -296,6 +297,7 @@ export function SettingsControlCenter(
     useState<"idle" | "refreshing" | "ready" | "error">("idle");
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
+  const bindRecovery = useGatewayBindRecovery(renderedActiveSection === "gateway" && !snapshot.diagnostics.rpcOk);
   const displayedGatewayBind = currentGatewayBind || snapshot.diagnostics.bindMode || (
     gatewayBindRefreshState === "refreshing"
       ? "Refreshing..."
@@ -1698,6 +1700,15 @@ export function SettingsControlCenter(
               {renderedActiveSection === "gateway" ? (
               <section id="gateway" className="scroll-mt-24">
                 <Card title="Gateway" icon={ShieldCheck} surfaceTheme={surfaceTheme}>
+                  <GatewayBindRecovery
+                    {...bindRecovery}
+                    className="mb-4"
+                    surfaceTheme={surfaceTheme}
+                    onRecovery={async () => {
+                      const response = await fetch("/api/snapshot?force=true", { cache: "no-store" });
+                      if (response.ok) onSnapshotChange?.(await response.json());
+                    }}
+                  />
                   <GatewayLiveHealthPanel
                     snapshot={snapshot}
                     transportSummary={transportSummary}

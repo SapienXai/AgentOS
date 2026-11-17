@@ -16,6 +16,7 @@ import { CommandBar } from "@/components/mission-control/command-bar";
 import { workspaceTaskCardFiltersStorageKey } from "@/components/mission-control/canvas.persistence";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
+import { GatewayBindRecovery, useGatewayBindRecovery } from "@/components/mission-control/gateway-bind-recovery";
 import { InspectorPanel } from "@/components/mission-control/inspector-panel";
 import {
   clampInspectorWidth,
@@ -259,6 +260,7 @@ export function MissionControlShell({
   mode?: "mission" | "settings";
 }) {
   const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, gatewayRegistered, gatewayConfigured, gatewayReady, runtimeWritable, localModelStatus, cliInstalled, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const bindRecovery = useGatewayBindRecovery(mode === "mission" && (gatewayReachable === false || !snapshot.diagnostics.rpcOk));
   const {
     activeWorkspaceId,
     setActiveWorkspaceId,
@@ -1098,6 +1100,7 @@ export function MissionControlShell({
     isOpenClawOnboardingModelReady &&
     hasWorkspaceSetup;
   const shouldAutoShowOnboarding =
+    bindRecovery.status.state === "none" &&
     !shouldDeferOnboarding &&
     !hasActiveMissionWork &&
     (!isOnboardingDismissed || needsWorkspaceSetup) &&
@@ -4762,6 +4765,14 @@ export function MissionControlShell({
         surfaceTheme === "light" && "mission-shell--light"
       )}
     >
+      <div className="pointer-events-none fixed inset-x-4 top-[calc(env(safe-area-inset-top)+4rem)] z-20 flex justify-center">
+        <GatewayBindRecovery
+          {...bindRecovery}
+          className="pointer-events-auto w-full max-w-lg"
+          surfaceTheme={surfaceTheme}
+          onRecovery={async () => { await refreshSnapshot({ force: true }); }}
+        />
+      </div>
       <div className="mission-canvas-backdrop absolute inset-0 z-0">
         <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
         <div className="absolute inset-0 z-10">
