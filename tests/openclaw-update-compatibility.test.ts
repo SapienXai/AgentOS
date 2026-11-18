@@ -201,11 +201,11 @@ test("offline mode uses local fallback manifest", () => {
     ),
     true
   );
-  const candidateTarget = snapshot.candidateVersions.find((entry) => entry.version === "2026.10.6");
+  const candidateTarget = snapshot.candidateVersions.find((entry) => entry.version === "2026.11.5");
   const candidateDecision = resolveOpenClawUpdateDecision({
     manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
     agentOsVersion: "0.8.0",
-    targetVersion: "2026.10.6",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   assert.equal(candidateTarget?.status, "candidate");

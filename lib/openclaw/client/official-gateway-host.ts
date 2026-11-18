@@ -302,6 +302,10 @@ type CanonicalDeviceAuthRow = {
 };
 
 function canonicalStateDatabasePath(stateDir: string) {
+  // OpenClaw 2026.11 moves local device identity and tokens out of the
+  // shared runtime database. The upstream migration owns the move and receipt.
+  const credentialStore = join(stateDir, "client", "credentials.sqlite");
+  if (existsSync(credentialStore)) return credentialStore;
   return join(stateDir, "state", "openclaw.sqlite");
 }
 
@@ -473,8 +477,15 @@ function withCanonicalStateDatabase<T>(
   callback: (db: DatabaseSync) => T,
   options: { readOnly?: boolean } = {}
 ): T {
-  const db = new DatabaseSync(canonicalStateDatabasePath(stateDir), options);
+  const databasePath = canonicalStateDatabasePath(stateDir);
+  const db = new DatabaseSync(databasePath, options);
   try {
+    if (databasePath === join(stateDir, "client", "credentials.sqlite")) {
+      const migration = db.prepare("SELECT phase FROM client_credential_migration WHERE version = 1").get();
+      if (migration?.phase !== "complete") {
+        throw new Error("OpenClaw has not completed the local client credential migration.");
+      }
+    }
     return callback(db);
   } finally {
     db.close();

@@ -26,7 +26,9 @@ const explicitGatewayMutationMethods = new Set([
   "plugins.setEnabled",
   "plugins.uninstall",
   "chat.inject",
-  "web.login.wait"
+  "web.login.wait",
+  "wizard.next",
+  "openclaw.setup.activate"
 ]);
 
 export function normalizeEnvFlag(value: string | undefined) {

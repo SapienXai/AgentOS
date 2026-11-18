@@ -129,6 +129,8 @@ test("ChatGPT provider auth builds an explicit, force-capable OpenClaw login com
       "login",
       "--provider",
       "openai",
+      "--method",
+      "oauth",
       "--force",
       "--agent",
       "main",

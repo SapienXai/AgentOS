@@ -389,14 +389,50 @@ fn is_external_web_url(url: &tauri::Url) -> bool {
 }
 
 fn is_openai_authorization_url(url: &tauri::Url) -> bool {
-    url.scheme() == "https"
+    let exact_origin = url.scheme() == "https"
         && url.host_str() == Some("auth.openai.com")
         && url.port().is_none()
-        && url.path() == "/oauth/authorize"
         && url.username().is_empty()
         && url.password().is_none()
         && url.fragment().is_none()
-        && url.query().is_some()
+        && url.query().is_some();
+    if !exact_origin {
+        return false;
+    }
+    if url.path() == "/oauth/authorize" {
+        return true;
+    }
+    if url.path() != "/api/accounts/authorize" {
+        return false;
+    }
+    let unique = |key: &str| {
+        let mut values = url.query_pairs().filter(|(name, _)| name == key);
+        let (_, value) = values.next()?;
+        if value.is_empty() || values.next().is_some() {
+            return None;
+        }
+        Some(value.into_owned())
+    };
+    if unique("response_type").as_deref() != Some("code")
+        || unique("code_challenge_method").as_deref() != Some("S256")
+        || ["client_id", "state", "nonce", "code_challenge"]
+            .iter()
+            .any(|key| unique(key).is_none())
+    {
+        return false;
+    }
+    let Some(callback) = unique("redirect_uri").and_then(|value| tauri::Url::parse(&value).ok())
+    else {
+        return false;
+    };
+    callback.scheme() == "http"
+        && callback.host_str() == Some("localhost")
+        && callback.port().is_some()
+        && callback.path() == "/auth/callback"
+        && callback.username().is_empty()
+        && callback.password().is_none()
+        && callback.query().is_none()
+        && callback.fragment().is_none()
 }
 
 #[cfg(not(debug_assertions))]

@@ -24,7 +24,7 @@ RUN mkdir -p /runtime-extras/node_modules/.pnpm && \
 COPY . .
 RUN pnpm build
 
-FROM ghcr.io/openclaw/openclaw:2026.10.6@sha256:7dbff0fe5f5359b1badefe90a23efa9f203cd0d3c36bee095f4896c7a1d3864b
+FROM ghcr.io/openclaw/openclaw:2026.11.5@sha256:9c74476e3e79b5a1595fd5cf904286eaba3471c10c640aaa9a361a89b41d0882
 
 USER root
 

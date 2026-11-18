@@ -769,7 +769,7 @@ function ConnectAiStage({
             >
               <span className="relative z-10 inline-flex items-center gap-2">
                 <ProviderLogo provider="openai" className="h-5 w-5 rounded-md border-slate-200/80 bg-white" />
-                <span>{isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}</span>
+                <span>{isError ? "Reconnect Codex" : "Continue with Codex"}</span>
               </span>
             </Button>
           ) : null}

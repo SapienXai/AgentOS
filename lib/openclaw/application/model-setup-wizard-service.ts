@@ -21,6 +21,7 @@ const SETUP_START_WAIT_TIMEOUT_MS = 30_000;
 // admission can still be reconciled and cancelled by the retained lifecycle.
 const SETUP_START_RPC_TIMEOUT_MS = 60_000;
 const WIZARD_NEXT_TIMEOUT_MS = 120_000;
+const WIZARD_BROWSER_AUTH_WAIT_MS = 6 * 60_000;
 const WIZARD_STATUS_TIMEOUT_MS = 15_000;
 const WIZARD_CANCEL_TIMEOUT_MS = 15_000;
 
@@ -39,6 +40,7 @@ type SetupStartInput = {
   agentId?: string;
   workspace?: string;
   signal?: AbortSignal;
+  nativeOnly?: boolean;
 };
 
 type CapturedAdapter = {
@@ -71,7 +73,7 @@ export async function startModelSetupWizard(input: SetupStartInput) {
   };
   const lifecycle = new ModelSetupWizardLifecycle(
     sessionId,
-    createWizardTransport(captured.adapter, input.method, params),
+    createWizardTransport(captured.adapter, input.method, params, input.nativeOnly),
     {
       startWaitMs: SETUP_START_WAIT_TIMEOUT_MS,
       signal: input.signal
@@ -189,33 +191,38 @@ function assertCurrentConnection(managed: ManagedWizardSession) {
 function createWizardTransport(
   adapter: OpenClawAdapter,
   method: SetupStartMethod,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  nativeOnly = false
 ): ModelSetupWizardLifecycleTransport {
+  if (nativeOnly && !adapter.getGatewaySurfacePort?.()?.canProbeNativeGateway()) {
+    throw new Error("Native OpenClaw setup is unavailable.");
+  }
+  const transportOptions = nativeOnly ? { allowCliFallback: false } : {};
   return {
     // The start call intentionally has no request signal. The lifecycle races
     // it against the client deadline while retaining the promise for cleanup.
     start: async () => parseModelSetupWizardStartResult(
-      await adapter.call<unknown>(method, params, { timeoutMs: SETUP_START_RPC_TIMEOUT_MS })
+      await adapter.call<unknown>(method, params, { ...transportOptions, timeoutMs: SETUP_START_RPC_TIMEOUT_MS })
     ),
     next: async (answer, signal) => parseModelSetupWizardResult(
       await adapter.call<unknown>(
         "wizard.next",
         { sessionId: params.sessionId, ...(answer ? { answer } : {}) },
-        { timeoutMs: WIZARD_NEXT_TIMEOUT_MS, ...(signal ? { signal } : {}) }
+        { ...transportOptions, timeoutMs: nativeOnly ? WIZARD_BROWSER_AUTH_WAIT_MS : WIZARD_NEXT_TIMEOUT_MS, ...(signal ? { signal } : {}) }
       )
     ),
     status: async () => parseModelSetupWizardStatus(
       await adapter.call<unknown>(
         "wizard.status",
         { sessionId: params.sessionId },
-        { timeoutMs: WIZARD_STATUS_TIMEOUT_MS }
+        { ...transportOptions, timeoutMs: WIZARD_STATUS_TIMEOUT_MS }
       )
     ),
     cancel: async () => parseModelSetupWizardStatus(
       await adapter.call<unknown>(
         "wizard.cancel",
         { sessionId: params.sessionId },
-        { timeoutMs: WIZARD_CANCEL_TIMEOUT_MS }
+        { ...transportOptions, timeoutMs: WIZARD_CANCEL_TIMEOUT_MS }
       )
     )
   };

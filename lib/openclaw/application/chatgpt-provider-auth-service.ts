@@ -390,6 +390,8 @@ export function buildOpenClawChatGptLoginArgs(input: { agentId: string; force: b
     "login",
     "--provider",
     "openai",
+    "--method",
+    "oauth",
     ...(input.force ? ["--force"] : []),
     "--agent",
     agentId,

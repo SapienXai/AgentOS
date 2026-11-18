@@ -1,10 +1,7 @@
-// Keep the last certified recommendation until the 2026.10.6 candidate passes
-// the required certification gates. OpenClaw 10.6 is the exact native
-// contract/package target; 9.7 remains the certified recommendation and 9.1
-// remains the supported minimum when security-sensitive settings are explicit.
+// Keep the last certified recommendation until the new native target passes final certification.
 export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.7";
 export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.9.1";
-export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.10.6";
+export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.11.5";
 // Fresh setup follows the current native contract target. Its candidate status
 // remains separate from the certified recommendation used by update policy.
 export const OPENCLAW_INSTALL_TARGET_VERSION: string = OPENCLAW_NATIVE_CONTRACT_VERSION;

@@ -544,6 +544,7 @@ export function MissionControlShell({
   const [chatGptBrowserAuth, setChatGptBrowserAuth] = useState<ChatGptBrowserAuthSnapshot | null>(null);
   const [modelSwitchFeedback, setModelSwitchFeedback] =
     useState<ModelSwitchFeedback>(initialModelSwitchFeedback);
+  const [enteredAfterSiwc, setEnteredAfterSiwc] = useState(false);
   const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(false);
   const [isOnboardingForcedOpen, setIsOnboardingForcedOpen] = useState(false);
   const [onboardingSessionKey, setOnboardingSessionKey] = useState(0);
@@ -1094,12 +1095,14 @@ export function MissionControlShell({
     isOpenClawOnboardingSystemReady &&
     isOpenClawOnboardingModelReady &&
     !hasWorkspaceSetup;
-  const shouldDeferOnboarding = shouldDeferOnboardingUntilLiveSnapshot(snapshot, hasReceivedLiveSnapshot);
+  const shouldDeferOnboarding = gatewayReachable !== false &&
+    shouldDeferOnboardingUntilLiveSnapshot(snapshot, hasReceivedLiveSnapshot);
   const isOnboardingFullyReady =
     isOpenClawOnboardingSystemReady &&
     isOpenClawOnboardingModelReady &&
     hasWorkspaceSetup;
   const shouldAutoShowOnboarding =
+    !enteredAfterSiwc &&
     bindRecovery.status.state === "none" &&
     !shouldDeferOnboarding &&
     !hasActiveMissionWork &&
@@ -3214,6 +3217,13 @@ export function MissionControlShell({
     setLaunchpadWorkspaceCreateTarget(null);
   }, []);
 
+  const beginSiwcOnboarding = () => setIsOnboardingForcedOpen(true);
+  const enterAfterSiwc = () => {
+    setEnteredAfterSiwc(true);
+    dismissOnboarding();
+    void refreshSnapshot({ force: true }).catch(() => null);
+  };
+
   const waitForLaunchpadWorkspaceHandoff = useCallback(async (
     result: WorkspaceCreateResult,
     baseProgress: OperationProgressSnapshot | null
@@ -4371,6 +4381,8 @@ export function MissionControlShell({
           onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
           onSnapshotChange={setSnapshot}
           onRunSystemSetup={runOpenClawOnboarding}
+          onStartSiwc={beginSiwcOnboarding}
+          onEnterAfterSiwc={enterAfterSiwc}
           onRunModelSetDefault={runModelSetDefault}
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
@@ -5607,6 +5619,8 @@ export function MissionControlShell({
             onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
             onSnapshotChange={setSnapshot}
             onRunSystemSetup={runOpenClawOnboarding}
+            onStartSiwc={beginSiwcOnboarding}
+            onEnterAfterSiwc={enterAfterSiwc}
             onRunModelSetDefault={runModelSetDefault}
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}

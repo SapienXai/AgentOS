@@ -51,6 +51,8 @@ import {
   type ModelSwitchFeedback
 } from "@/components/mission-control/openclaw-onboarding.stages";
 
+import { SiwcWelcome } from "@/components/mission-control/siwc-welcome";
+
 type OnboardingVisualStage = WizardStage | "finish";
 
 export function OpenClawOnboarding({
@@ -85,6 +87,8 @@ export function OpenClawOnboarding({
   onClearModelSwitchFeedback,
   onSnapshotChange,
   onRunSystemSetup,
+  onStartSiwc,
+  onEnterAfterSiwc,
   onRunModelSetDefault,
   onOpenAddModels,
   onOpenGatewayAuthSettings,
@@ -131,7 +135,9 @@ export function OpenClawOnboarding({
   onSelectedThinkingChange: (value: OpenClawThinkingLevel) => void;
   onClearModelSwitchFeedback: () => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
-  onRunSystemSetup: () => void;
+  onRunSystemSetup: () => void | Promise<void>;
+  onStartSiwc?: () => void;
+  onEnterAfterSiwc?: () => void;
   onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onOpenGatewayAuthSettings: () => void;
@@ -190,6 +196,7 @@ export function OpenClawOnboarding({
   );
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
+  const [showLegacySetup, setShowLegacySetup] = useState(false);
   const [advancedProviderFlowOpen, setAdvancedProviderFlowOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
@@ -288,6 +295,24 @@ export function OpenClawOnboarding({
 
   if (!portalRoot) {
     return null;
+  }
+
+  if (!showLegacySetup && !renderLaunchpad && !isChatGptAuthSurface && !isModelSwitchActive && onStartSiwc && onEnterAfterSiwc) {
+    return (
+      <SiwcWelcome
+        systemReady={onboardingSystemReady}
+        onPrepare={onRunSystemSetup}
+        onStart={onStartSiwc}
+        onAlternative={() => {
+          setShowLegacySetup(true);
+          setAdvancedProviderFlowOpen(true);
+        }}
+        onEnter={onEnterAfterSiwc}
+        onClose={onSkipSetup}
+        surfaceTheme={surfaceTheme}
+        themeControl={<OnboardingThemeSwitch surfaceTheme={surfaceTheme} onToggleTheme={onToggleTheme} />}
+      />
+    );
   }
 
   return createPortal(

@@ -1,5 +1,7 @@
 import { validateOpenAiAuthorizationUrl } from "@/lib/openclaw/chatgpt-auth-url";
 
+import { validateOpenClawSiwcAuthorizationUrl } from "@/lib/openclaw/siwc-onboarding";
+
 export type ExternalAuthOpenMethod = "tauri" | "browser";
 
 const inFlightOpenAttempts = new Map<string, Promise<ExternalAuthOpenMethod>>();
@@ -18,7 +20,7 @@ export function isTauriDesktopRuntime() {
  * shell's native opener, with a normal-browser fallback for the web app.
  */
 export async function openExternalAuthUrl(value: string): Promise<ExternalAuthOpenMethod> {
-  const url = validateOpenAiAuthorizationUrl(value);
+  const url = validateOpenAiAuthorizationUrl(value) ?? validateOpenClawSiwcAuthorizationUrl(value);
 
   if (!url) {
     throw new Error("OpenClaw returned an invalid OpenAI authorization URL.");

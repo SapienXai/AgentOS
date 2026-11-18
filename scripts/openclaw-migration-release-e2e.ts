@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { access, cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -171,6 +171,17 @@ async function main() {
     await sourceGateway.stop();
     sourceGateway = null;
 
+    phase = "verify-source-backup";
+    const archive = path.join(fixtureRoot, "before-upgrade.tar.gz");
+    const backup = await runCommand(
+      path.join(runtimePackagePath, "openclaw.mjs"),
+      ["backup", "create", "--output", archive, "--verify", "--json"],
+      { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, HOME: homeDir }
+    );
+    const archiveBytes = await stat(archive).then((file) => file.size).catch(() => 0);
+    evidence.backup = { verified: backup.code === 0 && archiveBytes > 0, archiveBytes };
+    if (backup.code !== 0 || archiveBytes <= 0) throw new Error("OpenClaw did not verify the pre-upgrade backup.");
+
     phase = "install-target-package";
     await installRuntimePackage(path.resolve(TARGET_PACKAGE), runtimePackagePath);
     assertIdentity(await readPackageIdentity(runtimePackagePath), { version: TARGET_VERSION, commit: TARGET_COMMIT, build: TARGET_BUILD, state: TARGET_STATE_SCHEMA, agent: TARGET_AGENT_SCHEMA });
@@ -208,7 +219,7 @@ async function main() {
     phase = "target-native-surface-reads";
     const targetConfig = await targetClient.callNative<Record<string, unknown>>("config.get", {}, readPolicy());
     const targetAgents = await targetClient.callNative<Record<string, unknown>>("agents.list", {}, readPolicy());
-    const targetSessions = await targetClient.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy());
+    const targetSessions = await waitForTargetSessionAdmission(targetClient);
     const targetHistory = await targetClient.callNative<Record<string, unknown>>("chat.history", { sessionKey: rootSessionKey, limit: 20 }, readPolicy());
     const targetReads = await readNativeSurfaces(targetClient, rootSessionKey);
     const afterRuntime = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
@@ -257,6 +268,7 @@ async function main() {
     const stateAfterDoctor = migration.stateAfterDoctor as Record<string, unknown>;
     const targetState = target.state as Record<string, unknown>;
     evidence.checks = {
+      sourceBackupVerified: backup.code === 0 && archiveBytes > 0,
       exactSourcePackage: sourceIdentity.version === SOURCE_VERSION && sourceIdentity.sourceCommit === SOURCE_COMMIT && sourceIdentity.buildId === SOURCE_BUILD,
       exactTargetPackage: targetIdentity.version === TARGET_VERSION && targetIdentity.sourceCommit === TARGET_COMMIT && targetIdentity.buildId === TARGET_BUILD,
       sourceRuntimeIdentity: Boolean((evidence.source as Record<string, unknown>).runtime) && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).version === SOURCE_VERSION && ((evidence.source as Record<string, unknown>).runtime as Record<string, unknown>).protocol === 4,
@@ -300,6 +312,18 @@ async function main() {
 
 function mutationPolicy() { return { safety: "mutation", timeoutMs: 10_000 } as const; }
 function readPolicy() { return { safety: "read", timeoutMs: 10_000 } as const; }
+
+async function waitForTargetSessionAdmission(client: ReturnType<typeof createClient>) {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      return await client.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy());
+    } catch (error) {
+      if (Date.now() >= deadline || !/has not completed startup inspection and preparation/i.test(sanitizeError(error))) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
 
 async function readPackageIdentity(packageRoot: string): Promise<PackageIdentity> {
   const packageJson = JSON.parse(await readFileText(path.join(packageRoot, "package.json"))) as { version?: string; openclaw?: { schemaVersions?: { state?: number; agent?: number } } };

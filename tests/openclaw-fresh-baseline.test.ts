@@ -26,7 +26,7 @@ test("OpenClaw 2026.9.7 remains recommended while 10.6 is an explicit candidate 
       reason: "Retained as the default until a newer target completes final certification."
     }
   );
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.10.6")?.status, "candidate");
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.11.5")?.status, "candidate");
 });
 
 test("fresh installer contract targets the current native contract candidate directly", () => {
