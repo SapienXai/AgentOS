@@ -586,7 +586,8 @@ export async function generateWorkspaceBlueprint(
     ...normalized.warnings,
     ...(reasoning.warning ? [reasoning.warning] : [])
   ])];
-  const identity = normalized.identity;
+  const workspaceName = boundedText(input.workspaceName, "", 100);
+  const identity = workspaceName ? { ...normalized.identity, name: workspaceName } : normalized.identity;
   const createdAt = now();
   const blueprint: WorkspaceBlueprint = {
     schemaVersion: WORKSPACE_BLUEPRINT_SCHEMA_VERSION,
@@ -643,7 +644,7 @@ export async function generateWorkspaceBlueprint(
     operatorOverrides: overrides,
     provenance: {
       architectRunId,
-    inputFingerprint: fingerprintInput({ brief, revisionInstruction, materialization, knowledge, operatorConstraints, overrides, projectIntelligence: projectIntelligence ? projectContextRefs(projectIntelligence, knowledgeEvidence.targetedEvidence ?? []) : null, targetedEvidence: knowledgeEvidence.targetedEvidence ?? [] }),
+      inputFingerprint: fingerprintInput({ brief, workspaceName, revisionInstruction, materialization, knowledge, operatorConstraints, overrides, projectIntelligence: projectIntelligence ? projectContextRefs(projectIntelligence, knowledgeEvidence.targetedEvidence ?? []) : null, targetedEvidence: knowledgeEvidence.targetedEvidence ?? [] }),
       knowledgeGenerationId: knowledge.generationId,
       sourceIds,
       createdAt,
@@ -656,6 +657,7 @@ export async function generateWorkspaceBlueprint(
     }
   };
 
+  if (workspaceName) lockPath(blueprint, "identity.name");
   const validation = validateWorkspaceBlueprint(blueprint);
   blueprint.status = !validation.valid
     ? "blocked"
@@ -2141,8 +2143,14 @@ function normalizeDurableFacts(
 
 function applyLockedBlueprintPaths(next: WorkspaceBlueprint, previous: WorkspaceBlueprint) {
   for (const path of previous.operatorOverrides.lockedPaths) {
-    if (path === "identity" || path === "identity.name" || path === "identity.purpose" || path === "identity.projectType") {
+    if (path === "identity") {
       next.identity = structuredClone(previous.identity);
+    } else if (path === "identity.name") {
+      next.identity.name = previous.identity.name;
+    } else if (path === "identity.purpose") {
+      next.identity.purpose = previous.identity.purpose;
+    } else if (path === "identity.projectType") {
+      next.identity.projectType = previous.identity.projectType;
     } else if (path === "workforce.primaryAgent") {
       next.workforce.primaryAgent = structuredClone(previous.workforce.primaryAgent);
     } else if (path === "workforce.specialists") {
@@ -2247,6 +2255,7 @@ function lockPath(blueprint: WorkspaceBlueprint, path: string) {
 
 function fingerprintInput(input: {
   brief: string;
+  workspaceName?: string;
   revisionInstruction?: string;
   materialization: WorkspaceMaterialization;
   knowledge: KnowledgeContext;
@@ -2259,6 +2268,7 @@ function fingerprintInput(input: {
     policy: WORKSPACE_BLUEPRINT_POLICY_VERSION,
     architectPolicy: WORKSPACE_ARCHITECT_POLICY_VERSION,
     brief: input.brief,
+    ...(input.workspaceName ? { workspaceName: input.workspaceName } : {}),
     revisionInstruction: input.revisionInstruction ?? null,
     materialization: input.materialization,
     operatorConstraints: input.operatorConstraints,

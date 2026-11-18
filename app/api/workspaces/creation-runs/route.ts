@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 const jsonSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
   brief: z.string().trim().min(1).max(12_000),
+  workspaceName: z.string().trim().min(1).max(100).optional(),
   draftContextId: z.string().uuid().nullable().optional(),
   mode: z.enum(["automatic", "review"]).default("automatic"),
   profile: z.enum(["fast", "medium", "high", "quick", "deep"]).default("fast"),
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
       const base = jsonSchema.parse({
         idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
         brief: String(formData.get("brief") ?? ""),
+        workspaceName: formData.get("workspaceName") || undefined,
         draftContextId: formData.get("draftContextId") || undefined,
         mode: formData.get("mode") || undefined,
         profile: formData.get("profile") || undefined,

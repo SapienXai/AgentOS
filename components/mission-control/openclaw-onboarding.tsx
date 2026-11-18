@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import Image from "next/image";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, MoonStar, SquareTerminal, SunMedium, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, LockKeyhole, MoonStar, SquareTerminal, SunMedium, XCircle } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
+import { OnboardingOwnerForm } from "@/components/auth/instance-protection-dialog";
+import { useInstanceProtection } from "@/components/auth/instance-protection-provider";
+import { isTauriDesktopRuntime } from "@/lib/desktop/open-external-auth-url";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogTitle } from "@/components/ui/dialog";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -88,7 +94,10 @@ export function OpenClawOnboarding({
   onSnapshotChange,
   onRunSystemSetup,
   onStartSiwc,
+  onLeaveSiwc,
+  resumeSiwc,
   onEnterAfterSiwc,
+  onCreateFirstWorkspace,
   onRunModelSetDefault,
   onOpenAddModels,
   onOpenGatewayAuthSettings,
@@ -137,7 +146,10 @@ export function OpenClawOnboarding({
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRunSystemSetup: () => void | Promise<void>;
   onStartSiwc?: () => void;
+  onLeaveSiwc?: () => void;
+  resumeSiwc?: boolean;
   onEnterAfterSiwc?: () => void;
+  onCreateFirstWorkspace?: () => void;
   onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onOpenGatewayAuthSettings: () => void;
@@ -199,6 +211,10 @@ export function OpenClawOnboarding({
   const [showLegacySetup, setShowLegacySetup] = useState(false);
   const [advancedProviderFlowOpen, setAdvancedProviderFlowOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [siwcVerified, setSiwcVerified] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const { status: instanceStatus } = useInstanceProtection();
+  const stepContent = useRef<HTMLDivElement>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
     forcePending: systemSetupRequired,
@@ -271,8 +287,28 @@ export function OpenClawOnboarding({
     0,
     Math.min(100, Math.round(((systemProgressUnits + modelProgressUnits + workspaceProgressUnits) / 5) * 100))
   );
-  const activeStepNumber = visualStage === "finish" ? 3 : visualStage === "models" ? 2 : 1;
+  const resumeModelSetup = resumeSiwc && selectedVisualStage !== "system" && snapshot.diagnostics.installed &&
+    !systemSetupRequired && (systemRun.runState === "idle" || systemRun.runState === "success");
+  const showSiwc = !showLegacySetup && Boolean(onStartSiwc && onEnterAfterSiwc) && (
+    resumeModelSetup || (onboardingSystemReady && visualStage === "models" && !isChatGptAuthSurface && !isModelSwitchActive)
+  );
+  const needsOwnerAccount = instanceStatus?.protectionEnabled === false &&
+    portalRoot !== null && !isTauriDesktopRuntime() &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  const showOwner = showSiwc && needsOwnerAccount;
+  const activeStepNumber = showOwner ? 2
+    : showSiwc ? siwcVerified ? 4 : 3
+    : visualStage === "finish" ? 4 : visualStage === "models" ? 3 : 1;
 
+  const goBackToSystem = () => {
+    setSiwcVerified(false);
+    setSelectedVisualStage("system");
+    onBackToSystem();
+  };
+
+  useEffect(() => {
+    stepContent.current?.focus({ preventScroll: true });
+  }, [activeStepNumber, portalRoot]);
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       setPortalRoot(document.body);
@@ -297,29 +333,11 @@ export function OpenClawOnboarding({
     return null;
   }
 
-  if (!showLegacySetup && !renderLaunchpad && !isChatGptAuthSurface && !isModelSwitchActive && onStartSiwc && onEnterAfterSiwc) {
-    return (
-      <SiwcWelcome
-        systemReady={onboardingSystemReady}
-        onPrepare={onRunSystemSetup}
-        onStart={onStartSiwc}
-        onAlternative={() => {
-          setShowLegacySetup(true);
-          setAdvancedProviderFlowOpen(true);
-        }}
-        onEnter={onEnterAfterSiwc}
-        onClose={onSkipSetup}
-        surfaceTheme={surfaceTheme}
-        themeControl={<OnboardingThemeSwitch surfaceTheme={surfaceTheme} onToggleTheme={onToggleTheme} />}
-      />
-    );
-  }
-
   return createPortal(
-    <motion.div
-      initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+    <OnboardingDialog
+      initial={reduceMotion ? false : { opacity: 0, backdropFilter: "blur(0px)" }}
       animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
-      exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+      exit={reduceMotion ? undefined : { opacity: 0, backdropFilter: "blur(0px)" }}
       className={cn(
         "openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden p-0 sm:px-6 sm:py-4",
         surfaceTheme === "light"
@@ -334,8 +352,8 @@ export function OpenClawOnboarding({
         className="pointer-events-auto absolute inset-x-0 top-0 z-[1] h-16"
       />
       <motion.div
-        initial={{ opacity: 0, y: 18, scale: isMobileViewport ? 1 : 0.885 }}
-        animate={{ opacity: 1, y: 0, scale: isMobileViewport ? 1 : 0.9 }}
+        initial={reduceMotion ? false : { opacity: 0, y: 18, scale: isMobileViewport ? 1 : 0.885 }}
+        animate={{ opacity: 1, y: 0, scale: isMobileViewport || reduceMotion ? 1 : 0.9 }}
         className={cn(
           "relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
           isChatGptAuthSurface && !advancedProviderFlowOpen
@@ -357,7 +375,7 @@ export function OpenClawOnboarding({
             <div className="flex justify-center">
               <div className="flex min-w-0 flex-col items-center text-center">
                 <div className="flex items-center justify-center gap-2.5 sm:gap-3">
-                  <AgentOSMark />
+                  <AgentOSMark still={Boolean(reduceMotion)} />
                   <div className="min-w-0">
                     <span className="block text-[19px] font-bold tracking-[-0.02em] sm:text-[21px]">
                       Agent<span className="text-primary">OS</span>
@@ -365,17 +383,19 @@ export function OpenClawOnboarding({
                   </div>
                 </div>
                 <p className={cn("mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5", (isModelSwitchActive || isChatGptAuthSurface) && "hidden")}>
-                  Connect your local OpenClaw and prepare your environment.
+                  Set up AgentOS
                 </p>
               </div>
             </div>
 
-            {!isModelSwitchActive && !isChatGptAuthSurface ? (
+            {(!isModelSwitchActive && !isChatGptAuthSurface) || showSiwc ? (
               <SetupStepper
                 activeStep={activeStepNumber}
                 systemReady={onboardingSystemReady}
-                modelReady={modelSetupConfirmed}
-                finishReady={canShowFinish}
+                securityReady={!needsOwnerAccount}
+                modelReady={showSiwc ? siwcVerified : modelSetupConfirmed}
+                finishReady={showSiwc ? siwcVerified : canShowFinish}
+                interactive={!showSiwc}
                 surfaceTheme={surfaceTheme}
                 onSelectStage={(nextStage) => {
                   setSelectedVisualStage(nextStage);
@@ -388,14 +408,50 @@ export function OpenClawOnboarding({
           </div>
 
           <div
+            ref={stepContent}
+            tabIndex={-1}
+            role="region"
+            aria-label={["OpenClaw setup", "AgentOS security", "Connect AI", "Finish setup"][activeStepNumber - 1]}
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 sm:px-8 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
-              isChatGptAuthSurface ? "sm:pb-8" : "sm:pb-24",
-              visualStage === "system" && "sm:overflow-y-hidden",
-              isModelSwitchActive && "!overflow-y-hidden"
+              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 outline-none sm:px-8 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
+              showSiwc ? "pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-9"
+                : isChatGptAuthSurface ? "sm:pb-8" : "sm:pb-24",
+              visualStage === "system" && !showSiwc && "sm:overflow-y-hidden",
+              !showSiwc && isModelSwitchActive && "!overflow-y-hidden"
             )}
           >
-            {renderLaunchpad ? (
+            {showOwner ? (
+              <div className="mx-auto w-full max-w-[560px]">
+                <div className="mb-6">
+                  <div className="mb-4 grid size-12 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                    <LockKeyhole aria-hidden className="size-6" />
+                  </div>
+                  <h2 className="text-balance text-3xl font-semibold leading-tight tracking-[-0.04em] sm:text-4xl">Secure your AgentOS</h2>
+                  <p className="mt-2 max-w-md text-pretty text-sm leading-6 text-muted-foreground sm:text-base">
+                    Create the owner account you’ll use to sign in and manage this AgentOS installation.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border bg-background/50 p-4 sm:p-6">
+                  <OnboardingOwnerForm onBack={goBackToSystem} />
+                </div>
+              </div>
+            ) : showSiwc && onStartSiwc && onEnterAfterSiwc ? (
+              <SiwcWelcome
+                systemReady={onboardingSystemReady}
+                onPrepare={onRunSystemSetup}
+                onStart={onStartSiwc}
+                onAlternative={() => {
+                  onLeaveSiwc?.();
+                  setShowLegacySetup(true);
+                  setSelectedVisualStage("models");
+                  setAdvancedProviderFlowOpen(true);
+                }}
+                onEnter={onEnterAfterSiwc}
+                onCreateWorkspace={onCreateFirstWorkspace}
+                onVerifiedChange={setSiwcVerified}
+                onBack={goBackToSystem}
+              />
+            ) : renderLaunchpad ? (
               <LaunchpadStage
                 surfaceTheme={surfaceTheme}
                 workspaceCount={workspaceCount}
@@ -457,7 +513,7 @@ export function OpenClawOnboarding({
               "mt-auto shrink-0 flex flex-col gap-3 border-t px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:px-10",
               surfaceTheme === "light" ? "border-border/70 bg-white/36" : "border-white/8 bg-black/10",
               isModelSwitchActive && "!hidden",
-              isChatGptAuthSurface && "!hidden"
+              (showSiwc || isChatGptAuthSurface) && "!hidden"
             )}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
@@ -635,7 +691,8 @@ export function OpenClawOnboarding({
                       </>
                     ) : (
                       <>
-                        {primaryAction.label}
+                        {visualStage === "system" && primaryAction.kind === "continue" && needsOwnerAccount && !showLegacySetup
+                          ? "Continue to security" : primaryAction.label}
                         <ArrowRight className="ml-1.5 h-3 w-3" />
                       </>
                     )}
@@ -646,8 +703,27 @@ export function OpenClawOnboarding({
           </div>
         </div>
       </motion.div>
-    </motion.div>,
+    </OnboardingDialog>,
     portalRoot
+  );
+}
+
+function OnboardingDialog({ children, ...surface }: Omit<ComponentProps<typeof motion.div>, "children"> & { children: ReactNode }) {
+  return (
+    <Dialog open>
+      <DialogPrimitive.Content
+        asChild
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
+        <motion.div {...surface}>
+          <DialogTitle className="sr-only">Set up AgentOS</DialogTitle>
+          {children}
+        </motion.div>
+      </DialogPrimitive.Content>
+    </Dialog>
   );
 }
 
@@ -765,20 +841,16 @@ function SetupBackground({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   );
 }
 
-function AgentOSMark() {
+function AgentOSMark({ still }: { still: boolean }) {
   return (
     <span className="relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[9px]" aria-hidden="true">
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        poster="/assets/logo.webp"
-        className="h-full w-full scale-[1.12] object-cover"
-      >
-        <source src="/assets/logo.webm" type="video/webm" />
-      </video>
+      {still
+        ? <Image src="/assets/logo.webp" alt="" width={32} height={32} />
+        : (
+          <video autoPlay loop muted playsInline preload="auto" poster="/assets/logo.webp" className="h-full w-full scale-[1.12] object-cover">
+            <source src="/assets/logo.webm" type="video/webm" />
+          </video>
+        )}
     </span>
   );
 }
@@ -819,29 +891,40 @@ function OnboardingThemeSwitch({
 function SetupStepper({
   activeStep,
   systemReady,
+  securityReady,
   modelReady,
   finishReady,
+  interactive,
   surfaceTheme,
   onSelectStage
 }: {
   activeStep: number;
   systemReady: boolean;
+  securityReady: boolean;
   modelReady: boolean;
   finishReady: boolean;
+  interactive: boolean;
   surfaceTheme: SurfaceTheme;
   onSelectStage: (stage: OnboardingVisualStage) => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const steps = [
-    { order: 1, id: "system", label: "Setup", complete: systemReady },
-    { order: 2, id: "models", label: "Connect AI", complete: modelReady },
-    { order: 3, id: "finish", label: "Finish", complete: finishReady }
+    { order: 1, id: "system", label: "OpenClaw", complete: systemReady },
+    { order: 2, id: "security", label: "Security", complete: systemReady && securityReady },
+    { order: 3, id: "models", label: "Connect AI", complete: modelReady },
+    { order: 4, id: "finish", label: "Finish", complete: finishReady }
   ] as const;
 
   return (
-    <div className="mx-auto mb-6 mt-6 grid max-w-[640px] grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)_48px_minmax(0,1fr)] items-start gap-1 sm:mb-8 sm:mt-8 sm:gap-2 max-md:w-full max-md:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)_28px_minmax(0,1fr)]">
+    <div aria-label="Setup progress" role="group" className="mx-auto mb-3 mt-5 grid max-w-[640px] grid-cols-[repeat(3,minmax(0,1fr)_12px)_minmax(0,1fr)] items-start gap-1 sm:mb-5 sm:mt-6 sm:grid-cols-[repeat(3,minmax(0,1fr)_48px)_minmax(0,1fr)] sm:gap-2">
       {steps.map((step, index) => {
         const isActive = activeStep === step.order;
         const isComplete = step.complete;
+        const unavailableReason = step.id === "models" && !systemReady
+          ? "Finish OpenClaw setup before connecting a model."
+          : step.id === "finish" && !finishReady
+            ? "Complete model setup before finishing."
+            : null;
         const connectorProgress =
           index + 1 < activeStep || step.complete ? "100%" : index + 1 === activeStep ? "42%" : "0%";
         const content = (
@@ -850,7 +933,7 @@ function SetupStepper({
               className={cn(
                 "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-colors max-md:h-5 max-md:w-5 max-md:text-[9px]",
                 isActive
-                  ? "border-primary bg-primary text-primary-foreground shadow-[0_10px_26px_hsl(var(--primary)/0.22)]"
+                  ? "border-primary bg-[color:color-mix(in_srgb,hsl(var(--primary)),black_12%)] text-primary-foreground shadow-[0_10px_26px_hsl(var(--primary)/0.22)]"
                   : isComplete
                     ? surfaceTheme === "light"
                       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -860,7 +943,7 @@ function SetupStepper({
             >
               {isComplete && !isActive ? <Check className="h-3 w-3 max-md:h-2 max-md:w-2" /> : step.order}
             </span>
-            <span className={cn("block max-w-full truncate text-[12px] font-semibold leading-4", isActive ? "text-primary" : "text-foreground")}>
+            <span className={cn("block max-w-full text-[11px] font-semibold leading-4 sm:text-xs", isActive ? "text-foreground" : "text-muted-foreground")}>
               {step.label}
             </span>
           </div>
@@ -868,8 +951,8 @@ function SetupStepper({
 
         return (
           <div key={step.id} className="contents">
-            {step.id === "finish" && !modelReady ? (
-              <div title="Complete model setup before finishing." className="cursor-not-allowed opacity-60">
+            {!interactive || step.id === "security" || unavailableReason ? (
+              <div aria-current={isActive ? "step" : undefined} title={unavailableReason ?? undefined} className={cn(!isActive && !isComplete && "opacity-70")}>
                 {content}
               </div>
             ) : (
@@ -888,7 +971,7 @@ function SetupStepper({
                   className="absolute inset-y-0 left-0 rounded-full bg-primary"
                   initial={false}
                   animate={{ width: connectorProgress }}
-                  transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: reduceMotion ? 0 : 1.2, ease: [0.22, 1, 0.36, 1] }}
                 />
               </div>
             ) : null}

@@ -75,6 +75,10 @@ type WorkspaceWizardDialogProps = {
   onWorkspaceUpdated?: (workspaceId: string) => void;
   creationReviewRunId?: string | null;
   creationReopenRequest?: { runId: string; nonce: number } | null;
+  firstWorkspace?: boolean;
+  verifyWorkspace?: (result: WorkspaceCreateResult) => Promise<boolean>;
+  onTestWorkspaceAgent?: (result: WorkspaceCreateResult) => void;
+  defaultModel?: string | null;
 };
 
 export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
@@ -89,6 +93,10 @@ export function WorkspaceWizardDialog(props: WorkspaceWizardDialogProps) {
         onOpenModelSetup={props.onOpenModelSetup}
         reviewRunId={props.creationReviewRunId}
         reopenRequest={props.creationReopenRequest}
+        firstWorkspace={props.firstWorkspace}
+        verifyWorkspace={props.verifyWorkspace}
+        onTestWorkspaceAgent={props.onTestWorkspaceAgent}
+        defaultModel={props.defaultModel}
       />
     );
   }

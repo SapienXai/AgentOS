@@ -152,6 +152,17 @@ test("an explicit project name in the brief wins over a generic Architect worksp
   assert.match(result.blueprint.workforce.primaryAgent.name, /^nitroclash\s/i);
 });
 
+test("retains the name supplied to the first workspace form", async () => {
+  const result = await generateWorkspaceBlueprint(input("Organize a weekly task review.", {
+    workspaceName: "Onboarding Test",
+    mode: "review"
+  }), { runId: "first-workspace-name", deterministicSafe: true });
+
+  assert.equal(result.blueprint.identity.name, "Onboarding Test");
+  assert.ok(result.blueprint.operatorOverrides.lockedPaths.includes("identity.name"));
+  assert.equal(result.validation.valid, true);
+});
+
 test("a website source anchors identity when the Architect returns a generic name", async () => {
   const website = createWorkspaceKnowledgeSource({
     id: "coincollect-site",

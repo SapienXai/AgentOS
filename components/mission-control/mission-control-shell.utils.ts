@@ -763,6 +763,13 @@ export function hasAgentOSWorkspaceSetup(snapshot: Pick<MissionControlSnapshot, 
   });
 }
 
+export function hasProjectWorkspace(snapshot: Pick<MissionControlSnapshot, "workspaces" | "diagnostics">) {
+  const stateRoot = snapshot.diagnostics.runtime.stateRoot?.replaceAll("\\", "/").replace(/\/+$/, "");
+  return snapshot.workspaces.some((workspace) =>
+    workspace.bootstrap.template || !stateRoot || workspace.path.replaceAll("\\", "/").replace(/\/+$/, "") !== `${stateRoot}/workspace`
+  );
+}
+
 function normalizeSetupPath(value?: string | null) {
   return value?.trim().replace(/\/+$/, "") || null;
 }

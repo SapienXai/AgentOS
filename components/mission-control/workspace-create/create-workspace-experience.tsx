@@ -158,6 +158,10 @@ type CreateWorkspaceExperienceProps = {
   onOpenModelSetup?: () => void;
   reviewRunId?: string | null;
   reopenRequest?: { runId: string; nonce: number } | null;
+  firstWorkspace?: boolean;
+  verifyWorkspace?: (result: WorkspaceCreateResult) => Promise<boolean>;
+  onTestWorkspaceAgent?: (result: WorkspaceCreateResult) => void;
+  defaultModel?: string | null;
 };
 
 export function CreateWorkspaceExperience({
@@ -168,10 +172,16 @@ export function CreateWorkspaceExperience({
   onRefresh,
   onOpenModelSetup,
   reviewRunId = null,
-  reopenRequest = null
+  reopenRequest = null,
+  firstWorkspace = false,
+  verifyWorkspace,
+  onTestWorkspaceAgent,
+  defaultModel
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
   const [mode, setMode] = useState<"automatic" | "customize">("automatic");
@@ -304,6 +314,8 @@ export function CreateWorkspaceExperience({
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
     setBrief("");
+    setWorkspaceName("");
+    setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
     setMode("automatic");
@@ -417,7 +429,7 @@ export function CreateWorkspaceExperience({
 
   const generate = async () => {
     const nextBrief = brief.trim();
-    if (!nextBrief || stage === "generating") return;
+    if (!nextBrief || (firstWorkspace && !workspaceName.trim()) || stage === "generating") return;
 
     const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
     if (pendingSourceResult && "error" in pendingSourceResult) {
@@ -457,9 +469,10 @@ export function CreateWorkspaceExperience({
       const formData = new FormData();
       formData.set("idempotencyKey", crypto.randomUUID());
       formData.set("brief", nextBrief);
-      formData.set("mode", mode === "automatic" ? "automatic" : "review");
+      if (firstWorkspace) formData.set("workspaceName", workspaceName.trim());
+      formData.set("mode", mode === "automatic" && !firstWorkspace ? "automatic" : "review");
       formData.set("profile", profile);
-      formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation));
+      formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation && !firstWorkspace));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
       formData.set("materialization", JSON.stringify(nextMaterialization));
       formData.set("sources", JSON.stringify(nextSources));
@@ -483,7 +496,7 @@ export function CreateWorkspaceExperience({
       setProvisioningError(null);
       provisioningKeyRef.current = null;
       setStage(
-        mode === "automatic"
+        mode === "automatic" && !firstWorkspace
           && !environmentPreparation.requested
           && completedRun.snapshot.reviewReadiness?.provisionable === true
           ? "generating"
@@ -910,12 +923,13 @@ export function CreateWorkspaceExperience({
     void provision();
   }, [open, stage, creationRun, result, reviewReadiness, reviewRunId, provisioningRun, provisioningError, isProvisioningStarting, environmentPreparation.requested, provision]);
 
-  const openProvisionedWorkspace = () => {
+  const openProvisionedWorkspace = (testAgent = false) => {
     if (!provisioningRun?.result) {
       setProvisioningError("Workspace is ready, but its open target is unavailable. Close this screen and select it from the workspace menu.");
       return;
     }
-    onWorkspaceCreated?.(provisioningRun.result);
+    if (testAgent && onTestWorkspaceAgent) onTestWorkspaceAgent(provisioningRun.result);
+    else onWorkspaceCreated?.(provisioningRun.result);
     resetCreationState();
     onOpenChange(false);
   };
@@ -977,6 +991,23 @@ export function CreateWorkspaceExperience({
     : null;
 
   const isProvisioned = provisioningRun?.state === "ready" || provisioningRun?.state === "partial";
+  const provisionedWorkspace = isProvisioned ? provisioningRun?.result : null;
+  const provisionedRunId = isProvisioned ? provisioningRun?.runId : null;
+  const workspaceVisibility = workspaceCheck && workspaceCheck.runId === provisionedRunId ? workspaceCheck.status : "checking";
+  const canOpenWorkspace = Boolean(provisionedWorkspace && (!verifyWorkspace || workspaceVisibility === "live"));
+  const checkWorkspaceAvailability = useCallback(async () => {
+    if (!provisionedWorkspace || !provisionedRunId || !verifyWorkspace) return;
+    setWorkspaceCheck({ runId: provisionedRunId, status: "checking" });
+    const ready = await verifyWorkspace(provisionedWorkspace).catch(() => false);
+    setWorkspaceCheck((current) => current?.runId === provisionedRunId ? {
+      runId: provisionedRunId, status: ready ? "live" : "pending"
+    } : current);
+  }, [provisionedRunId, provisionedWorkspace, verifyWorkspace]);
+  useEffect(() => {
+    if (!open || !provisionedWorkspace) return;
+    const timer = window.setTimeout(() => void checkWorkspaceAvailability(), 0);
+    return () => window.clearTimeout(timer);
+  }, [open, provisionedWorkspace, checkWorkspaceAvailability]);
   const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
@@ -992,10 +1023,10 @@ export function CreateWorkspaceExperience({
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
-      title={isProvisioned ? "Workspace ready" : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Creating your workspace"}
-      description={isProvisioned ? "Your workspace is ready to open." : <span className="sr-only">Prepare your workspace</span>}
-      icon={isProvisioned ? Check : undefined}
-      chips={isProvisioned ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
+      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : stage === "intake" ? (firstWorkspace ? "Create your first workspace" : "Create a workspace") : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
+      description={isProvisioned ? (canOpenWorkspace ? "Your workspace is ready to open." : "AgentOS is checking the workspace and its agent in OpenClaw.") : <span className="sr-only">Prepare your workspace</span>}
+      icon={canOpenWorkspace ? Check : undefined}
+      chips={canOpenWorkspace ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
       variant="quiet"
       closeLabel={isActiveRun ? "Minimize workspace creation" : undefined}
       onOutsideInteraction={isActiveRun ? minimizeWorkspaceCreation : undefined}
@@ -1010,7 +1041,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && stage === "intake" && "sm:h-[min(90dvh,590px)]", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -1034,14 +1065,22 @@ export function CreateWorkspaceExperience({
                   <Check className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
-                  <p className={cn("truncate text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>{provisioningRun?.state === "partial" ? "Workspace is live" : "Workspace ready"}</p>
-                  <p className={cn("truncate text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{provisioningRun?.state === "partial" ? "Finish optional setup whenever you are ready." : "Open it to start working."}</p>
+                  <p className={cn("text-xs font-semibold", isLight ? "text-[#55483e]" : "text-slate-100")}>{canOpenWorkspace ? "Workspace ready" : "Waiting for OpenClaw"}</p>
+                  <p role="status" className={cn("text-[11px]", isLight ? "text-[#766b61]" : "text-slate-400")}>{canOpenWorkspace ? "Open it to start working." : workspaceVisibility === "checking" ? "Checking the live workspace and agent…" : "The workspace is saved. Check again to confirm it is available."}</p>
                 </div>
               </div>
-              <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 {provisioningRun?.environmentPreparation.retryable ? <Button type="button" variant="secondary" onClick={() => void provision({ retryEnvironmentPreparation: true })} disabled={!nativeEnvironmentPreparationReady} title={!nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined} aria-label="Retry native environment preparation" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Retry preparation</Button> : null}
-                <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} aria-label="Close workspace ready screen" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Close</Button>
-                <Button type="button" onClick={openProvisionedWorkspace} aria-label="Open Workspace" className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />Open Workspace</Button>
+                {canOpenWorkspace && firstWorkspace && onTestWorkspaceAgent && provisionedWorkspace?.primaryAgentId ? (
+                  <Button type="button" variant="secondary" onClick={() => openProvisionedWorkspace(true)} className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "min-h-10 flex-1 sm:flex-none")}>Test your agent</Button>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} aria-label="Close workspace ready screen" className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Close</Button>
+                )}
+                {canOpenWorkspace ? (
+                  <Button type="button" onClick={() => openProvisionedWorkspace()} className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />Open Workspace</Button>
+                ) : (
+                  <Button type="button" disabled={workspaceVisibility === "checking"} onClick={() => void checkWorkspaceAvailability()} className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 sm:h-8 sm:flex-none")}>Check availability</Button>
+                )}
               </div>
             </div>
           ) : (
@@ -1054,7 +1093,7 @@ export function CreateWorkspaceExperience({
                 <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <span className={cn("text-[10px]", isLight ? "text-[#9b8d80]" : "text-slate-500")}>{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
+                <span className={cn("text-[10px]", isLight ? "text-[#766b61]" : "text-slate-400")}>{firstWorkspace && defaultModel ? `Default model · ${defaultModel}` : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -1080,12 +1119,12 @@ export function CreateWorkspaceExperience({
           <div className="flex w-full items-center justify-end gap-3">
             <Button
               type="button"
-              disabled={!brief.trim()}
+              disabled={!brief.trim() || (firstWorkspace && !workspaceName.trim())}
               onClick={() => void generate()}
               className={missionControlDialogButtonClassName("primary", surfaceTheme) + " h-10 px-4 text-sm"}
             >
               <WandSparkles className="mr-2 h-4 w-4" />
-              Create workspace
+              {firstWorkspace ? "Review draft" : "Create workspace"}
             </Button>
           </div>
         )
@@ -1094,6 +1133,9 @@ export function CreateWorkspaceExperience({
       <div className={cn("min-h-0 h-full overflow-y-auto", isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]")}>
         {stage === "intake" ? (
           <IntakeView
+            firstWorkspace={firstWorkspace}
+            workspaceName={workspaceName}
+            setWorkspaceName={setWorkspaceName}
             isLight={isLight}
             brief={brief}
             setBrief={setBrief}
@@ -1135,6 +1177,11 @@ export function CreateWorkspaceExperience({
           />
         ) : stage === "provisioning" ? (
           <CreationProgressView run={creationRun} provisioning={provisioningRun} isLight={isLight} />
+        ) : isProvisioned && !canOpenWorkspace ? (
+          <main className="mx-auto max-w-lg px-6 py-10">
+            <h2 className="text-xl font-semibold">{result?.blueprint.identity.name ?? "Workspace setup"}</h2>
+            <p className="mt-3 text-sm text-muted-foreground">Workspace files were created. AgentOS will open the workspace once OpenClaw reports its live project and agent.</p>
+          </main>
         ) : isProvisioned ? (
           <WorkspaceReadyView isLight={isLight} result={result} creationRun={creationRun} provisioningRun={provisioningRun} provisioningError={provisioningError} />
         ) : (
@@ -1188,6 +1235,9 @@ export function CreateWorkspaceExperience({
 }
 
 function IntakeView({
+  firstWorkspace,
+  workspaceName,
+  setWorkspaceName,
   isLight,
   profile,
   setProfile,
@@ -1220,6 +1270,9 @@ function IntakeView({
   folderInputRef,
   notice
 }: {
+  firstWorkspace: boolean;
+  workspaceName: string;
+  setWorkspaceName: (value: string) => void;
   isLight: boolean;
   profile: WorkspaceCreationDepth;
   setProfile: (profile: WorkspaceCreationDepth) => void;
@@ -1252,11 +1305,12 @@ function IntakeView({
   folderInputRef: RefObject<HTMLInputElement | null>;
   notice: { tone: "warning" | "error" | "muted"; title: string; description: string } | null;
 }) {
+  const [showOptions, setShowOptions] = useState(false);
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center px-5 py-6 sm:px-8 sm:py-8">
-      <div className="mb-5">
+      {!firstWorkspace && <div className="mb-5">
         <h1 className="text-2xl font-semibold tracking-tight">What are you working on?</h1>
-      </div>
+      </div>}
 
       {notice ? (
         <div className={cn("mb-4 rounded-xl border px-4 py-3", notice.tone === "error" ? (isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-400/20 bg-red-400/10 text-red-100") : notice.tone === "warning" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-400/20 bg-amber-400/10 text-amber-100") : (isLight ? "border-[#e5dbd0] bg-white text-[#65594f]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
@@ -1265,15 +1319,46 @@ function IntakeView({
         </div>
       ) : null}
 
+      {firstWorkspace && (
+        <div className="mb-5 flex flex-col gap-2">
+          <label htmlFor="first-workspace-name" className="text-sm font-medium">Workspace name</label>
+          <input
+            id="first-workspace-name"
+            className={missionControlDialogControlClassName("h-11")}
+            value={workspaceName}
+            onChange={(event) => setWorkspaceName(event.target.value)}
+            placeholder="e.g. Weekly Planning"
+            maxLength={100}
+            required
+            autoFocus
+          />
+          <label htmlFor="workspace-purpose" className="mt-3 text-sm font-medium">What should your first agent help with?</label>
+        </div>
+      )}
       <Textarea
-        autoFocus
+        id="workspace-purpose"
+        autoFocus={!firstWorkspace}
         value={brief}
         onChange={(event) => setBrief(event.target.value)}
-        placeholder="Describe the project, business, team, or job you want AgentOS to work on…"
-        aria-label="What are you working on?"
+        placeholder={firstWorkspace ? "e.g. Organize tasks and prepare a short review each week." : "Describe the project, business, team, or job you want AgentOS to work on…"}
+        aria-label={firstWorkspace ? undefined : "What are you working on?"}
+        required={firstWorkspace}
+        maxLength={12000}
         className={cn("min-h-[120px] resize-y rounded-2xl px-5 py-4 text-base leading-7 shadow-none md:min-h-[140px] md:text-[17px]", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d] focus-visible:border-[#b8895f] focus-visible:ring-[#b8895f]/20" : "border-white/10 bg-white/[0.055] text-slate-100 placeholder:text-slate-500 focus-visible:border-violet-300/40 focus-visible:ring-violet-300/15")}
       />
 
+      {firstWorkspace && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <Button type="button" variant="ghost" className="min-h-11" onClick={() => {
+            if (!workspaceName.trim()) setWorkspaceName("Weekly Planning");
+            if (!brief.trim()) setBrief("Organize my tasks and prepare a short review at the end of each week.");
+          }}>Use example</Button>
+          <Button type="button" variant="ghost" className="min-h-11" aria-expanded={showOptions} aria-controls="workspace-intake-options" onClick={() => setShowOptions((current) => !current)}>
+            {showOptions ? "Hide optional settings" : "Optional settings"}
+          </Button>
+        </div>
+      )}
+      <div id="workspace-intake-options" hidden={firstWorkspace && !showOptions}>
       <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 pb-1" aria-label="Add project context">
         <span className={cn("mr-1 shrink-0 text-xs font-medium", isLight ? "text-[#837366]" : "text-slate-500")}>Add context</span>
         <ContextButton isLight={isLight} icon={Globe} label="Website" onClick={() => setContextAction(contextAction === "website" ? null : "website")} />
@@ -1334,10 +1419,10 @@ function IntakeView({
       <details className={cn("mt-4 px-1 py-2", isLight ? "border-[#e5dbd0] bg-white/70" : "border-white/10 bg-white/[0.025]")}>
         <summary className={cn("cursor-pointer text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Advanced options</summary>
         <div className="mt-4 flex flex-col items-center gap-3">
-          <label className={cn("flex w-full max-w-[600px] items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300", profile === "high" && "opacity-50")}>
+          {!firstWorkspace && <label className={cn("flex w-full max-w-[600px] items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300", profile === "high" && "opacity-50")}>
             <input type="checkbox" checked={continueLearningAfterCreation} disabled={profile === "high"} onChange={(event) => setContinueLearningAfterCreation(event.target.checked)} className="mt-0.5 accent-violet-500" />
             <span><span className="font-medium">Continue learning after creation</span><span className="ml-1 opacity-70">(Fast / Medium)</span><span className="mt-1 block opacity-70">AgentOS will prepare reviewable improvements without changing the workspace automatically.</span></span>
-          </label>
+          </label>}
           <div className="w-full max-w-[600px]">
             <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
             <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
@@ -1359,6 +1444,7 @@ function IntakeView({
           </div>
         </div>
       </details>
+      </div>
 
     </main>
   );

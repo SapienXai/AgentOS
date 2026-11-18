@@ -1,9 +1,9 @@
 "use client";
 
-import { Eye, EyeOff, Loader2, LockKeyhole, ShieldCheck, ShieldOff } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { ArrowLeft, Eye, EyeOff, Loader2, LockKeyhole, ShieldCheck, ShieldOff } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { broadcastAuthChange, useInstanceProtection } from "@/components/auth/instance-protection-provider";
+import { broadcastAuthChange, useInstanceProtection, type InstanceProtectionStatus } from "@/components/auth/instance-protection-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,10 @@ import { cn } from "@/lib/utils";
 
 type FieldErrors = Partial<Record<"username" | "password" | "confirmPassword" | "currentPassword", string>>;
 
-export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function InstanceProtectionDialog({ open, onOpenChange }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { status, loading, applyStatus } = useInstanceProtection();
   const [enabledSwitch, setEnabledSwitch] = useState(true);
   const [username, setUsername] = useState("");
@@ -47,14 +50,9 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
     setSubmitting(true);
     try {
       const action = status?.protectionEnabled ? "update" : "enable";
-      const response = await fetch("/api/auth/protection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "enable"
+      const { response, payload } = await saveProtection(action === "enable"
           ? { action, username: username.trim(), password }
-          : { action, username: username.trim(), currentPassword, newPassword: password || undefined })
-      });
-      const payload = (await response.json()) as NonNullable<typeof status> & { error?: string; code?: string };
+          : { action, username: username.trim(), currentPassword, newPassword: password || undefined });
       if (!response.ok || payload.error) {
         if (payload.code === "invalid-current-password") setErrors({ currentPassword: payload.error });
         else throw new Error(payload.error || "Protection settings could not be saved.");
@@ -178,12 +176,115 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
   );
 }
 
-function PasswordInput({ id, value, onChange, visible, onToggle, autoComplete }: { id: string; value: string; onChange: (value: string) => void; visible: boolean; onToggle: () => void; autoComplete: string }) {
-  return <div className="relative"><CompactInput id={id} type={visible ? "text" : "password"} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} className="pr-10" /><button type="button" onClick={onToggle} aria-label={visible ? "Hide password" : "Show password"} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button></div>;
+type ProtectionCredentials =
+  | { action: "enable"; username: string; password: string }
+  | { action: "update"; username: string; currentPassword: string; newPassword?: string };
+
+async function saveProtection(credentials: ProtectionCredentials) {
+  const response = await fetch("/api/auth/protection", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials)
+  });
+  const payload = await response.json() as InstanceProtectionStatus & { error?: string; code?: string };
+  return { response, payload };
 }
 
-function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label htmlFor={htmlFor} className="text-[11px] font-medium text-muted-foreground">{label}</Label>{children}{error ? <p role="alert" className="text-[11px] text-destructive">{error}</p> : null}</div>;
+export function OnboardingOwnerForm({ onBack }: { onBack: () => void }) {
+  const { applyStatus } = useInstanceProtection();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    const nextErrors = validate(false, { username, password, confirmPassword, currentPassword: "" });
+    setErrors(nextErrors);
+    setError(null);
+    if (Object.keys(nextErrors).length) {
+      requestAnimationFrame(() => form.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus());
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { response, payload } = await saveProtection({ action: "enable", username: username.trim(), password });
+      if (!response.ok || !payload.protectionEnabled || !payload.authenticated) {
+        setError(payload.error || "The owner account could not be created. Try again.");
+        return;
+      }
+      applyStatus(payload);
+      broadcastAuthChange();
+    } catch {
+      setError("AgentOS could not save the owner account. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form ref={form} onSubmit={submit} noValidate className="space-y-5">
+      <Field label="Username" htmlFor="onboarding-owner-username" error={errors.username} spacious>
+        <Input id="onboarding-owner-username" name="username" autoComplete="username" required
+          value={username} onChange={(event) => setUsername(event.target.value)}
+          aria-invalid={Boolean(errors.username)} aria-describedby={errors.username ? "onboarding-owner-username-error" : undefined}
+          className="h-11 text-base" />
+      </Field>
+      <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
+        <Field label="Password" htmlFor="onboarding-owner-password" error={errors.password} spacious>
+          <PasswordInput id="onboarding-owner-password" name="password" value={password} onChange={setPassword} visible={visible}
+            onToggle={() => setVisible(!visible)} autoComplete="new-password" error={errors.password} spacious />
+        </Field>
+        <Field label="Confirm password" htmlFor="onboarding-owner-confirm" error={errors.confirmPassword} spacious>
+          <PasswordInput id="onboarding-owner-confirm" name="confirmPassword" value={confirmPassword} onChange={setConfirmPassword}
+            visible={visible} autoComplete="new-password" error={errors.confirmPassword} spacious />
+        </Field>
+      </div>
+      <p id="onboarding-owner-password-hint" className="text-sm text-muted-foreground">Use at least 8 characters.</p>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <Button type="submit" disabled={submitting} className="h-12 w-full bg-[color:color-mix(in_srgb,hsl(var(--primary)),black_12%)] hover:bg-[color:color-mix(in_srgb,hsl(var(--primary)),black_16%)]">
+        {submitting && <Loader2 aria-hidden className="mr-2 size-4 motion-safe:animate-spin" />}
+        {submitting ? "Creating owner account…" : "Create owner account"}
+      </Button>
+      <Button type="button" variant="ghost" className="min-h-11 px-2 text-muted-foreground" onClick={onBack} disabled={submitting}>
+        <ArrowLeft aria-hidden className="mr-1.5 size-4" /> OpenClaw setup
+      </Button>
+    </form>
+  );
+}
+
+function PasswordInput({ id, name, value, onChange, visible, onToggle, autoComplete, error, spacious }: {
+  id: string; name?: string; value: string; onChange: (value: string) => void; visible: boolean;
+  onToggle?: () => void; autoComplete: string; error?: string; spacious?: boolean;
+}) {
+  const describedBy = [id === "onboarding-owner-password" && "onboarding-owner-password-hint", error && `${id}-error`].filter(Boolean).join(" ");
+  return (
+    <div className="relative">
+      <CompactInput id={id} name={name} type={visible ? "text" : "password"} autoComplete={autoComplete} value={value}
+        onChange={(event) => onChange(event.target.value)} required={spacious}
+        aria-invalid={spacious ? Boolean(error) : undefined} aria-describedby={describedBy || undefined}
+        className={cn(onToggle && "pr-11", spacious && "h-11 text-base")} />
+      {onToggle && <button type="button" onClick={onToggle} aria-label={visible ? "Hide passwords" : "Show passwords"}
+        className={cn("absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50", spacious && "inset-y-0 right-0 h-full w-11")}>
+        {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>}
+    </div>
+  );
+}
+
+function Field({ label, htmlFor, error, spacious, children }: {
+  label: string; htmlFor: string; error?: string; spacious?: boolean; children: React.ReactNode;
+}) {
+  return <div className="space-y-1.5">
+    <Label htmlFor={htmlFor} className={spacious ? "text-sm font-medium text-foreground" : "text-[11px] font-medium text-muted-foreground"}>{label}</Label>
+    {children}
+    {error && <p id={`${htmlFor}-error`} role={spacious ? undefined : "alert"} className={cn("text-destructive", spacious ? "text-xs" : "text-[11px]")}>{error}</p>}
+  </div>;
 }
 
 function CompactInput(props: React.ComponentProps<typeof Input>) {

@@ -337,6 +337,15 @@ export async function detectWorkspaceToolExamples(workspacePath: string) {
 }
 
 export function renderSkillMarkdown(skillId: string, role: string) {
+  const description = `Workspace guidance for ${skillId.replaceAll("-", " ")}.`;
+  return withWorkspaceSkillFrontmatter(skillId, description, renderSkillBody(skillId, role));
+}
+
+export function withWorkspaceSkillFrontmatter(skillId: string, description: string, body: string) {
+  return `---\nname: ${JSON.stringify(skillId)}\ndescription: ${JSON.stringify(description)}\n---\n\n${body}`;
+}
+
+function renderSkillBody(skillId: string, role: string) {
   switch (skillId) {
     case "project-builder":
       return `# Project Builder

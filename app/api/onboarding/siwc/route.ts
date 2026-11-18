@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  cancelSiwcFlow, getSiwcAuthorizationUrl, readSiwcFlow, selectSiwcAccount, startSiwcFlow
+  applySiwcModel, cancelSiwcFlow, getSiwcAuthorizationUrl, readSiwcFlow, readSiwcModelCatalog,
+  retrySavedSiwcFlow, selectSiwcAccount, startSiwcFlow
 } from "@/lib/openclaw/application/siwc-onboarding-service";
 import { resolveGatewayRuntimeIdentity } from "@/lib/openclaw/lifecycle/runtime-discovery";
-import type { SiwcFailure } from "@/lib/openclaw/siwc-onboarding";
+import { SIWC_THINKING_LEVELS, type SiwcFailure } from "@/lib/openclaw/siwc-onboarding";
 import { readInstanceSessionCookie } from "@/lib/security/instance-protection";
 import { requireSameOriginMutation } from "@/lib/security/instance-protection-route";
 import { evaluateLocalOperatorRequest, isLoopbackHost } from "@/lib/security/local-operator";
@@ -22,8 +23,13 @@ const headers = {
 };
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("start") }).strict(),
+  z.object({ action: z.literal("verify-saved") }).strict(),
   z.object({ action: z.literal("cancel") }).strict(),
-  z.object({ action: z.literal("select"), index: z.number().int().nonnegative() }).strict()
+  z.object({ action: z.literal("select"), index: z.number().int().nonnegative() }).strict(),
+  z.object({
+    action: z.literal("choose-model"), model: z.string().regex(/^openai\/[\w.-]{1,120}$/),
+    thinking: z.enum(SIWC_THINKING_LEVELS).optional()
+  }).strict()
 ]);
 
 async function getOwner(request: Request): Promise<{ key: string } | { response: NextResponse }> {
@@ -55,10 +61,14 @@ export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const authorize = query.get("authorize");
   if (authorize) {
-    const target = getSiwcAuthorizationUrl(owner.key, authorize);
+    const desktop = query.get("desktop") === "1";
+    const target = getSiwcAuthorizationUrl(owner.key, authorize, !desktop);
     if (!target) return failure("timeout", 410);
-    if (query.get("desktop") === "1") return NextResponse.json({ url: target }, { headers });
+    if (desktop) return NextResponse.json({ url: target }, { headers });
     return NextResponse.redirect(target, { status: 303, headers });
+  }
+  if (query.get("models") === "1") {
+    return NextResponse.json({ catalog: await readSiwcModelCatalog(owner.key) }, { headers });
   }
   return NextResponse.json({ state: readSiwcFlow(owner.key) }, { headers });
 }
@@ -70,15 +80,21 @@ export async function POST(request: Request) {
   if ("response" in owner) return owner.response;
   const input = actionSchema.safeParse(await request.json().catch(() => null));
   if (!input.success) return failure("unsupported", 400);
-  if (input.data.action === "start") {
-    const state = startSiwcFlow(owner.key, async () => {
-      const currentOwner = await getOwner(request);
-      return "key" in currentOwner && currentOwner.key === owner.key;
-    });
+  const ownerActive = async () => {
+    const currentOwner = await getOwner(request);
+    return "key" in currentOwner && currentOwner.key === owner.key;
+  };
+  if (input.data.action === "choose-model") {
+    const result = await applySiwcModel(owner.key, input.data.model, input.data.thinking, ownerActive);
+    return NextResponse.json({ result }, { status: result.ok ? 200 : 409, headers });
+  }
+  if (input.data.action === "start" || input.data.action === "verify-saved") {
+    const create = input.data.action === "start" ? startSiwcFlow : retrySavedSiwcFlow;
+    const state = create(owner.key, ownerActive);
     return NextResponse.json({ state }, { headers });
   }
   if (input.data.action === "cancel") {
-    cancelSiwcFlow(owner.key);
+    await cancelSiwcFlow(owner.key);
   } else if (!selectSiwcAccount(owner.key, input.data.index)) {
     return failure("verification", 409);
   }

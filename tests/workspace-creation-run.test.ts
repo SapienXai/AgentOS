@@ -248,6 +248,7 @@ test("creation idempotency covers normalized intent and upload content", async (
     actorId: "idempotency-actor",
     idempotencyKey: "creation-key",
     brief: "Build a workspace",
+    workspaceName: "Operator workspace",
     mode: "automatic" as const,
     operatorConstraints: ["Keep the workspace minimal"],
     materialization: { mode: "empty" },
@@ -265,10 +266,12 @@ test("creation idempotency covers normalized intent and upload content", async (
     const first = await startWorkspaceCreationRun(stableInput, deps);
     const replay = await startWorkspaceCreationRun({ ...stableInput, brief: "  Build a workspace  " }, deps);
     assert.equal(replay.runId, first.runId);
+    assert.equal(replay.input.workspaceName, "Operator workspace");
     await waitForTerminal(stableInput.actorId, first.runId, deps);
 
     for (const changed of [
       { brief: "Build a different workspace" },
+      { workspaceName: "Another workspace" },
       { mode: "review" as const },
       { operatorConstraints: ["Use two operators"] },
       { materialization: { mode: "existing", existingPath: "/tmp/workspace" } },

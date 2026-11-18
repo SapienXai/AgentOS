@@ -86,6 +86,7 @@ import {
   buildLaunchpadWorkspaceHandoffProgress,
   hasCompleteAgentOSWorkspaceSnapshot,
   hasAgentOSWorkspaceSetup,
+  hasProjectWorkspace,
   isDirectChatRuntime,
   isTaskHiddenByPreferences,
   mergeSnapshotWithOptimisticTasks,
@@ -545,6 +546,8 @@ export function MissionControlShell({
   const [modelSwitchFeedback, setModelSwitchFeedback] =
     useState<ModelSwitchFeedback>(initialModelSwitchFeedback);
   const [enteredAfterSiwc, setEnteredAfterSiwc] = useState(false);
+  const [resumeSiwc, setResumeSiwc] = useState(false);
+  const [isFirstWorkspace, setIsFirstWorkspace] = useState(false);
   const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(false);
   const [isOnboardingForcedOpen, setIsOnboardingForcedOpen] = useState(false);
   const [onboardingSessionKey, setOnboardingSessionKey] = useState(0);
@@ -1031,6 +1034,7 @@ export function MissionControlShell({
   }, [openWorkspaceWizard]);
   const handleWorkspaceWizardOpenChangeWithReview = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
+      setIsFirstWorkspace(false);
       setWorkspaceCreationReviewRunId(null);
       setWorkspaceCreationReopenRequest(null);
     }
@@ -1074,6 +1078,10 @@ export function MissionControlShell({
     isOpenClawOnboardingSystemReady || onboardingRunState === "success"
   );
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
+  const hasProject = hasProjectWorkspace(snapshot);
+  const needsChatGptSetup = snapshot.mode === "live" && !hasProject &&
+    !snapshot.diagnostics.modelReadiness.ready &&
+    snapshot.diagnostics.modelReadiness.authProviders.some(({ provider, connected }) => provider === "openai" && !connected);
   const openClawInstallSummary = resolveOpenClawInstallSummary(snapshot);
   const onboardingAction = resolveOnboardingAction(snapshot, {
     cliInstalled,
@@ -1107,11 +1115,10 @@ export function MissionControlShell({
     !shouldDeferOnboarding &&
     !hasActiveMissionWork &&
     (!isOnboardingDismissed || needsWorkspaceSetup) &&
-    (!isOpenClawOnboardingModelReady || needsWorkspaceSetup) &&
-    !shouldShowLaunchpadReadyState;
+    (needsChatGptSetup || ((!isOpenClawOnboardingModelReady || needsWorkspaceSetup) && !shouldShowLaunchpadReadyState));
   const shouldShowOnboarding =
     !isAddModelsDialogOpen &&
-    (shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen);
+    (shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen || resumeSiwc);
   const isFloatingHeaderHidden =
     shouldShowOnboarding ||
     isWorkspaceWizardOpen ||
@@ -3208,20 +3215,57 @@ export function MissionControlShell({
     );
   };
 
+  useEffect(() => {
+    if (mode !== "mission") return;
+    const restore = window.requestAnimationFrame(() => {
+      setResumeSiwc(window.sessionStorage.getItem("agentos-siwc-onboarding") === "active");
+    });
+    return () => window.cancelAnimationFrame(restore);
+  }, [mode]);
+
+  const leaveSiwcOnboarding = useCallback(() => {
+    window.sessionStorage.removeItem("agentos-siwc-onboarding");
+    setResumeSiwc(false);
+  }, []);
+
   const dismissOnboarding = useCallback(() => {
+    leaveSiwcOnboarding();
     setIsOnboardingForcedOpen(false);
     setShowOnboardingReadyState(false);
     setIsOnboardingDismissed(true);
     setLaunchpadWorkspaceCreateRunState("idle");
     setLaunchpadWorkspaceCreateProgress(null);
     setLaunchpadWorkspaceCreateTarget(null);
-  }, []);
+  }, [leaveSiwcOnboarding]);
 
-  const beginSiwcOnboarding = () => setIsOnboardingForcedOpen(true);
+  const beginSiwcOnboarding = () => {
+    window.sessionStorage.setItem("agentos-siwc-onboarding", "active");
+    setResumeSiwc(true);
+    setIsOnboardingForcedOpen(true);
+  };
   const enterAfterSiwc = () => {
     setEnteredAfterSiwc(true);
     dismissOnboarding();
     void refreshSnapshot({ force: true }).catch(() => null);
+  };
+
+  const openFirstWorkspace = () => {
+    enterAfterSiwc();
+    setIsFirstWorkspace(true);
+    openWorkspaceWizard("basic");
+  };
+
+  const verifyCreatedWorkspace = useCallback(async (result: WorkspaceCreateResult) => {
+    const live = await refreshSnapshot({ force: true });
+    return Boolean(live?.mode === "live" && resolveLaunchpadWorkspaceSetupReadiness(live, result).ready);
+  }, [refreshSnapshot]);
+
+  const testCreatedWorkspaceAgent = (result: WorkspaceCreateResult) => {
+    handleWorkspaceCreated(result);
+    if (!result.primaryAgentId) return;
+    inspectorChatEntryPointRef.current = "mission-control";
+    selectNode(result.primaryAgentId, "chat");
+    setIsInspectorOpen(true);
   };
 
   const waitForLaunchpadWorkspaceHandoff = useCallback(async (
@@ -4382,7 +4426,10 @@ export function MissionControlShell({
           onSnapshotChange={setSnapshot}
           onRunSystemSetup={runOpenClawOnboarding}
           onStartSiwc={beginSiwcOnboarding}
+          onLeaveSiwc={leaveSiwcOnboarding}
+          resumeSiwc={resumeSiwc}
           onEnterAfterSiwc={enterAfterSiwc}
+          onCreateFirstWorkspace={hasProject ? undefined : openFirstWorkspace}
           onRunModelSetDefault={runModelSetDefault}
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
@@ -4407,6 +4454,10 @@ export function MissionControlShell({
       ) : null}
 
       <WorkspaceWizardDialog
+        firstWorkspace={isFirstWorkspace}
+        verifyWorkspace={verifyCreatedWorkspace}
+        onTestWorkspaceAgent={testCreatedWorkspaceAgent}
+        defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
         key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
         open={isWorkspaceWizardOpen}
         onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
@@ -4931,6 +4982,17 @@ export function MissionControlShell({
           />
         </div>
       </div>
+      {enteredAfterSiwc && !hasProject && !shouldShowOnboarding && !isWorkspaceWizardOpen ? (
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-16">
+          <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card p-5 text-center shadow-panel">
+            <h2 className="text-lg font-semibold">Create your first workspace</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Give your project a name and decide what your first agent will help with.</p>
+            <button type="button" className="mt-4 min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground" onClick={openFirstWorkspace}>
+              Create workspace
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!isFloatingHeaderHidden ? (
         <>
@@ -5620,7 +5682,10 @@ export function MissionControlShell({
             onSnapshotChange={setSnapshot}
             onRunSystemSetup={runOpenClawOnboarding}
             onStartSiwc={beginSiwcOnboarding}
+            onLeaveSiwc={leaveSiwcOnboarding}
+            resumeSiwc={resumeSiwc}
             onEnterAfterSiwc={enterAfterSiwc}
+            onCreateFirstWorkspace={hasProject ? undefined : openFirstWorkspace}
             onRunModelSetDefault={runModelSetDefault}
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
@@ -5645,6 +5710,10 @@ export function MissionControlShell({
         ) : null}
 
         <WorkspaceWizardDialog
+          firstWorkspace={isFirstWorkspace}
+          verifyWorkspace={verifyCreatedWorkspace}
+          onTestWorkspaceAgent={testCreatedWorkspaceAgent}
+          defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
           key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
           open={isWorkspaceWizardOpen}
           onOpenChange={handleWorkspaceWizardOpenChangeWithReview}

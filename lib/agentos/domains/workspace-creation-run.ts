@@ -311,6 +311,7 @@ export type WorkspaceCreationEvent = {
 
 export type WorkspaceCreationRunInput = {
   brief: string;
+  workspaceName?: string;
   mode: "automatic" | "review";
   operatorConstraints: string[];
   materialization: unknown;
@@ -472,8 +473,10 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && (candidate.inputFingerprint === undefined || typeof candidate.inputFingerprint === "string" && /^[a-f0-9]{64}$/i.test(candidate.inputFingerprint))
     && typeof input === "object"
     && input !== null
-    && hasOnlyKeys(input as Record<string, unknown>, ["brief", "mode", "operatorConstraints", "materialization", "sources", "profile", "continueLearningAfterCreation", "trigger"])
+    && hasOnlyKeys(input as Record<string, unknown>, ["brief", "workspaceName", "mode", "operatorConstraints", "materialization", "sources", "profile", "continueLearningAfterCreation", "trigger"])
     && typeof (input as Record<string, unknown>).brief === "string"
+    && ((input as Record<string, unknown>).workspaceName === undefined ||
+      isWorkspaceCreationName((input as Record<string, unknown>).workspaceName))
     && ((input as Record<string, unknown>).mode === "automatic" || (input as Record<string, unknown>).mode === "review")
     && arrayOfStrings((input as Record<string, unknown>).operatorConstraints)
     && Array.isArray((input as Record<string, unknown>).sources)
@@ -499,6 +502,10 @@ export function validateWorkspaceCreationRun(value: unknown): value is Workspace
     && validateRemoteExecution(intelligenceExecution)
     && validateRemoteExecution(compositionExecution)
     && (candidate.lineage === undefined || validateWorkspaceCreationRunLineage(candidate.lineage));
+}
+
+function isWorkspaceCreationName(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 100;
 }
 
 function validateWorkspaceCreationSnapshot(value: unknown): value is WorkspaceCreationSnapshot {

@@ -14,6 +14,7 @@ import {
   parseModelSetupWizardResult,
   parseModelSetupWizardStartResult,
   parseModelSetupWizardStatus,
+  type ModelSetupWizardStep,
 } from "@/lib/openclaw/domains/model-setup-wizard";
 
 const SETUP_START_WAIT_TIMEOUT_MS = 30_000;
@@ -41,6 +42,7 @@ type SetupStartInput = {
   workspace?: string;
   signal?: AbortSignal;
   nativeOnly?: boolean;
+  onGatewayStep?: (step: ModelSetupWizardStep) => void;
 };
 
 type CapturedAdapter = {
@@ -76,7 +78,8 @@ export async function startModelSetupWizard(input: SetupStartInput) {
     createWizardTransport(captured.adapter, input.method, params, input.nativeOnly),
     {
       startWaitMs: SETUP_START_WAIT_TIMEOUT_MS,
-      signal: input.signal
+      signal: input.signal,
+      onGatewayStep: input.onGatewayStep
     }
   );
   pendingStarts.set(sessionId, { lifecycle, ownerActorId: input.actorId });

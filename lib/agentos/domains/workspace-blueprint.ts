@@ -415,6 +415,7 @@ export type WorkspaceArchitectKnowledgeInput = {
 
 export type WorkspaceArchitectInput = {
   brief: string;
+  workspaceName?: string;
   revisionInstruction?: string;
   materialization?: WorkspaceMaterialization;
   knowledge?: WorkspaceArchitectKnowledgeInput;

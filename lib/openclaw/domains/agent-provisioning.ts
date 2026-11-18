@@ -19,7 +19,7 @@ import {
   preserveLegacyAgentContextFiles,
   upsertAgentConfigEntry
 } from "@/lib/openclaw/domains/agent-config";
-import { buildAgentPolicyPromptLines, renderSkillMarkdown, writeTextFileEnsured, writeTextFileIfMissing } from "@/lib/openclaw/domains/workspace-bootstrap";
+import { buildAgentPolicyPromptLines, renderSkillMarkdown, withWorkspaceSkillFrontmatter, writeTextFileEnsured, writeTextFileIfMissing } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { syncWorkspaceAgentsMarkdown } from "@/lib/openclaw/domains/workspace-agents-document-sync";
 import { readWorkspaceProjectManifest, uniqueByChatId } from "@/lib/openclaw/domains/workspace-manifest";
 import type {
@@ -294,14 +294,14 @@ export async function ensureAgentPolicySkill(params: {
   await measureTiming(params.timings, "agent-policy.write-skill", () =>
     writeTextFileEnsured(
       path.join(params.workspacePath, "skills", skillId, "SKILL.md"),
-      `${renderAgentPolicySkillMarkdown(
+      `${withWorkspaceSkillFrontmatter(skillId, "Workspace operating policy for the assigned agent.", renderAgentPolicySkillMarkdown(
         params.agentName,
         params.policy,
         params.setupAgentId,
         team,
         coordination,
         params.behaviorInstructions
-      )}\n`
+      ))}\n`
     )
   );
   return skillId;

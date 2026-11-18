@@ -272,6 +272,7 @@ export type ModelSetupWizardAdvanceOptions = {
   primeRunningWithoutStep?: boolean;
   signal?: AbortSignal;
   status?: ModelSetupWizardStatusTransport;
+  onGatewayStep?: (step: ModelSetupWizardStep) => void;
 };
 
 /**
@@ -363,6 +364,7 @@ export async function advanceModelSetupWizard(
       continue;
     }
     if (current.step?.executor !== "gateway") return current;
+    options.onGatewayStep?.(current.step);
     current = await requestNext();
   }
 }

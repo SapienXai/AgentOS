@@ -120,6 +120,7 @@ export type StartWorkspaceCreationRunInput = {
   actorId: string;
   idempotencyKey: string;
   brief: string;
+  workspaceName?: string;
   mode?: "automatic" | "review";
   operatorConstraints?: string[];
   materialization?: unknown;
@@ -143,6 +144,7 @@ export async function startWorkspaceCreationRun(
   if (!idempotencyKey) throw new Error("A creation idempotency key is required.");
   const brief = redactSecretText(input.brief.trim()).slice(0, 12_000);
   if (!brief) throw new Error("Workspace architect brief is required.");
+  const workspaceName = input.workspaceName?.trim() ? redactSecretText(input.workspaceName.trim()).slice(0, 100) : undefined;
   const mode = input.mode ?? "automatic";
   const profile = normalizeWorkspaceCreationProfile(input.profile);
   const trigger = normalizeWorkspaceCreationTrigger(input.trigger);
@@ -152,6 +154,7 @@ export async function startWorkspaceCreationRun(
   const normalizedSources = normalizeWorkspaceKnowledgeSources(input.sources ?? []);
   const inputFingerprint = createWorkspaceCreationInputFingerprint({
     brief,
+    workspaceName,
     mode,
     operatorConstraints,
     materialization,
@@ -180,6 +183,7 @@ export async function startWorkspaceCreationRun(
   });
   const runInput: WorkspaceCreationRunInput = {
     brief,
+    ...(workspaceName ? { workspaceName } : {}),
     mode,
     operatorConstraints,
     materialization,
@@ -740,6 +744,7 @@ export async function refreshWorkspaceCreationRun(
     actorId: input.actorId,
     idempotencyKey: refreshKey,
     brief: parent.input.brief,
+    workspaceName: parent.input.workspaceName,
     mode: parent.input.mode,
     operatorConstraints: parent.input.operatorConstraints,
     materialization: parent.input.materialization,
@@ -1048,6 +1053,7 @@ async function executeCreationRun(filePath: string, actorId: string, dependencie
     const architectDraftContextId = run.draftContextId;
     const generatedResult = await dependencies.generateArchitect({
       brief: run.input.brief,
+      workspaceName: run.input.workspaceName,
       mode: run.input.mode,
       materialization: run.input.materialization as WorkspaceMaterialization,
       operatorConstraints: run.input.operatorConstraints,
@@ -1115,7 +1121,7 @@ async function completeWorkspaceComposition(
     profile: managedCompositionProfile(run),
     projectIntelligence: intelligencePack,
     blueprint: result.blueprint,
-    operatorIntent: { brief: run.input.brief, constraints: run.input.operatorConstraints },
+    operatorIntent: { brief: result.blueprint.brief, constraints: result.blueprint.operatorConstraints },
     existingFiles,
     materializationMode: result.blueprint.materialization.mode
   };
@@ -1243,7 +1249,7 @@ function isBriefOnlyFastPath(run: WorkspaceCreationRun) {
   const materialization = run.input.materialization;
   return run.input.profile !== undefined
     && normalizeWorkspaceCreationProfile(run.input.profile) === "fast"
-    && run.input.mode === "automatic"
+    && (run.input.mode === "automatic" || Boolean(run.input.workspaceName))
     && run.input.sources.length === 0
     && run.input.operatorConstraints.length === 0
     && Boolean(materialization && typeof materialization === "object" && (materialization as { mode?: unknown }).mode === "empty");
@@ -2087,6 +2093,7 @@ function normalizeCreationConstraints(values: string[]) {
 
 function createWorkspaceCreationInputFingerprint(input: {
   brief: string;
+  workspaceName?: string;
   mode: "automatic" | "review";
   operatorConstraints: string[];
   materialization: WorkspaceMaterialization;
@@ -2100,6 +2107,7 @@ function createWorkspaceCreationInputFingerprint(input: {
   return sha256(stableSerialize({
     version: 1,
     brief: input.brief,
+    ...(input.workspaceName ? { workspaceName: input.workspaceName } : {}),
     mode: input.mode,
     operatorConstraints: input.operatorConstraints,
     materialization: input.materialization,
