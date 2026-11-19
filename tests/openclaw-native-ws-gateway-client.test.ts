@@ -3821,7 +3821,9 @@ test("native WS gateway client retries agent wait with session params for legacy
         ok: true,
         payload: {
           runId: "run-1",
-          status: "started"
+          status: "started",
+          sessionKey: "agent:agent-1:canonical",
+          sessionId: "gateway-id"
         }
       });
     });
@@ -3847,8 +3849,8 @@ test("native WS gateway client retries agent wait with session params for legacy
   });
   assert.deepEqual(sentFrames[3]?.params, {
     runId: "run-1",
-    sessionKey: "agent:agent-1:explicit:session-1",
-    sessionId: "session-1",
+    sessionKey: "agent:agent-1:canonical",
+    sessionId: "gateway-id",
     timeoutMs: 1000
   });
   assert.equal(result.status, "completed");
@@ -4067,7 +4069,7 @@ test("native WS gateway client creates explicit sessions without patching metada
             }
           : frame.method === "chat.send"
             ? { runId: "run-1", status: "running" }
-            : { ok: true }
+            : { key: "agent:agent-1:canonical", sessionId: "gateway-id" }
       });
     });
   });
@@ -4078,7 +4080,7 @@ test("native WS gateway client creates explicit sessions without patching metada
     timeoutMs: 250
   });
 
-  await client.runAgentTurn({
+  const result = await client.runAgentTurn({
     agentId: "agent-1",
     sessionId: "session-1",
     message: "hello",
@@ -4095,6 +4097,10 @@ test("native WS gateway client creates explicit sessions without patching metada
     key: "agent:agent-1:explicit:session-1",
     agentId: "agent-1"
   });
+  assert.equal(sentFrames[2]?.params.sessionKey, "agent:agent-1:canonical");
+  assert.equal(sentFrames[2]?.params.sessionId, "gateway-id");
+  assert.equal(result.sessionKey, "agent:agent-1:canonical");
+  assert.equal(result.sessionId, "gateway-id");
   assert.equal(sentFrames.some((frame) => frame.method === "sessions.patch"), false);
   assert.deepEqual(fallback.calls, []);
 });
@@ -4145,6 +4151,8 @@ test("native WS gateway client keeps direct chat moving when session creation pa
     "sessions.create",
     "chat.send"
   ]);
+  assert.equal(sentFrames[2]?.params.sessionKey, "agent:agent-1:explicit:session-1");
+  assert.equal(Object.hasOwn(sentFrames[2]?.params ?? {}, "sessionId"), false);
   assert.equal(result.runId, "run-1");
   assert.deepEqual(fallback.calls, []);
 });
@@ -4189,8 +4197,7 @@ test("native WS gateway client refreshes config and retries chat after a Gateway
 
   const result = await client.runAgentTurn({
     agentId: "agent-1",
-    message: "hello",
-    idempotencyKey: "chat-1"
+    message: "hello"
   });
 
   assert.equal(result.runId, "run-1");
@@ -4200,10 +4207,9 @@ test("native WS gateway client refreshes config and retries chat after a Gateway
     "config.get",
     "chat.send"
   ]);
-  assert.deepEqual(
-    sentFrames.filter((frame) => frame.method === "chat.send").map((frame) => frame.params.idempotencyKey),
-    ["chat-1", "chat-1"]
-  );
+  const keys = sentFrames.filter((frame) => frame.method === "chat.send").map((frame) => frame.params.idempotencyKey);
+  assert.equal(typeof keys[0], "string");
+  assert.equal(keys[0], keys[1]);
   assert.deepEqual(fallback.calls, []);
 });
 
@@ -5145,6 +5151,7 @@ test("native WS gateway client streams agent turns through chat.send and session
           event: "session.message",
           payload: {
             sessionKey: "agent:agent-1:explicit:session-1",
+            sessionId: "gateway-created-id",
             runId: "run-1",
             status: "completed",
             message: { text: "Done from Gateway" }
@@ -5177,9 +5184,75 @@ test("native WS gateway client streams agent turns through chat.send and session
   ]);
   assert.equal(result.runId, "run-1");
   assert.equal(result.status, "completed");
+  assert.equal(result.sessionId, "gateway-created-id");
   assert.equal(result.payloads?.[0]?.text, "Done from Gateway");
   assert.match(stdout.join(""), /Done from Gateway/);
   assert.doesNotMatch(stdout.join(""), /You are chatting directly with the operator/);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("streamed chat uses the Gateway session identity and waits for admission before accepting events", async () => {
+  const fallback = new FallbackGatewayClient();
+  const sessionKey = "agent:agent-1:canonical";
+  const sessionId = "gateway-assigned-id";
+  const stdout: string[] = [];
+  const admitted: unknown[] = [];
+  let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | undefined;
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    queueMicrotask(() => {
+      if (frame.method === "sessions.messages.subscribe") subscriptionSocket = socket;
+      if (frame.method === "chat.send") {
+        const emitFinish = (identity: Record<string, string>, text: string) => subscriptionSocket?.emitMessage({
+          type: "event",
+          event: "session.message",
+          payload: { ...identity, status: "completed", message: { role: "assistant", text } }
+        });
+        emitFinish({ sessionId, runId: "earlier-run" }, "Earlier run");
+        emitFinish({ sessionKey, sessionId: "earlier-session-id", runId: "run-1" }, "Earlier session");
+        emitFinish({ sessionId, runId: "run-1" }, "Verified reply");
+      }
+      const responses: Record<string, unknown> = {
+        connect: { protocol: 4, features: { methods: ["sessions.create", "sessions.subscribe", "sessions.messages.subscribe", "chat.send"], events: ["session.message"] } },
+        "sessions.create": { key: sessionKey, sessionId },
+        "chat.send": { runId: "run-1", status: "started" }
+      };
+      socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: responses[frame.method] ?? { ok: true } });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({ fallback, transport, url: "ws://127.0.0.1:18789", timeoutMs: 250 });
+  const result = await client.streamAgentTurn(
+    { agentId: "agent-1", sessionId: "local-correlation", message: "hello", timeoutSeconds: 1 },
+    { onStdout: (text) => { stdout.push(text); }, onSession: (reference) => { admitted.push(reference); } }
+  );
+  const sent = sentFrames.find((frame) => frame.method === "chat.send");
+  assert.equal(sent?.params.sessionKey, sessionKey);
+  assert.equal(sent?.params.sessionId, sessionId);
+  assert.deepEqual(sentFrames.find((frame) => frame.method === "sessions.messages.subscribe")?.params, { key: sessionKey });
+  assert.deepEqual(admitted, [{ sessionKey, sessionId }]);
+  assert.equal(result.sessionKey, sessionKey);
+  assert.equal(result.sessionId, sessionId);
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.payloads, [{ text: "Verified reply", mediaUrl: null }]);
+  assert.doesNotMatch(stdout.join(""), /Earlier/);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("a pinned existing session keeps its identity guard and is not replayed on rejection", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    queueMicrotask(() => {
+      socket.emitMessage(frame.method === "connect"
+        ? { type: "res", id: frame.id, ok: true, payload: { protocol: 4 } }
+        : { type: "res", id: frame.id, ok: false, error: { message: 'Session "agent:agent-1:canonical" changed while starting work. Retry.' } });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({ fallback, transport, url: "ws://127.0.0.1:18789", timeoutMs: 250 });
+  await assert.rejects(client.runAgentTurn({
+    agentId: "agent-1", sessionKey: "agent:agent-1:canonical", sessionId: "pinned-id",
+    sessionAlreadyPrepared: true, message: "hello"
+  }), /changed while starting work/);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send"]);
+  assert.equal(sentFrames[1]?.params.sessionId, "pinned-id");
   assert.deepEqual(fallback.calls, []);
 });
 

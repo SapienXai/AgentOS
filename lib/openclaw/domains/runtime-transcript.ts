@@ -277,6 +277,10 @@ export async function resolveRuntimeTranscriptPath(
   sessionId: string,
   workspacePath?: string
 ) {
+  if ([agentId, sessionId].some((segment) => !segment || segment === "." || segment === ".." || /[\\/\0]/.test(segment))) {
+    return null;
+  }
+
   const stateRoot = getOpenClawStateRootPath();
   const candidates = [
     path.join(stateRoot, "agents", agentId, "sessions", `${sessionId}.jsonl`),

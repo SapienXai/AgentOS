@@ -242,20 +242,25 @@ export function buildNativeSessionCreateParams(input: OpenClawAgentTurnInput, se
 export function normalizeGatewayTurnEvent(
   frame: GatewayEventFrame,
   sessionKey: string,
-  runId: string | null
+  runId: string | null,
+  sessionId?: string
 ): { text: string | null; done: boolean; payload: MissionCommandPayload } | null {
   const payload = isObjectRecord(frame.payload) ? frame.payload : {};
   const eventSessionKey =
     readNonEmptyString(payload.sessionKey) ??
-    readNonEmptyString(payload.key) ??
-    readNonEmptyString(payload.sessionId);
+    readNonEmptyString(payload.key);
+  const eventSessionId = readNonEmptyString(payload.sessionId);
   const eventRunId =
     readNonEmptyString(payload.runId) ??
     readNonEmptyString(payload.run) ??
     readNonEmptyString(payload.clientRunId);
-  const expectedSessionId = sessionKey.includes(":explicit:") ? sessionKey.split(":explicit:").at(1) ?? null : null;
+  const expectedSessionId = sessionId ?? sessionKey.split(":explicit:").at(1);
 
   if (eventSessionKey && eventSessionKey !== sessionKey && eventSessionKey !== expectedSessionId) {
+    return null;
+  }
+
+  if (eventSessionId && eventSessionId !== expectedSessionId && (sessionId || !runId || eventRunId !== runId)) {
     return null;
   }
 
@@ -263,7 +268,7 @@ export function normalizeGatewayTurnEvent(
     return null;
   }
 
-  if (!eventSessionKey && !eventRunId) {
+  if (!eventSessionKey && !eventSessionId && !eventRunId) {
     return null;
   }
 
@@ -295,6 +300,7 @@ export function normalizeGatewayTurnEvent(
     done,
     payload: {
       runId: eventRunId ?? runId ?? undefined,
+      sessionId: eventSessionId ?? undefined,
       status: isError ? "stalled" : done ? "completed" : "running",
       summary,
       payloads: text ? [{ text, mediaUrl: null }] : []

@@ -101,6 +101,7 @@ import {
 import {
   CONNECT_METHOD,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
+  type GatewayEventFrame,
   type NativeWsOpenClawGatewayClientOptions,
   type OpenClawGatewayTransport
 } from "@/lib/openclaw/client/native-ws-gateway-types";
@@ -245,6 +246,7 @@ import type {
   OpenClawSkillLibraryReadInput,
   OpenClawSkillLibraryReadPayload,
   OpenClawStreamCallbacks,
+  OpenClawTurnSession,
   OpenClawTaskAssignInput,
   OpenClawTaskCancelInput,
   OpenClawTaskGetInput,
@@ -2260,10 +2262,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return this.fallback.runAgentTurn(input, options);
     }
 
+    const idempotencyKey = resolveAgentTurnIdempotencyKey(input);
     try {
       const payload = await this.retryAfterGatewayConfigConflict(
         options,
-        () => this.runAgentTurnNative(input, options)
+        () => this.runAgentTurnNative(input, idempotencyKey, options)
       );
       clearGatewayFallbackDiagnostic("chat.send");
       clearGatewayFallbackDiagnostic("sessions.send");
@@ -2277,14 +2280,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         options,
         () => this.waitForAgentTurnNative(input, payload, options)
       );
-      return waitedPayload
-        ? {
-            ...payload,
-            ...waitedPayload,
-            sessionKey: waitedPayload.sessionKey ?? payload.sessionKey,
-            sessionId: waitedPayload.sessionId ?? payload.sessionId
-          }
-        : payload;
+      return mergeAgentTurnCompletion(payload, waitedPayload);
     } catch (error) {
       this.options.onNativeFailure?.(error, "chat.send");
       const method = error instanceof NativeGatewayRequestError ? error.method : "chat.send";
@@ -2400,66 +2396,89 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return this.fallback.streamAgentTurn(input, callbacks, options);
     }
 
-    const sessionKey = input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId);
+    const idempotencyKey = resolveAgentTurnIdempotencyKey(input);
+    let session: OpenClawTurnSession | undefined;
     let subscription: OpenClawGatewayEventSubscription | null = null;
     let dispatchedRunId: string | null = null;
+    let dispatchConfirmed = false;
     let lastAssistantText = "";
+    const earlyEvents: GatewayEventFrame[] = [];
+    let waitTimer: ReturnType<typeof setTimeout> | undefined;
     let resolveFinal: (payload: MissionCommandPayload | null) => void = () => {};
     const finalPayload = new Promise<MissionCommandPayload | null>((resolve) => {
       resolveFinal = resolve;
     });
 
-    try {
+    const receiveEvent = (frame: GatewayEventFrame) => {
+      if (!session) return;
+      if (!dispatchConfirmed) {
+        if (earlyEvents.length >= 64) earlyEvents.shift();
+        earlyEvents.push(frame);
+        return;
+      }
+      const event = normalizeGatewayTurnEvent(frame, session.sessionKey, dispatchedRunId, session.sessionId);
+      if (!event) return;
+      if (event.text && event.text !== lastAssistantText) {
+        lastAssistantText = event.text;
+        void callbacks.onStdout?.(`${JSON.stringify({ type: "assistant", text: event.text })}\n`);
+      }
+      if (event.done) resolveFinal(event.payload);
+    };
+
+    const closeSubscription = () => {
+      subscription?.close();
+      subscription = null;
+    };
+
+    const subscribeToSession = async (next: OpenClawTurnSession) => {
+      const keyChanged = session?.sessionKey !== next.sessionKey;
+      session = next;
+      if (!keyChanged && subscription) return;
+      closeSubscription();
       subscription = await this.subscribeNativeEvents(
+        { subscribeSessions: true, sessionKeys: [next.sessionKey] },
         {
-          subscribeSessions: true,
-          sessionKeys: [sessionKey]
-        },
-        {
-          onEvent: (frame) => {
-            const eventPayload = normalizeGatewayTurnEvent(frame, sessionKey, dispatchedRunId);
-            if (!eventPayload) {
-              return;
-            }
-
-            if (eventPayload.text && eventPayload.text !== lastAssistantText) {
-              lastAssistantText = eventPayload.text;
-              void callbacks.onStdout?.(`${JSON.stringify({ type: "assistant", text: eventPayload.text })}\n`);
-            }
-
-            if (eventPayload.done) {
-              resolveFinal?.(eventPayload.payload);
-            }
-          },
+          onEvent: receiveEvent,
           onError: (error) => {
             void callbacks.onStderr?.(error instanceof Error ? `${error.message}\n` : `${String(error)}\n`);
           }
         },
         options
       );
+    };
 
+    try {
       const dispatchPayload = await this.retryAfterGatewayConfigConflict(
         options,
-        () => this.runAgentTurnNative(input, options)
+        () => this.runAgentTurnNative(input, idempotencyKey, options, async (prepared) => {
+          earlyEvents.length = 0;
+          await subscribeToSession(prepared);
+        })
       );
+      const admittedSession = {
+        sessionKey: dispatchPayload.sessionKey,
+        sessionId: dispatchPayload.sessionId
+      };
       dispatchedRunId = dispatchPayload.runId ?? null;
+      dispatchConfirmed = true;
+      callbacks.onSession?.(admittedSession);
+      await subscribeToSession(admittedSession).catch((error: unknown) => {
+        void callbacks.onStderr?.(error instanceof Error ? `${error.message}\n` : `${String(error)}\n`);
+      });
+      for (const frame of earlyEvents.splice(0)) receiveEvent(frame);
       clearGatewayFallbackDiagnostic("streamAgentTurn");
       this.clearNativeFailure("streamAgentTurn");
 
       const waitMs = resolveAgentTurnWaitMs(input, options);
       const settledPayload = await Promise.race([
         finalPayload,
-        new Promise<null>((resolve) => globalThis.setTimeout(() => resolve(null), waitMs))
+        new Promise<null>((resolve) => { waitTimer = setTimeout(() => resolve(null), waitMs); })
       ]);
-
-      if (settledPayload) {
-        return settledPayload;
-      }
-
-      return await this.retryAfterGatewayConfigConflict(
+      const completion = settledPayload ?? await this.retryAfterGatewayConfigConflict(
         options,
         () => this.waitForAgentTurnNative(input, dispatchPayload, options)
-      ) ?? dispatchPayload;
+      );
+      return mergeAgentTurnCompletion(dispatchPayload, completion);
     } catch (error) {
       this.options.onNativeFailure?.(error, "streamAgentTurn");
       const method = error instanceof NativeGatewayRequestError ? error.method : "streamAgentTurn";
@@ -2472,34 +2491,38 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       this.recordGatewayFallback("streamAgentTurn", error);
       return this.fallback.streamAgentTurn(input, callbacks, options);
     } finally {
-      subscription?.close();
+      clearTimeout(waitTimer);
+      closeSubscription();
       resolveFinal(null);
     }
   }
 
-  private async runAgentTurnNative(input: OpenClawAgentTurnInput, options: OpenClawCommandOptions = {}) {
-    const sessionKey = input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId);
+  private async runAgentTurnNative(
+    input: OpenClawAgentTurnInput,
+    idempotencyKey: string,
+    options: OpenClawCommandOptions,
+    beforeSend?: (session: OpenClawTurnSession) => Promise<void>
+  ) {
+    const requestedKey = input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId);
     const timeoutMs = typeof input.timeoutSeconds === "number" && Number.isFinite(input.timeoutSeconds)
       ? Math.max(0, Math.floor(input.timeoutSeconds * 1000))
       : undefined;
-    const idempotencyKey = input.idempotencyKey?.trim() || input.dispatchId || createRequestId();
-    const createdSession = await this.prepareNativeSession(input, sessionKey, options);
-    const chatParams = {
-      sessionKey,
-      sessionId: input.sessionId,
-      message: input.message,
-      thinking: input.thinking,
-      timeoutMs,
-      idempotencyKey
-    };
+    const prepared = await this.prepareNativeSession(input, requestedKey, options);
+    let session = prepared ?? { sessionKey: requestedKey };
+    const messageParams = { message: input.message, thinking: input.thinking, timeoutMs, idempotencyKey };
+    const attachSession = (payload: MissionCommandPayload) => withChatAdmission({
+      ...payload,
+      sessionKey: readNonEmptyString(payload.sessionKey) ?? session.sessionKey,
+      sessionId: readNonEmptyString(payload.sessionId) ?? session.sessionId
+    }, session.sessionKey, idempotencyKey);
+    const sendChat = async () => attachSession(await this.callNative<MissionCommandPayload>("chat.send", {
+      ...session,
+      ...messageParams
+    }, options));
 
+    await beforeSend?.(session);
     try {
-      const payload = await this.callNative<MissionCommandPayload>("chat.send", chatParams, options);
-      return withChatAdmission({
-        ...payload,
-        sessionKey: payload.sessionKey ?? createdSession?.sessionKey,
-        sessionId: payload.sessionId ?? createdSession?.sessionId ?? undefined
-      }, sessionKey, idempotencyKey);
+      return await sendChat();
     } catch (error) {
       if (!isGatewayMethodUnsupported(error)) {
         if (isGatewayAgentNotFoundError(error, input.agentId)) {
@@ -2507,18 +2530,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
           if (registryState === "present") {
             try {
-              const retrySession = await this.prepareNativeSession(input, sessionKey, options);
-              const payload = await this.callNative<MissionCommandPayload>("chat.send", chatParams, options);
-              return withChatAdmission({
-                ...payload,
-                sessionKey: payload.sessionKey ?? retrySession?.sessionKey ?? createdSession?.sessionKey,
-                sessionId: payload.sessionId ?? retrySession?.sessionId ?? createdSession?.sessionId ?? undefined
-              }, sessionKey, idempotencyKey);
+              session = await this.prepareNativeSession(input, requestedKey, options) ?? session;
+              await beforeSend?.(session);
+              return await sendChat();
             } catch (retryError) {
               if (isGatewayAgentNotFoundError(retryError, input.agentId)) {
                 throw buildGatewayAgentRegistryError(input.agentId, retryError);
               }
-
               throw retryError;
             }
           }
@@ -2532,22 +2550,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       }
     }
 
-    return this.callNative<MissionCommandPayload>(
-      "sessions.send",
-      {
-        agentId: input.agentId,
-        key: sessionKey,
-        message: input.message,
-        thinking: input.thinking,
-        timeoutMs,
-        idempotencyKey
-      },
-      options
-    ).then((payload) => withChatAdmission({
-      ...payload,
-      sessionKey: payload.sessionKey ?? createdSession?.sessionKey,
-      sessionId: payload.sessionId ?? createdSession?.sessionId ?? undefined
-    }, sessionKey, idempotencyKey));
+    return attachSession(await this.callNative<MissionCommandPayload>("sessions.send", {
+      agentId: input.agentId,
+      key: session.sessionKey,
+      ...messageParams
+    }, options));
   }
 
   private async retryAfterGatewayConfigConflict<T>(
@@ -2597,11 +2604,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }
   }
 
-  private async prepareNativeSession(input: OpenClawAgentTurnInput, sessionKey: string, options: OpenClawCommandOptions) {
+  private async prepareNativeSession(
+    input: OpenClawAgentTurnInput,
+    sessionKey: string,
+    options: OpenClawCommandOptions
+  ): Promise<OpenClawTurnSession | null> {
     if (input.sessionAlreadyPrepared) {
       return {
         sessionKey,
-        sessionId: input.sessionId ?? null
+        sessionId: input.sessionId
       };
     }
 
@@ -2629,7 +2640,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       clearGatewayFallbackDiagnostic("sessions.create");
       return {
         sessionKey: readNonEmptyString(payload.key) ?? readNonEmptyString(payload.sessionKey) ?? sessionKey,
-        sessionId: readNonEmptyString(payload.sessionId)
+        sessionId: readNonEmptyString(payload.sessionId) ?? undefined
       };
     } catch (error) {
       if (!shouldIgnoreNativeSessionPreparationError(error)) {
@@ -2675,7 +2686,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       if (shouldRetryNativeAgentWaitWithSessionParams(error)) {
         const payload = await this.callNative<MissionCommandPayload>(
           "agent.wait",
-          buildNativeAgentWaitParams(input, dispatchPayload.runId, waitMs, { includeSession: true }),
+          buildNativeAgentWaitParams(input, dispatchPayload.runId, waitMs, { session: dispatchPayload }),
           { ...options, timeoutMs: requestTimeoutMs },
           { safety: "read", timeoutMs: requestTimeoutMs }
         );
@@ -3520,13 +3531,29 @@ function withChatAdmission(payload: MissionCommandPayload, sessionKey: string, i
   };
 }
 
+function resolveAgentTurnIdempotencyKey(input: OpenClawAgentTurnInput) {
+  return input.idempotencyKey?.trim() || input.dispatchId || createRequestId();
+}
+
+function mergeAgentTurnCompletion(dispatch: MissionCommandPayload, completion: MissionCommandPayload | null) {
+  if (!completion) return dispatch;
+  return {
+    ...dispatch,
+    ...completion,
+    runId: completion.runId ?? dispatch.runId,
+    sessionKey: dispatch.sessionKey ?? completion.sessionKey,
+    sessionId: dispatch.sessionId ?? completion.sessionId,
+    meta: { ...dispatch.meta, ...completion.meta }
+  };
+}
+
 function buildNativeAgentWaitParams(
   input: OpenClawAgentTurnInput,
   runId: string,
   timeoutMs: number,
-  options: { includeSession?: boolean } = {}
+  options: { session?: MissionCommandPayload } = {}
 ) {
-  if (!options.includeSession) {
+  if (!options.session) {
     return {
       runId,
       timeoutMs
@@ -3535,8 +3562,8 @@ function buildNativeAgentWaitParams(
 
   return {
     runId,
-      sessionKey: input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId),
-    sessionId: input.sessionId ?? undefined,
+      sessionKey: options.session.sessionKey ?? (input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId)),
+    sessionId: options.session.sessionId ?? input.sessionId,
     timeoutMs
   };
 }

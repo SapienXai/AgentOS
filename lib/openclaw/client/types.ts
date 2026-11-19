@@ -156,7 +156,13 @@ export type OpenClawGatewayRequestPolicy = {
 export interface OpenClawStreamCallbacks {
   onStdout?: (text: string) => Promise<void> | void;
   onStderr?: (text: string) => Promise<void> | void;
+  onSession?: (session: OpenClawTurnSession) => void;
 }
+
+export type OpenClawTurnSession = {
+  sessionKey: string;
+  sessionId?: string;
+};
 
 export type GatewayStatusPayload = {
   service?: {
@@ -1719,6 +1725,7 @@ export interface OpenClawAgentTurnInput {
   agentId: string;
   /** Caller-selected OpenClaw session key, when a workflow already owns one. */
   sessionKey?: string;
+  /** Legacy key suffix for a new session, or the Gateway ID when already prepared. */
   sessionId?: string;
   message: string;
   thinking?: OpenClawThinkingLevel;

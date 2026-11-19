@@ -128,6 +128,7 @@ test("agent chat transcript messages rehydrate visible chat without internal pro
 
   const messages = await readAgentChatTranscriptMessages("agent-1", sessionId, workspacePath);
 
+  assert.deepEqual(await readAgentChatTranscriptMessages("agent-1", `sub/../${sessionId}`, workspacePath), []);
   assert.deepEqual(
     messages.map((message) => ({
       role: message.role,

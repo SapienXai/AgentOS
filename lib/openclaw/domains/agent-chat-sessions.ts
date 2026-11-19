@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { RuntimeRecord } from "@/lib/openclaw/types";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
@@ -11,6 +12,7 @@ export type AgentChatSessionOrigin = "agent-chat";
 export type AgentChatSessionRecord = {
   agentId: string;
   sessionId: string;
+  sessionKey?: string;
   workspacePath?: string;
   createdAt: string;
   updatedAt: string;
@@ -26,6 +28,7 @@ const agentChatSessionsPath = path.join(missionControlRootPath, "agent-chat-sess
 const maxAgentChatSessionRecords = 200;
 const maxAgentChatSessionAgeMs = 14 * 24 * 60 * 60 * 1000;
 const activeAgentChatSessionKeys = new Set<string>();
+let pendingRegistryWrite = Promise.resolve();
 
 export function markAgentChatSessionActive(input: { agentId: string; sessionId: string }) {
   const key = createAgentChatSessionKey(input.agentId.trim(), input.sessionId.trim());
@@ -49,6 +52,7 @@ export function isAgentChatSessionActive(input: { agentId?: string | null; sessi
 export async function recordAgentChatSession(input: {
   agentId: string;
   sessionId: string;
+  sessionKey?: string;
   workspacePath?: string;
 }) {
   const agentId = input.agentId.trim();
@@ -59,40 +63,24 @@ export async function recordAgentChatSession(input: {
   }
 
   const now = new Date().toISOString();
-  const registry = await readAgentChatSessionRegistry();
-  const nextRecord: AgentChatSessionRecord = {
-    agentId,
-    sessionId,
-    workspacePath: input.workspacePath,
-    createdAt:
-      registry.sessions.find((entry) => entry.agentId === agentId && entry.sessionId === sessionId)?.createdAt ??
-      now,
-    updatedAt: now,
-    origin: "agent-chat"
-  };
-  const nextSessions = pruneAgentChatSessionRecords([
-    nextRecord,
-    ...registry.sessions.filter((entry) => entry.agentId !== agentId || entry.sessionId !== sessionId)
-  ]);
-
-  await mkdir(missionControlRootPath, { recursive: true });
-  await writeFile(
-    agentChatSessionsPath,
-    `${JSON.stringify(
-      {
-        version: 1,
-        sessions: nextSessions
-      } satisfies AgentChatSessionRegistry,
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+  await updateAgentChatSessionRegistry((sessions) => {
+    const existing = sessions.find((entry) => entry.agentId === agentId && entry.sessionId === sessionId);
+    return [{
+      agentId,
+      sessionId,
+      sessionKey: input.sessionKey?.trim() || existing?.sessionKey,
+      workspacePath: input.workspacePath ?? existing?.workspacePath,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      origin: "agent-chat"
+    }, ...sessions.filter((entry) => entry !== existing)];
+  });
 }
 
 export async function forgetAgentChatSession(input: {
   agentId: string;
   sessionId: string;
+  sessionKey?: string;
 }) {
   const agentId = input.agentId.trim();
   const sessionId = input.sessionId.trim();
@@ -101,31 +89,22 @@ export async function forgetAgentChatSession(input: {
     return;
   }
 
-  const registry = await readAgentChatSessionRegistry();
-  const nextSessions = registry.sessions.filter((entry) => entry.agentId !== agentId || entry.sessionId !== sessionId);
-
-  if (nextSessions.length === registry.sessions.length) {
-    return;
-  }
-
-  await mkdir(missionControlRootPath, { recursive: true });
-  await writeFile(
-    agentChatSessionsPath,
-    `${JSON.stringify(
-      {
-        version: 1,
-        sessions: nextSessions
-      } satisfies AgentChatSessionRegistry,
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+  await updateAgentChatSessionRegistry((sessions) => {
+    const remaining = sessions.filter((entry) => entry.agentId !== agentId ||
+      (entry.sessionId !== sessionId && (!input.sessionKey || entry.sessionKey !== input.sessionKey)));
+    return remaining.length === sessions.length ? null : remaining;
+  });
 }
 
 export async function readAgentChatSessionIndex() {
   const registry = await readAgentChatSessionRegistry();
-  return new Map(registry.sessions.map((entry) => [createAgentChatSessionKey(entry.agentId, entry.sessionId), entry]));
+  const index = new Map<string, AgentChatSessionRecord>();
+  for (const entry of registry.sessions) {
+    index.set(createAgentChatSessionKey(entry.agentId, entry.sessionId), entry);
+    const key = createAgentChatSessionKey(entry.agentId, entry.sessionKey ?? buildAgentSessionKey(entry.agentId, entry.sessionId));
+    if (!index.has(key)) index.set(key, entry);
+  }
+  return index;
 }
 
 export async function readAgentChatSessionsForAgent(input: {
@@ -192,10 +171,11 @@ export function annotateAgentChatSessions(
   }
 
   return sessions.map((session) => {
-    const record =
-      session.agentId && session.sessionId
-        ? index.get(createAgentChatSessionKey(session.agentId, session.sessionId))
-        : null;
+    const agentId = session.agentId;
+    const record = agentId && (
+      (session.sessionId && index.get(createAgentChatSessionKey(agentId, session.sessionId))) ||
+      (session.key && index.get(createAgentChatSessionKey(agentId, session.key)))
+    );
 
     if (!record) {
       return session;
@@ -260,6 +240,27 @@ async function readAgentChatSessionRegistry(): Promise<AgentChatSessionRegistry>
   }
 }
 
+async function updateAgentChatSessionRegistry(
+  update: (sessions: AgentChatSessionRecord[]) => AgentChatSessionRecord[] | null
+) {
+  const write = pendingRegistryWrite.then(async () => {
+    const { sessions } = await readAgentChatSessionRegistry();
+    const next = update(sessions);
+    if (!next) return;
+    const registry: AgentChatSessionRegistry = { version: 1, sessions: pruneAgentChatSessionRecords(next) };
+    const temporaryPath = `${agentChatSessionsPath}.${randomUUID()}.tmp`;
+    await mkdir(missionControlRootPath, { recursive: true });
+    try {
+      await writeFile(temporaryPath, `${JSON.stringify(registry, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+      await rename(temporaryPath, agentChatSessionsPath);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  });
+  pendingRegistryWrite = write.catch(() => {});
+  await write;
+}
+
 function parseAgentChatSessionRecord(value: unknown): AgentChatSessionRecord | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -278,6 +279,7 @@ function parseAgentChatSessionRecord(value: unknown): AgentChatSessionRecord | n
   return {
     agentId,
     sessionId,
+    sessionKey: typeof record.sessionKey === "string" ? record.sessionKey.trim() || undefined : undefined,
     workspacePath: typeof record.workspacePath === "string" ? record.workspacePath : undefined,
     createdAt,
     updatedAt: Number.isNaN(Date.parse(updatedAt)) ? createdAt : updatedAt,

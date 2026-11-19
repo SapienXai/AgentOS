@@ -176,6 +176,10 @@ export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
     return conflictedAgentChatSessionMessage;
   }
 
+  if (/session "[^"]+" (?:changed|was deleted) while starting work/i.test(normalizedFailure)) {
+    return "OpenClaw changed the session before accepting this message. Send it again to start a fresh session.";
+  }
+
   return null;
 }
 

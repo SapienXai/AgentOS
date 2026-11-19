@@ -178,7 +178,7 @@ export async function GET(
         continue;
       }
 
-      const historyMessages = await readAgentChatHistoryMessages(agentId, session.sessionId);
+      const historyMessages = await readAgentChatHistoryMessages(agentId, session);
       messages.push(...historyMessages);
     }
 
@@ -318,11 +318,12 @@ export async function POST(
         await emitAssistantText(currentText);
       };
 
-      const pollGatewayHistory = async (agentId: string, sessionId: string) => {
+      const pollGatewayHistory = async (agentId: string, session: { sessionId: string; sessionKey?: string }) => {
         const history = await getOpenClawAdapter().getSessionHistory(
           {
             agentId,
-            sessionId,
+            sessionId: session.sessionId,
+            sessionKey: session.sessionKey,
             limit: 40
           },
           { timeoutMs: 1000 }
@@ -340,14 +341,18 @@ export async function POST(
         }
       };
 
-      const waitForLateAssistantText = async (agentId: string, sessionId: string, workspacePath?: string) => {
+      const waitForLateAssistantText = async (
+        agentId: string,
+        session: { sessionId: string; sessionKey?: string },
+        workspacePath?: string
+      ) => {
         const startedAt = Date.now();
 
         while (!latestAssistantText && Date.now() - startedAt < 6000 && !request.signal.aborted) {
           await wait(300);
 
           try {
-            await pollTranscript(agentId, sessionId, workspacePath);
+            await pollTranscript(agentId, session.sessionId, workspacePath);
           } catch {
             // Transcript files can appear slightly after the Gateway marks a turn complete.
           }
@@ -357,7 +362,7 @@ export async function POST(
           }
 
           try {
-            await pollGatewayHistory(agentId, sessionId);
+            await pollGatewayHistory(agentId, session);
           } catch {
             // Older Gateways may not expose chat history for explicit sessions.
           }
@@ -529,13 +534,30 @@ export async function POST(
           return;
         }
 
-        try {
-          await recordAgentChatSession({
+        let activeSession: { sessionId: string; sessionKey?: string } | undefined;
+        let persistSession = Promise.resolve();
+        const trackSession = (reference: { sessionId?: string | null; sessionKey?: string | null }) => {
+          const nextSession = {
+            sessionId: reference.sessionId?.trim() || activeSession?.sessionId || sessionId,
+            sessionKey: reference.sessionKey?.trim() || activeSession?.sessionKey
+          };
+          if (activeSession?.sessionId === nextSession.sessionId && activeSession.sessionKey === nextSession.sessionKey) {
+            return activeSession;
+          }
+          if (activeSession) markAgentChatSessionInactive({ agentId, sessionId: activeSession.sessionId });
+          activeSession = nextSession;
+          markAgentChatSessionActive({ agentId, sessionId: nextSession.sessionId });
+          persistSession = persistSession.then(() => recordAgentChatSession({
             agentId,
-            sessionId,
+            ...nextSession,
             workspacePath: agent.workspacePath
+          })).catch(() => {
+            console.warn("AgentOS could not persist the direct chat session reference.");
           });
-          markAgentChatSessionActive({ agentId, sessionId });
+          return nextSession;
+        };
+
+        try {
           const commandPromise = getOpenClawAdapter().streamAgentTurn(
             {
               agentId,
@@ -548,7 +570,10 @@ export async function POST(
               local: !snapshot.diagnostics.rpcOk
             },
             {
-              onStdout: handleCommandStdout
+              onStdout: handleCommandStdout,
+              onSession: (reference) => {
+                if (reference.sessionId) trackSession(reference);
+              }
             },
             {
               timeoutMs: 120000,
@@ -560,7 +585,7 @@ export async function POST(
           void (async () => {
             while (keepPolling && !request.signal.aborted) {
               try {
-                await pollTranscript(agentId, sessionId, agent.workspacePath);
+                if (activeSession) await pollTranscript(agentId, activeSession.sessionId, agent.workspacePath);
               } catch {
                 // Ignore transient transcript reads while the session is still booting.
               }
@@ -570,6 +595,8 @@ export async function POST(
           })();
 
           const result = await commandPromise;
+          const admittedSession = trackSession(result);
+          await persistSession;
           if (streamStdoutBuffer.trim()) {
             await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
             streamStdoutBuffer = "";
@@ -577,14 +604,14 @@ export async function POST(
           stopPolling();
 
           try {
-            await pollTranscript(agentId, sessionId, agent.workspacePath);
+            await pollTranscript(agentId, admittedSession.sessionId, agent.workspacePath);
           } catch {
             // Ignore a last transient read failure.
           }
 
           let response = toAgentChatResponse(agentId, result);
           if (isEmptyAgentChatResponse(response) && !latestAssistantText) {
-            await waitForLateAssistantText(agentId, sessionId, agent.workspacePath);
+            await waitForLateAssistantText(agentId, admittedSession, agent.workspacePath);
           }
 
           if (latestAssistantText && response.payloads.length === 0) {
@@ -609,10 +636,7 @@ export async function POST(
           response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
           const responseConflict = extractAgentChatSessionConflict(readAgentChatResponseDiagnosticText(response));
           if (responseConflict) {
-            await forgetAgentChatSession({
-              agentId: responseConflict.agentId,
-              sessionId: responseConflict.sessionId
-            }).catch(() => {});
+            await forgetAgentChatSession(responseConflict).catch(() => {});
             await send({
               type: "done",
               ok: false,
@@ -648,7 +672,7 @@ export async function POST(
             response: applyMissionControlActionMetadata(response, action)
           });
         } finally {
-          markAgentChatSessionInactive({ agentId, sessionId });
+          if (activeSession) markAgentChatSessionInactive({ agentId, sessionId: activeSession.sessionId });
           releaseAgentChatSessionTurnLock(inFlightKey, inFlightLock);
         }
       } catch (error) {
@@ -670,10 +694,7 @@ export async function POST(
 
         const conflictedSession = extractAgentChatSessionConflict(rawFailure);
         if (conflictedSession) {
-          await forgetAgentChatSession({
-            agentId: conflictedSession.agentId,
-            sessionId: conflictedSession.sessionId
-          }).catch(() => {});
+          await forgetAgentChatSession(conflictedSession).catch(() => {});
         }
 
         if (agentRegistryFailureMessage) {
@@ -730,12 +751,16 @@ function isComposedAgentChatPrompt(value: string) {
   );
 }
 
-async function readAgentChatHistoryMessages(agentId: string, sessionId: string): Promise<RehydratedAgentChatMessage[]> {
+async function readAgentChatHistoryMessages(
+  agentId: string,
+  { sessionId, sessionKey }: { sessionId: string; sessionKey?: string }
+): Promise<RehydratedAgentChatMessage[]> {
   try {
     const history = await getOpenClawAdapter().getSessionHistory(
       {
         agentId,
         sessionId,
+        sessionKey,
         limit: 60
       },
       { timeoutMs: 1500 }
@@ -943,7 +968,8 @@ function extractAgentChatSessionConflict(rawFailure: string) {
 
   return {
     agentId: match[1],
-    sessionId: match[2]
+    sessionId: match[2],
+    sessionKey: `agent:${match[1]}:explicit:${match[2]}`
   };
 }
 
