@@ -40,7 +40,7 @@
         "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
       },
       "updaterSignature": {
-        "status": "BLOCKED",
+        "status": "PASS",
         "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45389230270"
       },
       "autoUpdate": {
