@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-24T11:47:28.760Z",
+  "generatedAt": "2026-11-24T11:59:39.519Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosHead": "9debd96eefb9f6f703b5fba4071a1c2e88de6c74",
-    "certifiedCodeHead": "9debd96eefb9f6f703b5fba4071a1c2e88de6c74",
+    "agentosHead": "6520429582bf753f984520ef3e570017cda0ca0f",
+    "certifiedCodeHead": "6520429582bf753f984520ef3e570017cda0ca0f",
     "branch": "codex/agentos-v0.9.0-rc",
     "workingTreeClean": true,
     "repositoryDirtyFilesCount": 0,
-    "gitDescribe": "archive/branches/2026-10-20/openclaw-2026-10-5-compatibility-19-g9debd96e",
+    "gitDescribe": "archive/branches/2026-10-20/openclaw-2026-10-5-compatibility-22-g65204295",
     "openClaw": {
       "version": "2026.11.5",
       "sourceCommit": "e13cf15ece9bbd969b7362927c315362c90c97ff",
@@ -118,8 +118,8 @@
       "taskSuggestions.acceptModes",
       "talk-session-close-disposition"
     ],
-    "connectionId": "bc67336e-270a-49ac-8b52-6af6b2c7598e",
-    "deviceId": "56d204bb6e78a2a134e019385c9f07ddb936a0da9568320fd3974e7650b58ed1"
+    "connectionId": "73665183-1a34-4f48-ba6a-f39adb20a160",
+    "deviceId": "643120bfb465ffd245f31a534ce75af2c96a47496aa4c87973203be0f5c6d327"
   },
   "auth": {
     "defaultSharedStateMode": "managed-write",
@@ -663,8 +663,8 @@
     }
   ],
   "observations": {
-    "firstConnectionId": "bc67336e-270a-49ac-8b52-6af6b2c7598e",
-    "reconnectConnectionId": "0d716bc2-41cc-474c-9084-5059c3182ba0",
+    "firstConnectionId": "73665183-1a34-4f48-ba6a-f39adb20a160",
+    "reconnectConnectionId": "f406db61-76b8-4e01-b448-bd828430347c",
     "deviceIdStableAcrossRestart": true,
     "eventBridgeStarted": true,
     "eventBridgeReconnected": true,

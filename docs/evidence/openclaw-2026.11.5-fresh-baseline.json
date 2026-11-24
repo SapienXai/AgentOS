@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-24T11:48:21.149Z",
+  "generatedAt": "2026-11-24T12:01:05.848Z",
   "provenance": {
-    "agentosCommit": "9debd96eefb9f6f703b5fba4071a1c2e88de6c74",
+    "agentosCommit": "6520429582bf753f984520ef3e570017cda0ca0f",
     "targetVersion": "2026.11.5",
     "targetCommit": "e13cf15ece9bbd969b7362927c315362c90c97ff",
     "targetBuildId": "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z",
@@ -38,7 +38,7 @@
     "agentToAgentAllow": []
   },
   "gateway": {
-    "url": "ws://127.0.0.1:60990/",
+    "url": "ws://127.0.0.1:64770/",
     "protocol": 4,
     "installedVersion": "2026.11.5",
     "buildId": "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z"
@@ -46,9 +46,9 @@
   "runtimeCertification": {
     "runtime": {
       "schemaVersion": 2,
-      "generatedAt": "2026-11-24T11:48:05.830Z",
+      "generatedAt": "2026-11-24T12:00:50.695Z",
       "targetVersion": "2026.11.5",
-      "gatewayUrl": "ws://127.0.0.1:60990/",
+      "gatewayUrl": "ws://127.0.0.1:64770/",
       "installedVersion": "2026.11.5",
       "buildId": "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z",
       "protocolVersion": 4,
