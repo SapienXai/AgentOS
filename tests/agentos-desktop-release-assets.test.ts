@@ -30,12 +30,18 @@ test("release finalization validates complete CLI and signed Desktop assets befo
     assert.equal(latest.version, "0.8.1");
     assert.equal(latest.pub_date, stableNow.toISOString());
     assert.deepEqual(Object.keys(latest.platforms).sort(), [
+      "darwin-aarch64",
       "darwin-aarch64-app",
+      "linux-x86_64",
       "linux-x86_64-appimage",
       "linux-x86_64-deb",
       "linux-x86_64-rpm",
+      "windows-x86_64",
       "windows-x86_64-nsis"
     ]);
+    assert.deepEqual(latest.platforms["darwin-aarch64"], latest.platforms["darwin-aarch64-app"]);
+    assert.deepEqual(latest.platforms["linux-x86_64"], latest.platforms["linux-x86_64-appimage"]);
+    assert.deepEqual(latest.platforms["windows-x86_64"], latest.platforms["windows-x86_64-nsis"]);
     assert.equal(latest.platforms["darwin-aarch64-app"].url, "https://github.com/SapienXai/AgentOS/releases/download/agentos-v0.8.1/AgentOS-0.8.1-macos-arm64.app.tar.gz");
     assert.match(latest.platforms["linux-x86_64-deb"].signature, /signed-release-artifact/);
     assert.ok(result.assets.includes("agentos-darwin-arm64.tgz.sha256"));

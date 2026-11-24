@@ -17,6 +17,11 @@ const DESKTOP_ARTIFACTS = [
   { target: "linux-x86_64-deb", directory: "deb", extension: ".deb", output: "linux-x64.deb", signature: true },
   { target: "linux-x86_64-rpm", directory: "rpm", extension: ".rpm", output: "linux-x64.rpm", signature: true }
 ];
+const LEGACY_UPDATER_TARGETS = {
+  "darwin-aarch64": "darwin-aarch64-app",
+  "windows-x86_64": "windows-x86_64-nsis",
+  "linux-x86_64": "linux-x86_64-appimage"
+};
 
 export async function finalizeReleaseAssets({ root, version, now = new Date() }) {
   if (!isStableVersion(version)) throw new Error(`Release version must be a stable semantic version: ${version}`);
@@ -70,6 +75,11 @@ export async function finalizeReleaseAssets({ root, version, now = new Date() })
     };
     desktopOutputMap.set(outputName, bundle.path);
     if (signature) desktopOutputMap.set(`${outputName}.sig`, signature.path);
+  }
+
+  // Desktop 0.8.0 also reads the platform-and-architecture keys.
+  for (const [legacyTarget, target] of Object.entries(LEGACY_UPDATER_TARGETS)) {
+    platforms[legacyTarget] = platforms[target];
   }
 
   const installerArtifacts = [
