@@ -16,6 +16,17 @@ import {
 const certifiedCodeHead = "a".repeat(40);
 const currentHead = "b".repeat(40);
 
+test("publication tooling leaves the certified runtime intact", () => {
+  const changedPaths = [
+    ".github/workflows/publish-agentos.yml",
+    "scripts/check-certification-freshness.mjs",
+    "tests/certification-freshness.test.ts"
+  ];
+  assert.deepEqual(classifyCertificationChangedPaths(changedPaths).meaningfulPaths, []);
+  const runtimeChange = "apps/desktop/src-tauri/tauri.conf.json";
+  assert.deepEqual(classifyCertificationChangedPaths([...changedPaths, runtimeChange]).meaningfulPaths, [runtimeChange]);
+});
+
 async function withPolicyFixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-certification-freshness-"));
   try {

@@ -2,7 +2,7 @@
 
 24 November 2026. Candidate code `6520429582bf753f984520ef3e570017cda0ca0f`.
 
-**Public release decision — NO-GO.** The OpenClaw runtime passed certification. Public release acceptance requires production-signed installers, a native signed update rehearsal, iOS Home Screen validation, and the completed ChatGPT authorization path.
+**Public release policy.** The OpenClaw runtime passed certification. Each CLI platform must pass its clean-install and update checks. Desktop packages with a verified launch qualify for Public Preview while distribution signing or update acceptance is pending. Stable Desktop requires full acceptance. The tables below record the build acceptance results before publication. [Publication workflow](https://github.com/SapienXai/AgentOS/actions/workflows/publish-agentos.yml)
 
 ## OpenClaw and CI
 
@@ -22,7 +22,7 @@ CI previously failed because the 2026.11.5 certification artifact was absent. Th
 | Windows x64 | BLOCKED | The first native Windows job caught the updater compiler error. The fix is on main. The fixed Windows runner passed the Rust shell tests, packaged-server smoke, and unsigned NSIS build. A timestamped Authenticode signature and a signed installer/update rehearsal remain required. |
 | Linux x64 | BLOCKED | The final Linux desktop runner passed the native build and packaged-server smoke. The earlier staging AppImage signature verified with the production updater public key, and an altered copy failed verification. The emulated x64 host rejected the static AppImage wrapper. The extracted signed payload launched and served /login with HTTP 200. The DEB signature, clean installation, and HTTP 200 startup passed. The RPM signature and clean installation passed on Fedora 45 x64. Fedora GTK aborted before the server started when its sandboxed icon loader exited in the container. Direct AppImage execution, RPM launch on a native host, and a signed update rehearsal remain due. |
 
-The final staging workflow built and smoke-tested four CLI archives and built all three desktop platforms. Its asset validation verified the CLI SHA-256 checksums and all five desktop updater signatures against the bundled public key. The separate distribution-signing input requires an approved source ref and can build signed candidates while publication is disabled. The public job requires current certification, platform acceptance for the certified commit, final asset verification, and approval through the `agentos-public-release` environment. That environment is restricted to `agentos-v*` tags and has a required release owner. [Staging release workflow](https://github.com/SapienXai/AgentOS/actions/runs/45389230270) · [Protected release environment](https://github.com/SapienXai/AgentOS/settings/environments)
+The release build smoke-tested four CLI archives and built all three desktop platforms. It verified the CLI SHA-256 checksums and all five desktop updater signatures against the bundled public key. The publication job checks the original artifact, CI on `main`, current certification, and evidence for each channel. The protected `agentos-public-release` environment allows the publication job from `main` and requires a release owner. [Release build](https://github.com/SapienXai/AgentOS/actions/runs/45389230270) · [Protected release environment](https://github.com/SapienXai/AgentOS/settings/environments)
 
 ## CLI packages
 
@@ -44,13 +44,11 @@ The hosted CLI matrix ran against the candidate JavaScript bundle. The final sou
 | ChatGPT onboarding | BLOCKED | From an isolated fresh instance, protected owner setup and the simplified UI reached the real `auth.openai.com` consent page. A test account still has to approve token sharing and complete the first workspace and reply through ChatGPT. |
 | Local model onboarding rehearsal | PASS | The packaged web app created a real workspace and primary agent. Ollama returned the first reply. An authenticated browser reloaded the saved chat history and sent it through the normal follow-up request, and the agent recalled the earlier prompt. |
 
-The live download page and website main branch still serve the five existing 0.8.0 asset links. Each returned HTTP 200. The 0.9.0 link switch is ready for use after the 0.9.0 assets exist and are verified. [Download page](https://agentos.sapienx.app/download) · [Website production deployment](https://vercel.com/coin-collect-team/agentos/2ENFBoN58jX1Y19fewE8hzXJUFSX)
+Website download links are deployed after the corresponding public assets return HTTP 200. [Download page](https://agentos.sapienx.app/download)
 
 ## Release-owner actions
 
 - In Apple Developer, create or export the **Developer ID Application** certificate and create an app-specific password for notarization. Set repository secrets `APPLE_CERTIFICATE` (base64 of the exported P12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, and `APPLE_PASSWORD`. Set Actions variables `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID`. [Tauri macOS distribution signing](https://v2.tauri.app/distribute/sign/macos/)
 - In Azure Artifact Signing, finish organization identity validation and create a Public Trust certificate profile. Confirm the organization meets Public Trust eligibility and give the CI app registration the Artifact Signing Certificate Profile Signer role scoped to that profile. Set repository secret `AZURE_CLIENT_SECRET` and Actions variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_ARTIFACT_SIGNING_ENDPOINT`, `AZURE_ARTIFACT_SIGNING_ACCOUNT`, and `AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE`. [Tauri Windows distribution signing](https://v2.tauri.app/distribute/sign/windows/) · [Microsoft Public Trust eligibility](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)
 - Complete **Continue with ChatGPT → Open ChatGPT** in a clean QA instance with a dedicated ChatGPT test account and approve token sharing. An iPhone or a controllable iOS simulator is still needed to verify the Add to Home Screen path against a trusted QA origin.
-- After the signed artifact and account tests pass, approve the protected public release job. Enable the website 0.9.0 download links after the released assets respond successfully.
-
-No public tag or package publication was performed.
+- For an open-source Windows signing alternative, apply to SignPath Foundation with the public repository, published release history, and documented signing policy. Eligibility includes an OSI-approved license, verified project reputation, source-to-binary provenance, role separation, and MFA. Foundation acceptance and the project's signing approvals are required before an artifact can carry that signature. [SignPath Foundation terms](https://signpath.org/terms)

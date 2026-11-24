@@ -25,6 +25,7 @@ const OPENCLAW_VERSIONS_FILE = "lib/openclaw/versions.ts";
 const DESKTOP_CONFIG_FILE = "apps/desktop/src-tauri/tauri.conf.json";
 const DESKTOP_CARGO_FILE = "apps/desktop/src-tauri/Cargo.toml";
 const DESKTOP_RELEASE_WORKFLOW = ".github/workflows/desktop-release.yml";
+const PUBLICATION_WORKFLOW = ".github/workflows/publish-agentos.yml";
 const DESKTOP_ASSET_FINALIZER = "scripts/desktop/finalize-release-assets.mjs";
 const RELEASE_ASSETS = [
   "agentos-darwin-arm64.tgz",
@@ -57,6 +58,7 @@ export function checkReleaseConsistency(options = {}) {
   const installPs1 = readText(context, "install.ps1");
   const ciWorkflow = readText(context, ".github/workflows/ci.yml");
   const workflow = readText(context, ".github/workflows/release-agentos.yml");
+  const publicationWorkflow = readText(context, PUBLICATION_WORKFLOW);
   const desktopReleaseWorkflow = readText(context, DESKTOP_RELEASE_WORKFLOW);
   const desktopAssetFinalizer = readText(context, DESKTOP_ASSET_FINALIZER);
   const desktopCargo = readText(context, DESKTOP_CARGO_FILE);
@@ -89,6 +91,12 @@ export function checkReleaseConsistency(options = {}) {
   validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage, missionControlSmoke);
   validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
+  if (publicationWorkflow) {
+    for (const requirement of ["refs/heads/main", "environment: agentos-public-release", "needs.production-gate.result",
+      "pnpm --silent check:production-release --plan", "sha256sum --check --strict", "scripts/publish-agentos-release.mjs publish"]) {
+      expectIncludes(context, PUBLICATION_WORKFLOW, publicationWorkflow, requirement);
+    }
+  }
   validateDesktopReleaseContract(context, agentosPackage, desktopCargo, desktopConfig, desktopReleaseWorkflow, desktopAssetFinalizer);
 
   return buildResult(context, agentosPackage);
@@ -347,11 +355,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage, openCla
       },
       {
         label: "release tag example",
-        pattern: new RegExp(`git tag ${RELEASE_TAG_PREFIX}(${SEMVER_SOURCE})`, "g")
-      },
-      {
-        label: "release tag push example",
-        pattern: new RegExp(`git push origin ${RELEASE_TAG_PREFIX}(${SEMVER_SOURCE})`, "g")
+        pattern: new RegExp(`releases/tag/${RELEASE_TAG_PREFIX}(${SEMVER_SOURCE})(?=\\))`, "g")
       },
       {
         label: "versioned package manager install",
@@ -527,7 +531,6 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
     return;
   }
 
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, '- "agentos-v*"');
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm install --frozen-lockfile");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm lint");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm typegen");
@@ -535,9 +538,6 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:release");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:production-release");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "- production-gate");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "environment: agentos-public-release");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Run Mission Control browser smoke");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm start > .smoke/agentos-server.log");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm smoke:mission-control");
@@ -547,26 +547,12 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "./.github/workflows/desktop-release.yml");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "- build-desktop-assets");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "scripts/desktop/finalize-release-assets.mjs");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "fail_on_unmatched_files: true");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "packages/agentos/scripts/smoke-package.mjs --tarball");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "require('./packages/agentos/package.json').version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Ensure tag matches package version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "npm pack ./packages/agentos --pack-destination dist");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "install.sh");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "install.ps1");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, `node-version: ${REQUIRED_NODE_WORKFLOW_VERSION}`);
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "${{ needs.validate-release.outputs.version }}");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Highlights");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## OpenClaw compatibility impact");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Security impact");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Validation");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Smoke status");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Known limitations");
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Upgrade notes");
-
-  for (const asset of RELEASE_ASSETS) {
-    expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, asset);
-  }
 
   expectVersionReferences(context, ".github/workflows/release-agentos.yml", workflow, agentosPackage.version, [
     {

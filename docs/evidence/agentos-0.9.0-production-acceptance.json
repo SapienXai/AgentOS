@@ -32,6 +32,10 @@
       "autoUpdate": {
         "status": "BLOCKED",
         "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "packagedLaunch": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45389230270"
       }
     },
     "linux-x64": {
@@ -133,6 +137,17 @@
         "status": "BLOCKED",
         "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
       }
+    },
+    "linux-x64-deb": {
+      "packagedLaunch": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/82c8cc3356758cb976b16652573ff96946887148/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      }
     }
+  },
+  "releaseArtifact": {
+    "runId": 45389230270,
+    "id": 14921035647,
+    "sha256": "4940c5da90fc67b4f5426a1436ee9ff7ba19cb807079cc32c576618667496c03"
   }
 }

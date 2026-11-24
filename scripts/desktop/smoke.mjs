@@ -10,7 +10,7 @@ import { nodeExecutableName, sanitizeDiagnostics, resolveTargetPlatform } from "
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../..");
-const runtimeRoot = path.join(repoRoot, "apps", "desktop", "runtime");
+const runtimeRoot = process.argv[2] ? path.resolve(process.argv[2]) : path.join(repoRoot, "apps", "desktop", "runtime");
 const targetPlatform = resolveTargetPlatform();
 const serverRoot = path.join(runtimeRoot, "agentos");
 const serverWrapperPath = path.join(serverRoot, "agentos-desktop-server.cjs");

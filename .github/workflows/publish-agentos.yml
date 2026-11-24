@@ -1,0 +1,214 @@
+name: Publish AgentOS
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: agentos-publication
+  cancel-in-progress: false
+
+jobs:
+  production-gate:
+    if: github.ref == 'refs/heads/main' && github.repository == 'SapienXai/AgentOS'
+    runs-on: ubuntu-latest
+    outputs:
+      source_run: ${{ steps.plan.outputs.source_run }}
+      source_artifact: ${{ steps.plan.outputs.source_artifact }}
+      source_digest: ${{ steps.plan.outputs.source_digest }}
+      cli: ${{ steps.plan.outputs.cli }}
+      windows_asset: ${{ steps.plan.outputs.windows_asset }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require passing main CI and certified release provenance
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ci="$(gh run list --workflow ci.yml --branch main --commit "$GITHUB_SHA" --limit 1 --json conclusion --jq '.[0].conclusion')"
+          test "$ci" = success
+          pnpm check:release
+          pnpm --silent check:production-release --plan > release-plan.json
+          run="$(jq -r '.source.runId' release-plan.json)"
+          artifact="$(jq -r '.source.id' release-plan.json)"
+          digest="$(jq -r '.source.sha256' release-plan.json)"
+          commit="$(jq -r '.commit' release-plan.json)"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" | jq -e --arg commit "$commit" '
+            .head_sha == $commit and .conclusion == "success" and .path == ".github/workflows/release-agentos.yml"'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact" | jq -e --argjson run "$run" --arg digest "sha256:$digest" '
+            .workflow_run.id == $run and .name == "finalized-agentos-release" and .digest == $digest and .expired == false'
+          {
+            echo "source_run=$run"
+            echo "source_artifact=$artifact"
+            echo "source_digest=$digest"
+            echo "cli=$(jq -c '.cli' release-plan.json)"
+            echo "windows_asset=$(jq -r '[.desktop[] | select(.verifyInstaller and .channel != "withheld")][0].name // ""' release-plan.json)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: publication-plan
+          path: release-plan.json
+          if-no-files-found: error
+
+  cli-smoke:
+    name: Verify CLI (${{ matrix.target }})
+    needs: production-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: windows-latest
+            target: win32-x64
+          - runner: ubuntu-latest
+            target: linux-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
+      - uses: actions/setup-node@v5
+        if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
+        with:
+          node-version: 26.12.1
+      - uses: actions/download-artifact@v5
+        if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.production-gate.outputs.source_run }}
+          name: agentos-${{ matrix.target }}
+          path: verified
+      - name: Check the archive, clean install and read-only update check
+        if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          node scripts/publish-agentos-release.mjs verify-cli verified "$TARGET"
+          node packages/agentos/scripts/smoke-package.mjs --tarball "verified/agentos-$TARGET.tgz" --check-update
+          node scripts/publish-agentos-release.mjs verify-cli verified "$TARGET" "cli-$TARGET.txt"
+      - uses: actions/upload-artifact@v6
+        if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
+        with:
+          name: publication-proof-cli-${{ matrix.target }}
+          path: cli-${{ matrix.target }}.txt
+          if-no-files-found: error
+
+  windows-installer:
+    needs: production-gate
+    if: needs.production-gate.outputs.windows_asset != ''
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+      - uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.production-gate.outputs.source_run }}
+          name: agentos-desktop-windows-x64
+          path: desktop
+      - name: Install NSIS package and launch the installed app
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem desktop -Recurse -Filter '*setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected one Windows installer.' }
+          $installer = $installers[0].FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'AgentOS-public-install'
+          $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$destination") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS install failed ($($process.ExitCode))." }
+          $wrapper = @(Get-ChildItem $destination -Recurse -Filter 'agentos-desktop-server.cjs')
+          $application = Join-Path $destination 'agentos-desktop.exe'
+          if ($wrapper.Count -ne 1 -or !(Test-Path $application)) {
+            throw 'Installed shell or runtime is missing.'
+          }
+          node scripts/desktop/smoke.mjs $wrapper[0].Directory.Parent.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $app = Start-Process -FilePath $application -WorkingDirectory $destination -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(75)
+            $ready = $false
+            do {
+              $app.Refresh()
+              if ($app.HasExited) { throw 'Desktop shell exited during startup.' }
+              $nodes = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($app.Id) AND Name='node.exe'")
+              foreach ($child in $nodes) {
+                $listeners = @(Get-NetTCPConnection -OwningProcess $child.ProcessId -State Listen -ErrorAction SilentlyContinue)
+                foreach ($listener in $listeners) {
+                  if ($listener.LocalAddress -ne '127.0.0.1') { throw 'Embedded server is listening outside loopback.' }
+                  try {
+                    $status = Invoke-WebRequest -Uri "http://127.0.0.1:$($listener.LocalPort)/api/auth/status" -TimeoutSec 3
+                    $ready = $status.StatusCode -eq 200
+                  } catch {
+                    # Next.js can start listening before routes are ready.
+                  }
+                }
+              }
+              if (!$ready) { Start-Sleep -Milliseconds 500 }
+            } until ($ready -or (Get-Date) -ge $deadline)
+            if (!$ready) { throw 'Installed desktop did not start its embedded server.' }
+            Write-Output 'Installed desktop launched and its embedded loopback server returned HTTP 200.'
+          } finally {
+            if (!$app.HasExited) { taskkill /pid $app.Id /t /f | Out-Null }
+          }
+          (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() | Set-Content windows-desktop.txt -Encoding ascii
+      - uses: actions/upload-artifact@v6
+        with:
+          name: publication-proof-windows-desktop
+          path: windows-desktop.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [production-gate, cli-smoke, windows-installer]
+    if: '!cancelled() && needs.production-gate.result == ''success'''
+    runs-on: ubuntu-latest
+    environment: agentos-public-release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+      - uses: actions/download-artifact@v5
+        with:
+          name: publication-plan
+          path: plan
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: publication-proof-*
+          merge-multiple: true
+          path: proofs
+      - name: Verify immutable artifact, then publish accepted platforms
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.production-gate.outputs.source_artifact }}
+          DIGEST: ${{ needs.production-gate.outputs.source_digest }}
+        run: |
+          mkdir -p proofs
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > release.zip
+          echo "$DIGEST  release.zip" | sha256sum --check --strict
+          unzip -q release.zip -d release-assets
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node scripts/publish-agentos-release.mjs publish plan/release-plan.json release-assets proofs

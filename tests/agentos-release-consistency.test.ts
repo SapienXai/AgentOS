@@ -18,6 +18,7 @@ const releaseCheckFiles = [
   "install.ps1",
   ".github/workflows/ci.yml",
   ".github/workflows/release-agentos.yml",
+  ".github/workflows/publish-agentos.yml",
   ".github/workflows/desktop-release.yml",
   "apps/desktop/src-tauri/Cargo.toml",
   "apps/desktop/src-tauri/tauri.conf.json",

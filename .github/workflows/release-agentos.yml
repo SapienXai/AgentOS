@@ -1,17 +1,10 @@
 name: Release AgentOS
 
 on:
-  push:
-    tags:
-      - "agentos-v*"
   workflow_dispatch:
     inputs:
       sign_distribution:
         description: "Prepare distribution-signed candidate artifacts without publishing"
-        type: boolean
-        default: false
-      publish:
-        description: "Publish the selected release tag after production acceptance"
         type: boolean
         default: false
 
@@ -111,10 +104,9 @@ jobs:
       - id: tag
         shell: bash
         env:
-          PUBLISH: ${{ inputs.publish }}
           SIGN_DISTRIBUTION: ${{ inputs.sign_distribution }}
         run: |
-          if [[ "$SIGN_DISTRIBUTION" == "true" || "$PUBLISH" == "true" ]]; then
+          if [[ "$SIGN_DISTRIBUTION" == "true" ]]; then
             if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF_TYPE" != "tag" ]]; then
               echo "Distribution signing requires main or a release tag on main." >&2
               exit 1
@@ -122,10 +114,6 @@ jobs:
             git merge-base --is-ancestor HEAD origin/main
           fi
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
-            if [ "$PUBLISH" = "true" ]; then
-              echo "Select an AgentOS release tag to publish." >&2
-              exit 1
-            fi
             exit 0
           fi
           TAG="${GITHUB_REF_NAME}"
@@ -262,7 +250,7 @@ jobs:
     needs: validate-release
     uses: ./.github/workflows/desktop-release.yml
     with:
-      production: ${{ inputs.publish == true || inputs.sign_distribution == true }}
+      production: ${{ inputs.sign_distribution == true }}
     secrets: inherit
 
   validate-candidate-assets:
@@ -319,155 +307,3 @@ jobs:
             release-assets/AgentOS-*
             release-assets/latest.json
           if-no-files-found: error
-
-  production-gate:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: validate-candidate-assets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.30.3
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 26.12.1
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Require a release tag from main
-        run: git merge-base --is-ancestor HEAD origin/main
-
-      - name: Require release-owner review
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          reviewers="$(gh api "repos/$GITHUB_REPOSITORY/environments/agentos-public-release" --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] | length')"
-          test "$reviewers" -gt 0
-
-      - name: Require current OpenClaw certification and production acceptance
-        run: pnpm check:production-release
-
-  create-release:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs:
-      - validate-release
-      - validate-candidate-assets
-      - production-gate
-    runs-on: ubuntu-latest
-    environment: agentos-public-release
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v5
-        with:
-          name: finalized-agentos-release
-          path: release-assets
-
-      - name: Write release notes
-        shell: bash
-        run: |
-          cat > release-notes.md <<EOF
-          ## Highlights
-
-          - AgentOS release assets were built from the tagged source.
-          - Installer assets and package smoke checks are included for supported platforms.
-
-          ## OpenClaw compatibility impact
-
-          - OpenClaw supported baseline comes from \`lib/openclaw/versions.ts\`.
-          - Run \`agentos doctor --deep\` after installation to confirm local Gateway protocol, auth, scopes, native coverage, and fallback activity.
-
-          ## Security impact
-
-          - No release credentials are included in assets.
-          - Packaged AgentOS continues to use local API token authentication.
-
-          ## Validation
-
-          - \`pnpm lint\`
-          - \`pnpm typegen\`
-          - \`pnpm typecheck\`
-          - \`pnpm test\`
-          - \`pnpm build\`
-          - \`pnpm check:release\`
-          - \`pnpm smoke:mission-control\`
-          - \`packages/agentos/scripts/smoke-package.mjs\` for each release asset platform
-
-          ## Smoke status
-
-          - Mission Control browser smoke output is uploaded as the \`mission-control-release-smoke\` workflow artifact.
-          - Runtime golden-path smoke remains opt-in because it dispatches a real OpenClaw task: \`AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden\`.
-
-          ## Known limitations
-
-          - Mission Control browser smoke may report blocked data checks when CI has no real OpenClaw agents, tasks, or context files.
-          - Runtime golden-path smoke can be blocked by missing local OpenClaw auth, model credentials, or writable runtime state.
-          - Account-target browser-profile dispatch remains an MVP bridge until OpenClaw exposes typed browser-profile dispatch.
-
-          ## Upgrade notes
-
-          - Requires Node.js 24.22.1+ or 26.12.1+.
-          - Use the installer commands below or the attached tarball for your platform.
-
-          ## Install
-
-          macOS / Linux:
-
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | bash
-          \`\`\`
-
-          Windows PowerShell:
-
-          \`\`\`powershell
-          iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
-          \`\`\`
-
-          Specific version:
-
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=${{ needs.validate-release.outputs.version }} bash
-          \`\`\`
-
-          \`\`\`powershell
-          \$env:AGENTOS_VERSION='${{ needs.validate-release.outputs.version }}'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
-          \`\`\`
-
-          ## Included assets
-
-          - \`agentos-darwin-arm64.tgz\`
-          - \`agentos-darwin-x64.tgz\`
-          - \`agentos-linux-x64.tgz\`
-          - \`agentos-win32-x64.tgz\`
-          - Signed Tauri updater assets for macOS ARM64, Windows x64, Linux AppImage, Debian and RPM.
-          - macOS DMG, Windows NSIS, Linux AppImage, Debian and RPM installers.
-          EOF
-          version_notes="docs/release-notes-agentos-${{ needs.validate-release.outputs.version }}.md"
-          if [ -f "$version_notes" ]; then
-            cat "$version_notes" > version-release-notes.md
-            printf '\n' >> version-release-notes.md
-            cat release-notes.md >> version-release-notes.md
-            mv version-release-notes.md release-notes.md
-          fi
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.validate-release.outputs.tag }}
-          name: AgentOS ${{ needs.validate-release.outputs.version }}
-          body_path: release-notes.md
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            install.sh
-            install.ps1
-            release-assets/agentos-*
-            release-assets/AgentOS-*
-            release-assets/latest.json

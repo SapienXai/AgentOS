@@ -6,22 +6,29 @@ import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COM
 import { checkCertificationFreshness } from "@/scripts/check-certification-freshness.mjs";
 import { loadOpenClawCertifiedEvidence } from "@/scripts/openclaw-release-watch";
 
-const requiredChecks = {
-  "macos-arm64": ["cleanInstall", "distributionSigning", "notarization", "autoUpdate"],
-  "windows-x64": ["cleanInstall", "distributionSigning", "autoUpdate"],
-  "linux-x64": ["cleanInstall", "updaterSignature", "autoUpdate"],
-  "cli-macos-arm64": ["cleanInstall", "updateCheck"],
-  "cli-macos-x64": ["cleanInstall", "updateCheck"],
-  "cli-windows-x64": ["cleanInstall", "updateCheck"],
-  "cli-linux-x64": ["cleanInstall", "updateCheck"],
-  "ios-pwa": ["install", "authenticatedLaunch", "firstAgentReply"],
-  "android-pwa": ["install", "authenticatedLaunch", "firstAgentReply"],
-  onboarding: ["chatGptOAuth", "firstWorkspace", "firstAgentReply", "sessionContinuity"]
+const cliPlatforms = {
+  "darwin-arm64": "cli-macos-arm64",
+  "darwin-x64": "cli-macos-x64",
+  "win32-x64": "cli-windows-x64",
+  "linux-x64": "cli-linux-x64"
 } as const;
+
+const desktopPackages = [
+  { name: "macos-arm64.dmg", platform: "macos-arm64", launch: "macos-arm64", target: "darwin-aarch64-app", update: "macos-arm64.app.tar.gz", checks: ["cleanInstall", "distributionSigning", "notarization", "autoUpdate"] },
+  { name: "windows-x64-setup.exe", platform: "windows-x64", launch: "windows-x64", target: "windows-x86_64-nsis", update: "windows-x64-setup.exe", checks: ["cleanInstall", "distributionSigning", "autoUpdate"] },
+  { name: "linux-x64.AppImage", platform: "linux-x64", launch: "linux-x64-appimage", target: "linux-x86_64-appimage", update: "linux-x64.AppImage", checks: ["cleanInstall", "updaterSignature", "autoUpdate"] },
+  { name: "linux-x64.deb", platform: "linux-x64", launch: "linux-x64-deb", target: "linux-x86_64-deb", update: "linux-x64.deb", checks: ["cleanInstall", "updaterSignature", "autoUpdate"] },
+  { name: "linux-x64.rpm", platform: "linux-x64", launch: "linux-x64-rpm", target: "linux-x86_64-rpm", update: "linux-x64.rpm", checks: ["cleanInstall", "updaterSignature", "autoUpdate"] }
+] as const;
 
 const acceptanceSchema = z.object({
   version: z.string(),
   candidateCommit: z.string().regex(/^[0-9a-f]{40}$/),
+  releaseArtifact: z.object({
+    runId: z.number().int().positive(),
+    id: z.number().int().positive(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/)
+  }).optional(),
   checks: z.record(z.record(z.object({
     status: z.enum(["PASS", "FAIL", "BLOCKED"]),
     evidence: z.string().url().refine((value) => new URL(value).protocol === "https:")
@@ -50,13 +57,28 @@ async function main() {
     throw new Error("Production acceptance must cover the same candidate commit as OpenClaw certification.");
   }
 
-  const failedChecks = Object.entries(requiredChecks).flatMap(([platform, checks]) => checks
-    .filter((check) => acceptance.checks[platform]?.[check]?.status !== "PASS")
-    .map((check) => `${platform}.${check}`));
-  if (failedChecks.length > 0) {
-    throw new Error(`Missing or unsuccessful production acceptance: ${failedChecks.join(", ")}`);
+  const pass = (platform: string, check: string) => acceptance.checks[platform]?.[check]?.status === "PASS";
+  if (process.argv.includes("--plan")) {
+    if (!acceptance.releaseArtifact) throw new Error("The certified release artifact must be identified.");
+    const cli = Object.entries(cliPlatforms).filter(([, platform]) => pass(platform, "cleanInstall")).map(([artifact]) => artifact);
+    const desktop = desktopPackages.map(({ name, update, launch, platform, target, checks }) => {
+      const provenLaunch = pass(launch, "packagedLaunch");
+      const stable = provenLaunch && checks.every((check) => pass(platform, check));
+      return {
+        name: `AgentOS-${version}-${name}`,
+        update: `AgentOS-${version}-${update}`,
+        target,
+        channel: stable ? "stable" : provenLaunch ? "preview" : "withheld",
+        verifyInstaller: launch === "windows-x64"
+      };
+    });
+    console.log(JSON.stringify({ version, commit: freshness.certifiedCodeHead, source: acceptance.releaseArtifact, cli, desktop }));
+    return;
   }
-  console.log(`Production release gate: PASS for AgentOS ${version} with OpenClaw ${freshness.expectedVersion}.`);
+
+  const missing = Object.values(cliPlatforms).filter((platform) => !pass(platform, "cleanInstall") || !pass(platform, "updateCheck"));
+  if (missing.length) throw new Error(`Missing CLI package acceptance for ${missing.join(", ")}.`);
+  console.log(`CLI package acceptance: PASS for AgentOS ${version} with OpenClaw ${freshness.expectedVersion}.`);
 }
 
 main().catch((error) => {

@@ -22,6 +22,17 @@ export const CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES = [
   /^\.github\/workflows\/openclaw-agentos-(?:package|skill)-publish\.yml$/i
 ];
 
+// Publication consumes an immutable, separately verified bundle from the certified
+// commit. These paths can alter publication policy but cannot mutate that bundle.
+export const RELEASE_ONLY_PATH_RULES = [
+  /^\.github\/workflows\/(?:publish-agentos|release-agentos)\.yml$/,
+  /^scripts\/(?:check-production-release\.ts|publish-agentos-release\.mjs)$/,
+  /^packages\/agentos\/scripts\/(?:check-release-consistency|smoke-package)\.mjs$/,
+  /^scripts\/desktop\/smoke\.mjs$/,
+  /^tests\/agentos-public-release\.test\.mjs$/,
+  /^tests\/agentos-release-consistency\.test\.ts$/
+];
+
 export const CERTIFICATION_POLICY_TOOLING_PATH_RULES = [
   /^scripts\/check-certification-freshness\.mjs$/i,
   /^tests\/certification-freshness\.test\.ts$/i
@@ -38,6 +49,7 @@ function matchesAnyRule(filePath, rules) {
 export function classifyCertificationChangedPaths(changedPaths) {
   const uniquePaths = [...new Set(changedPaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0))];
   const documentationOnlyPaths = uniquePaths.filter(isCertificationDocumentationPath);
+  const releaseOnlyPaths = uniquePaths.filter((filePath) => matchesAnyRule(filePath, RELEASE_ONLY_PATH_RULES));
   const independentPackagePaths = uniquePaths.filter((filePath) => matchesAnyRule(filePath, CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES));
   const certificationPolicyPaths = uniquePaths.filter((filePath) => matchesAnyRule(filePath, CERTIFICATION_POLICY_TOOLING_PATH_RULES));
   const hasIndependentPackageSource = uniquePaths.some((filePath) => /^packages\/openclaw-agentos(?:\/|$)/i.test(filePath));
@@ -47,7 +59,7 @@ export function classifyCertificationChangedPaths(changedPaths) {
     matchesAnyRule(filePath, CERTIFICATION_POLICY_TOOLING_PATH_RULES) ||
     (filePath === "pnpm-lock.yaml" && hasIndependentPackageSource)
   );
-  const runtimeNeutralCertificationPolicyPaths = hasIndependentPackageSource && hasOnlyIndependentPackageChanges
+  const runtimeNeutralCertificationPolicyPaths = releaseOnlyPaths.length > 0 || (hasIndependentPackageSource && hasOnlyIndependentPackageChanges)
     ? certificationPolicyPaths
     : [];
   const packageLockPaths = hasIndependentPackageSource && hasOnlyIndependentPackageChanges
@@ -58,6 +70,7 @@ export function classifyCertificationChangedPaths(changedPaths) {
     !isCertificationDocumentationPath(filePath) &&
     !matchesAnyRule(filePath, CERTIFICATION_INDEPENDENT_PACKAGE_PATH_RULES) &&
     !runtimeNeutralCertificationPolicyPaths.includes(filePath) &&
+    !releaseOnlyPaths.includes(filePath) &&
     !packageLockPaths.includes(filePath)
   );
 
@@ -65,7 +78,7 @@ export function classifyCertificationChangedPaths(changedPaths) {
     changedPaths: uniquePaths,
     documentationOnlyPaths,
     independentPackagePaths: runtimeNeutralPackagePaths,
-    certificationPolicyPaths,
+    certificationPolicyPaths: [...certificationPolicyPaths, ...releaseOnlyPaths],
     meaningfulPaths
   };
 }

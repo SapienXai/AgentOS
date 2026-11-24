@@ -27,6 +27,10 @@ try {
   expectCommand(installedBin, ["doctor"], "AGENTOS DOCTOR");
   expectCommand(installedBin, ["doctor", "--deep"], "AGENTOS DOCTOR");
 
+  if (process.argv.includes("--check-update")) {
+    expectCommand(installedBin, ["update", "--check"], `up to date (${packageJson.version})`);
+  }
+
   console.log(`AgentOS package smoke passed for ${packageJson.name}@${packageJson.version}`);
 } finally {
   if (process.env.AGENTOS_KEEP_PACKAGE_SMOKE !== "1") {

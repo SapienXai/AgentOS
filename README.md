@@ -156,7 +156,9 @@ The initial password only creates the account when no Instance Protection state 
 
 ### Install
 
-Use the published CLI package:
+AgentOS 0.9.0 is available from the [GitHub release](https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.9.0). Use the shell installers below to install a verified CLI archive. For desktop previews and platform availability, see the [downloads page](https://agentos.sapienx.app/download).
+
+The npm registry has its own version history. To install the version currently on that registry:
 
 ```bash
 pnpm add -g @sapienx/agentos
@@ -164,8 +166,7 @@ pnpm add -g @sapienx/agentos
 npm install -g @sapienx/agentos
 ```
 
-For desktop installers, use the [public downloads page](https://agentos.sapienx.app/download).
-The shell installers require a release with CLI archives and SHA-256 checksums attached.
+The shell installers validate the CLI archive against its published SHA-256 checksum before installing it.
 
 macOS or Linux:
 
@@ -179,7 +180,7 @@ Windows PowerShell:
 iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
-Pin the version after the corresponding release is published:
+To pin 0.9.0:
 
 macOS or Linux:
 
@@ -449,17 +450,10 @@ For a real local release rehearsal, follow [`docs/agentos-clean-install-smoke-ch
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-pnpm check:production-release
+pnpm check:production-release --plan
 ```
 
-Run the Release AgentOS workflow on the candidate branch to build review artifacts. After production acceptance and release-owner approval, create and push the version tag:
-
-```bash
-git tag agentos-v0.9.0
-git push origin agentos-v0.9.0
-```
-
-Dispatch Release AgentOS on that tag with publishing enabled. The release job requires the `agentos-public-release` environment and matching production evidence. See the [0.9.0 release notes](docs/release-notes-agentos-0.9.0.md).
+Run **Release AgentOS** to build and verify artifacts. Dispatch **Publish AgentOS** on `main` to publish the platforms that passed their acceptance checks. The workflow requires passing main CI, matching production evidence, the original artifact checksum, and the `agentos-public-release` environment. It creates the release tags from the certified source commit. Desktop Public Preview installers are distributed separately from the stable Desktop updater. See the [0.9.0 release notes](docs/release-notes-agentos-0.9.0.md).
 
 The release workflow builds and smoke-tests packages for:
 
