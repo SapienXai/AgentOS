@@ -158,7 +158,14 @@ jobs:
             if (!$ready) { throw 'Installed desktop did not start its embedded server.' }
             Write-Output 'Installed desktop launched and its embedded loopback server returned HTTP 200.'
           } finally {
-            if (!$app.HasExited) { taskkill /pid $app.Id /t /f | Out-Null }
+            try {
+              $app.Refresh()
+              if (!$app.HasExited -and (!$app.CloseMainWindow() -or !$app.WaitForExit(3000))) {
+                $app.Kill($true)
+              }
+            } catch {
+              Write-Warning 'The runner will clean up remaining Desktop processes.'
+            }
           }
           (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() | Set-Content windows-desktop.txt -Encoding ascii
       - uses: actions/upload-artifact@v6
