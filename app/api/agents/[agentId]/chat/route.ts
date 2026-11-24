@@ -36,7 +36,7 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   ensureOpenAiAuthOrderForAgent
 } from "@/lib/openclaw/application/model-auth-service";
-import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
+import { isOpenClawAgentModelReady, readKnownAgentChatModelIssue } from "@/lib/openclaw/application/model-provider-state-service";
 import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   forgetAgentChatSession,
@@ -494,6 +494,14 @@ export async function POST(
               "AgentOS cannot write the OpenClaw session store for this agent. Start AgentOS outside the sandbox or grant write access to ~/.openclaw, then retry the chat."
           });
           clearMissionControlCaches();
+          return;
+        }
+
+        const compatibilityIssue = await readKnownAgentChatModelIssue({
+          agentId, modelId: agent.modelId, gatewayVersion: snapshot.diagnostics.version
+        });
+        if (compatibilityIssue) {
+          await send({ type: "done", ok: false, message: compatibilityIssue });
           return;
         }
 

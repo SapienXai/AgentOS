@@ -31,6 +31,12 @@ test("OpenClaw context recovery notices are failures and ordinary discussion rem
   assert.equal(resolveAgentChatContextFailureMessage("Your question is about context overflow."), null);
 });
 
+test("provider format rejection directs the operator to the model picker", () => {
+  assert.equal(resolveAgentChatRuntimeFailureMessage(
+    "OpenClaw Gateway ended the chat stream without assistant text: The AI service couldn't accept this request. Try a new conversation with /new, or choose another model in the Control UI."
+  ), "The selected model rejected this request. Try another model from the agent card.");
+});
+
 test("agent chat response helper reads assistant stream events", () => {
   assert.equal(
     extractAssistantTextFromAgentChatStreamLine(JSON.stringify({

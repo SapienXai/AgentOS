@@ -56,7 +56,7 @@ import {
   normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { buildUniqueAgentName } from "@/lib/openclaw/agent-naming";
-import { isOpenClawAgentModelReady } from "@/lib/openclaw/application/model-provider-state-service";
+import { isOpenClawAgentModelReady, readKnownAgentChatModelIssue } from "@/lib/openclaw/application/model-provider-state-service";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { removeWorkspaceChannelAgentMetadata } from "@/lib/openclaw/application/channel-service";
@@ -694,6 +694,11 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
         : agent.modelId ?? null;
 
   if (input.modelId !== undefined && nextModelId !== null) {
+    const compatibilityIssue = await readKnownAgentChatModelIssue({
+      agentId, modelId: nextModelId, gatewayVersion: snapshot.diagnostics.version
+    });
+    if (compatibilityIssue) throw new Error(compatibilityIssue);
+
     const readinessError = await resolveAgentModelAssignmentReadinessErrorWithNativeAgentEvidence(snapshot, {
       requestedModelId: nextModelId,
       candidateAgentIds: [agentId],

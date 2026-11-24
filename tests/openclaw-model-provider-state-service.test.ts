@@ -14,6 +14,7 @@ import {
   ensureOpenClawOllamaLocalCredential,
   isOpenClawAgentModelReady,
   persistOpenClawProviderToken,
+  readKnownAgentChatModelIssue,
   readOpenClawProviderConfigSummary,
   readOpenClawProviderModelStatus,
   readOpenClawCodexPluginReady,
@@ -27,6 +28,35 @@ import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-p
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/gateway-client";
 
 const originalFetch = globalThis.fetch;
+
+test("agent model changes reject the reproduced Sol route only for the pinned SIWC catalog", async () => {
+  let profileId = "openai:token-sharing:fixture";
+  let effort = "off";
+  let reads = 0;
+  setOpenClawAdapterForTesting({
+    getGatewaySurfacePort: () => ({
+      canProbeNativeGateway: () => true,
+      async probeNativeGateway(method: string) {
+        assert.equal(method, "models.list");
+        reads += 1;
+        return {
+          models: [{ provider: "openai", id: "gpt-6.2-sol", name: "GPT-6.2 Sol", thinkingLevels: [{ id: effort, label: effort }] }],
+          providerOutcomes: [{ provider: "openai", status: "ready", profileId }]
+        };
+      }
+    })
+  } as unknown as OpenClawAdapter);
+  const input = { agentId: "main", modelId: "openai/gpt-6.2-sol", gatewayVersion: "2026.11.5" };
+  assert.match(await readKnownAgentChatModelIssue(input) ?? "", /Choose GPT-6 Luna/);
+  assert.equal(await readKnownAgentChatModelIssue({ ...input, modelId: "openai/gpt-6-luna" }), null);
+  assert.equal(await readKnownAgentChatModelIssue({ ...input, gatewayVersion: "2026.11.8" }), null);
+  assert.equal(reads, 1);
+  effort = "low";
+  assert.equal(await readKnownAgentChatModelIssue(input), null);
+  effort = "off";
+  profileId = "openai:api-key-fixture";
+  assert.equal(await readKnownAgentChatModelIssue(input), null);
+});
 
 function fetchRouteGet() {
   return modelsProviderGet(new Request("http://agentos.test/api/models/providers"));

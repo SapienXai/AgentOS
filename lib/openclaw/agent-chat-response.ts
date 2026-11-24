@@ -164,6 +164,10 @@ export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
     return null;
   }
 
+  if (/The AI service couldn['’]t accept this request\. Try a new conversation with \/new/i.test(normalizedFailure)) {
+    return "The selected model rejected this request. Try another model from the agent card.";
+  }
+
   if (
     /stopped before confirming (?:the )?turn was complete/i.test(normalizedFailure) ||
     /before confirming (?:the )?turn[- ]complete confirmation/i.test(normalizedFailure) ||

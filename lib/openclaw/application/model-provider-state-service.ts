@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
-import { normalizeModelStatusPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
+import { normalizeModelStatusPayload, normalizeModelsPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import {
@@ -230,6 +230,25 @@ export async function readOpenClawProviderModelStatus(
 
     return null;
   }
+}
+
+export async function readKnownAgentChatModelIssue(input: { agentId: string; modelId: string; gatewayVersion?: string }) {
+  if (!/^v?2026\.11\.5(?:\s|$)/.test(input.gatewayVersion ?? "") ||
+      normalizeOpenAiModelId(input.modelId).split("@", 1)[0] !== "openai/gpt-6.2-sol") return null;
+
+  const native = getOpenClawAdapter().getGatewaySurfacePort?.();
+  if (!native?.canProbeNativeGateway()) return null;
+  // The pinned runtime advertises this model on SIWC but rejects an ordinary
+  // Responses turn even with a new session. Scope the guard to that route.
+  const catalog = await native.probeNativeGateway("models.list", {
+    view: "configured", agentId: input.agentId, provider: "openai"
+  }, { timeoutMs: 7_000 }).then(normalizeModelsPayload).catch(() => null);
+  const profile = catalog?.providerOutcomes?.find(({ provider, status }) => provider === "openai" && status === "ready");
+  const model = catalog?.models.find(({ key }) => key === "openai/gpt-6.2-sol");
+  const levels = model?.thinkingLevels;
+  return profile?.profileId?.startsWith("openai:token-sharing:") && levels?.length === 1 && levels[0].id === "off"
+    ? "OpenClaw runtime 2026.11.5 cannot run GPT-6.2 Sol agent chat with this ChatGPT connection. Choose GPT-6 Luna or another compatible model."
+    : null;
 }
 
 /**
