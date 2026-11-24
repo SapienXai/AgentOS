@@ -1,0 +1,138 @@
+{
+  "version": "0.9.0",
+  "candidateCommit": "6520429582bf753f984520ef3e570017cda0ca0f",
+  "checks": {
+    "macos-arm64": {
+      "cleanInstall": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "distributionSigning": {
+        "status": "FAIL",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "notarization": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "autoUpdate": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      }
+    },
+    "windows-x64": {
+      "cleanInstall": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "distributionSigning": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "autoUpdate": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      }
+    },
+    "linux-x64": {
+      "cleanInstall": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      },
+      "updaterSignature": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45389230270"
+      },
+      "autoUpdate": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+      }
+    },
+    "cli-macos-arm64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      }
+    },
+    "cli-macos-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45387312968"
+      },
+      "updateCheck": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      }
+    },
+    "cli-windows-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45387312968"
+      },
+      "updateCheck": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      }
+    },
+    "cli-linux-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+      }
+    },
+    "ios-pwa": {
+      "install": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "authenticatedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "firstAgentReply": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      }
+    },
+    "android-pwa": {
+      "install": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "authenticatedLaunch": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "firstAgentReply": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      }
+    },
+    "onboarding": {
+      "chatGptOAuth": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "firstWorkspace": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "firstAgentReply": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      },
+      "sessionContinuity": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#mobile-pwa-and-onboarding"
+      }
+    }
+  }
+}

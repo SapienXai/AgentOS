@@ -1,40 +1,56 @@
 # AgentOS 0.9.0 production readiness
 
-24 November 2026 · Candidate code `6d6f90f0` · Baseline `origin/main` at `5184b1df`
+24 November 2026. Candidate code `6520429582bf753f984520ef3e570017cda0ca0f`.
 
-**Public release remains NO-GO.** The candidate builds locally. The production acceptance gate is closed.
+**Public release decision — NO-GO.** The OpenClaw runtime passed certification. Public release acceptance requires production-signed installers, a native signed update rehearsal, iOS Home Screen validation, and the completed ChatGPT authorization path.
 
-## Platform evidence
+## OpenClaw and CI
 
-| Surface | Result | Observed evidence |
+AgentOS 0.9.0 is the first production baseline. The installer, supported minimum, recommendation, native contract, and Railway deployment use OpenClaw 2026.11.5. OpenClaw owns the Gateway, authentication, sessions, and runtime state. AgentOS owns onboarding, platform packaging, admission to its updater, and release policy. The clean certification uses disposable state and preserves existing external files.
+
+The exact 2026.11.5 package and separately published Gateway client and protocol packages matched the upstream release and npm integrity. The final candidate passed all 18 required certification artifacts. The fresh Gateway recorded 59 passing probes, 13 expected authorization denials, and 13 optional skips. The official production-runtime rehearsal recorded 46 passes, one expected denial, and 24 environment-limited skips. A concurrent identity run reported a Gateway error on session creation. The isolated retry passed, including the expected read-only denial and the authorized write. [Final certification](evidence/openclaw-2026.11.5-pre-merge-final-certification.json) · [Fresh Gateway](evidence/openclaw-2026.11.5-runtime-certification.json) · [Official runtime](evidence/openclaw-2026.11.5-final-official-runtime-certification.json)
+
+Release Watch now reviews only the newest stable release present in both upstreams. The dry run generated one intake for 2026.11.7. npm marked 2026.11.8 latest without matching GitHub stable release metadata. The earlier candidate rehearsal found session archive and delete failures on 2026.11.8. The 2026.11.7 intake remains pending certification. [Release Watch run](https://github.com/SapienXai/AgentOS/actions/runs/45387882253) · [OpenClaw 2026.11.7](https://github.com/openclaw/openclaw/releases/tag/v2026.11.7)
+
+CI previously failed because the 2026.11.5 certification artifact was absent. The artifact is now committed, and certification freshness remains required. A release job exposed a race in cleanup of a test's durable config queue. The test now waits for the persisted queue to empty. The Windows desktop job also exposed an updater method call that the locked Tauri API does not support. The installer now uses the existing embedded server shutdown before handing the already-verified update to Tauri. [Passing initial main CI](https://github.com/SapienXai/AgentOS/actions/runs/45387881857) · [Final candidate main CI](https://github.com/SapienXai/AgentOS/actions/runs/45389710450) · [Windows compiler failure](https://github.com/SapienXai/AgentOS/actions/runs/45387319077/job/138421548115) · [Final desktop runner validation](https://github.com/SapienXai/AgentOS/actions/runs/45389223666)
+
+## Desktop packages
+
+| Platform | Production acceptance | Observed evidence |
 | --- | --- | --- |
-| macOS ARM64 Desktop | FAIL | Built and verified a DMG, copied the app from the mounted image to a fresh directory, and verified the ad hoc bundle seal. Packaged server smoke and 13 Rust tests passed. Gatekeeper rejected the ad hoc signature. Developer ID notarization and the 0.8.0 in-app upgrade remain outstanding. |
-| Windows x64 Desktop and CLI | BLOCKED | Release jobs require installer Authenticode verification and Windows package smoke. No Windows installation or upgrade was exercised. |
-| Linux x64 Desktop | BLOCKED | A Linux x64 container exercised the CLI. Desktop AppImage, DEB and RPM installation and signed update remain outstanding. |
-| CLI on macOS ARM64 and Linux x64 | PASS | Both package smokes passed. On both platforms, installed the published 0.8.0 npm archive, created an owner and profile, upgraded to the candidate, and signed in again to read the existing profile. On macOS the shell installer also rejected an altered checksum and retained the installed package and state using a controlled download fixture. The Linux package and macOS DMG rehearsals preceded the final chat-only fix. |
-| Mobile PWA | BLOCKED | iPhone-sized WebKit and Android-sized Chromium verified protected login, the onboarding action and the standalone manifest. The candidate production package registered an active service worker. Physical home-screen installation and account-to-first-reply acceptance remain outstanding. |
-| ChatGPT onboarding | BLOCKED | Protected owner setup and OpenAI authorization launch passed against an isolated OpenClaw 2026.11.5 runtime. ChatGPT account consent, first workspace provisioning through that connection, and the first ChatGPT reply remain outstanding. |
+| macOS ARM64 | FAIL | Built the 0.9.0 DMG, verified the image, mounted it, copied the app into a fresh staging directory, and verified the ad hoc bundle seal. The packaged server smoke and 13 Rust shell tests passed. The first headless DMG run stopped in Finder layout setup. The CI-mode build completed, and the final DMG SHA-256 was `7218a7547ad2f9b44a14c80b0678d110f1a5618ef7baa375a01ee8d531820098`. Gatekeeper rejected the ad hoc app. Developer ID signing, notarization, and signed update installation remain required. |
+| Windows x64 | BLOCKED | The first native Windows job caught the updater compiler error. The fix is on main. The fixed Windows runner passed the Rust shell tests. Final installer packaging is tracked in the desktop workflow. A timestamped Authenticode signature and a signed installer/update rehearsal remain required. |
+| Linux x64 | BLOCKED | Release and desktop workflows build the AppImage, Debian, and RPM bundles. AppImage clean launch, the signed payload check, and a signed update rehearsal determine production acceptance. |
 
-The 0.8.0 published macOS updater archive verified with the public key bundled in the candidate. The new feed preserves the platform keys used by the 0.8.0 updater. A signed 0.9.0 application update still requires native platform acceptance.
+GitHub release workflow outputs are staging artifacts. The separate distribution-signing input requires an approved source ref and can build signed candidates while publication is disabled. The public job requires current certification, platform acceptance for the certified commit, final asset verification, and approval through the `agentos-public-release` environment. That environment is restricted to `agentos-v*` tags and has a required release owner. [Staging release workflow](https://github.com/SapienXai/AgentOS/actions/runs/45389230270) · [Protected release environment](https://github.com/SapienXai/AgentOS/settings/environments)
 
-An authenticated request to the packaged AgentOS API created a real workspace and primary agent. A local Ollama rehearsal reproduced a context overflow. The candidate now reports that terminal state as a failed chat turn. After raising the context limit in the disposable test runtime, the agent returned the expected first reply. AgentOS read the saved transcript and the next request reproduced the normal product history handoff. The agent recalled the word from the earlier turn. A separate direct request with no history did not recall it. These checks used Ollama for inference.
+## CLI packages
 
-## OpenClaw selection
-
-Retain 2026.11.5 as the candidate runtime and leave the certified recommendation at 2026.9.7 until final certification passes. Gateway protocol 4 and the pinned package identities remain the supported integration boundary.
-
-| OpenClaw | Result | Evidence |
+| Platform | Production acceptance | Observed evidence |
 | --- | --- | --- |
-| 2026.11.5 | PASS for the exercised runtime checks | The runtime harness recorded 59 passes, 13 expected denials and 13 skips. Exact Gateway lifecycle, operator authorization, session continuity, 2026.9.1 migration, native Doctor recovery, and the official production transport cutover passed. The cutover report covers candidate code `6d6f90f0`. |
-| 2026.11.7 | PASS for the exercised runtime checks | Matching runtime counts. Exact Gateway lifecycle, authorization, session continuity and 2026.9.1 migration and recovery passed. Two Gateway read methods gained write-scope requirements in the static comparison. |
-| 2026.11.8 | FAIL in runtime certification | npm moved its latest tag during the review. The intake could verify the npm identity, while GitHub release metadata was unavailable. The runtime report failed archive and delete-after-archive because the session was still active. Separate identity, session-continuity and official lifecycle tests passed. |
+| macOS ARM64 | PASS | Clean npm installation from the packaged 0.9.0 archive, package smoke, and read-only update check. |
+| macOS x64 | BLOCKED | The native Intel GitHub runner built and installed the 0.9.0 CLI and passed deep doctor. A native update check is outstanding. |
+| Windows x64 | BLOCKED | The native Windows GitHub runner built and installed the 0.9.0 CLI and passed deep doctor. A native update check is outstanding. |
+| Linux x64 | PASS | GitHub archive checksum verified. A fresh Linux x64 container installed the package, reported 0.9.0, ran the update check, served the login route with HTTP 200, and stopped cleanly. |
 
-## CI and publication
+The hosted CLI matrix ran against the candidate JavaScript bundle. The final source change affected the native desktop updater. [CLI packaging and smoke](https://github.com/SapienXai/AgentOS/actions/runs/45387312968)
 
-- Local lint, route generation, type checking, 2,254 tests, production build, release consistency, simulated compatibility, and package smoke ran. GitHub workflow syntax was validated with actionlint.
-- The GitHub CI failure on `main` comes from missing final OpenClaw 2026.11.5 evidence. Local production release validation fails on the same missing artifact. The native runtime reports describe individual suites. The failed CI and watcher runs are recorded in the [CI run](https://github.com/SapienXai/AgentOS/actions/runs/44486935082) and [Release Watch run](https://github.com/SapienXai/AgentOS/actions/runs/45195084982).
-- Release Watch now includes the newest release when the backlog exceeds its bound, accepts an exact manual target, and parses profile-dependent Gateway access. Dry-run intakes for 2026.11.5 and 2026.11.7 completed. The scheduled-equivalent run still reports the failed historical 2026.10.5 evidence and missing 2026.11.8 upstream release metadata.
-- Public publishing requires a manual dispatch against a matching tag from `main`, a protected `agentos-public-release` environment with reviewers, current OpenClaw final certification, platform acceptance bound to the candidate commit, and verified release signatures. The environment returned HTTP 404 when inspected. No publish was attempted.
-- The website candidate build rendered all five 0.9.0 download URLs using the release asset naming convention. The public download page can continue serving the 0.8.0 assets while the candidate awaits approval.
+## Mobile PWA and onboarding
 
-To pass the gate, commit the current OpenClaw final certification and `docs/evidence/agentos-0.9.0-production-acceptance.json`. The acceptance file must record `version`, the full `candidateCommit`, and platform `checks` containing each `status` and its HTTPS `evidence` link. The exact acceptance requirements are defined in `scripts/check-production-release.ts`. Use signed desktop artifacts and evidence from the actual platform and account flows.
+| Surface | Production acceptance | Observed evidence |
+| --- | --- | --- |
+| Android PWA | PASS (Android 16 emulator) | Added AgentOS to the launcher from Android Chrome and opened it from the launcher. The standalone window retained the authenticated session, ran the service worker, and received a real agent reply over HTTP 200. |
+| iOS PWA | BLOCKED | The iOS 27 Simulator opened the login page in Safari. In iPhone-sized WebKit, the authenticated session, standalone manifest, active service worker, and real agent reply passed. Native Safari Home Screen installation and authenticated standalone relaunch remain required. |
+| ChatGPT onboarding | BLOCKED | From an isolated fresh instance, protected owner setup and the simplified UI reached the real `auth.openai.com` consent page. A test account still has to approve token sharing and complete the first workspace and reply through ChatGPT. |
+| Local model onboarding rehearsal | PASS | The packaged web app created a real workspace and primary agent. Ollama returned the first reply. An authenticated browser reloaded the saved chat history and sent it through the normal follow-up request, and the agent recalled the earlier prompt. |
+
+The live download page and website main branch still serve the five existing 0.8.0 asset links. Each returned HTTP 200. The 0.9.0 link switch is ready for use after the 0.9.0 assets exist and are verified. [Download page](https://agentos.sapienx.app/download) · [Website production deployment](https://vercel.com/coin-collect-team/agentos/2ENFBoN58jX1Y19fewE8hzXJUFSX)
+
+## Release-owner actions
+
+- In Apple Developer, create or export the **Developer ID Application** certificate and create an app-specific password for notarization. Set repository secrets `APPLE_CERTIFICATE` (base64 of the exported P12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, and `APPLE_PASSWORD`. Set Actions variables `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID`. [Tauri macOS distribution signing](https://v2.tauri.app/distribute/sign/macos/)
+- In Azure Artifact Signing, finish organization identity validation and create a Public Trust certificate profile. Confirm the organization meets Public Trust eligibility and give the CI app registration the Artifact Signing Certificate Profile Signer role scoped to that profile. Set repository secret `AZURE_CLIENT_SECRET` and Actions variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_ARTIFACT_SIGNING_ENDPOINT`, `AZURE_ARTIFACT_SIGNING_ACCOUNT`, and `AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE`. [Tauri Windows distribution signing](https://v2.tauri.app/distribute/sign/windows/) · [Microsoft Public Trust eligibility](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)
+- Complete **Continue with ChatGPT → Open ChatGPT** in a clean QA instance with a dedicated ChatGPT test account and approve token sharing. An iPhone or a controllable iOS simulator is still needed to verify the Add to Home Screen path against a trusted QA origin.
+- After the signed artifact and account tests pass, approve the protected public release job. Enable the website 0.9.0 download links after the released assets respond successfully.
+
+No public tag or package publication was performed.
