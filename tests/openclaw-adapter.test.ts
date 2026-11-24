@@ -490,6 +490,17 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
   context.mock.timers.tick(100);
   await applied;
 
+  // The Gateway response arrives before the flush persists the empty queue.
+  const deadline = performance.now() + 2_000;
+  for (;;) {
+    const persisted = JSON.parse(await readFile(configPacingQueuePath(), "utf8")) as {
+      queuedMutations: unknown[];
+    };
+    if (persisted.queuedMutations.length === 0) break;
+    assert.ok(performance.now() < deadline, "The applied mutation must be removed from the persisted queue.");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
   assert.equal(attempt, 2);
   assert.deepEqual(appliedValues, [
     { model: "openai/gpt-5.5" }
