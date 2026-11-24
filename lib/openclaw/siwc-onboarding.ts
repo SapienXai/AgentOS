@@ -1,8 +1,8 @@
 export type SiwcOnboardingState =
-  | { phase: "checking" | "preparing" | "verifying" }
+  | { phase: "checking" | "preparing" | "verifying" | "restarting" }
   | { phase: "authorize"; flowId: string; browserRedirected?: boolean }
   | { phase: "choose-account"; options: string[] }
-  | { phase: "saved"; needsGatewayRestart: boolean }
+  | { phase: "saved"; recoveryFailed?: true }
   | { phase: "ready"; model: string; reused: boolean; thinking?: SiwcModelThinking }
   | { phase: "failed"; reason: SiwcFailure }
   | { phase: "cancelled" };

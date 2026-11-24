@@ -6,8 +6,10 @@ import {
   applySiwcModel, cancelSiwcFlow, getSiwcAuthorizationUrl, readSiwcFlow, readSiwcModelCatalog,
   retrySavedSiwcFlow, selectSiwcAccount, startSiwcFlow
 } from "@/lib/openclaw/application/siwc-onboarding-service";
+import { auditResultForNativeDoctorMutation, executeNativeDoctorMutation, getNativeDoctorSnapshot, reconcileNativeDoctorMutation } from "@/lib/openclaw/application/native-doctor-service";
 import { resolveGatewayRuntimeIdentity } from "@/lib/openclaw/lifecycle/runtime-discovery";
 import { SIWC_THINKING_LEVELS, type SiwcFailure } from "@/lib/openclaw/siwc-onboarding";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { readInstanceSessionCookie } from "@/lib/security/instance-protection";
 import { requireSameOriginMutation } from "@/lib/security/instance-protection-route";
 import { evaluateLocalOperatorRequest, isLoopbackHost } from "@/lib/security/local-operator";
@@ -32,7 +34,7 @@ const actionSchema = z.discriminatedUnion("action", [
   }).strict()
 ]);
 
-async function getOwner(request: Request): Promise<{ key: string } | { response: NextResponse }> {
+async function getOwner(request: Request) {
   const permission = await requireAgentOsProductPermission(request, "secrets.manage");
   if ("response" in permission || !permission.actor.authenticated ||
       !requireOwnerProductPermission(permission.actor, "secrets.manage")) {
@@ -52,12 +54,35 @@ async function getOwner(request: Request): Promise<{ key: string } | { response:
   const cookie = readInstanceSessionCookie(request.headers);
   if (actor.authenticationMethod === "instance-session" && !cookie) return { response: failure("owner", 403) };
   const key = createHash("sha256").update(JSON.stringify([actor.actorId, actor.authenticationMethod, cookie ?? null])).digest("hex");
-  return { key };
+  return { key, actor };
+}
+
+async function restartAfterSignIn(request: Request, ownerKey: string, signal: AbortSignal) {
+  const commandOptions = { signal };
+  const before = await getNativeDoctorSnapshot({ commandOptions, discoverAvailability: false });
+  const owner = await getOwner(request);
+  signal.throwIfAborted();
+  if (!owner.key || owner.key !== ownerKey || !requireOwnerProductPermission(owner.actor, "lifecycle.manage") ||
+      before.identity.authenticated !== true || !before.identity.connectionId || !before.identity.deviceId ||
+      before.identity.connectionGeneration === null) return false;
+
+  const mutation = await executeNativeDoctorMutation({ action: "gateway.restart.request", input: {
+    reason: "AgentOS ChatGPT setup credential recovery", skipDeferral: false
+  } }, { commandOptions });
+  const result = await reconcileNativeDoctorMutation(mutation, { before, commandOptions });
+  await recordAgentOsAuditEvent({
+    actor: owner.actor,
+    operation: "gateway.restart.request",
+    targetKind: "gateway",
+    targetId: before.identity.connectionId,
+    result: auditResultForNativeDoctorMutation(result.outcome, result.verification.status)
+  }).catch(() => {});
+  return result.verification.status === "verified";
 }
 
 export async function GET(request: Request) {
   const owner = await getOwner(request);
-  if ("response" in owner) return owner.response;
+  if (owner.response) return owner.response;
   const query = new URL(request.url).searchParams;
   const authorize = query.get("authorize");
   if (authorize) {
@@ -77,12 +102,12 @@ export async function POST(request: Request) {
   const blocked = requireSameOriginMutation(request);
   if (blocked) return blocked;
   const owner = await getOwner(request);
-  if ("response" in owner) return owner.response;
+  if (owner.response) return owner.response;
   const input = actionSchema.safeParse(await request.json().catch(() => null));
   if (!input.success) return failure("unsupported", 400);
   const ownerActive = async () => {
     const currentOwner = await getOwner(request);
-    return "key" in currentOwner && currentOwner.key === owner.key;
+    return currentOwner.key === owner.key;
   };
   if (input.data.action === "choose-model") {
     const result = await applySiwcModel(owner.key, input.data.model, input.data.thinking, ownerActive);
@@ -90,7 +115,7 @@ export async function POST(request: Request) {
   }
   if (input.data.action === "start" || input.data.action === "verify-saved") {
     const create = input.data.action === "start" ? startSiwcFlow : retrySavedSiwcFlow;
-    const state = create(owner.key, ownerActive);
+    const state = create(owner.key, ownerActive, (signal) => restartAfterSignIn(request, owner.key, signal));
     return NextResponse.json({ state }, { headers });
   }
   if (input.data.action === "cancel") {

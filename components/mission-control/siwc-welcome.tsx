@@ -44,7 +44,7 @@ type Props = {
 
 function active(state: SiwcOnboardingState | null) {
   return state?.phase === "checking" || state?.phase === "preparing" ||
-    state?.phase === "verifying" || state?.phase === "authorize" || state?.phase === "choose-account";
+    state?.phase === "verifying" || state?.phase === "restarting" || state?.phase === "authorize" || state?.phase === "choose-account";
 }
 
 export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, onEnter, onCreateWorkspace, onVerifiedChange, onBack }: Props) {
@@ -54,7 +54,6 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
   const [preparing, setPreparing] = useState(false);
   const [launchError, setLaunchError] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const [pollIssue, setPollIssue] = useState(false);
   const [desktopOpened, setDesktopOpened] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<SiwcModelCatalog | null>();
@@ -199,30 +198,20 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
     }
   };
 
-  const verifySaved = async (restart: boolean) => {
+  const verifySaved = async () => {
     if (working || state?.phase !== "saved") return;
     interacted.current = true;
     onStart();
     setPreparing(true);
-    setRestarting(restart);
     setLaunchError(false);
     setState({ phase: "verifying" });
     try {
-      if (restart) {
-        const response = await fetch("/api/gateway/control", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "restart" })
-        });
-        if (!response.ok) throw new Error("The Gateway restart could not be confirmed.");
-      }
       setState(await requestSiwc({ action: "verify-saved" }) ?? state);
     } catch {
       setState(state);
       setLaunchError(true);
     } finally {
       setPreparing(false);
-      setRestarting(false);
     }
   };
 
@@ -242,13 +231,13 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
   };
 
   const failed = state?.phase === "failed" ? state.reason : null;
-  const activeMessage = restarting ? "Restarting OpenClaw"
+  const activeMessage = phase === "restarting" ? "Restarting OpenClaw"
     : phase === "verifying" ? "Testing a model reply"
     : phase === "checking" ? "Checking your OpenClaw setup"
     : phase === "choose-account" ? "Choose a ChatGPT account"
     : phase === "authorize" ? browserOpened ? "Finish in your browser" : "Your sign-in link is ready"
     : "Preparing secure sign-in";
-  const progressDescription = restarting ? "AgentOS will retry the saved connection when OpenClaw is back."
+  const progressDescription = phase === "restarting" ? "AgentOS will resume the model check when OpenClaw is back."
     : phase === "authorize"
     ? (browserOpened
       ? "Approve token sharing in the OpenAI tab. AgentOS will pick up the result and test a model reply automatically."
@@ -401,15 +390,15 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
             <div role="status" className="space-y-1">
               <p className="font-semibold">ChatGPT sign-in saved</p>
               <p className="text-sm leading-6 text-muted-foreground">
-                {state.needsGatewayRestart
-                  ? "Restart OpenClaw to finish testing your connection. Active work may pause briefly."
+                {state.recoveryFailed
+                  ? "OpenClaw recovery could not be confirmed. Retry the model check or review Gateway settings."
                   : "Retry the model check to finish connecting your account."}
               </p>
             </div>
-            <Button className={primaryAction} onClick={() => void verifySaved(state.needsGatewayRestart)}>
-              {state.needsGatewayRestart ? "Restart Gateway and retry" : "Retry model check"}
+            <Button className={primaryAction} onClick={() => void verifySaved()}>
+              Retry model check
             </Button>
-            {launchError && <p role="alert" className="text-sm text-destructive">The model check could not restart. Check Gateway settings and try again.</p>}
+            {launchError && <p role="alert" className="text-sm text-destructive">The model check could not start. Try again.</p>}
           </>
         ) : working ? (
           <>
