@@ -736,7 +736,21 @@ function createProbes(input: {
       expectedOutcome: "authorization-denied"
     }),
     probe("talk-catalog", "talk.catalog", "Talk catalog", "talk.catalog", "optional", OPTIONAL_DIMENSIONS, "Talk catalog is optional for AgentOS core migration readiness.", {
-      validateResponse: objectWith("modes", "transports")
+      validateResponse: objectWith("modes", "transports"),
+      execute: async ({ clients }) => {
+        const deadline = Date.now() + 15_000;
+        for (;;) {
+          try {
+            return await clients.full.client.callNative("talk.catalog", {}, { timeoutMs: 4_000 }, { safety: "read" });
+          } catch (error) {
+            // The first read triggers upstream catalog initialization.
+            if (!(error instanceof Error) || !error.message.includes("Talk catalog is warming; retry shortly") || Date.now() >= deadline) {
+              throw error;
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 250));
+          }
+        }
+      }
     }),
     probe("talk-session", "talk.session.create", "Talk session", "talk.session.create", "experimental", OPTIONAL_DIMENSIONS, "Talk audio transport is not an AgentOS core dependency.", {
       skipReason: "Talk session creation and audio transport were not required in the isolated runtime."

@@ -458,9 +458,12 @@ test("CLI Gateway client does not fake successful agent updates", async () => {
   );
 });
 
-test("OpenClaw adapter queues the latest config mutation during Gateway config cooldown", { concurrency: false }, async () => {
+test("OpenClaw adapter queues the latest config mutation during Gateway config cooldown", { concurrency: false }, async (context) => {
+  context.mock.timers.enable({ apis: ["Date", "setTimeout"], now: Date.now() });
   setConfigUpdatePacingForTesting({ mode: "respect-gateway", minimumIntervalMs: null });
   const appliedValues: unknown[] = [];
+  let markApplied: () => void;
+  const applied = new Promise<void>((resolve) => { markApplied = resolve; });
   let attempt = 0;
   const adapter = new GatewayBackedOpenClawAdapter(() => ({
     async setConfig(_path: string, value: unknown) {
@@ -473,6 +476,7 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
       }
 
       appliedValues.push(value);
+      markApplied();
       return { stdout: JSON.stringify({ ok: true }), stderr: "" };
     }
   } as unknown as OpenClawGatewayClient));
@@ -483,7 +487,8 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
   assert.equal(first.metadata?.pending, true);
   assert.equal(second.metadata?.pending, true);
 
-  await delay(90);
+  context.mock.timers.tick(100);
+  await applied;
 
   assert.equal(attempt, 2);
   assert.deepEqual(appliedValues, [

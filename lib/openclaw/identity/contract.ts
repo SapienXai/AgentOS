@@ -409,8 +409,9 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "sessions.reclaim": ["operator.write"],
   "users.list": ["operator.read"],
   "users.self": ["operator.read"],
-  "users.setDisplayName": ["operator.write"],
-  "users.setAvatar": ["operator.write"],
+  // The pinned Gateway uses a read scope and separately requires the target profile.
+  "users.setDisplayName": ["operator.read"],
+  "users.setAvatar": ["operator.read"],
   "users.linkEmail": ["operator.admin"],
   "users.setRole": ["operator.admin"],
   "device.pair.list": ["operator.pairing"],

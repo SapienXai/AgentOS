@@ -156,6 +156,17 @@ The initial password only creates the account when no Instance Protection state 
 
 ### Install
 
+Use the published CLI package:
+
+```bash
+pnpm add -g @sapienx/agentos
+# or
+npm install -g @sapienx/agentos
+```
+
+For desktop installers, use the [public downloads page](https://agentos.sapienx.app/download).
+The shell installers require a release with CLI archives and SHA-256 checksums attached.
+
 macOS or Linux:
 
 ```bash
@@ -168,26 +179,18 @@ Windows PowerShell:
 iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
-Or install with a package manager:
-
-```bash
-pnpm add -g @sapienx/agentos
-# or
-npm install -g @sapienx/agentos
-```
-
-Install a specific published version:
+Pin the version after the corresponding release is published:
 
 macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.8.0 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.9.0 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.8.0'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.9.0'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 ### Start AgentOS
@@ -205,11 +208,9 @@ agentos doctor --deep
 
 Then:
 
-1. complete OpenClaw and model onboarding;
-2. create or select a workspace;
-3. create a digital worker;
-4. assign a mission or scheduled task;
-5. inspect the runtime, transcript, and output.
+1. Prepare OpenClaw and connect ChatGPT or another model provider.
+2. Create your first workspace and its first agent.
+3. Open the agent's chat and send a short message to confirm a reply.
 
 If OpenClaw is already installed, AgentOS connects to the live Gateway and projects its real state. If OpenClaw is missing or unhealthy, AgentOS shows an explicit setup or unavailable state instead of presenting fake operational data.
 
@@ -338,7 +339,7 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-The current `0.8.0` package uses the following OpenClaw version policy:
+The `0.9.0` release candidate uses the following OpenClaw version policy:
 
 - Recommended OpenClaw: `2026.9.7`;
 - Fresh setup install target: `2026.11.5` (candidate; final AgentOS certification pending);
@@ -449,9 +450,17 @@ For a real local release rehearsal, follow [`docs/agentos-clean-install-smoke-ch
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-git tag agentos-v0.8.0
-git push origin agentos-v0.8.0
+pnpm check:production-release
 ```
+
+Run the Release AgentOS workflow on the candidate branch to build review artifacts. After production acceptance and release-owner approval, create and push the version tag:
+
+```bash
+git tag agentos-v0.9.0
+git push origin agentos-v0.9.0
+```
+
+Dispatch Release AgentOS on that tag with publishing enabled. The release job requires the `agentos-public-release` environment and matching production evidence. See the [0.9.0 release notes](docs/release-notes-agentos-0.9.0.md).
 
 The release workflow builds and smoke-tests packages for:
 

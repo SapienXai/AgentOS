@@ -4,12 +4,22 @@ on:
   push:
     tags:
       - "agentos-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the selected release tag after production acceptance"
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: agentos-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validate-release:
@@ -19,6 +29,8 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -46,7 +58,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p .smoke
-          export AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          export AGENTOS_API_TOKEN
           export AGENTOS_SMOKE_BASE_URL=http://127.0.0.1:3000
           export AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1
           export AGENTOS_SMOKE_JSON_OUTPUT=.smoke/mission-control-smoke.json
@@ -82,7 +95,8 @@ jobs:
         if: always()
         with:
           name: mission-control-release-smoke
-          path: .smoke/*
+          path: .smoke/mission-control-smoke.json
+          include-hidden-files: true
           if-no-files-found: warn
 
       - id: package
@@ -92,11 +106,20 @@ jobs:
 
       - id: tag
         shell: bash
+        env:
+          PUBLISH: ${{ inputs.publish }}
         run: |
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            if [ "$PUBLISH" = "true" ]; then
+              echo "Select an AgentOS release tag to publish." >&2
+              exit 1
+            fi
+            exit 0
+          fi
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#agentos-v}"
 
-          if [ "$VERSION" = "$TAG" ]; then
+          if [[ ! "$TAG" =~ ^agentos-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Unexpected tag format: $TAG" >&2
             exit 1
           fi
@@ -105,6 +128,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Ensure tag matches package version
+        if: github.ref_type == 'tag'
         shell: bash
         run: |
           if [ "${{ steps.package.outputs.version }}" != "${{ steps.tag.outputs.version }}" ]; then
@@ -127,7 +151,7 @@ jobs:
           - runner: macos-15-intel
             platform: darwin
             arch: x64
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin
             arch: arm64
     runs-on: ${{ matrix.runner }}
@@ -225,14 +249,55 @@ jobs:
   build-desktop-assets:
     needs: validate-release
     uses: ./.github/workflows/desktop-release.yml
+    with:
+      production: ${{ inputs.publish == true }}
     secrets: inherit
 
-  create-release:
+  production-gate:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
     needs:
       - validate-release
       - build-release-assets
       - build-desktop-assets
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Require a release tag from main
+        run: git merge-base --is-ancestor HEAD origin/main
+
+      - name: Require release-owner review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers="$(gh api "repos/$GITHUB_REPOSITORY/environments/agentos-public-release" --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] | length')"
+          test "$reviewers" -gt 0
+
+      - name: Require current OpenClaw certification and production acceptance
+        run: pnpm check:production-release
+
+  create-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs:
+      - validate-release
+      - build-release-assets
+      - build-desktop-assets
+      - production-gate
+    runs-on: ubuntu-latest
+    environment: agentos-public-release
     permissions:
       contents: write
     steps:
@@ -246,6 +311,33 @@ jobs:
 
       - name: Validate complete release assets and build signed updater manifest
         run: node scripts/desktop/finalize-release-assets.mjs --root release-assets --version "${{ needs.validate-release.outputs.version }}"
+
+      - name: Verify updater archives with the bundled public key
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+          const { tmpdir } = require("node:os");
+          const { basename, join } = require("node:path");
+          const { plugins: { updater } } = require("./apps/desktop/src-tauri/tauri.conf.json");
+          const { platforms } = require("./release-assets/latest.json");
+          const temp = mkdtempSync(join(tmpdir(), "agentos-signatures-"));
+          try {
+            const publicKey = join(temp, "updater.pub");
+            writeFileSync(publicKey, Buffer.from(updater.pubkey, "base64"));
+            for (const { url, signature } of Object.values(platforms)) {
+              const asset = join("release-assets", basename(new URL(url).pathname));
+              const signatureFile = join(temp, "archive.minisig");
+              writeFileSync(signatureFile, Buffer.from(signature, "base64"));
+              execFileSync("minisign", ["-Vm", asset, "-p", publicKey, "-x", signatureFile], { stdio: "inherit" });
+            }
+          } finally {
+            rmSync(temp, { recursive: true, force: true });
+          }
+          EOF
 
       - name: Write release notes
         shell: bash
@@ -326,9 +418,17 @@ jobs:
           - Signed Tauri updater assets for macOS ARM64, Windows x64, Linux AppImage, Debian and RPM.
           - macOS DMG, Windows NSIS, Linux AppImage, Debian and RPM installers.
           EOF
+          version_notes="docs/release-notes-agentos-${{ needs.validate-release.outputs.version }}.md"
+          if [ -f "$version_notes" ]; then
+            cat "$version_notes" > version-release-notes.md
+            printf '\n' >> version-release-notes.md
+            cat release-notes.md >> version-release-notes.md
+            mv version-release-notes.md release-notes.md
+          fi
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.validate-release.outputs.tag }}
           name: AgentOS ${{ needs.validate-release.outputs.version }}
           body_path: release-notes.md
           generate_release_notes: true

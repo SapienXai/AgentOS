@@ -34,11 +34,12 @@ Manual dispatch can provide one validated exact target and opt into prerelease
 inspection. Versions are parsed numerically, so `2026.9.10` sorts after
 `2026.9.2`.
 
-The watcher processes a bounded backlog in ascending order. Each target gets
-its own intake and is compared sequentially to the previous upstream release,
-while AgentOS policy still remains based on the current recommended version.
-An unexpectedly large backlog fails visibly instead of launching an unbounded
-job.
+The watcher processes the newest 50 releases per scheduled run in ascending order.
+Each target gets its own intake and is compared sequentially. The first comparison
+starts at the current recommended version. An oversized backlog is reported as
+incomplete while the newest release remains visible. A manual exact target can
+review a version outside that window. Exact targets newer than the native contract
+are compared against that contract.
 
 ## Identity and evidence
 

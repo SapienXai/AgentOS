@@ -301,7 +301,7 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
         </h2>
         <p className="mt-2 max-w-md text-pretty text-sm leading-6 text-muted-foreground sm:text-base">
           {state?.phase === "ready"
-            ? (state.reused ? "OpenClaw verified your existing model." : "OpenClaw verified a reply from your ChatGPT connection.")
+            ? (state.reused ? "Your connected model responded successfully." : "Your ChatGPT connection responded successfully.")
             : "Use your ChatGPT account to power your default agent."}
         </p>
       </div>
@@ -315,7 +315,11 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
                 <span className="break-words">{state.model}{state.thinking ? ` · ${thinkingLabel(state.thinking)}` : ""}</span>
               </span>
             </p>
-            <div className="border-y border-border py-4">
+            <details className="border-y border-border py-4">
+              <summary className="cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+                Model settings
+              </summary>
+              <div className="mt-3">
               {catalog === undefined ? (
                 <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
                   <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" /> Loading OpenAI models…
@@ -381,7 +385,8 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
                   </Button>
                 </div>
               )}
-            </div>
+              </div>
+            </details>
             {onCreateWorkspace && (
               <Button className={primaryAction} onClick={onCreateWorkspace} disabled={applyingModel || pendingModel}>
                 Create your first workspace <ArrowRight aria-hidden className="ml-2 size-4" />

@@ -18,7 +18,7 @@ import {
 import { buildOpenClawCompatibilityIntake, renderOpenClawCompatibilityIssue } from "@/lib/openclaw/upstream/compatibility-intake";
 import { getOpenClawReleaseContractDiff } from "@/lib/openclaw/upstream/contract-diff";
 import { createGitHubIssueClient, syncOpenClawCompatibilityIssue, type GitHubIssueClient } from "@/lib/openclaw/upstream/github-issue-client";
-import { discoverOfficialOpenClawReleases, assertValidOpenClawReleaseVersion, type ReleaseWatcherFetch } from "@/lib/openclaw/upstream/release-discovery";
+import { discoverOfficialOpenClawReleases, assertValidOpenClawReleaseVersion, compareOpenClawReleaseVersions, type ReleaseWatcherFetch } from "@/lib/openclaw/upstream/release-discovery";
 import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
 import type {
   OpenClawCertifiedEvidence,
@@ -126,7 +126,9 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
   const issueClient = options.issueClient ?? createIssueClientFromEnvironment(options);
   const intakes: OpenClawReleaseWatchResult["intakes"] = [];
   let blockedIntakeCount = 0;
-  let baseVersion = recommendedVersion;
+  let baseVersion = targetVersion && compareOpenClawReleaseVersions(targetVersion, nativeContractVersion) > 0
+    ? nativeContractVersion
+    : recommendedVersion;
 
   for (const release of releasesForIntake) {
     const verification = await verifyOfficialOpenClawRelease({
@@ -168,8 +170,8 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     let issueAction = "not-requested";
     let issueMetadataStatus: OpenClawReleaseWatchResult["intakes"][number]["issueMetadataStatus"] = "not-requested";
     if (reconciliation.status === "blocked") {
-      issueAction = "identity-mismatch";
-      issueMetadataStatus = "identity-mismatch";
+      issueAction = reconciliation.identityStatus === "mismatch" ? "identity-mismatch" : "certification-evidence-invalid";
+      if (reconciliation.identityStatus === "mismatch") issueMetadataStatus = "identity-mismatch";
     } else if (issueClient) {
       const issueResult = await syncOpenClawCompatibilityIssue({ intake, client: issueClient, dryRun: options.dryRun });
       issueAction = issueResult.action;
@@ -238,10 +240,10 @@ export async function loadOpenClawCertifiedEvidence(input: {
     const historicalPath = await findHistoricalCertificationPath(evidenceRoot, input.version);
     if (historicalPath) {
       return {
-        status: "invalid",
+        status: "missing",
         path: historicalPath,
         evidence: null,
-        reason: "Only historical certification evidence was found; it is not promotable as pre-merge final evidence."
+        reason: "The current final certification is missing. The historical evidence is retained for review."
       };
     }
     return {

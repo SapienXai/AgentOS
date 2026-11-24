@@ -103,6 +103,23 @@ test("official discovery returns missed stable releases in ascending order and i
   assert.deepEqual(result.releases.map((release) => release.version), ["2026.9.3", "2026.9.4"]);
   assert.equal(result.latestStableVersion, "2026.9.4");
   assert.deepEqual(result.ignoredPrereleaseVersions, ["2026.9.5-beta.1"]);
+
+  const exact = await discoverOfficialOpenClawReleases({
+    currentRecommendedVersion: "2026.9.2",
+    targetVersion: "2026.9.4",
+    maxReleases: 1,
+    fetchImpl
+  });
+  assert.deepEqual(exact.releases.map(({ version }) => version), ["2026.9.4"]);
+  assert.equal(exact.truncated, false);
+
+  const bounded = await discoverOfficialOpenClawReleases({
+    currentRecommendedVersion: "2026.9.2",
+    maxReleases: 1,
+    fetchImpl
+  });
+  assert.deepEqual(bounded.releases.map(({ version }) => version), ["2026.9.4"]);
+  assert.equal(bounded.remainingReleaseCount, 1);
 });
 
 test("discovery distinguishes upstream failure from no new release", async () => {
@@ -614,7 +631,7 @@ test("release-watch promotes fresh final evidence and keeps historical evidence 
   );
   const historicalLookup = await loadOpenClawCertifiedEvidence({ version: "2026.9.4", evidenceDir: historicalEvidenceDir });
 
-  assert.equal(historicalLookup.status, "invalid");
+  assert.equal(historicalLookup.status, "missing");
   assert.equal(historicalLookup.evidence, null);
   assert.match(historicalLookup.reason, /historical|not promotable/i);
 });

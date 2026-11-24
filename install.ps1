@@ -112,6 +112,9 @@ $tempRoot = [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectoryS
 $tempDir = Join-Path $tempRoot ("agentos-install.{0}" -f ([guid]::NewGuid().ToString("N")))
 
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+$stagingDir = $null
+$previousPackage = $null
+$packageDir = Join-Path $installRoot "package"
 
 try {
   $artifactFile = Join-Path $tempDir $artifactName
@@ -120,37 +123,27 @@ try {
   Write-Host "Downloading $artifactUrl"
   Download-File -Url $artifactUrl -Target $artifactFile
 
-  $checksumDownloaded = $false
-
-  try {
-    Download-File -Url $checksumUrl -Target $checksumFile
-    $checksumDownloaded = $true
-  } catch {
-    $checksumDownloaded = $false
-  }
-
-  if ($checksumDownloaded) {
-    Verify-Checksum -ChecksumFile $checksumFile -ArtifactFile $artifactFile
-  } else {
-    Write-Host "No checksum file found; skipping SHA-256 verification."
-  }
+  Download-File -Url $checksumUrl -Target $checksumFile
+  Verify-Checksum -ChecksumFile $checksumFile -ArtifactFile $artifactFile
 
   Require-Command "tar"
 
   New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 
-  $packageDir = Join-Path $installRoot "package"
+  $stagingDir = Join-Path $installRoot (".package-install.{0}" -f ([guid]::NewGuid().ToString("N")))
+  New-Item -ItemType Directory -Path $stagingDir | Out-Null
+  & tar -xzf "$artifactFile" -C "$stagingDir"
+
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $stagingDir "package/bin/agentos.js") -PathType Leaf)) {
+    throw "Failed to extract a valid AgentOS package from $artifactFile."
+  }
 
   if (Test-Path -LiteralPath $packageDir) {
-    Remove-Item -LiteralPath $packageDir -Recurse -Force
+    $previousPackage = Join-Path $stagingDir "previous"
+    Move-Item -LiteralPath $packageDir -Destination $previousPackage
   }
-
-  & tar -xzf "$artifactFile" -C "$installRoot"
-
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed to extract $artifactFile."
-  }
+  Move-Item -LiteralPath (Join-Path $stagingDir "package") -Destination $packageDir
 
   $launcherPath = Join-Path $binDir "agentos.cmd"
   $nodeScriptPath = [System.IO.Path]::Combine($installRoot, "package", "bin", "agentos.js")
@@ -164,4 +157,10 @@ node "$nodeScriptPath" %*
   Print-Completion -LauncherPath $launcherPath
 } finally {
   Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+  if ($stagingDir) {
+    if ($previousPackage -and (Test-Path -LiteralPath $previousPackage) -and -not (Test-Path -LiteralPath $packageDir)) {
+      Move-Item -LiteralPath $previousPackage -Destination $packageDir
+    }
+    Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }

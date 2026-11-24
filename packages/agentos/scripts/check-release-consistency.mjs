@@ -449,7 +449,7 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     "package.json",
     "scripts.publish:agentos",
     rootPackage.scripts?.["publish:agentos"],
-    "pnpm check:release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"
+    "pnpm check:release && pnpm check:production-release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"
   );
 
   if (prepareBundle) {
@@ -535,6 +535,9 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:release");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:production-release");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "- production-gate");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "environment: agentos-public-release");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Run Mission Control browser smoke");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm start > .smoke/agentos-server.log");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm smoke:mission-control");

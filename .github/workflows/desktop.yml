@@ -20,7 +20,7 @@ jobs:
           - name: Linux
             os: ubuntu-22.04
           - name: macOS
-            os: macos-14
+            os: macos-15
           - name: Windows
             os: windows-latest
     runs-on: ${{ matrix.os }}

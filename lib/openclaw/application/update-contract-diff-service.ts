@@ -55,6 +55,7 @@ export type OpenClawCoreMethodSpec = {
   /** Unknown lifetime literals are retained as evidence and never treated as supported. */
   lifetime?: string | null;
   sessionAccess?: OpenClawGatewaySessionAccessContract | null;
+  profileAccess?: "required" | "independent" | null;
   readSharing?: OpenClawGatewayReadSharingContract | null;
 };
 
@@ -232,7 +233,7 @@ function parseLegacyCoreMethodRow(
   const fields = parseObjectFields(row, rowNumber);
   assertAllowedFields(fields, [
     "name", "scope", "advertise", "startup", "controlPlaneWrite", "lifetime", "sessionAccess",
-    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents"
+    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents", "profileAccess"
   ], rowNumber);
 
   const name = parseMethodName(fields.get("name"), rowNumber);
@@ -249,6 +250,7 @@ function parseLegacyCoreMethodRow(
     description: null,
     lifetime: parseLifetimeField(fields, rowNumber),
     sessionAccess: parseSessionAccessField(fields, rowNumber, constants),
+    ...(fields.has("profileAccess") ? { profileAccess: parseProfileAccess(fields, rowNumber) } : {}),
     readSharing: parseReadSharingPolicy(fields, rowNumber)
   };
 }
@@ -276,7 +278,7 @@ function parseTupleCoreMethodRow(
 
   assertAllowedFields(policy, [
     "advertise", "startup", "controlPlaneWrite", "compatibilityRestored", "description", "lifetime", "sessionAccess",
-    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents"
+    "shareKey", "shareMaxAgeMs", "shareInvalidationEvents", "profileAccess"
   ], rowNumber);
   return {
     name,
@@ -292,8 +294,17 @@ function parseTupleCoreMethodRow(
       : null,
     lifetime: parseLifetimeField(policy, rowNumber),
     sessionAccess: parseSessionAccessField(policy, rowNumber, constants),
+    ...(policy.has("profileAccess") ? { profileAccess: parseProfileAccess(policy, rowNumber) } : {}),
     readSharing: parseReadSharingPolicy(policy, rowNumber)
   };
+}
+
+function parseProfileAccess(fields: Map<string, string>, rowNumber: number) {
+  const access = parseStringLiteral(fields.get("profileAccess"), "profileAccess", rowNumber);
+  if (access !== "required" && access !== "independent") {
+    throw new Error(`OpenClaw core Gateway method descriptor row ${rowNumber} has unsupported profileAccess.`);
+  }
+  return access;
 }
 
 function parseLifetimeField(fields: Map<string, string>, rowNumber: number): string | null {
@@ -1049,14 +1060,16 @@ export function compareOpenClawCoreMethodSpecs(
       });
     }
 
+    const profileAccessChanged = (current.profileAccess ?? null) !== (target.profileAccess ?? null);
     if (
       current.advertise !== target.advertise ||
       current.startup !== target.startup ||
       current.controlPlaneWrite !== target.controlPlaneWrite ||
-      current.compatibilityRestored !== target.compatibilityRestored
+      current.compatibilityRestored !== target.compatibilityRestored ||
+      profileAccessChanged
     ) {
       const hidden = current.advertise && !target.advertise;
-      const dynamicAuthorization = requiresRuntimeAuthorization(target.scope);
+      const dynamicAuthorization = profileAccessChanged || requiresRuntimeAuthorization(target.scope);
       const status = hidden
         ? lostOperationStatus(method, currentSpecs, targetSpecs, operations)
         : dynamicAuthorization
@@ -1076,7 +1089,9 @@ export function compareOpenClawCoreMethodSpecs(
         currentReadSharing,
         targetReadSharing,
         affectedOperations,
-        message: dynamicAuthorization
+        message: profileAccessChanged
+          ? `${method} profile access changes from ${current.profileAccess ?? "implicit"} to ${target.profileAccess ?? "implicit"}; verify authorization against the live Gateway.`
+          : dynamicAuthorization
           ? `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}); descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
           : `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}).`
       });

@@ -98,6 +98,7 @@ jobs:
         with:
           name: openclaw-compat-${{ matrix.channel }}
           path: .compat/openclaw-${{ matrix.channel }}.json
+          include-hidden-files: true
           if-no-files-found: warn
 
   mission-control-browser-smoke:
@@ -129,7 +130,8 @@ jobs:
           AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json
         run: |
           mkdir -p .smoke
-          export AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          export AGENTOS_API_TOKEN
           pnpm start > .smoke/agentos-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
@@ -161,5 +163,6 @@ jobs:
         if: always()
         with:
           name: mission-control-browser-smoke
-          path: .smoke/*
+          path: .smoke/mission-control-smoke.json
+          include-hidden-files: true
           if-no-files-found: warn

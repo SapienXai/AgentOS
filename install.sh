@@ -72,26 +72,17 @@ download_file() {
 }
 
 verify_checksum() {
-  checksum_file="$1"
-  artifact_file="$2"
-
-  if command -v shasum >/dev/null 2>&1; then
-    (
-      cd "$(dirname "$artifact_file")"
-      shasum -a 256 -c "$(basename "$checksum_file")"
-    )
-    return
-  fi
-
-  if command -v sha256sum >/dev/null 2>&1; then
-    (
-      cd "$(dirname "$artifact_file")"
-      sha256sum -c "$(basename "$checksum_file")"
-    )
-    return
-  fi
-
-  echo "No checksum tool found; skipping SHA-256 verification."
+  node --input-type=commonjs - "$1" "$2" <<'NODE'
+const { createHash } = require("node:crypto");
+const { readFileSync } = require("node:fs");
+const { basename } = require("node:path");
+const [checksumFile, artifactFile] = process.argv.slice(2);
+const digest = createHash("sha256").update(readFileSync(artifactFile)).digest("hex");
+if (readFileSync(checksumFile, "utf8").trim() !== digest + "  " + basename(artifactFile)) {
+  console.error("SHA-256 verification failed for " + basename(artifactFile) + ".");
+  process.exitCode = 1;
+}
+NODE
 }
 
 render_launcher() {
@@ -144,7 +135,21 @@ ARTIFACT_URL="${BASE_URL}/${ARTIFACT_NAME}"
 CHECKSUM_URL="${BASE_URL}/${CHECKSUM_NAME}"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentos-install.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+STAGING_DIR=""
+cleanup_install() {
+  rm -rf "$TMP_DIR"
+  if [ -z "$STAGING_DIR" ]; then return; fi
+  if [ -e "$STAGING_DIR/previous" ] && [ ! -e "$INSTALL_ROOT/package" ]; then
+    if ! mv "$STAGING_DIR/previous" "$INSTALL_ROOT/package"; then
+      echo "Previous installation preserved in $STAGING_DIR/previous" >&2
+      return
+    fi
+  fi
+  rm -rf "$STAGING_DIR"
+}
+trap cleanup_install EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 ARTIFACT_FILE="$TMP_DIR/$ARTIFACT_NAME"
 CHECKSUM_FILE="$TMP_DIR/$CHECKSUM_NAME"
@@ -153,12 +158,16 @@ LAUNCHER_PATH="$BIN_DIR/agentos"
 echo "Downloading ${ARTIFACT_URL}"
 download_file "$ARTIFACT_URL" "$ARTIFACT_FILE"
 
-if download_file "$CHECKSUM_URL" "$CHECKSUM_FILE"; then
-  verify_checksum "$CHECKSUM_FILE" "$ARTIFACT_FILE"
-fi
+download_file "$CHECKSUM_URL" "$CHECKSUM_FILE"
+verify_checksum "$CHECKSUM_FILE" "$ARTIFACT_FILE"
 
 mkdir -p "$INSTALL_ROOT" "$BIN_DIR"
-rm -rf "$INSTALL_ROOT/package"
-tar -xzf "$ARTIFACT_FILE" -C "$INSTALL_ROOT"
+STAGING_DIR="$(mktemp -d "$INSTALL_ROOT/.package-install.XXXXXX")"
+tar -xzf "$ARTIFACT_FILE" -C "$STAGING_DIR"
+test -f "$STAGING_DIR/package/bin/agentos.js"
+if [ -e "$INSTALL_ROOT/package" ]; then
+  mv "$INSTALL_ROOT/package" "$STAGING_DIR/previous"
+fi
+mv "$STAGING_DIR/package" "$INSTALL_ROOT/package"
 render_launcher "$LAUNCHER_PATH" "$INSTALL_ROOT"
 print_completion "$LAUNCHER_PATH"

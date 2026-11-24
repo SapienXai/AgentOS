@@ -2,6 +2,10 @@ name: AgentOS Desktop Release Assets
 
 on:
   workflow_call:
+    inputs:
+      production:
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -21,7 +25,7 @@ jobs:
             os: ubuntu-22.04
           - name: macOS ARM64
             platform: macos-arm64
-            os: macos-14
+            os: macos-15
           - name: Windows x64
             platform: windows-x64
             os: windows-latest
@@ -61,6 +65,9 @@ jobs:
       - name: Prepare and audit packaged AgentOS
         run: pnpm desktop:prepare && pnpm desktop:audit && pnpm desktop:check
 
+      - name: Smoke packaged AgentOS server
+        run: pnpm desktop:smoke
+
       - name: Build signed Desktop bundles
         shell: bash
         env:
@@ -72,6 +79,24 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: codesign --verify --deep --strict --verbose=2 apps/desktop/src-tauri/target/release/bundle/macos/AgentOS.app
+
+      - name: Verify macOS distribution signing and notarization
+        if: inputs.production && runner.os == 'macOS'
+        shell: bash
+        run: |
+          app=apps/desktop/src-tauri/target/release/bundle/macos/AgentOS.app
+          codesign -dvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application:'
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+
+      - name: Verify Windows installer Authenticode
+        if: inputs.production && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis -Filter '*setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected one Windows installer.' }
+          $signature = Get-AuthenticodeSignature -FilePath $installers[0].FullName
+          if ($signature.Status -ne 'Valid') { throw "Windows installer signature is $($signature.Status)." }
 
       - uses: actions/upload-artifact@v6
         with:

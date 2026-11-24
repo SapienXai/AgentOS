@@ -2354,7 +2354,7 @@ function compareVersions(a, b) {
 async function installReleaseUpdate(status) {
   const artifactName = `agentos-${getAssetPlatform()}-${getAssetArch()}.tgz`;
   const checksumName = `${artifactName}.sha256`;
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "agentos-update-"));
+  const tempDir = mkdtempSync(path.join(path.dirname(packageRoot), ".agentos-update-"));
 
   try {
     const artifactPath = path.join(tempDir, artifactName);
@@ -2363,12 +2363,8 @@ async function installReleaseUpdate(status) {
 
     await downloadFileToPath(`${status.downloadBaseUrl}/${artifactName}`, artifactPath);
 
-    try {
-      await downloadFileToPath(`${status.downloadBaseUrl}/${checksumName}`, checksumPath);
-      verifyChecksumFile(checksumPath, artifactPath);
-    } catch {
-      console.warn("No checksum file found; skipping SHA-256 verification.");
-    }
+    await downloadFileToPath(`${status.downloadBaseUrl}/${checksumName}`, checksumPath);
+    verifyChecksumFile(checksumPath, artifactPath);
 
     mkdirSync(stageDir, {
       recursive: true
@@ -2384,8 +2380,10 @@ async function installReleaseUpdate(status) {
 
     const stagedPackagePath = path.join(stageDir, "package");
 
-    if (!existsSync(stagedPackagePath)) {
-      throw new Error("Update archive did not contain a package directory.");
+    const stagedPackage = JSON.parse(readFileSync(path.join(stagedPackagePath, "package.json"), "utf8"));
+    if (stagedPackage.name !== packageJson.name || stagedPackage.version !== status.latestVersion ||
+        !existsSync(path.join(stagedPackagePath, "bin", "agentos.js"))) {
+      throw new Error("Update archive does not match the requested AgentOS release.");
     }
 
     const backupPackagePath = `${packageRoot}.previous-${Date.now()}`;

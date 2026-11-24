@@ -219,8 +219,10 @@ async function main() {
     phase = "target-native-surface-reads";
     const targetConfig = await targetClient.callNative<Record<string, unknown>>("config.get", {}, readPolicy());
     const targetAgents = await targetClient.callNative<Record<string, unknown>>("agents.list", {}, readPolicy());
-    const targetSessions = await waitForTargetSessionAdmission(targetClient);
-    const targetHistory = await targetClient.callNative<Record<string, unknown>>("chat.history", { sessionKey: rootSessionKey, limit: 20 }, readPolicy());
+    const targetSessions = await waitForTargetSessionAdmission(() =>
+      targetClient!.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy()));
+    const targetHistory = await waitForTargetSessionAdmission(() =>
+      targetClient!.callNative<Record<string, unknown>>("chat.history", { sessionKey: rootSessionKey, limit: 20 }, readPolicy()));
     const targetReads = await readNativeSurfaces(targetClient, rootSessionKey);
     const afterRuntime = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: targetIdentity.agentSchema });
     evidence.target = {
@@ -313,11 +315,11 @@ async function main() {
 function mutationPolicy() { return { safety: "mutation", timeoutMs: 10_000 } as const; }
 function readPolicy() { return { safety: "read", timeoutMs: 10_000 } as const; }
 
-async function waitForTargetSessionAdmission(client: ReturnType<typeof createClient>) {
+async function waitForTargetSessionAdmission<T>(read: () => Promise<T>) {
   const deadline = Date.now() + 30_000;
   for (;;) {
     try {
-      return await client.callNative<Record<string, unknown>>("sessions.list", {}, readPolicy());
+      return await read();
     } catch (error) {
       if (Date.now() >= deadline || !/has not completed startup inspection and preparation/i.test(sanitizeError(error))) throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, 500));

@@ -87,7 +87,7 @@ test("AgentOS release check rejects Desktop version drift before packaging", asy
   const result = runReleaseCheck(tempRoot);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /tauri\.conf\.json: version is "9\.9\.9", expected "0\.8\.0"/);
+  assert.match(result.stderr, /tauri\.conf\.json: version is "9\.9\.9", expected "\d+\.\d+\.\d+"/);
 });
 
 test("AgentOS release check rejects vague README Node prerequisites", async () => {

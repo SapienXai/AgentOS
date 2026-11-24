@@ -183,6 +183,21 @@ test("session-scoped Gateway access policy remains structured compatibility evid
   );
 });
 
+test("profile-dependent Gateway access is parsed and requires runtime authorization review", () => {
+  const current = parseOpenClawCoreMethodSpecs(
+    'const CORE_GATEWAY_METHOD_SPECS = [["models.list", "models", "operator.read", "2026.9"]] as const;'
+  );
+  const target = parseOpenClawCoreMethodSpecs(
+    'const PROFILE_DEPENDENT = { profileAccess: "required" } as const;' +
+    'const CORE_GATEWAY_METHOD_SPECS = [["models.list", "models", "operator.read", "2026.9", PROFILE_DEPENDENT]] as const;'
+  );
+  assert.equal(target[0]?.profileAccess, "required");
+  const [change] = compareOpenClawCoreMethodSpecs(current, target);
+  assert.equal(change?.status, "unknown");
+  assert.equal(change?.authorizationEvidence, "runtime-required");
+  assert.match(change?.message ?? "", /profile access changes/);
+});
+
 test("unknown descriptor lifetime values remain visible as unknown evidence", () => {
   const unknownTarget = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
     ["agent.wait", "agent", "operator.write", "<=2026.7", { lifetime: "durable-observation" }],

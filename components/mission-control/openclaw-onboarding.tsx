@@ -270,23 +270,6 @@ export function OpenClawOnboarding({
     visualStage === "system" &&
     !onboardingSystemReady &&
     (cliInstalled == null || (gatewayReachable == null && gatewayRegistered == null));
-  const systemProgressUnits =
-    systemSteps.filter((step) => step.state === "complete").length +
-    (systemSteps.some((step) => step.state === "current") ? 0.5 : 0);
-  const modelProgressUnits = onboardingModelReady
-    ? 1
-    : visualStage === "models" && modelRun.runState === "running"
-      ? 0.5
-      : 0;
-  const workspaceProgressUnits = hasWorkspaceSetup || showReadyState
-    ? 1
-    : launchpadCreateRunState === "running"
-      ? 0.5
-      : 0;
-  const progressPercent = Math.max(
-    0,
-    Math.min(100, Math.round(((systemProgressUnits + modelProgressUnits + workspaceProgressUnits) / 5) * 100))
-  );
   const resumeModelSetup = resumeSiwc && selectedVisualStage !== "system" && snapshot.diagnostics.installed &&
     !systemSetupRequired && (systemRun.runState === "idle" || systemRun.runState === "success");
   const showSiwc = !showLegacySetup && Boolean(onStartSiwc && onEnterAfterSiwc) && (
@@ -416,7 +399,6 @@ export function OpenClawOnboarding({
               "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 outline-none sm:px-8 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
               showSiwc ? "pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-9"
                 : isChatGptAuthSurface ? "sm:pb-8" : "sm:pb-24",
-              visualStage === "system" && !showSiwc && "sm:overflow-y-hidden",
               !showSiwc && isModelSwitchActive && "!overflow-y-hidden"
             )}
           >
@@ -470,6 +452,8 @@ export function OpenClawOnboarding({
                 steps={systemSteps}
                 surfaceTheme={surfaceTheme}
                 run={stageRun}
+                checking={Boolean(systemStatusChecking)}
+                ready={onboardingSystemReady}
                 gatewayAuthNeedsSetup={gatewayAuthNeedsSetup}
                 statusCopy={stageStatusCopy}
                 phaseLabel={phaseLabel}
@@ -516,20 +500,7 @@ export function OpenClawOnboarding({
               (showSiwc || isChatGptAuthSurface) && "!hidden"
             )}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-              <span className="shrink-0 text-[12px] text-muted-foreground sm:text-[13px]">Overall progress</span>
-              <div className="h-1.5 w-full max-w-[190px] overflow-hidden rounded-full bg-muted">
-                <motion.div
-                  className="h-full rounded-full bg-primary"
-                  initial={false}
-                  animate={{ width: `${progressPercent}%` }}
-                  transition={{ duration: 0.35, ease: "easeOut" }}
-                />
-              </div>
-              <span className="text-[13px] font-semibold text-primary">{progressPercent}%</span>
-            </div>
-
-            <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
+            <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:justify-end sm:gap-3">
               {renderLaunchpad ? (
                 <span
                   className={cn(
@@ -986,6 +957,8 @@ function SetupSystemStage({
   steps,
   surfaceTheme,
   run,
+  checking,
+  ready,
   gatewayAuthNeedsSetup,
   statusCopy,
   phaseLabel,
@@ -994,6 +967,8 @@ function SetupSystemStage({
   steps: Array<{ id: string; label: string; description: string; state: StepState }>;
   surfaceTheme: SurfaceTheme;
   run: StageRunDetails;
+  checking: boolean;
+  ready: boolean;
   gatewayAuthNeedsSetup: boolean;
   statusCopy: string;
   phaseLabel: string;
@@ -1010,21 +985,18 @@ function SetupSystemStage({
         title={isRuntimeVerification ? "Verifying OpenClaw runtime" : "Setting up OpenClaw"}
         description={
           isRuntimeVerification
-            ? statusCopy || "Waiting for Gateway RPC and runtime storage to become ready."
-            : statusCopy || activeStep?.description || "Preparing the local OpenClaw runtime."
+            ? "Checking that AgentOS can connect to OpenClaw."
+            : "AgentOS is preparing OpenClaw on this computer."
         }
       />
-      <div className="space-y-2">
-        {steps.map((step, index) => (
-          <SetupTaskRow
-            key={step.id}
-            index={index}
-            step={step}
-            runState={run.runState}
-            surfaceTheme={surfaceTheme}
-          />
-        ))}
-      </div>
+      <h2 className="text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+        {checking ? "Checking your setup" : ready ? "OpenClaw is ready" : "Set up OpenClaw"}
+      </h2>
+      <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground sm:text-base">
+        {checking ? "AgentOS is checking for OpenClaw on this computer."
+          : ready ? "Continue to connect the AI that will power your agents."
+            : "AgentOS uses OpenClaw to run agents. Continue to prepare it on this computer."}
+      </p>
 
       {run.runState === "error" || gatewayAuthNeedsSetup ? (
         <div
@@ -1039,11 +1011,11 @@ function SetupSystemStage({
             <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="min-w-0">
               <p className="text-[12px] font-semibold">
-                {gatewayAuthNeedsSetup ? "Native Gateway auth needs attention" : "System setup needs attention"}
+                {gatewayAuthNeedsSetup ? "AgentOS needs permission to connect" : "System setup needs attention"}
               </p>
-              <p className="mt-1 text-[11px] leading-4 text-current/80">
+              <p role="alert" className="mt-1 text-[11px] leading-4 text-current/80">
                 {gatewayAuthNeedsSetup
-                  ? "OpenClaw reports a redacted Gateway secret. Generate a local token in Settings so AgentOS can use native WS instead of CLI fallback."
+                  ? "Open connection settings to authorize AgentOS with your local OpenClaw installation."
                   : statusCopy}
               </p>
               {gatewayAuthNeedsSetup ? (
@@ -1062,14 +1034,18 @@ function SetupSystemStage({
         </div>
       ) : null}
 
-      <SetupRunDetailsPanel
-        surfaceTheme={surfaceTheme}
-        statusCopy={statusCopy}
-        phaseLabel={phaseLabel}
-        run={run}
-      />
-
-      <SetupStatusPanel surfaceTheme={surfaceTheme} />
+      <details open={run.runState === "error" || Boolean(run.manualCommand) || undefined} className="mt-5 rounded-xl border border-border/70 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+          Setup details
+        </summary>
+        <div className="mt-3 space-y-2">
+          {steps.map((step, index) => (
+            <SetupTaskRow key={step.id} index={index} step={step} runState={run.runState} surfaceTheme={surfaceTheme} />
+          ))}
+          <SetupRunDetailsPanel surfaceTheme={surfaceTheme} statusCopy={statusCopy} phaseLabel={phaseLabel} run={run} />
+          <SetupStatusPanel surfaceTheme={surfaceTheme} />
+        </div>
+      </details>
     </div>
   );
 }

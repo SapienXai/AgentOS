@@ -155,14 +155,16 @@ async function main() {
     evidence.checks.officialHandshake = firstHello.protocol === 4 && firstHello.server.version === TARGET_VERSION;
     evidence.observations.connectionCount = 1;
 
-    const authDb = new DatabaseSync(path.join(stateDir, "state", "openclaw.sqlite"), { readOnly: true });
-    const identityState = authDb
-      .prepare("SELECT device_id, public_key_pem FROM device_identities WHERE identity_key = ?")
-      .get("primary") as { device_id?: unknown; public_key_pem?: unknown } | undefined;
-    const authState = authDb
-      .prepare("SELECT token FROM device_auth_tokens WHERE device_id = ? AND role = ?")
-      .get(deviceId, "operator") as { token?: unknown } | undefined;
-    authDb.close();
+    // OpenClaw migrates client credentials out of the runtime database at startup.
+    const authDb = new DatabaseSync(path.join(stateDir, "client", "credentials.sqlite"), { readOnly: true });
+    let identityState: { device_id?: unknown } | undefined;
+    let authState: { token?: unknown } | undefined;
+    try {
+      identityState = authDb.prepare("SELECT device_id FROM device_identities WHERE identity_key = ?").get("primary");
+      authState = authDb.prepare("SELECT token FROM device_auth_tokens WHERE device_id = ? AND role = ?").get(deviceId, "operator");
+    } finally {
+      authDb.close();
+    }
     evidence.checks.deviceSignatureRoundTrip = Boolean(
       transport.getDeviceId() === deviceId && typeof authState?.token === "string"
     );
@@ -171,7 +173,7 @@ async function main() {
     evidence.observations.canonicalIdentityPresent = Boolean(identityState);
     evidence.observations.canonicalIdentityIdMatches = identityState?.device_id === deviceId;
     evidence.observations.canonicalDeviceTokenPresent = typeof authState?.token === "string";
-    evidence.observations.canonicalDeviceTokenChanged = authState?.token !== deviceToken;
+    evidence.observations.canonicalDeviceTokenChanged = typeof authState?.token === "string" && authState.token !== deviceToken;
 
     const sessions = await domainClient.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS });
     const sessionDiagnostics = domainClient.getDiagnostics();

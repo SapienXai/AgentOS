@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,10 @@ import { test } from "node:test";
 import { getAgentOsProductUpdateSnapshot } from "@/lib/agentos/application/product-update-service";
 import { writeProductUpdateDiscoveryCache } from "@/lib/agentos/application/product-update-store";
 import { prepareAgentOsRuntimeStorage } from "@/lib/agentos/runtime-storage";
+
+const { version: currentVersion } = JSON.parse(readFileSync("packages/agentos/package.json", "utf8")) as { version: string };
+const [major, minor] = currentVersion.split(".").map(Number);
+const latestVersion = `${major}.${minor + 1}.0`;
 
 function githubResponse(payload: unknown) {
   return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -27,7 +32,7 @@ test("release launcher reports missing platform archives without advertising bro
   const originalFetch = globalThis.fetch;
   const env = makeEnv(runtimeDir);
   globalThis.fetch = async () => githubResponse({
-    tag_name: "agentos-v0.9.0",
+    tag_name: `agentos-v${latestVersion}`,
     draft: false,
     prerelease: false,
     assets: [{ name: "agentos-darwin-arm64.tgz" }]
@@ -57,11 +62,11 @@ test("failed refresh retains stale release evidence and marks the check unavaila
   const env = makeEnv(runtimeDir);
   await writeProductUpdateDiscoveryCache({
     schemaVersion: 1,
-    cacheKey: "release-launcher:0.8.0:github:SapienXai/AgentOS",
+    cacheKey: `release-launcher:${currentVersion}:github:SapienXai/AgentOS`,
     sourceId: "github:SapienXai/AgentOS",
-    currentVersion: "0.8.0",
-    latestVersion: "0.9.0",
-    releaseUrl: "https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.9.0",
+    currentVersion,
+    latestVersion,
+    releaseUrl: `https://github.com/SapienXai/AgentOS/releases/tag/agentos-v${latestVersion}`,
     cliAssetAvailable: false,
     checkedAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString()
   }, env);
@@ -75,7 +80,7 @@ test("failed refresh retains stale release evidence and marks the check unavaila
       env,
       platform: "linux"
     });
-    assert.equal(snapshot.latestVersion, "0.9.0");
+    assert.equal(snapshot.latestVersion, latestVersion);
     assert.equal(snapshot.availability, "available");
     assert.equal(snapshot.evidence, "stale");
     assert.match(snapshot.checkError ?? "", /could not be checked/i);
@@ -94,7 +99,7 @@ test("Railway ownership takes precedence over package layout and update requests
   };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => githubResponse({
-    tag_name: "agentos-v0.9.0",
+    tag_name: `agentos-v${latestVersion}`,
     draft: false,
     prerelease: false,
     assets: []
@@ -125,7 +130,7 @@ test("Desktop installation requires fresh native evidence bound to the embedded 
     AGENTOS_DESKTOP: "1",
     AGENTOS_DESKTOP_BUNDLE: "macos",
     AGENTOS_DESKTOP_LAUNCH_ID: launchId,
-    AGENTOS_DESKTOP_VERSION: "0.8.0"
+    AGENTOS_DESKTOP_VERSION: currentVersion
   };
   await prepareAgentOsRuntimeStorage({ env, cwd: runtimeDir });
   const updatesDir = path.join(runtimeDir, "updates");
@@ -134,8 +139,8 @@ test("Desktop installation requires fresh native evidence bound to the embedded 
     schemaVersion: 1,
     checkId: "00000000-0000-4000-8000-000000000012",
     launchId,
-    currentVersion: "0.8.0",
-    latestVersion: "0.9.0",
+    currentVersion,
+    latestVersion,
     updateAvailable: true,
     releaseIdentity: "a".repeat(64),
     checkedAt: new Date().toISOString(),

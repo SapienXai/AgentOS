@@ -1,5 +1,7 @@
 # @sapienx/agentos
 
+This source tree prepares AgentOS 0.9.0 for release. Published packages and desktop downloads are listed in the [public release history](https://github.com/SapienXai/AgentOS/releases).
+
 License: MIT
 
 Install:

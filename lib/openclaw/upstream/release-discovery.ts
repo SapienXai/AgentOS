@@ -4,7 +4,7 @@ import type { OpenClawReleaseCandidate, OpenClawReleaseDiscovery } from "@/lib/o
 export const OPENCLAW_UPSTREAM_REPOSITORY = "openclaw/openclaw";
 export const OPENCLAW_NPM_REGISTRY_URL = "https://registry.npmjs.org";
 export const OPENCLAW_GITHUB_API_URL = "https://api.github.com";
-export const DEFAULT_OPENCLAW_RELEASE_BACKLOG_LIMIT = 10;
+export const DEFAULT_OPENCLAW_RELEASE_BACKLOG_LIMIT = 50;
 
 const OPENCLAW_VERSION_PATTERN = /^v?(20\d{2}\.\d{1,2}\.\d{1,2})(?:-([0-9A-Za-z][0-9A-Za-z.-]*))?$/;
 const KNOWN_PRERELEASE_MARKERS = ["alpha", "beta", "canary", "dev", "nightly", "next", "preview", "rc"];
@@ -145,7 +145,7 @@ export async function discoverOfficialOpenClawReleases(input: {
       .filter((version) => isStableOpenClawRelease(version))
       .sort(compareOpenClawReleaseVersions)
       .at(-1) ?? null;
-    const bounded = candidates.slice(0, maxReleases);
+    const bounded = candidates.slice(-maxReleases);
 
     return {
       status: "ok",
@@ -280,6 +280,9 @@ function mergeReleaseCandidates(
         return null;
       }
       const manual = version === input.targetVersion;
+      if (input.targetVersion && !manual) {
+        return null;
+      }
       if (!manual && compareOpenClawReleaseVersions(version, input.currentRecommendedVersion) <= 0) {
         return null;
       }
