@@ -412,33 +412,11 @@ pub async fn install_agentos_update(
         "Installing the verified update. AgentOS will restart.",
     );
 
-    #[cfg(windows)]
-    let update = update.on_before_exit({
-        let app = app.clone();
-        let operation_path = operation_path.clone();
-        let mut receipt = receipt.clone();
-        move || {
-            receipt.state = "restart-required".to_string();
-            receipt.phase = Some("relaunch".to_string());
-            receipt.updated_at = now_string();
-            let _ = write_receipt(&operation_path, &receipt);
-            app.state::<DesktopState>()
-                .quitting
-                .store(true, Ordering::SeqCst);
-            shutdown_embedded_agentos(&app);
-        }
-    });
-
-    #[cfg(not(windows))]
-    {
-        receipt.phase = Some("relaunch".to_string());
-        receipt.updated_at = now_string();
-        if let Err(error) = write_receipt(&operation_path, &receipt) {
-            return Err(error);
-        }
-        state.quitting.store(true, Ordering::SeqCst);
-        shutdown_embedded_agentos(&app);
-    }
+    receipt.phase = Some("relaunch".to_string());
+    receipt.updated_at = now_string();
+    write_receipt(&operation_path, &receipt)?;
+    state.quitting.store(true, Ordering::SeqCst);
+    shutdown_embedded_agentos(&app);
 
     install_lock.retain();
     update_admission.retain();
