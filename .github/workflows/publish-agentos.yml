@@ -89,6 +89,7 @@ jobs:
         if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
         with:
           node-version: 26.12.1
+          package-manager-cache: false
       - uses: actions/download-artifact@v5
         if: contains(fromJSON(needs.production-gate.outputs.cli), matrix.target)
         with:
@@ -121,6 +122,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 26.12.1
+          package-manager-cache: false
       - uses: actions/download-artifact@v5
         with:
           github-token: ${{ github.token }}
@@ -190,6 +192,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 26.12.1
+          package-manager-cache: false
       - uses: actions/download-artifact@v5
         with:
           name: publication-plan
