@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.11.5-multi-user-identity-collaboration-certification",
+  "generatedAt": "2026-11-24T11:43:09.149Z",
+  "certifiedCodeHead": "aedd3fb3c127e2e817d1721f50595b91edd5ec80",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "codex/agentos-v0.9.0-rc",
+    "openClaw": {
+      "release": "2026.11.5",
+      "sourceCommit": "e13cf15ece9bbd969b7362927c315362c90c97ff",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.11.5",
+      "gatewayProtocolPackage": "2026.11.5",
+      "buildId": "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z",
+      "packageHash": "252e754a092fbaedeec048f1395965f8d7d58f6eee4bf1f1c9ffa8cc44297540",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "descriptors": {
+    "source": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+    "methods": {
+      "users.list": "operator.read",
+      "users.self": "operator.read",
+      "users.setDisplayName": "operator.read",
+      "users.setAvatar": "operator.read",
+      "users.linkEmail": "operator.admin",
+      "users.setRole": "operator.admin",
+      "session.visibility.set": "operator.write",
+      "session.members.list": "operator.read",
+      "session.members.listEvidence": "operator.read",
+      "session.members.add": "operator.write",
+      "session.members.remove": "operator.write",
+      "sessions.assignOwner": "operator.write"
+    },
+    "usersCreate": "ABSENT",
+    "sourceSha256": "e43f6d0ce3b64ef10948194c93718cd7d7f71cf56166aa9d52b6f1dd6c635268"
+  },
+  "identity": {
+    "AgentOsPrincipal": "signed AgentOS actorId",
+    "AgentOsRoles": [
+      "owner",
+      "member"
+    ],
+    "nativePrincipal": "OpenClaw UserProfile when the native request context proves one",
+    "connection": "shared trusted AgentOS service Gateway credential",
+    "nativeAttribution": "shared service",
+    "nativeHumanIdentityVerified": false,
+    "association": "metadata-associated only; never authentication or authorization",
+    "heuristicMatching": "disabled",
+    "perHumanDelegation": "not implemented"
+  },
+  "sessionCollaboration": {
+    "owner": "OpenClaw native session owner",
+    "participants": "OpenClaw native session members",
+    "visibility": "OpenClaw native session visibility",
+    "membershipEvidence": "OpenClaw native session.members.listEvidence",
+    "productPermission": "sessions.collaborate",
+    "rootDashboardNewRpcCount": 0,
+    "perSessionFanout": false
+  },
+  "runtime": {
+    "usersList": "PASS",
+    "usersSelf": "PASS",
+    "usersSetRole": "SKIPPED",
+    "sharedServiceAttribution": "PASS",
+    "associationDoesNotAuthenticate": "PASS",
+    "associationDoesNotAuthorize": "PASS",
+    "sessionMembersList": "PASS",
+    "sessionMembersListEvidence": "PASS",
+    "sessionMembersAdd": "SKIPPED",
+    "sessionMembersRemove": "SKIPPED",
+    "sessionVisibilitySet": "SKIPPED",
+    "agentOwnerAssignment": "PASS",
+    "humanOwnerAssignment": "SKIPPED",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "userProfileCount": 1,
+    "usersSelfResult": "native-profile",
+    "sessionVisibilityResult": "SessionMutationFactsUnavailableError: Session access facts are unavailable; retry after session storage is ready.",
+    "usersSetRoleReason": null,
+    "humanProfileReason": "profile provenance was not a verified disposable human fixture; mutation withheld safely",
+    "agentOwnerReason": null
+  },
+  "cleanup": {
+    "status": "complete",
+    "sessionDeleted": true,
+    "gatewayStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "exactPackage": true,
+    "exactSourceScopes": true,
+    "noUsersCreate": true,
+    "nativeOnly": true,
+    "noActorIdAsNativeProfileId": true,
+    "noHeuristicIdentityMapping": true,
+    "noLocalAcl": true,
+    "noPerHumanCredentialStore": true
+  },
+  "success": true,
+  "failure": null
+}

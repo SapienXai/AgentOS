@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-workforce-acceptance",
+  "generatedAt": "2026-11-24T11:41:26.497Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "agentosCommit": "aedd3fb3c127e2e817d1721f50595b91edd5ec80",
+    "openClaw": {
+      "version": "2026.11.5",
+      "sourceCommit": "e13cf15ece9bbd969b7362927c315362c90c97ff",
+      "buildId": "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z",
+      "packageHash": "252e754a092fbaedeec048f1395965f8d7d58f6eee4bf1f1c9ffa8cc44297540"
+    },
+    "evidenceClasses": [
+      "LIVE_DISPOSABLE_2026_11_5",
+      "DETERMINISTIC_NATIVE_FIXTURE"
+    ]
+  },
+  "runtime": {
+    "version": "2026.11.5",
+    "protocol": 4,
+    "authenticated": true,
+    "grantedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.questions"
+    ],
+    "deviceIdentity": "canonical OpenClaw identity created inside the disposable state directory",
+    "loopback": true,
+    "isolatedState": true,
+    "securityDefaults": "tools.sessions.visibility=tree; tools.agentToAgent.enabled=false; tools.agentToAgent.allow=[]"
+  },
+  "modelAuthSetup": {
+    "method": "models.authSetApiKey",
+    "scope": "operator.admin",
+    "provider": "openai",
+    "profileId": "openai:manual",
+    "warning": "API key saved, but the Gateway has not confirmed applying the provider settings. Run `openclaw gateway restart` to apply them. Model auth changes were saved, but the Gateway could not refresh them. Run `openclaw gateway restart` to apply the saved changes.",
+    "credentialLocation": "isolated disposable OpenClaw agent profile"
+  },
+  "modelReadiness": {
+    "selectedModel": "openai/workforce-check-model",
+    "readiness": {
+      "ready": true,
+      "defaultModel": "openai/workforce-check-model",
+      "resolvedDefaultModel": "openai/workforce-check-model",
+      "defaultModelReady": true,
+      "recommendedModelId": "openai/workforce-check-model",
+      "preferredLoginProvider": null,
+      "totalModelCount": 1,
+      "availableModelCount": 1,
+      "localModelCount": 1,
+      "remoteModelCount": 0,
+      "missingModelCount": 0,
+      "authProviders": [
+        {
+          "provider": "openai",
+          "authMethod": "chatgpt-oauth",
+          "availableAuthMethods": [
+            "api-key",
+            "chatgpt-oauth"
+          ],
+          "connected": true,
+          "canLogin": false,
+          "detail": "1 auth profile"
+        }
+      ],
+      "issues": []
+    },
+    "models": [
+      {
+        "key": "openai/workforce-check-model",
+        "provider": "openai",
+        "available": true,
+        "local": true
+      }
+    ],
+    "defaultModel": "openai/workforce-check-model",
+    "resolvedDefault": "openai/workforce-check-model",
+    "allowed": [],
+    "authProviders": [
+      {
+        "provider": "openai",
+        "kind": "profiles",
+        "profileCount": 1,
+        "apiKeyProfiles": 1,
+        "tokenProfiles": 0
+      }
+    ],
+    "missingProvidersInUse": [],
+    "fallbackCounts": {
+      "models.authStatus": 1
+    }
+  },
+  "productPath": {
+    "dispatchCreatedBy": "submitMission",
+    "workflow": "submitMission -> submitMissionDispatch -> writeMissionDispatchRecord -> OpenClaw Gateway -> Workforce projection",
+    "manualDispatchInjection": false,
+    "persistedSidecar": true,
+    "missionListFromPersistedSidecar": true,
+    "missionDetailFromPersistedSidecar": true,
+    "requestId": "workforce-product-path-1795520493685",
+    "dispatchId": "dispatch-4d4e70da-ae11-4c0a-a267-67b9ea00d133",
+    "agentId": "main",
+    "workspaceId": "workspace",
+    "sessionKey": "agent:main:explicit:dispatch-4d4e70da-ae11-4c0a-a267-67b9ea00d133",
+    "runId": "dispatch-4d4e70da-ae11-4c0a-a267-67b9ea00d133"
+  },
+  "concurrentAdmission": {
+    "unrelatedRequestCount": 2,
+    "concurrentAdapterAdmissions": 2,
+    "sameAgent": true,
+    "distinctDispatchIds": true,
+    "distinctSessionKeys": true,
+    "distinctSessionIds": true,
+    "distinctRunIds": true
+  },
+  "reconciliationDiagnostic": null,
+  "checks": {
+    "runtime-identity": {
+      "status": "PASS",
+      "evidence": "LIVE_DISPOSABLE_2026_11_5"
+    },
+    "disposable-model-auth": {
+      "status": "PASS",
+      "evidence": [
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "OpenClaw stored the fixture-only API key in the disposable main-agent profile through its administrator-authorized native Gateway method."
+    },
+    "product-path-mission-create": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Canonical submitMission created and persisted the dispatch; the native Gateway populated runtime identity."
+    },
+    "product-path-api-list": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Mission list discovered the persisted dispatch and matched detail state from the same snapshot."
+    },
+    "product-path-api-detail": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Mission detail resolved by dispatch id from persisted sidecar plus current native snapshot."
+    },
+    "mission-basic": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Real AgentOS submission reached one native session/run and completed with authoritative output."
+    },
+    "product-path-idempotency": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Concurrent replay returned the same persisted dispatch without another native model completion; altered request identity failed closed."
+    },
+    "result-projection": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Final output came from the native Gateway result persisted by the canonical Mission workflow and reconstructed in Mission detail."
+    },
+    "concurrent-task-admission": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Two different requests reached native admission concurrently for one agent and OpenClaw returned distinct dispatch-correlated session keys, session IDs, and run IDs."
+    },
+    "artifacts": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "OpenClaw executed the native write tool and Workforce projected the bounded runtime-created artifact."
+    },
+    "delegation": {
+      "status": "SKIPPED",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "The deterministic sessions_spawn attempt completed without an exposed native task/child row; no synthetic delegation was created."
+    },
+    "waiting-worker": {
+      "status": "SKIPPED",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "The exact runtime exposed no native child task to drive this state."
+    },
+    "multiple-human-control": {
+      "status": "PASS",
+      "evidence": "LIVE_DISPOSABLE_2026_11_5",
+      "detail": "Two native questions remained independently pending until both were resolved."
+    },
+    "approval-resolution": {
+      "status": "PASS",
+      "evidence": "LIVE_DISPOSABLE_2026_11_5",
+      "detail": "Native approval was projected, denied safely, and disappeared from the pending inventory."
+    },
+    "human-control-product-path": {
+      "status": "SKIPPED",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Native Human Control projection and resolution passed, but the safe fixture did not expose a mission-linked task/session request for the AgentOS mutation path. No unrelated approval was relabelled as Mission-linked evidence."
+    },
+    "gateway-reconnect": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "The product-path Mission retained the same exact session key and history across disposable Gateway restart."
+    },
+    "agentos-restart-projection": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "LIVE_DISPOSABLE_2026_11_5"
+      ],
+      "detail": "Workforce projection rebuilt from the persisted product-path dispatch and native session after Gateway restart."
+    },
+    "cancellation": {
+      "status": "SKIPPED",
+      "evidence": "LIVE_DISPOSABLE_2026_11_5",
+      "detail": "No native task identity was exposed by this turn, so no unrelated session was cancelled."
+    },
+    "child-failure": {
+      "status": "SKIPPED",
+      "evidence": "LIVE_DISPOSABLE_2026_11_5",
+      "detail": "No native child task was exposed by the safe deterministic turn."
+    }
+  },
+  "runtimeTaskLedger": {
+    "taskListRead": true,
+    "taskCount": 0,
+    "taskIds": [],
+    "childCount": 0
+  },
+  "cleanup": {
+    "disposableRootRemoved": true,
+    "gatewayStopped": true,
+    "productionGatewayTouched": false
+  },
+  "certification": {
+    "status": "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS",
+    "capabilityRoutingReady": false,
+    "skippedLiveChecks": [
+      "delegation",
+      "waiting-worker",
+      "cancellation",
+      "child-failure",
+      "human-control-product-path"
+    ]
+  },
+  "failure": null,
+  "summary": {
+    "passed": 14,
+    "skipped": 5,
+    "failed": 0
+  }
+}
