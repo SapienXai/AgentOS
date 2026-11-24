@@ -266,7 +266,10 @@ jobs:
     secrets: inherit
 
   validate-candidate-assets:
-    needs: [validate-release, build-release-assets, build-desktop-assets]
+    needs:
+      - validate-release
+      - build-release-assets
+      - build-desktop-assets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -352,7 +355,10 @@ jobs:
 
   create-release:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: [validate-release, validate-candidate-assets, production-gate]
+    needs:
+      - validate-release
+      - validate-candidate-assets
+      - production-gate
     runs-on: ubuntu-latest
     environment: agentos-public-release
     permissions:
