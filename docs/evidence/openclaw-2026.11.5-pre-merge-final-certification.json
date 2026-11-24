@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.5-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-24T11:50:22.961Z",
-  "certifiedAt": "2026-11-24T11:50:22.961Z",
-  "agentosHead": "9debd96eefb9f6f703b5fba4071a1c2e88de6c74",
+  "generatedAt": "2026-11-24T12:02:25.606Z",
+  "certifiedAt": "2026-11-24T12:02:25.606Z",
+  "agentosHead": "6520429582bf753f984520ef3e570017cda0ca0f",
   "openclawVersion": "2026.11.5",
   "openclawSourceSha": "e13cf15ece9bbd969b7362927c315362c90c97ff",
   "upstreamEvidenceHashes": {},
@@ -17,8 +17,8 @@
   "knownExceptions": [],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "9debd96eefb9f6f703b5fba4071a1c2e88de6c74",
-    "evidenceCommit": "b3d3c5418703f32d13fb93050778d108697faeab",
+    "certifiedCodeHead": "6520429582bf753f984520ef3e570017cda0ca0f",
+    "evidenceCommit": "3832d954afced2616adf0d477935ad7548e2df3d",
     "branch": "codex/agentos-v0.9.0-rc",
     "node": "v24.22.1",
     "openClaw": {
