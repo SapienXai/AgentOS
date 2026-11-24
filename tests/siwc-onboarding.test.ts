@@ -64,8 +64,9 @@ test("owns the wizard by operator and requires the Gateway's verified model acti
   installGateway(async (method, params) => {
     if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
     if (method === "openclaw.setup.activate") return { ok: false };
-    if (method === "openclaw.setup.auth.start") {
+    if (method === "openclaw.setup.prepare.start") {
       assert.equal(params.authChoice, "openai-token-sharing");
+      assert.equal(params.modelRef, undefined);
       assert.equal(params.agentId, "main");
       return {
         sessionId: params.sessionId, done: false, status: "running",
@@ -118,7 +119,7 @@ test("waits for native cancellation before allowing a fresh sign-in", async () =
   installGateway(async (method, params) => {
     if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
     if (method === "openclaw.setup.activate") return { ok: false };
-    if (method === "openclaw.setup.auth.start") return {
+    if (method === "openclaw.setup.prepare.start") return {
       sessionId: params.sessionId, done: false, status: "running",
       step: { id: "account", type: "select", message: "Reconnect a ChatGPT account", options: [{ label: "New account", value: "new" }] }
     };
@@ -142,13 +143,13 @@ test("waits for native cancellation before allowing a fresh sign-in", async () =
 test("retries the staged ChatGPT grant without another OAuth wizard", async () => {
   const owner = "saved-sign-in-owner";
   const oldKind = "saved-auth:openai%3Asetup-11111111-1111-4111-8111-111111111111";
-  const newKind = "saved-auth:openai%3Asetup-22222222-2222-4222-8222-222222222222";
-  const model = "openai/verified-model";
+  const newKind = "saved-auth:openai%3Atoken-sharing%3Atest-account";
+  const model = "openai/gpt-6-luna";
   const authorityError = "Auth profile credential authority is unavailable; retry after owner recovery";
   let authorized = false;
   let wizardStarts = 0;
   let verifications = 0;
-  const trusted = (kind: string) => ({ kind, modelRef: model, brandId: "openai", label: "Saved Sign in with ChatGPT (Beta) sign-in" });
+  const trusted = (kind: string) => ({ kind, modelRef: "openai/gpt-6-astra", brandId: "openai", label: "Saved Sign in with ChatGPT (Beta) sign-in" });
   installGateway(async (method, params) => {
     if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
     if (method === "openclaw.setup.detect") {
@@ -159,22 +160,26 @@ test("retries the staged ChatGPT grant without another OAuth wizard", async () =
       assert.deepEqual(params, { kind: newKind, agentId: "main", modelRef: model });
       return ++verifications === 1 ? { ok: false, error: authorityError } : { ok: true, modelRef: model };
     }
-    if (method === "openclaw.setup.auth.start") {
+    if (method === "openclaw.setup.prepare.start") {
       wizardStarts += 1;
       return { sessionId: params.sessionId, done: false, status: "running", step: { id: "auth", type: "note", externalUrl: syntheticUrl } };
     }
     if (method === "wizard.next") {
       authorized = true;
-      return { done: true, status: "error", error: `Credentials saved; default unchanged. ${authorityError}` };
+      return { done: true, status: "done", preparedModelRef: "openai/gpt-6-astra" };
     }
     throw new Error(method);
+  }, async (path, value) => {
+    assert.equal(path, 'agents.defaults.models["openai/gpt-6-luna"].params.thinking');
+    assert.equal(value, "low");
+    return { stdout: "", stderr: "" };
   });
 
   startSiwcFlow(owner);
   assert.deepEqual(await expectPhase(owner, "saved"), { phase: "saved", needsGatewayRestart: true });
   assert.equal(retrySavedSiwcFlow("other-owner", async () => true).phase, "failed");
   retrySavedSiwcFlow(owner, async () => true);
-  assert.deepEqual(await expectPhase(owner, "ready"), { phase: "ready", model, reused: false });
+  assert.deepEqual(await expectPhase(owner, "ready"), { phase: "ready", model, thinking: "low", reused: false });
   assert.equal(wizardStarts, 1);
   assert.equal(verifications, 2);
 });
@@ -245,6 +250,30 @@ test("projects the connected catalog and verifies choices with the saved ChatGPT
   assert.deepEqual(calls, []);
   assert.deepEqual(await applySiwcModel("catalog-owner", luna, "low", async () => true), { ok: true, model: luna, thinking: "low" });
   assert.deepEqual(calls, ["verify", "save"]);
+});
+
+test("uses the live profile identity after the Gateway relabels a promoted ChatGPT credential", async () => {
+  const profileId = "openai:setup-44444444-4444-4444-8444-444444444444";
+  const kind = `saved-auth:${encodeURIComponent(profileId)}`;
+  let useSameProfile = true;
+  installGateway(async (method) => {
+    if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
+    if (method === "openclaw.setup.detect") return { candidates: [
+      { kind, brandId: "openai", label: "Saved Codex login (browser) sign-in", modelRef: "openai/gpt-6-astra" }
+    ] };
+    if (method === "models.list") return {
+      providerOutcomes: [{ provider: "openai", status: "ready", profileId: useSameProfile ? profileId : "openai:other" }],
+      models: [{ provider: "openai", id: "gpt-6-luna", available: true, thinkingLevels: [{ id: "low" }] }]
+    };
+    throw new Error(method);
+  });
+
+  assert.deepEqual(await readSiwcModelCatalog("catalog-owner"), {
+    scope: "gateway",
+    models: [{ id: "openai/gpt-6-luna", name: "gpt-6-luna", thinkingLevels: ["low"] }]
+  });
+  useSameProfile = false;
+  assert.equal(await readSiwcModelCatalog("catalog-owner"), null);
 });
 
 test("distinguishes identity-only, policy, quota and timeout from verification", () => {

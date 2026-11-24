@@ -172,6 +172,7 @@ export type NativeDoctorVerification = {
 };
 
 const NATIVE_READ_TIMEOUT_MS = 12_000;
+const RESTART_RECONNECT_TIMEOUT_MS = 45_000;
 const NATIVE_UPDATE_CONFIRMATION_TTL_MS = 2 * 60_000;
 const MAX_NATIVE_UPDATE_CONFIRMATIONS = 512;
 let nativeUpdateRunInFlight = false;
@@ -673,11 +674,12 @@ async function reconcileRestartMutation(
   if (mutation.outcome === "failed" || mutation.outcome === "unknown") {
     return mutation;
   }
-  const generation = await waitForNativeReconnect(options.adapter ?? getOpenClawAdapter(), options.before.identity.connectionGeneration);
+  const adapter = options.adapter ?? getOpenClawAdapter();
+  const generation = await waitForNativeReconnect(adapter, options.before.identity.connectionGeneration, RESTART_RECONNECT_TIMEOUT_MS);
   if (generation === null) {
     return applyVerification(mutation, unknownVerification("OpenClaw accepted the restart request, but AgentOS did not observe a fresh reconnect generation."));
   }
-  const fresh = await getNativeDoctorSnapshot({ adapter: options.adapter, commandOptions: options.commandOptions, probe: true });
+  const fresh = await getNativeDoctorSnapshot({ adapter, commandOptions: options.commandOptions, probe: true, discoverAvailability: false });
   return applyVerification(mutation, verifyFreshRestartState(options.before, fresh, generation));
 }
 
@@ -819,7 +821,7 @@ function hasFreshAuthenticatedGeneration(before: NativeDoctorSnapshot, after: Na
     && after.identity.authenticated === true;
 }
 
-async function waitForNativeReconnect(adapter: OpenClawAdapter, beforeGeneration: number | null): Promise<number | null> {
+async function waitForNativeReconnect(adapter: OpenClawAdapter, beforeGeneration: number | null, timeoutMs = 15_000): Promise<number | null> {
   if (beforeGeneration === null || !adapter.subscribeNativeRuntimeEvents || adapter.getNativeConnectionGeneration === undefined) {
     return null;
   }
@@ -828,7 +830,6 @@ async function waitForNativeReconnect(adapter: OpenClawAdapter, beforeGeneration
     return alreadyReconnected;
   }
 
-  const timeoutMs = 15_000;
   let subscription: { close: () => void; reconnectManagedByClient?: boolean } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let settled = false;
