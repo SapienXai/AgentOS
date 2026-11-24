@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 
 import { getOpenClawAdapter, type OpenClawAdapter, type OpenClawGatewaySurfacePort } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -19,6 +20,7 @@ const siwcChoice = "openai-token-sharing";
 const defaultSiwcModel = "openai/gpt-6-luna";
 const defaultSiwcThinking = "low";
 const lifetimeMs = 6 * 60_000;
+const credentialRecoveryRetryDelaysMs = [1_500, 3_000, 6_000, 6_000];
 const rosterSchema = z.object({
   defaultId: z.string().min(1),
   agents: z.array(z.object({ id: z.string().min(1) }))
@@ -348,6 +350,7 @@ async function readOpenAiSetupCandidates(native: OpenClawGatewaySurfacePort, age
 async function verifySavedSignIn(current: Flow, adapter: OpenClawAdapter, native: OpenClawGatewaySurfacePort, saved: SavedSignIn, restartGateway?: RestartGateway) {
   current.saved = saved;
   const signal = current.signal.signal;
+  let recoveryRetryIndex: number | undefined;
   for (;;) {
     signal.throwIfAborted();
     current.state = { phase: "verifying" };
@@ -356,7 +359,8 @@ async function verifySavedSignIn(current: Flow, adapter: OpenClawAdapter, native
     }, { signal, timeoutMs: 115_000 }).then((payload) => activationSchema.parse(payload))
       .catch((error: unknown): z.infer<typeof activationSchema> => ({ ok: false, error: error instanceof Error ? error.message : "" }));
     signal.throwIfAborted();
-    let needsRestart = Boolean(activation.gatewayRestartRequired || isCredentialAuthorityError(activation.error ?? ""));
+    const authorityUnavailable = !activation.ok && isCredentialAuthorityError(activation.error ?? "");
+    let needsRestart = Boolean(activation.gatewayRestartRequired || authorityUnavailable);
     if (activation.ok && activation.modelRef === defaultSiwcModel && !needsRestart) {
       needsRestart = await saveModelThinking(adapter, defaultSiwcModel, defaultSiwcThinking);
       signal.throwIfAborted();
@@ -374,7 +378,15 @@ async function verifySavedSignIn(current: Flow, adapter: OpenClawAdapter, native
       current.state = { phase: "restarting" };
       const verified = await restartGateway(signal).catch(() => false);
       signal.throwIfAborted();
-      if (verified) continue;
+      if (verified) {
+        recoveryRetryIndex = 0;
+        continue;
+      }
+    }
+    // Gateway RPC can be ready before the credential authority can serve the staged grant.
+    if (authorityUnavailable && recoveryRetryIndex !== undefined && recoveryRetryIndex < credentialRecoveryRetryDelaysMs.length) {
+      await delay(credentialRecoveryRetryDelaysMs[recoveryRetryIndex++], undefined, { signal });
+      continue;
     }
     current.state = { phase: "saved", recoveryFailed: true };
     return;

@@ -47,8 +47,9 @@ function installGateway(
   } as unknown as OpenClawAdapter);
 }
 
-async function expectPhase<T extends SiwcOnboardingState["phase"]>(owner: string, phase: T) {
-  for (let step = 0; step < 100; step++) {
+async function expectPhase<T extends SiwcOnboardingState["phase"]>(owner: string, phase: T, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     const state = readSiwcFlow(owner);
     if (state?.phase === phase) return state;
     await delay(5);
@@ -140,7 +141,7 @@ test("waits for native cancellation before allowing a fresh sign-in", async () =
   await cancelSiwcFlow(owner);
 });
 
-test("restarts once and verifies the staged ChatGPT grant without another OAuth wizard", async () => {
+test("automatically retries a staged ChatGPT grant when credential authority is still unavailable after restart", async () => {
   const owner = "saved-sign-in-owner";
   const oldKind = "saved-auth:openai%3Asetup-11111111-1111-4111-8111-111111111111";
   const newKind = "saved-auth:openai%3Atoken-sharing%3Atest-account";
@@ -161,7 +162,7 @@ test("restarts once and verifies the staged ChatGPT grant without another OAuth 
     if (method === "openclaw.setup.activate") {
       if (params.kind === "existing-model") return { ok: false };
       assert.deepEqual(params, { kind: newKind, agentId: "main", modelRef: model });
-      return ++verifications === 1 ? { ok: false, error: authorityError } : { ok: true, modelRef: model };
+      return ++verifications <= 2 ? { ok: false, error: authorityError } : { ok: true, modelRef: model };
     }
     if (method === "openclaw.setup.prepare.start") {
       wizardStarts += 1;
@@ -186,10 +187,10 @@ test("restarts once and verifies the staged ChatGPT grant without another OAuth 
   assert.equal(verifications, 1);
   assert.equal(retrySavedSiwcFlow("other-owner", async () => true).phase, "failed");
   confirmRestart(true);
-  assert.deepEqual(await expectPhase(owner, "ready"), { phase: "ready", model, thinking: "low", reused: false });
+  assert.deepEqual(await expectPhase(owner, "ready", 3_000), { phase: "ready", model, thinking: "low", reused: false });
   assert.equal(wizardStarts, 1);
   assert.equal(restarts, 1);
-  assert.equal(verifications, 2);
+  assert.equal(verifications, 3);
 });
 
 test("unverified recovery keeps the grant and subsequent model checks do not restart again", async () => {
