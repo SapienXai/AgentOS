@@ -22,8 +22,8 @@
     },
     "windows-x64": {
       "cleanInstall": {
-        "status": "BLOCKED",
-        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#desktop-packages"
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512322"
       },
       "distributionSigning": {
         "status": "BLOCKED",
@@ -35,7 +35,7 @@
       },
       "packagedLaunch": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45389230270"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512322"
       }
     },
     "linux-x64": {
@@ -65,31 +65,31 @@
     "cli-macos-x64": {
       "cleanInstall": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45387312968"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511858"
       },
       "updateCheck": {
-        "status": "BLOCKED",
-        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511858"
       }
     },
     "cli-windows-x64": {
       "cleanInstall": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45387312968"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512221"
       },
       "updateCheck": {
-        "status": "BLOCKED",
-        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512221"
       }
     },
     "cli-linux-x64": {
       "cleanInstall": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511815"
       },
       "updateCheck": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/blob/main/docs/release-readiness-agentos-0.9.0.md#cli-packages"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511815"
       }
     },
     "ios-pwa": {
@@ -148,6 +148,12 @@
   "releaseArtifact": {
     "runId": 45389230270,
     "id": 14921035647,
-    "sha256": "4940c5da90fc67b4f5426a1436ee9ff7ba19cb807079cc32c576618667496c03"
+    "sha256": "4940c5da90fc67b4f5426a1436ee9ff7ba19cb807079cc32c576618667496c03",
+    "cliArchiveProofs": {
+      "darwin-x64": "48a04ddd336930d382cbae0e98adf968e861c69d179c11b2eccbe48c38a89fd3",
+      "linux-x64": "45230ea8a672b0cdf06761439d8a63bd55444c4978a37aa6c5f6eb21be43a158",
+      "win32-x64": "0c9cfeda0cd4e1d00f21de9985178750e987e795328044b1b1fcfe5fbf975177",
+      "darwin-arm64": "587b9599129a55fffadd267d2d8c16f73f4266fcedef3ad7bd581ef64414dcdf"
+    }
   }
 }

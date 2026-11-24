@@ -2,7 +2,7 @@
 
 24 November 2026. Candidate code `6520429582bf753f984520ef3e570017cda0ca0f`.
 
-**Public release policy.** The OpenClaw runtime passed certification. Each CLI platform must pass its clean-install and update checks. Desktop packages with a verified launch qualify for Public Preview while distribution signing or update acceptance is pending. Stable Desktop requires full acceptance. The tables below record the build acceptance results before publication. [Publication workflow](https://github.com/SapienXai/AgentOS/actions/workflows/publish-agentos.yml)
+**Public release policy.** The OpenClaw runtime passed certification. Each CLI platform must pass its clean-install and update checks. The publication workflow accepts a recorded check only when its SHA-256 matches the original release bytes. Desktop packages with a verified launch qualify for Public Preview while distribution signing or update acceptance is pending. Stable Desktop requires full acceptance. [Publication workflow](https://github.com/SapienXai/AgentOS/actions/workflows/publish-agentos.yml)
 
 ## OpenClaw and CI
 
@@ -19,7 +19,7 @@ CI previously failed because the 2026.11.5 certification artifact was absent. Th
 | Platform | Production acceptance | Observed evidence |
 | --- | --- | --- |
 | macOS ARM64 | FAIL | Built the 0.9.0 DMG, verified the image, mounted it, copied the app into a fresh staging directory, and verified the ad hoc bundle seal. The packaged server smoke and 13 Rust shell tests passed. The first headless DMG run stopped in Finder layout setup. The CI-mode build completed, and the final DMG SHA-256 was `7218a7547ad2f9b44a14c80b0678d110f1a5618ef7baa375a01ee8d531820098`. Gatekeeper rejected the ad hoc app. Developer ID signing, notarization, and signed update installation remain required. |
-| Windows x64 | BLOCKED | The first native Windows job caught the updater compiler error. The fix is on main. The fixed Windows runner passed the Rust shell tests, packaged-server smoke, and unsigned NSIS build. A timestamped Authenticode signature and a signed installer/update rehearsal remain required. |
+| Windows x64 | PUBLIC PREVIEW | The native Windows runner installed the unsigned NSIS package and started the installed Desktop app. Its embedded loopback server returned HTTP 200. A timestamped Authenticode signature and a signed update rehearsal remain required for stable. [Windows installation and launch](https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512322) |
 | Linux x64 | BLOCKED | The final Linux desktop runner passed the native build and packaged-server smoke. The earlier staging AppImage signature verified with the production updater public key, and an altered copy failed verification. The emulated x64 host rejected the static AppImage wrapper. The extracted signed payload launched and served /login with HTTP 200. The DEB signature, clean installation, and HTTP 200 startup passed. The RPM signature and clean installation passed on Fedora 45 x64. Fedora GTK aborted before the server started when its sandboxed icon loader exited in the container. Direct AppImage execution, RPM launch on a native host, and a signed update rehearsal remain due. |
 
 The release build smoke-tested four CLI archives and built all three desktop platforms. It verified the CLI SHA-256 checksums and all five desktop updater signatures against the bundled public key. The publication job checks the original artifact, CI on `main`, current certification, and evidence for each channel. The protected `agentos-public-release` environment allows the publication job from `main` and requires a release owner. [Release build](https://github.com/SapienXai/AgentOS/actions/runs/45389230270) · [Protected release environment](https://github.com/SapienXai/AgentOS/settings/environments)
@@ -28,10 +28,10 @@ The release build smoke-tested four CLI archives and built all three desktop pla
 
 | Platform | Production acceptance | Observed evidence |
 | --- | --- | --- |
-| macOS ARM64 | PASS | Clean npm installation from the packaged 0.9.0 archive, package smoke, and read-only update check. |
-| macOS x64 | BLOCKED | The native Intel GitHub runner built and installed the 0.9.0 CLI and passed deep doctor. A native update check is outstanding. |
-| Windows x64 | BLOCKED | The native Windows GitHub runner built and installed the 0.9.0 CLI and passed deep doctor. A native update check is outstanding. |
-| Linux x64 | PASS | GitHub archive checksum verified. A fresh Linux x64 container installed the package, reported 0.9.0, ran the update check, served the login route with HTTP 200, and stopped cleanly. |
+| macOS ARM64 | PASS | Native Apple Silicon, macOS 27.0.1, Node.js 24.22.1. The original archive verified against the checksum from the release build. `node packages/agentos/scripts/smoke-package.mjs --tarball <path>/agentos-darwin-arm64.tgz --check-update` printed `AgentOS package smoke passed for @sapienx/agentos@0.9.0`. The SHA-256 is recorded in the acceptance file. |
+| macOS x64 | PASS | Clean install, deep doctor, and read-only update check. [Intel runner](https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511858) |
+| Windows x64 | PASS | Clean install, deep doctor, and read-only update check. [Windows runner](https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480512221) |
+| Linux x64 | PASS | Clean install, deep doctor, and read-only update check. A separate Linux x64 run served the login route and stopped cleanly. [Linux runner](https://github.com/SapienXai/AgentOS/actions/runs/45404109050/job/138480511815) |
 
 The hosted CLI matrix ran against the candidate JavaScript bundle. The final source change affected the native desktop updater. [CLI packaging and smoke](https://github.com/SapienXai/AgentOS/actions/runs/45387312968)
 

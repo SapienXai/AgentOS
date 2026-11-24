@@ -7,10 +7,10 @@ import { checkCertificationFreshness } from "@/scripts/check-certification-fresh
 import { loadOpenClawCertifiedEvidence } from "@/scripts/openclaw-release-watch";
 
 const cliPlatforms = {
-  "darwin-arm64": "cli-macos-arm64",
-  "darwin-x64": "cli-macos-x64",
-  "win32-x64": "cli-windows-x64",
-  "linux-x64": "cli-linux-x64"
+  "darwin-arm64": { platform: "cli-macos-arm64", runner: "macos-15" },
+  "darwin-x64": { platform: "cli-macos-x64", runner: "macos-15-intel" },
+  "win32-x64": { platform: "cli-windows-x64", runner: "windows-latest" },
+  "linux-x64": { platform: "cli-linux-x64", runner: "ubuntu-latest" }
 } as const;
 
 const desktopPackages = [
@@ -27,7 +27,8 @@ const acceptanceSchema = z.object({
   releaseArtifact: z.object({
     runId: z.number().int().positive(),
     id: z.number().int().positive(),
-    sha256: z.string().regex(/^[0-9a-f]{64}$/)
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    cliArchiveProofs: z.record(z.string().regex(/^[0-9a-f]{64}$/)).default({})
   }).optional(),
   checks: z.record(z.record(z.object({
     status: z.enum(["PASS", "FAIL", "BLOCKED"]),
@@ -59,8 +60,15 @@ async function main() {
 
   const pass = (platform: string, check: string) => acceptance.checks[platform]?.[check]?.status === "PASS";
   if (process.argv.includes("--plan")) {
-    if (!acceptance.releaseArtifact) throw new Error("The certified release artifact must be identified.");
-    const cli = Object.entries(cliPlatforms).filter(([, platform]) => pass(platform, "cleanInstall")).map(([artifact]) => artifact);
+    const { releaseArtifact } = acceptance;
+    if (!releaseArtifact) throw new Error("The certified release artifact must be identified.");
+    const targets = Object.keys(cliPlatforms) as (keyof typeof cliPlatforms)[];
+    const cli = targets.filter((target) => pass(cliPlatforms[target].platform, "cleanInstall"));
+    const cliProofs = Object.fromEntries(cli.flatMap((target) => {
+      const digest = releaseArtifact.cliArchiveProofs[target];
+      return digest && pass(cliPlatforms[target].platform, "updateCheck") ? [[target, digest] as const] : [];
+    }));
+    const cliSmokes = cli.flatMap((target) => cliProofs[target] ? [] : [{ target, runner: cliPlatforms[target].runner }]);
     const desktop = desktopPackages.map(({ name, update, launch, platform, target, checks }) => {
       const provenLaunch = pass(launch, "packagedLaunch");
       const stable = provenLaunch && checks.every((check) => pass(platform, check));
@@ -72,11 +80,12 @@ async function main() {
         verifyInstaller: launch === "windows-x64"
       };
     });
-    console.log(JSON.stringify({ version, commit: freshness.certifiedCodeHead, source: acceptance.releaseArtifact, cli, desktop }));
+    console.log(JSON.stringify({ version, commit: freshness.certifiedCodeHead, source: releaseArtifact, cli, cliProofs, cliSmokes, desktop }));
     return;
   }
 
-  const missing = Object.values(cliPlatforms).filter((platform) => !pass(platform, "cleanInstall") || !pass(platform, "updateCheck"));
+  const missing = Object.values(cliPlatforms).map(({ platform }) => platform)
+    .filter((platform) => !pass(platform, "cleanInstall") || !pass(platform, "updateCheck"));
   if (missing.length) throw new Error(`Missing CLI package acceptance for ${missing.join(", ")}.`);
   console.log(`CLI package acceptance: PASS for AgentOS ${version} with OpenClaw ${freshness.expectedVersion}.`);
 }

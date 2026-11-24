@@ -74,8 +74,10 @@ async function publish(plan, root, proofRoot) {
   const verified = new Map();
   for (const item of plan.cli) {
     const name = `cli-${item}.txt`;
-    if (!files.includes(name)) continue;
-    const digest = (await readFile(path.join(proofRoot, name), "utf8")).trim();
+    const digest = files.includes(name)
+      ? (await readFile(path.join(proofRoot, name), "utf8")).trim()
+      : plan.cliProofs[item];
+    if (!digest) continue;
     if (digest !== await verifyCliArchive(root, item)) throw new Error(`CLI smoke proof does not match ${item}.`);
     verified.set(item, digest);
   }
