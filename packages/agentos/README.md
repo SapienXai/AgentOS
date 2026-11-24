@@ -62,7 +62,7 @@ If AgentOS was installed with `pnpm` or `npm`, update commands only print the ma
 
 The Updates page keeps application ownership explicit. Supported AgentOS Desktop builds (macOS ARM64, Windows NSIS x64, and Linux AppImage x64) can install a newer signed Desktop release from the native shell. Debian and RPM Desktop builds show package-manager guidance. Release CLI, npm/pnpm, source-checkout, and hosted updates remain with their installation or deployment owner; the browser never runs a package manager, installer, or CLI updater.
 
-The first Desktop release with in-product updating must be installed manually over earlier Desktop versions. Back up existing AgentOS workspace and sidecar data before that initial upgrade, then confirm it is present after launch. AgentOS preserves the known legacy sidecar when it can verify the migration; conflicting or unreadable storage blocks Desktop update admission.
+Install AgentOS Desktop 0.9.0 as the first production baseline. Future Desktop updates use signed release bundles. Keep existing OpenClaw files and workspaces in place.
 
 `agentos uninstall` removes a release-installer copy. If the package was installed with `pnpm` or `npm`, remove it with your package manager instead.
 
@@ -82,10 +82,9 @@ Security:
 Compatibility:
 
 - Requires Node.js 24.22.1+ or 26.12.1+; Node.js 26.12.1+ is recommended.
-- Recommended OpenClaw: 2026.9.7.
-- Fresh setup install target: OpenClaw 2026.11.5 (candidate; final AgentOS certification pending).
-- Supported minimum: OpenClaw 2026.9.1 after explicit session-security reconciliation.
-- Native contract target: OpenClaw 2026.11.5 (candidate; certification pending).
+- Recommended OpenClaw: 2026.11.5.
+- Supported minimum: OpenClaw 2026.11.5.
+- Native contract target: OpenClaw 2026.11.5.
 - Uses OpenClaw Gateway-first transport by default, with explicit CLI fallback for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.
 - Run `agentos doctor --deep` and check in-app diagnostics to verify OpenClaw version, Gateway protocol compatibility, native auth, scopes, fallback activity, and model readiness before the first mission.
 - Account-target browser-profile dispatch is an MVP bridge until OpenClaw exposes typed browser-profile dispatch. AgentOS enforces access rules before task launch and passes selected profile/session context; `requires_approval` rules remain blocked until approval dispatch exists.

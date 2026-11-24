@@ -114,6 +114,7 @@ export async function discoverOfficialOpenClawReleases(input: {
   targetVersion?: string | null;
   includePrerelease?: boolean;
   maxReleases?: number;
+  latestStableOnly?: boolean;
   githubToken?: string | null;
   fetchImpl?: ReleaseWatcherFetch;
 }): Promise<OpenClawReleaseDiscovery> {
@@ -141,19 +142,23 @@ export async function discoverOfficialOpenClawReleases(input: {
       targetVersion,
       includePrerelease
     });
-    const latestStableVersion = [...new Set([...npm.versions, ...github.versions])]
-      .filter((version) => isStableOpenClawRelease(version))
-      .sort(compareOpenClawReleaseVersions)
-      .at(-1) ?? null;
-    const bounded = candidates.slice(-maxReleases);
+    const latestStableOnly = input.latestStableOnly === true && !targetVersion;
+    const stableVersions = latestStableOnly
+      ? github.versions.filter((version) => npm.metadata.has(version))
+      : [...new Set([...npm.versions, ...github.versions])];
+    const latestStableVersion = stableVersions.filter(isStableOpenClawRelease).sort(compareOpenClawReleaseVersions).at(-1) ?? null;
+    const selected = latestStableOnly
+      ? candidates.filter((candidate) => candidate.version === latestStableVersion)
+      : candidates;
+    const bounded = selected.slice(-maxReleases);
 
     return {
       status: "ok",
       currentRecommendedVersion,
       latestStableVersion,
       releases: bounded,
-      truncated: candidates.length > bounded.length,
-      remainingReleaseCount: Math.max(0, candidates.length - bounded.length),
+      truncated: selected.length > bounded.length,
+      remainingReleaseCount: Math.max(0, selected.length - bounded.length),
       ignoredPrereleaseVersions: [...new Set([
         ...npm.versions.filter((version) => !isStableOpenClawRelease(version)),
         ...github.versions.filter((version) => !isStableOpenClawRelease(version))

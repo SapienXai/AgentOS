@@ -14,38 +14,32 @@ test("release finalization validates complete CLI and signed Desktop assets befo
     await writeCliAssets(root);
     await writeSigned(root, "macos", "AgentOS.app.tar.gz", "mac bundle");
     await mkdir(path.join(root, "dmg"), { recursive: true });
-    await writeFile(path.join(root, "dmg", "AgentOS_0.8.1_aarch64.dmg"), "mac installer");
-    await writeSigned(root, "nsis", "AgentOS_0.8.1_x64-setup.exe", "windows installer");
-    await writeSigned(root, "appimage", "AgentOS_0.8.1_amd64.AppImage", "linux appimage");
-    await writeSigned(root, "deb", "AgentOS_0.8.1_amd64.deb", "linux deb");
-    await writeSigned(root, "rpm", "AgentOS-0.8.1-1.x86_64.rpm", "linux rpm");
+    await writeFile(path.join(root, "dmg", "AgentOS_0.9.0_aarch64.dmg"), "mac installer");
+    await writeSigned(root, "nsis", "AgentOS_0.9.0_x64-setup.exe", "windows installer");
+    await writeSigned(root, "appimage", "AgentOS_0.9.0_amd64.AppImage", "linux appimage");
+    await writeSigned(root, "deb", "AgentOS_0.9.0_amd64.deb", "linux deb");
+    await writeSigned(root, "rpm", "AgentOS-0.9.0-1.x86_64.rpm", "linux rpm");
 
-    const result = await finalizeReleaseAssets({ root, version: "0.8.1", now: stableNow });
+    const result = await finalizeReleaseAssets({ root, version: "0.9.0", now: stableNow });
     const latest = JSON.parse(await readFile(path.join(root, "latest.json"), "utf8")) as {
       version: string;
       pub_date: string;
       platforms: Record<string, { url: string; signature: string }>;
     };
 
-    assert.equal(latest.version, "0.8.1");
+    assert.equal(latest.version, "0.9.0");
     assert.equal(latest.pub_date, stableNow.toISOString());
     assert.deepEqual(Object.keys(latest.platforms).sort(), [
-      "darwin-aarch64",
       "darwin-aarch64-app",
-      "linux-x86_64",
       "linux-x86_64-appimage",
       "linux-x86_64-deb",
       "linux-x86_64-rpm",
-      "windows-x86_64",
       "windows-x86_64-nsis"
     ]);
-    assert.deepEqual(latest.platforms["darwin-aarch64"], latest.platforms["darwin-aarch64-app"]);
-    assert.deepEqual(latest.platforms["linux-x86_64"], latest.platforms["linux-x86_64-appimage"]);
-    assert.deepEqual(latest.platforms["windows-x86_64"], latest.platforms["windows-x86_64-nsis"]);
-    assert.equal(latest.platforms["darwin-aarch64-app"].url, "https://github.com/SapienXai/AgentOS/releases/download/agentos-v0.8.1/AgentOS-0.8.1-macos-arm64.app.tar.gz");
+    assert.equal(latest.platforms["darwin-aarch64-app"].url, "https://github.com/SapienXai/AgentOS/releases/download/agentos-v0.9.0/AgentOS-0.9.0-macos-arm64.app.tar.gz");
     assert.match(latest.platforms["linux-x86_64-deb"].signature, /signed-release-artifact/);
     assert.ok(result.assets.includes("agentos-darwin-arm64.tgz.sha256"));
-    assert.ok(result.assets.includes("AgentOS-0.8.1-linux-x64.rpm.sig"));
+    assert.ok(result.assets.includes("AgentOS-0.9.0-linux-x64.rpm.sig"));
     assert.equal((await readFile(path.join(root, "agentos-linux-x64.tgz"), "utf8")).trim(), "linux cli archive");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -57,11 +51,11 @@ test("release finalization rejects missing signed platform artifacts and prerele
   try {
     await writeCliAssets(root);
     await assert.rejects(
-      () => finalizeReleaseAssets({ root, version: "0.8.1-rc.1" }),
+      () => finalizeReleaseAssets({ root, version: "0.9.0-rc.1" }),
       /stable semantic version/
     );
     await assert.rejects(
-      () => finalizeReleaseAssets({ root, version: "0.8.1" }),
+      () => finalizeReleaseAssets({ root, version: "0.9.0" }),
       /Desktop updater bundle for darwin-aarch64-app/
     );
   } finally {

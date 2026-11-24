@@ -12,24 +12,16 @@ import {
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
 
-test("OpenClaw 2026.9.7 remains recommended while 10.6 is an explicit candidate and 9.1 stays supported", () => {
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
-  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.9.7");
-  assert.deepEqual(
-    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.9.7"),
-    {
-      version: "2026.9.7",
-      status: "certified",
-      minRequiredAgentOsVersion: "0.7.2",
-      notes: "Last certified stable OpenClaw version for AgentOS Gateway-first operation.",
-      reason: "Retained as the default until a newer target completes final certification."
-    }
-  );
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.11.5")?.status, "candidate");
+test("OpenClaw 2026.11.5 is the first production baseline", () => {
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.11.5");
+  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.11.5");
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, OPENCLAW_RECOMMENDED_VERSION);
+  assert.deepEqual(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.map(({ version, status }) => ({ version, status })), [
+    { version: "2026.11.5", status: "certified" }
+  ]);
 });
 
-test("fresh installer contract targets the current native contract candidate directly", () => {
+test("fresh installer contract targets the production baseline directly", () => {
   assert.equal(OPENCLAW_INSTALL_TARGET_VERSION, OPENCLAW_NATIVE_CONTRACT_VERSION);
   const command = getOpenClawInstallCommand();
   assert.match(command, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
@@ -46,7 +38,7 @@ test("the historical 6.11 runtime is below the promoted normal-support baseline"
   assert.equal(decision.status, "blocked");
   assert.equal(decision.allowed, false);
   assert.equal(decision.defaultVisible, false);
-  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.9\.1 or newer/);
+  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.11\.5 or newer/);
 });
 
 test("fresh baseline certification does not invoke the historical migration engine", () => {

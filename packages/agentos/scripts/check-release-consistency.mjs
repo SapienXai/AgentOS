@@ -328,7 +328,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage, openCla
     expectIncludes(context, "README.md", readme, `- ${REQUIRED_NODE_RUNTIME_COPY}`);
     if (recommendedCopy) expectIncludes(context, "README.md", readme, recommendedCopy);
     if (supportedMinimumCopy) expectIncludes(context, "README.md", readme, supportedMinimumCopy);
-    if (openClawVersionPolicy.nativeContract) expectIncludes(context, "README.md", readme, "Native contract target: `" + openClawVersionPolicy.nativeContract + "` (candidate; certification pending).");
+    if (openClawVersionPolicy.nativeContract) expectIncludes(context, "README.md", readme, "Native contract target: `" + openClawVersionPolicy.nativeContract + "`.");
     expectIncludes(context, "README.md", readme, "CLI fallback remains explicit and visible");
     expectIncludes(context, "README.md", readme, "Accounts and browser profiles are an MVP bridge");
     expectIncludes(context, "README.md", readme, "OpenClaw does not yet expose typed browser-profile dispatch");
@@ -369,7 +369,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage, openCla
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1");
     if (packageRecommendedCopy) expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, packageRecommendedCopy);
     if (packageSupportedMinimumCopy) expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, packageSupportedMinimumCopy);
-    if (openClawVersionPolicy.nativeContract) expectIncludes(context, AGENTOS_PACKAGE_DIR + "/README.md", packageReadme, "Native contract target: OpenClaw " + openClawVersionPolicy.nativeContract + " (candidate; certification pending).");
+    if (openClawVersionPolicy.nativeContract) expectIncludes(context, AGENTOS_PACKAGE_DIR + "/README.md", packageReadme, "Native contract target: OpenClaw " + openClawVersionPolicy.nativeContract + ".");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Gateway-first transport by default, with explicit CLI fallback");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Account-target browser-profile dispatch is an MVP bridge");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "`requires_approval` rules remain blocked until approval dispatch exists");
@@ -390,7 +390,7 @@ function validateSecurityDocs(context, security, cleanInstallChecklist, openClaw
     if (openClawVersionPolicy.recommended && openClawVersionPolicy.supportedBaseline) {
       expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `recommended OpenClaw ${openClawVersionPolicy.recommended}`);
       expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `supported minimum is OpenClaw ${openClawVersionPolicy.supportedBaseline}`);
-      if (openClawVersionPolicy.nativeContract) expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "OpenClaw " + openClawVersionPolicy.nativeContract + " is the candidate native contract target");
+      if (openClawVersionPolicy.nativeContract) expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "OpenClaw " + openClawVersionPolicy.nativeContract + " is the native contract target");
     }
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "agentos doctor --deep");
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "physical operator machine");

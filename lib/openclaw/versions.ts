@@ -1,9 +1,7 @@
-// Keep the last certified recommendation until the new native target passes final certification.
-export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.9.7";
-export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.9.1";
+// AgentOS 0.9.0 starts with one OpenClaw production baseline.
+export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.11.5";
+export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.11.5";
 export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.11.5";
-// Fresh setup follows the current native contract target. Its candidate status
-// remains separate from the certified recommendation used by update policy.
 export const OPENCLAW_INSTALL_TARGET_VERSION: string = OPENCLAW_NATIVE_CONTRACT_VERSION;
 export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;
 

@@ -19,7 +19,7 @@ function update(overrides: Partial<NativeDoctorSnapshot["update"]> = {}): Native
     readStatus: "available",
     status: "current",
     updateAvailable: false,
-    currentVersion: "2026.9.1",
+    currentVersion: "2026.11.5",
     latestVersion: null,
     effectiveChannel: "stable",
     schedule: null,
@@ -81,10 +81,10 @@ test("native available target with an exact certified decision is eligible for n
       update: update({
         status: "available",
         updateAvailable: true,
-        latestVersion: "2026.9.2"
+        latestVersion: "2026.11.6"
       }),
       agentOsDecision: {
-        version: "2026.9.2",
+        version: "2026.11.6",
         status: "certified",
         allowed: true,
         defaultVisible: true,
@@ -102,7 +102,7 @@ test("native available target with an exact certified decision is eligible for n
 test("durable active native run wins over a temporary unavailable availability probe", () => {
   const state = resolveNativeUpdateUserState({
     update: {
-      ...update({ currentVersion: "2026.9.1" }),
+      ...update({ currentVersion: "2026.11.5" }),
       readStatus: "unknown",
       status: "unknown",
       updateAvailable: null,
@@ -114,8 +114,8 @@ test("durable active native run wins over a temporary unavailable availability p
         phase: "restarting",
         status: "running",
         reason: null,
-        targetVersion: "2026.9.2",
-        beforeVersion: "2026.9.1",
+        targetVersion: "2026.11.6",
+        beforeVersion: "2026.11.5",
         afterVersion: null,
         steps: [],
         verification: null,
@@ -136,10 +136,10 @@ test("native available target remains explicitly uncertified without an exact de
       update: update({
         status: "available",
         updateAvailable: true,
-        latestVersion: "2026.9.3"
+        latestVersion: "2026.11.7"
       }),
       agentOsDecision: {
-        version: "2026.9.3",
+        version: "2026.11.7",
         status: "unknown",
         allowed: false,
         defaultVisible: false,
@@ -157,9 +157,9 @@ test("native available target remains explicitly uncertified without an exact de
 test("AgentOS certification never invents an update when native OpenClaw says current", () => {
   assert.equal(
     resolveNativeUpdateUserState({
-      update: update({ currentVersion: "2026.9.1" }),
+      update: update({ currentVersion: "2026.11.5" }),
       agentOsDecision: {
-        version: "2026.9.2",
+        version: "2026.11.6",
         status: "certified",
         allowed: true,
         defaultVisible: true,
@@ -180,10 +180,10 @@ test("blocked native target remains blocked even when a higher certification val
       update: update({
         status: "available",
         updateAvailable: true,
-        latestVersion: "2026.9.3"
+        latestVersion: "2026.11.7"
       }),
       agentOsDecision: {
-        version: "2026.9.3",
+        version: "2026.11.7",
         status: "blocked",
         allowed: false,
         defaultVisible: false,
@@ -204,14 +204,14 @@ test("native campaign hold is shown before normal availability action", () => {
       update: update({
         status: "available",
         updateAvailable: true,
-        latestVersion: "2026.9.2",
+        latestVersion: "2026.11.6",
         schedule: {
           autoEnabled: true,
           campaign: { state: "countdown", holdUntilMs: Date.now() + 60_000 }
         }
       }),
       agentOsDecision: {
-        version: "2026.9.2",
+        version: "2026.11.6",
         status: "certified",
         allowed: true,
         defaultVisible: true,
@@ -253,18 +253,18 @@ test("native forbidden, unavailable, and unknown reads are not reported as up to
 test("product update state keeps a discovered target visible when native mutation is unavailable", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
     snapshot: policySnapshot({
-      ...update({ currentVersion: "2026.9.3" }),
-      discoveredAvailableVersion: "2026.9.4",
+      ...update({ currentVersion: "2026.11.7" }),
+      discoveredAvailableVersion: "2026.11.8",
       availabilitySource: "openclaw-cli-fallback"
     }),
     agentOsVersion: "0.7.9",
-    manifest: manifest([{ version: "2026.9.4", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.8", status: "certified" }])
   });
 
   assert.equal(policy.nativeAvailableVersion, null);
   assert.equal(policy.productUpdate.state, "available-fallback");
   assert.equal(policy.productUpdate.action, "advanced");
-  assert.equal(policy.productUpdate.availableVersion, "2026.9.4");
+  assert.equal(policy.productUpdate.availableVersion, "2026.11.8");
   assert.match(policy.productUpdate.reason, /read-only CLI status fallback/);
   assert.equal(policy.canRunNormalUpdate, false);
 });
@@ -272,11 +272,11 @@ test("product update state keeps a discovered target visible when native mutatio
 test("product update state separates availability from certification and AgentOS prerequisites", () => {
   const available = resolveOpenClawProductUpdateState({
     nativeState: "available-uncertified",
-    currentVersion: "2026.9.3",
-    availableVersion: "2026.9.4",
+    currentVersion: "2026.11.7",
+    availableVersion: "2026.11.8",
     availabilitySource: "native-gateway",
     agentOsDecision: {
-      version: "2026.9.4",
+      version: "2026.11.8",
       status: "candidate",
       allowed: false,
       defaultVisible: true,
@@ -289,11 +289,11 @@ test("product update state separates availability from certification and AgentOS
   });
   const required = resolveOpenClawProductUpdateState({
     nativeState: "available-uncertified",
-    currentVersion: "2026.9.3",
-    availableVersion: "2026.9.4",
+    currentVersion: "2026.11.7",
+    availableVersion: "2026.11.8",
     availabilitySource: "native-gateway",
     agentOsDecision: {
-      version: "2026.9.4",
+      version: "2026.11.8",
       status: "certified",
       allowed: false,
       defaultVisible: false,
@@ -306,11 +306,11 @@ test("product update state separates availability from certification and AgentOS
   });
   const blocked = resolveOpenClawProductUpdateState({
     nativeState: "blocked",
-    currentVersion: "2026.9.3",
-    availableVersion: "2026.9.4",
+    currentVersion: "2026.11.7",
+    availableVersion: "2026.11.8",
     availabilitySource: "native-gateway",
     agentOsDecision: {
-      version: "2026.9.4",
+      version: "2026.11.8",
       status: "blocked",
       allowed: false,
       defaultVisible: false,
@@ -349,7 +349,7 @@ function manifest(entries: OpenClawCompatibilityManifest["versions"]): OpenClawC
   return {
     schemaVersion: 1,
     source: "override",
-    recommendedVersion: "2026.9.3",
+    recommendedVersion: "2026.11.7",
     versions: entries
   };
 }
@@ -359,7 +359,7 @@ function policyUpdate(latestVersion: string) {
     status: "available" as const,
     readStatus: "available" as const,
     updateAvailable: true,
-    currentVersion: "2026.9.1",
+    currentVersion: "2026.11.5",
     latestVersion,
     effectiveChannel: "stable",
     schedule: null,
@@ -374,7 +374,7 @@ function policySnapshot(updateValue: NativeDoctorSnapshot["update"]): NativeDoct
     runtime: { status: "healthy", reachable: true, explanation: "healthy" },
     status: {
       readStatus: "available",
-      runtimeVersion: "2026.9.1",
+      runtimeVersion: "2026.11.5",
       version: null,
       updateChannel: "stable",
       gatewayReachable: true,
@@ -414,12 +414,12 @@ function policySnapshot(updateValue: NativeDoctorSnapshot["update"]): NativeDoct
 
 test("exact manifest status wins over version ordering", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
     manifest: manifest([
-      { version: "2026.9.1", status: "certified" },
-      { version: "2026.9.2", status: "blocked" },
-      { version: "2026.9.3", status: "certified" }
+      { version: "2026.11.5", status: "certified" },
+      { version: "2026.11.6", status: "blocked" },
+      { version: "2026.11.7", status: "certified" }
     ])
   });
 
@@ -430,11 +430,11 @@ test("exact manifest status wins over version ordering", () => {
 
 test("unknown manifest gaps remain uncertified even below a certified release", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
     manifest: manifest([
-      { version: "2026.9.1", status: "certified" },
-      { version: "2026.9.3", status: "certified" }
+      { version: "2026.11.5", status: "certified" },
+      { version: "2026.11.7", status: "certified" }
     ])
   });
 
@@ -447,9 +447,9 @@ test("unknown manifest gaps remain uncertified even below a certified release", 
 
 test("newer stable targets beyond the recommendation use the normal native path after informed confirmation", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.8")),
+    snapshot: policySnapshot(policyUpdate("2026.11.12")),
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
 
   assert.equal(policy.agentOsDecision?.status, "unknown");
@@ -462,41 +462,41 @@ test("newer stable targets beyond the recommendation use the normal native path 
 
 test("native authorization and complete preflight remain server-side update requirements", () => {
   const authorizedPolicy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.8")),
+    snapshot: policySnapshot(policyUpdate("2026.11.12")),
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
   const unauthorized = resolveNormalOpenClawUpdatePolicy({
     snapshot: {
-      ...policySnapshot(policyUpdate("2026.9.8")),
-      identity: { ...policySnapshot(policyUpdate("2026.9.8")).identity, updateAuthorized: false }
+      ...policySnapshot(policyUpdate("2026.11.12")),
+      identity: { ...policySnapshot(policyUpdate("2026.11.12")).identity, updateAuthorized: false }
     },
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
   const unhealthy = resolveNormalOpenClawUpdatePolicy({
     snapshot: {
-      ...policySnapshot(policyUpdate("2026.9.8")),
+      ...policySnapshot(policyUpdate("2026.11.12")),
       recovery: { status: "needs-attention", issues: [], actions: [], explanation: "repair needed" }
     },
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
   const unidentified = resolveNormalOpenClawUpdatePolicy({
     snapshot: {
-      ...policySnapshot(policyUpdate("2026.9.8")),
-      identity: { ...policySnapshot(policyUpdate("2026.9.8")).identity, connectionGeneration: null }
+      ...policySnapshot(policyUpdate("2026.11.12")),
+      identity: { ...policySnapshot(policyUpdate("2026.11.12")).identity, connectionGeneration: null }
     },
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
   const missingOptionalDeviceId = resolveNormalOpenClawUpdatePolicy({
     snapshot: {
-      ...policySnapshot(policyUpdate("2026.9.8")),
-      identity: { ...policySnapshot(policyUpdate("2026.9.8")).identity, deviceId: null }
+      ...policySnapshot(policyUpdate("2026.11.12")),
+      identity: { ...policySnapshot(policyUpdate("2026.11.12")).identity, deviceId: null }
     },
     agentOsVersion: "0.8.0",
-    manifest: manifest([{ version: "2026.9.7", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.11", status: "certified" }])
   });
 
   assert.equal(guardNormalOpenClawUpdate({ policy: authorizedPolicy, confirmationMatches: true, unverifiedAcknowledged: true }).allowed, true);
@@ -516,16 +516,16 @@ test("native authorization and complete preflight remain server-side update requ
 
 test("AgentOS minimum version and non-stable channels remain hard blockers", () => {
   const required = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.8")),
+    snapshot: policySnapshot(policyUpdate("2026.11.12")),
     agentOsVersion: "0.7.2",
     manifest: manifest([{
-      version: "2026.9.8",
+      version: "2026.11.12",
       status: "candidate",
       minRequiredAgentOsVersion: "0.8.0"
     }])
   });
   const beta = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot({ ...policyUpdate("2026.9.8-beta.1"), effectiveChannel: "beta" }),
+    snapshot: policySnapshot({ ...policyUpdate("2026.11.12-beta.1"), effectiveChannel: "beta" }),
     agentOsVersion: "0.8.0",
     manifest: manifest([])
   });
@@ -539,16 +539,16 @@ test("AgentOS minimum version and non-stable channels remain hard blockers", () 
 
 test("date-version validation supports future stable releases and rejects invalid progression", () => {
   assert.equal(isStableOpenClawVersion("2027.1.2"), true);
-  assert.equal(isStableOpenClawVersion("2026.9.8-beta.1"), false);
+  assert.equal(isStableOpenClawVersion("2026.11.12-beta.1"), false);
   assert.equal(isStableOpenClawVersion("2026.13.1"), false);
   assert.equal(isStableOpenClawVersion("2026.2.30"), false);
 });
 
 test("community release signals cannot change the native policy decision", () => {
   const input = {
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "blocked" }])
+    manifest: manifest([{ version: "2026.11.6", status: "blocked" }])
   } as const;
   const withHighCommunitySignal = resolveNormalOpenClawUpdatePolicy(input);
   const withLowCommunitySignal = resolveNormalOpenClawUpdatePolicy(input);
@@ -559,11 +559,11 @@ test("community release signals cannot change the native policy decision", () =>
 test("native applying campaign is visible after a page reload", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
     snapshot: policySnapshot({
-        ...policyUpdate("2026.9.2"),
+        ...policyUpdate("2026.11.6"),
         schedule: { autoEnabled: true, campaign: { state: "applying" } }
       }),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
 
   assert.equal(policy.state, "running");
@@ -573,11 +573,11 @@ test("native applying campaign is visible after a page reload", () => {
 test("native hold is only available for an active automatic campaign", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
     snapshot: policySnapshot({
-        ...policyUpdate("2026.9.2"),
+        ...policyUpdate("2026.11.6"),
         schedule: { autoEnabled: true, campaign: { state: "countdown" } }
       }),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
 
   assert.equal(policy.canHoldUpdate, true);
@@ -585,9 +585,9 @@ test("native hold is only available for an active automatic campaign", () => {
 
 test("normal update gate rejects direct policy bypasses", () => {
   const blocked = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "blocked" }])
+    manifest: manifest([{ version: "2026.11.6", status: "blocked" }])
   });
   const result = guardNormalOpenClawUpdate({ policy: blocked, confirmationMatches: true });
 
@@ -602,9 +602,9 @@ test("normal update gate rejects direct policy bypasses", () => {
 
 test("normal update gate allows an exact certified native target", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
   assert.deepEqual(guardNormalOpenClawUpdate({ policy, confirmationMatches: true }), { allowed: true });
 });
@@ -612,9 +612,9 @@ test("normal update gate allows an exact certified native target", () => {
 test("unverified exact stable targets require informed confirmation in the normal update route", () => {
   for (const status of ["candidate", "unknown"] as const) {
     const policy = resolveNormalOpenClawUpdatePolicy({
-      snapshot: policySnapshot(policyUpdate("2026.9.2")),
+      snapshot: policySnapshot(policyUpdate("2026.11.6")),
       agentOsVersion: "0.7.2",
-      manifest: manifest([{ version: "2026.9.2", status }])
+      manifest: manifest([{ version: "2026.11.6", status }])
     });
     const result = guardNormalOpenClawUpdate({ policy, confirmationMatches: true });
 
@@ -629,9 +629,9 @@ test("unverified exact stable targets require informed confirmation in the norma
 
 test("normal update gate rejects a native available state without an exact target", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot({ ...policyUpdate("2026.9.2"), latestVersion: null }),
+    snapshot: policySnapshot({ ...policyUpdate("2026.11.6"), latestVersion: null }),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
   const result = guardNormalOpenClawUpdate({ policy, confirmationMatches: true });
 
@@ -641,9 +641,9 @@ test("normal update gate rejects a native available state without an exact targe
 
 test("normal update gate rejects stale target, channel, or Gateway confirmation", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
-    snapshot: policySnapshot(policyUpdate("2026.9.2")),
+    snapshot: policySnapshot(policyUpdate("2026.11.6")),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
   const result = guardNormalOpenClawUpdate({ policy, confirmationMatches: false });
 
@@ -654,14 +654,14 @@ test("normal update gate rejects stale target, channel, or Gateway confirmation"
 test("normal update gate requires native availability and exact target evidence", () => {
   const policy = resolveNormalOpenClawUpdatePolicy({
     snapshot: policySnapshot({
-        ...policyUpdate("2026.9.2"),
+        ...policyUpdate("2026.11.6"),
         readStatus: "unknown",
         status: "unknown",
         updateAvailable: null,
         latestVersion: null
       }),
     agentOsVersion: "0.7.2",
-    manifest: manifest([{ version: "2026.9.2", status: "certified" }])
+    manifest: manifest([{ version: "2026.11.6", status: "certified" }])
   });
   const result = guardNormalOpenClawUpdate({ policy, confirmationMatches: true });
 
@@ -671,15 +671,15 @@ test("normal update gate requires native availability and exact target evidence"
 
 
 test("fresh same-channel CLI discovery enables native update but retains authorization and freshness gates", () => {
-  const snapshot = policySnapshot({...policyUpdate("2026.10.9"), availabilitySource: "openclaw-cli-fallback", channelTargetVerified: true, channelDiscoveryRequired: true});
-  const policy = resolveNormalOpenClawUpdatePolicy({snapshot, agentOsVersion: "0.8.0"});
-  assert.equal(policy.nativeAvailableVersion, "2026.10.9");
+  const snapshot = policySnapshot({...policyUpdate("2026.11.7"), availabilitySource: "openclaw-cli-fallback", channelTargetVerified: true, channelDiscoveryRequired: true});
+  const policy = resolveNormalOpenClawUpdatePolicy({snapshot, agentOsVersion: "0.9.0"});
+  assert.equal(policy.nativeAvailableVersion, "2026.11.7");
   assert.equal(policy.canRunNormalUpdate, true);
   assert.equal(policy.productUpdate.state, "available-uncertified");
   assert.equal(policy.productUpdate.availabilitySource, "openclaw-cli-fallback");
   assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: true}).allowed, false);
   assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: true, unverifiedAcknowledged: true}).allowed, true);
   assert.equal(guardNormalOpenClawUpdate({policy, confirmationMatches: false, unverifiedAcknowledged: true}).allowed, false);
-  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, identity: {...snapshot.identity, updateAuthorized: false}}, agentOsVersion: "0.8.0"}).canRunNormalUpdate, false);
-  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, update: {...snapshot.update, channelTargetVerified: false}}, agentOsVersion: "0.8.0"}).canRunNormalUpdate, false);
+  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, identity: {...snapshot.identity, updateAuthorized: false}}, agentOsVersion: "0.9.0"}).canRunNormalUpdate, false);
+  assert.equal(resolveNormalOpenClawUpdatePolicy({snapshot: {...snapshot, update: {...snapshot.update, channelTargetVerified: false}}, agentOsVersion: "0.9.0"}).canRunNormalUpdate, false);
 });

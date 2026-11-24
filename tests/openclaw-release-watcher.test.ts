@@ -122,6 +122,27 @@ test("official discovery returns missed stable releases in ascending order and i
   assert.equal(bounded.remainingReleaseCount, 1);
 });
 
+test("scheduled discovery reviews only the latest stable published through both upstreams", async () => {
+  const discovery = await discoverOfficialOpenClawReleases({
+    currentRecommendedVersion: "2026.11.5",
+    latestStableOnly: true,
+    fetchImpl: jsonFetch({
+      [npmDistTagsEndpoint]: { latest: "2026.11.8" },
+      [npmPackumentEndpoint]: { versions: {
+        "2026.11.6": {}, "2026.11.7": {}, "2026.11.8": {}
+      } },
+      [releaseEndpoint]: [
+        releaseRecord("2026.11.6"), releaseRecord("2026.11.7"), releaseRecord("2026.11.10-beta.3")
+      ]
+    })
+  });
+
+  assert.equal(discovery.latestStableVersion, "2026.11.7");
+  assert.equal(discovery.npmLatestVersion, "2026.11.8");
+  assert.deepEqual(discovery.releases.map((release) => release.version), ["2026.11.7"]);
+  assert.equal(discovery.remainingReleaseCount, 0);
+});
+
 test("discovery distinguishes upstream failure from no new release", async () => {
   const noRelease = await discoverOfficialOpenClawReleases({
     currentRecommendedVersion: "2026.9.2",
@@ -817,8 +838,8 @@ test("release review issue retains read-sharing policy identities for runtime re
 
 test("unmanifested releases remain unverified in compatibility evidence and watcher has no mutation path", () => {
   const decision = resolveOpenClawUpdateDecision({
-    targetVersion: "2026.9.5",
-    agentOsVersion: "0.8.0",
+    targetVersion: "2026.11.6",
+    agentOsVersion: "0.9.0",
     manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
     mode: "recommended"
   });

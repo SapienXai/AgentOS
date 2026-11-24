@@ -10,7 +10,6 @@ import {
   OPENCLAW_CERTIFICATION_TARGET_VERSION
 } from "@/lib/openclaw/certification-target";
 import { OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL } from "@/lib/openclaw/identity/contract";
-import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 const TARGET_VERSION = OPENCLAW_CERTIFICATION_TARGET_VERSION;
 
@@ -55,6 +54,6 @@ test("final certification requires a successful native Gateway API update and fr
   cliOnlyUpdate.update.nativeGatewayRun.trigger = "cli";
   assert.equal(assessOpenClawCertificationArtifact("native-update", cliOnlyUpdate).status, "FAIL");
   const staleRuntime = validArtifact();
-  staleRuntime.runtime.installedVersion = OPENCLAW_SUPPORTED_BASELINE_VERSION;
+  staleRuntime.runtime.installedVersion = "2026.11.4";
   assert.equal(assessOpenClawCertificationArtifact("native-update", staleRuntime).status, "FAIL");
 });

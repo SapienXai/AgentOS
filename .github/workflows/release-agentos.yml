@@ -6,6 +6,10 @@ on:
       - "agentos-v*"
   workflow_dispatch:
     inputs:
+      sign_distribution:
+        description: "Prepare distribution-signed candidate artifacts without publishing"
+        type: boolean
+        default: false
       publish:
         description: "Publish the selected release tag after production acceptance"
         type: boolean
@@ -108,7 +112,15 @@ jobs:
         shell: bash
         env:
           PUBLISH: ${{ inputs.publish }}
+          SIGN_DISTRIBUTION: ${{ inputs.sign_distribution }}
         run: |
+          if [[ "$SIGN_DISTRIBUTION" == "true" || "$PUBLISH" == "true" ]]; then
+            if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF_TYPE" != "tag" ]]; then
+              echo "Distribution signing requires main or a release tag on main." >&2
+              exit 1
+            fi
+            git merge-base --is-ancestor HEAD origin/main
+          fi
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
             if [ "$PUBLISH" = "true" ]; then
               echo "Select an AgentOS release tag to publish." >&2
@@ -250,63 +262,19 @@ jobs:
     needs: validate-release
     uses: ./.github/workflows/desktop-release.yml
     with:
-      production: ${{ inputs.publish == true }}
+      production: ${{ inputs.publish == true || inputs.sign_distribution == true }}
     secrets: inherit
 
-  production-gate:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs:
-      - validate-release
-      - build-release-assets
-      - build-desktop-assets
+  validate-candidate-assets:
+    needs: [validate-release, build-release-assets, build-desktop-assets]
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.30.3
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 26.12.1
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Require a release tag from main
-        run: git merge-base --is-ancestor HEAD origin/main
-
-      - name: Require release-owner review
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          reviewers="$(gh api "repos/$GITHUB_REPOSITORY/environments/agentos-public-release" --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] | length')"
-          test "$reviewers" -gt 0
-
-      - name: Require current OpenClaw certification and production acceptance
-        run: pnpm check:production-release
-
-  create-release:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs:
-      - validate-release
-      - build-release-assets
-      - build-desktop-assets
-      - production-gate
-    runs-on: ubuntu-latest
-    environment: agentos-public-release
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/download-artifact@v5
         with:
           pattern: agentos-*
-          merge-multiple: true
+          merge-multiple: false
           path: release-assets
 
       - name: Validate complete release assets and build signed updater manifest
@@ -339,6 +307,64 @@ jobs:
           }
           EOF
 
+      - uses: actions/upload-artifact@v6
+        with:
+          name: finalized-agentos-release
+          path: |
+            release-assets/agentos-*.tgz
+            release-assets/agentos-*.tgz.sha256
+            release-assets/AgentOS-*
+            release-assets/latest.json
+          if-no-files-found: error
+
+  production-gate:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: validate-candidate-assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Require a release tag from main
+        run: git merge-base --is-ancestor HEAD origin/main
+
+      - name: Require release-owner review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers="$(gh api "repos/$GITHUB_REPOSITORY/environments/agentos-public-release" --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] | length')"
+          test "$reviewers" -gt 0
+
+      - name: Require current OpenClaw certification and production acceptance
+        run: pnpm check:production-release
+
+  create-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: [validate-release, validate-candidate-assets, production-gate]
+    runs-on: ubuntu-latest
+    environment: agentos-public-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: finalized-agentos-release
+          path: release-assets
+
       - name: Write release notes
         shell: bash
         run: |
@@ -351,7 +377,7 @@ jobs:
           ## OpenClaw compatibility impact
 
           - OpenClaw supported baseline comes from \`lib/openclaw/versions.ts\`.
-          - Run \`agentos doctor --deep\` after upgrading to confirm local Gateway protocol, auth, scopes, native coverage, and fallback activity.
+          - Run \`agentos doctor --deep\` after installation to confirm local Gateway protocol, auth, scopes, native coverage, and fallback activity.
 
           ## Security impact
 

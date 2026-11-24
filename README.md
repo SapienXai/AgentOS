@@ -339,13 +339,12 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-The `0.9.0` release candidate uses the following OpenClaw version policy:
+AgentOS `0.9.0` is the first production baseline. Start with a clean AgentOS
+installation and keep any existing OpenClaw files and workspaces in place.
 
-- Recommended OpenClaw: `2026.9.7`;
-- Fresh setup install target: `2026.11.5` (candidate; final AgentOS certification pending);
-- Supported minimum: `2026.9.1`, provided its security-sensitive session settings
-  are explicit after AgentOS reconciliation;
-- Native contract target: `2026.11.5` (candidate; certification pending).
+- Recommended OpenClaw: `2026.11.5`.
+- Supported minimum: `2026.11.5`.
+- Native contract target: `2026.11.5`.
 
 All supported installations also require:
 

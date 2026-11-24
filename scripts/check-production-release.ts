@@ -7,10 +7,13 @@ import { checkCertificationFreshness } from "@/scripts/check-certification-fresh
 import { loadOpenClawCertifiedEvidence } from "@/scripts/openclaw-release-watch";
 
 const requiredChecks = {
-  "macos-arm64": ["cleanInstall", "upgradeFrom080", "dataPreserved", "distributionSigning", "autoUpdate"],
-  "windows-x64": ["cleanInstall", "upgradeFrom080", "dataPreserved", "distributionSigning", "autoUpdate"],
-  "linux-x64": ["cleanInstall", "upgradeFrom080", "dataPreserved", "updaterSignature", "autoUpdate"],
-  cli: ["cleanInstall", "upgradeFrom080", "dataPreserved", "update"],
+  "macos-arm64": ["cleanInstall", "distributionSigning", "notarization", "autoUpdate"],
+  "windows-x64": ["cleanInstall", "distributionSigning", "autoUpdate"],
+  "linux-x64": ["cleanInstall", "updaterSignature", "autoUpdate"],
+  "cli-macos-arm64": ["cleanInstall", "updateCheck"],
+  "cli-macos-x64": ["cleanInstall", "updateCheck"],
+  "cli-windows-x64": ["cleanInstall", "updateCheck"],
+  "cli-linux-x64": ["cleanInstall", "updateCheck"],
   "ios-pwa": ["install", "authenticatedLaunch", "firstAgentReply"],
   "android-pwa": ["install", "authenticatedLaunch", "firstAgentReply"],
   onboarding: ["chatGptOAuth", "firstWorkspace", "firstAgentReply", "sessionContinuity"]

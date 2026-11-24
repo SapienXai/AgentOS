@@ -36,17 +36,16 @@ const staleBaselineCopyPattern = new RegExp([
 ].join("|"));
 
 test("setup smoke uses the centralized OpenClaw baseline constants", () => {
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.11.5");
   assert.equal(OPENCLAW_NATIVE_CONTRACT_VERSION, "2026.11.5");
   assert.equal(OPENCLAW_INSTALL_TARGET_VERSION, "2026.11.5");
-  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.9.1");
+  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.11.5");
   assert.equal(compareVersionStrings(OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION) >= 0, true);
   assert.match(OPENCLAW_RECOMMENDED_VERSION, /^\d{4}\.\d+\.\d+$/);
   assert.equal(OPENCLAW_GATEWAY_BASELINE_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
 
   const installCommand = getOpenClawInstallCommand();
   assert.match(installCommand, new RegExp(`(?:--version|-Tag)\\s+${OPENCLAW_INSTALL_TARGET_VERSION}`));
-  assert.doesNotMatch(installCommand, new RegExp(OPENCLAW_RECOMMENDED_VERSION));
   assert.doesNotMatch(installCommand, /update\s+--tag/);
 });
 

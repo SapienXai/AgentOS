@@ -105,14 +105,12 @@ test("AgentOS release check rejects vague README Node prerequisites", async () =
 test("AgentOS release check validates the native contract independently from the recommendation", async () => {
   const tempRoot = await copyReleaseCheckFixture();
   const nativeVersion = readNativeOpenClawContractVersion();
-  const recommendedVersion = readRecommendedOpenClawVersion();
-  assert.notEqual(nativeVersion, recommendedVersion);
 
   const readmePath = path.join(tempRoot, "README.md");
   const contents = await readFile(readmePath, "utf8");
   const tick = String.fromCharCode(96);
-  const nativeCopy = "Native contract target: " + tick + nativeVersion + tick + " (candidate; certification pending).";
-  const staleCopy = "Native contract target: " + tick + recommendedVersion + tick + " (candidate; certification pending).";
+  const nativeCopy = "Native contract target: " + tick + nativeVersion + tick + ".";
+  const staleCopy = "Native contract target: " + tick + "2026.11.4" + tick + ".";
   assert.ok(contents.includes(nativeCopy));
   await writeFile(readmePath, contents.replace(nativeCopy, staleCopy), "utf8");
 
@@ -121,7 +119,7 @@ test("AgentOS release check validates the native contract independently from the
   assert.match(result.stderr, /Native contract target/);
 });
 
-test("AgentOS release check keeps recommended and supported OpenClaw versions distinct", async () => {
+test("AgentOS release check requires explicit recommendation and minimum labels", async () => {
   const tempRoot = await copyReleaseCheckFixture();
   const recommendedOpenClawVersion = readRecommendedOpenClawVersion();
   const paths = [

@@ -7,10 +7,10 @@ import {
 } from "@/lib/openclaw/certification-target";
 import { OPENCLAW_NATIVE_CONTRACT_VERSION, OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
-test("certification targets the candidate native contract before policy promotion", () => {
+test("certification targets the native production baseline", () => {
   assert.equal(OPENCLAW_CERTIFICATION_TARGET_VERSION, OPENCLAW_NATIVE_CONTRACT_VERSION);
   assert.equal(OPENCLAW_CERTIFICATION_TARGET_VERSION, "2026.11.5");
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.9.7");
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.11.5");
 });
 
 test("certification schemas come from the exact promoted identity", () => {

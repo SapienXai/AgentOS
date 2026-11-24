@@ -103,6 +103,7 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
     currentRecommendedVersion: recommendedVersion,
     targetVersion,
     includePrerelease: options.includePrerelease,
+    latestStableOnly: !targetVersion,
     githubToken: options.githubToken,
     fetchImpl: options.fetchImpl
   });
@@ -114,8 +115,13 @@ export async function runOpenClawReleaseWatch(options: OpenClawReleaseWatchOptio
 
   const releasesForIntake = selectOpenClawReleasesForIntake(discovery.releases, compatibilityManifest);
   if (releasesForIntake.length === 0) {
-    const message = `OpenClaw upstream check\nAgentOS recommended: ${recommendedVersion}\nLatest official stable: ${discovery.latestStableVersion ?? "unknown"}\nStatus: current`;
-    await writeWatcherSummary(`## OpenClaw Release Watch\n\n${message.replaceAll("\n", "\n\n")}`, options);
+    if (!discovery.latestStableVersion) {
+      const message = "No stable OpenClaw release was confirmed across npm and GitHub.";
+      await writeWatcherSummary(buildWatcherSummary({ discovery, intakes: [], message, productionConfig }), options);
+      return { status: "discovery-failed", discovery, intakes: [], productionConfig, message };
+    }
+    const message = "The current baseline covers the latest jointly published stable release.";
+    await writeWatcherSummary(buildWatcherSummary({ discovery, intakes: [], message, productionConfig }), options);
     return { status: "current", discovery, intakes: [], productionConfig, message };
   }
 
@@ -642,6 +648,8 @@ function buildWatcherSummary(input: {
     "",
     `- AgentOS recommended: \`${input.discovery.currentRecommendedVersion}\``,
     `- Latest official stable: \`${input.discovery.latestStableVersion ?? "unknown"}\``,
+    `- npm latest: \`${input.discovery.npmLatestVersion ?? "unknown"}\``,
+    `- GitHub latest stable: \`${input.discovery.githubLatestVersion ?? "unknown"}\``,
     `- Discovered releases: ${input.discovery.releases.map((release) => `\`${release.version}\``).join(", ") || "none"}`,
     `- Repository production pin: **${input.productionConfig.status}**${input.productionConfig.version ? ` — \`${input.productionConfig.version}\`` : ""}`,
     `- Production reconciliation: ${safeSummary(input.productionConfig.reason)}`,

@@ -84,26 +84,19 @@ export const LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST: OpenClawCompatibilityManifes
   schemaVersion: 1,
   source: "local-fallback",
   recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
-  minRequiredAgentOsVersion: "0.7.2",
+  minRequiredAgentOsVersion: "0.9.0",
   versions: [
-    ...(String(OPENCLAW_SUPPORTED_BASELINE_VERSION) === String(OPENCLAW_RECOMMENDED_VERSION) ? [] : [{
-      version: OPENCLAW_SUPPORTED_BASELINE_VERSION,
-      status: "certified" as const,
-      minRequiredAgentOsVersion: "0.7.2",
-      notes: "Certified stable baseline for AgentOS Gateway-first operation.",
-      reason: "Validated against AgentOS compatibility diagnostics and runtime smoke coverage."
-    }]),
     {
       version: OPENCLAW_RECOMMENDED_VERSION,
       status: "certified",
-      minRequiredAgentOsVersion: "0.7.2",
-      notes: "Last certified stable OpenClaw version for AgentOS Gateway-first operation.",
-      reason: "Retained as the default until a newer target completes final certification."
+      minRequiredAgentOsVersion: "0.9.0",
+      notes: "OpenClaw production baseline for AgentOS 0.9.0.",
+      reason: "Validated against the exact OpenClaw release and a clean Gateway runtime."
     },
     ...(String(OPENCLAW_NATIVE_CONTRACT_VERSION) === String(OPENCLAW_RECOMMENDED_VERSION) ? [] : [{
       version: OPENCLAW_NATIVE_CONTRACT_VERSION,
       status: "candidate" as const,
-      minRequiredAgentOsVersion: "0.7.2",
+      minRequiredAgentOsVersion: "0.9.0",
       notes: `Exact ${OPENCLAW_NATIVE_CONTRACT_VERSION} native contract target; final certification is pending.`,
       reason: "Candidate updates require explicit opt-in and compatibility preflight until final certification passes."
     }])

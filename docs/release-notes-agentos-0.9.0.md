@@ -9,11 +9,13 @@
 
 ## OpenClaw compatibility
 
-The candidate targets OpenClaw 2026.11.5 for fresh setups. Run `agentos doctor --deep` to confirm the local Gateway, authentication, scopes, and model readiness after an update.
+AgentOS 0.9.0 starts with OpenClaw 2026.11.5. Run `agentos doctor --deep` to verify Gateway connectivity, authentication, scopes, and model readiness.
 
-## Upgrading from 0.8.0
+## Install and get started
 
-Back up your AgentOS and OpenClaw state before upgrading. Use the desktop updater for a packaged desktop installation or the same package manager that installed the CLI. Keep the existing AgentOS application data directory and OpenClaw workspace when replacing an installation.
+Start with a clean AgentOS 0.9.0 installation. Open AgentOS, choose **Connect ChatGPT**, complete authorization in your browser, create a workspace, and send your first message. Existing OpenClaw files and workspaces remain on disk.
+
+From 0.9.0 forward, Desktop verifies updater signatures before installation. Debian and RPM users update through their package manager.
 
 ## Platform downloads
 

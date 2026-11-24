@@ -21,26 +21,26 @@ import {
 const manifest: OpenClawCompatibilityManifest = {
   schemaVersion: 1,
   source: "override",
-  recommendedVersion: "2026.9.1",
+  recommendedVersion: "2026.11.5",
   minRequiredAgentOsVersion: "0.7.2",
   versions: [
     {
-      version: "2026.9.1",
+      version: "2026.11.5",
       status: "certified",
       reason: "Certified stable baseline."
     },
     {
-      version: "2026.9.10",
+      version: "2026.11.14",
       status: "candidate",
       reason: "Preview validation in progress."
     },
     {
-      version: "2026.9.3",
+      version: "2026.11.7",
       status: "blocked",
       reason: "Known Gateway regression."
     },
     {
-      version: "2026.9.2",
+      version: "2026.11.6",
       status: "certified",
       minRequiredAgentOsVersion: "0.8.0",
       reason: "Requires newer AgentOS protocol support."
@@ -52,7 +52,7 @@ test("certified OpenClaw version is allowed in the normal update path", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
 
@@ -73,20 +73,20 @@ test("OpenClaw versions below the required baseline are blocked", () => {
   assert.equal(decision.status, "blocked");
   assert.equal(decision.allowed, false);
   assert.equal(decision.defaultVisible, false);
-  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.9\.1 or newer/);
+  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.11\.5 or newer/);
 });
 
 test("candidate OpenClaw version requires explicit opt-in", () => {
   const defaultDecision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.10",
+    targetVersion: "2026.11.14",
     mode: "recommended"
   });
   const previewDecision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.10",
+    targetVersion: "2026.11.14",
     mode: "candidate"
   });
 
@@ -163,7 +163,7 @@ test("blocked OpenClaw version is rejected with the manifest reason", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.3",
+    targetVersion: "2026.11.7",
     mode: "advanced"
   });
 
@@ -176,7 +176,7 @@ test("minimum AgentOS version blocks OpenClaw update", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.2",
+    targetVersion: "2026.11.6",
     mode: "recommended"
   });
 
@@ -187,7 +187,7 @@ test("minimum AgentOS version blocks OpenClaw update", () => {
 
 test("offline mode uses local fallback manifest", () => {
   const snapshot = resolveOpenClawUpdateCompatibilitySnapshot({
-    agentOsVersion: "0.7.2",
+    agentOsVersion: "0.9.0",
     currentVersion: "2026.6.7"
   });
 
@@ -201,16 +201,7 @@ test("offline mode uses local fallback manifest", () => {
     ),
     true
   );
-  const candidateTarget = snapshot.candidateVersions.find((entry) => entry.version === "2026.11.5");
-  const candidateDecision = resolveOpenClawUpdateDecision({
-    manifest: LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST,
-    agentOsVersion: "0.8.0",
-    targetVersion: "2026.11.5",
-    mode: "recommended"
-  });
-  assert.equal(candidateTarget?.status, "candidate");
-  assert.equal(candidateDecision.allowed, false);
-  assert.equal(candidateDecision.requiresExplicitOptIn, true);
+  assert.equal(snapshot.candidateVersions.length, 0);
 });
 
 test("an older local override cannot hide a newer shipped compatibility entry", () => {
@@ -218,23 +209,23 @@ test("an older local override cannot hide a newer shipped compatibility entry", 
     localManifest: {
       schemaVersion: 1,
       source: "local-fallback",
-      recommendedVersion: "2026.9.4",
+      recommendedVersion: "2026.11.8",
       versions: [
-        { version: "2026.9.1", status: "certified" },
-        { version: "2026.9.4", status: "certified" }
+        { version: "2026.11.5", status: "certified" },
+        { version: "2026.11.8", status: "certified" }
       ]
     },
     overrideManifest: {
       schemaVersion: 1,
       source: "override",
-      recommendedVersion: "2026.9.1",
-      versions: [{ version: "2026.9.1", status: "candidate", reason: "Local retest" }]
+      recommendedVersion: "2026.11.5",
+      versions: [{ version: "2026.11.5", status: "candidate", reason: "Local retest" }]
     }
   });
 
-  assert.equal(effective.recommendedVersion, "2026.9.4");
-  assert.equal(effective.versions.find((entry) => entry.version === "2026.9.4")?.status, "certified");
-  assert.equal(effective.versions.find((entry) => entry.version === "2026.9.1")?.status, "candidate");
+  assert.equal(effective.recommendedVersion, "2026.11.8");
+  assert.equal(effective.versions.find((entry) => entry.version === "2026.11.8")?.status, "certified");
+  assert.equal(effective.versions.find((entry) => entry.version === "2026.11.5")?.status, "candidate");
 });
 
 test("failed post-update verification keeps the target installed by default", () => {
@@ -290,7 +281,7 @@ test("preflight report blocks update when Gateway is not ready", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
@@ -298,7 +289,7 @@ test("preflight report blocks update when Gateway is not ready", () => {
       loaded: false,
       rpcOk: false
     }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: false,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -313,12 +304,12 @@ test("preflight allows updating an older installed version to the supported base
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({ version: "2026.8.2" }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: false,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -329,7 +320,7 @@ test("preflight allows updating an older installed version to the supported base
   assert.equal(report.warnings.some((check) => check.id === "installed-version"), true);
   assert.match(
     report.warnings.find((check) => check.id === "installed-version")?.message ?? "",
-    /updating to v2026\.9\.1 will bring the runtime to the supported baseline/i
+    /updating to v2026\.11\.5 will bring the runtime to the supported baseline/i
   );
 });
 
@@ -337,19 +328,19 @@ test("preflight blocks a target with incompatible Gateway server-method evidence
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({}),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: true,
     serverMethodContractDiff: {
       generatedAt: "2026-06-14T10:00:00.000Z",
       source: "github-static",
       currentVersion: "2026.6.7",
-      targetVersion: "2026.9.1",
+      targetVersion: "2026.11.5",
       status: "blocker",
       currentMethodCount: 10,
       targetMethodCount: 9,
@@ -378,12 +369,12 @@ test("candidate preflight remains attemptable only with explicit opt-in warning"
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.10",
+    targetVersion: "2026.11.14",
     mode: "candidate"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({}),
-    targetVersion: "2026.9.10",
+    targetVersion: "2026.11.14",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -398,7 +389,7 @@ test("preflight warns when active workloads may be interrupted", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const snapshot = createUpdateSafetySnapshot({});
@@ -406,7 +397,7 @@ test("preflight warns when active workloads may be interrupted", () => {
   snapshot.tasks = [{ status: "queued" }] as MissionControlSnapshot["tasks"];
   const report = buildOpenClawUpdatePreflightReport({
     snapshot,
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -421,14 +412,14 @@ test("advanced preflight allows install-and-verify when scope approval is pendin
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.11.8",
     mode: "advanced"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({
       pendingScopeApproval: true
     }),
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.11.8",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -444,7 +435,7 @@ test("advanced preflight treats current Gateway downtime as a post-update verifi
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.11.8",
     mode: "advanced"
   });
   const report = buildOpenClawUpdatePreflightReport({
@@ -452,7 +443,7 @@ test("advanced preflight treats current Gateway downtime as a post-update verifi
       loaded: false,
       rpcOk: false
     }),
-    targetVersion: "2026.9.4",
+    targetVersion: "2026.11.8",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -471,14 +462,14 @@ test("certified preflight still blocks normal update when scope approval is pend
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({
       pendingScopeApproval: true
     }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -492,15 +483,15 @@ test("certified recovery to the baseline can proceed when scope approval is pend
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({
-      version: "2026.9.2",
+      version: "2026.11.6",
       pendingScopeApproval: true
     }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -520,14 +511,14 @@ test("certified recovery to the baseline requires a saved rollback snapshot", ()
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: createUpdateSafetySnapshot({
-      version: "2026.9.2"
+      version: "2026.11.6"
     }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: false,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -545,7 +536,7 @@ test("certified preflight still blocks normal update when the current Gateway is
   const decision = resolveOpenClawUpdateDecision({
     manifest,
     agentOsVersion: "0.7.2",
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     mode: "recommended"
   });
   const report = buildOpenClawUpdatePreflightReport({
@@ -553,7 +544,7 @@ test("certified preflight still blocks normal update when the current Gateway is
       loaded: false,
       rpcOk: false
     }),
-    targetVersion: "2026.9.1",
+    targetVersion: "2026.11.5",
     decision,
     rollbackSnapshotAvailable: true,
     generatedAt: new Date("2026-06-14T10:00:00.000Z")
@@ -594,7 +585,7 @@ test("advanced exact-version updates keep manually selected targets installed wh
   assert.match(settingsSource, /onOpenUpdateDialog\(latestVersion \?\? undefined, "advanced"\)/);
 });
 
-test("update route uses OpenClaw 2026.9.1+ JSON updater commands", () => {
+test("update route uses OpenClaw 2026.11.5+ JSON updater commands", () => {
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
   assert.match(routeSource, /\["update", "status", "--json"\]/);
@@ -739,7 +730,7 @@ function createUpdateSafetySnapshot(input: {
   pendingScopeApproval?: boolean;
   version?: string;
 }): MissionControlSnapshot {
-  const version = input.version ?? "2026.9.1";
+  const version = input.version ?? "2026.11.5";
 
   return {
     diagnostics: {
@@ -748,7 +739,7 @@ function createUpdateSafetySnapshot(input: {
       rpcOk: input.rpcOk ?? true,
       health: "healthy",
       version,
-      latestVersion: "2026.9.1",
+      latestVersion: "2026.11.5",
       workspaceRoot: "/tmp/agentos",
       configuredWorkspaceRoot: null,
       dashboardUrl: "http://127.0.0.1:3000",
