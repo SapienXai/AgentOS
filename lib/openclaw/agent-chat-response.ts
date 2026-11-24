@@ -183,6 +183,19 @@ export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
   return null;
 }
 
+export function resolveAgentChatContextFailureMessage(text: string) {
+  const notice = text.trim()
+    .replace(/^OpenClaw Gateway ended the chat stream without assistant text:\s*/i, "")
+    .replace(/^⚠\uFE0F?\s*/, "");
+  if (/^Auto-compaction could not recover this turn\./i.test(notice)) {
+    return "OpenClaw could not fit this turn into the model's context. The conversation was preserved. Try a shorter message or select a model with a larger context window.";
+  }
+  if (/^Context overflow\s*[:—–-]\s*prompt too large for (?:the|this) model\./i.test(notice)) {
+    return "This message is too large for the selected model. Try a shorter message or select a model with a larger context window.";
+  }
+  return null;
+}
+
 export function extractAgentChatEmptyResponseDiagnosticText(payload: unknown) {
   const candidates = collectDiagnosticTextCandidates(payload)
     .map((value) => value.replace(/\s+/g, " ").trim())

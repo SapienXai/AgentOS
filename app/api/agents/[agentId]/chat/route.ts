@@ -22,6 +22,7 @@ import {
   extractLatestAssistantTextFromSessionHistory,
   isCompletedEmptyAgentChatResponse,
   recoverStreamedAgentChatResponse,
+  resolveAgentChatContextFailureMessage,
   resolveAgentChatRuntimeFailureMessage,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
@@ -630,6 +631,18 @@ export async function POST(
           const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
             modelId: activeAgentModelId
           });
+          const contextFailure = [
+            response.summary,
+            ...response.payloads.map(({ text }) => text),
+            emptyResponseDiagnosticMessage ?? ""
+          ]
+            .map(resolveAgentChatContextFailureMessage)
+            .find(Boolean);
+          if (contextFailure) {
+            await send({ type: "done", ok: false, message: contextFailure });
+            return;
+          }
+
           response = recoverSilentOpenAiChatFailure(response, activeAgentModelId);
           response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
           response = attachStreamMissionControlAction(response, latestStreamAction);

@@ -12,10 +12,24 @@ import {
   incompleteAgentChatConfirmationMessage,
   isCompletedEmptyAgentChatResponse,
   recoverStreamedAgentChatResponse,
+  resolveAgentChatContextFailureMessage,
   resolveAgentChatRuntimeFailureMessage,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
+
+test("OpenClaw context recovery notices are failures and ordinary discussion remains a reply", () => {
+  assert.match(resolveAgentChatContextFailureMessage(
+    "⚠️ Auto-compaction could not recover this turn. I kept this conversation mapped to the current session."
+  ) ?? "", /The conversation was preserved/);
+  assert.match(resolveAgentChatContextFailureMessage(
+    "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
+  ) ?? "", /too large for the selected model/);
+  assert.match(resolveAgentChatContextFailureMessage(
+    "OpenClaw Gateway ended the chat stream without assistant text: Context overflow: prompt too large for the model."
+  ) ?? "", /too large for the selected model/);
+  assert.equal(resolveAgentChatContextFailureMessage("Your question is about context overflow."), null);
+});
 
 test("agent chat response helper reads assistant stream events", () => {
   assert.equal(
