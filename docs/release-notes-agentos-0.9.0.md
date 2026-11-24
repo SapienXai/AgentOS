@@ -4,6 +4,7 @@
 
 - Setup keeps OpenClaw diagnostics and model settings available on demand so the next action stays visible.
 - The setup guide leads from a verified model connection to creating the first workspace and starting a conversation with its agent.
+- Agent chat reports a model context overflow as a failed turn and explains how to retry.
 - CLI release installs and updates require valid SHA-256 checksums before replacing the installed application.
 
 ## OpenClaw compatibility
