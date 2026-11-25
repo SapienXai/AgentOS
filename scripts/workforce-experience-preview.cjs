@@ -228,8 +228,14 @@ async function run() {
               await lead.getByLabel("Working instructions and knowledge to consult").fill("Consult company guidelines before publishing.");
               const apply = page.getByRole("button", { name: "Save team changes" });
               await expect(page.getByRole("button", { name: "Launch workspace", exact: true })).toBeDisabled();
+              const saved = page.waitForResponse(response => response.request().method() === "POST" && /\/creation-runs\/[^/]+\/revise$/.test(response.url()));
               await apply.click();
-              await expect(lead.locator("summary")).toContainText("Managing editor", { timeout: 20000 });
+              const revision = await saved;
+              assert(revision.ok(), `Employee review returned ${revision.status()}.`);
+              const result = await revision.json();
+              assert.equal(result.result.blueprint.workforce.primaryAgent.role, "Managing editor");
+              assert.deepEqual(result.result.blueprint.workforce.primaryAgent.responsibilities, ["Consult company guidelines before publishing."]);
+              await expect(lead.locator("summary")).toContainText("Managing editor");
               await expect(apply).toBeDisabled();
             });
             await context.close();
@@ -446,6 +452,15 @@ async function run() {
           await expect(document).toBeVisible({timeout:10000});
           await document.click();
           await expect(page.getByText("Check the source before publication.", {exact:false}).first()).toBeVisible();
+        });
+        if (theme === "light" && size === stageSizes.at(-1)) await record("knowledge-reference", async () => {
+          await go("/knowledge");
+          await page.getByRole("button", { name: "Add reference", exact: true }).click();
+          await page.getByLabel("Reference name").fill("Newsroom handbook");
+          await page.getByLabel("Website address").fill("https://example.com/newsroom");
+          await page.getByRole("button", { name: "Save to workspace", exact: true }).click();
+          await page.getByRole("button", { name: /Newsroom handbook/i }).click();
+          await expect(page.getByText("https://example.com/newsroom", { exact: false }).first()).toBeVisible();
         });
         if (theme === "light" && size === stageSizes.at(-1)) await record("native-employee-created", async () => {
           await go("/team");
