@@ -14,6 +14,8 @@ import type {
 
 const OPENCLAW_REPOSITORY = "openclaw/openclaw";
 const CORE_DESCRIPTOR_PATH = "src/gateway/methods/core-descriptors.ts";
+const CORE_DESCRIPTOR_OPTIONS_PATH = "src/gateway/methods/core-descriptor-options.ts";
+const CORE_DESCRIPTOR_OPTIONS_IMPORT = /^\s*import\s*\{([^{}]*)\}\s*from\s*["']\.\/core-descriptor-options\.js["']\s*;/m;
 const SERVER_METHODS_PREFIX = "src/gateway/server-methods/";
 const GATEWAY_CONTRACT_TREE_PATHS = [
   "src/gateway/server-methods",
@@ -167,8 +169,8 @@ export async function getOpenClawServerMethodContractDiff(
   return value;
 }
 
-export function parseOpenClawCoreMethodSpecs(source: string): OpenClawCoreMethodSpec[] {
-  if (source.length > MAX_SOURCE_BYTES) {
+export function parseOpenClawCoreMethodSpecs(source: string, optionsSource?: string): OpenClawCoreMethodSpec[] {
+  if (source.length > MAX_SOURCE_BYTES || (optionsSource?.length ?? 0) > MAX_SOURCE_BYTES) {
     throw new Error("OpenClaw contract source exceeded the safe response size limit.");
   }
 
@@ -197,6 +199,17 @@ export function parseOpenClawCoreMethodSpecs(source: string): OpenClawCoreMethod
   }
 
   const constants = extractSharedPolicyConstants(source, declaration.index);
+  const imported = readCoreDescriptorOptionsImport(source.slice(0, declaration.index));
+  if (imported && optionsSource) {
+    const sharedConstants = extractSharedPolicyConstants(optionsSource, optionsSource.length);
+    for (const name of imported.split(",").map((entry) => entry.trim()).filter(Boolean)) {
+      const expression = sharedConstants.get(name);
+      if (expression === undefined || constants.has(name)) {
+        throw new Error(`OpenClaw shared Gateway policy import ${name} is unavailable or ambiguous.`);
+      }
+      constants.set(name, expression);
+    }
+  }
   const specs = rows.map((row, index) => parseCoreMethodRow(row, index + 1, constants));
   const seen = new Set<string>();
   for (const spec of specs) {
@@ -767,6 +780,18 @@ export function resetOpenClawServerMethodContractDiffCache() {
   scopedReleaseTreeCache = new WeakMap();
 }
 
+function readCoreDescriptorOptionsImport(source: string) {
+  return CORE_DESCRIPTOR_OPTIONS_IMPORT.exec(stripJavaScriptComments(source))?.[1];
+}
+
+async function readCoreMethodSpecs(version: string, fetchImpl: FetchLike) {
+  const source = await fetchText(rawSourceUrl(version, CORE_DESCRIPTOR_PATH), fetchImpl);
+  const optionsSource = readCoreDescriptorOptionsImport(source)
+    ? await fetchText(rawSourceUrl(version, CORE_DESCRIPTOR_OPTIONS_PATH), fetchImpl)
+    : undefined;
+  return parseOpenClawCoreMethodSpecs(source, optionsSource);
+}
+
 async function buildContractDiff(input: {
   currentVersion: string;
   targetVersion: string;
@@ -774,8 +799,8 @@ async function buildContractDiff(input: {
   now: () => Date;
 }): Promise<OpenClawServerMethodContractDiffReport> {
   const [currentResult, targetResult, compareResult] = await Promise.allSettled([
-    fetchText(rawSourceUrl(input.currentVersion, CORE_DESCRIPTOR_PATH), input.fetchImpl),
-    fetchText(rawSourceUrl(input.targetVersion, CORE_DESCRIPTOR_PATH), input.fetchImpl),
+    readCoreMethodSpecs(input.currentVersion, input.fetchImpl),
+    readCoreMethodSpecs(input.targetVersion, input.fetchImpl),
     fetchCompareFiles(input.currentVersion, input.targetVersion, input.fetchImpl)
   ]);
 
@@ -794,8 +819,8 @@ async function buildContractDiff(input: {
   }
 
   try {
-    const currentSpecs = parseOpenClawCoreMethodSpecs(currentResult.value);
-    const targetSpecs = parseOpenClawCoreMethodSpecs(targetResult.value);
+    const currentSpecs = currentResult.value;
+    const targetSpecs = targetResult.value;
     let compareFiles: ChangedFilesEvidence = compareResult.status === "fulfilled"
       ? compareResult.value
       : { files: [], truncated: false, scope: "complete-repository" };
