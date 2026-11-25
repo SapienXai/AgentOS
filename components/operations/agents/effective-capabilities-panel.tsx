@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { McpIntegrationsPanel } from "@/components/operations/agents/mcp-integrations-panel";
 import type { EffectiveCapabilityStatus, SkillLibraryItem, WorkerEffectiveCapabilitiesPayload } from "@/lib/openclaw/types";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,7 @@ export function EffectiveCapabilitiesPanel({
       )}
 
       <SkillLibraryPanel data={data} onActivate={onActivate} />
+      <McpIntegrationsPanel effectiveTools={data.mcpTools} />
     </div>
   );
 }

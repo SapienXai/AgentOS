@@ -349,6 +349,9 @@ export async function getWorkerEffectiveCapabilities(
       profile: effective?.profile ?? null
     },
     capabilities,
+    mcpTools: effective?.groups.filter(({ source }) => source === "mcp").flatMap(({ tools }) =>
+      tools.map(({ id, deniedBySession }) => ({ id, available: deniedBySession !== true }))
+    ) ?? null,
     skills,
     skillLibrary: {
       supported: libraryAvailable,
