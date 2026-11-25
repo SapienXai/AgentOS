@@ -171,7 +171,7 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
     }
   };
 
-  const start = async () => {
+  const start = async (fresh = false) => {
     if (working) return;
     interacted.current = true;
     prepareBrowser();
@@ -190,7 +190,7 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
           await onPrepare();
         }
       }
-      setState(await requestSiwc({ action: "start" }));
+      setState(await requestSiwc({ action: "start", fresh }));
     } catch {
       setState({ phase: "failed", reason: "gateway" });
     } finally {
@@ -376,6 +376,9 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
               )}
               </div>
             </details>
+            <Button type="button" variant="ghost" onClick={() => void start(true)} disabled={applyingModel}>
+              Connect another ChatGPT account
+            </Button>
             {onCreateWorkspace && (
               <Button className={primaryAction} onClick={onCreateWorkspace} disabled={applyingModel || pendingModel}>
                 Create your first workspace <ArrowRight aria-hidden className="ml-2 size-4" />
@@ -397,6 +400,9 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
             </div>
             <Button className={primaryAction} onClick={() => void verifySaved()}>
               Retry model check
+            </Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => void start(true)}>
+              Connect a different ChatGPT account
             </Button>
             {launchError && <p role="alert" className="text-sm text-destructive">The model check could not start. Try again.</p>}
           </>
@@ -508,7 +514,7 @@ async function openDesktop(path: string) {
   await openExternalAuthUrl(url);
 }
 
-async function requestSiwc(action?: { action: "start" | "cancel" | "verify-saved" } | { action: "select"; index: number }, signal?: AbortSignal) {
+async function requestSiwc(action?: { action: "start"; fresh?: boolean } | { action: "cancel" | "verify-saved" } | { action: "select"; index: number }, signal?: AbortSignal) {
   const response = await fetch(SIWC_ENDPOINT, {
     cache: "no-store", signal,
     ...(action ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action) } : {})

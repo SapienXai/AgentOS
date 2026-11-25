@@ -24,7 +24,7 @@ const headers = {
   "X-Content-Type-Options": "nosniff"
 };
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("start") }).strict(),
+  z.object({ action: z.literal("start"), fresh: z.boolean().optional() }).strict(),
   z.object({ action: z.literal("verify-saved") }).strict(),
   z.object({ action: z.literal("cancel") }).strict(),
   z.object({ action: z.literal("select"), index: z.number().int().nonnegative() }).strict(),
@@ -114,8 +114,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ result }, { status: result.ok ? 200 : 409, headers });
   }
   if (input.data.action === "start" || input.data.action === "verify-saved") {
-    const create = input.data.action === "start" ? startSiwcFlow : retrySavedSiwcFlow;
-    const state = create(owner.key, ownerActive, (signal) => restartAfterSignIn(request, owner.key, signal));
+    const restart = (signal: AbortSignal) => restartAfterSignIn(request, owner.key, signal);
+    const state = input.data.action === "start"
+      ? startSiwcFlow(owner.key, ownerActive, restart, input.data.fresh)
+      : retrySavedSiwcFlow(owner.key, ownerActive, restart);
     return NextResponse.json({ state }, { headers });
   }
   if (input.data.action === "cancel") {

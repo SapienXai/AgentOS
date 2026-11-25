@@ -6,7 +6,7 @@ import { GET, POST } from "@/app/api/onboarding/siwc/route";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   applySiwcModel, cancelSiwcFlow, classifySiwcFailure, getSiwcAuthorizationUrl, readSiwcFlow,
-  readSiwcModelCatalog, retrySavedSiwcFlow, startSiwcFlow
+  readSiwcModelCatalog, retrySavedSiwcFlow, selectSiwcAccount, startSiwcFlow
 } from "@/lib/openclaw/application/siwc-onboarding-service";
 import { validateOpenClawSiwcAuthorizationUrl, type SiwcOnboardingState } from "@/lib/openclaw/siwc-onboarding";
 
@@ -101,16 +101,43 @@ test("owns the wizard by operator and requires the Gateway's verified model acti
   await delay(5);
 });
 
-test("preserves a verified existing model and never starts provider login", async () => {
+test("reuses the saved ChatGPT grant and model without opening OAuth", async () => {
+  const candidate = { kind: "saved-auth:openai%3Atoken-sharing%3Aexisting", modelRef: "openai/gateway-selected", brandId: "openai", label: "Saved ChatGPT" };
   installGateway(async (method, params) => {
     if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
+    if (method === "openclaw.setup.detect") return { candidates: [candidate] };
     assert.equal(method, "openclaw.setup.activate");
-    assert.deepEqual(params, { kind: "existing-model", agentId: "main" });
-    return { ok: true, modelRef: "another-provider/verified-model" };
+    assert.deepEqual(params, { kind: candidate.kind, modelRef: candidate.modelRef, agentId: "main" });
+    return { ok: true, modelRef: candidate.modelRef };
   });
   startSiwcFlow("reuse-owner");
   assert.deepEqual(await expectPhase("reuse-owner", "ready"), {
-    phase: "ready", model: "another-provider/verified-model", reused: true
+    phase: "ready", model: candidate.modelRef, reused: true
+  });
+});
+
+test("selects a specific saved grant without exposing native account identifiers", async () => {
+  const owner = "saved-picker";
+  const candidates = ["first", "second"].map((account) => ({
+    kind: `saved-auth:openai%3Atoken-sharing%3A${account}`,
+    modelRef: "openai/gateway-selected", brandId: "openai", label: "Saved ChatGPT"
+  }));
+  installGateway(async (method, params) => {
+    if (method === "agents.list") return { defaultId: "main", agents: [{ id: "main" }] };
+    if (method === "openclaw.setup.detect") return { candidates };
+    assert.equal(method, "openclaw.setup.activate");
+    assert.equal(params.kind, candidates[1].kind);
+    return { ok: true, modelRef: candidates[1].modelRef };
+  });
+  startSiwcFlow(owner);
+  const state = await expectPhase(owner, "choose-account");
+  assert.deepEqual(state, { phase: "choose-account", options: [
+    "Saved ChatGPT account 1", "Saved ChatGPT account 2", "Connect another account"
+  ] });
+  assert.equal(selectSiwcAccount("other-owner", 1), false);
+  assert.equal(selectSiwcAccount(owner, 1), true);
+  assert.deepEqual(await expectPhase(owner, "ready"), {
+    phase: "ready", model: candidates[1].modelRef, reused: true
   });
 });
 
@@ -145,7 +172,7 @@ test("automatically retries a staged ChatGPT grant when credential authority is 
   const owner = "saved-sign-in-owner";
   const oldKind = "saved-auth:openai%3Asetup-11111111-1111-4111-8111-111111111111";
   const newKind = "saved-auth:openai%3Atoken-sharing%3Atest-account";
-  const model = "openai/gpt-6-luna";
+  const model = "openai/gpt-6-astra";
   const authorityError = "Auth profile credential authority is unavailable; retry after owner recovery";
   let authorized = false;
   let wizardStarts = 0;
@@ -173,21 +200,17 @@ test("automatically retries a staged ChatGPT grant when credential authority is 
       return { done: true, status: "done", preparedModelRef: "openai/gpt-6-astra" };
     }
     throw new Error(method);
-  }, async (path, value) => {
-    assert.equal(path, 'agents.defaults.models["openai/gpt-6-luna"].params.thinking');
-    assert.equal(value, "low");
-    return { stdout: "", stderr: "" };
   });
 
   startSiwcFlow(owner, async () => true, async () => {
     restarts += 1;
     return restartResult;
-  });
+  }, true);
   assert.deepEqual(await expectPhase(owner, "restarting"), { phase: "restarting" });
   assert.equal(verifications, 1);
   assert.equal(retrySavedSiwcFlow("other-owner", async () => true).phase, "failed");
   confirmRestart(true);
-  assert.deepEqual(await expectPhase(owner, "ready", 3_000), { phase: "ready", model, thinking: "low", reused: false });
+  assert.deepEqual(await expectPhase(owner, "ready", 3_000), { phase: "ready", model, reused: false });
   assert.equal(wizardStarts, 1);
   assert.equal(restarts, 1);
   assert.equal(verifications, 3);
