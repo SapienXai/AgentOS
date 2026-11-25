@@ -582,8 +582,10 @@
         "image": "PASS",
         "nativeGateway": "PASS",
         "volumeBackedSessionAfterContainerRecreation": "PASS",
-        "sameContainerRestart": "FAIL",
-        "hosted": "NOT_VERIFIED"
+        "sameContainerRestart": "PASS",
+        "hosted": "NOT_VERIFIED",
+        "initialSameContainerProbe": "FAIL",
+        "retry": "Rediscovered the mapped HTTP port, allowed readiness to settle, and read the persisted native session."
       }
     },
     "finalCertification": {
