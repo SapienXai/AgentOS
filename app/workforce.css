@@ -53,21 +53,20 @@
 .workforce-main,
 .workforce-setup,
 .workforce-setup-card {
-  --workforce-paper: hsl(225 18% 8%);
-  --workforce-panel: hsl(227 17% 12%);
-  --workforce-inset: hsl(228 14% 16%);
-  --workforce-line: hsl(228 13% 24%);
-  --workforce-radius: 1.25rem;
+  --workforce-paper: hsl(230 13% 8%);
+  --workforce-panel: hsl(229 13% 11%);
+  --workforce-inset: hsl(228 13% 15%);
+  --workforce-line: hsl(226 11% 21%);
+  --workforce-radius: 1rem;
 }
-
 .workforce-main.mission-shell--light,
 .workforce-setup[data-theme="light"],
 .workforce-setup[data-theme="light"] .workforce-setup-card,
 .workforce-setup-light {
-  --workforce-paper: hsl(42 26% 97%);
-  --workforce-panel: hsl(44 38% 99%);
-  --workforce-inset: hsl(40 22% 93%);
-  --workforce-line: hsl(37 14% 86%);
+  --workforce-paper: hsl(42 27% 96%);
+  --workforce-panel: hsl(43 38% 99%);
+  --workforce-inset: hsl(38 22% 91%);
+  --workforce-line: hsl(38 15% 84%);
 }
 
 .workforce-main { background: var(--workforce-paper); }
@@ -139,3 +138,57 @@
   .workforce-main .workforce-content > div { gap: 1.25rem; }
   .workforce-setup-step { scroll-padding-block: 1rem; }
 }
+
+/* Product chrome and content only. Mission Control keeps its own styling. */
+.workforce-main .workforce-heading {
+  font-size: clamp(1.75rem, 2.75vw, 2.65rem);
+  letter-spacing: -.048em;
+}
+.workforce-main .workforce-person {
+  gap: .9rem;
+  padding: 1rem;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.workforce-main .workforce-person:focus-within {
+  border-color: hsl(var(--ring) / .55);
+}
+.workforce-main .workforce-person--list {
+  border-radius: .7rem;
+  background: transparent;
+}
+.workforce-main .workforce-section-title {
+  letter-spacing: -.018em;
+}
+.workforce-row {
+  min-block-size: 3.25rem;
+  border-radius: .65rem;
+  transition: background-color 160ms ease;
+}
+.workforce-row:hover,
+.workforce-row:focus-within { background-color: var(--workforce-inset); }
+
+@media (prefers-reduced-motion: reduce) {
+  .workforce-main .workforce-person, .workforce-row { transition: none; }
+}
+
+.workforce-main .workforce-person--list {
+  border: 0;
+  border-radius: 0;
+  padding: .95rem 1rem;
+}
+.workforce-main .workforce-person--list:hover { background-color: var(--workforce-inset); }
+.workforce-main .workforce-person--list .workforce-person-work { min-block-size: 0; }
+.workforce-main .workforce-person--list .workforce-disclosure { margin-block-start: .25rem; }
+.workforce-person--review summary:hover { opacity: .9; }
+
+@media (min-width: 640px) {
+  .workforce-main .workforce-person--list { gap: 1.25rem; }
+  .workforce-main .workforce-person--list > div:first-child { flex: 0 0 min(32%, 16rem); }
+}
+
+
+.workforce-main .workforce-workspace-trigger { gap: .625rem; padding-inline: .625rem; }
+.workforce-main .workforce-workspace-caption { font-size: .7rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.workforce-main .workforce-workspace-diagnostic { display: none; }
+.workforce-collection { min-block-size: 2.75rem; }
+.workforce-collections { align-content: start; }

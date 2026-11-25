@@ -99,7 +99,7 @@ export function MissionListPage({
       <PageHeader
         title="Tasks"
         subtitle="Assign work, follow the results, and make decisions when your team needs you."
-        primaryAction={{ label: "Assign task", icon: Plus, onClick: () => setNewTaskOpen(true), disabled: eligibleAgentCount === 0, title: eligibleAgentCount === 0 ? "Connect an available agent in this workspace before starting a task." : undefined }}
+        primaryAction={{ label: "Assign task", icon: Plus, onClick: () => setNewTaskOpen(true), disabled: eligibleAgentCount === 0, title: eligibleAgentCount === 0 ? "Connect an available employee in this workspace before starting a task." : undefined }}
       />
 
       <TaskViewNavigation view={view} attentionCount={payload.summary.needsYou} />
@@ -280,25 +280,26 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
           <DialogTitle>Assign task</DialogTitle>
           <DialogDescription>Describe the result you want and choose who should do the work.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-1">
+        <form id="workforce-assign-task" className="space-y-4 py-1" onSubmit={event => { event.preventDefault(); void submit(); }}>
           <div>
-            <Label htmlFor="mission-goal">Task goal</Label>
+            <Label htmlFor="mission-goal">What should they do?</Label>
             <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-sm" disabled={submitting} />
           </div>
           <div>
             <Label htmlFor="mission-agent">Employee</Label>
             <select id="mission-agent" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
               <option value="">Choose an employee</option>
-              {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} ({agent.status})</option>)}
+              {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
             <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only employees in the current workspace are available here.</p>
           </div>
           {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>OpenClaw is not fully ready. Start will validate the live Gateway before creating runtime work.</span></div> : null}
           {error ? <p className="text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}</p> : null}
-        </div>
+          <Link className="inline-flex min-h-10 items-center text-sm font-medium text-primary hover:underline" href="/missions?view=scheduled">Set up recurring work</Link>
+        </form>
         <DialogFooter className="gap-2 sm:justify-end">
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={submitting || eligibleAgents.length === 0 || !agentId}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
+          <Button type="submit" form="workforce-assign-task" disabled={submitting || eligibleAgents.length === 0 || !agentId}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

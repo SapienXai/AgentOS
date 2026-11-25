@@ -82,6 +82,7 @@ export function OperationsTopBar({
       {!compact && <span className="mr-auto truncate text-sm font-medium text-foreground">{activeWorkspaceName ?? "All workspaces"}</span>}
       {connectionState === "retrying" ? <span role="status">Reconnecting…</span> : null}
       <RuntimeIssueIndicator
+        workforce
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}
         onSnapshotChange={onSnapshotChange}
@@ -126,7 +127,7 @@ export function PageHeader({
 
   return (
     <header className="border-b border-border pb-4 pt-1 sm:pt-0">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {icon}
           <div className="min-w-0">

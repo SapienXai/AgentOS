@@ -730,7 +730,7 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
     "utf8"
   );
 
-  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
+  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(true\);/);
   assert.match(source, /sidebarPinned=\{isSidebarPinned\}/);
   assert.match(source, /onToggleCollapsed=\{handleSidebarPinToggle\}/);
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
@@ -886,7 +886,7 @@ test("model setup exposes explicit providers and the custom provider creation fl
   );
 
   assert.match(setupSource, /buildExplicitModelProviderDescriptor\(providerId\)/);
-  assert.match(setupSource, /providerDescriptors\.map\(provider => <option key=\{provider.id\}/);
+  assert.match(setupSource, /providerDescriptors\.filter\(provider => provider.id !== "ollama"\)\.map\(provider => <option key=\{provider.id\}/);
   assert.match(setupSource, /<label[\s\S]*<span>AI provider<\/span>[\s\S]*<select/);
   assert.match(setupSource, /onOpenAddModels\("custom"\)/);
   assert.match(librarySource, /isInitialCustomProvider = normalizedInitialProvider === "custom"/);

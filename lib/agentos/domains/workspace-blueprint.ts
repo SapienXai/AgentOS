@@ -232,6 +232,7 @@ export type WorkspaceBlueprintAgent = {
   isPrimary: boolean;
   purpose: string;
   responsibilities: string[];
+  knowledgeSourceIds?: string[];
   outputs: string[];
   skillIds: string[];
   toolIds: string[];
@@ -241,7 +242,7 @@ export type WorkspaceBlueprintAgent = {
 };
 
 export type WorkspaceEmployeeDraftEdit = Pick<WorkspaceBlueprintAgent,
-  "id" | "name" | "role" | "purpose" | "responsibilities" | "skillIds" | "toolIds"
+  "id" | "name" | "role" | "purpose" | "responsibilities" | "skillIds" | "toolIds" | "knowledgeSourceIds"
 >;
 
 export type WorkspaceBlueprintWorkflow = {

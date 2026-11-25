@@ -893,6 +893,9 @@ export function validateWorkspaceBlueprint(value: unknown): WorkspaceBlueprintVa
     }
   }
   for (const entry of allAgents) {
+    if (entry.knowledgeSourceIds?.some(id => !blueprint.knowledge.sourceIds.includes(id))) {
+      issues.push({ code: "source_reference_invalid", path: "workforce.knowledgeSourceIds", message: "An employee refers to a source outside the saved workspace plan.", severity: "error" });
+    }
     checkEvidenceRefs(issues, entry.evidenceRefs, evidenceIds, `workforce.${entry.id}.evidenceRefs`);
   }
   for (const evidence of blueprint.evidence) {

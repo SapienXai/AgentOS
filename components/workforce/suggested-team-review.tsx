@@ -6,6 +6,7 @@ import { ArrowRight, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DraftAbilities, abilityName } from "@/components/workforce/draft-abilities";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import type { WorkspaceBlueprint, WorkspaceEmployeeDraftEdit } from "@/lib/agentos/domains/workspace-blueprint";
 
@@ -20,7 +21,7 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
   const proposed = [blueprint.workforce.primaryAgent, ...blueprint.workforce.specialists];
   const [employees, setEmployees] = useState<WorkspaceEmployeeDraftEdit[]>(proposed.map(employee => ({
     id: employee.id, name: employee.name, role: employee.role, purpose: employee.purpose,
-    responsibilities: employee.responsibilities, skillIds: employee.skillIds, toolIds: employee.toolIds
+    responsibilities: employee.responsibilities, skillIds: employee.skillIds, toolIds: employee.toolIds, knowledgeSourceIds: employee.knowledgeSourceIds ?? []
   })));
   const [instructions, setInstructions] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
@@ -62,12 +63,13 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
       </header>
       <form onSubmit={save} className="space-y-3">
         {employees.map((employee, index) => (
-          <details className="workforce-person !block" key={employee.id}>
+          <details className="workforce-person workforce-person--review !block" key={employee.id}>
             <summary className="flex cursor-pointer list-none items-center gap-3">
               <EmployeeAvatar name={employee.name} />
               <span className="min-w-0 flex-1">
                 <span className="block break-words font-semibold">{employee.name || "New employee"}</span>
-                <span className="text-sm text-muted-foreground">{employee.role}{index === 0 ? " · Lead" : ""}</span>
+                <span className="block text-sm text-muted-foreground">{employee.role}{index === 0 ? " · Lead" : ""}</span>
+                <span className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{employee.purpose}</span>
               </span>
               <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             </summary>
@@ -92,9 +94,19 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
                 <span className="block text-xs font-normal text-muted-foreground">One instruction per line. Name the shared references this employee should use.</span>
               </label>
               {blueprint.knowledge.sources.length > 0 ? (
-                <ul aria-label="Sources in this workspace" className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {blueprint.knowledge.sources.map(source => <li key={source.id} className="rounded-md bg-muted px-2 py-1">{source.label} · {source.status}</li>)}
-                </ul>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Shared sources to consult</legend>
+                  <p className="text-xs text-muted-foreground">Selections become working guidance. All workspace members retain their existing access.</p>
+                  {blueprint.knowledge.sources.map(source => {
+                    const selected = employee.knowledgeSourceIds ?? [];
+                    return <label key={source.id} className="flex min-h-10 items-center gap-2 text-sm">
+                      <input type="checkbox" checked={selected.includes(source.id)} onChange={event => edit(employee.id, {
+                        knowledgeSourceIds: event.target.checked ? [...selected, source.id] : selected.filter(id => id !== source.id)
+                      })} />
+                      {source.label} <span className="text-xs text-muted-foreground">{source.status === "ready" ? "Source prepared" : "Reference or pending setup"}</span>
+                    </label>;
+                  })}
+                </fieldset>
               ) : null}
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Proposed capabilities</legend>
@@ -102,9 +114,10 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
                   <label key={key + id} className="flex min-h-10 items-center gap-2 text-sm">
                     <input type="checkbox" checked={employee[key].includes(id)} onChange={e =>
                       edit(employee.id, { [key]: e.target.checked ? [...employee[key], id] : employee[key].filter(item => item !== id) })} />
-                    <span>{id} <span className="text-muted-foreground">· {key === "skillIds" ? "Skill" : "Tool"}</span></span>
+                    <span className="capitalize">{abilityName(id)} <span className="text-muted-foreground">· {key === "skillIds" ? "Skill" : "Tool"}</span></span>
                   </label>
                 )))}
+                <DraftAbilities selected={employee.toolIds} onChange={toolIds => edit(employee.id, { toolIds })} />
                 {!proposed[index].skillIds.length && !proposed[index].toolIds.length ? <p className="text-sm text-muted-foreground">No additional capabilities are proposed.</p> : null}
               </fieldset>
             </fieldset>
@@ -115,6 +128,7 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
         </Button>
         {dirty ? <p role="status" className="text-sm text-muted-foreground">Save your edits to refresh the launch plan.</p> : null}
       </form>
+      <p className="text-xs leading-5 text-muted-foreground">You can add more employees from Team after launch.</p>
       <details ref={advancedReview} className="workforce-panel px-4 py-3">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
           <ArrowRight aria-hidden="true" className="size-4" /> Review workspace plan and advanced setup

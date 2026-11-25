@@ -436,8 +436,8 @@ export function ModelStage({
         <>
           {modelSwitchFeedback.phase === "idle" ? (
             <div className="mt-3 flex items-center justify-between gap-3">
-              <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
-                Step 2: Advanced model setup
+              <p className="workforce-section-title text-foreground">
+                Choose an AI provider
               </p>
               {advancedProviderFlowOpen ? (
                 <Button
@@ -604,7 +604,7 @@ function ConnectAiStage({
           surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500"
         )}
       >
-        {chatGptBrowserAuth ? "ChatGPT sign-in" : "Step 2"}
+        {chatGptBrowserAuth ? "ChatGPT sign-in" : null}
       </p>
       <h2 className={cn("mt-2 text-[22px] font-medium tracking-[-0.02em]", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
         {showModelSelection ? connectedTitle : chatGptBrowserAuth ? "Sign in to continue" : "Connect your AI"}
@@ -617,8 +617,8 @@ function ConnectAiStage({
           : chatGptBrowserAuth
             ? "Complete sign-in in the browser, then return here."
             : isLocalOllamaSelected
-              ? "Use the Ollama model detected on this machine to power your agents locally."
-              : "Connect your ChatGPT account to power your agents and start using AgentOS."}
+              ? "Use the Ollama model detected on this machine to power your team locally."
+              : "Sign in to authorize AgentOS to use your eligible ChatGPT account."}
       </p>
 
       {chatGptBrowserAuth ? (
@@ -835,7 +835,7 @@ function ModelDefaultSummary({
               surfaceTheme === "light" ? "text-[#9a7a65]" : "text-slate-500"
             )}
           >
-            Detected default
+            Current model
           </p>
           <p className={cn("mt-1 truncate text-[10px]", surfaceTheme === "light" ? "text-[#3e2f24]" : "text-white")}>
             {defaultModelLabel ?? "Not set"}

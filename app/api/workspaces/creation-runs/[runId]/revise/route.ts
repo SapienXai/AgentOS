@@ -23,6 +23,7 @@ const revisionRequestSchema = z.object({
       name: z.string().trim().min(1).max(100),
       role: z.string().trim().min(1).max(100),
       purpose: z.string().trim().min(1).max(500),
+      knowledgeSourceIds: z.array(z.string().min(1).max(160)).max(20).optional(),
       responsibilities: z.array(z.string().trim().min(1).max(300)).max(12),
       skillIds: z.array(z.string().min(1).max(160)).max(64),
       toolIds: z.array(z.string().min(1).max(160)).max(64)

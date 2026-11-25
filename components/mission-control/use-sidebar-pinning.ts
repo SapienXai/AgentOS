@@ -5,21 +5,22 @@ import { useCallback, useSyncExternalStore, type SetStateAction } from "react";
 export const sidebarPinnedStorageKey = "agentos.sidebar.pinned";
 
 const listeners = new Set<() => void>();
-let memoryPinned = false;
+let memoryPinned: boolean | null = null;
 
-function readSidebarPinned() {
+function readSidebarPinned(defaultPinned: boolean) {
   try {
-    memoryPinned = window.localStorage.getItem(sidebarPinnedStorageKey) === "true";
-    return memoryPinned;
+    const preference = window.localStorage.getItem(sidebarPinnedStorageKey);
+    memoryPinned = preference === null ? null : preference === "true";
+    return memoryPinned ?? defaultPinned;
   } catch {
-    return memoryPinned;
+    return memoryPinned ?? defaultPinned;
   }
 }
 
 function subscribe(listener: () => void) {
   const handleStorage = (event: StorageEvent) => {
     if (event.key === sidebarPinnedStorageKey) {
-      memoryPinned = event.newValue === "true";
+      memoryPinned = event.newValue === null ? null : event.newValue === "true";
       listener();
     }
   };
@@ -32,10 +33,11 @@ function subscribe(listener: () => void) {
   };
 }
 
-export function useSidebarPinning() {
-  const isSidebarPinned = useSyncExternalStore(subscribe, readSidebarPinned, () => false);
+export function useSidebarPinning(defaultPinned = false) {
+  const readPreference = useCallback(() => readSidebarPinned(defaultPinned), [defaultPinned]);
+  const isSidebarPinned = useSyncExternalStore(subscribe, readPreference, () => defaultPinned);
   const setIsSidebarPinned = useCallback((action: SetStateAction<boolean>) => {
-    const nextPinned = typeof action === "function" ? action(readSidebarPinned()) : action;
+    const nextPinned = typeof action === "function" ? action(readPreference()) : action;
     memoryPinned = nextPinned;
 
     try {
@@ -44,7 +46,7 @@ export function useSidebarPinning() {
       // Keep the in-memory preference when browser storage is unavailable.
     }
     listeners.forEach((listener) => listener());
-  }, []);
+  }, [readPreference]);
 
   return { isSidebarPinned, setIsSidebarPinned };
 }

@@ -1,3 +1,5 @@
+import { DRAFT_TOOL_LABELS } from "@/lib/agentos/domains/draft-abilities";
+import { listOpenClawTools, normalizeOpenClawToolsCatalog } from "@/lib/openclaw/application/catalog-service";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -478,7 +480,8 @@ async function rebuildWorkspaceCreationComposition(filePath: string, actorId: st
 
 function reviewEmployeeEdits(
   blueprint: WorkspaceArchitectResult["blueprint"],
-  edits: WorkspaceEmployeeDraftEdit[]
+  edits: WorkspaceEmployeeDraftEdit[],
+  nativeOptions: ReadonlySet<string>
 ): WorkspaceArchitectResult["blueprint"] {
   const { primaryAgent, specialists } = blueprint.workforce;
   const employees = [primaryAgent, ...specialists];
@@ -489,8 +492,13 @@ function reviewEmployeeEdits(
 
   const updated = employees.map(employee => {
     const edit = submitted.get(employee.id)!;
-    if (edit.skillIds.some(id => !employee.skillIds.includes(id)) || edit.toolIds.some(id => !employee.toolIds.includes(id))) {
-      throw new Error("Employee review can only keep or remove capabilities from the saved proposal.");
+    if (edit.skillIds.some(id => !employee.skillIds.includes(id)) ||
+        edit.toolIds.some(id => !employee.toolIds.includes(id) && !nativeOptions.has(id))) {
+      throw new Error("Employee review can only keep or remove capabilities from the saved proposal or select eligible tools verified by OpenClaw.");
+    }
+    const knowledgeSourceIds = [...new Set(edit.knowledgeSourceIds ?? employee.knowledgeSourceIds ?? [])];
+    if (knowledgeSourceIds.some(id => !blueprint.knowledge.sourceIds.includes(id))) {
+      throw new Error("A selected knowledge source is no longer part of this workspace.");
     }
     return {
       ...employee,
@@ -498,6 +506,7 @@ function reviewEmployeeEdits(
       role: redactSecretText(edit.role),
       purpose: redactSecretText(edit.purpose),
       responsibilities: edit.responsibilities.map(redactSecretText),
+      ...(knowledgeSourceIds.length || edit.knowledgeSourceIds ? { knowledgeSourceIds } : {}),
       skillIds: [...new Set(edit.skillIds)],
       toolIds: [...new Set(edit.toolIds)]
     };
@@ -580,8 +589,21 @@ export async function reviseWorkspaceCreationRun(
       } satisfies WorkspaceArchitectIntelligenceInput : undefined;
       let revised: WorkspaceArchitectResult;
       if (input.employeeReview) {
+        const previousEmployees = new Map(
+          [oldResult.blueprint.workforce.primaryAgent, ...oldResult.blueprint.workforce.specialists].map(employee => [employee.id, employee])
+        );
+        const wantsNewTool = input.employeeReview.employees.some(edit =>
+          edit.toolIds.some(id => Object.hasOwn(DRAFT_TOOL_LABELS, id) && !previousEmployees.get(edit.id)?.toolIds.includes(id))
+        );
+        const confirmedTools = new Set<string>();
+        if (wantsNewTool) {
+          const catalog = await listOpenClawTools({ includePlugins: false }, { timeoutMs: 5000 });
+          for (const tool of normalizeOpenClawToolsCatalog(catalog)) {
+            if (tool.category === "builtin" && Object.hasOwn(DRAFT_TOOL_LABELS, tool.name)) confirmedTools.add(tool.name);
+          }
+        }
         const blueprint = {
-          ...reviewEmployeeEdits(oldResult.blueprint, input.employeeReview.employees),
+          ...reviewEmployeeEdits(oldResult.blueprint, input.employeeReview.employees, confirmedTools),
           updatedAt: resolved.now().toISOString()
         };
         revised = {

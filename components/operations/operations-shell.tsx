@@ -119,7 +119,7 @@ export function OperationsShell({
       : resolveDefaultWorkspaceId(initialSnapshot)
   );
   const [sidebarExpandedState, setSidebarExpanded] = useState(false);
-  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
+  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning(true);
   const sidebarExpanded = isSidebarPinned || sidebarExpandedState;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
@@ -396,7 +396,7 @@ export function OperationsShell({
         className={cn(
           "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
           sidebarExpanded
-            ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
+            ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[236px] lg:max-w-none"
             : "w-[56px]"
         )}
         onMouseEnter={() => {
@@ -524,10 +524,10 @@ export function OperationsShell({
       <main
         className={cn(
           "operations-content workforce-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-8 lg:pt-6",
-          sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
+          sidebarExpanded ? "lg:pl-[260px]" : "lg:pl-[80px]"
         )}
       >
-        <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-7">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
           <div className="sticky top-0 z-30 -mx-3 flex min-h-14 items-center gap-3 border-b border-border bg-background/92 px-3 backdrop-blur-xl sm:-mx-5 sm:px-5 lg:hidden">
             <button
               type="button"

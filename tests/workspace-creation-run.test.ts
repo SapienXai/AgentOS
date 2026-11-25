@@ -470,6 +470,10 @@ test("server-authoritative revision creates a new composition lineage without ac
       actorId, runId: created.run.runId,
       employeeReview: { revision: 1, employees: [{ ...updatedEmployee, toolIds: ["unproposed-tool"] }] }
     }, editDependencies), /keep or remove capabilities/);
+    await assert.rejects(reviseWorkspaceCreationRun({
+      actorId, runId: created.run.runId,
+      employeeReview: { revision: 1, employees: [{ ...updatedEmployee, knowledgeSourceIds: ["unrelated-source"] }] }
+    }, editDependencies), /source is no longer part of this workspace/i);
     const employeeReview = await reviseWorkspaceCreationRun({
       actorId, runId: created.run.runId,
       employeeReview: { revision: 1, employees: [updatedEmployee] }

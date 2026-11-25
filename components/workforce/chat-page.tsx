@@ -49,24 +49,24 @@ function ChatPageContent({ snapshot, rootSnapshot, activeWorkspaceId, surfaceThe
   };
 
   return (
-    <div className="workforce-chat-panel grid min-w-0 overflow-hidden rounded-xl border border-border bg-card md:grid-cols-[minmax(215px,255px)_minmax(0,1fr)]">
+    <div className="workforce-chat-panel grid min-w-0 overflow-hidden workforce-panel md:grid-cols-[minmax(13rem,16rem)_minmax(0,1fr)]">
       <section aria-label="Employees" className={cn("min-h-0 min-w-0 overflow-y-auto md:border-r md:border-border", employee && "hidden md:block")}>
-        <div className="border-b border-border p-4">
+        <div className="px-4 pb-2 pt-4">
           <h1 className="workforce-heading font-display font-semibold">Chat</h1>
-          <div className="relative mt-4">
+          <div className="relative mt-3">
             <Search aria-hidden="true" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input type="search" aria-label="Find an employee" value={search} onChange={event => setSearch(event.target.value)}
               placeholder="Find an employee" className="h-11 pl-9 text-base sm:text-sm" />
           </div>
         </div>
-        <ul className="space-y-0.5 p-2">
+        <ul className="space-y-0.5 px-2 pb-3">
           {filtered.map(agent => {
             const name = formatAgentDisplayName(agent);
             return (
               <li key={agent.id}>
                 <button type="button" aria-pressed={employee?.id === agent.id} onClick={() => selectEmployee(agent.id)}
                   className={cn("flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:outline focus-visible:outline-ring motion-reduce:transition-none",
-                    employee?.id === agent.id && "bg-accent")}>
+                    employee?.id === agent.id && "bg-primary/10")}>
                   <EmployeeAvatar agent={agent} name={name} className="size-9 rounded-lg" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{name}</span>
@@ -89,7 +89,7 @@ function ChatPageContent({ snapshot, rootSnapshot, activeWorkspaceId, surfaceThe
               <EmployeeAvatar agent={employee} name={conversationTitle} className="size-9 rounded-lg" />
               <div className="min-w-0">
                 <h2 ref={heading} tabIndex={-1} className="truncate text-base font-semibold outline-none">{conversationTitle}</h2>
-                <Link href={`/agents/${encodeURIComponent(employee.id)}`} className="text-xs font-medium text-muted-foreground hover:underline">Employee profile</Link>
+                <Link href={`/agents/${encodeURIComponent(employee.id)}`} className="text-xs font-medium text-muted-foreground hover:underline">{employee.workerProfile?.employment.role || "Employee"} · Profile</Link>
               </div>
             </header>
             <div className="min-h-0 flex-1">

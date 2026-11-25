@@ -1690,7 +1690,7 @@ function WorkspaceSwitcher({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((current) => !current)}
-        className="group flex w-full items-center gap-3 rounded-lg border border-border bg-card/75 px-3 py-3 text-left shadow-card transition-all hover:border-primary/25 hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="workforce-workspace-trigger group flex w-full items-center gap-3 rounded-lg border border-border bg-card/75 px-3 py-3 text-left shadow-card transition-all hover:border-primary/25 hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
           <Home className="h-4 w-4" />
@@ -1699,7 +1699,7 @@ function WorkspaceSwitcher({
           <span className="block truncate text-[0.95rem] font-semibold leading-5 text-foreground">
             {activeWorkspaceId === null ? "All workspaces" : workspace?.name || "No workspace"}
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
+          <span className="workforce-workspace-caption mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
             <StatusDot tone={statusTone} pulse={statusTone === "bg-emerald-400"} className="h-2 w-2" />
             {activeWorkspaceId === null ? `${workspaceCount} workspaces` : activeWorkspaceIsPending ? "Creating workspace" : "Workspace"}
           </span>
@@ -1711,7 +1711,7 @@ function WorkspaceSwitcher({
               open && "rotate-180"
             )}
           />
-          <span className="text-[0.6rem] font-medium text-muted-foreground">{statusLabel}</span>
+          <span className="workforce-workspace-diagnostic text-[0.6rem] font-medium text-muted-foreground">{statusLabel}</span>
         </span>
       </button>
 

@@ -73,7 +73,7 @@ export function AgentsPageContent({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
   const [sort, setSort] = useState<"last-active" | "name" | "status" | "workspace">("last-active");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [view, setView] = useState<"grid" | "list">("list");
   const [selectedId, setSelectedId] = useState("");
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [modelAgentId, setModelAgentId] = useState<string | null>(null);
@@ -185,7 +185,7 @@ export function AgentsPageContent({
           <PageHeader
             surfaceTheme={surfaceTheme}
             title="Team"
-            subtitle="See who’s on your team and what they’re working on."
+            subtitle="Meet your employees, see what they’re working on, and give them their next assignment."
             actions={
               <>
                 <CreateAgentDialog
@@ -238,7 +238,7 @@ export function AgentsPageContent({
           </div>
 
           {filteredAgents.length > 0 ? (
-            <div className={cn(view === "grid" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-2.5")}>
+            <div className={cn(view === "grid" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3" : "workforce-panel divide-y divide-border/75 overflow-hidden")}>
               {filteredAgents.map((agent) => (
                 <AgentCard
                   key={agent.id}
@@ -381,9 +381,9 @@ function AgentCard({
   return (
     <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list && "workforce-person--list")}>
       <div className="flex min-w-0 items-center gap-4">
-        <EmployeeAvatar agent={agent.source} name={agent.name} className="size-16 rounded-2xl text-lg" />
+        <EmployeeAvatar agent={agent.source} name={agent.name} className={cn("size-16 rounded-2xl text-lg", list && "size-14 rounded-xl")} />
         <div className="min-w-0 flex-1">
-          <h2 className="break-words font-display text-xl font-semibold leading-tight">
+          <h2 className={cn("break-words font-display text-xl font-semibold leading-tight", list && "text-lg")}>
             <Link href={`/agents/${encodeURIComponent(agent.id)}`} className="rounded-sm hover:underline focus-visible:outline focus-visible:outline-ring">
               {agent.name} <ArrowUpRight className="ml-1 inline size-3 text-muted-foreground" aria-hidden="true" />
             </Link>

@@ -4,12 +4,10 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import Link from "next/link";
 import {
   ArrowLeft,
-  Bot,
   CheckCircle2,
   CircleDashed,
   Code2,
   FolderKanban,
-  Gauge,
   MessageCircle,
   Pencil,
   Play,
@@ -49,6 +47,7 @@ import {
 } from "@/components/operations/operations-ui";
 import { OperationsShell } from "@/components/operations/operations-shell";
 import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
+import { EmployeeDocuments } from "@/components/workforce/employee-documents";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -250,18 +249,24 @@ export function AgentDetailPageContent({
             </nav>
 
             <div role="region" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label ?? "Settings"} for ${displayName}`}>
-              {tab === "overview" ? <OverviewTab agent={agent} workspace={workspace} modelLabel={modelLabel} currentWork={currentWork} activity={activity} capabilities={capabilities.data} onOpenCapabilities={() => updateTab("capabilities")} onOpenChannels={() => updateTab("channels")} onChangeModel={() => setModelOpen(true)} /> : null}
+              {tab === "overview" ? <OverviewTab agent={agent} currentWork={currentWork} activity={activity} capabilities={capabilities.data}
+                onOpenCapabilities={() => updateTab("capabilities")} onOpenActivity={() => updateTab("sessions")} onEdit={() => setProfileOpen(true)} /> : null}
               {tab === "behavior" ? <><Button variant="ghost" onClick={() => updateTab("settings")}>Back to employee settings</Button><BehaviorTab agent={agent} onEdit={() => setProfileOpen(true)} /></> : null}
               {tab === "knowledge" ? (
-                <SectionCard title="Knowledge and memory">
-                  <div className="space-y-3 p-4 text-sm leading-6 text-muted-foreground">
-                    <p>Review the context and memory OpenClaw reports for {displayName}.</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => setContextOpen(true)}>Open employee context</Button>
-                      <Button asChild variant="secondary"><Link href="/knowledge">Company knowledge</Link></Button>
+                <div className="space-y-5">
+                  <section className="workforce-panel space-y-3 p-4 sm:p-5">
+                    <h2 className="workforce-section-title">Workspace documents</h2>
+                    <p className="text-sm leading-6 text-muted-foreground">Assign a shared source to include it in {displayName}’s memory search. Workspace-level file access is managed separately.</p>
+                    <EmployeeDocuments key={agent.id} workspaceId={workspace.id} employeeId={agent.id} />
+                  </section>
+                  <section className="border-t border-border/70 pt-5">
+                    <h2 className="workforce-section-title">Employee context and memory</h2>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button variant="secondary" onClick={() => setContextOpen(true)}>Open employee context</Button>
+                      <Button asChild variant="ghost"><Link href={`/knowledge?workspaceId=\${encodeURIComponent(workspace.id)}`}>Company knowledge</Link></Button>
                     </div>
-                  </div>
-                </SectionCard>
+                  </section>
+                </div>
               ) : null}
               {tab === "settings" || tab === "intelligence" ? (
                 <div className="workforce-detail-grid space-y-4">
@@ -325,41 +330,80 @@ export function AgentDetailPageContent({
   );
 }
 
-function OverviewTab({ agent, workspace, modelLabel, currentWork, activity, capabilities, onOpenCapabilities, onOpenChannels, onChangeModel }: { agent: MissionControlSnapshot["agents"][number]; workspace: MissionControlSnapshot["workspaces"][number]; modelLabel: string; currentWork: ReturnType<typeof resolveAgentCurrentWork>; activity: ReturnType<typeof buildAgentDetailActivity>; capabilities: WorkerEffectiveCapabilitiesPayload | null; onOpenCapabilities: () => void; onOpenChannels: () => void; onChangeModel: () => void }) {
+function OverviewTab({ agent, currentWork, activity, capabilities, onOpenCapabilities, onOpenActivity, onEdit }: {
+  agent: MissionControlSnapshot["agents"][number];
+  currentWork: ReturnType<typeof resolveAgentCurrentWork>;
+  activity: ReturnType<typeof buildAgentDetailActivity>;
+  capabilities: WorkerEffectiveCapabilitiesPayload | null;
+  onOpenCapabilities: () => void;
+  onOpenActivity: () => void;
+  onEdit: () => void;
+}) {
+  const purpose = agent.workerProfile?.employment.mission || agent.profile.purpose;
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
-      <div className="space-y-4">
-        <SectionCard title="Current work">
-          <div className="p-4"><div className="flex items-start gap-3"><EntityIcon icon={Gauge} label="Work" tone="info" size="md" /><div className="min-w-0"><p className="text-sm font-semibold">{currentWork.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{currentWork.detail}</p><div className="mt-3 flex flex-wrap gap-2"><StatusBadge label={currentWork.status} tone={currentWork.status === "running" ? "info" : currentWork.status === "completed" ? "success" : "muted"} /></div></div></div></div>
-        </SectionCard>
-        <SectionCard title="Recent work and sessions">
-          {activity.length ? <div className="divide-y divide-border">{activity.slice(0, 5).map((entry) => <div key={entry.id} className="flex items-start gap-3 px-4 py-3"><CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{entry.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{entry.detail}</p></div><span className="shrink-0 text-[10px] text-muted-foreground">{entry.updatedLabel}</span></div>)}</div> : <div className="p-4"><EmptyState title="No recent runtime evidence" description="OpenClaw has not reported recent task or runtime activity for this worker." /></div>}
-        </SectionCard>
+    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(16rem,.8fr)]">
+      <div className="space-y-5">
+        <section className="workforce-panel p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="workforce-section-title">Responsibilities</h2>
+            <Button size="sm" variant="ghost" onClick={onEdit}>Edit responsibilities</Button>
+          </div>
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{purpose || "Give this employee a clear job to do."}</p>
+          {agent.workerProfile?.employment.behaviorInstructions && <details className="mt-4 border-t border-border pt-3">
+            <summary className="cursor-pointer text-sm font-medium">Working instructions</summary>
+            <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{agent.workerProfile.employment.behaviorInstructions}</p>
+          </details>}
+        </section>
+        <section className="border-t border-border/75 pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="workforce-section-title">Recent activity</h2>
+            <Button variant="ghost" size="sm" onClick={onOpenActivity}>See activity</Button>
+          </div>
+          <ActivityRows activity={activity.slice(0, 4)} />
+        </section>
       </div>
-      <div className="space-y-4">
-        <SectionCard title="Worker identity">
-          <div className="p-4"><div className="flex items-start gap-3"><EntityIcon icon={Bot} label={agent.identity.emoji || agent.name} tone="purple" size="lg" /><div className="min-w-0"><p className="text-base font-semibold">{agent.identity.emoji ? `${agent.identity.emoji} ` : ""}{agent.name}</p><p className="mt-1 text-xs text-muted-foreground">{agent.workerProfile?.employment.role || "OpenClaw worker"}</p></div></div><div className="mt-4"><KeyValue label="Workspace" value={workspace.name} /><KeyValue label="Model" value={modelLabel} action={<Button variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[10px]" onClick={onChangeModel}>Change</Button>} /><KeyValue label="Heartbeat" value={agent.heartbeat.enabled ? agent.heartbeat.every || "Enabled" : "Off"} /><KeyValue label="Sessions" value={String(agent.sessionCount)} /></div></div>
-        </SectionCard>
-        <SectionCard title="Effective capability summary" action={<Button variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[11px]" onClick={onOpenCapabilities}>Open</Button>}>
-          <div className="p-4">{capabilities ? <div className="flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.summary.available} tone="success" /><CapabilityCount label="Needs setup" value={capabilities.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.summary["requires-approval"]} tone="info" /></div> : <p className="text-xs text-muted-foreground">Effective capability state is still loading or unavailable.</p>}<p className="mt-3 text-[11px] leading-5 text-muted-foreground">Configured declarations and effective session tools are shown separately in Capabilities.</p></div>
-        </SectionCard>
-        <SectionCard title="Delivery" action={<Button variant="ghost" size="sm" className="h-7 rounded-lg px-2 text-[11px]" onClick={onOpenChannels}>Open</Button>}>
-          <div className="p-4"><p className="text-xs leading-5 text-muted-foreground">Channel bindings remain owned by OpenClaw&apos;s canonical route service.</p><div className="mt-3 flex items-center gap-2 text-xs font-medium"><MessageCircle className="h-4 w-4 text-primary" />{agent.workspaceId ? "Workspace-scoped routes" : "No workspace binding"}</div></div>
-        </SectionCard>
-      </div>
+      <aside aria-label="At a glance" className="space-y-4">
+        <section className="workforce-panel p-4 sm:p-5">
+          <h2 className="workforce-section-title">Current work</h2>
+          <p className="mt-2 break-words text-sm font-medium">{currentWork.label}</p>
+          {currentWork.detail && <p className="mt-1 break-words text-sm leading-5 text-muted-foreground">{currentWork.detail}</p>}
+        </section>
+        <section className="border-t border-border/75 px-1 pt-4">
+          <h2 className="workforce-section-title">What they can use</h2>
+          {capabilities ? (
+            <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+              <li>{capabilities.summary.available} ready to use</li>
+              {capabilities.summary["needs-setup"] > 0 && <li>{capabilities.summary["needs-setup"]} need setup</li>}
+              {capabilities.summary["requires-approval"] > 0 && <li>{capabilities.summary["requires-approval"]} require approval</li>}
+            </ul>
+          ) : <p className="mt-2 text-sm text-muted-foreground">Availability has not been confirmed.</p>}
+          <Button variant="secondary" size="sm" className="mt-4" onClick={onOpenCapabilities}>Manage abilities</Button>
+        </section>
+      </aside>
     </div>
   );
+}
+
+function ActivityRows({ activity }: { activity: ReturnType<typeof buildAgentDetailActivity> }) {
+  return activity.length ? <ul className="mt-2 divide-y divide-border/70">
+    {activity.map(entry => <li key={entry.id} className="flex items-start gap-3 py-3">
+      <CircleDashed aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1"><p className="break-words text-sm font-medium">{entry.title}</p>
+        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{entry.detail}</p></div>
+      <span className="shrink-0 text-xs text-muted-foreground">{entry.updatedLabel}</span>
+    </li>)}
+  </ul> : <p className="py-3 text-sm text-muted-foreground">No recent activity reported.</p>;
 }
 
 function BehaviorTab({ agent, onEdit }: { agent: MissionControlSnapshot["agents"][number]; onEdit: () => void }) {
   const behavior = agent.workerProfile?.employment.behaviorInstructions || agent.profile.operatingInstructions.join("\n\n");
   const mission = agent.workerProfile?.employment.mission || agent.profile.purpose || "No mission statement is configured.";
   const labels = agent.workerProfile?.operator.labels ?? [];
-  return <div className="space-y-4"><SectionCard title="Behavior contract" action={<Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit behavior</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><ReadOnlyBlock label="Mission" value={mission} /><ReadOnlyBlock label="Working guidance" value={behavior || "No behavior instructions are configured."} /><div className="lg:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operator labels</p><div className="mt-2 flex flex-wrap gap-2">{labels.length ? labels.map((label) => <Badge key={label} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{label}</Badge>) : <span className="text-xs text-muted-foreground">No labels configured.</span>}</div></div></div></SectionCard><SectionCard title="Edit semantics"><div className="flex items-start gap-3 p-4"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /><p className="text-xs leading-5 text-muted-foreground">Behavior edits open the existing Worker Profile editor. Draft changes stay local until Save Worker Profile commits them through the protected AgentOS/OpenClaw update path.</p></div></SectionCard></div>;
+  return <div className="space-y-4"><SectionCard title="Working instructions" action={<Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit behavior</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><ReadOnlyBlock label="Mission" value={mission} /><ReadOnlyBlock label="Working guidance" value={behavior || "No behavior instructions are configured."} /><div className="lg:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operator labels</p><div className="mt-2 flex flex-wrap gap-2">{labels.length ? labels.map((label) => <Badge key={label} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{label}</Badge>) : <span className="text-xs text-muted-foreground">No labels configured.</span>}</div></div></div></SectionCard><SectionCard title="Edit semantics"><div className="flex items-start gap-3 p-4"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /><p className="text-xs leading-5 text-muted-foreground">Behavior edits open the existing Worker Profile editor. Draft changes stay local until Save Worker Profile commits them through the protected AgentOS/OpenClaw update path.</p></div></SectionCard></div>;
 }
 
 function CapabilitiesTab({ agent, capabilities, onRefreshCapabilities, onActivate, onOpenEditor, onEditProfile, focusId }: { agent: MissionControlSnapshot["agents"][number]; capabilities: WorkerEffectiveCapabilitiesState; onRefreshCapabilities: () => void; onActivate: (skill: SkillLibraryItem) => Promise<boolean>; onOpenEditor: (focus: "skills" | "tools") => void; onEditProfile: () => void; focusId: string | null }) {
-  return <div className="space-y-4"><SectionCard title="Configured vs effective" action={<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onRefreshCapabilities}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", capabilities.loading && "animate-spin")} />Refresh</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Configured declarations</p><div className="mt-2 flex flex-wrap gap-2">{agent.skills.map((skill) => <Badge key={skill} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Skill · {skill}</Badge>)}{agent.tools.map((tool) => <Badge key={tool} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Tool · {tool}</Badge>)}{agent.skills.length === 0 && agent.tools.length === 0 ? <span className="text-xs text-muted-foreground">No explicit declarations.</span> : null}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("skills")}><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Manage skills</Button><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("tools")}><Wrench className="mr-1.5 h-3.5 w-3.5" /> Manage tools</Button></div></div><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Effective session state</p>{capabilities.loading ? <p className="mt-2 text-xs text-muted-foreground">Reading native OpenClaw session evidence…</p> : capabilities.error ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">{capabilities.error}</p> : capabilities.data ? <div className="mt-2 flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.data.summary.available} tone="success" /><CapabilityCount label="Setup" value={capabilities.data.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.data.summary["requires-approval"]} tone="info" /><CapabilityCount label="Blocked" value={capabilities.data.summary.blocked} tone="danger" /></div> : <p className="mt-2 text-xs text-muted-foreground">No effective session state was returned.</p>}</div></div></SectionCard><EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} focusId={focusId} /><SectionCard title="Guardrails & access" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={onEditProfile}>Edit in Worker Profile</Button>}><div className="grid gap-3 p-4 sm:grid-cols-3"><KeyValue label="Policy" value={agent.policy.preset} /><KeyValue label="File access" value={agent.policy.fileAccess} /><KeyValue label="Network" value={agent.policy.networkAccess} /><KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} /><KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} /><KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} /></div></SectionCard></div>;
+  return <div className="space-y-4"><SectionCard title="Employee abilities" action={<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onRefreshCapabilities}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", capabilities.loading && "animate-spin")} />Refresh</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Configured declarations</p><div className="mt-2 flex flex-wrap gap-2">{agent.skills.map((skill) => <Badge key={skill} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Skill · {skill}</Badge>)}{agent.tools.map((tool) => <Badge key={tool} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Tool · {tool}</Badge>)}{agent.skills.length === 0 && agent.tools.length === 0 ? <span className="text-xs text-muted-foreground">No explicit declarations.</span> : null}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("skills")}><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Manage skills</Button><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("tools")}><Wrench className="mr-1.5 h-3.5 w-3.5" /> Manage tools</Button></div></div><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ready to use</p>{capabilities.loading ? <p className="mt-2 text-xs text-muted-foreground">Checking availability…</p> : capabilities.error ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">{capabilities.error}</p> : capabilities.data ? <div className="mt-2 flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.data.summary.available} tone="success" /><CapabilityCount label="Setup" value={capabilities.data.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.data.summary["requires-approval"]} tone="info" /><CapabilityCount label="Blocked" value={capabilities.data.summary.blocked} tone="danger" /></div> : <p className="mt-2 text-xs text-muted-foreground">Availability has not been confirmed.</p>}</div></div></SectionCard><EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} focusId={focusId} /><SectionCard title="Guardrails & access" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={onEditProfile}>Edit in Worker Profile</Button>}><div className="grid gap-3 p-4 sm:grid-cols-3"><KeyValue label="Policy" value={agent.policy.preset} /><KeyValue label="File access" value={agent.policy.fileAccess} /><KeyValue label="Network" value={agent.policy.networkAccess} /><KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} /><KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} /><KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} /></div></SectionCard></div>;
 }
 
 function ChannelsTab({ agent, workspace, surfaceTheme, onRouteChanged }: { agent: MissionControlSnapshot["agents"][number]; workspace: MissionControlSnapshot["workspaces"][number]; surfaceTheme: "dark" | "light"; onRouteChanged: () => Promise<void> }) {
@@ -367,7 +411,9 @@ function ChannelsTab({ agent, workspace, surfaceTheme, onRouteChanged }: { agent
 }
 
 function SessionsTab({ sessions, activity, onRefresh, focusKey }: { sessions: ReturnType<typeof buildAgentDetailSessions>; activity: ReturnType<typeof buildAgentDetailActivity>; onRefresh: () => Promise<void>; focusKey: string | null }) {
-  return <div className="space-y-4"><SectionCard title="Session history" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => void onRefresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>}><div className="p-4"><p className="mb-3 text-xs leading-5 text-muted-foreground">Session rows are projected from the existing OpenClaw runtime/session/task snapshot. AgentOS does not create a parallel session store here.</p>{sessions.length ? <div className="grid gap-2 lg:grid-cols-2">{sessions.map((session) => <div key={session.key} data-session-key={session.key} className={cn("rounded-xl border border-border bg-muted/20 p-3", focusKey === session.key && "ring-2 ring-primary/40")}><div className="flex items-start gap-3"><EntityIcon icon={session.source === "runtime" ? Code2 : FolderKanban} label="S" tone="info" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{session.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{session.subtitle}</p><div className="mt-2 flex flex-wrap gap-2"><StatusBadge label={session.status} tone={session.status === "running" ? "info" : session.status === "completed" ? "success" : "muted"} /><span className="text-[10px] text-muted-foreground">{session.updatedLabel}</span><span className="text-[10px] text-muted-foreground">{session.tokenLabel} tokens</span></div></div></div><p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{session.key}</p></div>)}</div> : <EmptyState title="No sessions reported" description="OpenClaw has not exposed session evidence for this worker yet." />}</div></SectionCard><SectionCard title="Recent activity"><div className="divide-y divide-border">{activity.length ? activity.map((entry) => <div key={entry.id} className="flex items-start gap-3 px-4 py-3"><CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="text-xs font-medium">{entry.title}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{entry.detail}</p></div><span className="text-[10px] text-muted-foreground">{entry.updatedLabel}</span></div>) : <div className="p-4"><EmptyState title="No recent activity" description="Only confirmed runtime and task evidence appears here." /></div>}</div></SectionCard></div>;
+  return <div className="space-y-4"><section className="workforce-panel p-4 sm:p-5"><h2 className="workforce-section-title">Recent activity</h2><ActivityRows activity={activity} /></section>
+    <details open={Boolean(focusKey)} className="workforce-panel p-4"><summary className="cursor-pointer text-sm font-medium">Native session details</summary>
+    <SectionCard title="Session history" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => void onRefresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>}><div className="p-4"><p className="mb-3 text-xs leading-5 text-muted-foreground">OpenClaw session history.</p>{sessions.length ? <div className="grid gap-2 lg:grid-cols-2">{sessions.map((session) => <div key={session.key} data-session-key={session.key} className={cn("rounded-xl border border-border bg-muted/20 p-3", focusKey === session.key && "ring-2 ring-primary/40")}><div className="flex items-start gap-3"><EntityIcon icon={session.source === "runtime" ? Code2 : FolderKanban} label="S" tone="info" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{session.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{session.subtitle}</p><div className="mt-2 flex flex-wrap gap-2"><StatusBadge label={session.status} tone={session.status === "running" ? "info" : session.status === "completed" ? "success" : "muted"} /><span className="text-[10px] text-muted-foreground">{session.updatedLabel}</span><span className="text-[10px] text-muted-foreground">{session.tokenLabel} tokens</span></div></div></div><p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{session.key}</p></div>)}</div> : <EmptyState title="No sessions reported" description="OpenClaw has not exposed session evidence for this worker yet." />}</div></SectionCard></details></div>;
 }
 
 function ReadOnlyBlock({ label, value }: { label: string; value: string }) {

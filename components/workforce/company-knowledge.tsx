@@ -1,19 +1,31 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, BookOpen, FileText, Link2, Plus, Upload } from "lucide-react";
+import { ArrowUpRight, BookOpen, Brain, FileText, Link2, Plus, ScrollText, Search, UsersRound } from "lucide-react";
 
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
+import { EmployeeDocuments, documentLabel } from "@/components/workforce/employee-documents";
+import { KnowledgeImportDialog } from "@/components/workforce/knowledge-import-dialog";
+import { PageHeader } from "@/components/operations/operations-ui";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { FileView } from "@/components/operations/operations-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import { WORKSPACE_MANAGED_FILE_MAX_BYTES } from "@/lib/openclaw/workspace-file-types";
+import { isAssignableDocument, knowledgeFormatFromPath } from "@/lib/agentos/domains/knowledge-import-formats";
+import { cn } from "@/lib/utils";
 
-type KnowledgeGroup = "profile" | "guidelines" | "documents" | "sources" | "memory";
+const groups = [
+  { id: "documents", label: "Documents", icon: FileText, description: "Source material people and employees can use in this workspace." },
+  { id: "profile", label: "Company profile", icon: BookOpen, description: "What this company does and what it aims to accomplish." },
+  { id: "guidelines", label: "Guidelines", icon: ScrollText, description: "Working practices, decisions and recurring processes." },
+  { id: "sources", label: "References", icon: Link2, description: "Saved links and references. Website contents stay at the source." },
+  { id: "employees", label: "Employees", icon: UsersRound, description: "Review the sources assigned to each employee and their native memory." },
+  { id: "memory", label: "Memory", icon: Brain, description: "Native memory files retained in the workspace." }
+] as const;
+type Group = typeof groups[number]["id"];
+
 const managedLabels: Record<string, string> = {
   "docs/brief.md": "Company brief",
   "docs/architecture.md": "How the workspace is organized",
@@ -23,175 +35,142 @@ const managedLabels: Record<string, string> = {
   "memory/blueprint.md": "Workspace plan"
 };
 
-function groupFor(file: FileView): KnowledgeGroup | null {
+export function knowledgeTitle(file: FileView) {
+  return managedLabels[file.relativePath] ?? documentLabel(file.relativePath);
+}
+
+function groupFor(file: FileView): Group | null {
   const { relativePath, category } = file;
   if (!file.source?.exists || relativePath.startsWith("agents/")) return null;
   if (relativePath === "docs/brief.md") return "profile";
   if (/^docs\/(?:working-)?guidelines(?:-[a-f0-9]{8})?\.md$/.test(relativePath)) return "guidelines";
-  if (relativePath.startsWith("docs/sources/")) return "sources";
+  if (knowledgeFormatFromPath(relativePath) === "reference") return "sources";
   if (relativePath.startsWith("docs/")) return "documents";
   if (category === "memory") return "memory";
   return null;
 }
 
-function documentTitle(file: FileView) {
-  return managedLabels[file.relativePath] ??
-    file.name.replace(/-[a-f0-9]{8}(?=\.(?:md|json)$)/, "").replace(/\.(?:md|json)$/, "").replaceAll("-", " ");
-}
-
-export function CompanyKnowledge({ files, employees, workspaceId, loading, onOpen, onChanged }: {
+export function CompanyKnowledge({ files, employees, workspaceId, loading, surfaceTheme, onOpen, onChanged, onManageFiles, children }: {
   files: FileView[];
   employees: MissionControlSnapshot["agents"];
   workspaceId: string | null;
   loading: boolean;
+  surfaceTheme: "dark" | "light";
   onOpen: (file: FileView) => void;
   onChanged: () => void;
+  onManageFiles: () => void;
+  children?: React.ReactNode;
 }) {
-  const [dialog, setDialog] = useState<"file" | "source" | null>(null);
-  const [working, setWorking] = useState(false);
+  const [group, setGroup] = useState<Group>("documents");
+  const [search, setSearch] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function addKnowledge(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!workspaceId || !dialog || working) return;
-    const input = new FormData(event.currentTarget);
-    setWorking(true);
-    setError("");
-    try {
-      let name: string, content: string, folder: string, extension: string;
-      if (dialog === "file") {
-        const file = input.get("document");
-        if (!(file instanceof File) || !file.size || !/\.(md|json)$/i.test(file.name)) throw new Error("Choose a Markdown or JSON document.");
-        if (file.size > WORKSPACE_MANAGED_FILE_MAX_BYTES) throw new Error("Choose a file 512 KB or smaller.");
-        name = file.name.replace(/\.(md|json)$/i, "");
-        extension = file.name.toLowerCase().endsWith(".json") ? "json" : "md";
-        content = await file.text();
-        folder = "docs";
-      } else {
-        const url = new URL(String(input.get("url") ?? ""));
-        if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) throw new Error("Enter an HTTP or HTTPS link without credentials.");
-        name = String(input.get("title") ?? "").trim();
-        content = `# ${name}\n\n<${url.href}>\n`;
-        extension = "md";
-        folder = "docs/sources";
-      }
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "document";
-      const suffix = crypto.getRandomValues(new Uint32Array(1))[0].toString(16).padStart(8, "0");
-      const path = `${folder}/${slug}-${suffix}.${extension}`;
-      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/files`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, content })
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: string } | null;
-        throw new Error(payload?.error || "OpenClaw could not save this document.");
-      }
-      setMessage(dialog === "file" ? "Document added to the workspace." : "Reference link saved to the workspace.");
-      setDialog(null);
-      onChanged();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not save to the workspace.");
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  function rows(id: KnowledgeGroup, empty: ReactNode) {
-    const matching = files.filter(file => groupFor(file) === id);
-    return matching.length ? (
-      <ul className="divide-y divide-border/65">
-        {matching.map(file => (
-          <li key={file.id}>
-            <button onClick={() => onOpen(file)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-accent/70">
-              {id === "sources" ? <Link2 aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" /> : <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-              <span className="min-w-0 flex-1">
-                <span className="block break-words text-sm font-medium capitalize">{documentTitle(file)}</span>
-                <span className="text-xs text-muted-foreground">{file.workspaceName} · {id === "sources" ? "Saved reference" : "Workspace file"}</span>
-              </span>
-              <ArrowUpRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-            </button>
-          </li>
-        ))}
-      </ul>
-    ) : <p className="text-sm leading-6 text-muted-foreground">{loading ? "Loading…" : empty}</p>;
-  }
+  const [assignment, setAssignment] = useState<FileView | null>(null);
+  const [employeeId, setEmployeeId] = useState("");
+  const selected = groups.find(item => item.id === group)!;
+  const query = search.trim().toLowerCase();
+  const visible = files.filter(file => groupFor(file) === group && (
+    !query || [documentLabel(file.relativePath), managedLabels[file.relativePath], file.workspaceName, knowledgeFormatFromPath(file.relativePath)].join(" ").toLowerCase().includes(query)
+  ));
+  const SelectedIcon = selected.icon;
 
   return (
-    <div className="workforce-detail-grid space-y-5" aria-busy={loading}>
-      <p role="status" className={message ? "text-sm text-foreground" : "sr-only"}>{message}</p>
-      <div className="workforce-detail-grid-inner">
-        <section className="workforce-panel px-5 py-5 sm:p-6">
-          <BookOpen aria-hidden="true" className="mb-3 size-5 text-primary" />
-          <h2 className="workforce-section-title">Company profile</h2>
-          <p className="mb-3 mt-1 text-sm text-muted-foreground">What the company does and what the team is here to accomplish.</p>
-          {rows("profile", "A company brief appears here when it’s available in the workspace.")}
-        </section>
-        <section className="workforce-panel p-5 sm:p-6">
-          <h2 className="workforce-section-title">Working guidelines</h2>
-          <p className="mb-3 mt-1 text-sm text-muted-foreground">Reference material for how the company works.</p>
-          {rows("guidelines", "No dedicated guidelines document is available. Upload a guideline to share it with the company.")}
+    <>
+      <PageHeader title="Knowledge" subtitle="The facts, documents and guidelines your company works from."
+        primaryAction={{ label: "Add knowledge", icon: Plus, disabled: !workspaceId,
+          title: workspaceId ? undefined : "Choose one workspace to add a source.", onClick: () => setImportOpen(true) }} />
+      {children}
+      {message ? <p role="status" className="rounded-lg bg-primary/5 px-3 py-2 text-sm">{message}</p> : null}
+      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)]">
+        <nav aria-label="Knowledge collections" className="workforce-collections grid min-w-0 grid-cols-2 gap-1 sm:grid-cols-3 md:flex md:flex-col">
+          {groups.map(item => (
+            <button key={item.id} type="button" aria-pressed={group === item.id} onClick={() => { setGroup(item.id); setSearch(""); }}
+              className={cn("workforce-collection flex min-w-0 items-center gap-2.5 rounded-lg px-3 text-left text-sm font-medium",
+                group === item.id ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground")}>
+              <item.icon aria-hidden="true" className={cn("size-4", group === item.id && "text-primary")} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <section aria-labelledby="workforce-knowledge-heading" aria-busy={loading} className="workforce-panel min-w-0 overflow-hidden">
+          <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/75 p-4 sm:p-5">
+            <div>
+              <h2 id="workforce-knowledge-heading" className="workforce-section-title">{selected.label}</h2>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">{selected.description}</p>
+            </div>
+            {group !== "employees" && <label className="relative w-full max-w-[15rem]">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={search} onChange={event => setSearch(event.target.value)} aria-label={"Search " + selected.label.toLowerCase()} placeholder={"Search " + selected.label.toLowerCase()} className="pl-9" />
+            </label>}
+          </header>
+          {group === "employees" ? (
+            <ul className="divide-y divide-border px-3 py-1">
+              {employees.map(employee => <li key={employee.id}>
+                <Link href={"/agents/" + encodeURIComponent(employee.id) + "?tab=knowledge"} className="workforce-row flex w-full items-center gap-3 px-2 py-2">
+                  <EmployeeAvatar agent={employee} name={employee.name} className="size-9 rounded-lg" />
+                  <span className="flex-1 text-sm font-semibold">{employee.name}</span><ArrowUpRight aria-hidden="true" className="size-4 text-muted-foreground" />
+                </Link>
+              </li>)}
+              {!employees.length && <li className="p-3 text-sm text-muted-foreground">Employee context appears here after you build your team.</li>}
+            </ul>
+          ) : visible.length ? (
+            <ul className="divide-y divide-border/80 px-3 py-1">
+              {visible.map(file => {
+                const format = knowledgeFormatFromPath(file.relativePath);
+                const title = knowledgeTitle(file);
+                return <li key={file.id} className="workforce-row flex items-center gap-1">
+                  <button type="button" onClick={() => onOpen(file)} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"><SelectedIcon aria-hidden="true" className="size-4" /></span>
+                    <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold capitalize">{title}</span>
+                      <span className="text-xs text-muted-foreground">{format === "reference" ? "Saved reference" : format === "note" ? "Note" : format?.toUpperCase() || "Workspace file"} · {file.workspaceName}{file.sizeBytes != null ? " · " + new Intl.NumberFormat("en", { style: "unit", unit: "kilobyte", maximumFractionDigits: 1 }).format(file.sizeBytes / 1024) : ""}</span>
+                    </span>
+                    <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                  {isAssignableDocument(file.relativePath) && employees.some(employee => employee.workspaceId === file.workspaceId) &&
+                    <Button size="sm" variant="ghost" onClick={() => { setAssignment(file); setEmployeeId(""); }} aria-label={"Assign " + title}>Assign</Button>}
+                </li>;
+              })}
+            </ul>
+          ) : (
+            <div className="flex items-start gap-3 p-5 sm:p-6">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                <SelectedIcon aria-hidden="true" className="size-4" />
+              </span>
+              <div>
+                <p role={loading ? "status" : undefined} className="text-sm font-semibold">{loading ? "Loading workspace sources…" : query ? "No matching sources" : "No " + selected.label.toLowerCase() + " yet"}</p>
+                {!loading && !query && group === "documents" && <p className="mt-1 text-sm text-muted-foreground">Add materials your team can refer to, such as a product brief or an editorial guide.</p>}
+              </div>
+            </div>
+          )}
         </section>
       </div>
-      <section className="workforce-panel space-y-3 p-5 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="workforce-section-title">Shared documents</h2>
-          <Button variant="secondary" disabled={!workspaceId} onClick={() => { setError(""); setDialog("file"); }}>
-            <Upload aria-hidden="true" className="mr-2 size-4" /> Upload document
-          </Button>
+      <details className="border-t border-border/75 py-3">
+        <summary className="cursor-pointer text-sm font-medium">Advanced file access</summary>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Button size="sm" variant="secondary" disabled={!workspaceId} onClick={onManageFiles}>Manage workspace context</Button>
+          <Link href="/files" className="text-sm font-medium text-primary hover:underline">Browse managed files</Link>
         </div>
-        {rows("documents", workspaceId ? "Share a Markdown or JSON document with this workspace." : "Choose a workspace to upload shared documents.")}
-      </section>
-      <div className="workforce-detail-grid-inner">
-        <section className="workforce-panel space-y-3 p-5 sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="workforce-section-title">Knowledge sources</h2>
-            <Button variant="ghost" disabled={!workspaceId} onClick={() => { setError(""); setDialog("source"); }}>
-              <Plus aria-hidden="true" className="mr-1.5 size-4" /> Add reference
-            </Button>
-          </div>
-          {rows("sources", "Save links that the team can follow from a workspace reference.")}
-        </section>
-        <section className="workforce-panel space-y-3 p-5 sm:p-6">
-          <h2 className="workforce-section-title">Workspace memory</h2>
-          {rows("memory", "No native workspace memory files are available.")}
-        </section>
-      </div>
-      <section className="space-y-3">
-        <h2 className="workforce-section-title">Employee knowledge</h2>
-        {employees.length ? (
-          <div className="flex flex-wrap gap-2">
-            {employees.map(employee => (
-              <Link key={employee.id} href={`/agents/${encodeURIComponent(employee.id)}?tab=knowledge`}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-muted/70 px-2.5 py-1.5 text-sm hover:bg-accent">
-                <EmployeeAvatar agent={employee} name={employee.name} className="size-7 rounded-lg" /> {employee.name}
-              </Link>
-            ))}
-          </div>
-        ) : <p className="text-sm text-muted-foreground">Employee context is available after you build your team.</p>}
-      </section>
-      <Dialog open={!!dialog} onOpenChange={open => { if (!open && !working) setDialog(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{dialog === "file" ? "Upload a shared document" : "Add a reference link"}</DialogTitle>
-            <DialogDescription>{dialog === "file"
-              ? "Save a Markdown or JSON file directly in this workspace. Employees can read it when their native access permits."
-              : "Save a link as a workspace document. The content at the link remains with its source."}</DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={addKnowledge}>
-            {dialog === "file" ? (
-              <div className="space-y-2"><Label htmlFor="knowledge-file">Markdown or JSON document</Label>
-                <Input name="document" type="file" id="knowledge-file" accept=".md,.json" required disabled={working} /></div>
-            ) : (
-              <>
-                <div className="space-y-2"><Label htmlFor="knowledge-title">Reference name</Label><Input name="title" id="knowledge-title" required maxLength={100} disabled={working} /></div>
-                <div className="space-y-2"><Label htmlFor="knowledge-url">Website address</Label><Input name="url" id="knowledge-url" type="url" required maxLength={4096} disabled={working} /></div>
-              </>
-            )}
-            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" disabled={working}>{working ? "Saving…" : "Save to workspace"}</Button>
-          </form>
+      </details>
+      {workspaceId && importOpen ? <KnowledgeImportDialog workspaceId={workspaceId} surfaceTheme={surfaceTheme}
+        onClose={() => setImportOpen(false)} onImported={({ title, kind }) => {
+          setImportOpen(false); setSearch(""); setGroup(kind === "reference" ? "sources" : "documents");
+          setMessage(title + (kind === "reference" ? " saved as a reference." : " added to the workspace.")); onChanged();
+        }} /> : null}
+      {assignment ? <Dialog open onOpenChange={open => { if (!open) setAssignment(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Assign document</DialogTitle>
+            <DialogDescription>Add this shared source to an employee’s memory search. Workspace file access is managed separately.</DialogDescription></DialogHeader>
+          <label className="space-y-1.5 text-sm font-medium"><span>Employee</span>
+            <select className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-base sm:text-sm"
+              value={employeeId} onChange={event => setEmployeeId(event.target.value)}>
+              <option value="">Choose an employee</option>
+              {employees.filter(employee => employee.workspaceId === assignment.workspaceId).map(employee =>
+                <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+            </select>
+          </label>
+          {employeeId && assignment.workspaceId ? <EmployeeDocuments key={employeeId} workspaceId={assignment.workspaceId} employeeId={employeeId} path={assignment.relativePath} /> : null}
         </DialogContent>
-      </Dialog>
-    </div>
+      </Dialog> : null}
+    </>
   );
 }

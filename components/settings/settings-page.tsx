@@ -40,13 +40,13 @@ export function SettingsPage({
             <header className="mb-6 border-b border-border/65 pb-4">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="workforce-heading font-display font-semibold leading-tight">Settings</h1>
-                <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
+                {activeSection === "runtime" && <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />}
               </div>
               <p className="mt-2 text-sm text-muted-foreground">Manage your workspace, AI models and security.</p>
               {activeSection === "runtime" ? <OperatorScopeFreshness projection={operatorRuntime} className="mt-2" /> : null}
             </header>
 
-            <div className="grid items-start gap-8 lg:grid-cols-[180px_minmax(0,680px)]">
+            <div className="grid items-start gap-5 lg:grid-cols-[180px_minmax(0,680px)] lg:gap-8">
               <SettingsNavigation activeSection={activeSection} onSelect={onSelectSection} surfaceTheme={surfaceTheme} />
               <div className="min-w-0">
                 {activeSection === "general" ? <GeneralSettings {...props} surfaceTheme={surfaceTheme} onToggleTheme={onToggleTheme} /> : null}

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
 import { Activity, Bot, Folder, LockKeyhole, Settings2, Wrench } from "lucide-react";
 
 import type { SettingsArea } from "@/components/settings/settings-types";
@@ -25,16 +24,10 @@ export function SettingsNavigation({
   onSelect: (section: SettingsArea) => void;
   surfaceTheme: "dark" | "light";
 }) {
-  const mobileNavigationRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const activeLink = mobileNavigationRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
-    activeLink?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeSection]);
 
   return (
     <nav aria-label="Settings sections" className="min-w-0">
-      <div ref={mobileNavigationRef} className="flex gap-1 overflow-x-auto pb-1 lg:hidden">
+      <div className="grid grid-cols-2 gap-1 border-b border-border pb-3 sm:grid-cols-3 lg:hidden">
         {sections.map((section) => (
           <SettingsNavigationLink
             key={section.id}
@@ -88,7 +81,7 @@ function SettingsNavigationLink({
       onClick={() => onSelect(section.id)}
       className={cn(
         "flex shrink-0 items-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-        compact ? "min-h-11 px-3 text-sm" : "min-h-10 w-full px-3 text-sm",
+        compact ? "min-h-[2.75rem] px-3 text-sm" : "min-h-10 w-full px-3 text-sm",
         active
           ? surfaceTheme === "light"
             ? "bg-primary/10 text-primary"

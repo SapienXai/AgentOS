@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
-
 import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, Database, Eye, FilePlus2, FileText, Filter, Folder, FolderOpen, HardDrive, Import, ListFilter, Plus, SlidersHorizontal, SquareArrowOutUpRight, Upload, type LucideIcon } from "lucide-react";
 
+import { AgentChatMessageContent } from "@/components/mission-control/agent-chat-message-content";
+import { MissionControlDialogShell } from "@/components/mission-control/mission-control-dialog-shell";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
-import { CompanyKnowledge } from "@/components/workforce/company-knowledge";
+import { CompanyKnowledge, knowledgeTitle } from "@/components/workforce/company-knowledge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { WorkspaceManagedFile, WorkspaceManagedFileListResponse, WorkspaceManagedFileReadResponse } from "@/lib/openclaw/workspace-file-types";
+import { knowledgeFormatFromPath } from "@/lib/agentos/domains/knowledge-import-formats";
 import { cn } from "@/lib/utils";
 import { buildFileViews, fileCollectionIcons, formatBytes, type FileView } from "@/components/operations/operations-data";
 import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, ToolbarButton, ViewToggle } from "@/components/operations/operations-ui";
@@ -157,28 +158,13 @@ export function FilesPageContent({
     <>
       {knowledge ? (
         <div className="space-y-5">
-          <PageHeader title="Knowledge" subtitle="Give your team a shared understanding of the company and its work."
-            actions={<Button type="button" size="sm" className="min-h-11"
-              onClick={() => setWorkspaceFilesOpen(true)} disabled={!activeWorkspaceId}
-              title={activeWorkspaceId ? undefined : "Choose a specific workspace first."}>
-              <FileText className="mr-2 size-4" /> Manage workspace context
-            </Button>} />
-          <SearchToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Find a document" surfaceTheme={surfaceTheme} />
-          {fileError ? (
-            <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 p-4 text-sm">
+          <CompanyKnowledge key={activeWorkspaceId ?? "all"} files={fileViews} employees={snapshot.agents}
+            workspaceId={activeWorkspace?.id ?? null} loading={isLoadingFiles} surfaceTheme={surfaceTheme} onOpen={setPreviewFile}
+            onManageFiles={() => setWorkspaceFilesOpen(true)} onChanged={() => setFileReloadKey(key => key + 1)}>
+            {fileError ? <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 p-4 text-sm">
               <span>{fileError}</span><Button type="button" variant="secondary" onClick={() => setFileReloadKey(key => key + 1)}>Retry</Button>
-            </div>
-          ) : null}
-          <CompanyKnowledge key={activeWorkspaceId ?? "all"} files={filteredFiles} employees={snapshot.agents}
-            workspaceId={activeWorkspace?.id ?? null} loading={isLoadingFiles} onOpen={setPreviewFile}
-            onChanged={() => setFileReloadKey(key => key + 1)} />
-          <details className="rounded-xl border border-border bg-card px-4">
-            <summary className="cursor-pointer py-3 text-sm font-medium">Advanced file access</summary>
-            <div className="space-y-3 pb-4 text-sm leading-6 text-muted-foreground">
-              <p>OpenClaw manages which files are available for a workspace. A visible document is a file listing. Retrieval depends on the employee’s native context and memory configuration.</p>
-              <Link href="/files" className="font-medium text-primary hover:underline">Browse managed files</Link>
-            </div>
-          </details>
+            </div> : null}
+          </CompanyKnowledge>
         </div>
       ) : <OperationsPageLayout
       main={
@@ -322,6 +308,9 @@ export function FilesPageContent({
         }}
       />
       <FilePreviewDialog
+        key={previewFile?.id ?? "closed"}
+        knowledge={knowledge}
+        surfaceTheme={surfaceTheme}
         file={previewFile}
         open={Boolean(previewFile)}
         onOpenChange={(open) => setPreviewFile(open ? previewFile : null)}
@@ -554,11 +543,15 @@ function FileInspector({
 
 function FilePreviewDialog({
   file,
+  knowledge,
+  surfaceTheme,
   open,
   onOpenChange,
   onSaved
 }: {
   file: FileView | null;
+  knowledge: boolean;
+  surfaceTheme: "dark" | "light";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
@@ -568,6 +561,8 @@ function FilePreviewDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [retry, setRetry] = useState(0);
   const canRead = Boolean(file?.workspaceId && file?.source?.exists);
   const canSave = Boolean(file?.workspaceId && file?.source?.editable && content !== savedContent && !loading && !saving);
 
@@ -617,7 +612,7 @@ function FilePreviewDialog({
     return () => {
       cancelled = true;
     };
-  }, [canRead, file, open]);
+  }, [canRead, file, open, retry]);
 
   const saveFile = async () => {
     if (!file?.workspaceId) {
@@ -651,6 +646,50 @@ function FilePreviewDialog({
       setSaving(false);
     }
   };
+
+  if (knowledge && file) {
+    const format = knowledgeFormatFromPath(file.relativePath);
+    const reference = format === "reference";
+    const isJson = file.source?.language === "json";
+    // Import-generated headings can carry a friendly original name. The path remains in Advanced.
+    const heading = savedContent.match(/^# ([^\r\n]{1,120})\n\n/)?.[1];
+    const title = format && heading && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(heading) ? heading : knowledgeTitle(file);
+    const subtitle = reference ? "Saved reference · " + file.workspaceName :
+      (format ? format === "note" ? "Workspace note" : format.toUpperCase() + " document" : "Workspace source") + " · " + file.workspaceName;
+    return (
+      <MissionControlDialogShell open={open} onOpenChange={value => { if (!saving) onOpenChange(value); }}
+        surfaceTheme={surfaceTheme} title={<span className="break-words capitalize">{title}</span>}
+        description={subtitle} variant="quiet"
+        contentClassName={cn("workforce-setup-card sm:w-[min(92vw,720px)]", surfaceTheme === "light" && "workforce-setup-light")}
+        bodyClassName="px-5 py-4 sm:px-7 sm:py-6"
+        footer={editing ? <>
+          <Button variant="ghost" disabled={saving} onClick={() => { setEditing(false); setContent(savedContent); setError(null); }}>Cancel edit</Button>
+          <Button disabled={!canSave} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save source"}</Button>
+        </> : <>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+          {file.source?.editable && !loading && !error ? <Button variant="secondary" onClick={() => setEditing(true)}>Edit source</Button> : null}
+        </>}>
+        {error ? <div role="alert" className="mb-3 space-y-2 text-sm text-destructive">
+          <p>{error}</p>{!editing && <Button variant="secondary" onClick={() => setRetry(value => value + 1)}>Retry</Button>}
+        </div> : null}
+        {editing ? <Textarea aria-label="Source text" value={content} onChange={event => setContent(event.target.value)}
+          className="min-h-[16rem] w-full text-base" disabled={saving} autoFocus /> : loading ? (
+          <p role="status" className="text-sm text-muted-foreground">Loading source…</p>
+        ) : !error ? (
+          <div className="space-y-4">
+            {reference && <p className="text-sm text-muted-foreground">Open the link to read the content on its website.</p>}
+            {isJson ? <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">{content}</pre> :
+              <AgentChatMessageContent text={format ? content.replace(/^# [^\r\n]+\n\n/, "") : content} className="break-words" />}
+            {!reference && <p className="border-t border-border pt-3 text-sm text-muted-foreground">Shared in {file.workspaceName}. Employee memory assignments are managed separately.</p>}
+          </div>
+        ) : null}
+        <details className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-medium">Source details</summary>
+          <p className="mt-2 break-all">{file.relativePath}</p>
+        </details>
+      </MissionControlDialogShell>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

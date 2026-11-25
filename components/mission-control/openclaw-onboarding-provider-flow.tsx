@@ -35,7 +35,6 @@ import { getModelProviderAdapter } from "@/lib/openclaw/model-provider-adapters"
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import { enrichCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import { useModelCatalog } from "@/hooks/use-model-catalog";
 import { cn } from "@/lib/utils";
 
@@ -597,9 +596,7 @@ export function OpenClawOnboardingProviderFlow({
       />
       <div
         className={cn(
-          compactSelection ? "mt-0" : "mt-3 rounded-[16px] border px-3 py-3",
-          !compactSelection &&
-            (isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]")
+          compactSelection ? "mt-0" : "mt-3"
         )}
       >
       {sharedCatalogError || sharedCatalogWarning || explicitProviderError ? (
@@ -620,7 +617,12 @@ export function OpenClawOnboardingProviderFlow({
                 setActiveProviderId(provider.id);
                 if (selectedProviderId && selectedProviderId !== provider.id) onSelectedModelIdChange("");
               }}>
-              {providerDescriptors.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+              <optgroup label="Cloud and configured providers">
+                {providerDescriptors.filter(provider => provider.id !== "ollama").map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+              </optgroup>
+              <optgroup label="On this machine">
+                {providerDescriptors.filter(provider => provider.id === "ollama").map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+              </optgroup>
             </select>
           </label>
           <div className="flex flex-wrap gap-1">
@@ -632,11 +634,7 @@ export function OpenClawOnboardingProviderFlow({
 
       <div
         className={cn(
-          compactSelection ? "mt-3" : "mt-3 rounded-[18px] border p-3",
-          !compactSelection &&
-            (isLight
-              ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
-              : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")
+          compactSelection ? "mt-3" : "mt-4 border-t border-border pt-4"
         )}
       >
         {!compactSelection ? (
@@ -645,6 +643,9 @@ export function OpenClawOnboardingProviderFlow({
               <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>
                 {activeDescriptor.label}
               </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeProviderId === "ollama"
+                ? "Use models running on this machine." : activeProviderId === "openai"
+                  ? "Connect an OpenAI API key or authorize ChatGPT with your account." : "Connect your account or provide the key required by this provider."}</p>
             </div>
 
             <Badge
@@ -804,13 +805,11 @@ export function OpenClawOnboardingProviderFlow({
         ) : null}
 
         {activeProviderId === "openai" && !showLoadingHero && !compactSelection ? (
-          <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-[#e3d5c8] bg-white/70" : "border-white/10 bg-white/[0.03]")}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <details className="mt-4 border-t border-border pt-3">
+            <summary className="cursor-pointer text-sm font-medium">Use a ChatGPT account</summary>
+            <div className="mt-2 flex flex-wrap items-start gap-3">
               <div>
-                <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>Connect ChatGPT</p>
-                <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-[#74665c]" : "text-slate-400")}>
-                  OpenClaw {OPENCLAW_RECOMMENDED_VERSION} keeps ChatGPT OAuth under provider <code>openai</code> and runtime <code>codex</code>.
-                </p>
+                <p className="text-sm leading-5 text-muted-foreground">Authorize your ChatGPT account in the browser to use its eligible models.</p>
               </div>
               <Button
                 type="button"
@@ -841,8 +840,7 @@ export function OpenClawOnboardingProviderFlow({
                 Reconnect ChatGPT
               </Button>
             </div>
-
-          </div>
+          </details>
         ) : null}
 
         {compactSelection ? (
