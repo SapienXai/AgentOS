@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -9,7 +10,8 @@ import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/lib/openc
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
 import {
   probeLocalGatewayConfiguration,
-  probeLocalGatewayRegistration
+  probeLocalGatewayRegistration,
+  probeLocalGatewayStatus
 } from "@/lib/openclaw/client/local-gateway-probe";
 import { probeLocalDefaultModel } from "@/lib/openclaw/state/local-model-status";
 import {
@@ -4476,4 +4478,33 @@ test("workspace bootstrap input keeps the path contract stable", () => {
     }
   ]);
   assert.equal(targetDir, "/workspaces/alpha-workspace");
+});
+
+test("configured local Gateway readiness probes the matching port and rejects nonlocal targets", async (t) => {
+  const requests: Array<string | undefined> = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url);
+    response.writeHead(200, { "Content-Type": "application/json" }).end('{"ready":true}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  const endpoint = server.address();
+  assert.ok(endpoint && typeof endpoint === "object");
+  const url = `ws://127.0.0.1:${endpoint.port}`;
+  const key = "AGENTOS_OPENCLAW_GATEWAY_URL";
+  const previous = process.env[key];
+  t.after(() => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
+  process.env[key] = url;
+  assert.equal((await probeLocalGatewayStatus())?.gateway?.probeUrl, url);
+  assert.deepEqual(requests, ["/readyz"]);
+
+  process.env[key] = "ws://192.0.2.1:18789";
+  assert.equal(await probeLocalGatewayStatus(), null);
+  assert.deepEqual(requests, ["/readyz"]);
+  assert.equal((await probeLocalGatewayStatus(endpoint.port))?.rpc?.ok, true);
 });

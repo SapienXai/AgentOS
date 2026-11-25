@@ -41,7 +41,7 @@ let reconciliationPromise: Promise<void> | null = null;
 let reconciliationDirty = false;
 let reconciliationFollowUp = false;
 let attentionRevision = 0;
-let invalidateMissionControlSnapshot: (() => void) | null = null;
+let invalidateMissionControlSnapshot: ((event: string) => void) | null = null;
 const bridgeEventSubscribers = new Set<(frame: GatewayEventFrame) => void>();
 
 const HUMAN_CONTROL_ATTENTION_EVENTS = new Set([
@@ -60,7 +60,7 @@ const HUMAN_CONTROL_ATTENTION_EVENTS = new Set([
   "task"
 ]);
 
-export function registerMissionControlSnapshotInvalidator(invalidator: () => void) {
+export function registerMissionControlSnapshotInvalidator(invalidator: (event: string) => void) {
   invalidateMissionControlSnapshot = invalidator;
 }
 
@@ -206,7 +206,7 @@ async function startEventBridge(generation: number) {
             getOpenClawAdapter().invalidateReadCache?.();
           }
           try {
-            invalidateMissionControlSnapshot?.();
+            invalidateMissionControlSnapshot?.(frame.event);
           } catch (error) {
             lastError = redactErrorMessage(error, "Mission Control snapshot invalidation failed.");
           }

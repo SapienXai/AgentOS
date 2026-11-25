@@ -171,9 +171,13 @@ export function clearMissionControlCaches() {
   clearRuntimeHistoryCache();
 }
 
-export function invalidateMissionControlSnapshotCache() {
+export function invalidateMissionControlSnapshotCache(event?: string) {
   missionControlCacheService.clear();
+  const modelsStatus = event === "sessions.changed" ? payloadCaches.modelsStatus : null;
   clearMissionControlPayloadCaches();
+  // Session updates change session overrides, while explicit model changes and
+  // the existing slow-payload expiration govern the global provider inventory.
+  payloadCaches.modelsStatus = modelsStatus;
 }
 
 registerMissionControlSnapshotInvalidator(invalidateMissionControlSnapshotCache);
@@ -345,7 +349,7 @@ async function loadMissionControlSnapshots({
     }
 
     if (!resolvedGatewayStatus.value) {
-      const probedGatewayStatus = await probeLocalGatewayStatus(gatewayStatusCache.getCachedPort());
+      const probedGatewayStatus = await probeLocalGatewayStatus();
 
       if (probedGatewayStatus) {
         gatewayStatusCache.write(probedGatewayStatus);
