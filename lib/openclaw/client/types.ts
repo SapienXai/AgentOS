@@ -1779,6 +1779,7 @@ export interface OpenClawWorktreesBranchesPayload {
   defaultBranch?: string;
   headBranch?: string;
   repositoryStatus?: "git" | "not_git" | "unavailable";
+  refreshing?: boolean;
 }
 
 export interface OpenClawTaskSuggestion {

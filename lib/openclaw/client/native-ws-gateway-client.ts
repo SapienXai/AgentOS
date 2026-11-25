@@ -1,5 +1,7 @@
 import "server-only";
 
+import { setTimeout as wait } from "node:timers/promises";
+
 /**
  * Shared AgentOS domain/policy client. Its historical class name is retained
  * for compatibility while production always injects the official transport.
@@ -1023,16 +1025,43 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
-  inspectWorktreeBranches(
+  async inspectWorktreeBranches(
     input: { repoRoot: string; includeRepositoryStatus?: boolean },
     options: OpenClawCommandOptions = {}
   ) {
-    return this.nativeOnly<OpenClawWorktreesBranchesPayload>(
+    const read = () => this.nativeOnly<OpenClawWorktreesBranchesPayload>(
       "worktrees.branches",
       { ...input },
       options,
       (payload) => parseObjectGatewayPayload<OpenClawWorktreesBranchesPayload>("worktrees.branches", payload)
     );
+    if (!input.includeRepositoryStatus || this.options.forceCli || isCliGatewayClientForcedByEnv()) return read();
+
+    const refreshed = Promise.withResolvers<void>();
+    const subscription = await this.subscribeNativeEvents({}, {
+      onEvent: ({ event, payload }) => {
+        if (event === "worktrees.branches.changed" && isObjectRecord(payload) &&
+            payload.repoRoot === input.repoRoot) refreshed.resolve();
+      }
+    }, options);
+    const timer = new AbortController();
+    try {
+      const result = await read();
+      if (!result.refreshing) return result;
+
+      const signal = options.signal ? AbortSignal.any([options.signal, timer.signal]) : timer.signal;
+      await Promise.race([
+        refreshed.promise,
+        wait(Math.min(options.timeoutMs ?? 5_000, 5_000), undefined, { signal, ref: false })
+      ]);
+      // A cold branch listing is a snapshot while the Gateway refreshes.
+      // Reread at most once, including when an invalidation could have been lost.
+      this.requestPolicy.invalidateReadCache();
+      return await read();
+    } finally {
+      timer.abort();
+      subscription.close();
+    }
   }
 
   createSession(input: OpenClawSessionCreateInput, options: OpenClawCommandOptions = {}) {
