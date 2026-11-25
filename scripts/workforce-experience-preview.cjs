@@ -219,6 +219,10 @@ async function run() {
               await page.getByLabel("What are you working on?").fill("Research and publish a monthly neighborhood newsletter. Propose a lead editor and a research specialist.");
               await page.getByRole("button", { name: "Suggest a team", exact: true }).click();
               await expect(page.getByRole("heading", { name: "Meet your proposed team" })).toBeVisible({ timeout: 55000 });
+              const dialog = await page.getByRole("dialog", { name: "Build your team" }).boundingBox();
+              const launch = await page.getByRole("button", { name: "Launch workspace", exact: true }).boundingBox();
+              assert(dialog && dialog.x >= -1 && dialog.x + dialog.width <= size.width + 1, "Team review extends outside the viewport.");
+              assert(launch && launch.x >= 0 && launch.x + launch.width <= size.width + 1, "Launch action is clipped.");
             });
             await record("reviewed-team-edits", async () => {
               const lead = page.locator("details.workforce-person").first();

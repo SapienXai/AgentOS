@@ -1182,7 +1182,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && (isLight ? "workforce-setup-card workforce-setup-light" : "workforce-setup-card"), isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && "workforce-setup-card grid-cols-[minmax(0,1fr)]", firstWorkspace && isLight && "workforce-setup-light", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -1225,20 +1225,21 @@ export function CreateWorkspaceExperience({
               </div>
             </div>
           ) : (
-            <div className="flex w-full items-center justify-between gap-3">
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
               {(
-                <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" onClick={() => { setTeamEditsPending(false); setStage("intake"); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                  <Button type="button" variant="ghost" onClick={() => { setTeamEditsPending(false); setStage("intake"); }} className={cn(firstWorkspace ? "min-h-11 px-2 sm:min-h-9" : "h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
                     <ChevronLeft className="mr-1.5 h-4 w-4" />
                     Back to brief
                   </Button>
-                  <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
+                  <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn(firstWorkspace ? "min-h-11 px-2 sm:min-h-9" : "h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
                 </div>
               )}
-              <div className="flex flex-col items-end gap-1">
+              <div className={cn("flex min-w-0 flex-col items-end gap-1", firstWorkspace && "w-full sm:w-auto")}>
                 {!firstWorkspace ? <span className="text-xs text-muted-foreground">{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span> : null}
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
+                <div className={cn("flex min-w-0 flex-wrap items-center gap-2", firstWorkspace && "w-full sm:w-auto")}>
+                  <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)}
+                    className={firstWorkspace ? "min-h-11 sm:min-h-9" : missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
                     Customize
                   </Button>
@@ -1249,7 +1250,7 @@ export function CreateWorkspaceExperience({
                       onClick={() => void provision()}
                       title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
                       aria-label={isEnrichmentReview ? "Apply workspace updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
-                      className={missionControlDialogButtonClassName("primary", surfaceTheme)}
+                      className={firstWorkspace ? "min-h-11 flex-1 sm:min-h-9 sm:flex-none" : missionControlDialogButtonClassName("primary", surfaceTheme)}
                     >
                       {isEnrichmentReview ? "Apply updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
                     </Button>
