@@ -71,13 +71,15 @@ test("worker detail route and roster preserve the first-class access contract", 
   const roster = readFileSync(path.join(process.cwd(), "components/operations/agents/agents-page-content.tsx"), "utf8");
   const detail = readFileSync(path.join(process.cwd(), "components/operations/agents/agent-detail-page-content.tsx"), "utf8");
 
-  assert.match(route, /preferredWorkspaceId=\{agent\.workspaceId\}/);
+  assert.match(route, /workspaceId=\{agent\.workspaceId\}/);
+  assert.match(detail, /preferredWorkspaceId=\{workspaceId\}/);
   assert.match(shell, /preferredWorkspaceId/);
-  assert.match(roster, /Open worker detail/);
-  for (const label of ["Overview", "Behavior", "Capabilities", "Channels", "Sessions"]) {
-    assert.match(detail, new RegExp(label));
+  assert.match(roster, /href=\{`\/agents\/\$\{encodeURIComponent\(agent.id\)\}`\}/);
+  const tabs = readFileSync(path.join(process.cwd(), "components/operations/agents/agent-detail-tabs.ts"), "utf8");
+  for (const label of ["Overview", "Identity", "Knowledge", "Capabilities", "Intelligence", "Connections", "Activity"]) {
+    assert.match(tabs, new RegExp(label));
   }
-  assert.match(detail, /AgentChatDrawer/);
+  assert.match(detail, /\/chat\?employee=/);
   assert.match(detail, /MissionDispatchDialog/);
   assert.match(detail, /AgentModelPickerDialog/);
   assert.match(detail, /AgentChannelsSection/);

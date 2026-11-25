@@ -1,6 +1,6 @@
 [package]
 name = "agentos-desktop"
-version = "0.10.0"
+version = "0.11.0"
 description = "Thin native shell for the AgentOS application"
 authors = ["SapienX"]
 edition = "2021"

@@ -19,7 +19,7 @@ import {
   WandSparkles,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import {
   MissionControlDialogShell,
@@ -27,6 +27,10 @@ import {
   missionControlDialogButtonClassName,
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
+import { FirstWorkspaceForms, firstEmployeeDraft, type FirstEmployeeDraft } from "@/components/workforce/first-workspace-forms";
+import { OnboardingProgress } from "@/components/workforce/onboarding-progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import {
   clearWorkspaceCreationMinimizedRun,
@@ -67,9 +71,7 @@ import { presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-c
 
 type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
-const firstWorkspaceName = "Agents Workspace";
-const firstWorkspaceBrief = "Set up a general-purpose workspace with one assistant to help organize work, answer questions, and plan next steps.";
-const firstWorkspaceKey = "onboarding:agents-workspace";
+const firstWorkspaceKey = "onboarding:workforce-workspace";
 type ContextAction = "website" | "github" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
 type UrlSourceBuildResult = { source: WorkspaceKnowledgeSource } | { error: string };
@@ -184,6 +186,13 @@ export function CreateWorkspaceExperience({
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [manualTeam, setManualTeam] = useState<FirstEmployeeDraft[]>([firstEmployeeDraft]);
+  const [manualReview, setManualReview] = useState(false);
+  const [manualLaunching, setManualLaunching] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const manualCreated = useRef<WorkspaceCreateResult | null>(null);
+  const manualKey = useRef<string | null>(null);
   const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
@@ -317,6 +326,12 @@ export function CreateWorkspaceExperience({
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
     setBrief("");
+    setFirstName("");
+    setManualReview(false);
+    setManualTeam([firstEmployeeDraft]);
+    setManualError(null);
+    manualCreated.current = null;
+    manualKey.current = null;
     setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
@@ -405,6 +420,7 @@ export function CreateWorkspaceExperience({
   }, [reopenRequest]);
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && manualLaunching) return;
     if (!nextOpen && isActiveRun) {
       minimizeWorkspaceCreation();
       return;
@@ -429,8 +445,8 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const generate = async (retryFirstWorkspace = false) => {
-    const nextBrief = firstWorkspace ? firstWorkspaceBrief : brief.trim();
+  const generate = async () => {
+    const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating" || (firstWorkspace && abortControllerRef.current)) return;
 
     const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
@@ -469,23 +485,11 @@ export function CreateWorkspaceExperience({
 
     try {
       const formData = new FormData();
-      let idempotencyKey = firstWorkspace ? firstWorkspaceKey : crypto.randomUUID();
-      if (firstWorkspace) {
-        const failedRunId = retryFirstWorkspace && creationRun &&
-          (creationRun.snapshot.state === "failed" || creationRun.snapshot.state === "cancelled")
-          ? creationRun.runId : null;
-        if (failedRunId) idempotencyKey = `${firstWorkspaceKey}:retry:${failedRunId}`;
-        try {
-          if (failedRunId) sessionStorage.setItem(firstWorkspaceKey, idempotencyKey);
-          else idempotencyKey = sessionStorage.getItem(firstWorkspaceKey) || idempotencyKey;
-        } catch {
-          // Browser storage can be disabled. The initial request is still idempotent on the server.
-        }
-      }
+      const idempotencyKey = crypto.randomUUID();
       formData.set("idempotencyKey", idempotencyKey);
       formData.set("brief", nextBrief);
-      if (firstWorkspace) formData.set("workspaceName", firstWorkspaceName);
-      formData.set("mode", firstWorkspace || mode === "automatic" ? "automatic" : "review");
+      if (firstWorkspace) formData.set("workspaceName", firstName.trim());
+      formData.set("mode", !firstWorkspace && mode === "automatic" ? "automatic" : "review");
       formData.set("profile", profile);
       formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation && !firstWorkspace));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
@@ -511,7 +515,7 @@ export function CreateWorkspaceExperience({
       setProvisioningError(null);
       provisioningKeyRef.current = null;
       setStage(
-        (firstWorkspace || mode === "automatic")
+        (!firstWorkspace && mode === "automatic")
           && !environmentPreparation.requested
           && completedRun.snapshot.reviewReadiness?.provisionable === true
           ? "generating"
@@ -540,14 +544,6 @@ export function CreateWorkspaceExperience({
       if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   };
-
-  const startFirstWorkspace = useEffectEvent(() => {
-    void generate();
-  });
-
-  useEffect(() => {
-    if (open && firstWorkspace) startFirstWorkspace();
-  }, [open, firstWorkspace]);
 
   const pollCreationRun = useCallback(async (runId: string, controller: AbortController, initial: WorkspaceCreationRun, sourceList: WorkspaceKnowledgeSource[]) => {
     let afterSequence = initial.events.at(-1)?.sequence ?? 0;
@@ -591,7 +587,7 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open || firstWorkspace || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
+    if (!open || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -605,6 +601,8 @@ export function CreateWorkspaceExperience({
         const payload = await response.json().catch(() => null) as WorkspaceCreationRun & { runs?: WorkspaceCreationRun[] } | null;
         const activeRun = minimizedRunId ? payload : payload?.runs?.[0];
         if (!response.ok || !activeRun || controller.signal.aborted) return;
+        if (firstWorkspace && (!activeRun.input.workspaceName || activeRun.input.mode !== "review")) return;
+        if (firstWorkspace) setFirstName(activeRun.input.workspaceName ?? "");
         clearWorkspaceCreationMinimizedRun();
         const recoveredSources = activeRun.input.sources as WorkspaceKnowledgeSource[];
         setBrief(activeRun.input.brief);
@@ -1031,10 +1029,66 @@ export function CreateWorkspaceExperience({
     const timer = window.setTimeout(() => void checkWorkspaceAvailability(), 0);
     return () => window.clearTimeout(timer);
   }, [open, provisionedWorkspace, checkWorkspaceAvailability]);
+  const handedOffRun = useRef<string | null>(null);
+  useEffect(() => {
+    if (!firstWorkspace || !open || !provisionedWorkspace || !provisionedRunId ||
+        provisioningRun?.state !== "ready" || !canOpenWorkspace || handedOffRun.current === provisionedRunId) return;
+    handedOffRun.current = provisionedRunId;
+    onWorkspaceCreated?.(provisionedWorkspace);
+    onOpenChange(false);
+  }, [firstWorkspace, open, provisionedWorkspace, provisionedRunId, provisioningRun?.state, canOpenWorkspace, onWorkspaceCreated, onOpenChange]);
+
   const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
-  const firstWorkspaceStarting = firstWorkspace && stage === "intake" && !notice;
+  const launchManualWorkspace = async () => {
+    if (manualLaunching) return;
+    setManualLaunching(true);
+    setManualError(null);
+    try {
+      const priorKey = sessionStorage.getItem(firstWorkspaceKey);
+      manualKey.current ??= priorKey || crypto.randomUUID();
+      sessionStorage.setItem(firstWorkspaceKey, manualKey.current);
+      let created = manualCreated.current;
+      if (!created) {
+        const website = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
+        if (website && "error" in website) throw new Error(website.error);
+        if (uploadGroups.length) throw new Error("To include attached files during setup, use Suggest a team. You can also add them after launch.");
+        const response = await fetch("/api/workspaces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: firstName.trim(),
+            brief: brief.trim(),
+            modelId: defaultModel || undefined,
+            sourceMode: "empty",
+            teamPreset: "custom",
+            knowledgeSources: website ? [website.source] : [],
+            rules: { workspaceOnly: true, generateStarterDocs: true, generateMemory: true, kickoffMission: false },
+            creation: { source: "launchpad", idempotencyKey: manualKey.current },
+            agents: manualTeam.map(({ id, name, role }, index) => ({
+              id, name: name.trim(), role: role.trim(), enabled: true, isPrimary: index === 0
+            }))
+          })
+        });
+        const payload = await response.json() as WorkspaceCreateResult & { error?: string };
+        if (!response.ok || !payload.workspaceId) throw new Error(payload.error || "Workspace could not be created.");
+        created = payload;
+        manualCreated.current = created;
+      }
+      if (verifyWorkspace && !await verifyWorkspace(created)) {
+        throw new Error("The workspace was saved. Launch again to check when OpenClaw can see the team.");
+      }
+      sessionStorage.removeItem(firstWorkspaceKey);
+      onWorkspaceCreated?.(created);
+      resetCreationState();
+      onOpenChange(false);
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : "Workspace could not be created.");
+    } finally {
+      setManualLaunching(false);
+    }
+  };
 
   return (
     <>
@@ -1047,7 +1101,7 @@ export function CreateWorkspaceExperience({
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
-      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : firstWorkspace ? firstWorkspaceName : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
+      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : firstWorkspace ? (stage === "intake" && !manualReview ? "Create your workspace" : "Build your team") : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
       description={isProvisioned ? (canOpenWorkspace ? "Your workspace is ready to open." : "AgentOS is checking the workspace and its agent in OpenClaw.") : <span className="sr-only">Prepare your workspace</span>}
       icon={canOpenWorkspace ? Check : undefined}
       chips={canOpenWorkspace ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
@@ -1109,7 +1163,7 @@ export function CreateWorkspaceExperience({
             </div>
           ) : (
             <div className="flex w-full items-center justify-between gap-3">
-              {!firstWorkspace && (
+              {(
                 <div className="flex items-center gap-1">
                   <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
                     <ChevronLeft className="mr-1.5 h-4 w-4" />
@@ -1131,23 +1185,17 @@ export function CreateWorkspaceExperience({
                       disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
                       onClick={() => void provision()}
                       title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
-                      aria-label={isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
+                      aria-label={isEnrichmentReview ? "Apply workspace updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
                       className={missionControlDialogButtonClassName("primary", surfaceTheme)}
                     >
-                      {isEnrichmentReview ? "Apply updates" : "Create Workspace"}
+                      {isEnrichmentReview ? "Apply updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
                     </Button>
                   ) : null}
                 </div>
               </div>
             </div>
           )
-        ) : firstWorkspace ? (
-          notice ? (
-            <div className="flex w-full justify-end">
-              <Button type="button" onClick={() => void generate(true)} className={missionControlDialogButtonClassName("primary", surfaceTheme)}>Retry setup</Button>
-            </div>
-          ) : null
-        ) : (
+        ) : firstWorkspace ? null : (
           <div className="flex w-full items-center justify-end gap-3">
             <Button
               type="button"
@@ -1163,14 +1211,38 @@ export function CreateWorkspaceExperience({
       }
     >
       <div className={cn("min-h-0 h-full overflow-y-auto", isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]")}>
-        {firstWorkspaceStarting ? (
-          <CreationProgressView run={null} isLight={isLight} firstWorkspace />
-        ) : firstWorkspace && stage === "intake" ? (
-          <div className="mx-auto max-w-lg space-y-2 px-6 py-10" role="alert">
-            <p className="text-base font-semibold">{notice?.title}</p>
-            <p className="text-sm text-muted-foreground">{notice?.description}</p>
-          </div>
-        ) : stage === "intake" ? (
+        {firstWorkspace && stage === "review" && !isProvisioned ? <div className="px-5 pt-5 sm:px-8"><OnboardingProgress current={3} /></div> : null}
+        {firstWorkspace && stage === "intake" ? (
+          <FirstWorkspaceForms
+            manual={manualReview}
+            name={firstName} brief={brief} team={manualTeam} working={manualLaunching}
+            onName={setFirstName} onBrief={setBrief} onTeam={setManualTeam}
+            error={manualError ?? notice?.description}
+            information={manualLaunching ? "Creating your team in OpenClaw…" : null}
+            onGenerate={() => void generate()}
+            onManual={() => { setNotice(null); setManualError(null); setManualReview(true); }}
+            onBack={() => { setManualError(null); setManualReview(false); }}
+            onLaunch={() => void launchManualWorkspace()}
+          >
+            <details className="rounded-lg border border-border bg-card px-3.5 text-sm">
+              <summary className="cursor-pointer py-3 font-medium">Add a website or documents</summary>
+              <div className="space-y-3 pb-3">
+                <Label htmlFor="workforce-website">Website</Label>
+                <Input id="workforce-website" name="website" type="url" value={sourceDraft.value} placeholder="https://"
+                  className="min-h-12 text-base sm:text-sm"
+                  onChange={(event) => setSourceDraft({ kind: "website", value: event.target.value })} />
+                <Label htmlFor="workforce-documents">Documents for team suggestions</Label>
+                <Input id="workforce-documents" name="documents" type="file" multiple accept={WORKSPACE_KNOWLEDGE_FILE_ACCEPT}
+                  className="min-h-12 text-base sm:text-sm" onChange={(event) => void handleFiles(event.target.files, "file")} />
+                {sources.filter((source) => source.kind === "file").map((source) => (
+                  <div key={source.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>{source.label}</span>
+                    <Button type="button" variant="ghost" onClick={() => removeSource(source.id)}>Remove</Button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </FirstWorkspaceForms>        ) : stage === "intake" ? (
           <IntakeView
             isLight={isLight}
             brief={brief}

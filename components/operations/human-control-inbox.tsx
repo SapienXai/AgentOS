@@ -30,7 +30,7 @@ export function HumanControlInbox({
 }: {
   surfaceTheme: SurfaceTheme;
   attentionRefreshGeneration: number;
-  mode?: "card" | "page";
+  mode?: "card" | "page" | "section";
   missionId?: string | null;
   prefetch?: boolean;
   onSummaryChange?: (summary: HumanControlInboxPayload["summary"] | null) => void;
@@ -49,7 +49,7 @@ export function HumanControlInbox({
   const pendingIdRef = useRef(pendingId);
   const loadInboxRef = useRef<() => Promise<void>>(async () => {});
 
-  const visible = mode === "page" || open;
+  const visible = mode !== "card" || open;
   const shouldLoad = visible || prefetch;
   openRef.current = shouldLoad;
   loadingRef.current = loading;
@@ -143,22 +143,29 @@ export function HumanControlInbox({
 
   const summary = payload?.summary;
   const inboxContent = (
-    <div className={cn("flex min-h-0 flex-col gap-3", mode === "page" ? "" : "max-h-[min(88dvh,760px)] overflow-hidden")}>
+    <div className={cn("flex min-h-0 flex-col gap-3", mode !== "card" ? "" : "max-h-[min(88dvh,760px)] overflow-hidden")}>
       {payload?.issues?.length ? <div className="rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]" role="status"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><div><p className="font-semibold">Some OpenClaw attention state could not be verified.</p><ul className="mt-1 list-disc space-y-0.5 pl-4">{payload.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div></div> : null}
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />Loading current attention…</div>
       ) : error ? (
         <div className="rounded-lg border border-[hsl(var(--status-danger)/0.30)] bg-[hsl(var(--status-danger)/0.08)] p-3 text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}<Button variant="secondary" size="sm" className="mt-3 h-8 rounded-lg text-xs" onClick={() => { setPayload(null); void loadInbox(); }}>Try again</Button></div>
       ) : payload?.items.length ? (
-        <div className={cn("space-y-2", mode === "page" ? "" : "min-h-0 overflow-y-auto pr-1")}>{groupHumanControlItems(payload.items).map((group) => <AttentionRow key={group.key} item={group.item} group={group} pending={pendingId === group.item.id} answers={answers} onAnswerChange={(questionId, values) => setAnswers((current) => ({ ...current, [questionId]: values }))} onAction={(action, actionPayload) => void runAction(group.item, action, actionPayload)} />)}</div>
+        <div className={cn("space-y-2", mode !== "card" ? "" : "min-h-0 overflow-y-auto pr-1")}>{groupHumanControlItems(payload.items).map((group) => <AttentionRow key={group.key} item={group.item} group={group} pending={pendingId === group.item.id} answers={answers} onAnswerChange={(questionId, values) => setAnswers((current) => ({ ...current, [questionId]: values }))} onAction={(action, actionPayload) => void runAction(group.item, action, actionPayload)} />)}</div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-10 text-center"><Check className="h-7 w-7 text-[hsl(var(--status-success-foreground))]" aria-hidden="true" /><p className="mt-3 text-sm font-semibold text-foreground">Nothing needs your attention</p><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{payload?.issues?.length ? "No verified pending items are currently available." : "OpenClaw has no current approvals, questions, suggestions, or actionable blockers."}</p></div>
       )}
     </div>
   );
 
+  if (mode === "section") {
+    return <section aria-label="Decisions and approvals" className="space-y-3">
+      <div><h2 className="text-base font-semibold">Decisions and approvals</h2><p className="mt-1 text-sm text-muted-foreground">Pending decisions across this OpenClaw installation.</p></div>
+      {inboxContent}
+    </section>;
+  }
+
   if (mode === "page") {
-    return <section className="flex min-w-0 flex-col gap-3"><div className="flex items-start gap-2.5"><div className="mt-0.5 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] p-2 text-[hsl(var(--status-warning-foreground))]"><Inbox className="h-4 w-4" aria-hidden="true" /></div><div><h1 className="font-display text-[1.48rem] font-semibold leading-tight text-foreground">Human Control</h1><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Every unresolved approval, question, blocker, and recovery decision in one operator queue.</p></div></div>{summary ? <InboxSummary summary={summary} /> : null}{inboxContent}</section>;
+    return <section className="flex min-w-0 flex-col gap-3"><div className="flex items-start gap-2.5"><div className="mt-0.5 rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] p-2 text-[hsl(var(--status-warning-foreground))]"><Inbox className="h-4 w-4" aria-hidden="true" /></div><div><h1 className="font-display text-[1.48rem] font-semibold leading-tight text-foreground">Needs you</h1><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Every unresolved approval, question, blocker, and recovery decision in one operator queue.</p></div></div>{summary ? <InboxSummary summary={summary} /> : null}{inboxContent}</section>;
   }
 
   const hasPending = Boolean(summary?.totalPending);

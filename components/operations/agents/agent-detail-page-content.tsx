@@ -20,15 +20,13 @@ import {
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
-import { AgentChatDialog } from "@/components/mission-control/agent-chat-dialog";
-import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
 import { EffectiveCapabilitiesPanel } from "@/components/operations/agents/effective-capabilities-panel";
 import {
   AGENT_DETAIL_TABS,
   parseAgentDetailQueryState,
-  type AgentDetailTab
+  type AgentDetailTab, type AgentDetailQueryState
 } from "@/components/operations/agents/agent-detail-tabs";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import {
@@ -49,6 +47,9 @@ import {
   StatusBadge,
   type StatusTone
 } from "@/components/operations/operations-ui";
+import { OperationsShell } from "@/components/operations/operations-shell";
+import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
+import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,6 +73,21 @@ function readAgentDetailLocation() {
     capability: search.get("capability"),
     session: search.get("session")
   });
+}
+
+export function EmployeeProfileRoute({ initialSnapshot, employeeId, workspaceId, query }: {
+  initialSnapshot: MissionControlSnapshot;
+  employeeId: string;
+  workspaceId: string;
+  query: AgentDetailQueryState;
+}) {
+  return (
+    <OperationsShell initialSnapshot={initialSnapshot} preferredWorkspaceId={workspaceId}>
+      {context => <AgentDetailPageContent agentId={employeeId} snapshot={context.snapshot} rootSnapshot={context.rootSnapshot}
+        surfaceTheme={context.surfaceTheme} refresh={context.refresh} setSnapshot={context.setSnapshot}
+        initialTab={query.tab} initialCapabilityFocus={query.capabilityFocus} initialSessionFocus={query.sessionFocus} />}
+    </OperationsShell>
+  );
 }
 
 export function AgentDetailPageContent({
@@ -98,7 +114,7 @@ export function AgentDetailPageContent({
   const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
   const workspace = agent ? resolveAgentDetailWorkspace(snapshot, agent) : null;
   const [tab, setTab] = useState<AgentDetailTab>(initialTab);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [capabilityOpen, setCapabilityOpen] = useState(false);
@@ -106,7 +122,7 @@ export function AgentDetailPageContent({
   const [addModelsOpen, setAddModelsOpen] = useState(false);
   const [modelProviderToConnect, setModelProviderToConnect] = useState<AddModelsProviderId | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
-  const capabilities = useWorkerEffectiveCapabilities({ agentId: agent?.id });
+  const capabilities = useWorkerEffectiveCapabilities({ agentId: agent?.id, enabled: tab === "capabilities" || tab === "overview" });
   const [capabilityFocusId, setCapabilityFocusId] = useState(initialCapabilityFocus);
   const [sessionFocusKey, setSessionFocusKey] = useState(initialSessionFocus);
 
@@ -161,7 +177,7 @@ export function AgentDetailPageContent({
   if (!agent || !workspace || !agentView || !currentWork) {
     return (
       <OperationsPageLayout
-        main={<div className="space-y-3"><EmptyState title="Worker unavailable" description="This agent is no longer present in the current OpenClaw snapshot. Return to the roster and refresh to continue." /><Link href="/agents" className="mx-auto flex w-fit rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground">Back to Agents</Link></div>}
+        main={<div className="space-y-3"><EmptyState title="Employee unavailable" description="This agent is no longer present in the current OpenClaw snapshot. Return to the roster and refresh to continue." /><Link href="/team" className="mx-auto flex w-fit rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground">Back to Team</Link></div>}
         inspector={null}
       />
     );
@@ -178,11 +194,6 @@ export function AgentDetailPageContent({
     setModelProviderToConnect(provider ?? null);
     setAddModelsOpen(true);
   };
-  const openChatModelProvider = (provider: AddModelsProviderId) => {
-    setModelProviderToConnect(provider);
-    setChatOpen(false);
-    window.requestAnimationFrame(() => setAddModelsOpen(true));
-  };
   const handleAddModelsOpenChange = (open: boolean) => {
     setAddModelsOpen(open);
     if (!open) {
@@ -194,23 +205,24 @@ export function AgentDetailPageContent({
       <OperationsPageLayout
         main={
           <div className="space-y-4">
-            <Link href="/agents" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to Agents
+            <Link href="/team" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to Team
             </Link>
 
             <PageHeader
               title={displayName}
+              icon={<EmployeeAvatar agent={agent} name={displayName} className="size-14" />}
               subtitle={`${agent.workerProfile?.employment.role || "OpenClaw worker"} · ${workspace.name}`}
               actions={
                 <>
                   <Button variant="ghost" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setProfileOpen(true)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
                   </Button>
-                  <Button variant="secondary" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setChatOpen(true)}>
-                    <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Chat
+                  <Button asChild size="sm" className="h-9 rounded-lg px-3 text-xs">
+                    <Link href={`/chat?employee=${encodeURIComponent(agent.id)}`}><MessageCircle className="mr-1.5 size-3.5" /> Chat</Link>
                   </Button>
-                  <Button size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setDispatchOpen(true)}>
-                    <Play className="mr-1.5 h-3.5 w-3.5" /> Give work
+                  <Button variant="secondary" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setDispatchOpen(true)}>
+                    <Play className="mr-1.5 h-3.5 w-3.5" /> Assign task
                   </Button>
                 </>
               }
@@ -218,21 +230,19 @@ export function AgentDetailPageContent({
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge label={agentView.statusLabel} tone={statusTone} />
                 <Badge variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{modelLabel}</Badge>
-                <Badge variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{workspace.name}</Badge>
                 <span className="text-[11px] text-muted-foreground">Updated {formatRelativeTime(agent.lastActiveAt, resolveRelativeTimeReferenceMs(snapshot.generatedAt))}</span>
               </div>
             </PageHeader>
 
-            <nav aria-label="Worker detail sections" className="overflow-x-auto border-b border-border">
+            <nav aria-label="Employee profile sections" className="overflow-x-auto border-b border-border">
               <div className="flex min-w-max gap-1">
                 {AGENT_DETAIL_TABS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
-                    role="tab"
-                    aria-selected={tab === item.id}
+                    aria-pressed={tab === item.id}
                     onClick={() => updateTab(item.id)}
-                    className={cn("border-b-2 px-3 py-2.5 text-xs font-medium transition-colors", tab === item.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
+                    className={cn("min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors motion-reduce:transition-none", tab === item.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
                   >
                     {item.label}
                   </button>
@@ -240,9 +250,28 @@ export function AgentDetailPageContent({
               </div>
             </nav>
 
-            <div role="tabpanel" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label} for ${displayName}`}>
+            <div role="region" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label} for ${displayName}`}>
               {tab === "overview" ? <OverviewTab agent={agent} workspace={workspace} modelLabel={modelLabel} currentWork={currentWork} activity={activity} capabilities={capabilities.data} onOpenCapabilities={() => updateTab("capabilities")} onOpenChannels={() => updateTab("channels")} onChangeModel={() => setModelOpen(true)} /> : null}
               {tab === "behavior" ? <BehaviorTab agent={agent} onEdit={() => setProfileOpen(true)} /> : null}
+              {tab === "knowledge" ? (
+                <SectionCard title="Knowledge and memory">
+                  <div className="space-y-3 p-4 text-sm leading-6 text-muted-foreground">
+                    <p>Review the context and memory OpenClaw reports for {displayName}.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={() => setContextOpen(true)}>Open employee context</Button>
+                      <Button asChild variant="secondary"><Link href="/knowledge">Company knowledge</Link></Button>
+                    </div>
+                  </div>
+                </SectionCard>
+              ) : null}
+              {tab === "intelligence" ? (
+                <SectionCard title="AI model">
+                  <div className="space-y-3 p-4 text-sm">
+                    <p className="text-muted-foreground">Current model <strong className="ml-2 font-medium text-foreground">{modelLabel}</strong></p>
+                    <Button onClick={() => setModelOpen(true)}>Change model</Button>
+                  </div>
+                </SectionCard>
+              ) : null}
               {tab === "capabilities" ? (
                 <CapabilitiesTab
                   agent={agent}
@@ -262,16 +291,8 @@ export function AgentDetailPageContent({
         inspector={null}
       />
 
-      <AgentChatDialog open={chatOpen} onOpenChange={setChatOpen} agent={agent} statusLabel={agentView.statusLabel}>
-        <AgentChatDrawer
-          agent={agent}
-          snapshot={rootSnapshot}
-          isVisible={chatOpen}
-          onRefresh={refresh}
-          onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
-          onConnectModelProvider={openChatModelProvider}
-        />
-      </AgentChatDialog>
+      {contextOpen ? <ContextEngineDialog agentId={agent.id} open onOpenChange={setContextOpen} surfaceTheme={surfaceTheme}
+        onConfigureCapabilities={(_, focus) => { setContextOpen(false); openCapabilityEditor(focus); }} /> : null}
 
       <WorkerProfileDialog
         open={profileOpen}

@@ -1,0 +1,50 @@
+/* Scope chrome changes to workforce navigation and destinations. */
+.workforce-mobile-navigation {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+
+@media (max-width: 1023px) {
+  .workforce-canvas-region {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+
+  .workforce-content {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+.workforce-main {
+  background: hsl(var(--agentos-surface-base));
+}
+
+.workforce-heading {
+  text-wrap: balance;
+  font-size: clamp(1.65rem, 2.7vw, 2.35rem);
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+}
+
+.workforce-chat-panel {
+  height: calc(100vh - 6rem);
+  height: calc(100dvh - 6rem);
+  min-height: 24rem;
+}
+
+@media (max-width: 1023px) {
+  .workforce-chat-panel {
+    height: calc(100vh - 8.5rem - env(safe-area-inset-bottom));
+    height: calc(100dvh - 8.5rem - env(safe-area-inset-bottom));
+    min-height: 17rem;
+  }
+
+  .workforce-main:has(.workforce-chat-panel textarea:focus) .workforce-mobile-navigation {
+    visibility: hidden;
+  }
+}
+
+.workforce-main::before,
+.workforce-main::after {
+  content: none;
+}

@@ -57,6 +57,7 @@ import {
   type ModelSwitchFeedback
 } from "@/components/mission-control/openclaw-onboarding.stages";
 
+import { OnboardingProgress } from "@/components/workforce/onboarding-progress";
 import { SiwcWelcome } from "@/components/mission-control/siwc-welcome";
 
 type OnboardingVisualStage = WizardStage | "finish";
@@ -106,7 +107,6 @@ export function OpenClawOnboarding({
   onSkipSetup,
   onContinueToModels,
   onBackToSystem,
-  onSelectStage,
   onConnectChatGPT,
   chatGptBrowserAuth,
   onSubmitChatGptRedirect,
@@ -158,7 +158,6 @@ export function OpenClawOnboarding({
   onSkipSetup: () => void;
   onContinueToModels: () => void;
   onBackToSystem: () => void;
-  onSelectStage: (stage: WizardStage) => void;
   onConnectChatGPT: (force?: boolean) => void;
   chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
@@ -211,7 +210,6 @@ export function OpenClawOnboarding({
   const [showLegacySetup, setShowLegacySetup] = useState(false);
   const [advancedProviderFlowOpen, setAdvancedProviderFlowOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [siwcVerified, setSiwcVerified] = useState(false);
   const reduceMotion = useReducedMotion();
   const { status: instanceStatus } = useInstanceProtection();
   const stepContent = useRef<HTMLDivElement>(null);
@@ -279,12 +277,9 @@ export function OpenClawOnboarding({
     portalRoot !== null && !isTauriDesktopRuntime() &&
     ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
   const showOwner = showSiwc && needsOwnerAccount;
-  const activeStepNumber = showOwner ? 2
-    : showSiwc ? siwcVerified ? 4 : 3
-    : visualStage === "finish" ? 4 : visualStage === "models" ? 3 : 1;
+  const activeStepNumber = showOwner ? 2 : visualStage === "finish" ? 4 : visualStage === "models" ? 3 : 1;
 
   const goBackToSystem = () => {
-    setSiwcVerified(false);
     setSelectedVisualStage("system");
     onBackToSystem();
   };
@@ -371,23 +366,9 @@ export function OpenClawOnboarding({
               </div>
             </div>
 
-            {(!isModelSwitchActive && !isChatGptAuthSurface) || showSiwc ? (
-              <SetupStepper
-                activeStep={activeStepNumber}
-                systemReady={onboardingSystemReady}
-                securityReady={!needsOwnerAccount}
-                modelReady={showSiwc ? siwcVerified : modelSetupConfirmed}
-                finishReady={showSiwc ? siwcVerified : canShowFinish}
-                interactive={!showSiwc}
-                surfaceTheme={surfaceTheme}
-                onSelectStage={(nextStage) => {
-                  setSelectedVisualStage(nextStage);
-                  if (nextStage !== "finish") {
-                    onSelectStage(nextStage);
-                  }
-                }}
-              />
-            ) : null}
+            <div className="px-4 pt-4 sm:px-8">
+              <OnboardingProgress current={renderLaunchpad && !hasWorkspaceSetup ? 2 : 1} />
+            </div>
           </div>
 
           <div
@@ -430,7 +411,6 @@ export function OpenClawOnboarding({
                 }}
                 onEnter={onEnterAfterSiwc}
                 onCreateWorkspace={onCreateFirstWorkspace}
-                onVerifiedChange={setSiwcVerified}
                 onBack={goBackToSystem}
               />
             ) : renderLaunchpad ? (
@@ -571,7 +551,7 @@ export function OpenClawOnboarding({
                   ) : (
                     <Button
                       type="button"
-                      onClick={onCreateWorkspace}
+                      onClick={launchpadCreateRunState === "error" ? onCreateWorkspace : onCreateFirstWorkspace ?? onCreateWorkspace}
                       className={cn(
                         "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98] max-sm:min-w-0 max-sm:flex-1",
                         surfaceTheme === "light"
@@ -856,100 +836,6 @@ function OnboardingThemeSwitch({
         {surfaceTheme === "light" ? <SunMedium className="h-3 w-3" /> : <MoonStar className="h-3 w-3" />}
       </span>
     </button>
-  );
-}
-
-function SetupStepper({
-  activeStep,
-  systemReady,
-  securityReady,
-  modelReady,
-  finishReady,
-  interactive,
-  surfaceTheme,
-  onSelectStage
-}: {
-  activeStep: number;
-  systemReady: boolean;
-  securityReady: boolean;
-  modelReady: boolean;
-  finishReady: boolean;
-  interactive: boolean;
-  surfaceTheme: SurfaceTheme;
-  onSelectStage: (stage: OnboardingVisualStage) => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const steps = [
-    { order: 1, id: "system", label: "OpenClaw", complete: systemReady },
-    { order: 2, id: "security", label: "Security", complete: systemReady && securityReady },
-    { order: 3, id: "models", label: "Connect AI", complete: modelReady },
-    { order: 4, id: "finish", label: "Finish", complete: finishReady }
-  ] as const;
-
-  return (
-    <div aria-label="Setup progress" role="group" className="mx-auto mb-3 mt-5 grid max-w-[640px] grid-cols-[repeat(3,minmax(0,1fr)_12px)_minmax(0,1fr)] items-start gap-1 sm:mb-5 sm:mt-6 sm:grid-cols-[repeat(3,minmax(0,1fr)_48px)_minmax(0,1fr)] sm:gap-2">
-      {steps.map((step, index) => {
-        const isActive = activeStep === step.order;
-        const isComplete = step.complete;
-        const unavailableReason = step.id === "models" && !systemReady
-          ? "Finish OpenClaw setup before connecting a model."
-          : step.id === "finish" && !finishReady
-            ? "Complete model setup before finishing."
-            : null;
-        const connectorProgress =
-          index + 1 < activeStep || step.complete ? "100%" : index + 1 === activeStep ? "42%" : "0%";
-        const content = (
-          <div className="flex min-w-0 flex-col items-center gap-1 text-center">
-            <span
-              className={cn(
-                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-colors max-md:h-5 max-md:w-5 max-md:text-[9px]",
-                isActive
-                  ? "border-primary bg-[color:color-mix(in_srgb,hsl(var(--primary)),black_12%)] text-primary-foreground shadow-[0_10px_26px_hsl(var(--primary)/0.22)]"
-                  : isComplete
-                    ? surfaceTheme === "light"
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                      : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
-                    : "border-border bg-card text-muted-foreground"
-              )}
-            >
-              {isComplete && !isActive ? <Check className="h-3 w-3 max-md:h-2 max-md:w-2" /> : step.order}
-            </span>
-            <span className={cn("block max-w-full text-[11px] font-semibold leading-4 sm:text-xs", isActive ? "text-foreground" : "text-muted-foreground")}>
-              {step.label}
-            </span>
-          </div>
-        );
-
-        return (
-          <div key={step.id} className="contents">
-            {!interactive || step.id === "security" || unavailableReason ? (
-              <div aria-current={isActive ? "step" : undefined} title={unavailableReason ?? undefined} className={cn(!isActive && !isComplete && "opacity-70")}>
-                {content}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onSelectStage(step.id)}
-                className="min-w-0 rounded-[12px] px-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-current={isActive ? "step" : undefined}
-              >
-                {content}
-              </button>
-            )}
-            {index < steps.length - 1 ? (
-              <div aria-hidden="true" className="relative mt-3.5 h-0.5 w-full self-start overflow-hidden rounded-full bg-border max-md:mt-2.5">
-                <motion.div
-                  className="absolute inset-y-0 left-0 rounded-full bg-primary"
-                  initial={false}
-                  animate={{ width: connectorProgress }}
-                  transition={{ duration: reduceMotion ? 0 : 1.2, ease: [0.22, 1, 0.36, 1] }}
-                />
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

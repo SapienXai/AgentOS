@@ -71,15 +71,12 @@ test("system onboarding keeps setup rows compact and the log collapsed", () => {
   assert.match(source, /aria-label=\{surfaceTheme === "light" \? "Switch to dark theme" : "Switch to light theme"\}/);
   assert.match(source, /max-sm:invisible sm:mt-2 sm:min-h-5/);
   assert.match(source, /h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-\[9px\]/);
-  assert.match(source, /aria-label="Setup progress" role="group"/);
-  assert.match(source, /h-7 w-7 shrink-0 items-center justify-center rounded-full border text-\[12px\]/);
-  assert.match(source, /id: "system", label: "OpenClaw"/);
-  assert.match(source, /id: "security", label: "Security"/);
-  assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
-  assert.match(source, /grid-cols-\[repeat\(3,minmax\(0,1fr\)_12px\)_minmax\(0,1fr\)\]/);
-  assert.match(source, /flex min-w-0 flex-col items-center gap-1 text-center/);
-  assert.match(source, /relative mt-3\.5 h-0\.5 w-full self-start overflow-hidden rounded-full bg-border/);
-  assert.match(source, /duration: reduceMotion \? 0 : 1\.2/);
+  const progress = readFileSync(path.join(process.cwd(), "components/workforce/onboarding-progress.tsx"), "utf8");
+  assert.match(source, /<OnboardingProgress/);
+  assert.match(progress, /"Connect your AI", "Create your workspace", "Build your team"/);
+  assert.match(progress, /aria-current=.*"step"/);
+  assert.match(source, /<OnboardingOwnerForm/);
+  assert.match(source, /<SetupSystemStage/);
   assert.doesNotMatch(source, /<p className="mt-0\.5 text-\[12px\] leading-4 text-muted-foreground">\{step\.description\}/);
   assert.match(source, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);
   assert.match(source, /aria-controls="onboarding-setup-log-details"/);
@@ -111,7 +108,7 @@ test("ChatGPT return stays on model selection until the user confirms", () => {
 
   assert.match(onboardingSource, /const modelSetupConfirmed = showReadyState \|\| modelSwitchFeedback\.phase === "success";/);
   assert.match(onboardingSource, /const showLaunchpad = modelSetupConfirmed &&/);
-  assert.match(onboardingSource, /modelReady=\{showSiwc \? siwcVerified : modelSetupConfirmed\}/);
+  assert.match(onboardingSource, /<SiwcWelcome[\s\S]*onStart=\{onStartSiwc\}/);
   assert.match(flowSource, /id="chatgpt-model-select"/);
   assert.match(flowSource, /id="chatgpt-reasoning-select"/);
   assert.match(flowSource, /\["xhigh", "Xhigh"\]/);
@@ -180,7 +177,7 @@ test("browser ChatGPT auth keeps onboarding focused and callback recovery compac
   assert.match(onboardingSource, /const isChatGptAuthSurface = visualStage === "models" && Boolean\(chatGptBrowserAuth\);/);
   assert.match(onboardingSource, /isChatGptAuthSurface && !advancedProviderFlowOpen\s*\n\s*\? "sm:max-w-\[720px\]"/);
   assert.match(onboardingSource, /sm:w-\[min\(1240px,calc\(100vw-32px\)\)\] sm:max-w-\[1240px\]/);
-  assert.match(onboardingSource, /!isModelSwitchActive && !isChatGptAuthSurface/);
+  assert.match(onboardingSource, /<OnboardingProgress/);
   assert.match(onboardingSource, /\(showSiwc \|\| isChatGptAuthSurface\) && "!hidden"/);
   assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle" && \(!chatGptBrowserAuth \|\| isChatGptPreparation\)\}/);
   assert.match(stagesSource, /role=\{browserAuthError \? "alert" : "status"\}/);

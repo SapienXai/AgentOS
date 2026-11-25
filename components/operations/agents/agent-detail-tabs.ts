@@ -1,4 +1,4 @@
-export type AgentDetailTab = "overview" | "behavior" | "capabilities" | "channels" | "sessions";
+export type AgentDetailTab = "overview" | "behavior" | "knowledge" | "capabilities" | "intelligence" | "channels" | "sessions";
 
 export type AgentDetailQueryState = {
   tab: AgentDetailTab;
@@ -8,10 +8,12 @@ export type AgentDetailQueryState = {
 
 export const AGENT_DETAIL_TABS: Array<{ id: AgentDetailTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "behavior", label: "Behavior" },
+  { id: "behavior", label: "Identity" },
+  { id: "knowledge", label: "Knowledge" },
   { id: "capabilities", label: "Capabilities" },
-  { id: "channels", label: "Channels" },
-  { id: "sessions", label: "Sessions" }
+  { id: "intelligence", label: "Intelligence" },
+  { id: "channels", label: "Connections" },
+  { id: "sessions", label: "Activity" }
 ];
 
 export function parseAgentDetailTab(value: string | null | undefined): AgentDetailTab {

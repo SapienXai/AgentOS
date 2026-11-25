@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
-import { Activity, ArrowUpRight, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
+import { ArrowUpRight, Chrome, Folder, Globe2, MessageSquare, Play, Plus, Plug, SlidersHorizontal, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -11,10 +11,9 @@ import { AgentChatDialog } from "@/components/mission-control/agent-chat-dialog"
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
-import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
+import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
@@ -27,13 +26,11 @@ import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import {
   buildAgentViews,
-  formatBigNumber,
   statusToneForAgentFilter,
-  summarizeTokens,
   type AgentFilter,
   type AgentView
 } from "@/components/operations/operations-data";
-import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, type StatusTone } from "@/components/operations/operations-ui";
+import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle } from "@/components/operations/operations-ui";
 import { agentFilterLabel, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
 export function AgentsPageContent({
@@ -62,7 +59,7 @@ export function AgentsPageContent({
   const [filter, setFilter] = useState<AgentFilter>("all");
   const [sort, setSort] = useState<"last-active" | "name" | "status" | "workspace">("last-active");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [selectedId, setSelectedId] = useState(agents[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [modelAgentId, setModelAgentId] = useState<string | null>(null);
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
@@ -84,13 +81,12 @@ export function AgentsPageContent({
     const matchesFilter = filter === "all" || agent.status === filter;
     return matchesSearch && matchesFilter;
   }).sort((left, right) => sortAgentViews(left, right, sort));
-  const selectedAgent = filteredAgents.find((agent) => agent.id === selectedId) ?? filteredAgents[0] ?? null;
+  const selectedAgent = filteredAgents.find((agent) => agent.id === selectedId) ?? null;
   const chatAgent = chatAgentId ? rootSnapshot.agents.find((agent) => agent.id === chatAgentId) ?? null : null;
   const runningCount = agents.filter((agent) => agent.status === "running").length;
   const readyCount = agents.filter((agent) => agent.status === "ready").length;
   const idleCount = agents.filter((agent) => agent.status === "idle").length;
   const approvalCount = agents.filter((agent) => agent.status === "needs-approval").length;
-  const tokenTotal = summarizeTokens(snapshot);
   const filterCounts: Record<AgentFilter, number> = {
     all: agents.length,
     ready: readyCount,
@@ -173,11 +169,12 @@ export function AgentsPageContent({
           <>
           <PageHeader
             surfaceTheme={surfaceTheme}
-            title="Agents"
-            subtitle="Manage your AI workforce. Monitor health, configure capabilities, and run agents at scale."
+            title="Team"
+            subtitle="Meet the employees in your workspace and give them work."
             actions={
               <>
                 <CreateAgentDialog
+                  workforce
                   snapshot={rootSnapshot}
                   defaultWorkspaceId={activeWorkspaceId}
                   pendingAgentNames={pendingAgentNames}
@@ -192,7 +189,7 @@ export function AgentsPageContent({
                       className="h-8 rounded-lg px-3 text-xs"
                     >
                       <Plus className="mr-1.5 h-3.5 w-3.5" />
-                      Create Agent
+                      Add employee
                     </Button>
                   }
                 />
@@ -200,27 +197,19 @@ export function AgentsPageContent({
             }
           />
 
-          <StatGrid columns={5}>
-            <StatCard label="Total Agents" value={String(agents.length)} detail={`${snapshot.workspaces.length} workspaces`} icon={Bot} tone="info" />
-            <StatCard label="Active" value={String(runningCount)} detail={`${Math.round((runningCount / Math.max(1, agents.length)) * 100)}% of total`} icon={Activity} tone="success" />
-            <StatCard label="Idle" value={String(idleCount)} detail={`${Math.round((idleCount / Math.max(1, agents.length)) * 100)}% of total`} icon={Clock3} tone="warning" />
-            <StatCard label="Needs Approval" value={String(approvalCount)} detail={`${Math.round((approvalCount / Math.max(1, agents.length)) * 100)}% of total`} icon={ShieldCheck} tone="danger" />
-            <StatCard label="Runtime Tokens" value={formatBigNumber(tokenTotal)} detail={tokenTotal ? "From live runtimes" : "No runtime token usage reported"} icon={Sparkles} tone="purple" />
-          </StatGrid>
-
           <SearchToolbar
             search={search}
             onSearchChange={setSearch}
-            searchPlaceholder="Search agents..."
+            searchPlaceholder="Search employees"
             surfaceTheme={surfaceTheme}
-            right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
-          >
-            <ToolbarButton surfaceTheme={surfaceTheme} icon={Filter} label={`Filter: ${agentFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
-            <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatAgentSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
-          </SearchToolbar>
+            right={<div className="hidden gap-2 sm:flex">
+              <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatAgentSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
+              <ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />
+            </div>}
+          />
 
           <div className="flex flex-wrap items-center gap-2">
-            {(["all", "ready", "running", "idle", "needs-approval"] as AgentFilter[]).map((id) => (
+            {(["all", "ready", "running", "idle", "needs-approval"] as AgentFilter[]).filter(id => id === "all" || id === filter || filterCounts[id] > 0).map((id) => (
               <FilterChip
                 key={id}
                 label={agentFilterLabel(id)}
@@ -234,7 +223,7 @@ export function AgentsPageContent({
           </div>
 
           {filteredAgents.length > 0 ? (
-            <div className={cn(view === "grid" ? "grid gap-2.5 lg:grid-cols-2 min-[1400px]:grid-cols-3" : "flex flex-col gap-2.5")}>
+            <div className={cn(view === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-2.5")}>
               {filteredAgents.map((agent) => (
                 <AgentCard
                   key={agent.id}
@@ -242,7 +231,7 @@ export function AgentsPageContent({
                   connectionBadges={resolveAgentConnectionBadges(agent, loginTargets, accessRules)}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
-                  onSelect={() => setSelectedId(agent.id)}
+                  onSelect={() => setSelectedId((current) => current === agent.id ? "" : agent.id)}
                   onMessage={() => setChatAgentId(agent.id)}
                   onRunTask={() => setDispatchAgent(agent)}
                   onManageProfile={() => setProfileAgentId(agent.id)}
@@ -250,10 +239,14 @@ export function AgentsPageContent({
               ))}
             </div>
           ) : (
-            <EmptyState title="No agents match your filters" description="Clear search or switch back to All to see every OpenClaw agent in this workspace." />
+            <EmptyState title={agents.length ? "No employees match" : "Your team is empty"}
+              description={agents.length ? "Clear the search or change the filter." : "Add an employee to start working in this workspace."} />
           )}
 
-          <RecentAgentActivity snapshot={snapshot} agents={agents} />
+          {snapshot.tasks.length ? <details className="rounded-xl border border-border bg-card px-4">
+            <summary className="cursor-pointer py-3 text-sm font-medium">Recent work</summary>
+            <div className="pb-4"><RecentAgentActivity snapshot={snapshot} agents={agents} /></div>
+          </details> : null}
         </>
       }
       inspector={selectedAgent ? (
@@ -359,170 +352,50 @@ function AgentCard({
   onRunTask: () => void;
   onManageProfile: () => void;
 }) {
-  const Icon = agent.icon;
-  const heartbeatLabel = agent.source?.heartbeat.enabled
-    ? agent.source.heartbeat.every ?? "on"
-    : "off";
-  const roleLabel = agent.source?.workerProfile?.employment.role ?? (agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel);
-  const statusVariant = toAgentBadgeVariant(agent.statusTone);
-  const onlineLabel = agent.online ? "Online" : "Offline";
-  const profileVisual = resolveAgentProfileVisual(agent.id, agent.name, agent.source?.identity.theme);
+  const role = agent.source?.workerProfile?.employment.role || agent.policyLabel;
+  const chatHref = `/chat?employee=${encodeURIComponent(agent.id)}`;
 
   return (
-    <div
-      style={profileVisual.style as CSSProperties}
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        "agent-node group relative isolate overflow-hidden rounded-lg border border-border bg-card text-left shadow-card backdrop-blur-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        list ? "md:grid md:grid-cols-[220px_minmax(0,1fr)]" : "",
-        selected && "border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.12),0_22px_64px_hsl(var(--primary)/0.12)]"
-      )}
-    >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,hsl(var(--primary)/0.12),transparent_36%),radial-gradient(circle_at_84%_18%,hsl(var(--status-success)/0.07),transparent_28%)]" />
-        <div className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,hsl(var(--primary)/0.86),hsl(var(--primary)/0.12))]" />
+    <article className={cn("min-w-0 rounded-xl border bg-card p-4 transition-colors motion-reduce:transition-none",
+      selected ? "border-primary/40" : "border-border hover:border-muted-foreground/40", list && "sm:flex sm:items-center sm:gap-5")}>
+      <div className="flex min-w-0 items-center gap-3">
+        <EmployeeAvatar agent={agent.source} name={agent.name} />
+        <div className="min-w-0 flex-1">
+          <h2 className="break-words font-display text-base font-semibold leading-tight">
+            <Link href={`/agents/${encodeURIComponent(agent.id)}`} className="rounded-sm hover:underline focus-visible:outline focus-visible:outline-ring">
+              {agent.name} <ArrowUpRight className="ml-1 inline size-3 text-muted-foreground" aria-hidden="true" />
+            </Link>
+          </h2>
+          <p className="text-sm text-muted-foreground">{role}</p>
+        </div>
+        <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
       </div>
 
-      <div
-        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[12px] md:rounded-r-none" : "h-[124px] rounded-t-[12px] sm:h-[154px]")}
-        style={profileVisual.style as CSSProperties}
-      >
-        <video
-          className="pointer-events-none absolute inset-0 h-full w-full scale-[1.06] object-cover object-center brightness-[0.74] contrast-[1.12] saturate-[0.9] transition-[filter,transform] duration-300 group-hover:scale-[1.04] group-hover:brightness-[0.92] group-hover:contrast-[1.1] group-hover:saturate-[1.08]"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="metadata"
-          aria-hidden="true"
-        >
-          <source src={profileVisual.videoSrc} type="video/webm" />
-        </video>
-        <div className="agent-profile-media__refraction" />
-        <div className="agent-profile-media__glow" />
-        <div className="agent-profile-media__grain" />
-        <div className="absolute left-3 top-3 z-20 flex flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-slate-950/70 text-primary shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-              <Icon className="h-4 w-4" />
-            </span>
-            <AgentConnectionIconRow badges={connectionBadges} />
-          </div>
-          <Badge variant={statusVariant} className="w-fit max-w-[150px] truncate px-2 py-1 text-[9px]">
-            {agent.statusLabel}
-          </Badge>
+      {agent.purpose !== role || connectionBadges.length > 0 ? (
+        <div className={cn("min-w-0", list ? "mt-3 flex-1 sm:mt-0" : "mt-3")}>
+          {agent.purpose !== role ? <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.purpose}</p> : null}
+          {connectionBadges.length ? <div className="mt-2"><AgentConnectionIconRow badges={connectionBadges} /></div> : null}
         </div>
-        {selected ? (
-          <span className="absolute right-3 top-3 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-primary/30 bg-primary/15 text-primary shadow-[0_0_16px_hsl(var(--primary)/0.20)]">
-            <CircleCheck className="h-3.5 w-3.5" />
-          </span>
-        ) : null}
-        <div className="absolute inset-x-0 bottom-0 z-20 p-3.5">
-          <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
-            <span className={cn("h-1.5 w-1.5 rounded-full", agent.online ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.42)]" : "bg-slate-500")} />
-            Agent
-          </div>
-          <h3 className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">{agent.name}</h3>
-          <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">{roleLabel}</p>
-        </div>
+      ) : null}
+
+      <div className={cn("flex flex-wrap items-center gap-1.5", list ? "mt-3 sm:ml-auto sm:mt-0" : "mt-4 border-t border-border pt-3")}>
+        {agent.source ? (
+          <Button asChild variant="secondary" size="sm" className="min-h-11 sm:min-h-8">
+            <Link href={chatHref}><MessageSquare className="mr-1.5 size-3.5" /> Chat</Link>
+          </Button>
+        ) : (
+          <Button type="button" variant="secondary" size="sm" onClick={onMessage}>Chat</Button>
+        )}
+        <Button type="button" variant="ghost" size="sm" className="min-h-11 sm:min-h-8" onClick={onRunTask}>
+          <Play className="mr-1.5 size-3.5" /> Assign task
+        </Button>
+        <Button type="button" variant="ghost" size="icon" className="ml-auto min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
+          aria-label={`Quick details for ${agent.name}`} aria-expanded={selected} onClick={onSelect}>
+          <SlidersHorizontal className="size-3.5" />
+        </Button>
+        {selected ? <Button type="button" variant="ghost" size="sm" onClick={onManageProfile}>Edit profile</Button> : null}
       </div>
-
-      <div className="relative z-10 px-3.5 pb-3.5 pt-3.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="muted" className="max-w-[170px] truncate px-2 py-1 text-[9px] normal-case tracking-normal">
-            {agent.modelLabel}
-          </Badge>
-          <Badge
-            variant={agent.online ? "success" : "muted"}
-            className={cn(
-              "px-2 py-1 text-[9px] normal-case tracking-normal",
-              agent.online && "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100"
-            )}
-          >
-            {onlineLabel}
-          </Badge>
-        </div>
-
-        <div className="mt-2.5">
-          <p className="line-clamp-1 text-[12px] leading-5 text-foreground/80 sm:line-clamp-2 sm:min-h-10">{agent.purpose}</p>
-          <p className="mt-2 hidden truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground sm:block">
-            Heartbeat {heartbeatLabel} · Last seen {agent.lastActiveLabel}
-          </p>
-        </div>
-
-        <div className="mt-3 hidden grid-cols-3 gap-2 sm:grid">
-          <AgentCardStat label="Tools" value={agent.toolsCount} />
-          <AgentCardStat label="Sessions" value={agent.sessionsCount} />
-          <AgentCardStat label="Policy" value={agent.policyLabel} />
-        </div>
-
-        <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-10 rounded-full border-border bg-muted/35 px-2 text-xs text-foreground hover:bg-muted/60"
-            onClick={(event) => {
-              event.stopPropagation();
-              onMessage();
-            }}
-          >
-            <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Message
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className={cn(
-              "h-10 rounded-full border-primary/20 bg-primary/10 px-2 text-xs text-primary shadow-[0_10px_24px_rgba(245,158,11,0.18)] hover:border-primary/30 hover:bg-primary/15 hover:text-primary",
-              "dark:border-amber-300/20 dark:bg-[linear-gradient(180deg,rgba(251,191,36,0.18),rgba(217,119,6,0.28))] dark:text-amber-50 dark:hover:border-amber-200/30 dark:hover:bg-amber-400/20 dark:hover:text-white"
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRunTask();
-            }}
-          >
-            <Play className="mr-1.5 h-3.5 w-3.5" /> Run Task
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-10 rounded-full border-border bg-muted/35 px-3 text-muted-foreground"
-            title="Open this worker's profile."
-            onClick={(event) => {
-              event.stopPropagation();
-              onManageProfile();
-            }}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-
-        <div className="mt-3 overflow-hidden rounded-b-[18px] border-t border-border bg-muted/35 px-2.5 py-2 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)]">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/75 shadow-[0_0_10px_hsl(var(--primary)/0.25)]" />
-            <p className="truncate text-[8px] uppercase leading-none tracking-[0.22em] text-muted-foreground">Agent details</p>
-            <p className="ml-auto min-w-0 truncate text-[8px] leading-none text-muted-foreground">
-              {agent.toolsCount} tool{agent.toolsCount === 1 ? "" : "s"} · {agent.sessionsCount} session
-              {agent.sessionsCount === 1 ? "" : "s"}
-            </p>
-          </div>
-          <Link
-            href={`/agents/${encodeURIComponent(agent.id)}`}
-            className="mt-2 inline-flex min-h-0 w-full items-center justify-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10"
-            onClick={(event) => event.stopPropagation()}
-          >
-            Open worker detail <ArrowUpRight className="h-3 w-3" />
-          </Link>
-        </div>
-      </div>
-    </div>
+    </article>
   );
 }
 
@@ -694,31 +567,6 @@ function buildAgentAccountBadges(
   }
 
   return Array.from(summaries.values()).sort((left, right) => left.serviceName.localeCompare(right.serviceName));
-}
-
-function AgentCardStat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-[14px] border border-border bg-muted/45 px-2.5 py-2 text-center shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:bg-muted/35">
-      <p className="truncate text-[8px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-[13px] font-semibold leading-none text-foreground dark:text-slate-100">{value}</p>
-    </div>
-  );
-}
-
-function toAgentBadgeVariant(tone: StatusTone): "default" | "muted" | "success" | "warning" | "danger" {
-  if (tone === "success") {
-    return "success";
-  }
-  if (tone === "warning") {
-    return "warning";
-  }
-  if (tone === "danger") {
-    return "danger";
-  }
-  if (tone === "muted") {
-    return "muted";
-  }
-  return "default";
 }
 
 function AgentInspector({

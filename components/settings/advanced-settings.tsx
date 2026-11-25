@@ -12,6 +12,8 @@ const advancedLinks = [
   { id: "compatibility-lab", hash: "developer", label: "Compatibility Lab", description: "Preflight, shadow probes, certification, and update engineering tools.", icon: Microscope },
   { id: "config-update-pacing", hash: "developer", label: "Config update pacing", description: "Developer controls for Gateway config queue behavior.", icon: Gauge },
   { id: "update-management", href: "/updates", label: "Update management", description: "Open the canonical Updates surface for normal update flows.", icon: Database },
+  { id: "runtime-jobs", href: "/operations", label: "Runtime jobs", description: "Inspect scheduled operations and their run history.", icon: Gauge },
+  { id: "raw-files", href: "/files", label: "Managed files", description: "Browse native workspace context and output files.", icon: Database },
   { id: "reset-or-uninstall", hash: "danger-zone", label: "Reset or uninstall", description: "Destructive actions with explicit confirmation.", icon: AlertTriangle }
 ] as const;
 

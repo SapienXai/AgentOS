@@ -1,19 +1,22 @@
 "use client";
 
-import { AccountsPageContent } from "@/components/operations/accounts/accounts-page-content";
-import { AgentsPageContent } from "@/components/operations/agents/agents-page-content";
-import { DashboardPageContent } from "@/components/operations/dashboard/dashboard-page-content";
-import { FilesPageContent } from "@/components/operations/files/files-page-content";
-import { IntegrationsPageContent } from "@/components/operations/integrations/integrations-page-content";
-import { ChannelCenterPageContent } from "@/components/operations/channels/channel-center-page-content";
-import { ModelsPageContent } from "@/components/operations/models/models-page-content";
+import dynamic from "next/dynamic";
+
 import { OperationsShell } from "@/components/operations/operations-shell";
-import { TasksPageContent } from "@/components/operations/tasks/tasks-page-content";
-import { UpdatesPageContent } from "@/components/operations/updates/updates-page-content";
-import { OperationsJobsPageContent } from "@/components/operations/operations/operations-jobs-page-content";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 
-export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "accounts" | "models" | "channels" | "integrations" | "updates" | "operations";
+const AccountsPageContent = dynamic(() => import("@/components/operations/accounts/accounts-page-content").then(module => module.AccountsPageContent));
+const AgentsPageContent = dynamic(() => import("@/components/operations/agents/agents-page-content").then(module => module.AgentsPageContent));
+const DashboardPageContent = dynamic(() => import("@/components/operations/dashboard/dashboard-page-content").then(module => module.DashboardPageContent));
+const FilesPageContent = dynamic(() => import("@/components/operations/files/files-page-content").then(module => module.FilesPageContent));
+const IntegrationsPageContent = dynamic(() => import("@/components/operations/integrations/integrations-page-content").then(module => module.IntegrationsPageContent));
+const ChannelCenterPageContent = dynamic(() => import("@/components/operations/channels/channel-center-page-content").then(module => module.ChannelCenterPageContent));
+const ModelsPageContent = dynamic(() => import("@/components/operations/models/models-page-content").then(module => module.ModelsPageContent));
+const TasksPageContent = dynamic(() => import("@/components/operations/tasks/tasks-page-content").then(module => module.TasksPageContent));
+const UpdatesPageContent = dynamic(() => import("@/components/operations/updates/updates-page-content").then(module => module.UpdatesPageContent));
+const OperationsJobsPageContent = dynamic(() => import("@/components/operations/operations/operations-jobs-page-content").then(module => module.OperationsJobsPageContent));
+
+export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "knowledge" | "accounts" | "models" | "channels" | "integrations" | "updates" | "operations";
 
 export function OperationsPage({
   initialSnapshot,
@@ -70,9 +73,10 @@ export function OperationsPage({
           return <OperationsJobsPageContent snapshot={context.rootSnapshot} activeWorkspaceId={context.activeWorkspaceId} surfaceTheme={context.surfaceTheme} refresh={context.refresh} />;
         }
 
-        if (page === "files") {
+        if (page === "files" || page === "knowledge") {
           return (
             <FilesPageContent
+              knowledge={page === "knowledge"}
               snapshot={context.snapshot}
               activeWorkspaceId={context.activeWorkspaceId}
               surfaceTheme={context.surfaceTheme}

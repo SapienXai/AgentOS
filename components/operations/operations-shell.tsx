@@ -7,6 +7,7 @@ import { CreateAgentDialog } from "@/components/mission-control/create-agent-dia
 import {
   AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS
 } from "@/components/mission-control/agent-creation-progress.utils";
+import { WorkforceMobileNavigation } from "@/components/mission-control/workforce-mobile-navigation";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
@@ -379,18 +380,11 @@ export function OperationsShell({
   return (
     <div
       className={cn(
-        "mission-shell relative min-h-screen overflow-hidden bg-background text-foreground",
+        "mission-shell workforce-main relative min-h-screen overflow-hidden bg-background text-foreground",
         surfaceTheme === "light" && "mission-shell--light"
       )}
     >
       <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspace?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
-      <div className="mission-canvas-backdrop fixed inset-0 z-0">
-        <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0 opacity-60" />
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_54%_0%,hsl(var(--primary)/0.10),transparent_32%),linear-gradient(180deg,hsl(var(--background)/0.10),hsl(var(--background)/0.58))]"
-        />
-      </div>
 
       <div
         className={cn(
@@ -519,17 +513,19 @@ export function OperationsShell({
         />
       </div>
 
+      <WorkforceMobileNavigation open={mobileSidebarOpen} onOpen={() => setMobileSidebarOpen((current) => !current)} />
+
       <main
         className={cn(
-          "operations-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-4 lg:pt-4",
+          "operations-content workforce-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-8 lg:pt-6",
           sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
         )}
       >
-        <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-3">
+        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-4">
           <div className="sticky top-0 z-30 -mx-3 flex min-h-14 items-center gap-3 border-b border-border bg-background/92 px-3 backdrop-blur-xl sm:-mx-5 sm:px-5 lg:hidden">
             <button
               type="button"
-              aria-label="Open navigation"
+              aria-label="Open workspace menu"
               aria-expanded={mobileSidebarOpen}
               onClick={() => setMobileSidebarOpen(true)}
               className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card/80 text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -537,8 +533,7 @@ export function OperationsShell({
               <Menu className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-foreground">{activeWorkspace?.name ?? "All workspaces"}</p>
-              <p className="truncate text-[0.65rem] text-muted-foreground">AgentOS operations</p>
+              <p className="truncate text-sm font-semibold text-foreground">{activeWorkspace?.name ?? "All workspaces"}</p>
             </div>
             <OperationsTopBar
               compact

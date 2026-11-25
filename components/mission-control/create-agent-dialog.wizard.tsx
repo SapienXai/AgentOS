@@ -55,8 +55,16 @@ type SurfaceTheme = "dark" | "light";
 type CreateAgentProgress = "idle" | "creating" | "syncing" | "complete";
 type QuickRolePreset = Exclude<AgentPreset, "custom">;
 
+const employeeRoles = [
+  { name: "Assistant", mission: "Organize everyday work, draft responses, and keep next steps clear." },
+  { name: "Researcher", mission: "Find reliable evidence, summarize findings, and identify open questions." },
+  { name: "Developer", mission: "Investigate technical problems, propose changes, and verify the results." },
+  { name: "Marketing", mission: "Develop briefs and copy that match the workspace’s audience and tone." }
+];
+
 type CreateAgentDialogProps = {
   snapshot: MissionControlSnapshot;
+  workforce?: boolean;
   defaultWorkspaceId?: string | null;
   pendingAgentNames?: readonly Pick<PendingAgentProjection, "workspaceId" | "name">[];
   onRefresh: () => Promise<void>;
@@ -72,6 +80,7 @@ type CreateAgentDialogProps = {
 
 export function CreateAgentDialog({
   snapshot,
+  workforce = false,
   defaultWorkspaceId,
   pendingAgentNames = [],
   onRefresh,
@@ -554,8 +563,8 @@ export function CreateAgentDialog({
         surfaceTheme={surfaceTheme}
         variant="quiet"
         trigger={trigger}
-        title="Create agent"
-        description={headerDescription}
+        title={workforce ? "Add employee" : "Create agent"}
+        description={workforce ? "Give your employee a name, a role, and a clear responsibility." : headerDescription}
         contentClassName="sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl"
         headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
         bodyClassName={cn(
@@ -624,7 +633,7 @@ export function CreateAgentDialog({
                   ? "Joining workspace…"
                   : createProgress === "complete"
                     ? "Agent online"
-                    : "Create agent"}
+                    : workforce ? "Add employee" : "Create agent"}
             </Button>
           </div>
         </div>
@@ -641,6 +650,18 @@ export function CreateAgentDialog({
         />
       ) : (
       <div className="mx-auto w-full max-w-[620px] space-y-6">
+        {workforce ? (
+          <FormField label="Start with a role" htmlFor="employee-role-preset" surfaceTheme={surfaceTheme}>
+            <select id="employee-role-preset" className={selectClassName(surfaceTheme)} defaultValue=""
+              onChange={(event) => {
+                const selected = employeeRoles.find((role) => role.name === event.target.value);
+                setDraft((current) => ({ ...current, role: selected?.name ?? "", mission: selected?.mission ?? "" }));
+              }}>
+              <option value="">Create your own</option>
+              {employeeRoles.map((role) => <option key={role.name}>{role.name}</option>)}
+            </select>
+          </FormField>
+        ) : (
         <section className="space-y-3" aria-labelledby="create-agent-role-baseline-heading">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -680,6 +701,8 @@ export function CreateAgentDialog({
           ) : null}
         </section>
 
+        )}
+
         <section className="space-y-4" aria-labelledby="create-agent-general-heading">
           <div>
             <h2 id="create-agent-general-heading" className={cn("text-sm font-semibold", isLight ? "text-[#2d241f]" : "text-white")}>
@@ -701,17 +724,25 @@ export function CreateAgentDialog({
             />
           </FormField>
 
+          {workforce ? (
+            <FormField label="Role" htmlFor="employee-role" surfaceTheme={surfaceTheme}>
+              <Input id="employee-role" value={draft.role} maxLength={100}
+                placeholder="e.g. Researcher" className={controlClassName(surfaceTheme)}
+                onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))} />
+            </FormField>
+          ) : null}
+
           <FormField
-            label="What should this agent own?"
+            label={workforce ? "What should they do?" : "What should this agent own?"}
             htmlFor="create-agent-mission"
-            helper="A short responsibility or mission for this agent."
+            helper={workforce ? undefined : "A short responsibility or mission for this agent."}
             surfaceTheme={surfaceTheme}
           >
             <Textarea
               id="create-agent-mission"
               value={draft.mission}
               onChange={(event) => setDraft((current) => ({ ...current, mission: event.target.value }))}
-              placeholder="Monitor protocol operations, review deployments, and surface anything that needs attention."
+              placeholder={workforce ? "Summarize research and flag open questions." : "Monitor protocol operations, review deployments, and surface anything that needs attention."}
               className={cn(controlClassName(surfaceTheme), "min-h-[112px] resize-y")}
             />
           </FormField>
@@ -740,7 +771,7 @@ export function CreateAgentDialog({
             <div id="create-agent-advanced-settings" className="space-y-6">
               <AdvancedSection title="Agent" description="Optional identity and working guidance." surfaceTheme={surfaceTheme}>
                 <div className="space-y-4">
-                  <FormField label="Role" htmlFor="create-agent-role" surfaceTheme={surfaceTheme}>
+                  {!workforce ? <FormField label="Role" htmlFor="create-agent-role" surfaceTheme={surfaceTheme}>
                     <Input
                       id="create-agent-role"
                       value={draft.role}
@@ -748,7 +779,7 @@ export function CreateAgentDialog({
                       placeholder={currentPresetMeta.label}
                       className={controlClassName(surfaceTheme)}
                     />
-                  </FormField>
+                  </FormField> : null}
                   <FormField label="Instructions" htmlFor="create-agent-behavior" helper="Optional working guidance for this agent." surfaceTheme={surfaceTheme}>
                     <Textarea
                       id="create-agent-behavior"
@@ -761,6 +792,14 @@ export function CreateAgentDialog({
                 </div>
               </AdvancedSection>
 
+              {workforce ? <details className="text-sm">
+                <summary className="cursor-pointer font-medium">Native role and cloning</summary>
+                <div className="mt-3 space-y-3">
+                  <QuickRoleSelector value={quickRolePreset} onChange={handleRoleChange} surfaceTheme={surfaceTheme} />
+                  <CloneAgentPicker candidates={cloneCandidates} workspaceNames={workspaceNames} search={cloneSearch}
+                    selectedAgentId={selectedCloneAgentId} onSearchChange={setCloneSearch} onSelect={handleCloneAgentSelect} surfaceTheme={surfaceTheme} />
+                </div>
+              </details> : null}
               <AdvancedSection title="Runtime" description="Choose the workspace and model only when you need to override the automatic setup." surfaceTheme={surfaceTheme}>
                 <div className="space-y-4">
                   <FormField label="Workspace" htmlFor="create-agent-workspace" surfaceTheme={surfaceTheme}>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, CircleCheck, Clock3, ExternalLink, Gauge, Layers3, LoaderCircle, MessageCircle, PackageOpen, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
+import { BellRing, CircleCheck, ExternalLink, Gauge, Layers3, LoaderCircle, MessageCircle, PackageOpen, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
@@ -10,7 +10,7 @@ import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/
 import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import { cn } from "@/lib/utils";
 import { buildIntegrationViews, integrationStatusIcons, type IntegrationStatus, type IntegrationView } from "@/components/operations/operations-data";
-import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
+import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
 import { formatIntegrationSortLabel, formatIntegrationStatusFilterLabel, formatIntegrationStatusLabel, formatManagedBy, integrationStatusToneMap, MetricTile, readClientError, sortIntegrations, statusIconClassName, type IntegrationRuntimeOverride, type IntegrationSortMode } from "@/components/operations/operations-shared";
 
 export function IntegrationsPageContent({
@@ -31,7 +31,7 @@ export function IntegrationsPageContent({
   const [category, setCategory] = useState("All Categories");
   const [status, setStatus] = useState<"All Statuses" | IntegrationStatus>("All Statuses");
   const [sort, setSort] = useState<IntegrationSortMode>("last-active");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [view, setView] = useState<"grid" | "list">("list");
   const [showAllMobileIntegrations, setShowAllMobileIntegrations] = useState(true);
   const [selectedId, setSelectedId] = useState(baseIntegrations[0]?.id ?? "");
   const [runningAction, setRunningAction] = useState<string | null>(null);
@@ -154,17 +154,6 @@ export function IntegrationsPageContent({
     return matchesSearch && matchesCategory && matchesStatus;
   }).sort((left, right) => sortIntegrations(left, right, sort));
   const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? filteredIntegrations[0] ?? null;
-  const connectedCount = filteredIntegrations.filter((integration) => integration.status === "connected").length;
-  const pendingCount = filteredIntegrations.filter((integration) =>
-    integration.status === "running" ||
-    integration.status === "linked" ||
-    integration.status === "pending-setup" ||
-    integration.status === "configured" ||
-    integration.status === "stopped" ||
-    integration.status === "missing-credentials" ||
-    integration.status === "needs-authentication"
-  ).length;
-  const failedCount = filteredIntegrations.filter((integration) => integration.status === "failed").length;
   const visibleIntegrations = showAllMobileIntegrations ? filteredIntegrations : filteredIntegrations.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
@@ -368,14 +357,11 @@ export function IntegrationsPageContent({
             <PageHeader
               surfaceTheme={surfaceTheme}
               title="Integrations"
-              subtitle="Inspect the native OpenClaw capability catalog, then continue in the canonical surface that owns each capability."
+              subtitle="Connect apps and see which capabilities OpenClaw reports for your workspace."
               actions={
                 <>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/channels")}>
                     <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Channels
-                  </Button>
-                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/models")}>
-                    <Gauge className="mr-1.5 h-3.5 w-3.5" /> Models
                   </Button>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/accounts")}>
                     <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Accounts
@@ -387,7 +373,7 @@ export function IntegrationsPageContent({
             <SearchToolbar
               search={search}
               onSearchChange={setSearch}
-              searchPlaceholder="Search integrations..."
+              searchPlaceholder="Find an integration"
               surfaceTheme={surfaceTheme}
               right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
             >
@@ -395,14 +381,6 @@ export function IntegrationsPageContent({
               <ToolbarButton surfaceTheme={surfaceTheme} icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
               <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} />
             </SearchToolbar>
-
-            <StatGrid columns={5}>
-              <StatCard label="Total Integrations" value={String(filteredIntegrations.length)} detail={`${integrations.length} registered`} icon={Plug} tone="info" />
-              <StatCard label="Connected" value={String(connectedCount)} detail={`${Math.round((connectedCount / Math.max(1, filteredIntegrations.length)) * 100)}% of filtered`} icon={CircleCheck} tone="success" />
-              <StatCard label="Pending Setup" value={String(pendingCount)} detail="Needs setup or credentials" icon={Clock3} tone="warning" />
-              <StatCard label="Failed" value={String(failedCount)} detail="Real errors only" icon={X} tone="danger" />
-              <StatCard label="Automations Using" value="-" detail="Metrics unavailable from snapshot" icon={Workflow} tone="purple" />
-            </StatGrid>
 
             <PluginCatalogPanel
               catalog={pluginCatalog}

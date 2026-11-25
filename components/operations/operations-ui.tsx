@@ -5,7 +5,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ChevronDown,
   Clock3,
-  Command,
   LayoutGrid,
   List,
   Moon,
@@ -96,8 +95,8 @@ export function OperationsTopBar({
       <span className="hidden font-mono text-muted-foreground/80 sm:inline">
         v{version}
       </span>
-      <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
-      <OperatorScopeFreshness projection={operatorRuntime} compact className={compact ? "hidden sm:flex" : "hidden xl:flex"} />
+      {!compact ? <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact /> : null}
+      {!compact ? <OperatorScopeFreshness projection={operatorRuntime} compact className="hidden xl:flex" /> : null}
       <RuntimeIssueIndicator
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}
@@ -123,6 +122,7 @@ export function OperationsTopBar({
 export function PageHeader({
   title,
   subtitle,
+  icon,
   primaryAction,
   secondaryAction,
   actions,
@@ -130,6 +130,7 @@ export function PageHeader({
 }: {
   title: string;
   subtitle: string;
+  icon?: ReactNode;
   surfaceTheme?: OperationsSurfaceTheme;
   primaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; title?: string };
   secondaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void };
@@ -142,15 +143,12 @@ export function PageHeader({
   return (
     <header className="border-b border-border pb-4 pt-1 sm:pt-0">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <h1
-            className="font-display text-[1.48rem] font-semibold leading-tight tracking-normal text-foreground"
-          >
-            {title}
-          </h1>
-          <p className="mt-1.5 max-w-3xl text-[0.78rem] leading-5 text-muted-foreground">
-            {subtitle}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {icon}
+          <div className="min-w-0">
+            <h1 className="workforce-heading font-display font-semibold text-foreground">{title}</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">{subtitle}</p>
+          </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 [&>button]:flex-1 sm:w-auto sm:[&>button]:flex-none">
           {actions ?? (
@@ -253,14 +251,11 @@ export function SearchToolbar({
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
+            aria-label={searchPlaceholder}
+            type="search"
             placeholder={searchPlaceholder}
-            className="h-11 rounded-xl bg-card/80 pl-8 pr-11 text-base sm:h-8 sm:rounded-lg sm:text-[0.74rem]"
+            className="h-11 rounded-xl bg-card/80 pl-8 pr-3 text-base sm:h-9 sm:rounded-lg sm:text-sm"
           />
-          <span
-            className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground sm:flex"
-          >
-            <Command className="h-2.5 w-2.5" /> K
-          </span>
         </div>
         {children ? <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">{children}</div> : null}
       </div>

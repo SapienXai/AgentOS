@@ -10,6 +10,7 @@ import { WorkspaceCreationActivityIndicator } from "@/components/workspace-creat
 import { getInstanceProtectionStatus, INSTANCE_PROTECTION_COOKIE } from "@/lib/security/instance-protection";
 
 import "@/app/globals.css";
+import "@/app/workforce.css";
 
 const siteTitle = "AgentOS | Control Plane";
 const siteDescription = "Human Control Layer for AI Agents and Companies | Built on OpenClaw.";

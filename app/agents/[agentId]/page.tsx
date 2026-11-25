@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { parseAgentDetailQueryState } from "@/components/operations/agents/agent-detail-tabs";
-import { AgentDetailPageContent } from "@/components/operations/agents/agent-detail-page-content";
-import { OperationsShell } from "@/components/operations/operations-shell";
+import { EmployeeProfileRoute } from "@/components/operations/agents/agent-detail-page-content";
 import { getInitialControlPlaneSnapshot } from "@/lib/agentos/initial-snapshot";
 
 export const dynamic = "force-dynamic";
@@ -34,21 +33,5 @@ export default async function AgentDetailRoute({
     session: read("session")
   });
 
-  return (
-    <OperationsShell initialSnapshot={snapshot} preferredWorkspaceId={agent.workspaceId}>
-      {(context) => (
-        <AgentDetailPageContent
-          agentId={agent.id}
-          snapshot={context.snapshot}
-          rootSnapshot={context.rootSnapshot}
-          surfaceTheme={context.surfaceTheme}
-          refresh={context.refresh}
-          setSnapshot={context.setSnapshot}
-          initialTab={initialQuery.tab}
-          initialCapabilityFocus={initialQuery.capabilityFocus}
-          initialSessionFocus={initialQuery.sessionFocus}
-        />
-      )}
-    </OperationsShell>
-  );
+  return <EmployeeProfileRoute initialSnapshot={snapshot} employeeId={agent.id} workspaceId={agent.workspaceId} query={initialQuery} />;
 }

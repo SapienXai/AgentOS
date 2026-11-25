@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 const sections: Array<{ id: SettingsArea; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
-  { id: "ai-tools", label: "AI & Tools", icon: Bot },
+  { id: "ai-tools", label: "AI & Models", icon: Bot },
   { id: "workspace", label: "Workspace", icon: Folder },
   { id: "runtime", label: "Runtime", icon: Activity },
   { id: "security", label: "Security", icon: LockKeyhole },

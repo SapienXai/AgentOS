@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, Database, Eye, FilePlus2, FileText, Filter, Folder, FolderOpen, HardDrive, Import, ListFilter, Plus, SlidersHorizontal, SquareArrowOutUpRight, Upload, type LucideIcon } from "lucide-react";
 
@@ -19,8 +21,10 @@ import { formatFileSortLabel, readClientError, sortFileViews } from "@/component
 export function FilesPageContent({
   snapshot,
   activeWorkspaceId,
-  surfaceTheme
+  surfaceTheme,
+  knowledge = false
 }: {
+  knowledge?: boolean;
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
@@ -32,6 +36,7 @@ export function FilesPageContent({
     () => (activeWorkspaceId ? (activeWorkspace ? [activeWorkspace] : []) : snapshot.workspaces),
     [activeWorkspace, activeWorkspaceId, snapshot.workspaces]
   );
+  const workspaceList = JSON.stringify(visibleWorkspaces.map(({ id, name }) => ({ id, name })));
   const [filesByWorkspace, setFilesByWorkspace] = useState<Record<string, WorkspaceManagedFile[]>>({});
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -45,22 +50,23 @@ export function FilesPageContent({
   const [fileReloadKey, setFileReloadKey] = useState(0);
 
   useEffect(() => {
-    if (visibleWorkspaces.length === 0) {
+    const workspaces = JSON.parse(workspaceList) as Array<{ id: string; name: string }>;
+    if (workspaces.length === 0) {
       setFilesByWorkspace({});
       setFileError(null);
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setIsLoadingFiles(true);
     setFileError(null);
 
     void (async () => {
       const entries = await Promise.all(
-        visibleWorkspaces.map(async (workspace) => {
+        workspaces.map(async (workspace) => {
           try {
             const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/files`, {
-              cache: "no-store"
+              cache: "no-store", signal: controller.signal
             });
             const result = (await response.json()) as WorkspaceManagedFileListResponse & { error?: string };
             if (!response.ok || result.error) {
@@ -77,7 +83,7 @@ export function FilesPageContent({
         })
       );
 
-      if (!cancelled) {
+      if (!controller.signal.aborted) {
         setFilesByWorkspace(
           Object.fromEntries(entries.map((entry) => [entry.workspaceId, entry.files]))
         );
@@ -90,9 +96,9 @@ export function FilesPageContent({
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [fileReloadKey, visibleWorkspaces]);
+  }, [fileReloadKey, workspaceList]);
 
   const fileViews = useMemo(
     () =>
@@ -146,9 +152,57 @@ export function FilesPageContent({
     }
   };
 
+  const companyDocuments = filteredFiles.filter(file =>
+    file.collection === "Core Knowledge" || file.collection === "Memory" || file.collection === "Generated Outputs"
+  );
+
   return (
     <>
-      <OperationsPageLayout
+      {knowledge ? (
+        <div className="space-y-5">
+          <PageHeader title="Knowledge" subtitle="Find the instructions, documents, and retained context in your workspace."
+            actions={<Button type="button" size="sm" className="min-h-11"
+              onClick={() => setWorkspaceFilesOpen(true)} disabled={!activeWorkspaceId}
+              title={activeWorkspaceId ? undefined : "Choose a specific workspace first."}>
+              <FileText className="mr-2 size-4" /> Edit workspace knowledge
+            </Button>} />
+          <SearchToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Find a document" surfaceTheme={surfaceTheme} />
+          {fileError ? (
+            <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 p-4 text-sm">
+              <span>{fileError}</span><Button type="button" variant="secondary" onClick={() => setFileReloadKey(key => key + 1)}>Retry</Button>
+            </div>
+          ) : null}
+          {isLoadingFiles ? <p role="status" className="text-sm text-muted-foreground">Loading workspace documents…</p> : companyDocuments.length ? (
+            <SectionCard title="Workspace documents">
+              <ul className="divide-y divide-border">
+                {companyDocuments.map(file => (
+                  <li key={file.id}>
+                    <button type="button" onClick={() => setPreviewFile(file)}
+                      className="flex min-h-14 w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-accent focus-visible:outline focus-visible:outline-ring">
+                      <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-sm font-medium">{file.source?.label || file.name}</span>
+                        <span className="block text-xs text-muted-foreground">{file.workspaceName} · {file.collection}</span>
+                      </span>
+                      <Eye aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          ) : !fileError ? (
+            <EmptyState title={search ? "No documents match" : "No workspace documents"}
+              description={search ? "Try another name or choose a different workspace." : "Select a workspace to add or edit its supported context files."} />
+          ) : null}
+          <details className="rounded-xl border border-border bg-card px-4">
+            <summary className="cursor-pointer py-3 text-sm font-medium">Advanced file access</summary>
+            <div className="space-y-3 pb-4 text-sm leading-6 text-muted-foreground">
+              <p>OpenClaw manages which files are available for a workspace. A visible document is a file listing. Retrieval depends on the employee’s native context and memory configuration.</p>
+              <Link href="/files" className="font-medium text-primary hover:underline">Browse managed files</Link>
+            </div>
+          </details>
+        </div>
+      ) : <OperationsPageLayout
       main={
         <>
           <PageHeader
@@ -279,12 +333,15 @@ export function FilesPageContent({
         </>
       }
       inspector={selectedFile ? <FileInspector file={selectedFile} onReveal={() => revealFile(selectedFile)} onPreview={() => setPreviewFile(selectedFile)} /> : null}
-    />
+    />}
       <WorkspaceContextFilesDialog
         snapshot={snapshot}
         workspaceId={activeWorkspaceId}
         open={workspaceFilesOpen}
-        onOpenChange={setWorkspaceFilesOpen}
+        onOpenChange={(open) => {
+          setWorkspaceFilesOpen(open);
+          if (!open) setFileReloadKey(key => key + 1);
+        }}
       />
       <FilePreviewDialog
         file={previewFile}
