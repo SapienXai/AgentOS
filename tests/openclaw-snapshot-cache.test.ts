@@ -25,3 +25,20 @@ test("an older refresh cannot clear, publish over, or resolve ahead of a newer g
   assert.equal(await cache.get(), "new-visible");
   assert.equal(loads, 2);
 });
+
+test("invalidation during a load leaves it uncached and does not start a replacement unprompted", async () => {
+  const first = Promise.withResolvers<SnapshotPair<string>>();
+  let loads = 0;
+  const cache = new SnapshotCacheController({
+    ttlMs: 1_000,
+    load: () => ++loads === 1 ? first.promise : Promise.resolve({ visible: "fresh", full: "fresh" })
+  });
+
+  const initial = cache.get();
+  cache.clear();
+  first.resolve({ visible: "initial", full: "initial" });
+  assert.equal(await initial, "initial");
+  assert.equal(loads, 1);
+  assert.equal(await cache.get(), "fresh");
+  assert.equal(loads, 2);
+});

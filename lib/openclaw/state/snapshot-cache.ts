@@ -58,9 +58,13 @@ export class SnapshotCacheController<TSnapshot> {
       ? this.pending
       : this.loadForCurrentGeneration(options.force ? options.loadProfile ?? "refresh" : "interactive");
     const result = await pending.promise;
-    return pending.generation === this.generation
-      ? selectSnapshot(result, options.includeHidden)
-      : this.get({ includeHidden: options.includeHidden });
+    if (pending.generation === this.generation) return selectSnapshot(result, options.includeHidden);
+
+    // Invalidation alone must not start another load on behalf of this
+    // request. Native events can invalidate every load during sustained use.
+    const newer = this.pending;
+    const replacement = newer?.generation === this.generation ? await newer.promise : result;
+    return selectSnapshot(this.cache ?? replacement, options.includeHidden);
   }
 
   private loadForCurrentGeneration(profile: SnapshotLoadProfile) {
