@@ -4856,7 +4856,9 @@ test("native WS gateway client uses the exact Skills Library read and activation
     description: skill.description,
     ownerLabel: skill.ownerLabel
   };
+  let skillAttached = false;
   const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    if (frame.method === "skills.library.activate") skillAttached = true;
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4874,7 +4876,7 @@ test("native WS gateway client uses the exact Skills Library read and activation
                 defaultSelectionLimit: 64,
                 session: {
                   sessionKey: "agent:worker:main",
-                  selections: [selection],
+                  selections: skillAttached ? [selection] : [],
                   attachable: [skill]
                 }
               }
@@ -4900,18 +4902,23 @@ test("native WS gateway client uses the exact Skills Library read and activation
     timeoutMs: 250
   });
 
-  assert.equal((await client.listSkillLibrary({ scope: "all", sessionKey: "agent:worker:main" })).entries[0]?.revision, skill.revision);
+  const library = await client.listSkillLibrary({ scope: "all", sessionKey: "agent:worker:main" });
+  assert.equal(library.entries[0]?.revision, skill.revision);
+  assert.deepEqual(library.session?.selections, []);
   assert.equal((await client.readSkillLibrary({ skillId: skill.skillId, revision: skill.revision, sessionKey: "agent:worker:main" })).revisions[0]?.revision, skill.revision);
   const activation = await client.activateSkillLibrary({
     sessionKey: "agent:worker:main", action: "attach", skillId: skill.skillId, revision: skill.revision
   });
   assert.equal(activation.sessionActivation, "next-turn");
   assert.deepEqual(activation.selections, [activationSelection]);
+  const updated = await client.listSkillLibrary({ scope: "all", sessionKey: "agent:worker:main" });
+  assert.deepEqual(updated.session?.selections, [selection]);
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
     "skills.library.list",
     "skills.library.read",
-    "skills.library.activate"
+    "skills.library.activate",
+    "skills.library.list"
   ]);
   assert.deepEqual(sentFrames[1]?.params, { scope: "all", sessionKey: "agent:worker:main" });
   assert.deepEqual(sentFrames[2]?.params, { skillId: skill.skillId, revision: skill.revision, sessionKey: "agent:worker:main" });

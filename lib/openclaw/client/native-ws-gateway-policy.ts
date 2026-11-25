@@ -25,6 +25,7 @@ const explicitGatewayMutationMethods = new Set([
   "plugins.install",
   "plugins.setEnabled",
   "plugins.uninstall",
+  "skills.library.activate",
   "chat.inject",
   "web.login.wait",
   "wizard.next",
