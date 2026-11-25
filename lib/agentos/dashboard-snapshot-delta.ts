@@ -24,9 +24,10 @@ function sameValue(left: unknown, right: unknown) {
 
 function objectDelta(previous: object, next: object): ObjectDelta {
   const baseline = previous as RecordValue;
+  const current = next as RecordValue;
   return {
-    set: Object.fromEntries(Object.entries(next).filter(([key, value]) => !sameValue(baseline[key], value))),
-    unset: Object.keys(previous).filter((key) => !Object.hasOwn(next, key))
+    set: Object.fromEntries(Object.entries(next).filter(([key, value]) => value !== undefined && !sameValue(baseline[key], value))),
+    unset: Object.keys(previous).filter((key) => baseline[key] !== undefined && (!Object.hasOwn(current, key) || current[key] === undefined))
   };
 }
 
@@ -67,8 +68,8 @@ function applyCollectionDelta<Row extends IdentifiedRow>(baseline: Row[], delta:
 }
 
 export function buildDashboardSnapshotDelta(previous: ControlPlaneSnapshot, next: ControlPlaneSnapshot): DashboardSnapshotDelta | null {
-  if (Object.keys(previous).some((key) => !Object.hasOwn(next, key))) return null;
-  const { set } = objectDelta(previous, next);
+  const { set, unset } = objectDelta(previous, next);
+  if (unset.length) return null;
   const delta: DashboardSnapshotDelta = {
     baseRevision: previous.revision,
     baseGeneratedAt: previous.generatedAt,

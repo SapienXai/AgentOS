@@ -68,13 +68,13 @@ export async function GET(request: Request) {
         request.signal.removeEventListener("abort", handleAbort);
       };
 
-      const sendEvent = (event: string, data: unknown) => {
+      const sendEvent = (event: string, data: unknown, redacted = false) => {
         if (closed) {
           return false;
         }
 
         try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(redactSecrets(data))}\n\n`));
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(redacted ? data : redactSecrets(data))}\n\n`));
           return true;
         } catch {
           close();
@@ -127,11 +127,11 @@ export async function GET(request: Request) {
             const baseline = publishedSnapshot;
             const delta = deltaEnabled && !reconcile && baseline ? buildDashboardSnapshotDelta(baseline, next) : null;
             if (!delta) {
-              if (sendEvent("snapshot", snapshot)) publishedSnapshot = next;
+              if (sendEvent("snapshot", next, true)) publishedSnapshot = next;
               return;
             }
             if ((delta.diagnostics || delta.runtimes || delta.tasks || Object.keys(delta.changes).length) &&
-                sendEvent("snapshot-delta", delta)) publishedSnapshot = next;
+                sendEvent("snapshot-delta", delta, true)) publishedSnapshot = next;
           } catch (error) {
             sendEvent("error", {
               error: redactErrorMessage(error, "Unknown stream error.")
