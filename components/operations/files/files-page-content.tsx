@@ -152,8 +152,8 @@ export function FilesPageContent({
     }
   };
 
-  const companyDocuments = filteredFiles.filter(file =>
-    file.collection === "Core Knowledge" || file.collection === "Memory" || file.collection === "Generated Outputs"
+  const companyDocuments = filteredFiles.filter(file => file.source?.exists &&
+    !file.relativePath.startsWith("agents/") && (file.category === "context" || file.category === "memory")
   );
 
   return (
@@ -182,7 +182,7 @@ export function FilesPageContent({
                       <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1">
                         <span className="block break-words text-sm font-medium">{file.source?.label || file.name}</span>
-                        <span className="block text-xs text-muted-foreground">{file.workspaceName} · {file.collection}</span>
+                        <span className="block text-xs text-muted-foreground">{file.workspaceName} · {file.category === "memory" ? "Workspace memory" : "Workspace context"}</span>
                       </span>
                       <Eye aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                     </button>

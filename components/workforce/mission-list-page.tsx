@@ -200,7 +200,7 @@ export function TaskViewNavigation({ view, attentionCount }: { view: TaskView; a
     { id: "scheduled", label: "Scheduled" }
   ];
   return (
-    <nav aria-label="Task views" className="flex gap-1 overflow-x-auto border-b border-border">
+    <nav aria-label="Task views" className="flex flex-wrap gap-x-1 border-b border-border">
       {views.map(({ id, label }) => (
         <Link key={id} href={id === "all" ? "/missions" : `/missions?view=${id}`} scroll={false}
           aria-current={view === id ? "page" : undefined}

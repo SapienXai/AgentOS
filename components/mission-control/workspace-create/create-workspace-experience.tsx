@@ -56,7 +56,8 @@ import type {
 } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
 import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
-import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
+import type { OperationProgressSnapshot, WorkspaceCreateResult, WorkspaceCreateStreamEvent } from "@/lib/agentos/contracts";
+import { consumeNdjsonStream } from "@/lib/ndjson";
 import type { ExecutionTopologyProjection } from "@/lib/openclaw/domains/execution-topology";
 import {
   formatWorkspaceChannelSetup,
@@ -191,8 +192,7 @@ export function CreateWorkspaceExperience({
   const [manualReview, setManualReview] = useState(false);
   const [manualLaunching, setManualLaunching] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
-  const manualCreated = useRef<WorkspaceCreateResult | null>(null);
-  const manualKey = useRef<string | null>(null);
+  const [manualProgress, setManualProgress] = useState<OperationProgressSnapshot | null>(null);
   const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
@@ -330,8 +330,7 @@ export function CreateWorkspaceExperience({
     setManualReview(false);
     setManualTeam([firstEmployeeDraft]);
     setManualError(null);
-    manualCreated.current = null;
-    manualKey.current = null;
+    setManualProgress(null);
     setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
@@ -1045,41 +1044,53 @@ export function CreateWorkspaceExperience({
     if (manualLaunching) return;
     setManualLaunching(true);
     setManualError(null);
+    setManualProgress(null);
     try {
-      const priorKey = sessionStorage.getItem(firstWorkspaceKey);
-      manualKey.current ??= priorKey || crypto.randomUUID();
-      sessionStorage.setItem(firstWorkspaceKey, manualKey.current);
-      let created = manualCreated.current;
-      if (!created) {
-        const website = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
-        if (website && "error" in website) throw new Error(website.error);
-        if (uploadGroups.length) throw new Error("To include attached files during setup, use Suggest a team. You can also add them after launch.");
-        const response = await fetch("/api/workspaces", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: firstName.trim(),
-            brief: brief.trim(),
-            modelId: defaultModel || undefined,
-            sourceMode: "empty",
-            teamPreset: "custom",
-            knowledgeSources: website ? [website.source] : [],
-            rules: { workspaceOnly: true, generateStarterDocs: true, generateMemory: true, kickoffMission: false },
-            creation: { source: "launchpad", idempotencyKey: manualKey.current },
-            agents: manualTeam.map(({ id, name, role }, index) => ({
-              id, name: name.trim(), role: role.trim(), enabled: true, isPrimary: index === 0
-            }))
-          })
-        });
-        const payload = await response.json() as WorkspaceCreateResult & { error?: string };
-        if (!response.ok || !payload.workspaceId) throw new Error(payload.error || "Workspace could not be created.");
-        created = payload;
-        manualCreated.current = created;
+      const storageKey = `${firstWorkspaceKey}:${firstName.trim().toLowerCase()}`;
+      const idempotencyKey = sessionStorage.getItem(storageKey) || crypto.randomUUID();
+      sessionStorage.setItem(storageKey, idempotencyKey);
+      const website = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
+      if (website && "error" in website) throw new Error(website.error);
+      if (uploadGroups.length) throw new Error("To include attached files during setup, use Suggest a team. You can also add them after launch.");
+      const response = await fetch("/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: firstName.trim(),
+          brief: brief.trim(),
+          modelId: defaultModel || undefined,
+          sourceMode: "empty",
+          teamPreset: "custom",
+          stream: true,
+          knowledgeSources: website ? [website.source] : [],
+          rules: { workspaceOnly: true, generateStarterDocs: true, generateMemory: true, kickoffMission: false },
+          creation: { source: "launchpad", idempotencyKey },
+          agents: manualTeam.map(({ id, name, role }, index) => ({
+            id, name: name.trim(), role: role.trim(), enabled: true, isPrimary: index === 0
+          }))
+        })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || "Workspace could not be created.");
+      }
+      const completed: { result?: WorkspaceCreateResult; error?: string } = {};
+      await consumeNdjsonStream<WorkspaceCreateStreamEvent>(response, (event) => {
+        if (event.progress) setManualProgress(event.progress);
+        if (event.type === "done") {
+          completed.result = event.result;
+          if (!event.ok) completed.error = event.error;
+        }
+      });
+      if (completed.error || !completed.result) throw new Error(completed.error || "OpenClaw did not confirm workspace creation.");
+      const created = completed.result;
+      if (created.agentIds.length !== manualTeam.length) {
+        throw new Error(`OpenClaw found ${created.agentIds.length} of ${manualTeam.length} employees. Open the workspace from the switcher and add the remaining employees in Team.`);
       }
       if (verifyWorkspace && !await verifyWorkspace(created)) {
         throw new Error("The workspace was saved. Launch again to check when OpenClaw can see the team.");
       }
-      sessionStorage.removeItem(firstWorkspaceKey);
+      sessionStorage.removeItem(storageKey);
       onWorkspaceCreated?.(created);
       resetCreationState();
       onOpenChange(false);
@@ -1218,7 +1229,8 @@ export function CreateWorkspaceExperience({
             name={firstName} brief={brief} team={manualTeam} working={manualLaunching}
             onName={setFirstName} onBrief={setBrief} onTeam={setManualTeam}
             error={manualError ?? notice?.description}
-            information={manualLaunching ? "Creating your team in OpenClaw…" : null}
+            information={manualLaunching ? manualProgress?.steps.find(step => step.status === "active")?.detail
+              || "Creating your team in OpenClaw…" : null}
             onGenerate={() => void generate()}
             onManual={() => { setNotice(null); setManualError(null); setManualReview(true); }}
             onBack={() => { setManualError(null); setManualReview(false); }}
@@ -1242,7 +1254,8 @@ export function CreateWorkspaceExperience({
                 ))}
               </div>
             </details>
-          </FirstWorkspaceForms>        ) : stage === "intake" ? (
+          </FirstWorkspaceForms>
+        ) : stage === "intake" ? (
           <IntakeView
             isLight={isLight}
             brief={brief}

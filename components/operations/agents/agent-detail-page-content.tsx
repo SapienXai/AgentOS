@@ -234,8 +234,8 @@ export function AgentDetailPageContent({
               </div>
             </PageHeader>
 
-            <nav aria-label="Employee profile sections" className="overflow-x-auto border-b border-border">
-              <div className="flex min-w-max gap-1">
+            <nav aria-label="Employee profile sections" className="border-b border-border">
+              <div className="flex flex-wrap gap-x-1">
                 {AGENT_DETAIL_TABS.map((item) => (
                   <button
                     key={item.id}

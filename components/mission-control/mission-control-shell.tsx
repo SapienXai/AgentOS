@@ -4988,7 +4988,7 @@ export function MissionControlShell({
         </div>
       </div>
       {shouldOfferFirstWorkspace && !isFloatingHeaderHidden && !isInspectorOpen ? (
-        <div className="pointer-events-auto absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-[24] lg:bottom-auto lg:left-[316px] lg:right-auto lg:top-9">
+        <div className="pointer-events-auto absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-[24] lg:hidden">
           {firstWorkspaceAction}
         </div>
       ) : null}
@@ -5020,11 +5020,12 @@ export function MissionControlShell({
           <div
             data-tauri-drag-region="deep"
             className={cn(
-              "pointer-events-auto absolute top-9 z-[60] hidden mission-ease-smooth transition-[left] duration-500 lg:block",
+              "pointer-events-auto absolute top-9 z-[60] hidden items-center gap-2 mission-ease-smooth transition-[left] duration-500 lg:flex",
               isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]"
             )}
           >
             <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
+            {shouldOfferFirstWorkspace && !isInspectorOpen ? firstWorkspaceAction : null}
           </div>
         </>
       ) : null}

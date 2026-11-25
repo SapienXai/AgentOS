@@ -14,6 +14,7 @@ assert.equal(require(path.resolve(packageRoot, "package.json")).version, "2026.1
 const openclaw = path.resolve(packageRoot, "openclaw.mjs");
 const serve = process.argv.includes("--serve");
 const baseline = process.argv.includes("--baseline");
+const matchedCanvas = process.argv.includes("--matched-canvas");
 const connect = process.argv.includes("--connect");
 const fresh = connect || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
@@ -151,7 +152,9 @@ async function run() {
     const report = [];
     let completedConversation = false;
     const requestedWidths = process.env.WORKFORCE_VIEWPORTS?.split(",").map(Number);
-    const stageSizes = [{width:1440,height:900}, {width:1280,height:800}, {width:390,height:844}, {width:360,height:800}]
+    const stageSizes = [{width:1440,height:900}, {width:1280,height:800}, {width:820,height:1180}, {width:844,height:390},
+      {width:390,height:baseline && matchedCanvas ? 788 : 844}, {width:360,height:800}]
+      .filter(size => requestedWidths || ![820, 844].includes(size.width))
       .filter(size => !requestedWidths || requestedWidths.includes(size.width));
     for (const theme of ["dark", "light"]) {
       for (const size of stageSizes) {
@@ -214,12 +217,19 @@ async function run() {
             await expect(page.getByRole("heading", {name:"Choose your first employees"})).toBeVisible();
           });
           if (theme === "light" && size === stageSizes.at(-1)) {
+            const startTime = performance.now();
             await record("launch-workspace", async () => {
-              const startTime = performance.now();
               await page.getByRole("button", {name:"Launch workspace", exact:true}).click();
-              await expect(page.locator(".react-flow__node-agent").filter({hasText:"Assistant"}).first()).toBeVisible({timeout: 30000});
-              await expect(page.getByRole("dialog")).toHaveCount(0);
-              console.log(`Manual fixture launch to visible canvas: ${Math.round(performance.now() - startTime)} ms.`);
+              await expect(page.getByRole("dialog")).toHaveCount(0, {timeout: 45000});
+              await expect(page.locator('.react-flow__node-agent[data-id="harbor-review-assistant"]')).toBeVisible({timeout: 10000});
+              console.log(`Manual fixture launch to verified canvas: ${Math.round(performance.now() - startTime)} ms.`);
+            });
+            await record("first-conversation", async () => {
+              await go("/chat?employee=harbor-review-assistant");
+              await page.getByRole("textbox", {name:"Message Assistant", exact:true}).fill("Draft the first line of our newsletter.");
+              await page.getByRole("button", {name:"Send message", exact:true}).click();
+              await expect(page.getByText("AGENTOS_FIXTURE_FIRST_REPLY", {exact:true})).toBeVisible({timeout: 25000});
+              console.log(`Manual fixture launch to first reply: ${Math.round(performance.now() - startTime)} ms.`);
             });
           }
           await context.close();
@@ -257,22 +267,65 @@ async function run() {
           await action.click();
           await expect(page.locator(".agent-node__action-menu")).toBeVisible();
         });
+        if (size.width === 1440) await record("canvas-drag-restored", async () => {
+          await go("/mission-control");
+          const ada = page.locator('.react-flow__node-agent[data-id="fieldwork-studio-ada"]');
+          await expect(ada).toBeVisible();
+          await wait(650);
+          const before = await ada.evaluate(el => el.style.transform);
+          const point = await ada.evaluate(el => {
+            const box = el.getBoundingClientRect();
+            for (const dx of [16, 32, 80, 120]) for (const dy of [22, 42, 52, 80]) {
+              const x = Math.round(box.left + dx), y = Math.round(box.top + dy);
+              const target = document.elementFromPoint(x, y);
+              if (target?.closest(".react-flow__node") === el && !target.closest(".nodrag, button, a, input")) return { x, y };
+            }
+            return null;
+          });
+          assert(point, "No draggable point on Ada was visible.");
+          await page.mouse.move(point.x, point.y);
+          await page.mouse.down();
+          await page.mouse.move(point.x + 88, point.y - 22, {steps:12});
+          await page.mouse.up();
+          await expect.poll(() => ada.evaluate(el => el.style.transform)).not.toBe(before);
+          const moved = await ada.evaluate(el => el.style.transform);
+          const savedPosition = () => page.evaluate(() => {
+            const positions = JSON.parse(localStorage.getItem("mission-control-node-positions:v4:workspace:fieldwork-studio") || "{}");
+            return positions["agent:fieldwork-studio:fieldwork-studio-ada"];
+          });
+          await expect.poll(async () => {
+            const saved = await savedPosition();
+            return Boolean(saved && (saved.x !== 96 || saved.y !== 160));
+          }).toBe(true);
+          await go("/mission-control");
+          await expect.poll(() => ada.evaluate(el => el.style.transform)).toBe(moved);
+        });
         if (size.width === 390) await record("canvas-inspector", async () => {
           await page.getByRole("button", { name: "Open inspector", exact: true }).click();
           await expect(page.getByRole("button", { name: "Close inspector", exact: true }).first()).toBeVisible();
         });
-        if (baseline) {
+        if (baseline || matchedCanvas) {
           await context.close();
           continue;
         }
 
         await record("workspace-switcher", async () => {
           if (size.width === 390 || size.width === 1440) await go("/mission-control");
-          if (size.width < 768) await page.getByRole("button", {name:"More", exact:true}).click();
+          if (size.width < 1024) await page.getByRole("button", {name:"More", exact:true}).click();
           else await page.getByRole("button", {name:"Expand sidebar", exact:true}).hover();
           const switcher = page.getByRole("button", {name:/Fieldwork Studio Workspace/}).first();
           await switcher.click({timeout: 5000});
           await expect(page.getByRole("menuitem", {name:/Northline Press/}).first()).toBeVisible();
+        });
+        if (size.width === 1440 || size.width === 390) await record("workspace-switch-confirmed", async () => {
+          await page.getByRole("menuitem", {name:/Northline Press/}).first().click();
+          const sam = page.locator('.react-flow__node-agent[data-id="northline-press-sam"]');
+          await expect(sam).toBeVisible();
+          await expect(page.locator('.react-flow__node-agent[data-id="fieldwork-studio-ada"]')).toHaveCount(0);
+          await page.getByRole("link", {name:"Team",exact:true}).first().click();
+          await expect(page.getByRole("link", {name:"Sam",exact:true})).toBeVisible();
+          await expect(page.getByRole("link", {name:"Ada",exact:true})).toHaveCount(0);
+          await page.evaluate(({ scopeKey, workspaceId }) => sessionStorage.setItem(scopeKey, workspaceId), {scopeKey, workspaceId:first.workspaceId});
         });
         await record("team", async () => {
           await go("/team");
@@ -306,6 +359,17 @@ async function run() {
           if (size.width < 500) {
             await composer.focus();
             await expect(page.getByRole("button", { name:"Send message" })).toBeInViewport();
+          }
+        });
+        if (size.width === 360 || size.width === 390) await record("chat-constrained-height", async () => {
+          const composer = page.getByRole("textbox", {name:"Message Ada", exact:true});
+          await page.setViewportSize({width:size.width, height:470});
+          try {
+            await composer.focus();
+            await expect(page.getByRole("button", {name:"Send message"})).toBeInViewport();
+            await screenshot("chat-focused-470");
+          } finally {
+            await page.setViewportSize(size);
           }
         });
         await record("tasks", async () => {
@@ -351,7 +415,7 @@ async function run() {
     }
 
     await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
-    if (!fresh && !baseline) {
+    if (!fresh && !baseline && !matchedCanvas) {
       for (const route of ["/chat", "/team", "/knowledge", "/missions", "/integrations", "/settings"]) {
         const unauthenticated = await fetch(base + route, { redirect: "manual" });
         assert.equal(unauthenticated.status, 307);
@@ -380,11 +444,18 @@ async function run() {
       const promotedHeaders = { Cookie: INSTANCE_PROTECTION_COOKIE + "=" + promoted.session };
       const allowed = await fetch(base + "/api/snapshot", { headers:promotedHeaders });
       assert(allowed.ok, `Promoted owner snapshot returned ${allowed.status}.`);
+      const stream = await fetch(base + "/api/stream", { headers:promotedHeaders, signal:AbortSignal.timeout(17000) });
+      assert.equal(stream.status, 200);
+      const reader = stream.body.getReader();
       await updateManagedAgentOsUserRole(member.actorId, "member", env);
       await updateManagedAgentOsUserStatus(member.actorId, "disabled", env);
+      for (;;) {
+        const event = await reader.read();
+        if (event.done) break;
+      }
       const revoked = await fetch(base + "/api/stream", { headers:promotedHeaders, redirect:"manual" });
       assert.equal(revoked.status, 401);
-      console.log("Unauthenticated and member route/API checks passed. Revocation denied a new SSE connection.");
+      console.log("Unauthenticated and member route/API checks passed. Revocation closed the active SSE stream and denied a new connection.");
     }
     const failures = report.filter(result => result.result === "FAIL");
     console.log(`Captured ${report.length - failures.length}/${report.length} checks to ${output}.`);
