@@ -464,6 +464,7 @@ export function AgentChatDrawer({
       });
       const result = await response.json().catch(() => null) as { aborted?: boolean; error?: string } | null;
       if (!response.ok) throw new Error(result?.error || "OpenClaw could not stop this reply.");
+      if (result?.aborted === true) toast.info("Reply stopped.");
       if (result?.aborted === false) toast.info("This reply is no longer active.");
     } catch (error) {
       toast.error("Could not stop reply.", {

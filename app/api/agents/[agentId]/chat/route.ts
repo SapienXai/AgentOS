@@ -75,6 +75,7 @@ type AgentChatCommandPayload = {
 };
 
 type AgentChatStreamEvent =
+  | { type: "cancelled" }
   | {
       type: "admitted";
       runId: string;
@@ -404,7 +405,7 @@ export async function POST(
           await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
         }
         if (result.status === "cancelled" || result.stopReason === "aborted") {
-          await send({ type: "done", ok: false, message: "OpenClaw stopped this reply." });
+          await send({ type: "cancelled" });
           return;
         }
 

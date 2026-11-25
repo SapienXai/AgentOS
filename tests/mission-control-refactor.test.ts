@@ -1503,6 +1503,8 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(runnerSource, /maxAgentChatStatusHistory = 5/);
   assert.match(routeSource, /onToolStart: \(name\)/);
   assert.match(routeSource, /onAdmission: \(runId\)/);
+  assert.match(routeSource, /await send\(\{ type: "cancelled" \}\)/);
+  assert.match(runnerSource, /if \(!finalResponse && !cancelled\)/);
   assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
   assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);

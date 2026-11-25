@@ -12,6 +12,7 @@ import { sanitizeAgentChatVisibleText } from "@/lib/openclaw/agent-chat-response
 import type { MissionControlSnapshot, MissionResponse } from "@/lib/agentos/contracts";
 
 type AgentChatStreamEvent =
+  | { type: "cancelled" }
   | {
       type: "admitted";
       runId: string;
@@ -210,8 +211,18 @@ async function runAgentChatTurn({
     }
 
     let finalResponse: MissionResponse | null = null;
+    let cancelled = false;
 
     await consumeNdjsonStream<AgentChatStreamEvent>(response, async (event) => {
+      if (event.type === "cancelled") {
+        cancelled = true;
+        updateAgentChatMessages(chatKey, (current) => current.flatMap((entry) => {
+          if (entry.id === userMessageId) return [{ ...entry, status: "sent", runId: run.runId }];
+          if (entry.id !== assistantMessageId) return [entry];
+          return entry.text.trim() ? [{ ...entry, status: "sent" }] : [];
+        }));
+        return;
+      }
       if (event.type === "admitted") {
         run.runId = event.runId;
         dispatchAgentChatStateChange(chatKey);
@@ -296,7 +307,7 @@ async function runAgentChatTurn({
       if (renamedTo) void onRefresh?.().catch(() => null);
     });
 
-    if (!finalResponse) {
+    if (!finalResponse && !cancelled) {
       throw new Error("OpenClaw completed without returning a response.");
     }
   } catch (error) {
