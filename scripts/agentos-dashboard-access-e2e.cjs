@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
-const { mkdir, mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
+const { access, mkdir, mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
@@ -70,7 +70,7 @@ async function main() {
   assert.equal(version, "2026.11.10");
   await readFile(path.join(buildRoot, ".next", "BUILD_ID"));
   for (const name of [".env", ".env.local", ".env.production", ".env.production.local"]) {
-    const exists = await readFile(path.join(buildRoot, name)).then(() => true, (error) => {
+    const exists = await access(path.join(buildRoot, name)).then(() => true, (error) => {
       if (error.code === "ENOENT") return false;
       throw error;
     });
