@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import type {
   OpenClawMemoryDreamActionPayload,
   OpenClawMemoryStatusPayload
@@ -22,6 +23,7 @@ const PACKAGE_ROOT = process.env.OPENCLAW_MEMORY_CERT_PACKAGE?.trim() || `/tmp/o
 const OUTPUT_PATH = process.env.OPENCLAW_MEMORY_CERT_OUTPUT?.trim() || path.resolve(`docs/evidence/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-native-memory.json`);
 const REQUEST_TIMEOUT_MS = 10_000;
 const agentId = "main";
+const VERIFY_RETRIEVAL = process.env.OPENCLAW_MEMORY_CERT_VERIFY_RETRIEVAL === "1";
 
 type CertStatus = "PASS" | "SKIPPED" | "EXPECTED-DENIAL" | "FAIL";
 
@@ -40,6 +42,7 @@ async function main() {
   const token = `agentos-memory-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   let gateway: ChildProcess | null = null;
   let client: ReturnType<typeof createClient> | null = null;
+  let embeddingFixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>> | undefined;
   const rpcCounts: Record<string, number> = {};
   const count = (method: string) => { rpcCounts[method] = (rpcCounts[method] ?? 0) + 1; };
   const evidence = {
@@ -58,8 +61,8 @@ async function main() {
         packageRoot: "[DISPOSABLE_EXACT_PACKAGE]"
       },
       gatewayProtocol: 4,
-      gatewayClient: packageIdentity.version,
-      gatewayProtocolPackage: packageIdentity.version
+      gatewayClient: await readAgentOsSdkVersion("gateway-client"),
+      gatewayProtocolPackage: await readAgentOsSdkVersion("gateway-protocol")
     },
     runtime: {
       packageMode: "exact-openclaw-package-fixture",
@@ -94,6 +97,13 @@ async function main() {
       gatewayFinalAuthority: true
     },
     cleanup: { status: "pending" as "pending" | "complete", gatewayProcessStopped: false, disposableRootRemoved: false },
+    retrieval: {
+      status: VERIFY_RETRIEVAL ? "FAIL" : "NOT_VERIFIED",
+      persistedFact: false,
+      isolatedAgent: false,
+      afterRestart: false,
+      embeddingRequests: 0
+    },
     rpcCounts,
     skips: [] as string[],
     success: false
@@ -101,9 +111,25 @@ async function main() {
 
   try {
     await mkdir(workspaceDir, { recursive: true, mode: 0o700 });
+    const otherWorkspace = path.join(disposableRoot, "other-workspace");
+    if (VERIFY_RETRIEVAL) {
+      embeddingFixture = await createOpenClawRuntimeProviderFixture();
+      await mkdir(otherWorkspace, { mode: 0o700 });
+      await writeFile(path.join(workspaceDir, "MEMORY.md"), "# Incident note\n\nThe Halcyon relay uses the quartz escrow protocol.\n", { mode: 0o600 });
+      await writeFile(path.join(otherWorkspace, "MEMORY.md"), "# Incident note\n\nThe other relay uses a separate protocol.\n", { mode: 0o600 });
+    }
     await writeFile(configPath, `${JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } },
-      agents: { defaults: { workspace: workspaceDir }, entries: { [agentId]: { workspace: workspaceDir } } },
+      agents: { ...(embeddingFixture ? { ownership: "explicit" } : {}), defaults: { workspace: workspaceDir }, entries: {
+        [agentId]: { workspace: workspaceDir },
+        ...(embeddingFixture ? { isolated: { workspace: otherWorkspace } } : {})
+      } },
+      ...(embeddingFixture ? { memory: { search: {
+        provider: "openai",
+        model: "text-embedding-3-small",
+        fallback: "none",
+        remote: { baseUrl: embeddingFixture.baseUrl, apiKey: "agentos-disposable-embedding-fixture" }
+      } } } : {}),
       cron: { enabled: false }
     }, null, 2)}\n`, { mode: 0o600 });
     gateway = await startGateway({ packageRoot: PACKAGE_ROOT, homeDir, stateDir, configPath, workspaceDir, port, token });
@@ -161,11 +187,37 @@ async function main() {
     evidence.authorization.readScope = "PASS";
     evidence.authorization.writeScope = "PASS";
     evidence.observations.noCliFallback = (client.getDiagnostics?.().fallbackTotal ?? 0) === 0 ? "PASS" : "FAIL";
+
+    if (embeddingFixture) {
+      const query = "Halcyon relay";
+      const verify = async (target: string) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const search = await client?.searchMemory?.({ agentId: target, query, maxResults: 5, minScore: 0 }, { timeoutMs: REQUEST_TIMEOUT_MS });
+          if (search?.results.length && !search.stale) return search.results;
+          await delay(250);
+        }
+        throw new Error("The disposable memory fixture did not return fresh native search results.");
+      };
+      evidence.retrieval.persistedFact = (await verify(agentId)).some(({ snippet }) => snippet?.includes("quartz escrow protocol"));
+      const isolated = await verify("isolated");
+      evidence.retrieval.isolatedAgent = isolated.some(({ snippet }) => snippet?.includes("separate protocol")) &&
+        isolated.every(({ snippet }) => !snippet?.includes("quartz escrow protocol"));
+      client.close("disposable memory restart");
+      client = null;
+      await stopProcess(gateway);
+      gateway = await startGateway({ packageRoot: PACKAGE_ROOT, homeDir, stateDir, configPath, workspaceDir, port, token });
+      client = createClient({ port, token });
+      evidence.retrieval.afterRestart = (await verify(agentId)).some(({ snippet }) => snippet?.includes("quartz escrow protocol"));
+      evidence.retrieval.embeddingRequests = embeddingFixture.stats.embeddingCount;
+      evidence.retrieval.status = evidence.retrieval.persistedFact && evidence.retrieval.isolatedAgent &&
+        evidence.retrieval.afterRestart && evidence.retrieval.embeddingRequests > 0 ? "PASS" : "FAIL";
+    }
   } catch (error) {
     evidence.skips.push(`Disposable native memory runtime could not complete: ${sanitize(error instanceof Error ? error.message : String(error))}`);
   } finally {
     client?.close("native memory certification complete");
     await stopProcess(gateway).catch(() => {});
+    await embeddingFixture?.close().catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup.status = "complete";
     evidence.cleanup.gatewayProcessStopped = gateway?.exitCode !== null;
@@ -179,12 +231,18 @@ async function main() {
     && methodsPass
     && evidence.cleanup.gatewayProcessStopped
     && evidence.cleanup.disposableRootRemoved
+    && (!VERIFY_RETRIEVAL || evidence.retrieval.status === "PASS")
     && evidence.observations.noCliFallback !== "FAIL";
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await writeFile(OUTPUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
   console.log(`OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} NATIVE MEMORY GATE: ${evidence.success ? "PASS" : "FAIL"}`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
   if (!evidence.success) process.exitCode = 1;
+}
+
+async function readAgentOsSdkVersion(name: string) {
+  const { version } = JSON.parse(await readFile(path.resolve("node_modules", "@openclaw", name, "package.json"), "utf8")) as { version?: string };
+  return version ?? null;
 }
 
 function createClient(input: { port: number; token: string }) {
@@ -208,16 +266,17 @@ async function startGateway(input: { packageRoot: string; homeDir: string; state
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";
+  let errorOutput = "";
   child.stdout?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
-  child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
+  child.stderr?.on("data", (chunk: Buffer | string) => { errorOutput = `${errorOutput}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Disposable OpenClaw Gateway exited (${child.exitCode}). ${sanitize(output)}`);
+    if (child.exitCode !== null) throw new Error(`Disposable OpenClaw Gateway exited (${child.exitCode}). ${sanitize(errorOutput || output.slice(-300))}`);
     try { if ((await fetch(`http://127.0.0.1:${input.port}/healthz`)).ok) return child; } catch {}
     await delay(250);
   }
   await stopProcess(child);
-  throw new Error(`Disposable OpenClaw Gateway did not become ready. ${sanitize(output)}`);
+  throw new Error(`Disposable OpenClaw Gateway did not become ready. ${sanitize(errorOutput || output)}`);
 }
 
 function recordOutcome(target: { status: CertStatus; result: string | null }, error: unknown) {

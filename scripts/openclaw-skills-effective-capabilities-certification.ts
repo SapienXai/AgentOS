@@ -316,7 +316,7 @@ async function main() {
         }>("skills.library.save", {
           expectedRevision: null,
           slug: "agentos-phase-2-1-certification-skill",
-          content: "# AgentOS Phase 2.1 Certification Skill\n\nDisposable certification fixture.\n"
+          content: "---\nname: agentos-phase-2-1-certification-skill\ndescription: Disposable certification fixture.\n---\n\n# AgentOS Phase 2.1 Certification Skill\n"
         }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", allowCliFallback: false, timeoutMs: REQUEST_TIMEOUT_MS });
         assert.equal(receipt.state, "published");
         assert.ok(receipt.entry?.skillId);

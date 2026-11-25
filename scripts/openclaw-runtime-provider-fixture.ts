@@ -9,6 +9,7 @@ export type OpenClawRuntimeProviderFixture = {
     requestCount: number;
     completionCount: number;
     streamingCompletionCount: number;
+    embeddingCount: number;
     lastPrompt: string;
   };
   close: () => Promise<void>;
@@ -34,6 +35,7 @@ export async function createOpenClawRuntimeProviderFixture(input: {
     requestCount: 0,
     completionCount: 0,
     streamingCompletionCount: 0,
+    embeddingCount: 0,
     lastPrompt: ""
   };
 
@@ -82,6 +84,23 @@ async function handleRequest(
       object: "list",
       data: [{ id: modelId, object: "model", owned_by: "agentos-runtime-certification" }]
     });
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/v1/embeddings") {
+    try {
+      const payload = JSON.parse(await readBody(request)) as { input: string | string[]; model?: string };
+      const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
+      const data = inputs.map((input, index) => ({
+        object: "embedding",
+        index,
+        embedding: /halcyon/i.test(input) ? [1, 0, 0] : [0, 1, 0]
+      }));
+      stats.embeddingCount += data.length;
+      writeJson(response, 200, { object: "list", model: payload.model, data, usage: { prompt_tokens: 1, total_tokens: 1 } });
+    } catch {
+      writeJson(response, 400, { error: { message: "Invalid embedding request", type: "invalid_request_error" } });
+    }
     return;
   }
 
