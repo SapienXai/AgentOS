@@ -2,7 +2,7 @@
   "purpose": "Disposable engineering evidence. The repository production certification gate still applies.",
   "branch": "codex/agentos-0.10.0-native-alignment",
   "initialCode": "d992fdded9b00aba91248dd1c030a53b4a5ea6c4",
-  "finalEngineeringCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+  "finalEngineeringCode": "570b93aaac66fdc3b7485228fa797b580815b775",
   "runtimeRecommendation": "2026.11.5",
   "defaultGatewaySdkVersions": {
     "gatewayClient": "2026.11.5",
@@ -12,7 +12,8 @@
     "lint": "PASS",
     "typecheck": "PASS",
     "tests": {
-      "passed": 2267,
+      "revision": "7787b5da1cb4bd5570e41c38c6cf814c8b3d3c2c",
+      "passed": 2268,
       "failed": 0
     },
     "build": "PASS",
@@ -41,8 +42,10 @@
     },
     "candidateRuntime": {
       "result": "PASS",
-      "observedCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+      "observedCode": "7787b5da1cb4bd5570e41c38c6cf814c8b3d3c2c",
       "runtime": "2026.11.10",
+      "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
+      "build": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
       "runtimePackageHash": "efa510a740b56e46bb3cdb0c344c4a814ad1126c19f010f066b6407c93e3ae4c",
       "provider": "loopback OpenAI-compatible fixture",
       "nativeSessionCount": 1,
@@ -53,24 +56,36 @@
       "explicitConversationHistoryEntries": 1,
       "nativeCatalogSearch": "PASS",
       "nativeAbort": "PASS",
-      "nativeAdapterAdmissionP95Ms": 38,
+      "nativeAdapterAdmissionP95Ms": 31.4,
       "benchmark": {
         "scope": "Warm native adapter, setup/history requests through dispatch admission; model execution and browser excluded",
         "before": {
           "turns": 50,
-          "nativeAdapterAdmissionP95Ms": 122.5,
+          "nativeAdapterAdmissionP95Ms": 47.2,
           "nativeHistoryReadsBeforeDispatch": 235,
           "explicitSessionCreationsBeforeDispatch": 50,
           "messageInputBytesP95": 1932
         },
         "after": {
           "turns": 50,
-          "nativeAdapterAdmissionP95Ms": 38,
+          "nativeAdapterAdmissionP95Ms": 31.4,
           "nativeHistoryReadsBeforeDispatch": 0,
           "explicitSessionCreationsBeforeDispatch": 0,
           "messageInputBytesP95": 27
         }
-      }
+      },
+      "parallelValidationBenchmarks": [
+        {
+          "observedCode": "570b93aaac66fdc3b7485228fa797b580815b775",
+          "beforeP95Ms": 85.6,
+          "afterP95Ms": 155
+        },
+        {
+          "observedCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+          "beforeP95Ms": 122.5,
+          "afterP95Ms": 38
+        }
+      ]
     },
     "candidateSdkOverlay": {
       "result": "PASS",
@@ -239,7 +254,7 @@
       "resizeAfterOpening": true,
       "composerWithinViewport": true
     },
-    "observedApplicationCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+    "observedApplicationCode": "570b93aaac66fdc3b7485228fa797b580815b775",
     "overlappingSubmissionResult": "NOT_VERIFIED"
   },
   "distribution": {

@@ -1,6 +1,6 @@
 # AgentOS 0.10.0 engineering verification
 
-The engineering branch is `codex/agentos-0.10.0-native-alignment`. The initial commit and latest observed main CI are recorded in the [audit](audit.md). The implementation and test code are at `69e3b762b3b4c6ca8e91d6beb75ce82b9843606a`. The [evidence summary](evidence.json) records the code revision used by each probe. Changes are local engineering work. The installed-customer recommendation, published package metadata, desktop distribution and checked-in Railway runtime pin still target the existing 0.9.0 distribution and OpenClaw 2026.11.5 policy. OpenClaw 2026.11.10 is the candidate qualified by the disposable tests below.
+The engineering branch is `codex/agentos-0.10.0-native-alignment`. The final application code is at `570b93aaac66fdc3b7485228fa797b580815b775`, and the complete test suite ran at `7787b5da1cb4bd5570e41c38c6cf814c8b3d3c2c`. The branch has no remote CI run. The installed-customer recommendation, published package metadata, desktop distribution and checked-in Railway runtime pin retain the existing 0.9.0 distribution and OpenClaw 2026.11.5 policy. The disposable tests below qualify specific scenarios on candidate OpenClaw 2026.11.10. [Initial audit and main CI](audit.md), [evidence and per-probe revisions](evidence.json)
 
 ## Phase status
 
@@ -26,7 +26,7 @@ AgentOS removed prompt reconstruction, per-turn session creation, local transcri
 
 Existing fragmented sessions remain in the OpenClaw history. The new drawer opens a continuing session in its own namespace. Older conversations can be inspected through the OpenClaw session catalog. No historical turn is replayed, imported into model context, deleted, reassigned, or silently merged. Authenticated product accounts each receive a new default key on migration. The audit found no basis for retroactively assigning unscoped legacy history to individual product actors.
 
-The snapshot controller now fences overlapping loads by generation. Completion from an older load cannot evict a newer in-flight request or replace its data. Skills Library activation accepts OpenClaw's persisted four-field selection receipt, while list rows retain catalog enrichment. Successful activation invalidates the native read cache before the application rereads the catalog.
+The snapshot controller now fences overlapping loads by generation. If a newer load is already in flight, an invalidated read joins it. Otherwise, it can return its result without publishing stale cache state. This keeps reads bounded during repeated invalidation. Skills Library activation accepts OpenClaw's persisted four-field selection receipt, while list rows retain catalog enrichment. Successful activation invalidates the native read cache before the application rereads the catalog.
 
 ### Recovery
 
@@ -38,7 +38,7 @@ Keep verified archives outside the state tree. Restore into a fresh sibling stag
 
 | Check | Result | Evidence and limits |
 | --- | --- | --- |
-| Repository build, lint, type checking and tests | PASS | 2,267 tests passed. The final production build passed in a clean checkout. An earlier workspace build reported 30 Turbopack file-tracing warnings. The separate release gates below apply. |
+| Repository build, lint, type checking and tests | PASS | 2,268 tests passed. The final production build passed in a clean checkout. An earlier workspace build reported 30 Turbopack file-tracing warnings. The separate release gates below apply. |
 | Release consistency | PASS | Existing 0.9.0 package and installer metadata. |
 | Candidate macOS clean runtime installation | PASS | Exact npm runtime, authenticated Gateway protocol 4, startup, persistence, Doctor and 59 successful runtime probes. The run also observed 13 expected denials and recorded 13 skips. |
 | Candidate Gateway SDK pair | PASS | Isolated worktree with official Gateway client and protocol 2026.11.10. Type checking and exact-runtime native chat fixture passed. |
@@ -62,9 +62,9 @@ Keep verified archives outside the state tree. Restore into a fresh sibling stag
 
 ## Performance
 
-The benchmark runs the prior fragmented dispatch strategy and the new continuing strategy on the same host, exact OpenClaw package and loopback provider. The fragmented strategy reads up to five previous native histories, builds the previous wrapper and creates an explicit per-turn session. It reuses the repository's historical prompt function only inside the benchmark. The new strategy sends the current unwrapped operator message to its stable key. Dispatch timing ends at Gateway admission and excludes actual model execution, HTTP/browser rendering and the old route’s filesystem polling.
+The benchmark runs the prior fragmented dispatch strategy and the new continuing strategy on the same host, exact OpenClaw package and loopback provider. The fragmented strategy reads up to five previous native histories, builds the previous wrapper and creates an explicit per-turn session. It reuses the repository's historical prompt function only inside the benchmark. The new strategy sends the current unwrapped operator message to its stable key. Dispatch timing ends at Gateway admission and excludes actual model execution, HTTP/browser rendering and the old route’s filesystem polling. To reproduce, run `pnpm openclaw:session-task-e2e` with `OPENCLAW_DIRECT_CHAT_MATRIX=1`, `OPENCLAW_DIRECT_CHAT_BENCHMARK=1`, and the exact candidate package path, certification target identity and output path documented by the harness. [Session/task fixture](../../scripts/openclaw-session-task-e2e.ts), [candidate package identity](evidence.json)
 
-Reference host: macOS arm64, Mac17,8, 48 GiB RAM, Node 24.22.1. Each arm submitted 50 turns. The final code revision measured 122.5 → 38.0 ms p95 during concurrent validation. Earlier passes measured 50.2 → 25.7 ms, 63.9 → 39.9 ms and 119.5 → 108.9 ms. These are local adapter measurements. Concurrent runs include contention from builds and other validation.
+The reference host was a macOS arm64 Mac17,8 with 48 GiB RAM and Node 24.22.1. Each arm submitted 50 turns. The final run without a parallel build or test suite measured 47.2 → 31.4 ms p95. Two runs during parallel validation measured 85.6 → 155.0 ms and 122.5 → 38.0 ms. Earlier passes measured 50.2 → 25.7 ms, 63.9 → 39.9 ms and 119.5 → 108.9 ms. The RPC and byte reductions were consistent. Admission latency varied with the run, and the benchmark did not isolate the sources of that variation.
 
 | Metric | Fragmented | Continuing |
 | --- | ---: | ---: |
