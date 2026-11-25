@@ -6,6 +6,7 @@ import {
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import {
   probeLocalGatewayConfiguration,
   probeLocalGatewayRegistration,
@@ -22,12 +23,17 @@ const STREAM_SYSTEM_STATUS_INTERVAL_MS = 10_000;
 const STREAM_INITIAL_SNAPSHOT_DELAY_MS = 0;
 
 export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
+  const deltaEnabled = new URL(request.url).searchParams.get("delta") === "1";
   let interval: ReturnType<typeof setInterval> | undefined;
   let systemStatusInterval: ReturnType<typeof setInterval> | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
   let snapshotTask: Promise<void> | null = null;
+  let snapshotDirty = false;
+  let publishedSnapshot: Record<string, unknown> | undefined;
   let systemStatusTask: Promise<void> | null = null;
   let cliInstalled: boolean | null = null;
   let gatewayRegistered: boolean | null = null;
@@ -91,25 +97,54 @@ export async function GET(request: Request) {
 
       request.signal.addEventListener("abort", handleAbort);
 
-      const sendSnapshot = async () => {
+      const checkAccess = async () => {
+        const current = await requireAgentOsProductPermission(request, "runtime.use");
+        if ("response" in current || current.actor.actorId !== permission.actor.actorId) {
+          close();
+          return false;
+        }
+        return !closed;
+      };
+
+      const sendSnapshot = async (reconcile = false) => {
         if (closed) {
           return;
         }
 
         if (snapshotTask) {
+          snapshotDirty = true;
           return snapshotTask;
         }
 
         snapshotTask = (async () => {
           try {
+            if (!(await checkAccess())) return;
             const snapshot = await getMissionControlSnapshot();
-            sendEvent("snapshot", snapshot);
+            if (!(await checkAccess())) return;
+            const next = redactSecrets(snapshot) as unknown as Record<string, unknown>;
+            const baseline = publishedSnapshot;
+            if (!deltaEnabled || reconcile || !baseline || Object.keys(baseline).some((key) => !(key in next))) {
+              if (sendEvent("snapshot", snapshot)) publishedSnapshot = next;
+              return;
+            }
+            const changed = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
+              !Object.is(baseline[key], value) && JSON.stringify(baseline[key]) !== JSON.stringify(value)
+            ));
+            if (Object.keys(changed).length && sendEvent("snapshot-delta", {
+              baseRevision: baseline.revision,
+              baseGeneratedAt: baseline.generatedAt,
+              changes: changed
+            })) publishedSnapshot = next;
           } catch (error) {
             sendEvent("error", {
               error: redactErrorMessage(error, "Unknown stream error.")
             });
           } finally {
             snapshotTask = null;
+            if (snapshotDirty) {
+              snapshotDirty = false;
+              scheduleSnapshot(STREAM_EVENT_DEBOUNCE_MS);
+            }
           }
         })();
 
@@ -137,6 +172,7 @@ export async function GET(request: Request) {
         }
 
         systemStatusTask = (async () => {
+          if (!(await checkAccess())) return;
           const [gatewayStatus, detectedGatewayRegistered, detectedGatewayConfigured, detectedCliInstalled] = await Promise.all([
           probeLocalGatewayStatus().catch(() => null),
           gatewayRegistered === true
@@ -176,6 +212,7 @@ export async function GET(request: Request) {
           }).catch(() => false);
         }
 
+          if (!(await checkAccess())) return;
           sendEvent("system-status", {
             gatewayReachable: Boolean(gatewayStatus),
             gatewayReady,
@@ -185,7 +222,7 @@ export async function GET(request: Request) {
             runtimeWritable,
             modelStatus
           });
-        })().finally(() => {
+        })().catch(close).finally(() => {
           systemStatusTask = null;
         });
 
@@ -193,15 +230,16 @@ export async function GET(request: Request) {
       };
 
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents((frame) => {
-        void sendSystemStatus();
         if (isHumanControlAttentionEvent(frame)) {
-          sendEvent("attention", { revision: getOpenClawAttentionRevision() });
+          void checkAccess().then((allowed) => {
+            if (allowed) sendEvent("attention", { revision: getOpenClawAttentionRevision() });
+          }).catch(close);
         }
         scheduleSnapshot(STREAM_EVENT_DEBOUNCE_MS);
       });
 
       interval = setInterval(() => {
-        void sendSnapshot();
+        void sendSnapshot(true);
       }, STREAM_RECONCILIATION_INTERVAL_MS);
 
       sendEvent("ready", {
@@ -220,6 +258,9 @@ export async function GET(request: Request) {
       if (interval) {
         clearInterval(interval);
       }
+      if (systemStatusInterval) {
+        clearInterval(systemStatusInterval);
+      }
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
@@ -230,7 +271,7 @@ export async function GET(request: Request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Cache-Control": "private, no-store, no-transform",
       Connection: "keep-alive"
     }
   });

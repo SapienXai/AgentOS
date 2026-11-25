@@ -111,10 +111,11 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const source = new EventSource("/api/stream");
+    const source = new EventSource("/api/stream?delta=1");
+    let streamSnapshot: ControlPlaneSnapshot | undefined;
 
-    source.addEventListener("snapshot", (event) => {
-      const nextSnapshot = JSON.parse(event.data) as ControlPlaneSnapshot;
+    const receiveSnapshot = (nextSnapshot: ControlPlaneSnapshot) => {
+      streamSnapshot = nextSnapshot;
       startTransition(() => {
         setSafeSnapshot((currentSnapshot) =>
           isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
@@ -122,6 +123,21 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         setHasReceivedLiveSnapshot(true);
         setConnectionState("live");
       });
+    };
+
+    source.addEventListener("snapshot", (event) => {
+      receiveSnapshot(JSON.parse(event.data) as ControlPlaneSnapshot);
+    });
+
+    source.addEventListener("snapshot-delta", (event) => {
+      const delta = JSON.parse(event.data) as {
+        baseRevision?: number;
+        baseGeneratedAt?: string;
+        changes: Partial<ControlPlaneSnapshot>;
+      };
+      if (!streamSnapshot || streamSnapshot.revision !== delta.baseRevision ||
+          streamSnapshot.generatedAt !== delta.baseGeneratedAt) return;
+      receiveSnapshot({ ...streamSnapshot, ...delta.changes });
     });
 
     source.addEventListener("attention", (event) => {
@@ -181,6 +197,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
       cache: "no-store",
       signal: options.signal
     });
+    if (!response.ok) throw new Error("The AgentOS dashboard snapshot is unavailable.");
     const nextSnapshot = (await response.json()) as ControlPlaneSnapshot;
     const snapshotPending = response.headers.get("X-AgentOS-Snapshot-Pending") === "true";
 
