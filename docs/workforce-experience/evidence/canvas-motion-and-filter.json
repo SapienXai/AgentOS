@@ -1,0 +1,159 @@
+{
+  "checks": {
+    "base": [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-task-filter",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-tether-motion",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-task-filter",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-tether-motion",
+        "result": "PASS"
+      }
+    ],
+    "candidate": [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-task-filter",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-tether-motion",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-task-filter",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-tether-motion",
+        "result": "PASS"
+      }
+    ]
+  },
+  "motion": {
+    "base": {
+      "dark": {
+        "sampleCount": 69,
+        "distinctNodePositions": 34,
+        "distinctTetherPaths": 35,
+        "firstFrame": [
+          "translate(-18px, 82px)",
+          "M110.99999433841386,161.999989398036 C110.99999433841386,137.99999415811178 82.99999196140625,113.99999891818754 54.99998958439864,113.99999891818754"
+        ],
+        "finalFrame": [
+          "translate(99.3418px, 131px)",
+          "M228.34176649031258,210.9873311701879 C228.34176649031258,186.9936650441877 200.34176411330498,162.99999891818754 172.34176173629737,162.99999891818754"
+        ],
+        "lastEightMaxDistanceFromFinal": 0,
+        "shift": [
+          117.3418,
+          49
+        ]
+      },
+      "light": {
+        "sampleCount": 87,
+        "distinctNodePositions": 35,
+        "distinctTetherPaths": 36,
+        "firstFrame": [
+          "translate(-18px, 82px)",
+          "M111.0000006642166,161.99999097544537 C111.0000006642166,137.99999180571612 82.99998792517715,113.99999263598686 54.99997518613772,113.99999263598686"
+        ],
+        "finalFrame": [
+          "translate(99.3418px, 131px)",
+          "M228.34177281611534,210.98733274759726 C228.34177281611534,186.99366269179205 200.3417600770759,162.99999263598687 172.34174733803644,162.99999263598687"
+        ],
+        "lastEightMaxDistanceFromFinal": 0,
+        "shift": [
+          117.3418,
+          49
+        ]
+      }
+    },
+    "candidate": {
+      "dark": {
+        "sampleCount": 67,
+        "distinctNodePositions": 33,
+        "distinctTetherPaths": 34,
+        "firstFrame": [
+          "translate(-18px, 82px)",
+          "M110.99999771233828,162.00001022391908 C110.99999771233828,138.0000054569399 83.00000037639909,114.00000068996073 55.00000304045989,114.00000068996073"
+        ],
+        "finalFrame": [
+          "translate(99.3418px, 131px)",
+          "M228.34176986423702,210.98735199607097 C228.34176986423702,186.99367634301586 200.34177252829784,163.00000068996073 172.34177519235863,163.00000068996073"
+        ],
+        "lastEightMaxDistanceFromFinal": 0,
+        "shift": [
+          117.3418,
+          49
+        ]
+      },
+      "light": {
+        "sampleCount": 75,
+        "distinctNodePositions": 35,
+        "distinctTetherPaths": 36,
+        "firstFrame": [
+          "translate(-18px, 82px)",
+          "M110.9999919357771,161.99998770566125 C110.9999919357771,137.99999097725032 82.99998496652942,113.9999942488394 54.99997799728175,113.9999942488394"
+        ],
+        "finalFrame": [
+          "translate(97.9842px, 131px)",
+          "M226.98414217012345,211.33872735936714 C226.98414217012345,187.1693608041033 198.98413520087576,162.9999942488394 170.9841282316281,162.9999942488394"
+        ],
+        "lastEightMaxDistanceFromFinal": 0,
+        "shift": [
+          115.9842,
+          49
+        ]
+      }
+    }
+  },
+  "capture": "Chromium pixel ratio 1, 1440 × 900, normal motion, 3.2 s RAF sampling after dragging an employee in the controlled connected-surface fixture."
+}
