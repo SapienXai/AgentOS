@@ -1,0 +1,2307 @@
+{
+  "environment": {
+    "scale": "50/500",
+    "sequence": [
+      "main",
+      "candidate"
+    ],
+    "domSamplesPerBuild": 24,
+    "notes": "Per update records native mutation completion and two Playwright markers on each browser."
+  },
+  "main": [
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1188.9,
+          "ttfbMs": 298,
+          "domContentLoadedMs": 342,
+          "canvasMs": 745,
+          "firstNodeMs": 745,
+          "nodeReadyMs": 745,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 667,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 10237.6,
+          "ttfbMs": 295,
+          "domContentLoadedMs": 336,
+          "canvasMs": 739,
+          "firstNodeMs": 739,
+          "nodeReadyMs": 739,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 660,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 9863,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 260.1,
+          "ttfbMs": 41,
+          "domContentLoadedMs": 73,
+          "canvasMs": 223,
+          "firstNodeMs": 223,
+          "nodeReadyMs": 224,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 232,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 256.9,
+          "ttfbMs": 40,
+          "domContentLoadedMs": 92,
+          "canvasMs": 224,
+          "firstNodeMs": 224,
+          "nodeReadyMs": 225,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 233,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 50,
+          "maxLongTaskMs": 50,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1188.9,
+        "p95Ms": 10237.6,
+        "worstMs": 10237.6
+      },
+      "coldRpcCounts": {
+        "connect": 10,
+        "agents.list": 3,
+        "models.authStatus": 2,
+        "models.list": 2,
+        "health": 3,
+        "status": 4,
+        "device.pair.list": 2,
+        "sessions.subscribe": 1,
+        "config.get": 3,
+        "tasks.list": 6,
+        "sessions.list": 4,
+        "worktrees.list": 1,
+        "taskSuggestions.list": 1,
+        "cron.status": 1,
+        "cron.list": 1,
+        "update.status": 1,
+        "system": 1,
+        "channels.status": 1
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 10,
+          "agents.list": 3,
+          "models.authStatus": 2,
+          "models.list": 2,
+          "health": 3,
+          "status": 4,
+          "device.pair.list": 2,
+          "sessions.subscribe": 1,
+          "config.get": 3,
+          "tasks.list": 6,
+          "sessions.list": 4,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "measured": 24,
+        "historicalP95Ms": 3237,
+        "namedNodeP95Ms": 3237,
+        "trace": [
+          {
+            "event": 1,
+            "agentsUpdateMs": 1565,
+            "sessionsPatchCompleteMs": 1622,
+            "browser": [
+              {
+                "historical": 1698,
+                "namedNode": 1698,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 11033,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1698,
+                "namedNode": 1698,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 11048,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 2,
+            "agentsUpdateMs": 918,
+            "sessionsPatchCompleteMs": 948,
+            "browser": [
+              {
+                "historical": 3237,
+                "namedNode": 3237,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 14156,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 3236,
+                "namedNode": 3237,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 14166,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 3,
+            "agentsUpdateMs": 650,
+            "sessionsPatchCompleteMs": 748,
+            "browser": [
+              {
+                "historical": 1534,
+                "namedNode": 1534,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 15793,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1534,
+                "namedNode": 1534,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 15802,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 4,
+            "agentsUpdateMs": 698,
+            "sessionsPatchCompleteMs": 764,
+            "browser": [
+              {
+                "historical": 2050,
+                "namedNode": 2050,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 16948,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 17884,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2056,
+                "namedNode": 2056,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 16957,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 17894,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 5,
+            "agentsUpdateMs": 641,
+            "sessionsPatchCompleteMs": 743,
+            "browser": [
+              {
+                "historical": 2031,
+                "namedNode": 2031,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 19435,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2032,
+                "namedNode": 2032,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 19445,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 6,
+            "agentsUpdateMs": 650,
+            "sessionsPatchCompleteMs": 751,
+            "browser": [
+              {
+                "historical": 1535,
+                "namedNode": 1536,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 20382,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 21441,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1536,
+                "namedNode": 1536,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 20391,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 21427,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 7,
+            "agentsUpdateMs": 705,
+            "sessionsPatchCompleteMs": 751,
+            "browser": [
+              {
+                "historical": 2038,
+                "namedNode": 2038,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 22580,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 23523,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2542,
+                "namedNode": 2542,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 22566,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 23510,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 8,
+            "agentsUpdateMs": 647,
+            "sessionsPatchCompleteMs": 725,
+            "browser": [
+              {
+                "historical": 1512,
+                "namedNode": 1512,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 25492,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1512,
+                "namedNode": 1512,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 25502,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 9,
+            "agentsUpdateMs": 696,
+            "sessionsPatchCompleteMs": 759,
+            "browser": [
+              {
+                "historical": 2045,
+                "namedNode": 2045,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 26631,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 27564,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2045,
+                "namedNode": 2045,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 26639,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 27572,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 10,
+            "agentsUpdateMs": 646,
+            "sessionsPatchCompleteMs": 741,
+            "browser": [
+              {
+                "historical": 1527,
+                "namedNode": 1527,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 29093,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1527,
+                "namedNode": 1527,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 29101,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 11,
+            "agentsUpdateMs": 697,
+            "sessionsPatchCompleteMs": 733,
+            "browser": [
+              {
+                "historical": 2527,
+                "namedNode": 2527,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 30218,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 31152,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2527,
+                "namedNode": 2527,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 30228,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 31162,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 12,
+            "agentsUpdateMs": 626,
+            "sessionsPatchCompleteMs": 724,
+            "browser": [
+              {
+                "historical": 1508,
+                "namedNode": 1508,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 33118,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1509,
+                "namedNode": 1509,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 33105,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 13,
+            "agentsUpdateMs": 699,
+            "sessionsPatchCompleteMs": 743,
+            "browser": [
+              {
+                "historical": 2535,
+                "namedNode": 2536,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 34249,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 35211,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2536,
+                "namedNode": 2536,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 34236,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 35196,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 14,
+            "agentsUpdateMs": 622,
+            "sessionsPatchCompleteMs": 716,
+            "browser": [
+              {
+                "historical": 1504,
+                "namedNode": 1504,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 37137,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1505,
+                "namedNode": 1505,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 37144,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 15,
+            "agentsUpdateMs": 703,
+            "sessionsPatchCompleteMs": 762,
+            "browser": [
+              {
+                "historical": 2050,
+                "namedNode": 2050,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 38282,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 39248,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2552,
+                "namedNode": 2552,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 38290,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 39256,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 16,
+            "agentsUpdateMs": 677,
+            "sessionsPatchCompleteMs": 784,
+            "browser": [
+              {
+                "historical": 1570,
+                "namedNode": 1570,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 41234,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1570,
+                "namedNode": 1570,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 41244,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 17,
+            "agentsUpdateMs": 713,
+            "sessionsPatchCompleteMs": 757,
+            "browser": [
+              {
+                "historical": 2043,
+                "namedNode": 2043,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 42399,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 43354,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2043,
+                "namedNode": 2043,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 42407,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 43363,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 18,
+            "agentsUpdateMs": 639,
+            "sessionsPatchCompleteMs": 712,
+            "browser": [
+              {
+                "historical": 1496,
+                "namedNode": 1496,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 44821,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1497,
+                "namedNode": 1497,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 44809,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 19,
+            "agentsUpdateMs": 686,
+            "sessionsPatchCompleteMs": 723,
+            "browser": [
+              {
+                "historical": 2515,
+                "namedNode": 2515,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 45956,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 46876,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2514,
+                "namedNode": 2515,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 45943,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 46884,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 20,
+            "agentsUpdateMs": 668,
+            "sessionsPatchCompleteMs": 774,
+            "browser": [
+              {
+                "historical": 1562,
+                "namedNode": 1563,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 48861,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1562,
+                "namedNode": 1562,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 48871,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 21,
+            "agentsUpdateMs": 732,
+            "sessionsPatchCompleteMs": 780,
+            "browser": [
+              {
+                "historical": 2573,
+                "namedNode": 2573,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 50022,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 51044,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2573,
+                "namedNode": 2573,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 50031,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 51054,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 22,
+            "agentsUpdateMs": 627,
+            "sessionsPatchCompleteMs": 734,
+            "browser": [
+              {
+                "historical": 4034,
+                "namedNode": 4034,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 55326,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 4035,
+                "namedNode": 4035,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 55337,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 23,
+            "agentsUpdateMs": 684,
+            "sessionsPatchCompleteMs": 749,
+            "browser": [
+              {
+                "historical": 2042,
+                "namedNode": 2042,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 56365,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 57416,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2042,
+                "namedNode": 2042,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 56375,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 57424,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 24,
+            "agentsUpdateMs": 653,
+            "sessionsPatchCompleteMs": 752,
+            "browser": [
+              {
+                "historical": 1537,
+                "namedNode": 1537,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 59026,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1537,
+                "namedNode": 1537,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 59037,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 678786,
+        "updateBytes": 4101465,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "diagnostics",
+            180982
+          ],
+          [
+            "workspaces",
+            110421
+          ],
+          [
+            "agents",
+            55630
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1389.9
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 678786,
+        "updateBytes": 1430650,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "diagnostics",
+            180982
+          ],
+          [
+            "workspaces",
+            110421
+          ],
+          [
+            "agents",
+            55630
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1365.8
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 445600,
+          "cpuAveragePercent": 12.5
+        },
+        "gateway": {
+          "rssKiB": 2341264,
+          "cpuAveragePercent": 11.2
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 907600,
+      "gatewayRssAfterSeedKiB": 2377920
+    }
+  ],
+  "candidate": [
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1109.9,
+          "ttfbMs": 259,
+          "domContentLoadedMs": 294,
+          "canvasMs": 656,
+          "firstNodeMs": 656,
+          "nodeReadyMs": 657,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 578,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1106,
+          "ttfbMs": 259,
+          "domContentLoadedMs": 309,
+          "canvasMs": 653,
+          "firstNodeMs": 653,
+          "nodeReadyMs": 654,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 578,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 237.9,
+          "ttfbMs": 38,
+          "domContentLoadedMs": 70,
+          "canvasMs": 213,
+          "firstNodeMs": 213,
+          "nodeReadyMs": 213,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 238,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 303.8,
+          "ttfbMs": 37,
+          "domContentLoadedMs": 54,
+          "canvasMs": 210,
+          "firstNodeMs": 210,
+          "nodeReadyMs": 211,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 237,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1106,
+        "p95Ms": 1109.9,
+        "worstMs": 1109.9
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "device.pair.list": 1,
+        "health": 1,
+        "status": 2,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "models.authStatus": 6,
+        "models.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "measured": 24,
+        "historicalP95Ms": 3514,
+        "namedNodeP95Ms": 3515,
+        "trace": [
+          {
+            "event": 1,
+            "agentsUpdateMs": 1895,
+            "sessionsPatchCompleteMs": 1986,
+            "browser": [
+              {
+                "historical": 1992,
+                "namedNode": 1992,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 22020,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1992,
+                "namedNode": 1992,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 22031,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 2,
+            "agentsUpdateMs": 1101,
+            "sessionsPatchCompleteMs": 1222,
+            "browser": [
+              {
+                "historical": 3514,
+                "namedNode": 3515,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 25775,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 3514,
+                "namedNode": 3515,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 25758,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 3,
+            "agentsUpdateMs": 711,
+            "sessionsPatchCompleteMs": 874,
+            "browser": [
+              {
+                "historical": 1663,
+                "namedNode": 1663,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 27343,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1662,
+                "namedNode": 1663,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 27328,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 4,
+            "agentsUpdateMs": 819,
+            "sessionsPatchCompleteMs": 873,
+            "browser": [
+              {
+                "historical": 2161,
+                "namedNode": 2161,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 28474,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 29477,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2161,
+                "namedNode": 2161,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 28484,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 29486,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 5,
+            "agentsUpdateMs": 697,
+            "sessionsPatchCompleteMs": 837,
+            "browser": [
+              {
+                "historical": 1625,
+                "namedNode": 1625,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 31125,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1624,
+                "namedNode": 1624,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 31133,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 6,
+            "agentsUpdateMs": 857,
+            "sessionsPatchCompleteMs": 946,
+            "browser": [
+              {
+                "historical": 2239,
+                "namedNode": 2240,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 32337,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 33336,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2239,
+                "namedNode": 2239,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 32348,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 33322,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 7,
+            "agentsUpdateMs": 676,
+            "sessionsPatchCompleteMs": 797,
+            "browser": [
+              {
+                "historical": 1587,
+                "namedNode": 1588,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 34994,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1587,
+                "namedNode": 1587,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 35003,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 8,
+            "agentsUpdateMs": 746,
+            "sessionsPatchCompleteMs": 807,
+            "browser": [
+              {
+                "historical": 2603,
+                "namedNode": 2603,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 36189,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 37181,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2603,
+                "namedNode": 2603,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 36200,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 37191,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 9,
+            "agentsUpdateMs": 723,
+            "sessionsPatchCompleteMs": 820,
+            "browser": [
+              {
+                "historical": 1610,
+                "namedNode": 1610,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 38070,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 39204,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1610,
+                "namedNode": 1610,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 38055,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 39191,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 10,
+            "agentsUpdateMs": 773,
+            "sessionsPatchCompleteMs": 827,
+            "browser": [
+              {
+                "historical": 2622,
+                "namedNode": 2622,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 40435,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 41493,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2622,
+                "namedNode": 2622,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 40422,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 41477,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 11,
+            "agentsUpdateMs": 756,
+            "sessionsPatchCompleteMs": 932,
+            "browser": [
+              {
+                "historical": 1717,
+                "namedNode": 1717,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 42651,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 43462,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1717,
+                "namedNode": 1717,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 42636,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 43471,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 12,
+            "agentsUpdateMs": 894,
+            "sessionsPatchCompleteMs": 974,
+            "browser": [
+              {
+                "historical": 2266,
+                "namedNode": 2266,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 44715,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 45728,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2267,
+                "namedNode": 2267,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 44726,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 45714,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 13,
+            "agentsUpdateMs": 757,
+            "sessionsPatchCompleteMs": 982,
+            "browser": [
+              {
+                "historical": 1767,
+                "namedNode": 1767,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 47505,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1768,
+                "namedNode": 1768,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 47515,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 14,
+            "agentsUpdateMs": 796,
+            "sessionsPatchCompleteMs": 907,
+            "browser": [
+              {
+                "historical": 2195,
+                "namedNode": 2196,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 48610,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 49734,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2195,
+                "namedNode": 2195,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 48620,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 49720,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 15,
+            "agentsUpdateMs": 669,
+            "sessionsPatchCompleteMs": 799,
+            "browser": [
+              {
+                "historical": 1587,
+                "namedNode": 1587,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 51402,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1587,
+                "namedNode": 1587,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 51387,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 16,
+            "agentsUpdateMs": 793,
+            "sessionsPatchCompleteMs": 866,
+            "browser": [
+              {
+                "historical": 2659,
+                "namedNode": 2660,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 52641,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 53624,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2659,
+                "namedNode": 2659,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 52651,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 53609,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 17,
+            "agentsUpdateMs": 679,
+            "sessionsPatchCompleteMs": 782,
+            "browser": [
+              {
+                "historical": 1569,
+                "namedNode": 1569,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 55645,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1570,
+                "namedNode": 1570,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 55631,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 18,
+            "agentsUpdateMs": 817,
+            "sessionsPatchCompleteMs": 866,
+            "browser": [
+              {
+                "historical": 2662,
+                "namedNode": 2662,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 56929,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 57912,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2662,
+                "namedNode": 2662,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 56915,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 57899,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 19,
+            "agentsUpdateMs": 733,
+            "sessionsPatchCompleteMs": 850,
+            "browser": [
+              {
+                "historical": 1639,
+                "namedNode": 1639,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 59941,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1640,
+                "namedNode": 1640,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 59952,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 20,
+            "agentsUpdateMs": 756,
+            "sessionsPatchCompleteMs": 803,
+            "browser": [
+              {
+                "historical": 5113,
+                "namedNode": 5113,
+                "stream": [
+                  {
+                    "kind": "snapshot",
+                    "ms": 63659,
+                    "mode": "live",
+                    "employees": 50
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 64678,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 5113,
+                "namedNode": 5113,
+                "stream": [
+                  {
+                    "kind": "snapshot",
+                    "ms": 63668,
+                    "mode": "live",
+                    "employees": 50
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 64689,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 21,
+            "agentsUpdateMs": 699,
+            "sessionsPatchCompleteMs": 861,
+            "browser": [
+              {
+                "historical": 1649,
+                "namedNode": 1649,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 66667,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1649,
+                "namedNode": 1649,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 66651,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 22,
+            "agentsUpdateMs": 756,
+            "sessionsPatchCompleteMs": 818,
+            "browser": [
+              {
+                "historical": 2612,
+                "namedNode": 2613,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 67877,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 68867,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 2613,
+                "namedNode": 2613,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 67862,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 68877,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 23,
+            "agentsUpdateMs": 674,
+            "sessionsPatchCompleteMs": 776,
+            "browser": [
+              {
+                "historical": 2066,
+                "namedNode": 2066,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 70925,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1564,
+                "namedNode": 1564,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 70911,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "event": 24,
+            "agentsUpdateMs": 742,
+            "sessionsPatchCompleteMs": 864,
+            "browser": [
+              {
+                "historical": 1654,
+                "namedNode": 1654,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 72058,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 72980,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              },
+              {
+                "historical": 1654,
+                "namedNode": 1654,
+                "stream": [
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 72043,
+                    "mode": null,
+                    "employees": null
+                  },
+                  {
+                    "kind": "snapshot-delta",
+                    "ms": 72991,
+                    "mode": null,
+                    "employees": null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 585398,
+        "updateBytes": 4094176,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110425
+          ],
+          [
+            "diagnostics",
+            87890
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1567.4
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 585398,
+        "updateBytes": 1517030,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110425
+          ],
+          [
+            "diagnostics",
+            87890
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1528.8
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 415584,
+          "cpuAveragePercent": 14.9
+        },
+        "gateway": {
+          "rssKiB": 2543696,
+          "cpuAveragePercent": 13.6
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 900912,
+      "gatewayRssAfterSeedKiB": 2497040
+    }
+  ]
+}

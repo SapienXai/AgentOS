@@ -1,0 +1,716 @@
+{
+  "environment": {
+    "scale": "50/500",
+    "sequence": [
+      "candidate",
+      "main"
+    ],
+    "browserClients": 2,
+    "restartsPerBuild": 2,
+    "domSamplesPerBuild": 30
+  },
+  "main": [
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1157.2,
+          "ttfbMs": 274,
+          "domContentLoadedMs": 301,
+          "canvasMs": 709,
+          "firstNodeMs": 709,
+          "nodeReadyMs": 709,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 628,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1158.6,
+          "ttfbMs": 272,
+          "domContentLoadedMs": 299,
+          "canvasMs": 703,
+          "firstNodeMs": 703,
+          "nodeReadyMs": 703,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 628,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1098.4,
+          "ttfbMs": 240,
+          "domContentLoadedMs": 276,
+          "canvasMs": 654,
+          "firstNodeMs": 654,
+          "nodeReadyMs": 654,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 573,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1081.2,
+          "ttfbMs": 219,
+          "domContentLoadedMs": 253,
+          "canvasMs": 649,
+          "firstNodeMs": 649,
+          "nodeReadyMs": 649,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 558,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 256.1,
+          "ttfbMs": 37,
+          "domContentLoadedMs": 71,
+          "canvasMs": 219,
+          "firstNodeMs": 219,
+          "nodeReadyMs": 219,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 227,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 265.1,
+          "ttfbMs": 38,
+          "domContentLoadedMs": 96,
+          "canvasMs": 228,
+          "firstNodeMs": 228,
+          "nodeReadyMs": 229,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 238,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 50,
+          "maxLongTaskMs": 50,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1098.4,
+        "p95Ms": 1158.6,
+        "worstMs": 1158.6
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "device.pair.list": 1,
+        "status": 1,
+        "health": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "models.authStatus": 6,
+        "models.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 30,
+        "missed": 0,
+        "medianMs": 1600.7,
+        "p95Ms": 3249.5,
+        "worstMs": 4519.659207999997,
+        "timingsMs": [
+          1551.3,
+          3249.5,
+          1521.4,
+          2596.9,
+          1517.9,
+          2540.8,
+          1600.7,
+          2045.3,
+          2620,
+          1521,
+          2528,
+          1552.9,
+          2532.6,
+          1514.8,
+          2527.1,
+          1576.4,
+          2021.9,
+          1510.1,
+          2592.9,
+          1528.9,
+          4519.7,
+          1550.5,
+          2115,
+          1521.9,
+          2530.5,
+          1503.7,
+          2007.2,
+          1504,
+          2508.2,
+          1492.9
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 4097074,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1390
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 1517018,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1378.2
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 434672,
+          "cpuAveragePercent": 12.9
+        },
+        "gateway": {
+          "rssKiB": 2578048,
+          "cpuAveragePercent": 11.8
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 866960,
+      "gatewayRssAfterSeedKiB": 2560816
+    }
+  ],
+  "candidate": [
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1115,
+          "ttfbMs": 260,
+          "domContentLoadedMs": 286,
+          "canvasMs": 655,
+          "firstNodeMs": 655,
+          "nodeReadyMs": 656,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 587,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1111.2,
+          "ttfbMs": 259,
+          "domContentLoadedMs": 313,
+          "canvasMs": 651,
+          "firstNodeMs": 651,
+          "nodeReadyMs": 652,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 582,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1077.9,
+          "ttfbMs": 222,
+          "domContentLoadedMs": 273,
+          "canvasMs": 608,
+          "firstNodeMs": 608,
+          "nodeReadyMs": 608,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 536,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1066.6,
+          "ttfbMs": 218,
+          "domContentLoadedMs": 244,
+          "canvasMs": 606,
+          "firstNodeMs": 606,
+          "nodeReadyMs": 607,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 533,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 249.2,
+          "ttfbMs": 42,
+          "domContentLoadedMs": 75,
+          "canvasMs": 215,
+          "firstNodeMs": 215,
+          "nodeReadyMs": 215,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 225,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 239.4,
+          "ttfbMs": 41,
+          "domContentLoadedMs": 61,
+          "canvasMs": 214,
+          "firstNodeMs": 214,
+          "nodeReadyMs": 214,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 224,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1077.9,
+        "p95Ms": 1115,
+        "worstMs": 1115
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "health": 1,
+        "device.pair.list": 1,
+        "status": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "sessions.list": 2,
+        "tasks.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "sessions.list": 2,
+          "tasks.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "sessions.list": 2,
+          "tasks.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "models.authStatus": 6,
+        "models.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "sessions.list": 12,
+        "tasks.list": 24,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 30,
+        "missed": 0,
+        "medianMs": 1880.6,
+        "p95Ms": 3958.9,
+        "worstMs": 4701.840665999989,
+        "timingsMs": [
+          1880.6,
+          3958.9,
+          1630.3,
+          2642.1,
+          1855.4,
+          2228.2,
+          1615.7,
+          2140.1,
+          2281.9,
+          1734.4,
+          2155.6,
+          1580,
+          2635.8,
+          1587.8,
+          2254.2,
+          1613.9,
+          2607.7,
+          1570.5,
+          2628.4,
+          1754.1,
+          4701.8,
+          1679.6,
+          2588.5,
+          1603.7,
+          2653.5,
+          1576,
+          2589.1,
+          1738.1,
+          2197.7,
+          1605
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 4097074,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1484.9
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 1517018,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1474.1
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 421424,
+          "cpuAveragePercent": 13.6
+        },
+        "gateway": {
+          "rssKiB": 2477680,
+          "cpuAveragePercent": 12.9
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 908672,
+      "gatewayRssAfterSeedKiB": 2469648
+    }
+  ]
+}

@@ -1,0 +1,5533 @@
+{
+  "environment": {
+    "node": "24.22.1",
+    "browser": "Google Chrome 158.0.8127.38",
+    "macOS": "27.0.1",
+    "viewport": [
+      1440,
+      900
+    ],
+    "coldProcessRestartsPerScale": 10,
+    "isolatedBrowserContextsPerRestart": 2,
+    "eventSamplesPerScale": 20,
+    "openclaw": "2026.11.10",
+    "main": "49cf636241e2d00df79245d07a56a29b339687b1",
+    "candidate": "228912e297fba6f465965e6231475d56589b7694"
+  },
+  "main": [
+    {
+      "agents": 1,
+      "nativeSessionsCreated": 1,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1273.1,
+          "ttfbMs": 377,
+          "domContentLoadedMs": 431,
+          "canvasMs": 820,
+          "firstNodeMs": 820,
+          "nodeReadyMs": 821,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 743,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1264.9,
+          "ttfbMs": 377,
+          "domContentLoadedMs": 427,
+          "canvasMs": 818,
+          "firstNodeMs": 818,
+          "nodeReadyMs": 818,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 739,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 8103.8,
+          "ttfbMs": 209,
+          "domContentLoadedMs": 242,
+          "canvasMs": 595,
+          "firstNodeMs": 595,
+          "nodeReadyMs": 595,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 527,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 8077,
+              "mode": "live",
+              "employees": 1
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 8086.8,
+          "ttfbMs": 196,
+          "domContentLoadedMs": 246,
+          "canvasMs": 581,
+          "firstNodeMs": 581,
+          "nodeReadyMs": 581,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 514,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 8064,
+              "mode": "live",
+              "employees": 1
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1049.7,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 225,
+          "canvasMs": 588,
+          "firstNodeMs": 588,
+          "nodeReadyMs": 588,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 507,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3561.2,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 225,
+          "canvasMs": 587,
+          "firstNodeMs": 587,
+          "nodeReadyMs": 588,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 504,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3411,
+              "mode": "live",
+              "employees": 1
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3569.1,
+          "ttfbMs": 207,
+          "domContentLoadedMs": 231,
+          "canvasMs": 586,
+          "firstNodeMs": 586,
+          "nodeReadyMs": 586,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 518,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3256,
+              "mode": "live",
+              "employees": 1
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1045,
+          "ttfbMs": 200,
+          "domContentLoadedMs": 225,
+          "canvasMs": 576,
+          "firstNodeMs": 576,
+          "nodeReadyMs": 576,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 508,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1051.3,
+          "ttfbMs": 201,
+          "domContentLoadedMs": 224,
+          "canvasMs": 582,
+          "firstNodeMs": 582,
+          "nodeReadyMs": 582,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 508,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1044.7,
+          "ttfbMs": 200,
+          "domContentLoadedMs": 237,
+          "canvasMs": 576,
+          "firstNodeMs": 576,
+          "nodeReadyMs": 576,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 502,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.3,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 225,
+          "canvasMs": 577,
+          "firstNodeMs": 577,
+          "nodeReadyMs": 577,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 512,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1040.9,
+          "ttfbMs": 200,
+          "domContentLoadedMs": 221,
+          "canvasMs": 579,
+          "firstNodeMs": 579,
+          "nodeReadyMs": 580,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 505,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1075.4,
+          "ttfbMs": 219,
+          "domContentLoadedMs": 259,
+          "canvasMs": 627,
+          "firstNodeMs": 627,
+          "nodeReadyMs": 627,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 545,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3579.9,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 238,
+          "canvasMs": 629,
+          "firstNodeMs": 629,
+          "nodeReadyMs": 630,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 544,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3368,
+              "mode": "live",
+              "employees": 1
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.5,
+          "ttfbMs": 204,
+          "domContentLoadedMs": 228,
+          "canvasMs": 582,
+          "firstNodeMs": 582,
+          "nodeReadyMs": 583,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 507,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1051.1,
+          "ttfbMs": 205,
+          "domContentLoadedMs": 228,
+          "canvasMs": 591,
+          "firstNodeMs": 591,
+          "nodeReadyMs": 591,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 512,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1058.4,
+          "ttfbMs": 209,
+          "domContentLoadedMs": 232,
+          "canvasMs": 598,
+          "firstNodeMs": 598,
+          "nodeReadyMs": 598,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 519,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1048,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 226,
+          "canvasMs": 588,
+          "firstNodeMs": 588,
+          "nodeReadyMs": 588,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 510,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1053.2,
+          "ttfbMs": 205,
+          "domContentLoadedMs": 240,
+          "canvasMs": 572,
+          "firstNodeMs": 572,
+          "nodeReadyMs": 572,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 511,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1046.6,
+          "ttfbMs": 205,
+          "domContentLoadedMs": 227,
+          "canvasMs": 588,
+          "firstNodeMs": 588,
+          "nodeReadyMs": 588,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 506,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 230.1,
+          "ttfbMs": 19,
+          "domContentLoadedMs": 34,
+          "canvasMs": 197,
+          "firstNodeMs": 197,
+          "nodeReadyMs": 197,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 205,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 50,
+          "maxLongTaskMs": 50,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 229.1,
+          "ttfbMs": 17,
+          "domContentLoadedMs": 36,
+          "canvasMs": 193,
+          "firstNodeMs": 193,
+          "nodeReadyMs": 193,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 194,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 50,
+          "maxLongTaskMs": 50,
+          "htmlBytes": 63235,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1052.5,
+        "p95Ms": 8086.8,
+        "worstMs": 8103.8
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "status": 1,
+        "device.pair.list": 1,
+        "health": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1570.3,
+        "p95Ms": 1714.5,
+        "worstMs": 2088.2386660000047,
+        "timingsMs": [
+          1714.5,
+          1569.5,
+          1572.7,
+          1569.5,
+          1579.2,
+          1564.2,
+          1572.7,
+          1592.3,
+          1566.5,
+          1567.1,
+          1560.6,
+          2088.2,
+          1572.3,
+          1584.8,
+          1564.2,
+          1570.3,
+          1581,
+          1563.8,
+          1567,
+          1579.2
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 85623,
+        "updateBytes": 1095156,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "diagnostics",
+            79624
+          ],
+          [
+            "workspaces",
+            1779
+          ],
+          [
+            "agents",
+            1085
+          ],
+          [
+            "nativeWork",
+            768
+          ],
+          [
+            "runtimes",
+            717
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1192.5
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 85623,
+        "updateBytes": 189166,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "diagnostics",
+            79624
+          ],
+          [
+            "workspaces",
+            1779
+          ],
+          [
+            "agents",
+            1085
+          ],
+          [
+            "nativeWork",
+            768
+          ],
+          [
+            "runtimes",
+            717
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1189.6
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 381648,
+          "cpuAveragePercent": 3.8
+        },
+        "gateway": {
+          "rssKiB": 1536496,
+          "cpuAveragePercent": 6.2
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 837200,
+      "gatewayRssAfterSeedKiB": 1641216
+    },
+    {
+      "agents": 10,
+      "nativeSessionsCreated": 100,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1102,
+          "ttfbMs": 243,
+          "domContentLoadedMs": 267,
+          "canvasMs": 643,
+          "firstNodeMs": 643,
+          "nodeReadyMs": 644,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 570,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1104.9,
+          "ttfbMs": 244,
+          "domContentLoadedMs": 284,
+          "canvasMs": 641,
+          "firstNodeMs": 641,
+          "nodeReadyMs": 642,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 572,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 10625.6,
+          "ttfbMs": 212,
+          "domContentLoadedMs": 233,
+          "canvasMs": 605,
+          "firstNodeMs": 605,
+          "nodeReadyMs": 605,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 521,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 10231,
+              "mode": "live",
+              "employees": 10
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1046.8,
+          "ttfbMs": 201,
+          "domContentLoadedMs": 239,
+          "canvasMs": 590,
+          "firstNodeMs": 590,
+          "nodeReadyMs": 590,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 509,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1058.7,
+          "ttfbMs": 210,
+          "domContentLoadedMs": 234,
+          "canvasMs": 597,
+          "firstNodeMs": 597,
+          "nodeReadyMs": 598,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 525,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1059.7,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 236,
+          "canvasMs": 609,
+          "firstNodeMs": 609,
+          "nodeReadyMs": 610,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 527,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3570.4,
+          "ttfbMs": 207,
+          "domContentLoadedMs": 230,
+          "canvasMs": 606,
+          "firstNodeMs": 606,
+          "nodeReadyMs": 606,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 518,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3422,
+              "mode": "live",
+              "employees": 10
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1046.2,
+          "ttfbMs": 203,
+          "domContentLoadedMs": 225,
+          "canvasMs": 590,
+          "firstNodeMs": 590,
+          "nodeReadyMs": 591,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 508,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1054.7,
+          "ttfbMs": 207,
+          "domContentLoadedMs": 230,
+          "canvasMs": 604,
+          "firstNodeMs": 604,
+          "nodeReadyMs": 605,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 515,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1054.8,
+          "ttfbMs": 209,
+          "domContentLoadedMs": 232,
+          "canvasMs": 602,
+          "firstNodeMs": 602,
+          "nodeReadyMs": 602,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 515,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1061.7,
+          "ttfbMs": 211,
+          "domContentLoadedMs": 234,
+          "canvasMs": 605,
+          "firstNodeMs": 605,
+          "nodeReadyMs": 605,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 529,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3561.3,
+          "ttfbMs": 200,
+          "domContentLoadedMs": 226,
+          "canvasMs": 595,
+          "firstNodeMs": 595,
+          "nodeReadyMs": 596,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 520,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3284,
+              "mode": "live",
+              "employees": 10
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1061,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 234,
+          "canvasMs": 602,
+          "firstNodeMs": 602,
+          "nodeReadyMs": 603,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 520,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3576,
+          "ttfbMs": 216,
+          "domContentLoadedMs": 250,
+          "canvasMs": 607,
+          "firstNodeMs": 607,
+          "nodeReadyMs": 608,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 519,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3318,
+              "mode": "live",
+              "employees": 10
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1073.6,
+          "ttfbMs": 223,
+          "domContentLoadedMs": 256,
+          "canvasMs": 630,
+          "firstNodeMs": 630,
+          "nodeReadyMs": 631,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 539,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1069.2,
+          "ttfbMs": 223,
+          "domContentLoadedMs": 245,
+          "canvasMs": 626,
+          "firstNodeMs": 626,
+          "nodeReadyMs": 626,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 537,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1064.3,
+          "ttfbMs": 210,
+          "domContentLoadedMs": 234,
+          "canvasMs": 609,
+          "firstNodeMs": 609,
+          "nodeReadyMs": 610,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 530,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1059,
+          "ttfbMs": 208,
+          "domContentLoadedMs": 234,
+          "canvasMs": 603,
+          "firstNodeMs": 603,
+          "nodeReadyMs": 603,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 526,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.7,
+          "ttfbMs": 208,
+          "domContentLoadedMs": 232,
+          "canvasMs": 596,
+          "firstNodeMs": 596,
+          "nodeReadyMs": 597,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 515,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1037.2,
+          "ttfbMs": 201,
+          "domContentLoadedMs": 225,
+          "canvasMs": 587,
+          "firstNodeMs": 587,
+          "nodeReadyMs": 587,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 505,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 229.2,
+          "ttfbMs": 22,
+          "domContentLoadedMs": 34,
+          "canvasMs": 198,
+          "firstNodeMs": 198,
+          "nodeReadyMs": 198,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 206,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 50,
+          "maxLongTaskMs": 50,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 232.7,
+          "ttfbMs": 20,
+          "domContentLoadedMs": 72,
+          "canvasMs": 199,
+          "firstNodeMs": 199,
+          "nodeReadyMs": 200,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 207,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 82808,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1061,
+        "p95Ms": 3576,
+        "worstMs": 10625.6
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "status": 1,
+        "health": 1,
+        "device.pair.list": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "health": 3,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "health": 3,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "health": 3,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "health": 3,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1644.7,
+        "p95Ms": 2208.1,
+        "worstMs": 2295.9079590000038,
+        "timingsMs": [
+          2295.9,
+          1652.2,
+          2208.1,
+          1638.2,
+          1646.1,
+          1652.6,
+          2184.6,
+          1644.3,
+          1646.3,
+          1636.7,
+          1643.8,
+          1676,
+          1644.7,
+          1637.1,
+          1642.3,
+          1646.1,
+          1638.5,
+          1633.7,
+          1649.8,
+          1644
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 197059,
+        "updateBytes": 1763549,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "diagnostics",
+            81614
+          ],
+          [
+            "runtimes",
+            58841
+          ],
+          [
+            "workspaces",
+            22034
+          ],
+          [
+            "nativeWork",
+            19392
+          ],
+          [
+            "agents",
+            11010
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1231.9
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 197059,
+        "updateBytes": 550507,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "diagnostics",
+            81614
+          ],
+          [
+            "runtimes",
+            58841
+          ],
+          [
+            "workspaces",
+            22034
+          ],
+          [
+            "nativeWork",
+            19392
+          ],
+          [
+            "agents",
+            11010
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1241.4
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 391408,
+          "cpuAveragePercent": 5.4
+        },
+        "gateway": {
+          "rssKiB": 1590928,
+          "cpuAveragePercent": 5.9
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 905456,
+      "gatewayRssAfterSeedKiB": 2129952
+    },
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1117.9,
+          "ttfbMs": 266,
+          "domContentLoadedMs": 304,
+          "canvasMs": 656,
+          "firstNodeMs": 656,
+          "nodeReadyMs": 656,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 580,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1112.1,
+          "ttfbMs": 262,
+          "domContentLoadedMs": 287,
+          "canvasMs": 658,
+          "firstNodeMs": 658,
+          "nodeReadyMs": 658,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 580,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1076.9,
+          "ttfbMs": 228,
+          "domContentLoadedMs": 252,
+          "canvasMs": 607,
+          "firstNodeMs": 607,
+          "nodeReadyMs": 607,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 536,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 10110.3,
+          "ttfbMs": 224,
+          "domContentLoadedMs": 249,
+          "canvasMs": 619,
+          "firstNodeMs": 619,
+          "nodeReadyMs": 619,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 536,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 9780,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1096.1,
+          "ttfbMs": 223,
+          "domContentLoadedMs": 247,
+          "canvasMs": 606,
+          "firstNodeMs": 606,
+          "nodeReadyMs": 606,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 532,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1089.9,
+          "ttfbMs": 220,
+          "domContentLoadedMs": 245,
+          "canvasMs": 600,
+          "firstNodeMs": 600,
+          "nodeReadyMs": 600,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 526,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3585.1,
+          "ttfbMs": 222,
+          "domContentLoadedMs": 246,
+          "canvasMs": 601,
+          "firstNodeMs": 601,
+          "nodeReadyMs": 602,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 527,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3543,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3580.6,
+          "ttfbMs": 221,
+          "domContentLoadedMs": 256,
+          "canvasMs": 598,
+          "firstNodeMs": 598,
+          "nodeReadyMs": 598,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 525,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3551,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1074.8,
+          "ttfbMs": 226,
+          "domContentLoadedMs": 249,
+          "canvasMs": 609,
+          "firstNodeMs": 609,
+          "nodeReadyMs": 609,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 534,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1074.7,
+          "ttfbMs": 227,
+          "domContentLoadedMs": 250,
+          "canvasMs": 607,
+          "firstNodeMs": 607,
+          "nodeReadyMs": 607,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 532,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 3587.2,
+          "ttfbMs": 222,
+          "domContentLoadedMs": 246,
+          "canvasMs": 619,
+          "firstNodeMs": 619,
+          "nodeReadyMs": 620,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 541,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 3360,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1071.3,
+          "ttfbMs": 219,
+          "domContentLoadedMs": 272,
+          "canvasMs": 627,
+          "firstNodeMs": 627,
+          "nodeReadyMs": 628,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 544,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1068.7,
+          "ttfbMs": 219,
+          "domContentLoadedMs": 256,
+          "canvasMs": 596,
+          "firstNodeMs": 596,
+          "nodeReadyMs": 597,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 526,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1064.6,
+          "ttfbMs": 218,
+          "domContentLoadedMs": 242,
+          "canvasMs": 611,
+          "firstNodeMs": 611,
+          "nodeReadyMs": 612,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 527,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1069.7,
+          "ttfbMs": 226,
+          "domContentLoadedMs": 249,
+          "canvasMs": 616,
+          "firstNodeMs": 616,
+          "nodeReadyMs": 616,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 533,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1060.5,
+          "ttfbMs": 217,
+          "domContentLoadedMs": 267,
+          "canvasMs": 604,
+          "firstNodeMs": 604,
+          "nodeReadyMs": 605,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 524,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1081.1,
+          "ttfbMs": 224,
+          "domContentLoadedMs": 245,
+          "canvasMs": 613,
+          "firstNodeMs": 613,
+          "nodeReadyMs": 613,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 531,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1061.9,
+          "ttfbMs": 211,
+          "domContentLoadedMs": 264,
+          "canvasMs": 575,
+          "firstNodeMs": 575,
+          "nodeReadyMs": 575,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 516,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1072.2,
+          "ttfbMs": 224,
+          "domContentLoadedMs": 246,
+          "canvasMs": 607,
+          "firstNodeMs": 607,
+          "nodeReadyMs": 607,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 530,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1064.1,
+          "ttfbMs": 216,
+          "domContentLoadedMs": 241,
+          "canvasMs": 603,
+          "firstNodeMs": 603,
+          "nodeReadyMs": 604,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 527,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 248.4,
+          "ttfbMs": 49,
+          "domContentLoadedMs": 61,
+          "canvasMs": 224,
+          "firstNodeMs": 224,
+          "nodeReadyMs": 225,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 234,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 267.2,
+          "ttfbMs": 49,
+          "domContentLoadedMs": 104,
+          "canvasMs": 233,
+          "firstNodeMs": 233,
+          "nodeReadyMs": 233,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 242,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 170368,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1074.8,
+        "p95Ms": 3587.2,
+        "worstMs": 10110.3
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "status": 1,
+        "device.pair.list": 1,
+        "health": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "device.pair.list": 6,
+        "config.get": 11,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1589.6,
+        "p95Ms": 2116,
+        "worstMs": 2793.8838340000075,
+        "timingsMs": [
+          1570.5,
+          2793.9,
+          1554.2,
+          2011.2,
+          1489.5,
+          1995.8,
+          1589.6,
+          2116,
+          1485,
+          2006.7,
+          1476.2,
+          1990.9,
+          1483.6,
+          1991.8,
+          1908.2,
+          1480.7,
+          2054.4,
+          1479,
+          1989.4,
+          1556.8
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 4097264,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 947.4
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 585881,
+        "updateBytes": 1532338,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110424
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 957.8
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 467248,
+          "cpuAveragePercent": 10.3
+        },
+        "gateway": {
+          "rssKiB": 2286384,
+          "cpuAveragePercent": 13.8
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 922176,
+      "gatewayRssAfterSeedKiB": 2356144
+    }
+  ],
+  "candidate": [
+    {
+      "agents": 1,
+      "nativeSessionsCreated": 1,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1067.7,
+          "ttfbMs": 220,
+          "domContentLoadedMs": 244,
+          "canvasMs": 597,
+          "firstNodeMs": 597,
+          "nodeReadyMs": 598,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 521,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1064,
+          "ttfbMs": 217,
+          "domContentLoadedMs": 256,
+          "canvasMs": 583,
+          "firstNodeMs": 583,
+          "nodeReadyMs": 583,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 518,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1040.9,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 215,
+          "canvasMs": 580,
+          "firstNodeMs": 580,
+          "nodeReadyMs": 580,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 501,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1036.3,
+          "ttfbMs": 191,
+          "domContentLoadedMs": 215,
+          "canvasMs": 584,
+          "firstNodeMs": 584,
+          "nodeReadyMs": 585,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 499,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1039.6,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 216,
+          "canvasMs": 571,
+          "firstNodeMs": 571,
+          "nodeReadyMs": 571,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 492,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1029.1,
+          "ttfbMs": 186,
+          "domContentLoadedMs": 237,
+          "canvasMs": 562,
+          "firstNodeMs": 562,
+          "nodeReadyMs": 562,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 482,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.4,
+          "ttfbMs": 194,
+          "domContentLoadedMs": 216,
+          "canvasMs": 570,
+          "firstNodeMs": 570,
+          "nodeReadyMs": 570,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 488,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1045.8,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 231,
+          "canvasMs": 570,
+          "firstNodeMs": 570,
+          "nodeReadyMs": 571,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 483,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1038.3,
+          "ttfbMs": 194,
+          "domContentLoadedMs": 228,
+          "canvasMs": 574,
+          "firstNodeMs": 574,
+          "nodeReadyMs": 575,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 490,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1022.6,
+          "ttfbMs": 172,
+          "domContentLoadedMs": 209,
+          "canvasMs": 550,
+          "firstNodeMs": 550,
+          "nodeReadyMs": 550,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 469,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1036.7,
+          "ttfbMs": 192,
+          "domContentLoadedMs": 216,
+          "canvasMs": 584,
+          "firstNodeMs": 584,
+          "nodeReadyMs": 584,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 499,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1026,
+          "ttfbMs": 185,
+          "domContentLoadedMs": 207,
+          "canvasMs": 567,
+          "firstNodeMs": 567,
+          "nodeReadyMs": 567,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 489,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1036.8,
+          "ttfbMs": 188,
+          "domContentLoadedMs": 211,
+          "canvasMs": 567,
+          "firstNodeMs": 567,
+          "nodeReadyMs": 568,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 486,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1044.8,
+          "ttfbMs": 183,
+          "domContentLoadedMs": 223,
+          "canvasMs": 559,
+          "firstNodeMs": 559,
+          "nodeReadyMs": 560,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 480,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.9,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 217,
+          "canvasMs": 566,
+          "firstNodeMs": 566,
+          "nodeReadyMs": 566,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 490,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1024.6,
+          "ttfbMs": 184,
+          "domContentLoadedMs": 207,
+          "canvasMs": 564,
+          "firstNodeMs": 564,
+          "nodeReadyMs": 565,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 479,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1058.2,
+          "ttfbMs": 192,
+          "domContentLoadedMs": 227,
+          "canvasMs": 567,
+          "firstNodeMs": 567,
+          "nodeReadyMs": 567,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 490,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1044.8,
+          "ttfbMs": 181,
+          "domContentLoadedMs": 203,
+          "canvasMs": 551,
+          "firstNodeMs": 551,
+          "nodeReadyMs": 551,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 475,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1036.6,
+          "ttfbMs": 194,
+          "domContentLoadedMs": 230,
+          "canvasMs": 572,
+          "firstNodeMs": 572,
+          "nodeReadyMs": 573,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 494,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1026.6,
+          "ttfbMs": 184,
+          "domContentLoadedMs": 208,
+          "canvasMs": 560,
+          "firstNodeMs": 560,
+          "nodeReadyMs": 561,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 485,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 216.4,
+          "ttfbMs": 18,
+          "domContentLoadedMs": 48,
+          "canvasMs": 184,
+          "firstNodeMs": 184,
+          "nodeReadyMs": 185,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 194,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 219.1,
+          "ttfbMs": 17,
+          "domContentLoadedMs": 33,
+          "canvasMs": 183,
+          "firstNodeMs": 183,
+          "nodeReadyMs": 184,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 193,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 62396,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1038.3,
+        "p95Ms": 1064,
+        "worstMs": 1067.7
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "status": 1,
+        "device.pair.list": 1,
+        "health": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "models.authStatus": 2,
+        "models.list": 2,
+        "device.pair.list": 6,
+        "config.get": 11,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1601.7,
+        "p95Ms": 1665,
+        "worstMs": 2103.4392089999965,
+        "timingsMs": [
+          1665,
+          1622.1,
+          1602.3,
+          1586.6,
+          1598.5,
+          1589.3,
+          1595.4,
+          1585.8,
+          1604.6,
+          1589.6,
+          1605.3,
+          1608.8,
+          1586.7,
+          1601.7,
+          1579.5,
+          2103.4,
+          1599.7,
+          1601.8,
+          1607,
+          1621.6
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 86108,
+        "updateBytes": 1097845,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "diagnostics",
+            80109
+          ],
+          [
+            "workspaces",
+            1779
+          ],
+          [
+            "agents",
+            1085
+          ],
+          [
+            "nativeWork",
+            768
+          ],
+          [
+            "runtimes",
+            717
+          ]
+        ],
+        "eventToWireApproxP95Ms": 885.5
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 86108,
+        "updateBytes": 189996,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "diagnostics",
+            80109
+          ],
+          [
+            "workspaces",
+            1779
+          ],
+          [
+            "agents",
+            1085
+          ],
+          [
+            "nativeWork",
+            768
+          ],
+          [
+            "runtimes",
+            717
+          ]
+        ],
+        "eventToWireApproxP95Ms": 888.5
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 281264,
+          "cpuAveragePercent": 5.1
+        },
+        "gateway": {
+          "rssKiB": 1548016,
+          "cpuAveragePercent": 5.1
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 920912,
+      "gatewayRssAfterSeedKiB": 1814016
+    },
+    {
+      "agents": 10,
+      "nativeSessionsCreated": 100,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1086.3,
+          "ttfbMs": 236,
+          "domContentLoadedMs": 287,
+          "canvasMs": 629,
+          "firstNodeMs": 629,
+          "nodeReadyMs": 630,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 559,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1078,
+          "ttfbMs": 232,
+          "domContentLoadedMs": 257,
+          "canvasMs": 621,
+          "firstNodeMs": 621,
+          "nodeReadyMs": 622,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 563,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1040.1,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 215,
+          "canvasMs": 572,
+          "firstNodeMs": 572,
+          "nodeReadyMs": 572,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 494,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1031.4,
+          "ttfbMs": 187,
+          "domContentLoadedMs": 211,
+          "canvasMs": 561,
+          "firstNodeMs": 561,
+          "nodeReadyMs": 562,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 484,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1046.1,
+          "ttfbMs": 197,
+          "domContentLoadedMs": 234,
+          "canvasMs": 585,
+          "firstNodeMs": 585,
+          "nodeReadyMs": 585,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 502,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1037.7,
+          "ttfbMs": 194,
+          "domContentLoadedMs": 222,
+          "canvasMs": 579,
+          "firstNodeMs": 579,
+          "nodeReadyMs": 579,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 496,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1042.6,
+          "ttfbMs": 196,
+          "domContentLoadedMs": 219,
+          "canvasMs": 568,
+          "firstNodeMs": 568,
+          "nodeReadyMs": 568,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 491,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1028.4,
+          "ttfbMs": 189,
+          "domContentLoadedMs": 236,
+          "canvasMs": 555,
+          "firstNodeMs": 555,
+          "nodeReadyMs": 556,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 480,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1058.3,
+          "ttfbMs": 196,
+          "domContentLoadedMs": 218,
+          "canvasMs": 570,
+          "firstNodeMs": 570,
+          "nodeReadyMs": 570,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 492,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1048.4,
+          "ttfbMs": 187,
+          "domContentLoadedMs": 213,
+          "canvasMs": 555,
+          "firstNodeMs": 555,
+          "nodeReadyMs": 555,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 479,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1040.3,
+          "ttfbMs": 196,
+          "domContentLoadedMs": 219,
+          "canvasMs": 567,
+          "firstNodeMs": 567,
+          "nodeReadyMs": 567,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 490,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1031.1,
+          "ttfbMs": 188,
+          "domContentLoadedMs": 214,
+          "canvasMs": 566,
+          "firstNodeMs": 566,
+          "nodeReadyMs": 566,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 480,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1042.9,
+          "ttfbMs": 197,
+          "domContentLoadedMs": 219,
+          "canvasMs": 572,
+          "firstNodeMs": 572,
+          "nodeReadyMs": 573,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 495,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1030.5,
+          "ttfbMs": 187,
+          "domContentLoadedMs": 212,
+          "canvasMs": 575,
+          "firstNodeMs": 575,
+          "nodeReadyMs": 576,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 484,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1054.6,
+          "ttfbMs": 193,
+          "domContentLoadedMs": 215,
+          "canvasMs": 559,
+          "firstNodeMs": 559,
+          "nodeReadyMs": 560,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 485,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1051.3,
+          "ttfbMs": 191,
+          "domContentLoadedMs": 214,
+          "canvasMs": 558,
+          "firstNodeMs": 558,
+          "nodeReadyMs": 558,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 483,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1047.1,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 224,
+          "canvasMs": 595,
+          "firstNodeMs": 595,
+          "nodeReadyMs": 596,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 507,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1032.3,
+          "ttfbMs": 192,
+          "domContentLoadedMs": 218,
+          "canvasMs": 583,
+          "firstNodeMs": 583,
+          "nodeReadyMs": 584,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 495,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1056.8,
+          "ttfbMs": 195,
+          "domContentLoadedMs": 217,
+          "canvasMs": 569,
+          "firstNodeMs": 569,
+          "nodeReadyMs": 569,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 489,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1030.9,
+          "ttfbMs": 189,
+          "domContentLoadedMs": 234,
+          "canvasMs": 558,
+          "firstNodeMs": 558,
+          "nodeReadyMs": 558,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 480,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 214.9,
+          "ttfbMs": 22,
+          "domContentLoadedMs": 51,
+          "canvasMs": 187,
+          "firstNodeMs": 187,
+          "nodeReadyMs": 187,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 189,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 222.5,
+          "ttfbMs": 21,
+          "domContentLoadedMs": 43,
+          "canvasMs": 191,
+          "firstNodeMs": 191,
+          "nodeReadyMs": 191,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 200,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 81969,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1042.6,
+        "p95Ms": 1078,
+        "worstMs": 1086.3
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "health": 1,
+        "device.pair.list": 1,
+        "status": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "models.authStatus": 6,
+        "models.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1681.6,
+        "p95Ms": 2202.9,
+        "worstMs": 2331.951417000004,
+        "timingsMs": [
+          2332,
+          1698.1,
+          1690.3,
+          2168,
+          1656.3,
+          1670.8,
+          1690,
+          1691.2,
+          1681.6,
+          2160,
+          1675.4,
+          2202.9,
+          1654.8,
+          1666.3,
+          1649.4,
+          1675.5,
+          2182.7,
+          1680.7,
+          1678.1,
+          1683.4
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 197054,
+        "updateBytes": 1762886,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "diagnostics",
+            81614
+          ],
+          [
+            "runtimes",
+            58841
+          ],
+          [
+            "workspaces",
+            22031
+          ],
+          [
+            "nativeWork",
+            19390
+          ],
+          [
+            "agents",
+            11010
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1284.2
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 197054,
+        "updateBytes": 550395,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "diagnostics",
+            81614
+          ],
+          [
+            "runtimes",
+            58841
+          ],
+          [
+            "workspaces",
+            22031
+          ],
+          [
+            "nativeWork",
+            19390
+          ],
+          [
+            "agents",
+            11010
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1295.9
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 340112,
+          "cpuAveragePercent": 7.8
+        },
+        "gateway": {
+          "rssKiB": 1856112,
+          "cpuAveragePercent": 9.3
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 904112,
+      "gatewayRssAfterSeedKiB": 2210736
+    },
+    {
+      "agents": 50,
+      "nativeSessionsCreated": 500,
+      "browserClients": 2,
+      "rawSseClients": 2,
+      "cold": [
+        {
+          "renderMs": 1091.5,
+          "ttfbMs": 242,
+          "domContentLoadedMs": 265,
+          "canvasMs": 627,
+          "firstNodeMs": 627,
+          "nodeReadyMs": 627,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 552,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1084.4,
+          "ttfbMs": 237,
+          "domContentLoadedMs": 269,
+          "canvasMs": 619,
+          "firstNodeMs": 619,
+          "nodeReadyMs": 620,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 544,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1076.4,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 249,
+          "canvasMs": 573,
+          "firstNodeMs": 573,
+          "nodeReadyMs": 573,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 518,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1046.3,
+          "ttfbMs": 201,
+          "domContentLoadedMs": 233,
+          "canvasMs": 577,
+          "firstNodeMs": 577,
+          "nodeReadyMs": 578,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 503,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1061.7,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 249,
+          "canvasMs": 599,
+          "firstNodeMs": 599,
+          "nodeReadyMs": 600,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 518,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1055.8,
+          "ttfbMs": 209,
+          "domContentLoadedMs": 257,
+          "canvasMs": 591,
+          "firstNodeMs": 591,
+          "nodeReadyMs": 591,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 512,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1060.6,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 236,
+          "canvasMs": 589,
+          "firstNodeMs": 589,
+          "nodeReadyMs": 590,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 517,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1059,
+          "ttfbMs": 216,
+          "domContentLoadedMs": 238,
+          "canvasMs": 588,
+          "firstNodeMs": 588,
+          "nodeReadyMs": 589,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 517,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1061.4,
+          "ttfbMs": 210,
+          "domContentLoadedMs": 234,
+          "canvasMs": 598,
+          "firstNodeMs": 598,
+          "nodeReadyMs": 599,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 514,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1051.2,
+          "ttfbMs": 202,
+          "domContentLoadedMs": 227,
+          "canvasMs": 563,
+          "firstNodeMs": 563,
+          "nodeReadyMs": 564,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 504,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 9109.2,
+          "ttfbMs": 213,
+          "domContentLoadedMs": 236,
+          "canvasMs": 577,
+          "firstNodeMs": 577,
+          "nodeReadyMs": 577,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 523,
+              "mode": null,
+              "employees": null
+            },
+            {
+              "kind": "snapshot",
+              "ms": 8947,
+              "mode": "live",
+              "employees": 50
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1050.6,
+          "ttfbMs": 205,
+          "domContentLoadedMs": 227,
+          "canvasMs": 588,
+          "firstNodeMs": 588,
+          "nodeReadyMs": 589,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 511,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1072.5,
+          "ttfbMs": 210,
+          "domContentLoadedMs": 234,
+          "canvasMs": 584,
+          "firstNodeMs": 584,
+          "nodeReadyMs": 584,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 508,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1076.4,
+          "ttfbMs": 211,
+          "domContentLoadedMs": 258,
+          "canvasMs": 582,
+          "firstNodeMs": 582,
+          "nodeReadyMs": 583,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 507,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.8,
+          "ttfbMs": 209,
+          "domContentLoadedMs": 234,
+          "canvasMs": 584,
+          "firstNodeMs": 584,
+          "nodeReadyMs": 584,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 507,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1060.7,
+          "ttfbMs": 201,
+          "domContentLoadedMs": 247,
+          "canvasMs": 567,
+          "firstNodeMs": 567,
+          "nodeReadyMs": 568,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 497,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1075.7,
+          "ttfbMs": 214,
+          "domContentLoadedMs": 263,
+          "canvasMs": 586,
+          "firstNodeMs": 586,
+          "nodeReadyMs": 587,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 514,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1090,
+          "ttfbMs": 203,
+          "domContentLoadedMs": 243,
+          "canvasMs": 573,
+          "firstNodeMs": 573,
+          "nodeReadyMs": 573,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 501,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1052.9,
+          "ttfbMs": 207,
+          "domContentLoadedMs": 231,
+          "canvasMs": 579,
+          "firstNodeMs": 579,
+          "nodeReadyMs": 579,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 504,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 1089.4,
+          "ttfbMs": 205,
+          "domContentLoadedMs": 243,
+          "canvasMs": 572,
+          "firstNodeMs": 572,
+          "nodeReadyMs": 573,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 498,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "warm": [
+        {
+          "renderMs": 238.9,
+          "ttfbMs": 40,
+          "domContentLoadedMs": 70,
+          "canvasMs": 209,
+          "firstNodeMs": 209,
+          "nodeReadyMs": 209,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 218,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        },
+        {
+          "renderMs": 337.2,
+          "ttfbMs": 39,
+          "domContentLoadedMs": 55,
+          "canvasMs": 211,
+          "firstNodeMs": 211,
+          "nodeReadyMs": 211,
+          "observedNativeNode": {
+            "count": 1,
+            "correctName": true,
+            "nodeId": "main",
+            "onscreen": true,
+            "labelShows": true,
+            "actionEnabled": true
+          },
+          "stream": [
+            {
+              "kind": "ready",
+              "ms": 221,
+              "mode": null,
+              "employees": null
+            }
+          ],
+          "longTaskMs": 0,
+          "maxLongTaskMs": null,
+          "htmlBytes": 169529,
+          "rosterInInitialHtml": true
+        }
+      ],
+      "coldDistribution": {
+        "medianMs": 1061.4,
+        "p95Ms": 1091.5,
+        "worstMs": 9109.2
+      },
+      "coldRpcCounts": {
+        "connect": 3,
+        "agents.list": 2,
+        "models.authStatus": 1,
+        "models.list": 1,
+        "status": 1,
+        "device.pair.list": 1,
+        "health": 1,
+        "sessions.subscribe": 1,
+        "config.get": 1,
+        "tasks.list": 2,
+        "sessions.list": 2
+      },
+      "coldRpcCountsByPair": [
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 3,
+          "device.pair.list": 1,
+          "health": 3,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        }
+      ],
+      "mutationRpcCounts": {
+        "connect": 12,
+        "agents.list": 6,
+        "device.pair.list": 6,
+        "config.get": 12,
+        "tasks.list": 24,
+        "sessions.list": 12,
+        "worktrees.list": 6,
+        "taskSuggestions.list": 6,
+        "cron.status": 6,
+        "cron.list": 6,
+        "sessions.patch": 10
+      },
+      "visibleUpdate": {
+        "samples": 20,
+        "missed": 0,
+        "medianMs": 1616.3,
+        "p95Ms": 2562.5,
+        "worstMs": 3308.2284579999978,
+        "timingsMs": [
+          1610.7,
+          3308.2,
+          1616.3,
+          2099.9,
+          1534.8,
+          2111,
+          1537.8,
+          2555.8,
+          1524.3,
+          2059.6,
+          1561.1,
+          2178.4,
+          1578.3,
+          2114.8,
+          1524.9,
+          2562.5,
+          2049.9,
+          1512.7,
+          2068.2,
+          1506.7
+        ]
+      },
+      "nativeMutations": 10,
+      "settleMs": 0,
+      "fullStream": {
+        "initialSnapshotBytes": 585880,
+        "updateBytes": 4097727,
+        "updates": 6,
+        "deltas": 0,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110423
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1400.6
+      },
+      "deltaStream": {
+        "initialSnapshotBytes": 585880,
+        "updateBytes": 1517120,
+        "updates": 6,
+        "deltas": 6,
+        "largestFields": [
+          [
+            "runtimes",
+            296681
+          ],
+          [
+            "workspaces",
+            110423
+          ],
+          [
+            "diagnostics",
+            88374
+          ],
+          [
+            "agents",
+            55330
+          ],
+          [
+            "nativeWork",
+            19504
+          ]
+        ],
+        "eventToWireApproxP95Ms": 1378.4
+      },
+      "processSamples": {
+        "agentos": {
+          "rssKiB": 252416,
+          "cpuAveragePercent": 12.4
+        },
+        "gateway": {
+          "rssKiB": 2142736,
+          "cpuAveragePercent": 11.5
+        }
+      },
+      "gatewayRssBeforeSeedKiB": 914640,
+      "gatewayRssAfterSeedKiB": 2488624
+    }
+  ]
+}

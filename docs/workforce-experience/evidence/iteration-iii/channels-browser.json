@@ -1,0 +1,18 @@
+{
+  "stats": {
+    "startTime": "2026-11-25T22:04:03.088Z",
+    "duration": 29993.345999999998,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "tests": [
+    "Telegram online human acceptance completes all 26 steps",
+    "Telegram STOPPED start is issued once and progresses to ONLINE",
+    "Telegram group permissions use native policy presets and reload from OpenClaw state",
+    "Telegram token setup never projects the credential and continues to the directory",
+    "Discord hierarchy keeps thread routing inherited from #support",
+    "Agent badges show Telegram 2 and Discord 1 while default-only routes stay unbadged"
+  ]
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "keyboard-workspace-selection",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "keyboard-workspace-selection",
+    "result": "PASS"
+  }
+]
