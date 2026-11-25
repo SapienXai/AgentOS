@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, Database, Eye, FilePlus2, FileText, Filter, Folder, FolderOpen, HardDrive, Import, ListFilter, Plus, SlidersHorizontal, SquareArrowOutUpRight, Upload, type LucideIcon } from "lucide-react";
 
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
+import { CompanyKnowledge } from "@/components/workforce/company-knowledge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -152,19 +153,15 @@ export function FilesPageContent({
     }
   };
 
-  const companyDocuments = filteredFiles.filter(file => file.source?.exists &&
-    !file.relativePath.startsWith("agents/") && (file.category === "context" || file.category === "memory")
-  );
-
   return (
     <>
       {knowledge ? (
         <div className="space-y-5">
-          <PageHeader title="Knowledge" subtitle="Find the instructions, documents, and retained context in your workspace."
+          <PageHeader title="Knowledge" subtitle="Give your team a shared understanding of the company and its work."
             actions={<Button type="button" size="sm" className="min-h-11"
               onClick={() => setWorkspaceFilesOpen(true)} disabled={!activeWorkspaceId}
               title={activeWorkspaceId ? undefined : "Choose a specific workspace first."}>
-              <FileText className="mr-2 size-4" /> Edit workspace knowledge
+              <FileText className="mr-2 size-4" /> Manage workspace context
             </Button>} />
           <SearchToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Find a document" surfaceTheme={surfaceTheme} />
           {fileError ? (
@@ -172,28 +169,9 @@ export function FilesPageContent({
               <span>{fileError}</span><Button type="button" variant="secondary" onClick={() => setFileReloadKey(key => key + 1)}>Retry</Button>
             </div>
           ) : null}
-          {isLoadingFiles ? <p role="status" className="text-sm text-muted-foreground">Loading workspace documents…</p> : companyDocuments.length ? (
-            <SectionCard title="Workspace documents">
-              <ul className="divide-y divide-border">
-                {companyDocuments.map(file => (
-                  <li key={file.id}>
-                    <button type="button" onClick={() => setPreviewFile(file)}
-                      className="flex min-h-14 w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-accent focus-visible:outline focus-visible:outline-ring">
-                      <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-sm font-medium">{file.source?.label || file.name}</span>
-                        <span className="block text-xs text-muted-foreground">{file.workspaceName} · {file.category === "memory" ? "Workspace memory" : "Workspace context"}</span>
-                      </span>
-                      <Eye aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          ) : !fileError ? (
-            <EmptyState title={search ? "No documents match" : "No workspace documents"}
-              description={search ? "Try another name or choose a different workspace." : "Select a workspace to add or edit its supported context files."} />
-          ) : null}
+          <CompanyKnowledge key={activeWorkspaceId ?? "all"} files={filteredFiles} employees={snapshot.agents}
+            workspaceId={activeWorkspace?.id ?? null} loading={isLoadingFiles} onOpen={setPreviewFile}
+            onChanged={() => setFileReloadKey(key => key + 1)} />
           <details className="rounded-xl border border-border bg-card px-4">
             <summary className="cursor-pointer py-3 text-sm font-medium">Advanced file access</summary>
             <div className="space-y-3 pb-4 text-sm leading-6 text-muted-foreground">

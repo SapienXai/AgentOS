@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, LoaderCircle } from "lucide-react";
 
@@ -565,7 +566,8 @@ export function CreateAgentDialog({
         trigger={trigger}
         title={workforce ? "Add employee" : "Create agent"}
         description={workforce ? "Give your employee a name, a role, and a clear responsibility." : headerDescription}
-        contentClassName="sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl"
+        contentClassName={cn("sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl",
+          workforce && "workforce-setup-card", workforce && isLight && "workforce-setup-light")}
         headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
         bodyClassName={cn(
           "px-5 py-5 sm:px-7 sm:py-6",
@@ -621,7 +623,7 @@ export function CreateAgentDialog({
               onClick={() => void submitCreateAgent()}
               disabled={!canCreate}
               className={cn(
-                isLight
+                workforce ? "min-h-11 rounded-xl px-4" : isLight
                   ? "h-10 rounded-md border border-[hsl(var(--agentos-operational-accent))] bg-[hsl(var(--agentos-operational-accent))] px-4 text-[rgb(255,255,255)] shadow-[0_8px_18px_hsl(var(--agentos-operational-accent)/0.22)] hover:brightness-95"
                   : missionControlDialogButtonClassName("primary", surfaceTheme),
                 "rounded-md"
@@ -651,7 +653,9 @@ export function CreateAgentDialog({
       ) : (
       <div className="mx-auto w-full max-w-[620px] space-y-6">
         {workforce ? (
-          <FormField label="Start with a role" htmlFor="employee-role-preset" surfaceTheme={surfaceTheme}>
+          <div className="workforce-panel flex items-center gap-4 p-4">
+          <EmployeeAvatar name={draft.name || "Employee"} className="size-14 rounded-xl text-lg" />
+          <div className="min-w-0 flex-1"><FormField label="Start with a role" htmlFor="employee-role-preset" surfaceTheme={surfaceTheme}>
             <select id="employee-role-preset" className={selectClassName(surfaceTheme)} defaultValue=""
               onChange={(event) => {
                 const selected = employeeRoles.find((role) => role.name === event.target.value);
@@ -660,7 +664,8 @@ export function CreateAgentDialog({
               <option value="">Create your own</option>
               {employeeRoles.map((role) => <option key={role.name}>{role.name}</option>)}
             </select>
-          </FormField>
+          </FormField></div>
+          </div>
         ) : (
         <section className="space-y-3" aria-labelledby="create-agent-role-baseline-heading">
           <div className="flex items-start justify-between gap-4">

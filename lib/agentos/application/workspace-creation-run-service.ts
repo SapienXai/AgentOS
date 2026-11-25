@@ -19,7 +19,7 @@ import {
 } from "@/lib/agentos/application/workspace-creation-context-service";
 import { composeWorkspaceComposition, createDeterministicWorkspaceComposition, createWorkspaceCompositionBlueprintFingerprint, inspectWorkspaceCompositionFiles, type WorkspaceCompositionResult } from "@/lib/agentos/application/workspace-composer";
 import { createWorkspaceCompositionInputFingerprint, summarizeWorkspaceCompositionPlan, validateWorkspaceCompositionPlan, type WorkspaceCompositionPlan } from "@/lib/agentos/domains/workspace-composition";
-import { generateWorkspaceBlueprint, reviseWorkspaceBlueprint, validateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
+import { generateWorkspaceBlueprint, getWorkspaceBlueprintFreshness, reviseWorkspaceBlueprint, validateWorkspaceBlueprint } from "@/lib/agentos/application/workspace-architect";
 import {
   acquireProvisioningLease,
 } from "@/lib/agentos/application/workspace-provisioning-lease";
@@ -48,7 +48,7 @@ import {
 import { readWorkspaceIntelligenceBinding } from "@/lib/agentos/application/workspace-intelligence-binding-store";
 import { findRunById, resolveProvisioningRoot } from "@/lib/agentos/application/workspace-provisioning-store";
 import { normalizeWorkspaceMaterialization, type WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
-import type { WorkspaceArchitectIntelligenceInput, WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult } from "@/lib/agentos/domains/workspace-blueprint";
+import type { WorkspaceArchitectIntelligenceInput, WorkspaceArchitectLifecycleEvent, WorkspaceArchitectResult, WorkspaceEmployeeDraftEdit } from "@/lib/agentos/domains/workspace-blueprint";
 import { DEFAULT_KNOWLEDGE_INGESTION_LIMITS, type KnowledgeIngestionProgress } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import { normalizeWorkspaceKnowledgeSources, workspaceKnowledgeSourceIdentity, type WorkspaceKnowledgeSource } from "@/lib/agentos/domains/workspace-knowledge";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
@@ -476,6 +476,42 @@ async function rebuildWorkspaceCreationComposition(filePath: string, actorId: st
   return updateCompositionSnapshot(filePath, run, dependencies, rebuilt);
 }
 
+function reviewEmployeeEdits(
+  blueprint: WorkspaceArchitectResult["blueprint"],
+  edits: WorkspaceEmployeeDraftEdit[]
+): WorkspaceArchitectResult["blueprint"] {
+  const { primaryAgent, specialists } = blueprint.workforce;
+  const employees = [primaryAgent, ...specialists];
+  const submitted = new Map(edits.map(edit => [edit.id, edit]));
+  if (submitted.size !== edits.length || employees.length !== submitted.size || employees.some(employee => !submitted.has(employee.id))) {
+    throw new Error("The proposed team changed. Refresh the review and try again.");
+  }
+
+  const updated = employees.map(employee => {
+    const edit = submitted.get(employee.id)!;
+    if (edit.skillIds.some(id => !employee.skillIds.includes(id)) || edit.toolIds.some(id => !employee.toolIds.includes(id))) {
+      throw new Error("Employee review can only keep or remove capabilities from the saved proposal.");
+    }
+    return {
+      ...employee,
+      name: redactSecretText(edit.name),
+      role: redactSecretText(edit.role),
+      purpose: redactSecretText(edit.purpose),
+      responsibilities: edit.responsibilities.map(redactSecretText),
+      skillIds: [...new Set(edit.skillIds)],
+      toolIds: [...new Set(edit.toolIds)]
+    };
+  });
+  return {
+    ...blueprint,
+    workforce: { ...blueprint.workforce, primaryAgent: updated[0], specialists: updated.slice(1) },
+    operatorOverrides: {
+      ...blueprint.operatorOverrides,
+      lockedPaths: [...new Set([...blueprint.operatorOverrides.lockedPaths, "workforce.primaryAgent", "workforce.specialists"])]
+    }
+  };
+}
+
 /**
  * Revise a review-ready Create Workspace run from its durable server state.
  * The request intentionally contains no blueprint: the run result, staged
@@ -487,6 +523,7 @@ export async function reviseWorkspaceCreationRun(
     runId: string;
     instruction?: string;
     operatorEdits?: Parameters<typeof reviseWorkspaceBlueprint>[1]["operatorEdits"];
+    employeeReview?: { revision: number; employees: WorkspaceEmployeeDraftEdit[] };
     operatorConstraints?: string[];
     signal?: AbortSignal;
   },
@@ -514,6 +551,10 @@ export async function reviseWorkspaceCreationRun(
         throw new Error("The previous Architect revision outcome is ambiguous; refresh the saved workspace draft before trying again.");
       }
       const oldResult = latest.result;
+      if (input.employeeReview && input.employeeReview.revision !== (latest.snapshot.revision?.number ?? 0)) {
+        throw new Error("This proposal was revised in another session. Refresh the review before saving.");
+      }
+
       const context = latest.draftContextId
         ? await resolved.readContextMetadata({ actorId: input.actorId, draftContextId: latest.draftContextId })
         : null;
@@ -537,48 +578,61 @@ export async function reviseWorkspaceCreationRun(
           warnings: context?.warnings.slice(0, 8) ?? []
         }
       } satisfies WorkspaceArchitectIntelligenceInput : undefined;
-      await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
-        ...stored,
-        remoteExecution: {
-          ...stored.remoteExecution,
-          idempotencyKey: architectRunId,
-          outcome: "in-flight"
-        }
-      }));
       let revised: WorkspaceArchitectResult;
-      try {
-        revised = await resolved.reviseArchitect(
-          oldResult.blueprint,
-          {
-            ...(input.instruction?.trim() ? { revisionInstruction: input.instruction.trim() } : {}),
-            ...(input.operatorEdits ? { operatorEdits: input.operatorEdits } : {}),
-            ...(input.operatorConstraints ? { operatorConstraints: normalizeCreationConstraints(input.operatorConstraints) } : {}),
-            ...(context ? { knowledge: context.knowledge } : {}),
-            ...(projectIntelligence ? { projectIntelligence } : {}),
-            materialization: normalizeWorkspaceMaterialization(oldResult.blueprint.materialization)
-          },
-          {
-            runId: architectRunId,
-            signal: input.signal,
-            currentKnowledgeGenerationId: context?.generationId ?? null
-          }
-        );
-      } catch (error) {
+      if (input.employeeReview) {
+        const blueprint = {
+          ...reviewEmployeeEdits(oldResult.blueprint, input.employeeReview.employees),
+          updatedAt: resolved.now().toISOString()
+        };
+        revised = {
+          ...oldResult,
+          blueprint,
+          validation: validateWorkspaceBlueprint(blueprint),
+          freshness: getWorkspaceBlueprintFreshness(blueprint, context?.generationId ?? null)
+        };
+      } else {
         await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
           ...stored,
-          remoteExecution: { ...stored.remoteExecution, outcome: "ambiguous" }
-        })).catch(() => undefined);
-        throw error;
-      }
-      await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
-        ...stored,
-        remoteExecution: {
-          ...stored.remoteExecution,
-          runId: revised.reasoning.remoteRunId ?? null,
-          sessionKey: revised.reasoning.remoteSessionKey ?? null,
-          outcome: "completed"
+          remoteExecution: {
+            ...stored.remoteExecution,
+            idempotencyKey: architectRunId,
+            outcome: "in-flight"
+          }
+        }));
+        try {
+          revised = await resolved.reviseArchitect(
+            oldResult.blueprint,
+            {
+              ...(input.instruction?.trim() ? { revisionInstruction: input.instruction.trim() } : {}),
+              ...(input.operatorEdits ? { operatorEdits: input.operatorEdits } : {}),
+              ...(input.operatorConstraints ? { operatorConstraints: normalizeCreationConstraints(input.operatorConstraints) } : {}),
+              ...(context ? { knowledge: context.knowledge } : {}),
+              ...(projectIntelligence ? { projectIntelligence } : {}),
+              materialization: normalizeWorkspaceMaterialization(oldResult.blueprint.materialization)
+            },
+            {
+              runId: architectRunId,
+              signal: input.signal,
+              currentKnowledgeGenerationId: context?.generationId ?? null
+            }
+          );
+        } catch (error) {
+          await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+            ...stored,
+            remoteExecution: { ...stored.remoteExecution, outcome: "ambiguous" }
+          })).catch(() => undefined);
+          throw error;
         }
-      }));
+        await mutateWorkspaceCreationRun(locator.filePath, (stored) => ({
+          ...stored,
+          remoteExecution: {
+            ...stored.remoteExecution,
+            runId: revised.reasoning.remoteRunId ?? null,
+            sessionKey: revised.reasoning.remoteSessionKey ?? null,
+            outcome: "completed"
+          }
+        }));
+      }
       if (!revised.validation.valid) throw new Error("The revised workspace draft failed normalized validation.");
       const oldBlueprintFingerprint = latest.snapshot.revision?.blueprintFingerprint
         ?? createWorkspaceCompositionBlueprintFingerprint(oldResult.blueprint);

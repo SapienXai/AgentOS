@@ -1,9 +1,8 @@
 "use client";
 
-import { ArrowRight, Copy, LoaderCircle, Plus, RefreshCw, Search, SquareTerminal } from "lucide-react";
+import { ArrowRight, Copy, LoaderCircle, RefreshCw, Search, SquareTerminal } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
-import { ProviderCard } from "@/components/mission-control/add-models/provider-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -603,23 +602,6 @@ export function OpenClawOnboardingProviderFlow({
             (isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]")
         )}
       >
-      {!compactSelection ? (
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
-              {`Provider first : ${providerDescriptors.length} providers`}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-1.5">
-            {selectedModelLabel ? (
-              <Badge variant="default" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                Selected
-              </Badge>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
       {sharedCatalogError || sharedCatalogWarning || explicitProviderError ? (
         <div className={cn("mt-2 rounded-[12px] border px-2.5 py-2 text-[9px] leading-4", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/[0.06] text-amber-100")}
         >
@@ -627,78 +609,26 @@ export function OpenClawOnboardingProviderFlow({
         </div>
       ) : null}
 
-      {!compactSelection ? <div className="mt-3 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 pr-1">
-        <div className="w-[128px] shrink-0 snap-start sm:w-[136px]">
-          <button
-            type="button"
-            onClick={() => onOpenAddModels()}
-            className={cn(
-              "group flex h-full min-h-[104px] w-full flex-col justify-between rounded-[16px] border p-2 text-left transition-colors",
-              isLight
-                ? "border-cyan-200 bg-cyan-50/70 text-[#2d241f] hover:border-cyan-300 hover:bg-cyan-50"
-                : "border-cyan-300/30 bg-cyan-300/[0.06] text-white hover:border-cyan-300/50 hover:bg-cyan-300/[0.1]"
-            )}
-            aria-label="Browse all models"
-          >
-            <span className={cn("flex h-6 w-6 items-center justify-center rounded-[9px] border", isLight ? "border-cyan-200 bg-white text-cyan-700" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>
-              <Search className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
-            <span>
-              <span className="block font-display text-[0.72rem]">All models</span>
-              <span className={cn("mt-1 block text-[8px] leading-[0.85rem]", isLight ? "text-[#71675d]" : "text-slate-400")}>
-                Browse the complete model catalog.
-              </span>
-            </span>
-          </button>
+      {!compactSelection ? (
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <label className="block space-y-1.5 text-sm font-medium">
+            <span>AI provider</span>
+            <select value={activeProviderId} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground sm:text-sm"
+              onChange={event => {
+                const provider = providerDescriptors.find(item => item.id === event.target.value);
+                if (!provider) return;
+                setActiveProviderId(provider.id);
+                if (selectedProviderId && selectedProviderId !== provider.id) onSelectedModelIdChange("");
+              }}>
+              {providerDescriptors.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-1">
+            <Button type="button" variant="ghost" onClick={() => onOpenAddModels()}>Browse models</Button>
+            <Button type="button" variant="ghost" onClick={() => onOpenAddModels("custom")}>Custom provider</Button>
+          </div>
         </div>
-        {providerDescriptors.map((provider) => {
-          const draft = resolveDraft(providerDrafts[provider.id]);
-          const connection = draft.connection ?? resolveConnectionDetail(snapshot, provider.id);
-
-          return (
-            <div key={provider.id} className="w-[128px] shrink-0 snap-start sm:w-[136px]">
-              <ProviderCard
-                descriptor={provider}
-                active={activeProviderId === provider.id}
-                compact
-                micro
-                connected={connection.connected}
-                detail={connection.detail}
-                surfaceTheme={surfaceTheme}
-                onClick={() => {
-                  setActiveProviderId(provider.id);
-                  if (selectedProviderId && selectedProviderId !== provider.id) {
-                    onSelectedModelIdChange("");
-                  }
-                }}
-              />
-            </div>
-          );
-        })}
-        <div className="w-[128px] shrink-0 snap-start sm:w-[136px]">
-          <button
-            type="button"
-            onClick={() => onOpenAddModels("custom")}
-            className={cn(
-              "group flex h-full min-h-[104px] w-full flex-col justify-between rounded-[16px] border border-dashed p-2 text-left transition-colors",
-              isLight
-                ? "border-[#d8cfc2] bg-white/60 text-[#2d241f] hover:border-cyan-300 hover:bg-cyan-50/60"
-                : "border-white/15 bg-white/[0.025] text-white hover:border-cyan-300/40 hover:bg-cyan-300/[0.06]"
-            )}
-            aria-label="Add custom provider"
-          >
-            <span className={cn("flex h-6 w-6 items-center justify-center rounded-[9px] border", isLight ? "border-cyan-200 bg-cyan-50 text-cyan-700" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
-            <span>
-              <span className="block font-display text-[0.72rem]">Custom provider</span>
-              <span className={cn("mt-1 block text-[8px] leading-[0.85rem]", isLight ? "text-[#71675d]" : "text-slate-400")}>
-                Add an OpenAI-compatible endpoint.
-              </span>
-            </span>
-          </button>
-        </div>
-      </div> : null}
+      ) : null}
 
       <div
         className={cn(

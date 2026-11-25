@@ -903,6 +903,8 @@ test("partial workspace state is repaired from the authoritative native agent", 
     const harness = createHarness(rootPath);
     const input = { actorId: "actor-repair", blueprint: blueprint(), idempotencyKey: "repair-key", acceptDraft: true };
     const first = await waitForWorkspaceProvisioning(input, harness.dependencies);
+    const initialUpdates = harness.counts().updateCount;
+    assert.equal(initialUpdates, 1);
     const locator = await findRunById(rootPath, input.actorId, first.runId);
     assert.ok(locator);
     const manifestPath = path.join(first.result?.workspacePath ?? "", ".openclaw", "project.json");
@@ -915,7 +917,7 @@ test("partial workspace state is repaired from the authoritative native agent", 
     assert.equal(repaired.state, "ready");
     assert.equal(repaired.attempt, 2);
     assert.equal(harness.counts().createCount, 1);
-    assert.equal(harness.counts().updateCount, 1);
+    assert.equal(harness.counts().updateCount, initialUpdates + 1);
   } finally {
     await rm(rootPath, { recursive: true, force: true });
   }

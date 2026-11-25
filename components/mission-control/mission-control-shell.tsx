@@ -25,10 +25,8 @@ import {
   isInspectorDetailWidth
 } from "@/components/mission-control/inspector-resize";
 import { MissionControlShellDialogs } from "@/components/mission-control/mission-control-shell.dialogs";
-import { OpenClawOnboarding } from "@/components/mission-control/openclaw-onboarding";
 import type { ModelSwitchFeedback } from "@/components/mission-control/openclaw-onboarding.stages";
 import { ResetDialog } from "@/components/mission-control/reset-dialog";
-import { SettingsControlCenter } from "@/components/mission-control/settings-control-center";
 import { WorkforceMobileNavigation } from "@/components/mission-control/workforce-mobile-navigation";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
@@ -50,7 +48,6 @@ import { useMissionControlWorkspaceActions } from "@/components/mission-control/
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceAccountsDialog } from "@/components/mission-control/workspace-accounts-dialog";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
-import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
   workspaceCreationReopenEvent,
   type WorkspaceCreationReopenDetail
@@ -167,6 +164,21 @@ import {
 } from "@/lib/openclaw/model-provider-adapters";
 import { syncTauriDesktopPlatformMarker } from "@/lib/desktop/window-platform";
 import { cn } from "@/lib/utils";
+
+const OpenClawOnboarding = dynamic(
+  () => import("@/components/mission-control/openclaw-onboarding").then(module => module.OpenClawOnboarding),
+  { ssr: false }
+);
+
+const SettingsControlCenter = dynamic(
+  () => import("@/components/mission-control/settings-control-center").then(module => module.SettingsControlCenter),
+  { ssr: false }
+);
+
+const WorkspaceWizardDialog = dynamic(
+  () => import("@/components/mission-control/workspace-wizard/workspace-wizard-dialog").then(module => module.WorkspaceWizardDialog),
+  { ssr: false }
+);
 
 const MissionCanvasView = dynamic(
   () => import("@/components/mission-control/canvas").then((mod) => mod.MissionCanvas),
@@ -1020,6 +1032,11 @@ export function MissionControlShell({
     activeWorkspace: activeWorkspaceForDialogs,
     openWorkspaceOnCanvas
   });
+
+  const [hasOpenedWorkspaceWizard, setHasOpenedWorkspaceWizard] = useState(false);
+  useEffect(() => {
+    if (isWorkspaceWizardOpen) setHasOpenedWorkspaceWizard(true);
+  }, [isWorkspaceWizardOpen]);
 
   const openWorkspaceUpdateReview = useCallback((creationRunId: string) => {
     setWorkspaceCreationReviewRunId(creationRunId);
@@ -4447,7 +4464,7 @@ export function MissionControlShell({
         />
       ) : null}
 
-      <WorkspaceWizardDialog
+      {(isWorkspaceWizardOpen || hasOpenedWorkspaceWizard) ? <WorkspaceWizardDialog
         firstWorkspace={isFirstWorkspace}
         verifyWorkspace={verifyCreatedWorkspace}
         onTestWorkspaceAgent={testCreatedWorkspaceAgent}
@@ -4472,7 +4489,7 @@ export function MissionControlShell({
         onWorkspaceUpdated={(workspaceId) => {
           openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
-      />
+      /> : null}
 
       <AddModelsDialog
         open={isAddModelsDialogOpen}
@@ -5709,7 +5726,7 @@ export function MissionControlShell({
           />
         ) : null}
 
-        <WorkspaceWizardDialog
+        {(isWorkspaceWizardOpen || hasOpenedWorkspaceWizard) ? <WorkspaceWizardDialog
           firstWorkspace={isFirstWorkspace}
           verifyWorkspace={verifyCreatedWorkspace}
           onTestWorkspaceAgent={testCreatedWorkspaceAgent}
@@ -5743,7 +5760,7 @@ export function MissionControlShell({
           onWorkspaceUpdated={(workspaceId) => {
             openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
-        />
+        /> : null}
 
       <AddModelsDialog
         open={isAddModelsDialogOpen}

@@ -28,6 +28,8 @@ import {
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
 import { FirstWorkspaceForms, firstEmployeeDraft, type FirstEmployeeDraft } from "@/components/workforce/first-workspace-forms";
+import { SuggestedTeamReview } from "@/components/workforce/suggested-team-review";
+import { redactSecretText } from "@/lib/security/redaction";
 import { OnboardingProgress } from "@/components/workforce/onboarding-progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +54,7 @@ import {
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import type {
   WorkspaceArchitectResult,
+  WorkspaceEmployeeDraftEdit,
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
@@ -73,6 +76,7 @@ import { presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-c
 type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
 const firstWorkspaceKey = "onboarding:workforce-workspace";
+const firstWorkspaceDraftKey = "onboarding:workforce-draft:v1";
 type ContextAction = "website" | "github" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
 type UrlSourceBuildResult = { source: WorkspaceKnowledgeSource } | { error: string };
@@ -192,6 +196,8 @@ export function CreateWorkspaceExperience({
   const [manualReview, setManualReview] = useState(false);
   const [manualLaunching, setManualLaunching] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [teamEditsPending, setTeamEditsPending] = useState(false);
   const [manualProgress, setManualProgress] = useState<OperationProgressSnapshot | null>(null);
   const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
@@ -322,6 +328,40 @@ export function CreateWorkspaceExperience({
   );
   const isActiveRun = stage === "generating" || stage === "provisioning" || isProvisioningStarting;
 
+  useEffect(() => {
+    if (!firstWorkspace || !open || draftLoaded) return;
+    try {
+      const raw = sessionStorage.getItem(firstWorkspaceDraftKey);
+      if (raw) {
+        const saved = JSON.parse(raw) as { name?: unknown; brief?: unknown; manual?: unknown; team?: FirstEmployeeDraft[] };
+        if (typeof saved.name === "string") setFirstName(saved.name.slice(0, 80));
+        if (typeof saved.brief === "string") setBrief(saved.brief.slice(0, 3000));
+        if (Array.isArray(saved.team) && saved.team.length && saved.team.every(person =>
+          typeof person?.id === "string" && typeof person.name === "string" && typeof person.role === "string")) {
+          setManualTeam(saved.team.slice(0, 8).map(person => ({ id: person.id.slice(0, 100), name: person.name.slice(0, 64), role: person.role.slice(0, 100) })));
+          setManualReview(saved.manual === true);
+        }
+      }
+    } catch {
+      // Storage is optional. The server retains its own durable creation run.
+    }
+    setDraftLoaded(true);
+  }, [draftLoaded, firstWorkspace, open]);
+
+  useEffect(() => {
+    if (!firstWorkspace || !open || !draftLoaded || stage !== "intake" || (!firstName && !brief)) return;
+    try {
+      sessionStorage.setItem(firstWorkspaceDraftKey, JSON.stringify({
+        name: redactSecretText(firstName),
+        brief: redactSecretText(brief),
+        manual: manualReview,
+        team: manualTeam.map(person => ({ id: person.id, name: redactSecretText(person.name), role: redactSecretText(person.role) }))
+      }));
+    } catch {
+      // The workspace flow also works when a browser disallows session storage.
+    }
+  }, [brief, draftLoaded, firstName, firstWorkspace, manualReview, manualTeam, open, stage]);
+
   const resetCreationState = () => {
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
@@ -330,6 +370,10 @@ export function CreateWorkspaceExperience({
     setManualReview(false);
     setManualTeam([firstEmployeeDraft]);
     setManualError(null);
+    setTeamEditsPending(false);
+    if (firstWorkspace) {
+      try { sessionStorage.removeItem(firstWorkspaceDraftKey); } catch {}
+    }
     setManualProgress(null);
     setWorkspaceCheck(null);
     setProfile("fast");
@@ -478,6 +522,7 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setStage("generating");
+    setTeamEditsPending(false);
     setIsProvisioningStarting(false);
     setNotice(null);
     setRevisionError(null);
@@ -700,8 +745,8 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const revise = async () => {
-    if (!result || !revisionValue.trim() || isRevising) return;
+  const revise = async (employees?: WorkspaceEmployeeDraftEdit[]) => {
+    if (!result || (!employees && !revisionValue.trim()) || isRevising) return false;
 
     setIsRevising(true);
     setRevisionError(null);
@@ -710,7 +755,9 @@ export function CreateWorkspaceExperience({
       const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/revise`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(employees ? {
+          employeeReview: { revision: creationRun.snapshot.revision?.number ?? 0, employees }
+        } : {
           instruction: revisionValue.trim(),
           operatorConstraints: constraints
             .split("\n")
@@ -736,8 +783,11 @@ export function CreateWorkspaceExperience({
       setCustomName(revised.blueprint.identity.name);
       setCustomPrimaryName(revised.blueprint.workforce.primaryAgent.name);
       await certifyReview(payload.runId, false);
+      setTeamEditsPending(false);
+      return true;
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The revision could not be applied.");
+      return false;
     } finally {
       setIsRevising(false);
     }
@@ -1033,6 +1083,7 @@ export function CreateWorkspaceExperience({
     if (!firstWorkspace || !open || !provisionedWorkspace || !provisionedRunId ||
         provisioningRun?.state !== "ready" || !canOpenWorkspace || handedOffRun.current === provisionedRunId) return;
     handedOffRun.current = provisionedRunId;
+    try { sessionStorage.removeItem(firstWorkspaceDraftKey); } catch {}
     onWorkspaceCreated?.(provisionedWorkspace);
     onOpenChange(false);
   }, [firstWorkspace, open, provisionedWorkspace, provisionedRunId, provisioningRun?.state, canOpenWorkspace, onWorkspaceCreated, onOpenChange]);
@@ -1130,7 +1181,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && (isLight ? "workforce-setup-card workforce-setup-light" : "workforce-setup-card"), isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -1176,7 +1227,7 @@ export function CreateWorkspaceExperience({
             <div className="flex w-full items-center justify-between gap-3">
               {(
                 <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+                  <Button type="button" variant="ghost" onClick={() => { setTeamEditsPending(false); setStage("intake"); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
                     <ChevronLeft className="mr-1.5 h-4 w-4" />
                     Back to brief
                   </Button>
@@ -1184,7 +1235,7 @@ export function CreateWorkspaceExperience({
                 </div>
               )}
               <div className="flex flex-col items-end gap-1">
-                <span className={cn("text-[10px]", isLight ? "text-[#766b61]" : "text-slate-400")}>{firstWorkspace && defaultModel ? `Default model · ${defaultModel}` : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
+                {!firstWorkspace ? <span className="text-xs text-muted-foreground">{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span> : null}
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -1193,7 +1244,7 @@ export function CreateWorkspaceExperience({
                   {!(provisioningRun?.state === "failed" || provisioningError) ? (
                     <Button
                       type="button"
-                      disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
+                      disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady || teamEditsPending || isRevising}
                       onClick={() => void provision()}
                       title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
                       aria-label={isEnrichmentReview ? "Apply workspace updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
@@ -1221,8 +1272,11 @@ export function CreateWorkspaceExperience({
         )
       }
     >
-      <div className={cn("min-h-0 h-full overflow-y-auto", isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]")}>
-        {firstWorkspace && stage === "review" && !isProvisioned ? <div className="px-5 pt-5 sm:px-8"><OnboardingProgress current={3} /></div> : null}
+      <div className={cn("min-h-0 h-full overflow-y-auto", !firstWorkspace && (isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]"))}>
+        {firstWorkspace && stage === "review" && !isProvisioned ? <div className="px-5 pt-5 sm:px-8"><OnboardingProgress current={3} />
+          {revisionError ? <p role="alert" className="mx-auto mt-3 max-w-2xl text-sm text-destructive">{revisionError}</p> : null}
+          {reviewReadiness && !reviewReadiness.provisionable ? <p role="status" className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground">{reviewReadiness.message}</p> : null}
+        </div> : null}
         {firstWorkspace && stage === "intake" ? (
           <FirstWorkspaceForms
             manual={manualReview}
@@ -1307,7 +1361,8 @@ export function CreateWorkspaceExperience({
         ) : isProvisioned ? (
           <WorkspaceReadyView isLight={isLight} result={result} creationRun={creationRun} provisioningRun={provisioningRun} provisioningError={provisioningError} />
         ) : (
-          <ReviewView
+          (() => {
+            const reviewContent = <ReviewView
             isLight={isLight}
             profile={reviewProfile}
             isEnrichmentReview={isEnrichmentReview}
@@ -1348,7 +1403,14 @@ export function CreateWorkspaceExperience({
             startOverError={startOverError}
             onKeepDraft={() => setShowStartOverConfirmation(false)}
             onConfirmStartOver={() => void startOver()}
-          />
+          />;
+            return firstWorkspace && result ? (
+              <SuggestedTeamReview key={`${creationRun?.runId}:${creationRun?.snapshot.revision?.number ?? 0}`}
+                blueprint={result.blueprint} busy={isRevising} onSave={revise} onChangePending={setTeamEditsPending}>
+                {reviewContent}
+              </SuggestedTeamReview>
+            ) : reviewContent;
+          })()
         )}
       </div>
       </MissionControlDialogShell>

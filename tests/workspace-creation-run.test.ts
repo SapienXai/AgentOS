@@ -450,6 +450,42 @@ test("server-authoritative revision creates a new composition lineage without ac
     assert.match(revised.snapshot.revision?.compositionPlanId ?? "", /revision:1/);
     assert.equal(revised.snapshot.state, "review-ready");
 
+    const proposed = revisedResult.blueprint.workforce.primaryAgent;
+    const updatedEmployee = {
+      ...proposed,
+      name: "Studio lead",
+      role: "Editorial lead",
+      purpose: "Guide the weekly editorial work",
+      responsibilities: ["Read the company brief before assigning work."],
+      skillIds: [],
+      toolIds: []
+    };
+    const editDependencies = {
+      rootPath,
+      reviseArchitect: async () => { throw new Error("An operator edit must not invoke the architect."); },
+      composeWorkspace: async (compositionInput: Parameters<typeof createDeterministicWorkspaceComposition>[0], options?: { runId?: string }) =>
+        createDeterministicWorkspaceComposition(compositionInput, { runId: options?.runId, warning: "Deterministic employee review." })
+    };
+    await assert.rejects(reviseWorkspaceCreationRun({
+      actorId, runId: created.run.runId,
+      employeeReview: { revision: 1, employees: [{ ...updatedEmployee, toolIds: ["unproposed-tool"] }] }
+    }, editDependencies), /keep or remove capabilities/);
+    const employeeReview = await reviseWorkspaceCreationRun({
+      actorId, runId: created.run.runId,
+      employeeReview: { revision: 1, employees: [updatedEmployee] }
+    }, editDependencies);
+    const reviewedEmployee = (employeeReview?.result as WorkspaceArchitectResult).blueprint.workforce.primaryAgent;
+    assert.equal(reviewedEmployee.id, proposed.id);
+    assert.equal(reviewedEmployee.name, updatedEmployee.name);
+    assert.equal(reviewedEmployee.purpose, updatedEmployee.purpose);
+    assert.deepEqual(reviewedEmployee.responsibilities, updatedEmployee.responsibilities);
+    assert.deepEqual(reviewedEmployee.skillIds, []);
+    assert.match(employeeReview?.snapshot.revision?.compositionPlanId ?? "", /revision:2/);
+    await assert.rejects(reviseWorkspaceCreationRun({
+      actorId, runId: created.run.runId,
+      employeeReview: { revision: 1, employees: [updatedEmployee] }
+    }, editDependencies), /revised in another session/);
+
     const resumable = await listResumableWorkspaceCreationRuns(actorId, { rootPath });
     assert.deepEqual(resumable.map((run) => run.runId), [created.run.runId]);
   } finally {

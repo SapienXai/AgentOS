@@ -37,13 +37,13 @@ export function FirstWorkspaceForms({
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [manual]);
 
   return (
-    <div className="mx-auto max-w-xl px-5 pb-8 pt-5 sm:px-8 sm:pt-7">
+    <div className="workforce-setup-step mx-auto max-w-xl px-5 pt-5 sm:px-8 sm:pt-7">
       <OnboardingProgress current={manual ? 3 : 2} />
       <h2 ref={heading} tabIndex={-1} className="workforce-heading mt-6 font-display font-semibold outline-none">
         {manual ? "Choose your first employees" : "Make room for your work"}
       </h2>
       <p className="mb-6 mt-2 text-sm leading-6 text-muted-foreground">
-        {manual ? "Start with one assistant or add teammates with a clear role." : "Give your team a place to work and a purpose to start from."}
+        {manual ? "Start with one assistant or add teammates with distinct roles." : "Give the company a name and tell your team what it should accomplish."}
       </p>
       <form ref={form} aria-label={manual ? "Build your team" : "Create your workspace"} className="space-y-5"
         onSubmit={(event) => { event.preventDefault(); if (!working) (manual ? onLaunch : onGenerate)(); }}>

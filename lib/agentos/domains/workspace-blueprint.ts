@@ -240,6 +240,10 @@ export type WorkspaceBlueprintAgent = {
   evidenceRefs: string[];
 };
 
+export type WorkspaceEmployeeDraftEdit = Pick<WorkspaceBlueprintAgent,
+  "id" | "name" | "role" | "purpose" | "responsibilities" | "skillIds" | "toolIds"
+>;
+
 export type WorkspaceBlueprintWorkflow = {
   id: string;
   name: string;

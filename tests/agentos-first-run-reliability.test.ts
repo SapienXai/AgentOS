@@ -175,8 +175,7 @@ test("browser ChatGPT auth keeps onboarding focused and callback recovery compac
   const shellSource = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(onboardingSource, /const isChatGptAuthSurface = visualStage === "models" && Boolean\(chatGptBrowserAuth\);/);
-  assert.match(onboardingSource, /isChatGptAuthSurface && !advancedProviderFlowOpen\s*\n\s*\? "sm:max-w-\[720px\]"/);
-  assert.match(onboardingSource, /sm:w-\[min\(1240px,calc\(100vw-32px\)\)\] sm:max-w-\[1240px\]/);
+  assert.match(onboardingSource, /workforce-setup-card[\s\S]*sm:max-w-\[720px\]/);
   assert.match(onboardingSource, /<OnboardingProgress/);
   assert.match(onboardingSource, /\(showSiwc \|\| isChatGptAuthSurface\) && "!hidden"/);
   assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle" && \(!chatGptBrowserAuth \|\| isChatGptPreparation\)\}/);

@@ -162,16 +162,15 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
       setCliInstalled(status.cliInstalled === true);
       setRuntimeWritable((current) => preserveConfirmedStatus(current, status.runtimeWritable ?? null));
       if (status.modelStatus?.checked) {
-        setLocalModelStatus({
-          checked: true,
-          defaultModelId: status.modelStatus.defaultModelId ?? null,
-          modelIds: Array.isArray(status.modelStatus.modelIds) ? status.modelStatus.modelIds : []
-        });
+        const modelIds = Array.isArray(status.modelStatus.modelIds) ? status.modelStatus.modelIds : [];
+        const defaultModelId = status.modelStatus.defaultModelId ?? null;
+        setLocalModelStatus(current => (
+          current.checked && current.defaultModelId === defaultModelId &&
+          current.modelIds.length === modelIds.length && current.modelIds.every((id, index) => id === modelIds[index])
+            ? current
+            : { checked: true, defaultModelId, modelIds }
+        ));
       }
-    });
-
-    source.addEventListener("error", () => {
-      setConnectionState("retrying");
     });
 
     source.addEventListener("ready", () => {

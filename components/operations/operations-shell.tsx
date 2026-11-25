@@ -111,7 +111,7 @@ export function OperationsShell({
   preferredWorkspaceId?: string | null;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
-  const { snapshot, connectionState, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     preferredWorkspaceId && initialSnapshot.workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
@@ -232,6 +232,11 @@ export function OperationsShell({
       ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
     ]));
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get("workspaceId");
+    const targetWorkspaceId = preferredWorkspaceId ?? requestedWorkspaceId ?? storedWorkspaceId;
+    // A server seed can have only the system workspace while the shared stream starts.
+    // Wait for the authoritative roster before replacing a selected company.
+    if (!hasReceivedLiveSnapshot && targetWorkspaceId && !selectableWorkspaceIds.includes(targetWorkspaceId)
+      && targetWorkspaceId !== serializeWorkspaceSelection(null)) return;
     const resolvedWorkspaceId = preferredWorkspaceId && selectableWorkspaceIds.includes(preferredWorkspaceId)
       ? preferredWorkspaceId
       : requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
@@ -245,6 +250,7 @@ export function OperationsShell({
     setLoadedWorkspaceSelectionRoot(workspaceRoot);
   }, [
     activeWorkspaceId,
+    hasReceivedLiveSnapshot,
     loadedWorkspaceSelectionRoot,
     preferredWorkspaceId,
     visiblePendingCreatedAgents,
@@ -521,7 +527,7 @@ export function OperationsShell({
           sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
         )}
       >
-        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-4">
+        <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-7">
           <div className="sticky top-0 z-30 -mx-3 flex min-h-14 items-center gap-3 border-b border-border bg-background/92 px-3 backdrop-blur-xl sm:-mx-5 sm:px-5 lg:hidden">
             <button
               type="button"

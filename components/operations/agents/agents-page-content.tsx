@@ -50,9 +50,20 @@ export function AgentsPageContent({
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
+  const activeWork = useMemo(() => {
+    const items = new Map<string, string>();
+    for (const task of snapshot.tasks) {
+      if (task.primaryAgentId && (task.status === "running" || task.status === "queued") && !items.has(task.primaryAgentId)) {
+        items.set(task.primaryAgentId, task.mission || task.title);
+      }
+    }
+    return items;
+  }, [snapshot.tasks]);
   const agents = useMemo(
-    () => buildAgentViews(snapshot),
-    [snapshot]
+    () => buildAgentViews(snapshot).map(agent => agent.status === "running" && !activeWork.has(agent.id)
+      ? { ...agent, status: "ready" as const, statusLabel: "Ready", statusTone: "success" as const }
+      : agent),
+    [activeWork, snapshot]
   );
   const { loginTargets, accessRules } = useAccountsData(activeWorkspaceId);
   const [search, setSearch] = useState("");
@@ -170,7 +181,7 @@ export function AgentsPageContent({
           <PageHeader
             surfaceTheme={surfaceTheme}
             title="Team"
-            subtitle="Meet the employees in your workspace and give them work."
+            subtitle="See who’s on your team and what they’re working on."
             actions={
               <>
                 <CreateAgentDialog
@@ -186,7 +197,7 @@ export function AgentsPageContent({
                   trigger={
                     <Button
                       size="sm"
-                      className="h-8 rounded-lg px-3 text-xs"
+                      className="min-h-11 px-4"
                     >
                       <Plus className="mr-1.5 h-3.5 w-3.5" />
                       Add employee
@@ -223,11 +234,12 @@ export function AgentsPageContent({
           </div>
 
           {filteredAgents.length > 0 ? (
-            <div className={cn(view === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-2.5")}>
+            <div className={cn(view === "grid" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-2.5")}>
               {filteredAgents.map((agent) => (
                 <AgentCard
                   key={agent.id}
                   agent={agent}
+                  currentWork={activeWork.get(agent.id)}
                   connectionBadges={resolveAgentConnectionBadges(agent, loginTargets, accessRules)}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
@@ -335,6 +347,7 @@ export function AgentsPageContent({
 
 function AgentCard({
   agent,
+  currentWork,
   connectionBadges,
   selected,
   list,
@@ -344,6 +357,7 @@ function AgentCard({
   onManageProfile
 }: {
   agent: AgentView;
+  currentWork: string | undefined;
   connectionBadges: AgentConnectionBadge[];
   selected: boolean;
   list: boolean;
@@ -355,30 +369,36 @@ function AgentCard({
   const role = agent.source?.workerProfile?.employment.role || agent.policyLabel;
   const chatHref = `/chat?employee=${encodeURIComponent(agent.id)}`;
 
+  const activity = currentWork || (agent.statusTone === "danger" || agent.statusLabel === "Needs approval" ? agent.statusLabel : "No active task");
+
   return (
-    <article className={cn("min-w-0 rounded-xl border bg-card p-4 transition-colors motion-reduce:transition-none",
-      selected ? "border-primary/40" : "border-border hover:border-muted-foreground/40", list && "sm:flex sm:items-center sm:gap-5")}>
-      <div className="flex min-w-0 items-center gap-3">
-        <EmployeeAvatar agent={agent.source} name={agent.name} />
+    <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list && "workforce-person--list")}>
+      <div className="flex min-w-0 items-center gap-4">
+        <EmployeeAvatar agent={agent.source} name={agent.name} className="size-16 rounded-2xl text-lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="break-words font-display text-base font-semibold leading-tight">
+          <h2 className="break-words font-display text-xl font-semibold leading-tight">
             <Link href={`/agents/${encodeURIComponent(agent.id)}`} className="rounded-sm hover:underline focus-visible:outline focus-visible:outline-ring">
               {agent.name} <ArrowUpRight className="ml-1 inline size-3 text-muted-foreground" aria-hidden="true" />
             </Link>
           </h2>
-          <p className="text-sm text-muted-foreground">{role}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{role}</p>
         </div>
-        <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
+      </div>
+      <div className="workforce-person-work min-w-0">
+        {agent.purpose !== role ? <p className="line-clamp-2 text-sm leading-6 text-foreground">{agent.purpose}</p> : null}
+        <p className="flex items-start gap-2 text-sm leading-5 text-muted-foreground">
+          <span aria-hidden="true" className={cn("mt-[0.42rem] size-2 shrink-0 rounded-full bg-muted-foreground/45", currentWork && "bg-[hsl(var(--status-success))]")} />
+          {activity}
+        </p>
+        {connectionBadges.length ? (
+          <details className="workforce-disclosure">
+            <summary>{connectionBadges.length === 1 ? "1 connection" : `${connectionBadges.length} connections`}</summary>
+            <div className="pt-2"><AgentConnectionIconRow badges={connectionBadges} /></div>
+          </details>
+        ) : null}
       </div>
 
-      {agent.purpose !== role || connectionBadges.length > 0 ? (
-        <div className={cn("min-w-0", list ? "mt-3 flex-1 sm:mt-0" : "mt-3")}>
-          {agent.purpose !== role ? <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.purpose}</p> : null}
-          {connectionBadges.length ? <div className="mt-2"><AgentConnectionIconRow badges={connectionBadges} /></div> : null}
-        </div>
-      ) : null}
-
-      <div className={cn("flex flex-wrap items-center gap-1.5", list ? "mt-3 sm:ml-auto sm:mt-0" : "mt-4 border-t border-border pt-3")}>
+      <div className={cn("flex flex-wrap items-center gap-1.5", list ? "sm:ml-auto" : "border-t border-border/65 pt-2.5")}>
         {agent.source ? (
           <Button asChild variant="secondary" size="sm" className="min-h-11 sm:min-h-8">
             <Link href={chatHref}><MessageSquare className="mr-1.5 size-3.5" /> Chat</Link>

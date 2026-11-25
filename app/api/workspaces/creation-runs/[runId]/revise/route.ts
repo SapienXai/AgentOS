@@ -16,6 +16,18 @@ const revisionRequestSchema = z.object({
       primaryAgent: z.object({ name: z.string().trim().min(1).max(100).optional() }).strict().optional()
     }).strict().optional()
   }).strict().optional(),
+  employeeReview: z.object({
+    revision: z.number().int().nonnegative(),
+    employees: z.array(z.object({
+      id: z.string().min(1).max(160),
+      name: z.string().trim().min(1).max(100),
+      role: z.string().trim().min(1).max(100),
+      purpose: z.string().trim().min(1).max(500),
+      responsibilities: z.array(z.string().trim().min(1).max(300)).max(12),
+      skillIds: z.array(z.string().min(1).max(160)).max(64),
+      toolIds: z.array(z.string().min(1).max(160)).max(64)
+    }).strict()).min(1).max(20)
+  }).strict().optional(),
   operatorConstraints: z.array(z.string().trim().min(1).max(300)).max(12).optional()
 }).strict();
 
@@ -30,6 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
       runId,
       instruction: parsed.instruction,
       operatorEdits: parsed.operatorEdits,
+      employeeReview: parsed.employeeReview,
       operatorConstraints: parsed.operatorConstraints,
       signal: request.signal
     });

@@ -24,7 +24,7 @@ import { AgentModelPickerDialog } from "@/components/mission-control/agent-model
 import { AgentChannelsSection } from "@/components/operations/agents/agent-channels-section";
 import { EffectiveCapabilitiesPanel } from "@/components/operations/agents/effective-capabilities-panel";
 import {
-  AGENT_DETAIL_TABS,
+  AGENT_DETAIL_TABS, EMPLOYEE_SECTIONS, getEmployeeSection,
   parseAgentDetailQueryState,
   type AgentDetailTab, type AgentDetailQueryState
 } from "@/components/operations/agents/agent-detail-tabs";
@@ -211,8 +211,8 @@ export function AgentDetailPageContent({
 
             <PageHeader
               title={displayName}
-              icon={<EmployeeAvatar agent={agent} name={displayName} className="size-14" />}
-              subtitle={`${agent.workerProfile?.employment.role || "OpenClaw worker"} · ${workspace.name}`}
+              icon={<EmployeeAvatar agent={agent} name={displayName} className="size-[4.5rem] rounded-[1.15rem] text-xl" />}
+              subtitle={`${agent.workerProfile?.employment.role || "Digital employee"} · ${workspace.name}`}
               actions={
                 <>
                   <Button variant="ghost" size="sm" className="h-9 rounded-lg px-3 text-xs" onClick={() => setProfileOpen(true)}>
@@ -229,20 +229,19 @@ export function AgentDetailPageContent({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge label={agentView.statusLabel} tone={statusTone} />
-                <Badge variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">{modelLabel}</Badge>
-                <span className="text-[11px] text-muted-foreground">Updated {formatRelativeTime(agent.lastActiveAt, resolveRelativeTimeReferenceMs(snapshot.generatedAt))}</span>
+                {agent.lastActiveAt ? <span className="text-xs text-muted-foreground">Last active {formatRelativeTime(agent.lastActiveAt, resolveRelativeTimeReferenceMs(snapshot.generatedAt))}</span> : null}
               </div>
             </PageHeader>
 
             <nav aria-label="Employee profile sections" className="border-b border-border">
               <div className="flex flex-wrap gap-x-1">
-                {AGENT_DETAIL_TABS.map((item) => (
+                {EMPLOYEE_SECTIONS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
-                    aria-pressed={tab === item.id}
+                    aria-pressed={getEmployeeSection(tab) === item.id}
                     onClick={() => updateTab(item.id)}
-                    className={cn("min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors motion-reduce:transition-none", tab === item.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
+                    className={cn("min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors motion-reduce:transition-none", getEmployeeSection(tab) === item.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
                   >
                     {item.label}
                   </button>
@@ -250,9 +249,9 @@ export function AgentDetailPageContent({
               </div>
             </nav>
 
-            <div role="region" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label} for ${displayName}`}>
+            <div role="region" aria-label={`${AGENT_DETAIL_TABS.find((item) => item.id === tab)?.label ?? "Settings"} for ${displayName}`}>
               {tab === "overview" ? <OverviewTab agent={agent} workspace={workspace} modelLabel={modelLabel} currentWork={currentWork} activity={activity} capabilities={capabilities.data} onOpenCapabilities={() => updateTab("capabilities")} onOpenChannels={() => updateTab("channels")} onChangeModel={() => setModelOpen(true)} /> : null}
-              {tab === "behavior" ? <BehaviorTab agent={agent} onEdit={() => setProfileOpen(true)} /> : null}
+              {tab === "behavior" ? <><Button variant="ghost" onClick={() => updateTab("settings")}>Back to employee settings</Button><BehaviorTab agent={agent} onEdit={() => setProfileOpen(true)} /></> : null}
               {tab === "knowledge" ? (
                 <SectionCard title="Knowledge and memory">
                   <div className="space-y-3 p-4 text-sm leading-6 text-muted-foreground">
@@ -264,13 +263,27 @@ export function AgentDetailPageContent({
                   </div>
                 </SectionCard>
               ) : null}
-              {tab === "intelligence" ? (
-                <SectionCard title="AI model">
-                  <div className="space-y-3 p-4 text-sm">
-                    <p className="text-muted-foreground">Current model <strong className="ml-2 font-medium text-foreground">{modelLabel}</strong></p>
-                    <Button onClick={() => setModelOpen(true)}>Change model</Button>
+              {tab === "settings" || tab === "intelligence" ? (
+                <div className="workforce-detail-grid space-y-4">
+                  <div className="workforce-detail-grid-inner">
+                    <section className="workforce-panel space-y-3 p-5">
+                      <h2 className="workforce-section-title">Identity and responsibilities</h2>
+                      <p className="text-sm leading-6 text-muted-foreground">{agent.profile?.purpose || agent.workerProfile?.employment.role || "Set a clear responsibility for this employee."}</p>
+                      <Button variant="secondary" onClick={() => setProfileOpen(true)}>Edit employee</Button>
+                      <Button variant="ghost" onClick={() => updateTab("behavior")}>View working instructions</Button>
+                    </section>
+                    <section className="workforce-panel space-y-3 p-5">
+                      <h2 className="workforce-section-title">AI model</h2>
+                      <p className="break-words text-sm text-muted-foreground">{modelLabel}</p>
+                      <Button variant="secondary" onClick={() => setModelOpen(true)}>Change model</Button>
+                    </section>
                   </div>
-                </SectionCard>
+                  <details className="workforce-panel p-5">
+                    <summary className="cursor-pointer font-semibold">Connections and native settings</summary>
+                    <p className="mt-2 text-sm text-muted-foreground">Review how this employee is reached outside AgentOS.</p>
+                    <Button className="mt-3" variant="secondary" onClick={() => updateTab("channels")}>Manage connections</Button>
+                  </details>
+                </div>
               ) : null}
               {tab === "capabilities" ? (
                 <CapabilitiesTab
@@ -283,7 +296,7 @@ export function AgentDetailPageContent({
                   focusId={capabilityFocusId}
                 />
               ) : null}
-              {tab === "channels" ? <ChannelsTab agent={agent} workspace={workspace} surfaceTheme={surfaceTheme} onRouteChanged={refresh} /> : null}
+              {tab === "channels" ? <><Button variant="ghost" onClick={() => updateTab("settings")}>Back to employee settings</Button><ChannelsTab agent={agent} workspace={workspace} surfaceTheme={surfaceTheme} onRouteChanged={refresh} /></> : null}
               {tab === "sessions" ? <SessionsTab sessions={sessions} activity={activity} onRefresh={refresh} focusKey={sessionFocusKey} /> : null}
             </div>
           </div>
@@ -316,8 +329,8 @@ function OverviewTab({ agent, workspace, modelLabel, currentWork, activity, capa
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
       <div className="space-y-4">
-        <SectionCard title="Current operation">
-          <div className="p-4"><div className="flex items-start gap-3"><EntityIcon icon={Gauge} label="Work" tone="info" size="md" /><div className="min-w-0"><p className="text-sm font-semibold">{currentWork.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{currentWork.detail}</p><div className="mt-3 flex flex-wrap gap-2"><StatusBadge label={currentWork.status} tone={currentWork.status === "running" ? "info" : currentWork.status === "completed" ? "success" : "muted"} /><span className="text-[11px] text-muted-foreground">{currentWork.taskId ? `Task ${currentWork.taskId}` : "No task id reported"}</span></div></div></div></div>
+        <SectionCard title="Current work">
+          <div className="p-4"><div className="flex items-start gap-3"><EntityIcon icon={Gauge} label="Work" tone="info" size="md" /><div className="min-w-0"><p className="text-sm font-semibold">{currentWork.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{currentWork.detail}</p><div className="mt-3 flex flex-wrap gap-2"><StatusBadge label={currentWork.status} tone={currentWork.status === "running" ? "info" : currentWork.status === "completed" ? "success" : "muted"} /></div></div></div></div>
         </SectionCard>
         <SectionCard title="Recent work and sessions">
           {activity.length ? <div className="divide-y divide-border">{activity.slice(0, 5).map((entry) => <div key={entry.id} className="flex items-start gap-3 px-4 py-3"><CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{entry.title}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{entry.detail}</p></div><span className="shrink-0 text-[10px] text-muted-foreground">{entry.updatedLabel}</span></div>)}</div> : <div className="p-4"><EmptyState title="No recent runtime evidence" description="OpenClaw has not reported recent task or runtime activity for this worker." /></div>}

@@ -175,6 +175,23 @@ async function runScale(agentCount, sessionCount, browser) {
     const headers = { Authorization: `Bearer ${apiToken}` };
     const render = async (context) => {
       const page = await context.newPage();
+      await page.addInitScript(() => {
+        const marks = { canvasMs: null, firstNodeMs: null, longTasks: [] };
+        window.agentOsBenchmark = marks;
+        const dom = new MutationObserver(() => {
+          if (marks.canvasMs === null && document.querySelector(".react-flow")) marks.canvasMs = performance.now();
+          if (document.querySelector(".react-flow__node-agent")) {
+            marks.firstNodeMs = performance.now();
+            dom.disconnect();
+          }
+        });
+        dom.observe(document, { childList: true, subtree: true });
+        if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+          new PerformanceObserver(list => {
+            marks.longTasks.push(...list.getEntries().slice(0, 24).map(entry => Math.round(entry.duration)));
+          }).observe({ type: "longtask", buffered: true });
+        }
+      });
       const started = performance.now();
       const navigation = await page.goto(appUrl + "/mission-control", { timeout: 45000, waitUntil: "domcontentloaded" });
       await page.getByText("Benchmark agent 1", { exact: true }).first().waitFor({ timeout: 45000 });
@@ -182,7 +199,15 @@ async function runScale(agentCount, sessionCount, browser) {
       const html = await navigation.text();
       const nav = await page.evaluate(() => {
         const entry = performance.getEntriesByType("navigation")[0];
-        return { ttfbMs: Math.round(entry.responseStart), domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd) };
+        const marks = window.agentOsBenchmark;
+        return {
+          ttfbMs: Math.round(entry.responseStart),
+          domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd),
+          canvasMs: marks?.canvasMs == null ? null : Math.round(marks.canvasMs),
+          firstNodeMs: marks?.firstNodeMs == null ? null : Math.round(marks.firstNodeMs),
+          longTaskMs: marks?.longTasks.reduce((total, value) => total + value, 0) ?? null,
+          maxLongTaskMs: marks?.longTasks.length ? Math.max(...marks.longTasks) : null
+        };
       });
       return {
         page,

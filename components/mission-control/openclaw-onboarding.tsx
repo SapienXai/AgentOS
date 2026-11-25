@@ -209,7 +209,6 @@ export function OpenClawOnboarding({
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const [showLegacySetup, setShowLegacySetup] = useState(false);
   const [advancedProviderFlowOpen, setAdvancedProviderFlowOpen] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const reduceMotion = useReducedMotion();
   const { status: instanceStatus } = useInstanceProtection();
   const stepContent = useRef<HTMLDivElement>(null);
@@ -297,46 +296,35 @@ export function OpenClawOnboarding({
     };
   }, []);
 
-  useEffect(() => {
-    const mobileQuery = window.matchMedia("(max-width: 639px)");
-    const updateViewport = () => setIsMobileViewport(mobileQuery.matches);
-
-    updateViewport();
-    mobileQuery.addEventListener("change", updateViewport);
-
-    return () => mobileQuery.removeEventListener("change", updateViewport);
-  }, []);
-
   if (!portalRoot) {
     return null;
   }
 
   return createPortal(
     <OnboardingDialog
-      initial={reduceMotion ? false : { opacity: 0, backdropFilter: "blur(0px)" }}
-      animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
-      exit={reduceMotion ? undefined : { opacity: 0, backdropFilter: "blur(0px)" }}
+      data-theme={surfaceTheme}
+      initial={reduceMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0 }}
       className={cn(
-        "openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden p-0 sm:px-6 sm:py-4",
+        "workforce-setup openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden p-0 sm:px-6 sm:py-4",
         surfaceTheme === "light"
           ? "openclaw-onboarding-backdrop--light bg-[radial-gradient(circle_at_50%_4%,rgba(255,255,255,0.98),rgba(255,250,247,0.94)_34%,rgba(250,243,239,0.96)_72%)]"
           : "openclaw-onboarding-backdrop--dark bg-[radial-gradient(circle_at_50%_0%,rgba(38,10,18,0.46),rgba(6,8,13,0.96)_42%,rgba(2,4,8,0.98))]"
       )}
     >
-      <SetupBackground surfaceTheme={surfaceTheme} />
       <div
         aria-hidden="true"
         data-tauri-drag-region="deep"
         className="pointer-events-auto absolute inset-x-0 top-0 z-[1] h-16"
       />
       <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 18, scale: isMobileViewport ? 1 : 0.885 }}
-        animate={{ opacity: 1, y: 0, scale: isMobileViewport || reduceMotion ? 1 : 0.9 }}
+        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.2 }}
         className={cn(
-          "relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
-          isChatGptAuthSurface && !advancedProviderFlowOpen
-            ? "sm:max-w-[720px]"
-            : "sm:w-[min(1240px,calc(100vw-32px))] sm:max-w-[1240px]",
+          "workforce-setup-card relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
+          "sm:max-w-[720px]",
           surfaceTheme === "light"
             ? "bg-card text-foreground shadow-none sm:border-border/80 sm:bg-card/92 sm:shadow-[0_24px_70px_rgba(15,23,42,0.14)]"
             : "bg-background text-foreground shadow-none sm:border-primary/18 sm:bg-[hsl(var(--card)/0.88)] sm:shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_28px_90px_rgba(0,0,0,0.48)]"
@@ -675,120 +663,6 @@ function OnboardingDialog({ children, ...surface }: Omit<ComponentProps<typeof m
         </motion.div>
       </DialogPrimitive.Content>
     </Dialog>
-  );
-}
-
-function SetupBackground({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
-  const reduceMotion = useReducedMotion();
-  const lineTransition = { duration: 9, repeat: Infinity, repeatType: "mirror" as const, ease: "easeInOut" as const };
-  const pulseTransition = { duration: 2.8, repeat: Infinity, repeatType: "mirror" as const, ease: "easeInOut" as const };
-
-  return (
-    <div
-      aria-hidden="true"
-      className={cn(
-        "pointer-events-none absolute inset-0 overflow-hidden",
-        surfaceTheme === "light" ? "opacity-95" : "opacity-100"
-      )}
-    >
-      <motion.div
-        className={cn(
-          "absolute -left-[18%] top-[42%] h-[430px] w-[132%] rounded-[50%] border-t blur-[0.2px]",
-          surfaceTheme === "light"
-            ? "border-primary/18 shadow-[0_-10px_34px_hsl(var(--primary)/0.10)]"
-            : "border-primary/30 shadow-[0_-12px_50px_hsl(var(--primary)/0.24)]"
-        )}
-        animate={reduceMotion ? undefined : { x: [-28, 34, -28], y: [0, -16, 0], rotate: [-5, -2, -5] }}
-        transition={lineTransition}
-      />
-      <motion.div
-        className={cn(
-          "absolute -right-[20%] top-[30%] h-[520px] w-[88%] rounded-[50%] border-t blur-[0.2px]",
-          surfaceTheme === "light"
-            ? "border-primary/16 shadow-[0_-8px_30px_hsl(var(--primary)/0.10)]"
-            : "border-primary/28 shadow-[0_-12px_54px_hsl(var(--primary)/0.22)]"
-        )}
-        animate={reduceMotion ? undefined : { x: [24, -34, 24], y: [-10, 14, -10], rotate: [-19, -14, -19] }}
-        transition={{ ...lineTransition, duration: 11 }}
-      />
-      <motion.div
-        className={cn(
-          "absolute left-[2%] top-[60%] h-px w-[46%] origin-left rotate-[18deg]",
-          "bg-gradient-to-r from-transparent via-primary/70 to-transparent",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_22px_hsl(var(--primary)/0.22)]"
-            : "shadow-[0_0_34px_hsl(var(--primary)/0.48),0_0_80px_hsl(var(--primary)/0.16)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.18, 0.85, 0.18], x: [-70, 90, -70] }}
-        transition={{ duration: 4.8, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className={cn(
-          "absolute right-[4%] top-[72%] h-px w-[38%] origin-right rotate-[-22deg]",
-          "bg-gradient-to-r from-transparent via-primary/75 to-transparent",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_18px_hsl(var(--primary)/0.20)]"
-            : "shadow-[0_0_30px_hsl(var(--primary)/0.50),0_0_86px_hsl(var(--primary)/0.18)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.22, 0.92, 0.22], x: [58, -82, 58] }}
-        transition={{ duration: 5.6, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className={cn(
-          "absolute right-[-6%] top-[48%] h-[2px] w-[60%] origin-right rotate-[-36deg]",
-          "bg-gradient-to-r from-transparent via-primary/85 to-primary/10",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_24px_hsl(var(--primary)/0.26),0_0_70px_hsl(var(--primary)/0.10)]"
-            : "shadow-[0_0_38px_hsl(var(--primary)/0.68),0_0_110px_hsl(var(--primary)/0.28)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.24, 0.9, 0.24], x: [90, -70, 90], y: [12, -8, 12] }}
-        transition={{ duration: 6.2, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className={cn(
-          "absolute left-[-10%] bottom-[18%] h-[2px] w-[58%] origin-left rotate-[32deg]",
-          "bg-gradient-to-r from-transparent via-primary/80 to-transparent",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_22px_hsl(var(--primary)/0.24),0_0_62px_hsl(var(--primary)/0.10)]"
-            : "shadow-[0_0_36px_hsl(var(--primary)/0.64),0_0_100px_hsl(var(--primary)/0.26)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.2, 0.82, 0.2], x: [-80, 86, -80], y: [-10, 10, -10] }}
-        transition={{ duration: 5.4, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className={cn(
-          "absolute right-[3%] top-[38%] h-[48%] w-[32%] rotate-[-22deg] rounded-[40%] blur-3xl",
-          surfaceTheme === "light" ? "bg-primary/[0.06]" : "bg-primary/[0.13]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.22, 0.55, 0.22], x: [20, -18, 20], scale: [0.96, 1.06, 0.96] }}
-        transition={{ duration: 7.2, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className={cn(
-          "absolute bottom-[14%] left-[16%] h-2 w-2 rounded-full bg-primary",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_24px_hsl(var(--primary)/0.42),0_0_58px_hsl(var(--primary)/0.12)]"
-            : "shadow-[0_0_28px_hsl(var(--primary)/0.75),0_0_90px_hsl(var(--primary)/0.30)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.42, 1, 0.42], scale: [0.82, 1.28, 0.82] }}
-        transition={pulseTransition}
-      />
-      <motion.div
-        className={cn(
-          "absolute right-[5%] top-[72%] h-2 w-2 rounded-full bg-primary",
-          surfaceTheme === "light"
-            ? "shadow-[0_0_22px_hsl(var(--primary)/0.36),0_0_54px_hsl(var(--primary)/0.10)]"
-            : "shadow-[0_0_30px_hsl(var(--primary)/0.78),0_0_92px_hsl(var(--primary)/0.32)]"
-        )}
-        animate={reduceMotion ? undefined : { opacity: [0.35, 1, 0.35], scale: [0.75, 1.22, 0.75] }}
-        transition={{ ...pulseTransition, duration: 3.4 }}
-      />
-      <motion.div
-        className="absolute inset-x-[12%] top-[28%] h-[220px] rounded-[50%] bg-primary/10 blur-[90px]"
-        animate={reduceMotion ? undefined : { opacity: [0.08, 0.22, 0.08], scale: [0.96, 1.05, 0.96] }}
-        transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut" }}
-      />
-    </div>
   );
 }
 

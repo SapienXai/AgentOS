@@ -15,6 +15,7 @@ import {
 } from "@/lib/openclaw/domains/workspace-manifest";
 import { workspacePathMatchesId } from "@/lib/openclaw/domains/workspace-id";
 import { OPENCLAW_LEGACY_WORKSPACE_FILES } from "@/lib/openclaw/workspace-bootstrap-files";
+import { WORKSPACE_MANAGED_FILE_MAX_BYTES } from "@/lib/openclaw/workspace-file-types";
 import type {
   WorkspaceManagedFile,
   WorkspaceManagedFileCategory,
@@ -25,7 +26,7 @@ import type {
 } from "@/lib/openclaw/workspace-file-types";
 import type { WorkspaceProject } from "@/lib/openclaw/types";
 
-export const WORKSPACE_MANAGED_FILE_MAX_BYTES = 512 * 1024;
+export { WORKSPACE_MANAGED_FILE_MAX_BYTES } from "@/lib/openclaw/workspace-file-types";
 
 type WorkspaceFileSpec = {
   path: string;

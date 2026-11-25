@@ -16,7 +16,8 @@ const serve = process.argv.includes("--serve");
 const baseline = process.argv.includes("--baseline");
 const matchedCanvas = process.argv.includes("--matched-canvas");
 const connect = process.argv.includes("--connect");
-const fresh = connect || process.argv.includes("--fresh");
+const suggested = process.argv.includes("--suggested");
+const fresh = connect || suggested || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
 const { createManagedAgentOsUser, updateManagedAgentOsUserRole, updateManagedAgentOsUserStatus } = require(repo + "/lib/agentos/application/agentos-account-service.ts");
 const next = require.resolve(repo + "/node_modules/next/dist/bin/next");
@@ -60,7 +61,8 @@ async function run() {
     const config = path.join(root, "openclaw.json");
     const mainWorkspace = fresh ? path.join(state, "workspace") : path.join(root, "main");
     const defaultModel = "agentos-fixture/" + fixture.modelId;
-    await Promise.all([mkdir(state), mkdir(mainWorkspace, {recursive:true})]);
+    await mkdir(state);
+    await mkdir(mainWorkspace, { recursive: true });
     await writeFile(path.join(mainWorkspace, "AGENTS.md"), "# Fixture instructions\nUse the isolated sample workspace only.\n");
     if (fresh && !connect) {
       const authDir = path.join(state, "agents", "main", "agent");
@@ -197,6 +199,7 @@ async function run() {
           await record("provider-choice", async () => {
             await expect(page.getByRole("button", { name: "Other AI providers" })).toBeVisible({timeout: 10000});
             await page.getByRole("button", { name: "Other AI providers" }).click();
+            await expect(page.getByRole("combobox", { name: "AI provider", exact:true })).toBeVisible();
           });
           await context.close();
           continue;
@@ -210,6 +213,28 @@ async function run() {
             await page.getByRole("button", { name: "Create workspace", exact: true }).first().click({timeout: 7000});
             await expect(page.getByLabel("What are you working on?")).toBeVisible();
           });
+          if (suggested) {
+            await record("suggested-team", async () => {
+              await page.getByLabel("Workspace name", { exact: true }).fill("Harbor Review");
+              await page.getByLabel("What are you working on?").fill("Research and publish a monthly neighborhood newsletter. Propose a lead editor and a research specialist.");
+              await page.getByRole("button", { name: "Suggest a team", exact: true }).click();
+              await expect(page.getByRole("heading", { name: "Meet your proposed team" })).toBeVisible({ timeout: 55000 });
+            });
+            await record("reviewed-team-edits", async () => {
+              const lead = page.locator("details.workforce-person").first();
+              await lead.locator("summary").click();
+              await lead.getByLabel("Name", { exact: true }).fill("Harbor Lead");
+              await lead.getByLabel("Role", { exact: true }).fill("Managing editor");
+              await lead.getByLabel("Working instructions and knowledge to consult").fill("Consult company guidelines before publishing.");
+              const apply = page.getByRole("button", { name: "Save team changes" });
+              await expect(page.getByRole("button", { name: "Launch workspace", exact: true })).toBeDisabled();
+              await apply.click();
+              await expect(lead.locator("summary")).toContainText("Managing editor", { timeout: 20000 });
+              await expect(apply).toBeDisabled();
+            });
+            await context.close();
+            continue;
+          }
           await record("build-team", async () => {
             await page.getByLabel("Workspace name", {exact: true}).fill("Harbor Review");
             await page.getByLabel("What are you working on?").fill("Research and publish a monthly neighborhood newsletter.");
@@ -217,6 +242,14 @@ async function run() {
             await expect(page.getByRole("heading", {name:"Choose your first employees"})).toBeVisible();
           });
           if (theme === "light" && size === stageSizes.at(-1)) {
+            await record("resume-workspace-draft", async () => {
+              await go("/");
+              await page.getByRole("button", {name:"Create workspace",exact:true}).first().click();
+              await expect(page.getByRole("heading", {name:"Choose your first employees"})).toBeVisible();
+              await page.getByRole("button", {name:"Back",exact:true}).click();
+              await expect(page.getByLabel("Workspace name", {exact:true})).toHaveValue("Harbor Review");
+              await page.getByRole("button", {name:"Build team manually"}).click();
+            });
             const startTime = performance.now();
             await record("launch-workspace", async () => {
               await page.getByRole("button", {name:"Launch workspace", exact:true}).click();
@@ -310,14 +343,14 @@ async function run() {
         }
 
         await record("workspace-switcher", async () => {
-          if (size.width === 390 || size.width === 1440) await go("/mission-control");
+          await go("/mission-control");
           if (size.width < 1024) await page.getByRole("button", {name:"More", exact:true}).click();
           else await page.getByRole("button", {name:"Expand sidebar", exact:true}).hover();
           const switcher = page.getByRole("button", {name:/Fieldwork Studio Workspace/}).first();
           await switcher.click({timeout: 5000});
           await expect(page.getByRole("menuitem", {name:/Northline Press/}).first()).toBeVisible();
         });
-        if (size.width === 1440 || size.width === 390) await record("workspace-switch-confirmed", async () => {
+        if ([1440, 820, 390].includes(size.width)) await record("workspace-switch-confirmed", async () => {
           await page.getByRole("menuitem", {name:/Northline Press/}).first().click();
           const sam = page.locator('.react-flow__node-agent[data-id="northline-press-sam"]');
           await expect(sam).toBeVisible();
@@ -330,7 +363,7 @@ async function run() {
         await record("team", async () => {
           await go("/team");
           await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
-          await expect(page.getByRole("link", { name: "Ada", exact: true })).toBeVisible();
+          await expect(page.getByRole("link", { name: "Ada", exact: true })).toBeVisible({ timeout: 12000 });
         });
         await record("add-employee", async () => {
           await page.getByRole("button", { name: "Add employee", exact: true }).last().click();
@@ -348,7 +381,7 @@ async function run() {
         await record("chat", async () => {
           await go(`/chat?employee=${encodeURIComponent(worker.id)}`);
           const composer = page.getByRole("textbox", {name:"Message Ada", exact:true});
-          await expect(composer).toBeVisible();
+          await expect(composer).toBeVisible({ timeout: 12000 });
           if (!completedConversation) {
             await composer.fill("Write a one-line introduction for our research brief.");
             await page.getByRole("button", { name: "Send message" }).click();
@@ -398,9 +431,22 @@ async function run() {
           await record(name, async () => {
             await go(route);
             await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
-            if (name === "knowledge") await expect(page.getByRole("heading", { name:"Workspace documents" })).toBeVisible();
+            if (name === "knowledge") await expect(page.getByRole("heading", { name:"Shared documents" })).toBeVisible();
           });
         }
+        if (theme === "light" && size === stageSizes.at(-1)) await record("knowledge-upload", async () => {
+          await go("/knowledge");
+          await page.getByRole("button", {name:"Upload document",exact:true}).click();
+          await page.getByLabel("Markdown or JSON document").setInputFiles({
+            name:"Editorial standards.md", mimeType:"text/markdown",
+            buffer:Buffer.from("# Editorial standards\nCheck the source before publication.\n")
+          });
+          await page.getByRole("button", {name:"Save to workspace",exact:true}).click();
+          const document = page.getByRole("button", {name:/Editorial standards/i});
+          await expect(document).toBeVisible({timeout:10000});
+          await document.click();
+          await expect(page.getByText("Check the source before publication.", {exact:false}).first()).toBeVisible();
+        });
         if (theme === "light" && size === stageSizes.at(-1)) await record("native-employee-created", async () => {
           await go("/team");
           await page.getByRole("button", { name: "Add employee", exact: true }).last().click();
@@ -470,7 +516,7 @@ async function run() {
     await browser?.close();
     for (const child of children.reverse()) await stop(child);
     await fixture.close();
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5 });
   }
 }
 run().catch(error=>{console.error(error.message);process.exitCode=1;});

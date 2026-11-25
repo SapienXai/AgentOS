@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellRing, CircleCheck, ExternalLink, Gauge, Layers3, LoaderCircle, MessageCircle, PackageOpen, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow } from "lucide-react";
+import { BellRing, CircleCheck, ExternalLink, Layers3, LoaderCircle, MessageCircle, PackageOpen, RefreshCw, SearchCheck, ArrowUpRight, ShieldCheck, Slack, SlidersHorizontal, Sparkles, Workflow } from "lucide-react";
+
+import { siDiscord, siGithub, siGmail, siGooglechat, siGooglechrome, siGoogledrive, siLinear, siNotion, siOllama, siOpenrouter, siTelegram, siWhatsapp, siX } from "simple-icons";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
@@ -10,7 +13,7 @@ import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/
 import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import { cn } from "@/lib/utils";
 import { buildIntegrationViews, integrationStatusIcons, type IntegrationStatus, type IntegrationView } from "@/components/operations/operations-data";
-import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
+import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle } from "@/components/operations/operations-ui";
 import { formatIntegrationSortLabel, formatIntegrationStatusFilterLabel, formatIntegrationStatusLabel, formatManagedBy, integrationStatusToneMap, MetricTile, readClientError, sortIntegrations, statusIconClassName, type IntegrationRuntimeOverride, type IntegrationSortMode } from "@/components/operations/operations-shared";
 
 export function IntegrationsPageContent({
@@ -31,9 +34,10 @@ export function IntegrationsPageContent({
   const [category, setCategory] = useState("All Categories");
   const [status, setStatus] = useState<"All Statuses" | IntegrationStatus>("All Statuses");
   const [sort, setSort] = useState<IntegrationSortMode>("last-active");
-  const [view, setView] = useState<"grid" | "list">("list");
+  const [view, setView] = useState<"grid" | "list">("grid");
   const [showAllMobileIntegrations, setShowAllMobileIntegrations] = useState(true);
-  const [selectedId, setSelectedId] = useState(baseIntegrations[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,6 +51,7 @@ export function IntegrationsPageContent({
   const [pluginCatalogError, setPluginCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!showAdvanced) return;
     let cancelled = false;
     setPluginCatalogLoading(true);
     setPluginCatalogError(null);
@@ -88,7 +93,7 @@ export function IntegrationsPageContent({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, snapshot.agents]);
+  }, [activeWorkspaceId, showAdvanced, snapshot.agents]);
   const integrations = useMemo(
     () =>
       baseIntegrations.map((integration) => {
@@ -153,8 +158,12 @@ export function IntegrationsPageContent({
     const matchesStatus = status === "All Statuses" || integration.status === status;
     return matchesSearch && matchesCategory && matchesStatus;
   }).sort((left, right) => sortIntegrations(left, right, sort));
-  const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? filteredIntegrations[0] ?? null;
-  const visibleIntegrations = showAllMobileIntegrations ? filteredIntegrations : filteredIntegrations.slice(0, 6);
+  const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? null;
+  const apps = filteredIntegrations.filter(integration => integration.surfaceProvider || integration.modelProvider || integration.accountIds.length);
+  const nativeCapabilities = filteredIntegrations.filter(integration => !apps.includes(integration));
+  const connected = apps.filter(integration => integration.status === "connected" || integration.status === "running");
+  const available = apps.filter(integration => !connected.includes(integration));
+  const visibleIntegrations = showAllMobileIntegrations ? nativeCapabilities : nativeCapabilities.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
     void surfaceProvider;
@@ -357,7 +366,7 @@ export function IntegrationsPageContent({
             <PageHeader
               surfaceTheme={surfaceTheme}
               title="Integrations"
-              subtitle="Connect apps and see which capabilities OpenClaw reports for your workspace."
+              subtitle="Connect the apps your company uses and manage what each employee can do."
               actions={
                 <>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/channels")}>
@@ -375,55 +384,71 @@ export function IntegrationsPageContent({
               onSearchChange={setSearch}
               searchPlaceholder="Find an integration"
               surfaceTheme={surfaceTheme}
-              right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
+              right={<div className="hidden sm:block"><ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} /></div>}
             >
               <ToolbarButton surfaceTheme={surfaceTheme} icon={Layers3} label={category} chevron onClick={() => setCategory((current) => categories[(categories.indexOf(current) + 1) % categories.length])} />
               <ToolbarButton surfaceTheme={surfaceTheme} icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
-              <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} />
+              <div className="hidden sm:block"><ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} /></div>
             </SearchToolbar>
 
-            <PluginCatalogPanel
-              catalog={pluginCatalog}
-              loading={pluginCatalogLoading}
-              error={pluginCatalogError}
-              onOpenSurface={handleOpenPluginSurface}
-            />
+            {connected.length === 0 && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-muted-foreground/60" /> No connected applications yet
+              </p>
+            )}
 
             {filteredIntegrations.length === 0 ? (
-              <EmptyState
-                title="No integrations match"
-                description="Adjust search, category, or status filters to inspect another integration set."
-              />
+              <EmptyState title="No integrations match" description="Try another search or clear a filter." />
             ) : (
-              <div className="space-y-3">
-                {Array.from(new Set(visibleIntegrations.map((integration) => integration.category))).map((section) => (
-                  <section key={section}>
-                    <h2 className="mb-2 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">{section} ({filteredIntegrations.filter((integration) => integration.category === section).length})</h2>
-                    <div className={cn(view === "grid" ? "grid gap-2.5 lg:grid-cols-2 min-[1400px]:grid-cols-3" : "flex flex-col gap-2.5")}>
-                      {visibleIntegrations.filter((integration) => integration.category === section).map((integration) => (
-                        <IntegrationCard
-                          key={integration.id}
-                          integration={integration}
-                          selected={integration.id === selectedIntegration?.id}
-                          list={view === "list"}
+              <div className="space-y-6">
+                {[{ heading: "Connected applications", items: connected }, { heading: "Browse integrations", items: available }].map(({ heading, items }) => items.length ? (
+                  <section key={heading} className="space-y-3">
+                    <h2 className="workforce-section-title">{heading}</h2>
+                    <div className={cn(view === "grid" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-2")}>
+                      {items.map(integration => (
+                        <IntegrationCard key={integration.id} integration={integration}
+                          selected={integration.id === selectedIntegration?.id} list={view === "list"}
                           actionBusy={runningAction?.startsWith(`${integration.id}:`) ?? false}
-                          onSelect={() => setSelectedId(integration.id)}
+                          onSelect={() => setSelectedId(current => current === integration.id ? "" : integration.id)}
                           onConfigure={() => handleConfigureIntegration(integration)}
-                          onReconnect={() => void handleReconnectIntegration(integration)}
-                        />
+                          onReconnect={() => void handleReconnectIntegration(integration)} />
                       ))}
                     </div>
                   </section>
-                ))}
-                {!showAllMobileIntegrations && filteredIntegrations.length > visibleIntegrations.length ? (
-                  <Button variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileIntegrations(true)}>
-                    Show {filteredIntegrations.length - visibleIntegrations.length} more integrations
-                  </Button>
-                ) : null}
+                ) : null)}
               </div>
             )}
 
-            <AutomationImpactSummary integrations={integrations} />
+            <section className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-5">
+              <div>
+                <h2 className="workforce-section-title">Employee access</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Check which tools, skills and permissions are effective for each person.</p>
+              </div>
+              <Link href="/team" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium hover:underline">Open Team <ArrowUpRight aria-hidden="true" className="size-4" /></Link>
+            </section>
+
+            <details className="workforce-panel space-y-4 p-5" onToggle={event => setShowAdvanced(event.currentTarget.open)}>
+              <summary className="cursor-pointer font-semibold">Native tools, skills, plugins and automation</summary>
+              {showAdvanced ? (
+                <>
+                  <PluginCatalogPanel catalog={pluginCatalog} loading={pluginCatalogLoading} error={pluginCatalogError} onOpenSurface={handleOpenPluginSurface} />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {visibleIntegrations.map(integration => (
+                      <IntegrationCard key={integration.id} integration={integration}
+                        selected={integration.id === selectedIntegration?.id} list={false}
+                        actionBusy={runningAction?.startsWith(`${integration.id}:`) ?? false}
+                        onSelect={() => setSelectedId(current => current === integration.id ? "" : integration.id)}
+                        onConfigure={() => handleConfigureIntegration(integration)}
+                        onReconnect={() => void handleReconnectIntegration(integration)} />
+                    ))}
+                  </div>
+                  {!showAllMobileIntegrations && nativeCapabilities.length > visibleIntegrations.length ? (
+                    <Button variant="secondary" onClick={() => setShowAllMobileIntegrations(true)}>Show all capabilities</Button>
+                  ) : null}
+                  <AutomationImpactSummary integrations={integrations} />
+                </>
+              ) : null}
+            </details>
           </>
         }
         inspector={selectedIntegration ? (
@@ -436,6 +461,29 @@ export function IntegrationsPageContent({
         ) : null}
       />
     </>
+  );
+}
+
+const applicationIcons: Partial<Record<IntegrationView["id"], { path: string; hex: string }>> = {
+  chrome: siGooglechrome, discord: siDiscord, github: siGithub, gmail: siGmail,
+  "google-chat": siGooglechat, "google-drive": siGoogledrive, linear: siLinear,
+  notion: siNotion, ollama: siOllama, openrouter: siOpenrouter,
+  telegram: siTelegram, whatsapp: siWhatsapp, "x-twitter": siX
+};
+
+function ApplicationIcon({ integration }: { integration: IntegrationView }) {
+  const mark = applicationIcons[integration.id];
+  if (!mark && integration.id !== "slack") {
+    return <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />;
+  }
+  return (
+    <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-border bg-background" aria-hidden="true">
+      {mark ? (
+        <svg viewBox="0 0 24 24" className="size-[22px]" fill={mark.hex === "000000" ? "currentColor" : `#${mark.hex}`}>
+          <path d={mark.path} />
+        </svg>
+      ) : <Slack className="size-[22px] text-[#a84d90]" />}
+    </span>
   );
 }
 
@@ -457,73 +505,31 @@ function IntegrationCard({
   onReconnect: () => void;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        "rounded-lg border p-3 text-left transition-all hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        pageSurface,
-        selected && "border-primary/60 bg-primary/10"
-      )}
-    >
-      <div className={cn("flex gap-3", list ? "items-center" : "items-start")}>
-        <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="truncate text-[0.88rem] font-semibold text-foreground">{integration.name}</h3>
-              <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{integration.connectionHealth.label}</p>
-              <p className="mt-1 text-[0.68rem] text-muted-foreground">Linked: {integration.linkedAgentCount} agents</p>
-            </div>
-            <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
-          </div>
-          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              <MiniBadge>{integration.category.split(" ")[0]}</MiniBadge>
-              <MiniBadge>{integration.managedBy}</MiniBadge>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-7 rounded-[8px] px-2"
-                disabled={actionBusy || !integration.actionSupport.configure.supported}
-                title={integration.actionSupport.configure.reason}
-                aria-label={integration.modelProvider ? `Open ${integration.name} model setup` : `Open ${integration.name} setup`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onConfigure();
-                }}
-              >
-                <Gauge className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-7 rounded-[8px] px-2"
-                disabled={actionBusy || !integration.actionSupport.reconnect.supported}
-                title={integration.actionSupport.reconnect.reason}
-                aria-label={`Refresh ${integration.name} status`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onReconnect();
-                }}
-              >
-                <RefreshCw className={cn("h-3 w-3", actionBusy && "animate-spin")} />
-              </Button>
-              <MoreButton />
-            </div>
-          </div>
+    <article className={cn("workforce-panel flex min-w-0 flex-col gap-4 p-4 sm:p-5", selected && "ring-1 ring-primary/45", list && "sm:flex-row sm:items-center")}>
+      <ApplicationIcon integration={integration} />
+      <div className="min-w-0 flex-1">
+        <h3 className="break-words text-base font-semibold">{integration.name}</h3>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">{integration.description}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
+          {integration.linkedAgentCount ? <span className="text-xs text-muted-foreground">{integration.linkedAgentCount} linked</span> : null}
         </div>
       </div>
-    </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {integration.actionSupport.configure.supported ? (
+          <Button variant="secondary" size="sm" disabled={actionBusy} onClick={onConfigure}
+            aria-label={integration.modelProvider ? `Open ${integration.name} model setup` : `Open ${integration.name} setup`}>
+            {integration.status === "connected" || integration.status === "running" ? "Manage" : "Set up"}
+          </Button>
+        ) : null}
+        {integration.actionSupport.reconnect.supported ? (
+          <Button variant="ghost" size="icon" disabled={actionBusy} aria-label={`Refresh ${integration.name} status`} onClick={onReconnect}>
+            <RefreshCw className={cn("size-4", actionBusy && "animate-spin")} />
+          </Button>
+        ) : null}
+        <Button variant="ghost" size="sm" aria-expanded={selected} onClick={onSelect}>{selected ? "Hide details" : "Details"}</Button>
+      </div>
+    </article>
   );
 }
 
@@ -542,7 +548,7 @@ function IntegrationInspector({
   return (
     <InspectorPanelFrame>
       <div className="flex items-start gap-3">
-        <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />
+        <ApplicationIcon integration={integration} />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div>

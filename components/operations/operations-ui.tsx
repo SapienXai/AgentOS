@@ -18,10 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
-import { OperatorScopeFreshness, OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import type { AgentOsStatusTone, AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { cn } from "@/lib/utils";
 
 export type StatusTone = AgentOsStatusTone;
@@ -65,7 +63,6 @@ export function OperationsTopBar({
   onToggleTheme,
   onSnapshotChange,
   compact = false,
-  activeWorkspaceId = null,
   activeWorkspaceName = null
 }: {
   snapshot: MissionControlSnapshot;
@@ -78,25 +75,12 @@ export function OperationsTopBar({
   activeWorkspaceId?: string | null;
   activeWorkspaceName?: string | null;
 }) {
-  const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
-  const operatorRuntime = presentOperatorRuntime(snapshot, {
-    connectionState,
-    scope: {
-      workspaceId: activeWorkspaceId,
-      workspaceName: activeWorkspaceName,
-      workspaceCount: snapshot.workspaces.length
-    }
-  });
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
-    <div className={cn("flex items-center justify-end text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground", compact ? "gap-1" : "gap-2")}>
-      <span className="hidden sm:inline">OpenClaw</span>
-      <span className="hidden font-mono text-muted-foreground/80 sm:inline">
-        v{version}
-      </span>
-      {!compact ? <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact /> : null}
-      {!compact ? <OperatorScopeFreshness projection={operatorRuntime} compact className="hidden xl:flex" /> : null}
+    <div className={cn("flex items-center text-xs text-muted-foreground", compact ? "gap-1" : "gap-2")}>
+      {!compact && <span className="mr-auto truncate text-sm font-medium text-foreground">{activeWorkspaceName ?? "All workspaces"}</span>}
+      {connectionState === "retrying" ? <span role="status">Reconnecting…</span> : null}
       <RuntimeIssueIndicator
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}

@@ -736,8 +736,8 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
   assert.match(pinningSource, /agentos\.sidebar\.pinned/);
   assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
-  assert.match(operationsUiSource, /OperatorTruthBadge/);
-  assert.match(operationsUiSource, /OperatorScopeFreshness/);
+  assert.match(operationsUiSource, /<RuntimeIssueIndicator/);
+  assert.match(operationsUiSource, /connectionState === "retrying"/);
   assert.doesNotMatch(operationsUiSource, /compact \? "h-11 px-3"/);
 });
 
@@ -886,8 +886,8 @@ test("model setup exposes explicit providers and the custom provider creation fl
   );
 
   assert.match(setupSource, /buildExplicitModelProviderDescriptor\(providerId\)/);
-  assert.match(setupSource, /providerDescriptors\.map\(\(provider\)/);
-  assert.match(setupSource, /aria-label="Add custom provider"/);
+  assert.match(setupSource, /providerDescriptors\.map\(provider => <option key=\{provider.id\}/);
+  assert.match(setupSource, /<label[\s\S]*<span>AI provider<\/span>[\s\S]*<select/);
   assert.match(setupSource, /onOpenAddModels\("custom"\)/);
   assert.match(librarySource, /isInitialCustomProvider = normalizedInitialProvider === "custom"/);
   assert.match(librarySource, /!open \|\| isInitialCustomProvider \|\| activeProviderId \|\| !defaultProviderId/);
@@ -1080,8 +1080,7 @@ test("system setup shows Piko while runtime verification is running", () => {
   assert.match(source, /<summary[^>]*>\s*Setup details/);
   assert.match(source, /border-slate-200 bg-white shadow-\[0_8px_20px_rgba\(15,23,42,0\.05\)\]/);
   assert.match(source, /border-slate-700\/80 bg-slate-950 shadow-\[0_10px_24px_rgba\(0,0,0,0\.2\)\]/);
-  assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(false\)/);
-  assert.match(source, /window\.matchMedia\("\(max-width: 639px\)"\)/);
+  assert.match(source, /workforce-setup-card/);
   assert.match(source, /h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0/);
 });
 

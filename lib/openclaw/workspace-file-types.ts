@@ -1,3 +1,5 @@
+export const WORKSPACE_MANAGED_FILE_MAX_BYTES = 512 * 1024;
+
 export type WorkspaceManagedFileCategory =
   | "context"
   | "memory"
