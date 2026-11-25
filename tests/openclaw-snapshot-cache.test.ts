@@ -35,7 +35,7 @@ test("invalidation during a load leaves it uncached and does not start a replace
   });
 
   const initial = cache.get();
-  cache.clear();
+  cache.clear({ incrementGeneration: true });
   first.resolve({ visible: "initial", full: "initial" });
   assert.equal(await initial, "initial");
   assert.equal(loads, 1);
