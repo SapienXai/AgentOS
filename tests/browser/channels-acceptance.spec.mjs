@@ -78,11 +78,17 @@ test("Telegram online human acceptance completes all 26 steps", async ({ page })
   await step(9, async () => expect(dialog).toContainText("Online"));
   await step(10, async () => expect(dialog.getByText("Support Group", { exact: true })).toBeVisible());
   await step(11, async () => expect(dialog.getByText("Reservations Group", { exact: true })).toBeVisible());
-  await step(12, async () => expect(dialog.getByRole("button", { name: "Connect", exact: true }).first()).toBeVisible());
-  await step(13, async () => await dialog.getByRole("button", { name: "Connect", exact: true }).first().click());
-  await step(14, async () => await expect.poll(() => fixture.routeMutations.length).toBe(1));
-  await step(15, async () => expect(page.getByText("OpenClaw confirmed the group for Key 2 Lead.", { exact: true })).toBeVisible());
-  await step(16, async () => expect(dialog).toContainText("Connected"));
+  await step(12, async () => {
+    await dialog.getByRole("combobox", { name: /^Inbound agent/ }).first().selectOption(ids.agentId);
+    await expect(dialog.getByRole("button", { name: "Assign agent", exact: true })).toBeEnabled();
+  });
+  await step(13, async () => await dialog.getByRole("button", { name: "Assign agent", exact: true }).click());
+  await step(14, async () => {
+    await expect.poll(() => fixture.routeMutations.length).toBe(1);
+    expect(fixture.routeMutations[0].route.routeId).toBe(ids.telegramSupportRouteId);
+  });
+  await step(15, async () => expect(page.getByText("Telegram route updated.", { exact: true })).toBeVisible());
+  await step(16, async () => expect(dialog).toContainText("Explicit route"));
   await step(17, async () => await closeDialog(page));
   await step(18, async () => expect(page.getByRole("button", { name: "Open Telegram connections for Key 2 Lead" })).toBeVisible());
   await step(19, async () => await page.getByRole("button", { name: "Open Telegram connections for Key 2 Lead" }).click());
@@ -109,7 +115,9 @@ test("Telegram online human acceptance completes all 26 steps", async ({ page })
     await expect(reopened).toContainText("Support Group");
   });
   await step(25, async () => {
-    await page.getByRole("button", { name: "Remove override" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("combobox", { name: /^Inbound agent/ }).first().selectOption("");
+    await dialog.getByRole("button", { name: "Remove route", exact: true }).click();
     await expect.poll(() => fixture.routeMutations.length).toBe(2);
   });
   await step(26, async () => {
