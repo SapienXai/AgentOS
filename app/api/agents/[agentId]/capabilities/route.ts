@@ -30,7 +30,7 @@ const activateSchema = z.object({
 });
 
 export async function GET(request: Request, context: { params: Promise<{ agentId: string }> }) {
-  const permission = await requireAgentOsProductPermission(request, "agents.read");
+  const permission = await requireAgentOsProductPermission(request, "agents.manage");
   if ("response" in permission) return permission.response;
 
   try {

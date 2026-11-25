@@ -31,7 +31,8 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
     targetId: agentId,
     securityClass: "read",
     executionPath: "gateway-native",
-    productPermission: "runtime.use"
+    requireNativeIdentity: true,
+    productPermission: "agents.manage"
   });
   if ("response" in preflight) return preflight.response;
 
