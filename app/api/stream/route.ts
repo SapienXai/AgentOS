@@ -1,4 +1,6 @@
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { buildDashboardSnapshotDelta } from "@/lib/agentos/dashboard-snapshot-delta";
+import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
 import {
   getOpenClawEventBridgeStreamStatus,
   getOpenClawAttentionRevision,
@@ -33,7 +35,7 @@ export async function GET(request: Request) {
   let closed = false;
   let snapshotTask: Promise<void> | null = null;
   let snapshotDirty = false;
-  let publishedSnapshot: Record<string, unknown> | undefined;
+  let publishedSnapshot: ControlPlaneSnapshot | undefined;
   let systemStatusTask: Promise<void> | null = null;
   let cliInstalled: boolean | null = null;
   let gatewayRegistered: boolean | null = null;
@@ -121,20 +123,15 @@ export async function GET(request: Request) {
             if (!(await checkAccess())) return;
             const snapshot = await getMissionControlSnapshot();
             if (!(await checkAccess())) return;
-            const next = redactSecrets(snapshot) as unknown as Record<string, unknown>;
+            const next = redactSecrets(snapshot);
             const baseline = publishedSnapshot;
-            if (!deltaEnabled || reconcile || !baseline || Object.keys(baseline).some((key) => !(key in next))) {
+            const delta = deltaEnabled && !reconcile && baseline ? buildDashboardSnapshotDelta(baseline, next) : null;
+            if (!delta) {
               if (sendEvent("snapshot", snapshot)) publishedSnapshot = next;
               return;
             }
-            const changed = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
-              !Object.is(baseline[key], value) && JSON.stringify(baseline[key]) !== JSON.stringify(value)
-            ));
-            if (Object.keys(changed).length && sendEvent("snapshot-delta", {
-              baseRevision: baseline.revision,
-              baseGeneratedAt: baseline.generatedAt,
-              changes: changed
-            })) publishedSnapshot = next;
+            if ((delta.diagnostics || delta.runtimes || Object.keys(delta.changes).length) &&
+                sendEvent("snapshot-delta", delta)) publishedSnapshot = next;
           } catch (error) {
             sendEvent("error", {
               error: redactErrorMessage(error, "Unknown stream error.")

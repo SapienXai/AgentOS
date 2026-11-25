@@ -3,6 +3,7 @@
 import { startTransition, useCallback, useEffect, useState, type SetStateAction } from "react";
 
 import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
+import { applyDashboardSnapshotDelta, type DashboardSnapshotDelta } from "@/lib/agentos/dashboard-snapshot-delta";
 
 type ConnectionState = "connecting" | "live" | "retrying";
 
@@ -130,14 +131,9 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     });
 
     source.addEventListener("snapshot-delta", (event) => {
-      const delta = JSON.parse(event.data) as {
-        baseRevision?: number;
-        baseGeneratedAt?: string;
-        changes: Partial<ControlPlaneSnapshot>;
-      };
-      if (!streamSnapshot || streamSnapshot.revision !== delta.baseRevision ||
-          streamSnapshot.generatedAt !== delta.baseGeneratedAt) return;
-      receiveSnapshot({ ...streamSnapshot, ...delta.changes });
+      if (!streamSnapshot) return;
+      const next = applyDashboardSnapshotDelta(streamSnapshot, JSON.parse(event.data) as DashboardSnapshotDelta);
+      if (next) receiveSnapshot(next);
     });
 
     source.addEventListener("attention", (event) => {

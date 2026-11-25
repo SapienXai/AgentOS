@@ -33,7 +33,9 @@ async function stop(child) {
 
 async function waitReady(url, child) {
   for (let attempt = 0; attempt < 180; attempt++) {
-    if (child.exitCode !== null) throw new Error("A disposable benchmark process exited before readiness.");
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`A disposable benchmark process exited before ${new URL(url).pathname}: ${child.diagnostic()}`);
+    }
     try {
       if ((await fetch(url, { signal: AbortSignal.timeout(500) })).ok) return;
     } catch {}
@@ -70,6 +72,10 @@ async function watchStream(url, headers, signal) {
         const bytes = encoder.encode(frame).byteLength;
         if (!metrics.initialSnapshotBytes) {
           metrics.initialSnapshotBytes = bytes;
+          const payload = JSON.parse(frame.split("\n")[1].slice(6));
+          metrics.largestFields = Object.entries(payload)
+            .map(([key, value]) => [key, encoder.encode(JSON.stringify(value)).byteLength])
+            .sort((a, b) => b[1] - a[1]).slice(0, 5);
           resolveInitial();
           continue;
         }
@@ -110,7 +116,7 @@ async function runScale(agentCount, sessionCount, browser) {
     await writeFile(config, JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } },
       cron: { enabled: false },
-      agents: { entries: Object.fromEntries(ids.map((id, index) =>
+      agents: { ownership: "explicit", defaults: { systemAgent: { agentId: "main" } }, entries: Object.fromEntries(ids.map((id, index) =>
         [id, { name: `Benchmark agent ${index + 1}`, workspace: path.join(workspaces, id) }]
       )) }
     }), { mode: 0o600 });
@@ -122,7 +128,13 @@ async function runScale(agentCount, sessionCount, browser) {
       AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_API_TOKEN: apiToken, NODE_ENV: "production"
     };
     const launch = (args) => {
-      const child = spawn(process.execPath, args, { env, stdio: "ignore" });
+      const child = spawn(process.execPath, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+      let log = "";
+      for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => {
+        log = (log + chunk).replaceAll(token, "[credential]").replaceAll(apiToken, "[credential]")
+          .replaceAll(root, "[disposable-root]").slice(-2000);
+      });
+      child.diagnostic = () => log;
       children.push(child);
       return child;
     };
@@ -201,6 +213,7 @@ async function main() {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     for (const [agents, sessions] of [[1, 1], [10, 100], [50, 500]]) {
+      if (process.env.AGENTOS_BENCH_AGENT_COUNT && String(agents) !== process.env.AGENTOS_BENCH_AGENT_COUNT) continue;
       console.log(JSON.stringify(await runScale(agents, sessions, browser)));
     }
   } finally {
