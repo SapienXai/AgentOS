@@ -2432,7 +2432,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const event = normalizeGatewayTurnEvent(frame, session.sessionKey, dispatchedRunId, session.sessionId);
       if (!event) {
         if (options.allowCliFallback === false && isObjectRecord(frame.payload) && frame.payload.state === "final") {
-          resolveFinal({ runId: dispatchedRunId, status: "ok" });
+          resolveFinal({ runId: dispatchedRunId ?? undefined, status: "ok" });
         }
         return;
       }
