@@ -11,6 +11,7 @@ export type AgentChatMessage = {
   runId?: string | null;
   submissionId?: string | null;
   messageSeq?: number | null;
+  localAction?: boolean;
 };
 
 export const agentChatMessageStoragePrefix = "mission-control-agent-chat:v1";
@@ -18,16 +19,14 @@ export const agentChatLastSeenStoragePrefix = "mission-control-agent-chat-seen:v
 export const agentInboxLastSeenStoragePrefix = "mission-control-agent-inbox-seen:v1";
 export const agentChatStateEventName = "mission-control-agent-chat-state-change";
 export const maxAgentChatMessages = 60;
+const agentChatMessages = new Map<string, AgentChatMessage[]>();
+let clearedLegacyChat = false;
 
 export type AgentChatVisibleRunSnapshot = {
   isRunning: boolean;
   userMessageId: string | null;
   assistantMessageId: string | null;
 };
-
-function getChatStorageKey(agentId: string) {
-  return `${agentChatMessageStoragePrefix}:${agentId}`;
-}
 
 function getLastSeenStorageKey(agentId: string) {
   return `${agentChatLastSeenStoragePrefix}:${agentId}`;
@@ -63,21 +62,19 @@ function isAgentChatMessage(candidate: unknown): candidate is AgentChatMessage {
 }
 
 export function readAgentChatMessages(agentId: string): AgentChatMessage[] {
-  try {
-    const raw = globalThis.localStorage?.getItem(getChatStorageKey(agentId));
-    if (!raw) {
-      return [];
+  if (!clearedLegacyChat && typeof window !== "undefined") {
+    try {
+      const storage = window.localStorage;
+      for (let index = storage.length - 1; index >= 0; index--) {
+        const key = storage.key(index);
+        if (key?.startsWith(`${agentChatMessageStoragePrefix}:`)) storage.removeItem(key);
+      }
+      clearedLegacyChat = true;
+    } catch {
+      // The current chat works even if browser storage is unavailable.
     }
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isAgentChatMessage).slice(-maxAgentChatMessages);
-  } catch {
-    return [];
   }
+  return agentChatMessages.get(agentId) ?? [];
 }
 
 export function normalizeAgentChatMessagesForDisplay(
@@ -111,15 +108,22 @@ export function normalizeAgentChatMessagesForDisplay(
 }
 
 export function writeAgentChatMessages(agentId: string, messages: AgentChatMessage[]) {
-  try {
-    globalThis.localStorage?.setItem(
-      getChatStorageKey(agentId),
-      JSON.stringify(messages.slice(-maxAgentChatMessages))
-    );
-    dispatchAgentChatStateChange(agentId);
-  } catch {
-    // Ignore storage failures.
-  }
+  agentChatMessages.set(agentId, messages.slice(-maxAgentChatMessages));
+  dispatchAgentChatStateChange(agentId);
+}
+
+export function clearAgentChatMessages() {
+  agentChatMessages.clear();
+}
+
+export function reconcileAgentChatMessages(
+  currentMessages: readonly AgentChatMessage[],
+  serverMessages: readonly AgentChatMessage[]
+) {
+  const pendingMessages = currentMessages.filter((message) =>
+    message.status === "sending" || message.status === "error" || message.localAction
+  );
+  return mergeAgentChatMessagesForRehydration(pendingMessages, serverMessages);
 }
 
 export function mergeAgentChatMessagesForRehydration(

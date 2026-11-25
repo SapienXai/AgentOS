@@ -38,6 +38,7 @@ import {
   serializeWorkspaceSelection,
   shouldShowOnboardingLaunchpad,
   resolveWorkspaceSelection,
+  resolveDefaultWorkspaceId,
   resolveWorkspaceContextEngineAgent,
   shouldDeferOnboardingUntilLiveSnapshot,
   shouldDeferWorkspaceSelectionHydration
@@ -1308,6 +1309,16 @@ test("workspace selection helpers keep the last valid workspace", () => {
   assert.equal(resolveWorkspaceSelection([], "workspace-missing"), null);
 });
 
+test("fresh workspace selection prefers a project over the OpenClaw bootstrap workspace", () => {
+  const bootstrap = { id: "workspace", path: "/tmp/openclaw/workspace", bootstrap: { template: null } };
+  const project = { id: "agents-workspace", path: "/tmp/projects/agents-workspace", bootstrap: { template: "software" } };
+  const diagnostics = { runtime: { stateRoot: "/tmp/openclaw" } };
+  const snapshot = { workspaces: [bootstrap, project], diagnostics } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveDefaultWorkspaceId(snapshot), "agents-workspace");
+  assert.equal(resolveDefaultWorkspaceId({ ...snapshot, workspaces: snapshot.workspaces.slice(0, 1) }), "workspace");
+});
+
 test("workspace selection hydration waits for real snapshots", () => {
   const loadingSnapshot = {
     mode: "fallback",
@@ -1495,6 +1506,18 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
   assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);
+});
+
+test("agent chat loads model context from the same server history shown to the browser", () => {
+  const routeSource = readFileSync(path.join(rootDir, "app/api/agents/[agentId]/chat/route.ts"), "utf8");
+  const runnerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-runner.ts"), "utf8");
+  const [getRoute, postRoute] = routeSource.split("export async function POST(");
+
+  assert.match(getRoute, /await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
+  assert.match(postRoute, /const \{ messages \} = await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
+  assert.match(postRoute, /buildAgentChatPrompt\(history, operatorMessage/);
+  assert.doesNotMatch(postRoute, /input\.history/);
+  assert.doesNotMatch(runnerSource, /history:\s*promptHistory/);
 });
 
 test("mobile light sidebar uses an opaque surface and hides its launcher while open", () => {

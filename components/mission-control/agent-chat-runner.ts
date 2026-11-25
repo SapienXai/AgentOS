@@ -125,29 +125,17 @@ export function sendAgentChatMessage({
   writeAgentChatMessages(agentId, [...existingMessages, userMessage, assistantMessage].slice(-maxAgentChatMessages));
   dispatchAgentChatStateChange(agentId);
 
-  const promptHistory = existingMessages
+  const previousAssistantTexts = new Set(existingMessages
     .filter(
-      (entry): entry is AgentChatMessage & { role: "user" | "assistant" } =>
-        (entry.role === "user" || entry.role === "assistant") &&
-        entry.status !== "error" &&
-        entry.text.trim().length > 0
+      (entry) => entry.role === "assistant" && entry.status !== "error" && entry.text.trim().length > 0
     )
     .slice(-16)
-    .map((entry) => ({
-      role: entry.role,
-      text: entry.text
-    }));
-  const previousAssistantTexts = new Set(
-    promptHistory
-      .filter((entry) => entry.role === "assistant")
-      .map((entry) => normalizeAgentChatText(entry.text))
-      .filter(Boolean)
-  );
+    .map((entry) => normalizeAgentChatText(entry.text))
+    .filter(Boolean));
 
   const payload = {
     message: trimmedText,
     rawMessage: trimmedText,
-    history: promptHistory,
     idempotencyKey: userMessageId
   };
 
@@ -183,7 +171,6 @@ async function runAgentChatTurn({
   payload: {
     message: string;
     rawMessage: string;
-    history: Array<{ role: "user" | "assistant"; text: string }>;
     idempotencyKey: string;
     thinking?: "off" | "minimal" | "low" | "medium" | "high";
   };
@@ -287,6 +274,8 @@ async function runAgentChatTurn({
       if (finalResponse) {
         latestAssistantText = finalText;
       }
+      const renamedTo = finalResponse ? readRenamedAgent(finalResponse.meta) : null;
+      const localAction = Boolean(renamedTo && !finalResponse?.runId);
 
       updateAgentChatMessages(agentId, (current) =>
         current.map((entry) => {
@@ -294,6 +283,7 @@ async function runAgentChatTurn({
             const admission = readOpenClawAdmission(finalResponse?.meta);
             return {
               ...entry,
+              localAction,
               status: "sent" as const,
               submissionId: admission?.idempotencyKey ?? entry.submissionId,
               messageSeq: admission?.messageSeq ?? entry.messageSeq
@@ -303,6 +293,7 @@ async function runAgentChatTurn({
           if (entry.id === assistantMessageId) {
             return {
               ...entry,
+              localAction,
               text: finalText,
               status: "sent" as const,
               runId: finalResponse?.runId ?? entry.runId
@@ -313,7 +304,6 @@ async function runAgentChatTurn({
         })
       );
 
-      const renamedTo = finalResponse ? readRenamedAgent(finalResponse.meta) : null;
       if (renamedTo && onSnapshotChange) {
         onSnapshotChange((current) => applyAgentRename(current, agentId, renamedTo));
       }

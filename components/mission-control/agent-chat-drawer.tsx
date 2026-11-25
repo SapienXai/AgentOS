@@ -10,11 +10,10 @@ import { toast } from "@/components/ui/sonner";
 import { AgentChatSoundSettings, reportAgentChatVisibility, requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
 import { AgentChatMessageContent } from "@/components/mission-control/agent-chat-message-content";
 import {
-  agentChatMessageStoragePrefix,
   agentChatStateEventName,
   markAgentChatAsSeen,
   markAgentInboxAsSeen,
-  mergeAgentChatMessagesForRehydration,
+  reconcileAgentChatMessages,
   normalizeAgentChatMessagesForDisplay,
   readAgentChatMessages,
   writeAgentChatMessages,
@@ -194,7 +193,6 @@ export function AgentChatDrawer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isVisibleRef = useRef(isVisible);
   const isNearBottomRef = useRef(true);
-  const rehydratedAgentRef = useRef<string | null>(null);
   const agentLabel = formatAgentDisplayName(agent);
   const inboxItems = snapshot.agentInbox.filter((item) => item.agentId === agent.id);
   const quickPrompts = [
@@ -265,36 +263,29 @@ export function AgentChatDrawer({
       }
     };
 
-    const handleStorage = (event: StorageEvent) => {
-      if (!event.key || !event.key.startsWith(agentChatMessageStoragePrefix)) {
-        return;
-      }
-
-      syncAgentChatState();
-    };
-
     window.addEventListener(agentChatStateEventName, handleChatStateChange as EventListener);
-    window.addEventListener("storage", handleStorage);
 
     return () => {
       window.removeEventListener(agentChatStateEventName, handleChatStateChange as EventListener);
-      window.removeEventListener("storage", handleStorage);
     };
   }, [agent.id]);
 
   useEffect(() => {
-    if (!isVisible || runSnapshot.isRunning || rehydratedAgentRef.current === agent.id) {
+    if (!isVisible || runSnapshot.isRunning) {
       return;
     }
 
-    rehydratedAgentRef.current = agent.id;
-    let cancelled = false;
+    const controller = new AbortController();
+    let syncing = false;
 
-    void (async () => {
+    const syncHistory = async () => {
+      if (syncing || document.visibilityState !== "visible" || getAgentChatRunSnapshot(agent.id).isRunning) return;
+      syncing = true;
       try {
         const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/chat`, {
           method: "GET",
-          cache: "no-store"
+          cache: "no-store",
+          signal: controller.signal
         });
 
         if (!response.ok) {
@@ -305,12 +296,12 @@ export function AgentChatDrawer({
           messages?: AgentChatMessage[];
         } | null;
 
-        if (cancelled || !Array.isArray(payload?.messages) || payload.messages.length === 0) {
+        if (controller.signal.aborted || getAgentChatRunSnapshot(agent.id).isRunning || !Array.isArray(payload?.messages)) {
           return;
         }
 
         const currentMessages = readAgentChatMessages(agent.id);
-        const mergedMessages = mergeAgentChatMessagesForRehydration(currentMessages, payload.messages);
+        const mergedMessages = reconcileAgentChatMessages(currentMessages, payload.messages);
 
         if (agentChatMessagesEqual(currentMessages, mergedMessages)) {
           return;
@@ -318,12 +309,19 @@ export function AgentChatDrawer({
 
         writeAgentChatMessages(agent.id, mergedMessages);
       } catch {
-        // Rehydration is best-effort; local chat cache remains usable when OpenClaw history is unavailable.
+        // Keep this tab's current messages until the server can respond again.
+      } finally {
+        syncing = false;
       }
-    })();
+    };
+    void syncHistory();
+    const timer = window.setInterval(syncHistory, 5_000);
+    document.addEventListener("visibilitychange", syncHistory);
 
     return () => {
-      cancelled = true;
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncHistory);
     };
   }, [agent.id, isVisible, runSnapshot.isRunning]);
 

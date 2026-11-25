@@ -67,15 +67,9 @@ import type { TranscriptTurn } from "@/lib/openclaw/domains/runtime-transcript";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const chatHistoryEntrySchema = z.object({
-  role: z.enum(["user", "assistant"]),
-  text: z.string().min(1)
-});
-
 const chatSchema = z.object({
   message: z.string().min(1),
   rawMessage: z.string().min(1).optional(),
-  history: z.array(chatHistoryEntrySchema).optional(),
   thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
   idempotencyKey: z.string().trim().min(1).max(240).optional()
 });
@@ -160,35 +154,17 @@ export async function GET(
       return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
     }
 
-    const sessions = await readAgentChatSessionsForAgent({
-      agentId,
-      workspacePath: agent.workspacePath,
-      limit: 5
-    });
-    const messages: RehydratedAgentChatMessage[] = [];
-
-    for (const session of [...sessions].reverse()) {
-      const transcriptMessages = await readAgentChatTranscriptMessages(
-        agentId,
-        session.sessionId,
-        session.workspacePath ?? agent.workspacePath
-      );
-
-      if (transcriptMessages.length > 0) {
-        messages.push(...transcriptMessages);
-        continue;
-      }
-
-      const historyMessages = await readAgentChatHistoryMessages(agentId, session);
-      messages.push(...historyMessages);
+    const { sessionId, messages, available } = await readCanonicalAgentChat(agentId, agent.workspacePath);
+    const headers = { "Cache-Control": "private, no-store" };
+    if (!available) {
+      return NextResponse.json({ error: "OpenClaw chat history is temporarily unavailable." }, { status: 503, headers });
     }
-
-    return NextResponse.json({
+    return NextResponse.json(redactSecrets({
       agentId,
-      sessionId: sessions[0]?.sessionId ?? null,
-      source: messages.length > 0 ? "openclaw-session" : "unavailable",
-      messages: dedupeRehydratedAgentChatMessages(messages).slice(-60)
-    });
+      sessionId,
+      source: "openclaw-session",
+      messages
+    }), { headers });
   } catch (error) {
     return NextResponse.json(
       {
@@ -405,10 +381,9 @@ export async function POST(
           activeAgentModelId = agent.modelId;
         }
 
-        const submittedMessage = input.message.trim();
-        const rawMessage = input.rawMessage?.trim();
-        const operatorMessage = rawMessage || submittedMessage;
-        const history = normalizeAgentChatHistory(input.history ?? []).slice(-16);
+        const operatorMessage = input.rawMessage?.trim() || input.message.trim();
+        const { messages } = await readCanonicalAgentChat(agentId, agent.workspacePath);
+        const history = normalizeAgentChatHistory(messages.slice(-16));
         const directRename = resolveDirectAgentRenameRequest(operatorMessage, history);
         if (directRename) {
           await updateAgent({
@@ -510,21 +485,14 @@ export async function POST(
           modelId: agent.modelId
         });
 
-        let message = submittedMessage;
-
-        if (rawMessage || !isComposedAgentChatPrompt(submittedMessage)) {
-          const workspaceTeamPrompt = buildWorkspaceTeamPrompt(snapshot, agent);
-          const workspaceSurfacePrompt = renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot);
-
-          message = buildAgentChatPrompt(history, operatorMessage, {
-            agentId,
-            agentName: formatAgentDisplayName(agent),
-            agentDir: agent.agentDir,
-            workspacePath: agent.workspacePath,
-            workspaceTeamPrompt,
-            workspaceSurfacePrompt
-          });
-        }
+        const message = buildAgentChatPrompt(history, operatorMessage, {
+          agentId,
+          agentName: formatAgentDisplayName(agent),
+          agentDir: agent.agentDir,
+          workspacePath: agent.workspacePath,
+          workspaceTeamPrompt: buildWorkspaceTeamPrompt(snapshot, agent),
+          workspaceSurfacePrompt: renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot)
+        });
 
         const sessionId = await resolveAgentChatSessionId({
           agentId,
@@ -763,19 +731,25 @@ export async function POST(
   }
 }
 
-function isComposedAgentChatPrompt(value: string) {
-  return (
-    value.includes("Workspace team roster:") ||
-    value.includes("## Telegram coordination") ||
-    value.includes("## Discord coordination") ||
-    value.includes("You are chatting directly with the operator inside AgentOS.")
-  );
+async function readCanonicalAgentChat(agentId: string, workspacePath?: string) {
+  const sessions = await readAgentChatSessionsForAgent({ agentId, workspacePath, limit: 5 });
+  const transcripts = await Promise.all(sessions.map(async (session) => {
+    const history = await readAgentChatHistoryMessages(agentId, session);
+    if (history?.length) return history;
+    const transcript = await readAgentChatTranscriptMessages(agentId, session.sessionId, session.workspacePath ?? workspacePath);
+    return transcript.length > 0 ? transcript : history;
+  }));
+  return {
+    sessionId: sessions[0]?.sessionId ?? null,
+    available: transcripts.length === 0 || transcripts.some((transcript) => transcript !== null),
+    messages: dedupeRehydratedAgentChatMessages(transcripts.reverse().flatMap((transcript) => transcript ?? [])).slice(-60)
+  };
 }
 
 async function readAgentChatHistoryMessages(
   agentId: string,
   { sessionId, sessionKey }: { sessionId: string; sessionKey?: string }
-): Promise<RehydratedAgentChatMessage[]> {
+): Promise<RehydratedAgentChatMessage[] | null> {
   try {
     const history = await getOpenClawAdapter().getSessionHistory(
       {
@@ -798,7 +772,7 @@ async function readAgentChatHistoryMessages(
       messageSeq: message.messageSeq
     }));
   } catch {
-    return [];
+    return null;
   }
 }
 

@@ -19,7 +19,7 @@ import {
   WandSparkles,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type RefObject } from "react";
 
 import {
   MissionControlDialogShell,
@@ -66,6 +66,9 @@ import { presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-c
 
 type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
+const firstWorkspaceName = "Agents Workspace";
+const firstWorkspaceBrief = "Set up a general-purpose workspace with one assistant to help organize work, answer questions, and plan next steps.";
+const firstWorkspaceKey = "onboarding:agents-workspace";
 type ContextAction = "website" | "github" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
 type UrlSourceBuildResult = { source: WorkspaceKnowledgeSource } | { error: string };
@@ -180,7 +183,6 @@ export function CreateWorkspaceExperience({
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
-  const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
@@ -314,7 +316,6 @@ export function CreateWorkspaceExperience({
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
     setBrief("");
-    setWorkspaceName("");
     setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
@@ -427,9 +428,9 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const generate = async () => {
-    const nextBrief = brief.trim();
-    if (!nextBrief || (firstWorkspace && !workspaceName.trim()) || stage === "generating") return;
+  const generate = async (retryFirstWorkspace = false) => {
+    const nextBrief = firstWorkspace ? firstWorkspaceBrief : brief.trim();
+    if (!nextBrief || stage === "generating" || (firstWorkspace && abortControllerRef.current)) return;
 
     const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
     if (pendingSourceResult && "error" in pendingSourceResult) {
@@ -467,10 +468,23 @@ export function CreateWorkspaceExperience({
 
     try {
       const formData = new FormData();
-      formData.set("idempotencyKey", crypto.randomUUID());
+      let idempotencyKey = firstWorkspace ? firstWorkspaceKey : crypto.randomUUID();
+      if (firstWorkspace) {
+        const failedRunId = retryFirstWorkspace && creationRun &&
+          (creationRun.snapshot.state === "failed" || creationRun.snapshot.state === "cancelled")
+          ? creationRun.runId : null;
+        if (failedRunId) idempotencyKey = `${firstWorkspaceKey}:retry:${failedRunId}`;
+        try {
+          if (failedRunId) sessionStorage.setItem(firstWorkspaceKey, idempotencyKey);
+          else idempotencyKey = sessionStorage.getItem(firstWorkspaceKey) || idempotencyKey;
+        } catch {
+          // Browser storage can be disabled. The initial request is still idempotent on the server.
+        }
+      }
+      formData.set("idempotencyKey", idempotencyKey);
       formData.set("brief", nextBrief);
-      if (firstWorkspace) formData.set("workspaceName", workspaceName.trim());
-      formData.set("mode", mode === "automatic" && !firstWorkspace ? "automatic" : "review");
+      if (firstWorkspace) formData.set("workspaceName", firstWorkspaceName);
+      formData.set("mode", firstWorkspace || mode === "automatic" ? "automatic" : "review");
       formData.set("profile", profile);
       formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation && !firstWorkspace));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
@@ -496,7 +510,7 @@ export function CreateWorkspaceExperience({
       setProvisioningError(null);
       provisioningKeyRef.current = null;
       setStage(
-        mode === "automatic" && !firstWorkspace
+        (firstWorkspace || mode === "automatic")
           && !environmentPreparation.requested
           && completedRun.snapshot.reviewReadiness?.provisionable === true
           ? "generating"
@@ -510,7 +524,7 @@ export function CreateWorkspaceExperience({
         setNotice({
           tone: "warning",
           title: "Generation cancelled",
-          description: "Your brief and context are still here when you are ready to try again."
+          description: firstWorkspace ? "You can try again when you’re ready." : "Your brief and context are still here when you are ready to try again."
         });
         return;
       }
@@ -518,13 +532,21 @@ export function CreateWorkspaceExperience({
       setStage("intake");
       setNotice({
         tone: "error",
-        title: "Architect temporarily unavailable",
+        title: firstWorkspace ? "Could not create your first workspace" : "Architect temporarily unavailable",
         description: error instanceof Error ? error.message : "Try again without losing your project context."
       });
     } finally {
       if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   };
+
+  const startFirstWorkspace = useEffectEvent(() => {
+    void generate();
+  });
+
+  useEffect(() => {
+    if (open && firstWorkspace) startFirstWorkspace();
+  }, [open, firstWorkspace]);
 
   const pollCreationRun = useCallback(async (runId: string, controller: AbortController, initial: WorkspaceCreationRun, sourceList: WorkspaceKnowledgeSource[]) => {
     let afterSequence = initial.events.at(-1)?.sequence ?? 0;
@@ -568,7 +590,7 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
+    if (!open || firstWorkspace || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -630,7 +652,7 @@ export function CreateWorkspaceExperience({
       }
     })();
     return () => controller.abort();
-  }, [open, pollCreationRun, reopenRequest, reviewRunId]);
+  }, [open, firstWorkspace, pollCreationRun, reopenRequest, reviewRunId]);
 
   const refreshProject = async () => {
     if (!creationRun || isRefreshingProject) return;
@@ -1011,11 +1033,12 @@ export function CreateWorkspaceExperience({
   const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
+  const firstWorkspaceStarting = firstWorkspace && stage === "intake" && !notice;
 
   return (
     <>
       <PikoLoader
-        open={open && !isMinimized && isActiveRun}
+        open={open && !isMinimized && isActiveRun && !firstWorkspace}
         title={isProvisioningInFlight ? "Creating your workspace" : "Learning about your project"}
         description={isProvisioningStarting ? "Setting up your workspace…" : experience.primaryStatus}
       />
@@ -1023,7 +1046,7 @@ export function CreateWorkspaceExperience({
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
-      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : stage === "intake" ? (firstWorkspace ? "Create your first workspace" : "Create a workspace") : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
+      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : firstWorkspace ? firstWorkspaceName : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
       description={isProvisioned ? (canOpenWorkspace ? "Your workspace is ready to open." : "AgentOS is checking the workspace and its agent in OpenClaw.") : <span className="sr-only">Prepare your workspace</span>}
       icon={canOpenWorkspace ? Check : undefined}
       chips={canOpenWorkspace ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
@@ -1041,13 +1064,13 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && stage === "intake" && "sm:h-[min(90dvh,590px)]", isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
       footerInnerClassName="p-0"
       footer={
-        stage === "generating" && !isProvisioningStarting ? (
+        stage === "generating" && !isProvisioningStarting && !firstWorkspace ? (
           <div className="flex w-full items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={cancelGeneration} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
               Cancel
@@ -1085,13 +1108,15 @@ export function CreateWorkspaceExperience({
             </div>
           ) : (
             <div className="flex w-full items-center justify-between gap-3">
-              <div className="flex items-center gap-1">
-                <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
-                  <ChevronLeft className="mr-1.5 h-4 w-4" />
-                  Back to brief
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
-              </div>
+              {!firstWorkspace && (
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+                    <ChevronLeft className="mr-1.5 h-4 w-4" />
+                    Back to brief
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
+                </div>
+              )}
               <div className="flex flex-col items-end gap-1">
                 <span className={cn("text-[10px]", isLight ? "text-[#766b61]" : "text-slate-400")}>{firstWorkspace && defaultModel ? `Default model · ${defaultModel}` : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
                 <div className="flex items-center gap-2">
@@ -1115,27 +1140,37 @@ export function CreateWorkspaceExperience({
               </div>
             </div>
           )
+        ) : firstWorkspace ? (
+          notice ? (
+            <div className="flex w-full justify-end">
+              <Button type="button" onClick={() => void generate(true)} className={missionControlDialogButtonClassName("primary", surfaceTheme)}>Retry setup</Button>
+            </div>
+          ) : null
         ) : (
           <div className="flex w-full items-center justify-end gap-3">
             <Button
               type="button"
-              disabled={!brief.trim() || (firstWorkspace && !workspaceName.trim())}
+              disabled={!brief.trim()}
               onClick={() => void generate()}
               className={missionControlDialogButtonClassName("primary", surfaceTheme) + " h-10 px-4 text-sm"}
             >
               <WandSparkles className="mr-2 h-4 w-4" />
-              {firstWorkspace ? "Review draft" : "Create workspace"}
+              Create workspace
             </Button>
           </div>
         )
       }
     >
       <div className={cn("min-h-0 h-full overflow-y-auto", isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]")}>
-        {stage === "intake" ? (
+        {firstWorkspaceStarting ? (
+          <CreationProgressView run={null} isLight={isLight} firstWorkspace />
+        ) : firstWorkspace && stage === "intake" ? (
+          <div className="mx-auto max-w-lg space-y-2 px-6 py-10" role="alert">
+            <p className="text-base font-semibold">{notice?.title}</p>
+            <p className="text-sm text-muted-foreground">{notice?.description}</p>
+          </div>
+        ) : stage === "intake" ? (
           <IntakeView
-            firstWorkspace={firstWorkspace}
-            workspaceName={workspaceName}
-            setWorkspaceName={setWorkspaceName}
             isLight={isLight}
             brief={brief}
             setBrief={setBrief}
@@ -1173,6 +1208,7 @@ export function CreateWorkspaceExperience({
             run={creationRun}
             provisioningStarting={isProvisioningStarting}
             isLight={isLight}
+            firstWorkspace={firstWorkspace}
             onContinueNow={isProvisioningStarting ? undefined : () => void continueNow()}
           />
         ) : stage === "provisioning" ? (
@@ -1235,9 +1271,6 @@ export function CreateWorkspaceExperience({
 }
 
 function IntakeView({
-  firstWorkspace,
-  workspaceName,
-  setWorkspaceName,
   isLight,
   profile,
   setProfile,
@@ -1270,9 +1303,6 @@ function IntakeView({
   folderInputRef,
   notice
 }: {
-  firstWorkspace: boolean;
-  workspaceName: string;
-  setWorkspaceName: (value: string) => void;
   isLight: boolean;
   profile: WorkspaceCreationDepth;
   setProfile: (profile: WorkspaceCreationDepth) => void;
@@ -1305,12 +1335,11 @@ function IntakeView({
   folderInputRef: RefObject<HTMLInputElement | null>;
   notice: { tone: "warning" | "error" | "muted"; title: string; description: string } | null;
 }) {
-  const [showOptions, setShowOptions] = useState(false);
   return (
     <main className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center px-5 py-6 sm:px-8 sm:py-8">
-      {!firstWorkspace && <div className="mb-5">
+      <div className="mb-5">
         <h1 className="text-2xl font-semibold tracking-tight">What are you working on?</h1>
-      </div>}
+      </div>
 
       {notice ? (
         <div className={cn("mb-4 rounded-xl border px-4 py-3", notice.tone === "error" ? (isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-400/20 bg-red-400/10 text-red-100") : notice.tone === "warning" ? (isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-400/20 bg-amber-400/10 text-amber-100") : (isLight ? "border-[#e5dbd0] bg-white text-[#65594f]" : "border-white/10 bg-white/[0.04] text-slate-200"))} role="status">
@@ -1319,46 +1348,18 @@ function IntakeView({
         </div>
       ) : null}
 
-      {firstWorkspace && (
-        <div className="mb-5 flex flex-col gap-2">
-          <label htmlFor="first-workspace-name" className="text-sm font-medium">Workspace name</label>
-          <input
-            id="first-workspace-name"
-            className={missionControlDialogControlClassName("h-11")}
-            value={workspaceName}
-            onChange={(event) => setWorkspaceName(event.target.value)}
-            placeholder="e.g. Weekly Planning"
-            maxLength={100}
-            required
-            autoFocus
-          />
-          <label htmlFor="workspace-purpose" className="mt-3 text-sm font-medium">What should your first agent help with?</label>
-        </div>
-      )}
       <Textarea
         id="workspace-purpose"
-        autoFocus={!firstWorkspace}
+        autoFocus
         value={brief}
         onChange={(event) => setBrief(event.target.value)}
-        placeholder={firstWorkspace ? "e.g. Organize tasks and prepare a short review each week." : "Describe the project, business, team, or job you want AgentOS to work on…"}
-        aria-label={firstWorkspace ? undefined : "What are you working on?"}
-        required={firstWorkspace}
+        placeholder="Describe the project, business, team, or job you want AgentOS to work on…"
+        aria-label="What are you working on?"
         maxLength={12000}
         className={cn("min-h-[120px] resize-y rounded-2xl px-5 py-4 text-base leading-7 shadow-none md:min-h-[140px] md:text-[17px]", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d] focus-visible:border-[#b8895f] focus-visible:ring-[#b8895f]/20" : "border-white/10 bg-white/[0.055] text-slate-100 placeholder:text-slate-500 focus-visible:border-violet-300/40 focus-visible:ring-violet-300/15")}
       />
 
-      {firstWorkspace && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <Button type="button" variant="ghost" className="min-h-11" onClick={() => {
-            if (!workspaceName.trim()) setWorkspaceName("Weekly Planning");
-            if (!brief.trim()) setBrief("Organize my tasks and prepare a short review at the end of each week.");
-          }}>Use example</Button>
-          <Button type="button" variant="ghost" className="min-h-11" aria-expanded={showOptions} aria-controls="workspace-intake-options" onClick={() => setShowOptions((current) => !current)}>
-            {showOptions ? "Hide optional settings" : "Optional settings"}
-          </Button>
-        </div>
-      )}
-      <div id="workspace-intake-options" hidden={firstWorkspace && !showOptions}>
+      <div>
       <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 pb-1" aria-label="Add project context">
         <span className={cn("mr-1 shrink-0 text-xs font-medium", isLight ? "text-[#837366]" : "text-slate-500")}>Add context</span>
         <ContextButton isLight={isLight} icon={Globe} label="Website" onClick={() => setContextAction(contextAction === "website" ? null : "website")} />
@@ -1419,10 +1420,10 @@ function IntakeView({
       <details className={cn("mt-4 px-1 py-2", isLight ? "border-[#e5dbd0] bg-white/70" : "border-white/10 bg-white/[0.025]")}>
         <summary className={cn("cursor-pointer text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Advanced options</summary>
         <div className="mt-4 flex flex-col items-center gap-3">
-          {!firstWorkspace && <label className={cn("flex w-full max-w-[600px] items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300", profile === "high" && "opacity-50")}>
+          <label className={cn("flex w-full max-w-[600px] items-start gap-2 text-xs", isLight ? "text-[#65594f]" : "text-slate-300", profile === "high" && "opacity-50")}>
             <input type="checkbox" checked={continueLearningAfterCreation} disabled={profile === "high"} onChange={(event) => setContinueLearningAfterCreation(event.target.checked)} className="mt-0.5 accent-violet-500" />
             <span><span className="font-medium">Continue learning after creation</span><span className="ml-1 opacity-70">(Fast / Medium)</span><span className="mt-1 block opacity-70">AgentOS will prepare reviewable improvements without changing the workspace automatically.</span></span>
-          </label>}
+          </label>
           <div className="w-full max-w-[600px]">
             <label htmlFor="workspace-constraints" className={cn("text-xs font-medium", isLight ? "text-[#65594f]" : "text-slate-300")}>Specific constraints <span className="font-normal opacity-60">(optional)</span></label>
             <Textarea id="workspace-constraints" value={constraints} onChange={(event) => setConstraints(event.target.value)} placeholder="Anything AgentOS should keep in mind? One constraint per line." className={cn("mt-2 min-h-[84px] resize-y text-sm shadow-none", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d]" : "border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-500")} />
@@ -1570,11 +1571,14 @@ function mapCreationSourceStatus(state: "pending" | "discovering" | "fetching" |
   return "reading";
 }
 
-function CreationProgressView({ run, provisioning, provisioningStarting = false, isLight, onContinueNow }: {
-  run: WorkspaceCreationRun | null; provisioning?: ProvisioningRun | null; provisioningStarting?: boolean; isLight: boolean; onContinueNow?: () => void;
+function CreationProgressView({ run, provisioning, provisioningStarting = false, isLight, onContinueNow, firstWorkspace = false }: {
+  run: WorkspaceCreationRun | null; provisioning?: ProvisioningRun | null; provisioningStarting?: boolean; isLight: boolean; onContinueNow?: () => void; firstWorkspace?: boolean;
 }) {
   const progressProvisioning = provisioning ?? (provisioningStarting ? { state: "pending" as const, steps: [] as const } : null);
   const display = presentWorkspaceCreationDisplay(run, progressProvisioning);
+  const activity = firstWorkspace && !progressProvisioning && run?.snapshot.stage !== "workspace-composition"
+    ? "Preparing your workspace…"
+    : display.activity;
   const experience = presentWorkspaceCreationExperience({ run, provisioningRun: progressProvisioning });
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
@@ -1593,7 +1597,7 @@ function CreationProgressView({ run, provisioning, provisioningStarting = false,
       <div className="flex items-center justify-between gap-3">
         <p className={cn("flex items-center gap-2 text-xl font-medium tracking-tight", isLight ? "text-[#382d25]" : "text-slate-100")} role="status" aria-live="polite">
           <LoaderCircle className="size-4 shrink-0 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" />
-          {display.activity}
+          {activity}
         </p>
         <span className={cn("shrink-0 text-[11px] tabular-nums", isLight ? "text-[#8f8074]" : "text-slate-500")} aria-label={`Working for ${formatElapsed(elapsedMs)}`}>
           {formatElapsed(elapsedMs)}

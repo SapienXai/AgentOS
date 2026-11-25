@@ -764,9 +764,17 @@ export function hasAgentOSWorkspaceSetup(snapshot: Pick<MissionControlSnapshot, 
 }
 
 export function hasProjectWorkspace(snapshot: Pick<MissionControlSnapshot, "workspaces" | "diagnostics">) {
-  const stateRoot = snapshot.diagnostics.runtime.stateRoot?.replaceAll("\\", "/").replace(/\/+$/, "");
-  return snapshot.workspaces.some((workspace) =>
-    workspace.bootstrap.template || !stateRoot || workspace.path.replaceAll("\\", "/").replace(/\/+$/, "") !== `${stateRoot}/workspace`
+  return Boolean(findProjectWorkspace(snapshot));
+}
+
+export function resolveDefaultWorkspaceId(snapshot: Pick<MissionControlSnapshot, "workspaces" | "diagnostics">) {
+  return findProjectWorkspace(snapshot)?.id ?? snapshot.workspaces[0]?.id ?? null;
+}
+
+function findProjectWorkspace(snapshot: Pick<MissionControlSnapshot, "workspaces" | "diagnostics">) {
+  const stateRoot = snapshot.diagnostics.runtime?.stateRoot?.replaceAll("\\", "/").replace(/\/+$/, "");
+  return snapshot.workspaces.find((workspace) =>
+    workspace.bootstrap?.template || !stateRoot || workspace.path.replaceAll("\\", "/").replace(/\/+$/, "") !== `${stateRoot}/workspace`
   );
 }
 

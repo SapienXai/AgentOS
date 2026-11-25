@@ -21,6 +21,7 @@ import { useMissionControlPreferences } from "@/components/mission-control/use-m
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
   buildWorkspaceSelectionStorageKey,
+  resolveDefaultWorkspaceId,
   resolveWorkspaceSelection,
   serializeWorkspaceSelection,
   shouldDeferWorkspaceSelectionHydration
@@ -114,7 +115,7 @@ export function OperationsShell({
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     preferredWorkspaceId && initialSnapshot.workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
       ? preferredWorkspaceId
-      : initialSnapshot.workspaces[0]?.id ?? null
+      : resolveDefaultWorkspaceId(initialSnapshot)
   );
   const [sidebarExpandedState, setSidebarExpanded] = useState(false);
   const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
@@ -224,7 +225,7 @@ export function OperationsShell({
     }
 
     const workspaceSelectionStorageKey = buildWorkspaceSelectionStorageKey(workspaceRoot);
-    const storedWorkspaceId = globalThis.localStorage?.getItem(workspaceSelectionStorageKey) ?? null;
+    const storedWorkspaceId = globalThis.sessionStorage?.getItem(workspaceSelectionStorageKey) ?? null;
     const selectableWorkspaceIds = Array.from(new Set([
       ...snapshot.workspaces.map((workspace) => workspace.id),
       ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
@@ -234,7 +235,7 @@ export function OperationsShell({
       ? preferredWorkspaceId
       : requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
         ? requestedWorkspaceId
-        : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, activeWorkspaceId);
+        : resolveWorkspaceSelection(selectableWorkspaceIds, storedWorkspaceId, resolveDefaultWorkspaceId(snapshot));
 
     if (resolvedWorkspaceId !== activeWorkspaceId) {
       setActiveWorkspaceId(resolvedWorkspaceId);
@@ -294,7 +295,7 @@ export function OperationsShell({
       return;
     }
 
-    const storage = globalThis.localStorage;
+    const storage = globalThis.sessionStorage;
 
     if (typeof storage === "undefined") {
       return;

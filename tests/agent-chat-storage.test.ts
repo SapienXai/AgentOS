@@ -4,11 +4,20 @@ import { test } from "node:test";
 import {
   mergeAgentChatMessagesForRehydration,
   normalizeAgentChatMessagesForDisplay,
+  reconcileAgentChatMessages,
   resolveAgentChatLatestAssistantAt,
   resolveAgentChatUnreadCount,
   resolveAgentInboxUnreadCount,
   type AgentChatMessage
 } from "@/components/mission-control/agent-chat-storage";
+
+test("canonical chat removes messages from an earlier installation even when the server has no history", () => {
+  const stale: AgentChatMessage = { id: "cached-old", role: "user", text: "Old context", createdAt: 1, status: "sent" };
+  const saved: AgentChatMessage = { id: "native-new", role: "user", text: "Current context", createdAt: 2, status: "sent" };
+  const failed: AgentChatMessage = { id: "local-error", role: "user", text: "Retry me", createdAt: 3, status: "error" };
+  assert.deepEqual(reconcileAgentChatMessages([stale], []), []);
+  assert.deepEqual(reconcileAgentChatMessages([stale, failed], [saved]), [saved, failed]);
+});
 
 test("agent chat unread counts only completed assistant replies", () => {
   const messages: AgentChatMessage[] = [

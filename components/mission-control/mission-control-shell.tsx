@@ -99,6 +99,7 @@ import {
   resolveOpenClawInstallSummary,
   resolveTaskPrompt,
   buildWorkspaceSelectionStorageKey,
+  resolveDefaultWorkspaceId,
   resolveWorkspaceRootDraft,
   resolveWorkspaceSelection,
   resolveWorkspaceContextEngineAgent,
@@ -108,6 +109,7 @@ import {
   shouldDeferWorkspaceSelectionHydration,
   updateOptimisticMissionTask
 } from "@/components/mission-control/mission-control-shell.utils";
+import { clearAgentChatMessages } from "@/components/mission-control/agent-chat-storage";
 import {
   resolveEffectiveWizardStage,
   resolveInitialOnboardingModelId,
@@ -273,7 +275,7 @@ export function MissionControlShell({
     activeTaskCardContext,
     setActiveTaskCardContext,
     selectNode
-  } = useMissionControlSelection(initialSnapshot.workspaces[0]?.id ?? null);
+  } = useMissionControlSelection(resolveDefaultWorkspaceId(initialSnapshot));
   const [composerTargetAgentId, setComposerTargetAgentId] = useState<string | null>(null);
   const [isComposerActive, setIsComposerActive] = useState(false);
   const [isComposerVisible, setIsComposerVisible] = useState(false);
@@ -1585,11 +1587,11 @@ export function MissionControlShell({
     }
 
     const workspaceSelectionStorageKey = buildWorkspaceSelectionStorageKey(workspaceRoot);
-    const storedWorkspaceId = globalThis.localStorage?.getItem(workspaceSelectionStorageKey) ?? null;
+    const storedWorkspaceId = globalThis.sessionStorage?.getItem(workspaceSelectionStorageKey) ?? null;
     const resolvedWorkspaceId = resolveWorkspaceSelection(
       snapshot.workspaces.map((workspace) => workspace.id),
       storedWorkspaceId,
-      activeWorkspaceId
+      resolveDefaultWorkspaceId(snapshot)
     );
 
     if (resolvedWorkspaceId !== activeWorkspaceId) {
@@ -1616,7 +1618,7 @@ export function MissionControlShell({
     }
 
     const workspaceSelectionStorageKey = buildWorkspaceSelectionStorageKey(workspaceRoot);
-    const storage = globalThis.localStorage;
+    const storage = globalThis.sessionStorage;
 
     if (typeof storage === "undefined") {
       return;
@@ -4023,6 +4025,8 @@ export function MissionControlShell({
   };
 
   const clearMissionControlBrowserState = () => {
+    clearAgentChatMessages();
+    globalThis.sessionStorage?.removeItem(buildWorkspaceSelectionStorageKey(snapshot.diagnostics.workspaceRoot));
     if (typeof globalThis.localStorage === "undefined") {
       return;
     }
@@ -4458,7 +4462,7 @@ export function MissionControlShell({
         verifyWorkspace={verifyCreatedWorkspace}
         onTestWorkspaceAgent={testCreatedWorkspaceAgent}
         defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
-        key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
+        key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : isFirstWorkspace ? "workspace-first-create" : "workspace-create"}
         open={isWorkspaceWizardOpen}
         onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
         initialMode={workspaceWizardInitialMode}
@@ -4986,7 +4990,7 @@ export function MissionControlShell({
         <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-16">
           <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card p-5 text-center shadow-panel">
             <h2 className="text-lg font-semibold">Create your first workspace</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Give your project a name and decide what your first agent will help with.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Start with Agents Workspace and your first agent.</p>
             <button type="button" className="mt-4 min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground" onClick={openFirstWorkspace}>
               Create workspace
             </button>
@@ -5714,7 +5718,7 @@ export function MissionControlShell({
           verifyWorkspace={verifyCreatedWorkspace}
           onTestWorkspaceAgent={testCreatedWorkspaceAgent}
           defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
-          key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
+          key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : isFirstWorkspace ? "workspace-first-create" : "workspace-create"}
           open={isWorkspaceWizardOpen}
           onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
           initialMode={workspaceWizardInitialMode}
