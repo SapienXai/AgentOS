@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { resolveEffectiveCapability } from "@/lib/openclaw/application/worker-capability-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import type { OpenClawToolsCatalogPayload } from "@/lib/openclaw/client/types";
 import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
 import {
@@ -96,8 +97,7 @@ async function main() {
         packageRoot: "[DISPOSABLE_EXACT_PACKAGE]"
       },
       gatewayProtocol: 4,
-      gatewayClient: packageIdentity.version,
-      gatewayProtocolPackage: packageIdentity.version
+      ...readInstalledOpenClawSdkVersions()
     },
     runtime: {
       packageMode: "exact-openclaw-package-fixture",

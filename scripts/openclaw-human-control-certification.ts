@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import { OPENCLAW_STATIC_METHOD_SCOPES } from "@/lib/openclaw/identity/contract";
 import {
   OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
@@ -154,7 +155,7 @@ function createEvidence(identity: { version: string; sourceCommit: string | null
     artifactType: "openclaw-human-control-inbox-certification",
     generatedAt: new Date().toISOString(),
     certifiedCodeHead,
-    openClaw: { release: identity.version, source: identity.sourceCommit, gatewayProtocol: 4, gatewayClient: identity.version, gatewayProtocolPackage: identity.version, packageHash: identity.packageHash },
+    openClaw: { release: identity.version, source: identity.sourceCommit, gatewayProtocol: 4, ...readInstalledOpenClawSdkVersions(), packageHash: identity.packageHash },
     runtime: { isolated: true, gatewayPlacement: "disposable-loopback", handshake: "SKIPPED" as Result, userGatewayUntouched: true, realCredentialsAccessed: false },
     attentionProjection: { schema: "AttentionItem", sourceFamilies: ["exec approvals", "plugin approvals", "questions", "task suggestions", "effective capability blockers", "runtime issues"], stableIdentity: true, sourceOfTruth: "OpenClaw native lifecycle; AgentOS projection" },
     execApproval: { pendingRead: "SKIPPED" as Result, create: "SKIPPED" as Result, projection: "SKIPPED" as Result, resolve: "SKIPPED" as Result, event: "SKIPPED" as Result, skipReason: null as string | null },

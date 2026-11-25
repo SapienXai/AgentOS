@@ -18,6 +18,8 @@ import {
   OPENCLAW_CERTIFICATION_TARGET_VERSION as OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/certification-target";
 
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
+
 const execFileAsync = promisify(execFile);
 const PACKAGE_ROOT = process.env.OPENCLAW_MEMORY_CERT_PACKAGE?.trim() || `/tmp/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-source-agentos`;
 const OUTPUT_PATH = process.env.OPENCLAW_MEMORY_CERT_OUTPUT?.trim() || path.resolve(`docs/evidence/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-native-memory.json`);
@@ -61,8 +63,7 @@ async function main() {
         packageRoot: "[DISPOSABLE_EXACT_PACKAGE]"
       },
       gatewayProtocol: 4,
-      gatewayClient: await readAgentOsSdkVersion("gateway-client"),
-      gatewayProtocolPackage: await readAgentOsSdkVersion("gateway-protocol")
+      ...readInstalledOpenClawSdkVersions()
     },
     runtime: {
       packageMode: "exact-openclaw-package-fixture",
@@ -238,11 +239,6 @@ async function main() {
   console.log(`OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} NATIVE MEMORY GATE: ${evidence.success ? "PASS" : "FAIL"}`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
   if (!evidence.success) process.exitCode = 1;
-}
-
-async function readAgentOsSdkVersion(name: string) {
-  const { version } = JSON.parse(await readFile(path.resolve("node_modules", "@openclaw", name, "package.json"), "utf8")) as { version?: string };
-  return version ?? null;
 }
 
 function createClient(input: { port: number; token: string }) {

@@ -14,6 +14,8 @@ import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/ru
 import { redactSecretText } from "@/lib/security/redaction";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
+
 const TARGET_VERSION = OPENCLAW_CERTIFICATION_TARGET_VERSION;
 const TARGET_LABEL = TARGET_VERSION.split(".").slice(1).join(".");
 const TARGET_COMMIT = OPENCLAW_CERTIFICATION_TARGET_COMMIT;
@@ -261,6 +263,7 @@ async function writePrimaryRuntimeCertificationEvidence(input: {
 }) {
   const runtime = asRecord(input.certification.runtime);
   const results = Array.isArray(runtime?.results) ? runtime.results.map(asRecord).filter(Boolean) : [];
+  const sdkVersions = readInstalledOpenClawSdkVersions();
   const primaryEvidence = {
     schemaVersion: 1,
     artifactType: "openclaw-runtime-certification",
@@ -271,14 +274,13 @@ async function writePrimaryRuntimeCertificationEvidence(input: {
       openclawSourceCommit: TARGET_COMMIT,
       openclawBuildId: input.provisionedIdentity.buildId,
       openclawPackageHash: input.provisionedIdentity.packageHash,
-      gatewayClient: TARGET_VERSION,
-      gatewayProtocolPackage: TARGET_VERSION,
+      ...sdkVersions,
       runtimePathMode: "exact-built-source-package-fixture",
       gatewayPlacement: "disposable-loopback"
     },
     package: {
-      gatewayClient: TARGET_VERSION,
-      gatewayProtocol: TARGET_VERSION,
+      gatewayClient: sdkVersions.gatewayClient,
+      gatewayProtocol: sdkVersions.gatewayProtocolPackage,
       installedOpenClaw: input.provisionedIdentity.version,
       exactPackageHash: input.provisionedIdentity.packageHash
     },
