@@ -180,7 +180,12 @@ export async function assignEmployeeDocument(input: {
   if (!state.hash) throw new Error("OpenClaw did not provide a config revision. Refresh before trying again.");
   const next = input.selected ? [...state.paths, { path: input.path }] : state.paths.filter(entry => !matches(entry));
   const result = readConfigMutation(await state.adapter.setConfig(state.configPath, next, {
-    ...input.commandOptions, baseHash: state.hash, strictJson: true
+    ...input.commandOptions,
+    baseHash: state.hash,
+    strictJson: true,
+    // Gateway protects shrinking arrays. Explicitly replace only this employee's
+    // extraPaths, using the exact previous revision and preserving other entries.
+    ...(!input.selected ? { replacePaths: [state.replacementPath] } : {})
   }));
   if (result.pending || result.restartRequired) return { status: "pending" as const };
   const confirmed = await readEmployeeDocumentAssignmentState(input);
@@ -205,6 +210,7 @@ async function readEmployeeDocumentAssignmentState(input: {
   }
   return {
     adapter, configPath: buildWorkspaceNativeKnowledgeConfigPath(agent.id),
+    replacementPath: `agents.entries.${normalizeAgentId(agent.id)}.memory.search.extraPaths`,
     paths: readNativeExtraPaths(entry, agent.id), hash: native.hash ?? native.configRevisionHash ?? native.appliedConfigHash
   };
 }

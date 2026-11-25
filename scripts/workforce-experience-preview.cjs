@@ -98,6 +98,16 @@ async function run() {
       children.push(child);
       return child;
     }
+    if (suggested) {
+      // Seeded auth-profiles.json is a disposable migration input. The pinned
+      // OpenClaw owns conversion to its current native credential store.
+      const doctor = start([openclaw,"doctor","--repair","--non-interactive","--no-workspace-suggestions"]);
+      const status = await new Promise((resolve, reject) => {
+        doctor.once("error", reject);
+        doctor.once("exit", resolve);
+      });
+      assert.equal(status, 0, "OpenClaw could not migrate the fixture provider.");
+    }
     const owner = await enableInstanceProtection({ username: "fixture-owner", password: process.env.WORKFORCE_PREVIEW_PASSWORD || randomUUID() }, env);
     const cookie = INSTANCE_PROTECTION_COOKIE + "=" + owner.session;
     const launchGateway = () => start([openclaw,"gateway","run","--port",String(gatewayPort),"--allow-unconfigured"]);
