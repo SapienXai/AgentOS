@@ -3,16 +3,16 @@ import { OPENCLAW_NATIVE_CONTRACT_VERSION } from "@/lib/openclaw/versions";
 
 export const OPENCLAW_IDENTITY_CONTRACT_SCHEMA_VERSION = 1;
 export const OPENCLAW_IDENTITY_CONTRACT_VERSION = OPENCLAW_NATIVE_CONTRACT_VERSION;
-export const OPENCLAW_IDENTITY_CONTRACT_TAG = "v2026.11.5";
-export const OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT = "0581065e2e2d90607033598345e513b73a48c0ee";
-export const OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT = "e13cf15ece9bbd969b7362927c315362c90c97ff";
-export const OPENCLAW_IDENTITY_CONTRACT_BUILD = "2026.11.5-release-e13cf15ece9b-2026-11-17T03-37-27.630Z";
-export const OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY = "sha512-mqPlsGLOe8NS85BfP1vWW9YVwFXchsV75QTkEbyR4csylORxts+fmfZp9+qbD7aPbXQIctyjRk+CPL91fDvxBA==";
-export const OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY = "sha512-fUnFp/Ahb6z42AldDMRjkKiUuHD4bwfZdkWQf1mEFJXRqrGJ8Fgt3a9ueL9lPNlFizrtfSZgsz7zhTrQg4mUGg==";
-export const OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY = "sha512-ISAZ2NXqoj0xPmuw2FLgfdL79SGcjX3z7RahHYV/62HE0DWd7oi595dWC69yzzU1tkvIQifNZ8wVEWmoo8PP/Q==";
+export const OPENCLAW_IDENTITY_CONTRACT_TAG = "v2026.11.10";
+export const OPENCLAW_IDENTITY_CONTRACT_TAG_OBJECT = "891104d3aa179575da9ed39cf3db1b287ac92759";
+export const OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT = "6ea542fd97e2876aa4c871ccc494ed5419a03c5c";
+export const OPENCLAW_IDENTITY_CONTRACT_BUILD = "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z";
+export const OPENCLAW_IDENTITY_CONTRACT_PACKAGE_INTEGRITY = "sha512-/FKDjxY1ZdUSXHx1a9b4EUpPRZywM3uv4181g22XImJfp/5+h+fFUZ7B7HthNrdYzq//05zH0Yf7mefzIlWFaQ==";
+export const OPENCLAW_IDENTITY_CONTRACT_GATEWAY_CLIENT_INTEGRITY = "sha512-Yue8muvacPdYnDmqbDuou/+4nFrlahTkC9UWzvJRSH5UQrSRgstyxqmxCJoS9oHjM9xHWNekDsjac1TQ2NyDmw==";
+export const OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL_INTEGRITY = "sha512-dnuGg74lL/3ehOWmMEiaDuaHNwCcg9cv68rMcX8EjsNrw5740PdoNimto/PKyHX5oh6yzNodoyI7sJfiAGLK/Q==";
 export const OPENCLAW_IDENTITY_CONTRACT_GATEWAY_PROTOCOL = 4;
-export const OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA = 36;
-export const OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA = 38;
+export const OPENCLAW_IDENTITY_CONTRACT_STATE_SCHEMA = 40;
+export const OPENCLAW_IDENTITY_CONTRACT_AGENT_SCHEMA = 42;
 
 export const OPENCLAW_OPERATOR_ROLES = ["operator", "node"] as const;
 
@@ -371,6 +371,9 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "gateway.suspend.status": ["operator.read"],
   "gateway.suspend.resume": ["operator.admin"],
   "agents.list": ["operator.read"],
+  "chat.history": ["operator.read"],
+  "sessions.list": ["operator.read"],
+  "sessions.messages.subscribe": ["operator.read"],
   "agents.create": ["operator.admin"],
   "agents.update": ["operator.admin"],
   "agents.delete": ["operator.admin"],

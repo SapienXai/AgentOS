@@ -156,7 +156,7 @@ The initial password only creates the account when no Instance Protection state 
 
 ### Install
 
-AgentOS 0.9.0 is available from the [GitHub release](https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.9.0). Use the shell installers below to install a verified CLI archive. For desktop previews and platform availability, see the [downloads page](https://agentos.sapienx.app/download).
+AgentOS 0.9.0 is listed in the [published release history](https://github.com/SapienXai/AgentOS/releases). This checkout prepares 0.10.0. Its [release tag](https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.10.0) becomes available after publication. Use the shell installers below to install a verified CLI archive. For desktop previews and platform availability, see the [downloads page](https://agentos.sapienx.app/download).
 
 The npm registry has its own version history. To install the version currently on that registry:
 
@@ -180,18 +180,18 @@ Windows PowerShell:
 iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
-To pin 0.9.0:
+To pin 0.10.0 after publication, use the following commands.
 
 macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.9.0 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.10.0 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.9.0'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.10.0'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 ### Start AgentOS
@@ -340,12 +340,12 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-AgentOS `0.9.0` is the first production baseline. Start with a clean AgentOS
+AgentOS `0.10.0` is the engineering candidate. Start with a clean AgentOS
 installation and keep any existing OpenClaw files and workspaces in place.
 
 - Recommended OpenClaw: `2026.11.5`.
 - Supported minimum: `2026.11.5`.
-- Native contract target: `2026.11.5`.
+- Native contract target: `2026.11.10`.
 
 All supported installations also require:
 

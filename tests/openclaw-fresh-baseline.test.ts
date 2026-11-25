@@ -12,12 +12,13 @@ import {
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
 
-test("OpenClaw 2026.11.5 is the first production baseline", () => {
+test("the release candidate preserves the certified OpenClaw update baseline", () => {
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.11.5");
   assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.11.5");
   assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, OPENCLAW_RECOMMENDED_VERSION);
   assert.deepEqual(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.map(({ version, status }) => ({ version, status })), [
-    { version: "2026.11.5", status: "certified" }
+    { version: "2026.11.5", status: "certified" },
+    { version: "2026.11.10", status: "candidate" }
   ]);
 });
 
