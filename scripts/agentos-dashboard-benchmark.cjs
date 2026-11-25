@@ -12,6 +12,7 @@ const packageRoot = process.env.AGENTOS_BENCH_OPENCLAW_PACKAGE;
 if (!packageRoot) throw new Error("Set AGENTOS_BENCH_OPENCLAW_PACKAGE to the exact OpenClaw package root.");
 const openclaw = path.join(path.resolve(packageRoot), "openclaw.mjs");
 const app = require.resolve("next/dist/bin/next");
+const productRoot = process.env.AGENTOS_BENCH_APP_ROOT || process.cwd();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function reservePort() {
@@ -90,9 +91,9 @@ async function watchStream(url, headers, signal) {
 }
 
 function processSample(child) {
-  const [rss, cpu] = execFileSync("ps", ["-p", String(child.pid), "-o", "rss=,%cpu="], { encoding: "utf8" })
-    .trim().split(/\s+/).map(Number);
-  return { rssKiB: rss, cpuPercent: cpu };
+  const [rss, cpuTime] = execFileSync("ps", ["-p", String(child.pid), "-o", "rss=,time="], { encoding: "utf8" })
+    .trim().split(/\s+/);
+  return { rssKiB: Number(rss), cpuSeconds: cpuTime.split(":").reduce((total, part) => total * 60 + Number(part), 0) };
 }
 
 async function runScale(agentCount, sessionCount, browser) {
@@ -127,10 +128,12 @@ async function runScale(agentCount, sessionCount, browser) {
       AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl, AGENTOS_OPENCLAW_GATEWAY_TOKEN: token,
       AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_API_TOKEN: apiToken, NODE_ENV: "production"
     };
-    const launch = (args) => {
-      const child = spawn(process.execPath, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const nativeRpcCounts = {};
+    const launch = (args, observeOutput, cwd) => {
+      const child = spawn(process.execPath, args, { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
       let log = "";
       for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => {
+        observeOutput?.(chunk.toString());
         log = (log + chunk).replaceAll(token, "[credential]").replaceAll(apiToken, "[credential]")
           .replaceAll(root, "[disposable-root]").slice(-2000);
       });
@@ -138,7 +141,16 @@ async function runScale(agentCount, sessionCount, browser) {
       children.push(child);
       return child;
     };
-    const gateway = launch([openclaw, "gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"]);
+    let gatewayLogRemainder = "";
+    const gateway = launch([openclaw, "gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured",
+      "--verbose", "--ws-log", "compact"], (chunk) => {
+      const lines = (gatewayLogRemainder + chunk).split("\n");
+      gatewayLogRemainder = lines.pop() ?? "";
+      for (const line of lines) {
+        const method = line.match(/\bres\s+[✓✗]\s+([a-zA-Z][\w.]+)/)?.[1];
+        if (method) nativeRpcCounts[method] = (nativeRpcCounts[method] ?? 0) + 1;
+      }
+    });
     await waitReady(`http://127.0.0.1:${gatewayPort}/healthz`, gateway);
     client = createOfficialBackedOpenClawGatewayClient({
       url: gatewayUrl, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write"],
@@ -151,22 +163,52 @@ async function runScale(agentCount, sessionCount, browser) {
         client.callNative("sessions.create", { key }, { safety: "mutation", timeoutMs: 12_000 })
       ));
     }
-    const product = launch([app, "start", "--hostname", "127.0.0.1", "--port", String(appPort)]);
-    await waitReady(appUrl + "/api/health", product);
+    const product = launch([app, "start", "--hostname", "127.0.0.1", "--port", String(appPort)], undefined, productRoot);
+    await waitReady(appUrl + "/api/auth/status", product);
     const headers = { Authorization: `Bearer ${apiToken}` };
     const render = async (context) => {
       const page = await context.newPage();
       const started = performance.now();
-      await page.goto(appUrl + "/mission-control", { timeout: 45000 });
+      const navigation = await page.goto(appUrl + "/mission-control", { timeout: 45000, waitUntil: "domcontentloaded" });
       await page.getByText("Benchmark agent 1", { exact: true }).first().waitFor({ timeout: 45000 });
       const renderMs = Number((performance.now() - started).toFixed(1));
-      await page.close();
-      return renderMs;
+      const html = await navigation.text();
+      const nav = await page.evaluate(() => {
+        const entry = performance.getEntriesByType("navigation")[0];
+        return { ttfbMs: Math.round(entry.responseStart), domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd) };
+      });
+      return {
+        page,
+        timings: { renderMs, ...nav, htmlBytes: Buffer.byteLength(html), rosterInInitialHtml: html.includes("Benchmark agent 1") }
+      };
     };
     const browserContexts = await Promise.all([1, 2].map(() => browser.newContext({ extraHTTPHeaders: headers })));
     contexts.push(...browserContexts);
-    const coldRenderMs = await Promise.all(browserContexts.map(render));
-    const warmRenderMs = await Promise.all(browserContexts.map(render));
+    const countDelta = (before, after) => Object.fromEntries(Object.entries(after)
+      .map(([method, count]) => [method, count - (before[method] ?? 0)]).filter(([, count]) => count > 0));
+    const beforeCold = { ...nativeRpcCounts };
+    const cold = await Promise.all(browserContexts.map(render));
+    const coldRpcCounts = countDelta(beforeCold, nativeRpcCounts);
+    await Promise.all(cold.map(({ page }) => page.close()));
+    const warm = await Promise.all(browserContexts.map(render));
+    const calculateDomUpdates = async () => {
+      const samples = [];
+      let missed = 0;
+      for (let index = 0; index < 5; index++) {
+        const label = `Benchmark agent update ${index + 1}`;
+        const started = performance.now();
+        await client.callNative("agents.update", { agentId: "main", name: label }, { safety: "mutation", timeoutMs: 12_000 });
+        // Wake the existing snapshot subscription with the same native session
+        // event used in the stream workload. Observe the new roster name in the DOM.
+        await client.callNative("sessions.patch", { key: keys[0], label }, { safety: "mutation", timeoutMs: 12_000 });
+        const visible = await Promise.allSettled(warm.map(({ page }) =>
+          page.getByText(label, { exact: true }).first().waitFor({ timeout: 5000 })
+        ));
+        if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
+        else missed++;
+      }
+      return { samples: samples.length, missed, p95Ms: percentile(samples, 0.95) };
+    };
     const streams = await Promise.all(["", "?delta=1"].map((query) =>
       watchStream(appUrl + "/api/stream" + query, headers, signal.signal)
     ));
@@ -174,6 +216,8 @@ async function runScale(agentCount, sessionCount, browser) {
     await Promise.race([Promise.all(streams.map(({ initial }) => initial)), Promise.race(streams.map(({ completion }) => completion))]);
     clearTimeout(initialTimeout);
     assert.ok(streams.every(({ metrics }) => metrics.initialSnapshotBytes > 0));
+    const measuredStarted = performance.now();
+    const cpuStart = { agentos: processSample(product), gateway: processSample(gateway) };
     const mutations = [];
     for (let index = 0; index < 10; index++) {
       mutations.push(performance.now());
@@ -185,6 +229,13 @@ async function runScale(agentCount, sessionCount, browser) {
     await delay(3500);
     signal.abort();
     await Promise.all(streams.map(({ completion }) => completion));
+    const measuredSeconds = (performance.now() - measuredStarted) / 1000;
+    const sampleWorkload = (child, initial) => {
+      const sample = processSample(child);
+      return { rssKiB: sample.rssKiB, cpuAveragePercent: Number((100 * (sample.cpuSeconds - initial.cpuSeconds) / measuredSeconds).toFixed(1)) };
+    };
+    const processSamples = { agentos: sampleWorkload(product, cpuStart.agentos), gateway: sampleWorkload(gateway, cpuStart.gateway) };
+    const visibleUpdate = await calculateDomUpdates();
     const summarize = ({ metrics, arrivals }) => ({
       ...metrics,
       eventToWireApproxP95Ms: percentile(arrivals.flatMap((arrival) => {
@@ -194,9 +245,10 @@ async function runScale(agentCount, sessionCount, browser) {
     });
     return {
       agents: agentCount, nativeSessionsCreated: keys.length, browserClients: browserContexts.length,
-      coldRenderMs, warmRenderMs, nativeMutations: mutations.length,
+      cold: cold.map(({ timings }) => timings), warm: warm.map(({ timings }) => timings),
+      coldRpcCounts, visibleUpdate, nativeMutations: mutations.length,
       fullStream: summarize(streams[0]), deltaStream: summarize(streams[1]),
-      processSamples: { agentos: processSample(product), gateway: processSample(gateway) }
+      processSamples
     };
   } finally {
     signal.abort();

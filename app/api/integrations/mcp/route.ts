@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawConfigSnapshotPayload } from "@/lib/openclaw/client/types";
 import { isGatewayConfigConflictError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
@@ -48,6 +49,18 @@ function readServers(snapshot: OpenClawConfigSnapshotPayload): Record<string, Na
   return config.mcp?.servers ?? {};
 }
 
+function localControlUiUrl(request: Request, snapshot: OpenClawConfigSnapshotPayload) {
+  const config = snapshot.config as { gateway?: { controlUi?: { enabled?: boolean; basePath?: string } } } | undefined;
+  const controlUi = config?.gateway?.controlUi;
+  const gateway = URL.parse(resolveGatewayUrl());
+  if (controlUi?.enabled === false || !gateway || gateway.protocol !== "ws:" ||
+    !isLoopbackHost(gateway.host) || !isLoopbackHost(new URL(request.url).host) ||
+    gateway.username || gateway.password || gateway.pathname !== "/" || gateway.search || gateway.hash) return null;
+  const basePath = (controlUi?.basePath ?? "").replace(/\/+$/, "");
+  if (!/^(?:\/[A-Za-z0-9_.~-]+)*$/.test(basePath) || basePath.split("/").some((part) => part === "." || part === "..")) return null;
+  return new URL(`${basePath}/settings/mcp`, `http://${gateway.host}`).href;
+}
+
 function projectServers(servers: Record<string, NativeMcpServer>) {
   return Object.entries(servers).map(([id, server]) => {
     let host: string | null = null;
@@ -84,7 +97,10 @@ export async function GET(request: Request) {
     const snapshot = await getOpenClawAdapter().call<OpenClawConfigSnapshotPayload>("config.get", {}, {
       signal: request.signal, allowCliFallback: false
     });
-    return NextResponse.json({ servers: projectServers(readServers(snapshot)) }, { headers });
+    return NextResponse.json({
+      servers: projectServers(readServers(snapshot)),
+      controlUiUrl: localControlUiUrl(request, snapshot)
+    }, { headers });
   } catch {
     return NextResponse.json({ error: "OpenClaw could not read the MCP configuration." }, { status: 503, headers });
   }

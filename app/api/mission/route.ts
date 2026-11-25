@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const productAuthorization = await requireAgentOsProductPermission(request, "missions.use");
+  const productAuthorization = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in productAuthorization) {
     for (const [name, value] of Object.entries(browserAccountResponseHeaders())) {
       productAuthorization.response.headers.set(name, value);

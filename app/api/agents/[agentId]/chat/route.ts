@@ -58,6 +58,12 @@ const stopSchema = z.object({
   conversationId: conversationSchema,
   runId: nativeIdSchema
 }).strict();
+const archiveSchema = z.object({
+  action: z.literal("set-archived"),
+  conversationId: z.string().uuid().transform((value) => value.toLowerCase()),
+  sessionId: nativeIdSchema,
+  archived: z.boolean()
+}).strict();
 const queueActionSchema = z.discriminatedUnion("action", [
   stopSchema.extend({ action: z.literal("steer"), sessionId: nativeIdSchema }),
   z.object({
@@ -197,13 +203,13 @@ export async function GET(
     if (catalog) {
       const prefix = `${buildDirectAgentChatSessionKey(agent, permission.actor.actorId)}:`;
       const { sessions } = await getOpenClawAdapter().listSessions(
-        { search: prefix, agentId, limit: 50 },
+        { search: prefix, agentId, limit: 50, archived: "all" },
         { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
       );
-      const conversations = sessions.flatMap(({ key, updatedAt }) => {
+      const conversations = sessions.flatMap(({ key, updatedAt, archived }) => {
         if (!key?.startsWith(prefix)) return [];
         const id = conversationSchema.safeParse(key.slice(prefix.length));
-        return id.success && id.data ? [{ id: id.data, updatedAt: updatedAt ?? null }] : [];
+        return id.success && id.data ? [{ id: id.data, updatedAt: updatedAt ?? null, archived: archived === true }] : [];
       });
       return NextResponse.json({ conversations }, { headers });
     }
@@ -618,7 +624,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
   const permission = await requireAgentOsProductPermission(request, "agents.chat");
   if ("response" in permission) return permission.response;
 
-  const parsed = z.union([stopSchema, queueActionSchema]).safeParse(await request.json().catch(() => null));
+  const parsed = z.union([stopSchema, queueActionSchema, archiveSchema]).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "A valid conversation action is required." }, { status: 400 });
   const input = parsed.data;
 
@@ -628,11 +634,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
     if (!agent) return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
     const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, input.conversationId);
     const action = "action" in input ? input.action : "stop";
-    const method = action === "steer" ? "chat.steerNow" :
-      action === "dismiss" ? "chat.pendingInputs.dismiss" : "sessions.abort";
-    const params = !("action" in input) ? { key: sessionKey, runId: input.runId } :
-      input.action === "steer" ? { sessionKey, sessionId: input.sessionId, runId: input.runId } :
-        { sessionKey, sessionId: input.sessionId, inputIds: [input.inputId] };
+    const method = action === "steer" ? "chat.steerNow" : action === "dismiss" ? "chat.pendingInputs.dismiss" :
+      action === "set-archived" ? "sessions.patch" : "sessions.abort";
+    const params = !("action" in input) ? { key: sessionKey, runId: input.runId } : input.action === "steer"
+      ? { sessionKey, sessionId: input.sessionId, runId: input.runId }
+      : input.action === "dismiss" ? { sessionKey, sessionId: input.sessionId, inputIds: [input.inputId] }
+        : { key: sessionKey, expectedSessionId: input.sessionId, archived: input.archived, expectedArchived: !input.archived };
     const authorization = await requireAgentOsOpenClawPreflight(request, {
       operation: `agent.chat.${action}`,
       method,
@@ -652,6 +659,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
     const headers = { "Cache-Control": "private, no-store" };
     if ("action" in input) {
       const result = await adapter.call<Record<string, unknown>>(method, params, options);
+      if (input.action === "set-archived") {
+        if (result.ok !== true) throw new Error("OpenClaw did not confirm the archive change.");
+        return NextResponse.json({ archived: input.archived }, { headers });
+      }
       return NextResponse.json(redactSecrets({ status: result.status, dismissedIds: result.dismissedIds }), { headers });
     }
     const result = await adapter.abortAgentTurn({ sessionKey, agentId, runId: input.runId }, options);

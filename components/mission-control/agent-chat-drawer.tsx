@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowDown, Bot, KeyRound, LoaderCircle, Paperclip, SendHorizontal, Square, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { AgentChatSoundSettings, reportAgentChatVisibility, requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
@@ -220,9 +221,13 @@ export function AgentChatDrawer({
   const composerId = useId();
   const [catalog, setCatalog] = useState<{
     agentId: string;
-    conversations: Array<{ id: string; updatedAt: number | null }>;
+    conversations: Array<{ id: string; updatedAt: number | null; archived: boolean }>;
   }>();
   const conversations = catalog?.agentId === agent.id ? catalog.conversations : [];
+  const savedConversation = conversations.find(({ id }) => id === conversationId);
+  const archived = savedConversation?.archived === true;
+  const [archiveConfirmation, setArchiveConfirmation] = useState<string>();
+  const [updatingArchive, setUpdatingArchive] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [draftFiles, setDraftFiles] = useState<Record<string, File[]>>({});
   const files = draftFiles[chatKey] ?? [];
@@ -544,7 +549,7 @@ export function AgentChatDrawer({
     }
   }, [agent.id, inboxItems.length, isVisible, messages]);
 
-  const canSend = !chatAccessDenied && preparingFilesFor !== chatKey && Boolean(draft.trim());
+  const canSend = !chatAccessDenied && !archived && preparingFilesFor !== chatKey && Boolean(draft.trim());
   const stopRunId = runSnapshot.runs[0]?.runId;
 
   const displayedMessages = useMemo(() => {
@@ -647,7 +652,7 @@ export function AgentChatDrawer({
 
   const send = async (queueMode?: "steer") => {
     const text = draft.trim();
-    if (chatAccessDenied || !text || preparingFiles.current.has(chatKey) ||
+    if (chatAccessDenied || archived || !text || preparingFiles.current.has(chatKey) ||
         (submittedDraft.current?.chatKey === chatKey && submittedDraft.current.text === text)) return;
 
     let attachments: DirectChatAttachment[] | undefined;
@@ -689,6 +694,35 @@ export function AgentChatDrawer({
       if (isVisibleRef.current) {
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
+    }
+  };
+
+  const changeArchive = async () => {
+    if (!savedConversation || !queue?.sessionId || updatingArchive) return;
+    setUpdatingArchive(true);
+    try {
+      const requested = !archived;
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set-archived", conversationId: savedConversation.id, sessionId: queue.sessionId, archived: requested })
+      });
+      const result = await response.json().catch(() => null) as { archived?: boolean; error?: string } | null;
+      if (!response.ok || result?.archived !== requested) {
+        throw new Error(result?.error || "OpenClaw could not confirm the archive change.");
+      }
+      setCatalog((current) => current?.agentId === agent.id ? {
+        ...current,
+        conversations: current.conversations.map((conversation) => conversation.id === savedConversation.id
+          ? { ...conversation, archived: requested } : conversation)
+      } : current);
+      toast.info(requested ? "Conversation archived." : "Conversation restored.");
+      refreshConversation.current();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update the conversation archive.");
+    } finally {
+      setArchiveConfirmation(undefined);
+      setUpdatingArchive(false);
     }
   };
 
@@ -761,9 +795,10 @@ export function AgentChatDrawer({
             {conversationId && !conversations.some(({ id }) => id === conversationId) ? (
               <option value={conversationId}>New conversation</option>
             ) : null}
-            {conversations.map(({ id, updatedAt }) => (
+            {conversations.map(({ id, updatedAt, archived }) => (
               <option key={id} value={id}>
                 {updatedAt ? `${formatChatDate(updatedAt)} · ${formatChatTime(updatedAt)}` : id.slice(0, 8)}
+                {archived ? " · Archived" : ""}
               </option>
             ))}
           </select>
@@ -782,6 +817,31 @@ export function AgentChatDrawer({
           New chat
         </Button>
       </div>
+      {savedConversation && queue?.sessionId && !chatAccessDenied ? (
+        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-4 py-1 sm:px-6">
+          {archived ? <p className="text-xs text-muted-foreground">Restore this conversation to send messages.</p> : <span />}
+          <Button type="button" variant="ghost" size="sm" disabled={updatingArchive || runSnapshot.isRunning}
+            onClick={() => archived ? void changeArchive() : setArchiveConfirmation(savedConversation.id)}>
+            {archived ? "Restore conversation" : "Archive conversation"}
+          </Button>
+        </div>
+      ) : null}
+      <Dialog open={archiveConfirmation !== undefined && archiveConfirmation === conversationId} onOpenChange={(open) => {
+        if (!open && !updatingArchive) setArchiveConfirmation(undefined);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive conversation?</DialogTitle>
+            <DialogDescription>
+              OpenClaw stops active or queued work in this conversation. You can still read its history or restore it later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={updatingArchive} onClick={() => setArchiveConfirmation(undefined)}>Cancel</Button>
+            <Button type="button" disabled={updatingArchive} onClick={() => void changeArchive()}>Archive</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {chatAccessDenied ? (
         <p role="status" className="shrink-0 border-b border-border/70 px-4 py-2 text-sm text-muted-foreground sm:px-6">
           Direct chat requires an authorized operator and a native OpenClaw Gateway connection.
@@ -994,7 +1054,7 @@ export function AgentChatDrawer({
             <Textarea
               id={composerId}
               name="message"
-              disabled={chatAccessDenied}
+              disabled={chatAccessDenied || archived}
               ref={textareaRef}
               rows={1}
               value={draft}
@@ -1026,7 +1086,7 @@ export function AgentChatDrawer({
                 }}
               />
               <Button type="button" variant="ghost" aria-label="Attach files" className="h-10 w-10 rounded-full p-0"
-                disabled={chatAccessDenied || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
+                disabled={chatAccessDenied || archived || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
                 onClick={() => attachmentInput.current?.click()}>
                 <Paperclip className="h-4 w-4" aria-hidden="true" />
               </Button>

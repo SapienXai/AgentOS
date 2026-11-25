@@ -16,7 +16,7 @@ const taskReviewSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const authorization = await requireAgentOsProductPermission(request, "tasks.use");
+  const authorization = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in authorization) return authorization.response;
 
   try {
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authorization = await requireAgentOsProductPermission(request, "tasks.use");
+  const authorization = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in authorization) return authorization.response;
 
   const parsed = taskReviewSchema.safeParse(await request.json().catch(() => null));

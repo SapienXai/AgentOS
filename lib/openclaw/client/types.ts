@@ -1061,6 +1061,7 @@ export type OpenClawModelAuthLogoutPayload = {
 };
 
 export interface OpenClawListSessionsInput {
+  archived?: boolean | "all";
   limit?: number;
   activeMinutes?: number;
   includeGlobal?: boolean;
@@ -1075,6 +1076,7 @@ export interface OpenClawListSessionsInput {
 
 export type OpenClawSessionsPayload = {
   sessions: Array<Record<string, unknown> & {
+    archived?: boolean;
     agentId?: string;
     key?: string;
     sessionId?: string;

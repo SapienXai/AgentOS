@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getMissionControlSnapshot, runTaskHealthAudit } from "@/lib/agentos/control-plane";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -11,7 +12,9 @@ const taskHealthActionSchema = z.object({
   action: z.literal("audit")
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
+  if ("response" in permission) return permission.response;
   try {
     const snapshot = await getMissionControlSnapshot({ force: true });
 
@@ -29,6 +32,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
+  if ("response" in permission) return permission.response;
   try {
     const input = taskHealthActionSchema.parse(await request.json());
 

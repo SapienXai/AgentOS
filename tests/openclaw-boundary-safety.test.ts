@@ -269,7 +269,7 @@ test("local Gateway port probes do not claim authenticated RPC readiness", () =>
   );
 
   assert.doesNotMatch(probeSource, /rpc:\s*\{\s*ok:\s*true\s*\}/);
-  assert.match(snapshotLoaderSource, /const openclawCliInstalled = await detectOpenClaw\(\);/);
+  assert.match(snapshotLoaderSource, /\[localGatewayStatus, openclawCliInstalled\] = await Promise\.all\(\[\s*probeLocalGatewayStatus\(\),\s*detectOpenClaw\(\)/);
   assert.match(snapshotLoaderSource, /const openclawInstalled = openclawCliInstalled \|\| Boolean\(localGatewayStatus\?\.rpc\?\.ok\);/);
   assert.match(snapshotLoaderSource, /const shouldHydrateGatewayStatus = gatewayStatusCacheNeedsRefresh;/);
   assert.doesNotMatch(snapshotLoaderSource, /const shouldHydrateGatewayStatus = !localGatewayStatus/);

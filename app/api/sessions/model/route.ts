@@ -27,7 +27,7 @@ const inputSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "sessions.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   try {
     const input = inputSchema.parse(await request.json());

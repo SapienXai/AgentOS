@@ -23,7 +23,7 @@ const actionSchema = z.object({ action: z.enum(["run", "pause", "resume", "cance
 const updateSchema = z.object({ action: z.literal("update"), jobId: z.string().min(1), trigger });
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "tasks.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   try { return NextResponse.json(redactSecrets(await getOperationsSnapshot())); }
   catch (error) { return NextResponse.json({ error: redactErrorMessage(error, "Unable to load operations.") }, { status: 500 }); }

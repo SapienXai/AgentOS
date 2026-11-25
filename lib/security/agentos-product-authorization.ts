@@ -11,6 +11,7 @@ import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export type AgentOsProductPermission =
   | "runtime.use"
+  | "runtime.inspect"
   | "sessions.use"
   | "sessions.collaborate"
   | "sessions.place"
@@ -47,6 +48,7 @@ const MEMBER_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "tasks.use",
   "missions.use",
@@ -61,6 +63,7 @@ const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "tasks.use",
   "missions.use",
@@ -81,6 +84,7 @@ const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "sessions.collaborate",
   "sessions.place",

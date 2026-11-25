@@ -9,13 +9,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   const { searchParams } = new URL(request.url);
   const force = searchParams.get("force") === "true";
   const result = force
     ? { snapshot: await getMissionControlSnapshot({ force: true }), pending: false }
     : await getBoundedControlPlaneSnapshot();
+  const current = await requireAgentOsProductPermission(request, "runtime.inspect");
+  if ("response" in current) return current.response;
+  if (current.actor.actorId !== permission.actor.actorId) {
+    return NextResponse.json({ error: "The operator changed. Request the snapshot again." }, {
+      status: 403, headers: { "Cache-Control": "private, no-store" }
+    });
+  }
 
   return NextResponse.json(redactSecrets(result.snapshot), {
     headers: {

@@ -197,8 +197,10 @@ async function loadMissionControlSnapshots({
 } = {}): Promise<SnapshotPair<MissionControlSnapshot>> {
   const loadPayloadCaches = payloadCaches;
   const stateRoot = getOpenClawStateRootPath();
-  const localGatewayStatus = await probeLocalGatewayStatus();
-  const openclawCliInstalled = await detectOpenClaw();
+  const [localGatewayStatus, openclawCliInstalled] = await Promise.all([
+    probeLocalGatewayStatus(),
+    detectOpenClaw()
+  ]);
   const openclawInstalled = openclawCliInstalled || Boolean(localGatewayStatus?.rpc?.ok);
 
   if (!openclawInstalled) {
@@ -370,26 +372,22 @@ async function loadMissionControlSnapshots({
     const credentialProviderIds = credentialProviderIdsResult.status === "fulfilled"
       ? credentialProviderIdsResult.value
       : [];
-    if (isDeferredPayloadResult(agentsResult) && !systemProfile) {
-      agentsResult = await settleAgentPayloadFromOpenClaw(agentConfig);
-    }
-    const sessionsResult: PromiseSettledResult<SessionsPayload> = systemProfile
-      ? createDeferredPayloadResult<SessionsPayload>()
-      : await settleSessionsPayloadFromOpenClaw(agentConfig);
     const runtimeSnapshotMode = getCachedOpenClawCapabilityMatrix()?.operations?.runtimeSnapshot?.mode;
     const shouldHydrateRuntimeSnapshot =
       !systemProfile &&
       runtimeSnapshotMode !== "degraded" &&
       runtimeSnapshotMode !== "disabled" &&
       runtimeSnapshotMode !== "cli-fallback";
-    const runtimeSnapshotResult: PromiseSettledResult<OpenClawRuntimeSnapshotPayload> = systemProfile
-      ? createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>()
-      : shouldHydrateRuntimeSnapshot
-        ? await settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
-        : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>();
-    if (!systemProfile) {
-      taskListResult = await settleTaskListPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000);
-    }
+    const [agentPayload, sessionsResult, runtimeSnapshotResult, tasksPayload] = await Promise.all([
+      isDeferredPayloadResult(agentsResult) ? settleAgentPayloadFromOpenClaw(agentConfig) : agentsResult,
+      settleSessionsPayloadFromOpenClaw(agentConfig),
+      shouldHydrateRuntimeSnapshot
+        ? settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
+        : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>(),
+      settleTaskListPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
+    ]);
+    agentsResult = agentPayload;
+    taskListResult = tasksPayload;
     const resolvedAgents = resolveCachedPayload(agentsResult, loadPayloadCaches.agent, (entry) => {
       loadPayloadCaches.agent = entry;
     });

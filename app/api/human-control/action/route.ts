@@ -39,12 +39,12 @@ export async function POST(request: Request) {
   const parsed = parseAttentionId(input.itemId);
   if (!parsed) return NextResponse.json({ error: "Unknown Human Control item." }, { status: 404 });
 
-  const permissionName = parsed.kind === "suggestion" ? "tasks.use" : "runtime.use";
+  const permissionName = "runtime.inspect";
   const permission = await requireAgentOsProductPermission(request, permissionName);
   if ("response" in permission) return permission.response;
 
   // Native approval/question collections are Gateway-wide. Confirm the item
-  // is present in the actor-visible projection before allowing a mutation.
+  // is present within the trusted operator boundary before allowing a mutation.
   try {
     const snapshot = await getMissionControlSnapshot();
     const inbox = await getHumanControlInbox({ snapshot });

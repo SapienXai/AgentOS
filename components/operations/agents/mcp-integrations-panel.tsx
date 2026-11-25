@@ -19,7 +19,8 @@ export function McpIntegrationsPanel({ effectiveTools }: {
 }) {
   const [open, setOpen] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [servers, setServers] = useState<Server[] | null>(null);
+  const [inventory, setInventory] = useState<{ servers: Server[]; controlUiUrl?: string | null } | null>(null);
+  const servers = inventory?.servers;
   const [readError, setReadError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,20 +33,20 @@ export function McpIntegrationsPanel({ effectiveTools }: {
     void (async () => {
       try {
         const response = await fetch("/api/integrations/mcp", { cache: "no-store", signal: controller.signal });
-        const result = await response.json() as { servers?: Server[]; error?: string };
+        const result = await response.json() as { servers?: Server[]; controlUiUrl?: string | null; error?: string };
         if (controller.signal.aborted) return;
         if (!response.ok || !result.servers) {
-          setServers(null);
+          setInventory(null);
           setReadError(response.status === 401 || response.status === 403
             ? "MCP configuration is available to authorized operators."
             : (result.error || "OpenClaw could not read the MCP inventory."));
           return;
         }
         setReadError("");
-        setServers(result.servers);
+        setInventory({ servers: result.servers, controlUiUrl: result.controlUiUrl });
       } catch {
         if (!controller.signal.aborted) {
-          setServers(null);
+          setInventory(null);
           setReadError("OpenClaw could not read the MCP inventory.");
         }
       }
@@ -55,7 +56,7 @@ export function McpIntegrationsPanel({ effectiveTools }: {
 
   const refresh = () => {
     setReadError("");
-    setServers(null);
+    setInventory(null);
     setRevision((current) => current + 1);
   };
 
@@ -122,7 +123,9 @@ export function McpIntegrationsPanel({ effectiveTools }: {
                         {server.host ? `${server.host} · ` : ""}{server.transport} · {server.enabled ? "Enabled" : "Disabled"}
                       </p>
                       {server.auth === "shared" ? <p className="text-muted-foreground">
-                        Use the OpenClaw Control UI to sign in to this server.
+                        {inventory?.controlUiUrl ? <a className="underline underline-offset-2" href={inventory.controlUiUrl}
+                          target="_blank" rel="noopener noreferrer">Open OpenClaw MCP settings (opens in a new tab)</a>
+                          : "Open MCP settings in the OpenClaw Control UI to sign in to this server."}
                       </p> : null}
                       {server.auth === "per-requester" ? <p className="text-muted-foreground">
                         OpenClaw authorizes each requester in their native session.

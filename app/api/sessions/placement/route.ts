@@ -36,7 +36,7 @@ const placementMutationSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "sessions.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   const params = new URL(request.url).searchParams;
   const sessionKey = params.get("sessionKey");
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     targetId: sessionKeyResult.data,
     securityClass: "read",
     executionPath: "gateway-native",
-    productPermission: "sessions.use"
+    productPermission: "runtime.inspect"
   });
   if ("response" in preflight) return preflight.response;
 

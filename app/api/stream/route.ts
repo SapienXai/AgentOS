@@ -25,7 +25,7 @@ const STREAM_SYSTEM_STATUS_INTERVAL_MS = 10_000;
 const STREAM_INITIAL_SNAPSHOT_DELAY_MS = 0;
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   const deltaEnabled = new URL(request.url).searchParams.get("delta") === "1";
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
       request.signal.addEventListener("abort", handleAbort);
 
       const checkAccess = async () => {
-        const current = await requireAgentOsProductPermission(request, "runtime.use");
+        const current = await requireAgentOsProductPermission(request, "runtime.inspect");
         if ("response" in current || current.actor.actorId !== permission.actor.actorId) {
           close();
           return false;
@@ -133,9 +133,11 @@ export async function GET(request: Request) {
             if ((delta.diagnostics || delta.runtimes || delta.tasks || Object.keys(delta.changes).length) &&
                 sendEvent("snapshot-delta", delta, true)) publishedSnapshot = next;
           } catch (error) {
-            sendEvent("error", {
-              error: redactErrorMessage(error, "Unknown stream error.")
-            });
+            if (await checkAccess().catch(() => { close(); return false; })) {
+              sendEvent("error", {
+                error: redactErrorMessage(error, "Unknown stream error.")
+              });
+            }
           } finally {
             snapshotTask = null;
             if (snapshotDirty) {
