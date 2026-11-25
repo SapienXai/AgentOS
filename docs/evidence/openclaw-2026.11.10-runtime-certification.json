@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-runtime-certification",
-  "generatedAt": "2026-11-25T17:54:36.386Z",
+  "generatedAt": "2026-11-25T20:36:47.147Z",
   "provenance": {
-    "agentosCertifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
+    "agentosCertifiedCodeHead": "2d12152b4e82788431e06d5246428fe50367fb7d",
     "openclawRelease": "2026.11.10",
     "openclawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
     "openclawBuildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
@@ -4276,13 +4276,13 @@
           "currentScope": null,
           "targetScope": null,
           "affectedOperations": [],
-          "message": "The GitHub changed-file listing and complete tag-tree fallback were incomplete; implementation and protocol path counts are unknown (OpenClaw contract source returned HTTP 403.)."
+          "message": "The GitHub changed-file listing and complete tag-tree fallback were incomplete; implementation and protocol path counts are unknown (This operation was aborted)."
         }
       ],
       "blockerCount": 0,
       "warningCount": 33,
       "unknownCount": 17,
-      "error": "OpenClaw contract source returned HTTP 403."
+      "error": "This operation was aborted"
     },
     "evidenceBridge": {
       "schemaVersion": 2,
@@ -13639,9 +13639,9 @@
   ],
   "runtime": {
     "schemaVersion": 2,
-    "generatedAt": "2026-11-25T17:54:26.495Z",
+    "generatedAt": "2026-11-25T20:36:09.913Z",
     "targetVersion": "2026.11.10",
-    "gatewayUrl": "ws://127.0.0.1:49666/",
+    "gatewayUrl": "ws://127.0.0.1:55250/",
     "installedVersion": "2026.11.10",
     "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
     "protocolVersion": 4,

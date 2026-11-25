@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-25T17:54:56.000Z",
+  "generatedAt": "2026-11-25T20:37:28.967Z",
   "provenance": {
-    "agentosCommit": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
+    "agentosCommit": "2d12152b4e82788431e06d5246428fe50367fb7d",
     "targetVersion": "2026.11.10",
     "targetCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
     "targetBuildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
@@ -55,10 +55,10 @@
     "binaryRole": "exact-openclaw-package",
     "firstAssistantPresent": true,
     "secondAssistantPresent": true,
-    "restartedGeneration": 1795629312722,
+    "restartedGeneration": 1795639062916,
     "readinessState": "ready",
-    "recoveredGeneration": 1795629330342,
-    "recoveredPid": 40736
+    "recoveredGeneration": 1795639076527,
+    "recoveredPid": 76829
   },
   "external": {
     "ownership": "external-supervisor",
@@ -66,7 +66,7 @@
     "controlSocket": "private-unix-socket",
     "initialGeneration": 3,
     "recoveredGeneration": 4,
-    "recoveredPid": 43715,
+    "recoveredPid": 79978,
     "sessionContinuity": true
   },
   "checks": {

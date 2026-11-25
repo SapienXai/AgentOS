@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-human-control-inbox-certification",
-  "generatedAt": "2026-11-25T17:54:56.265Z",
-  "certifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
+  "generatedAt": "2026-11-25T20:36:47.201Z",
+  "certifiedCodeHead": "2d12152b4e82788431e06d5246428fe50367fb7d",
   "openClaw": {
     "release": "2026.11.10",
     "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",

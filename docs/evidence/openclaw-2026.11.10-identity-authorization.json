@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-25T17:56:30.396Z",
+  "generatedAt": "2026-11-25T20:36:53.756Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "",
-    "codeCommitUnderTest": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
+    "codeCommitUnderTest": "2d12152b4e82788431e06d5246428fe50367fb7d",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -350,7 +350,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "62efc8ef-b59d-432f-a826-0988d8ea0332",
+      "connectionId": "5ba7f0cc-1077-4aa5-b798-0672d97e437d",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -366,7 +366,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "66b7a7df-8f8c-4094-baeb-ac8255caacfc",
+      "connectionId": "eeb08868-cf88-4ca1-b091-55ce9eec46b5",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -382,7 +382,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "002f9297-34e5-4365-bd6b-080344351093",
+      "connectionId": "28bcc7a7-d556-45a7-aae3-f54341b4c23a",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -398,7 +398,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "95254b5e-f20f-4d3f-bf1d-195530d90189",
+      "connectionId": "b2228170-b1c6-454f-851e-f30ebfb9581a",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -414,7 +414,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "492cdd5c-f2d3-4d2c-9dca-b3c7f7844b52",
+      "connectionId": "db8125e3-ec88-4b59-9eeb-982f3feb26d0",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -432,7 +432,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "72951bfb-b7df-436c-a47c-978b0b25af3d",
+      "connectionId": "e363ca0f-fce8-45b3-b94a-161cb621f78e",
       "authenticated": true,
       "source": "native-handshake"
     },
@@ -448,7 +448,7 @@
       ],
       "grantedScopesKnown": true,
       "deviceId": null,
-      "connectionId": "b39bbe66-d0e0-48c9-aa76-2331be520e95",
+      "connectionId": "db570df4-b90f-40b8-8ec7-45a97a19efbd",
       "authenticated": true,
       "source": "native-handshake"
     }
@@ -795,7 +795,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "72571801-11f5-498b-8bbe-b879dd852a28",
+        "connectionId": "069d988d-a9c5-4f1f-8af2-7fc8453465f5",
         "authenticated": true,
         "source": "native-handshake"
       },
