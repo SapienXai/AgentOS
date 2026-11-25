@@ -1,0 +1,265 @@
+{
+  "purpose": "Disposable engineering evidence. The repository production certification gate still applies.",
+  "branch": "codex/agentos-0.10.0-native-alignment",
+  "initialCode": "d992fdded9b00aba91248dd1c030a53b4a5ea6c4",
+  "finalEngineeringCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+  "runtimeRecommendation": "2026.11.5",
+  "defaultGatewaySdkVersions": {
+    "gatewayClient": "2026.11.5",
+    "gatewayProtocolPackage": "2026.11.5"
+  },
+  "quality": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "tests": {
+      "passed": 2267,
+      "failed": 0
+    },
+    "build": "PASS",
+    "turbopackWarnings": 0,
+    "releaseConsistency": "PASS",
+    "certificationFreshness": "FAIL",
+    "productionReleaseGate": "FAIL",
+    "earlierWorkspaceBuildWarnings": 30
+  },
+  "nativeChat": {
+    "supportedRuntime": {
+      "result": "PASS",
+      "observedCode": "0383068ecaace6811b6e51bbf73398f32622bde0",
+      "runtime": "2026.11.5",
+      "runtimePackageHash": "252e754a092fbaedeec048f1395965f8d7d58f6eee4bf1f1c9ffa8cc44297540",
+      "provider": "loopback OpenAI-compatible fixture",
+      "nativeSessionCount": 1,
+      "streamedTurns": 50,
+      "turnsAfterClientRestart": 51,
+      "duplicateRequestsToProvider": 0,
+      "actorScopeHistoryEntries": 0,
+      "explicitConversationHistoryEntries": 1,
+      "nativeCatalogSearch": "PASS",
+      "nativeAbort": "PASS",
+      "nativeAdapterAdmissionP95Ms": 52.1
+    },
+    "candidateRuntime": {
+      "result": "PASS",
+      "observedCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+      "runtime": "2026.11.10",
+      "runtimePackageHash": "efa510a740b56e46bb3cdb0c344c4a814ad1126c19f010f066b6407c93e3ae4c",
+      "provider": "loopback OpenAI-compatible fixture",
+      "nativeSessionCount": 1,
+      "streamedTurns": 50,
+      "turnsAfterClientRestart": 51,
+      "duplicateRequestsToProvider": 0,
+      "actorScopeHistoryEntries": 0,
+      "explicitConversationHistoryEntries": 1,
+      "nativeCatalogSearch": "PASS",
+      "nativeAbort": "PASS",
+      "nativeAdapterAdmissionP95Ms": 38,
+      "benchmark": {
+        "scope": "Warm native adapter, setup/history requests through dispatch admission; model execution and browser excluded",
+        "before": {
+          "turns": 50,
+          "nativeAdapterAdmissionP95Ms": 122.5,
+          "nativeHistoryReadsBeforeDispatch": 235,
+          "explicitSessionCreationsBeforeDispatch": 50,
+          "messageInputBytesP95": 1932
+        },
+        "after": {
+          "turns": 50,
+          "nativeAdapterAdmissionP95Ms": 38,
+          "nativeHistoryReadsBeforeDispatch": 0,
+          "explicitSessionCreationsBeforeDispatch": 0,
+          "messageInputBytesP95": 27
+        }
+      }
+    },
+    "candidateSdkOverlay": {
+      "result": "PASS",
+      "observedCode": "0383068ecaace6811b6e51bbf73398f32622bde0",
+      "runtime": "2026.11.10",
+      "runtimePackageHash": "efa510a740b56e46bb3cdb0c344c4a814ad1126c19f010f066b6407c93e3ae4c",
+      "provider": "loopback OpenAI-compatible fixture",
+      "nativeSessionCount": 1,
+      "streamedTurns": 50,
+      "turnsAfterClientRestart": 51,
+      "duplicateRequestsToProvider": 0,
+      "actorScopeHistoryEntries": 0,
+      "explicitConversationHistoryEntries": 1,
+      "nativeCatalogSearch": "PASS",
+      "nativeAbort": "PASS",
+      "nativeAdapterAdmissionP95Ms": 36.4,
+      "sdkVersions": {
+        "gatewayClient": "2026.11.10",
+        "gatewayProtocolPackage": "2026.11.10"
+      },
+      "overlay": "Isolated checkout with explicit candidate SDK dependency pins.",
+      "overlayIncludesClientChangesThrough": "2429b08781e4d07dde8c59931ebd6ed156c139a6"
+    }
+  },
+  "freshRuntime": {
+    "result": "PASS",
+    "observedCode": "bf5df1f474102ea62e99bac10f724ea052f4e9fb",
+    "runtime": "2026.11.10",
+    "gatewayClient": "2026.11.5",
+    "gatewayProtocolPackage": "2026.11.5",
+    "protocol": 4,
+    "advertisedMethods": 559,
+    "advertisedEvents": 73,
+    "probeCounts": {
+      "PASS": 59,
+      "SKIPPED": 13,
+      "EXPECTED-DENIAL": 13
+    }
+  },
+  "migration": {
+    "result": "PASS",
+    "observedCode": "0383068ecaace6811b6e51bbf73398f32622bde0",
+    "source": "2026.11.5",
+    "target": "2026.11.10",
+    "checks": {
+      "sourceBackupVerified": true,
+      "exactSourcePackage": true,
+      "exactTargetPackage": true,
+      "sourceRuntimeIdentity": true,
+      "targetRuntimeIdentity": true,
+      "stateSchemaMigrated": true,
+      "agentSchemaIdentity": true,
+      "agentDatabaseSchemasMigrated": true,
+      "gatewayReconnect": true,
+      "representativeStatePreserved": true,
+      "securityPolicyPreserved": true,
+      "nativeSurfacesReadable": true,
+      "recoveryIdempotent": true,
+      "noProductionMutation": true
+    },
+    "rollback": {
+      "status": "PASS",
+      "version": "2026.11.5",
+      "stateSchema": 36,
+      "agentSchema": 38,
+      "assistantMessagesRestored": 1
+    },
+    "cleanup": {
+      "status": "complete",
+      "gatewayProcessesStopped": true,
+      "disposableRootRemoved": true
+    }
+  },
+  "memory": {
+    "result": "PASS",
+    "observedCode": "0383068ecaace6811b6e51bbf73398f32622bde0",
+    "runtime": "2026.11.10",
+    "status": "PASS",
+    "persistedFact": true,
+    "isolatedAgent": true,
+    "afterRestart": true,
+    "embeddingRequests": 12
+  },
+  "skills": {
+    "result": "PASS",
+    "observedCode": "bf5df1f474102ea62e99bac10f724ea052f4e9fb",
+    "runtime": "2026.11.10",
+    "checks": {
+      "exactPackage": true,
+      "nativeTransport": true,
+      "skillsListContract": true,
+      "skillsActivationContract": "PASS",
+      "toolsCatalogContract": true,
+      "toolsEffectiveContract": true,
+      "catalogNotAvailability": "PASS",
+      "availableFixture": "PASS",
+      "sessionSelectionShape": true,
+      "disposableSkillSeed": "PASS",
+      "disposableSkillRead": "PASS",
+      "disposableSkillActivation": "PASS",
+      "disposableSkillSessionSelection": "PASS",
+      "disposableSkillDetach": "PASS",
+      "disposableSkillCleanup": "PASS",
+      "exactScopes": true,
+      "insufficientScopeDenied": "EXPECTED-DENIAL",
+      "noCliFallback": true,
+      "cleanup": true
+    },
+    "actualModelUseOfSkill": "NOT_VERIFIED"
+  },
+  "workforce": {
+    "result": "PASS",
+    "observedCode": "c1e63dd530c2c629c5978f7022f1f8243403dcbf",
+    "counts": {
+      "passed": 14,
+      "skipped": 5,
+      "failed": 0
+    },
+    "skippedChecks": [
+      "delegation",
+      "waiting-worker",
+      "human-control-product-path",
+      "cancellation",
+      "child-failure"
+    ]
+  },
+  "automation": {
+    "result": "PASS",
+    "observedCode": "d992fdded9b00aba91248dd1c030a53b4a5ea6c4",
+    "runtime": "2026.11.10"
+  },
+  "humanControl": {
+    "result": "PASS",
+    "observedCode": "d992fdded9b00aba91248dd1c030a53b4a5ea6c4",
+    "runtime": "2026.11.10",
+    "questionLifecycle": "PASS",
+    "questionEvent": "PASS",
+    "approvalLifecycle": "PASS",
+    "approvalEvent": "SKIPPED"
+  },
+  "browserAndHttp": {
+    "unauthenticated": {
+      "GET": 401,
+      "POST": 401,
+      "PATCH": 401
+    },
+    "http": {
+      "status": "PASS",
+      "agentOsRestart": true,
+      "separateConversation": true,
+      "nativeHistory": true
+    },
+    "browser": {
+      "status": "PASS",
+      "engine": "Chrome",
+      "viewport": "1280x900",
+      "nativeInvalidation": true,
+      "refresh": true,
+      "stopReply": true,
+      "errors": [],
+      "stopFeedbackVerified": true
+    },
+    "narrowLayout": {
+      "status": "PASS",
+      "viewport": "390x844",
+      "resizeAfterOpening": true,
+      "composerWithinViewport": true
+    },
+    "observedApplicationCode": "69e3b762b3b4c6ca8e91d6beb75ce82b9843606a",
+    "overlappingSubmissionResult": "NOT_VERIFIED"
+  },
+  "distribution": {
+    "macOsDesktopShell": {
+      "status": "PASS",
+      "observedCode": "2429b08781e4d07dde8c59931ebd6ed156c139a6",
+      "agentosVersion": "0.9.0",
+      "bundledGuiLaunch": "NOT_VERIFIED",
+      "hostNode": "24.22.1"
+    },
+    "linuxArm64RailwayImage": {
+      "status": "PASS",
+      "observedApplicationCode": "2429b08781e4d07dde8c59931ebd6ed156c139a6",
+      "openClawVersion": "2026.11.10",
+      "openClawImageIndexDigest": "sha256:230afbdd8344310cac1e2d8e5dfad67315e82f3757692014310e77653639acb0",
+      "sdkVersion": "2026.11.10",
+      "health": "ok",
+      "hostedDeployment": "NOT_VERIFIED",
+      "nativeGatewayHealth": "PASS"
+    },
+    "windows": "NOT_VERIFIED"
+  }
+}
