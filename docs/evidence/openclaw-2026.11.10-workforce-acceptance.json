@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-workforce-acceptance",
-  "generatedAt": "2026-11-25T13:21:49.565Z",
+  "generatedAt": "2026-11-25T14:47:11.715Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosCommit": "0f9bd1a04dbea4d25fd78a63ffcb6b3d2b793078",
+    "agentosCommit": "45647bbe5858f919d9db2f399a32d3fad7974322",
     "openClaw": {
       "version": "2026.11.10",
       "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -101,12 +101,12 @@
     "persistedSidecar": true,
     "missionListFromPersistedSidecar": true,
     "missionDetailFromPersistedSidecar": true,
-    "requestId": "workforce-product-path-1795612915120",
-    "dispatchId": "dispatch-799a4cad-2538-4408-8139-2e7dd19a44c6",
+    "requestId": "workforce-product-path-1795618036108",
+    "dispatchId": "dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e",
     "agentId": "main",
     "workspaceId": "workspace",
-    "sessionKey": "agent:main:explicit:dispatch-799a4cad-2538-4408-8139-2e7dd19a44c6",
-    "runId": "dispatch-799a4cad-2538-4408-8139-2e7dd19a44c6"
+    "sessionKey": "agent:main:explicit:dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e",
+    "runId": "dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e"
   },
   "concurrentAdmission": {
     "unrelatedRequestCount": 2,
@@ -223,12 +223,12 @@
       "detail": "Native approval was projected, denied safely, and disappeared from the pending inventory."
     },
     "human-control-product-path": {
-      "status": "SKIPPED",
+      "status": "PASS",
       "evidence": [
         "APPLICATION_PATH",
         "LIVE_DISPOSABLE_2026_11_10"
       ],
-      "detail": "Native Human Control projection and resolution passed, but the safe fixture did not expose a mission-linked task/session request for the AgentOS mutation path. No unrelated approval was relabelled as Mission-linked evidence."
+      "detail": "A native question tied to the Mission session appeared with task provenance in AgentOS Human Control. Answering through the application service settled that exact native question."
     },
     "gateway-reconnect": {
       "status": "PASS",
@@ -275,14 +275,13 @@
       "delegation",
       "waiting-worker",
       "cancellation",
-      "child-failure",
-      "human-control-product-path"
+      "child-failure"
     ]
   },
   "failure": null,
   "summary": {
-    "passed": 14,
-    "skipped": 5,
+    "passed": 15,
+    "skipped": 4,
     "failed": 0
   }
 }

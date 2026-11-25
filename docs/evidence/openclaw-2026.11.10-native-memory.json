@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-memory-certification",
-  "generatedAt": "2026-11-25T13:18:31.928Z",
+  "generatedAt": "2026-11-25T14:48:08.198Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "0f9bd1a04dbea4d25fd78a63ffcb6b3d2b793078",
-    "branch": "codex/agentos-0.10.0-native-alignment",
+    "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+    "branch": "",
     "openClaw": {
       "release": "2026.11.10",
       "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",

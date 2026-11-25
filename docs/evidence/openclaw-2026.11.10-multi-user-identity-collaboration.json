@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-2026.11.10-multi-user-identity-collaboration-certification",
+  "generatedAt": "2026-11-25T14:46:01.024Z",
+  "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "",
+    "openClaw": {
+      "release": "2026.11.10",
+      "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
+      "gatewayProtocol": 4,
+      "gatewayClient": "2026.11.10",
+      "gatewayProtocolPackage": "2026.11.10",
+      "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
+      "packageHash": "efa510a740b56e46bb3cdb0c344c4a814ad1126c19f010f066b6407c93e3ae4c",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "descriptors": {
+    "source": "pinned OpenClaw src/gateway/methods/core-descriptors.ts",
+    "methods": {
+      "users.list": "operator.read",
+      "users.self": "operator.read",
+      "users.setDisplayName": "operator.read",
+      "users.setAvatar": "operator.read",
+      "users.linkEmail": "operator.admin",
+      "users.setRole": "operator.admin",
+      "session.visibility.set": "operator.write",
+      "session.members.list": "operator.read",
+      "session.members.listEvidence": "operator.read",
+      "session.members.add": "operator.write",
+      "session.members.remove": "operator.write",
+      "sessions.assignOwner": "operator.write"
+    },
+    "usersCreate": "ABSENT",
+    "sourceSha256": "2e34c20366260ad0a2fe9d71a49bf637c62f45076c75915dacc8720ac910b492"
+  },
+  "identity": {
+    "AgentOsPrincipal": "signed AgentOS actorId",
+    "AgentOsRoles": [
+      "owner",
+      "member"
+    ],
+    "nativePrincipal": "OpenClaw UserProfile when the native request context proves one",
+    "connection": "shared trusted AgentOS service Gateway credential",
+    "nativeAttribution": "shared service",
+    "nativeHumanIdentityVerified": false,
+    "association": "metadata-associated only; never authentication or authorization",
+    "heuristicMatching": "disabled",
+    "perHumanDelegation": "not implemented"
+  },
+  "sessionCollaboration": {
+    "owner": "OpenClaw native session owner",
+    "participants": "OpenClaw native session members",
+    "visibility": "OpenClaw native session visibility",
+    "membershipEvidence": "OpenClaw native session.members.listEvidence",
+    "productPermission": "sessions.collaborate",
+    "rootDashboardNewRpcCount": 0,
+    "perSessionFanout": false
+  },
+  "runtime": {
+    "usersList": "PASS",
+    "usersSelf": "PASS",
+    "usersSetRole": "SKIPPED",
+    "sharedServiceAttribution": "PASS",
+    "associationDoesNotAuthenticate": "PASS",
+    "associationDoesNotAuthorize": "PASS",
+    "sessionMembersList": "PASS",
+    "sessionMembersListEvidence": "PASS",
+    "sessionMembersAdd": "SKIPPED",
+    "sessionMembersRemove": "SKIPPED",
+    "sessionVisibilitySet": "PASS",
+    "agentOwnerAssignment": "PASS",
+    "humanOwnerAssignment": "SKIPPED",
+    "realUserGatewayTouched": false,
+    "realHumanProfileTouched": false,
+    "userProfileCount": 1,
+    "usersSelfResult": "native-profile",
+    "sessionVisibilityResult": "changed-and-restored",
+    "usersSetRoleReason": null,
+    "humanProfileReason": "profile provenance was not a verified disposable human fixture; mutation withheld safely",
+    "agentOwnerReason": null
+  },
+  "cleanup": {
+    "status": "complete",
+    "sessionDeleted": true,
+    "gatewayStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "exactPackage": true,
+    "exactSourceScopes": true,
+    "noUsersCreate": true,
+    "nativeOnly": true,
+    "noActorIdAsNativeProfileId": true,
+    "noHeuristicIdentityMapping": true,
+    "noLocalAcl": true,
+    "noPerHumanCredentialStore": true
+  },
+  "success": true,
+  "failure": null
+}

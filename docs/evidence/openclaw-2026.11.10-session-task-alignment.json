@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-25T13:20:37.999Z",
+  "generatedAt": "2026-11-25T14:47:16.076Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "branch": "codex/agentos-0.10.0-native-alignment",
-    "codeCommitUnderTest": "0f9bd1a04dbea4d25fd78a63ffcb6b3d2b793078",
+    "branch": "",
+    "codeCommitUnderTest": "45647bbe5858f919d9db2f399a32d3fad7974322",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -188,19 +188,19 @@
     "explicitConversationHistoryEntries": 1,
     "nativeCatalogSearch": "PASS",
     "nativeAbort": "PASS",
-    "nativeAdapterAdmissionP95Ms": 38.4,
+    "nativeAdapterAdmissionP95Ms": 35.9,
     "benchmark": {
       "scope": "Warm native adapter, setup/history requests through dispatch admission; model execution and browser excluded",
       "before": {
         "turns": 50,
-        "nativeAdapterAdmissionP95Ms": 64.7,
+        "nativeAdapterAdmissionP95Ms": 63.1,
         "nativeHistoryReadsBeforeDispatch": 235,
         "explicitSessionCreationsBeforeDispatch": 50,
         "messageInputBytesP95": 1932
       },
       "after": {
         "turns": 50,
-        "nativeAdapterAdmissionP95Ms": 38.4,
+        "nativeAdapterAdmissionP95Ms": 35.9,
         "nativeHistoryReadsBeforeDispatch": 0,
         "explicitSessionCreationsBeforeDispatch": 0,
         "messageInputBytesP95": 27
@@ -213,7 +213,7 @@
       "providerExecutions": 2,
       "nativeOrder": "PASS",
       "terminalResult": "ok",
-      "secondTurnElapsedMs": 6126
+      "secondTurnElapsedMs": 6145
     }
   },
   "multiUserSemantics": {
