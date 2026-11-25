@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getAgentChatRunSnapshot, sendAgentChatMessage } from "@/components/mission-control/agent-chat-runner";
+import { getAgentChatRunSnapshot, observeAgentChatStop, sendAgentChatMessage } from "@/components/mission-control/agent-chat-runner";
 import { readAgentChatMessages } from "@/components/mission-control/agent-chat-storage";
 
 test("overlapping sends keep distinct submission IDs and retire only their own run", async (context) => {
@@ -70,4 +70,35 @@ test("a disconnected observer preserves the admitted message and does not replay
   ]);
   assert.equal(errors[0].confirmed, false);
   assert.match(errors[0].message, /accepted this message/);
+});
+
+test("a confirmed stop settles the exact run even when its stream errors first", async (context) => {
+  const agentId = "stop-fixture";
+  const encoder = new TextEncoder();
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  context.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream = controller;
+      stream.enqueue(encoder.encode('{"type":"admitted","runId":"stop-native-run"}\n'));
+    }
+  }), { headers: { "Content-Type": "application/x-ndjson" } }));
+  const errors: string[] = [];
+  const send = sendAgentChatMessage({ agentId, text: "Run to stop", onError: (error) => errors.push(error) });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(getAgentChatRunSnapshot(agentId).runs[0]?.runId, "stop-native-run");
+
+  const stop = Promise.withResolvers<boolean>();
+  const receipt = observeAgentChatStop(agentId, "stop-native-run", () => stop.promise);
+  stream.enqueue(encoder.encode('{"type":"done","ok":false,"message":"The session changed"}\n'));
+  stream.close();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(getAgentChatRunSnapshot(agentId).isRunning, true);
+  stop.resolve(true);
+  assert.equal(await receipt, true);
+  await send;
+
+  assert.deepEqual(errors, []);
+  assert.deepEqual(readAgentChatMessages(agentId).map(({ status, runId }) => ({ status, runId })), [
+    { status: "sent", runId: "stop-native-run" }
+  ]);
 });

@@ -22,6 +22,7 @@ import {
 import {
   agentChatConversationKey,
   getAgentChatRunSnapshot,
+  observeAgentChatStop,
   sendAgentChatMessage,
   type AgentChatRunSnapshot
 } from "@/components/mission-control/agent-chat-runner";
@@ -592,15 +593,20 @@ export function AgentChatDrawer({
     if (!stopRunId || stoppingReply) return;
     setStoppingReply(true);
     try {
-      const response = await fetch(endpoint, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, runId: stopRunId })
+      const aborted = await observeAgentChatStop(chatKey, stopRunId, async () => {
+        const response = await fetch(endpoint, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId, runId: stopRunId }),
+          signal: AbortSignal.timeout(15_000)
+        });
+        const result = await response.json().catch(() => null) as { aborted?: boolean; error?: string } | null;
+        if (!response.ok || typeof result?.aborted !== "boolean") {
+          throw new Error(result?.error || "OpenClaw could not stop this reply.");
+        }
+        return result.aborted;
       });
-      const result = await response.json().catch(() => null) as { aborted?: boolean; error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || "OpenClaw could not stop this reply.");
-      if (result?.aborted === true) toast.info("Reply stopped.");
-      if (result?.aborted === false) toast.info("This reply is no longer active.");
+      toast.info(aborted ? "Reply stopped." : "This reply is no longer active.");
     } catch (error) {
       toast.error("Could not stop reply.", {
         description: error instanceof Error ? error.message : undefined

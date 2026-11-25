@@ -40,6 +40,7 @@ type ActiveAgentChatRun = {
   runId: string | null;
   statusMessage: string | null;
   statusHistory: string[];
+  stopReceipt?: Promise<boolean>;
 };
 
 export type AgentChatRunSnapshot = {
@@ -68,6 +69,13 @@ export function getAgentChatRunSnapshot(chatKey: string): AgentChatRunSnapshot {
 
 export function agentChatConversationKey(agentId: string, conversationId?: string) {
   return conversationId ? `${agentId}:${conversationId}` : agentId;
+}
+
+export function observeAgentChatStop(chatKey: string, runId: string, request: () => Promise<boolean>) {
+  const run = Array.from(activeAgentChatRuns.get(chatKey) ?? []).find((entry) => entry.runId === runId);
+  const receipt = request();
+  if (run) run.stopReceipt = receipt.catch(() => false);
+  return receipt;
 }
 
 export function sendAgentChatMessage({
@@ -178,6 +186,13 @@ async function runAgentChatTurn({
   let latestAssistantText = "";
   let assistantTextReceived = false;
   let rejectionConfirmed = false;
+  const settle = () => {
+    updateAgentChatMessages(chatKey, (current) => current.flatMap((entry) => {
+      if (entry.id === userMessageId) return [{ ...entry, status: "sent", runId: run.runId }];
+      if (entry.id !== assistantMessageId) return [entry];
+      return entry.text.trim() ? [{ ...entry, status: "sent" }] : [];
+    }));
+  };
   const startedAt = Date.now();
   let heartbeatIndex = 0;
   const heartbeatTimer = globalThis.setInterval(() => {
@@ -200,7 +215,7 @@ async function runAgentChatTurn({
 
     const contentType = response.headers.get("content-type") || "";
     if (!response.ok || !contentType.includes("application/x-ndjson")) {
-      rejectionConfirmed = response.status >= 400 && response.status < 500;
+      rejectionConfirmed = response.status >= 400 && response.status < 500 && response.status !== 408;
       const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new Error(errorPayload?.error || "OpenClaw rejected the message.");
     }
@@ -211,11 +226,7 @@ async function runAgentChatTurn({
     await consumeNdjsonStream<AgentChatStreamEvent>(response, async (event) => {
       if (event.type === "cancelled" || event.type === "settled") {
         settled = true;
-        updateAgentChatMessages(chatKey, (current) => current.flatMap((entry) => {
-          if (entry.id === userMessageId) return [{ ...entry, status: "sent", runId: run.runId }];
-          if (entry.id !== assistantMessageId) return [entry];
-          return entry.text.trim() ? [{ ...entry, status: "sent" }] : [];
-        }));
+        settle();
         return;
       }
       if (event.type === "admitted") {
@@ -307,6 +318,11 @@ async function runAgentChatTurn({
       throw new Error("OpenClaw completed without returning a response.");
     }
   } catch (error) {
+    // The Gateway can emit an error while the exact run's stop is in flight.
+    if (run.stopReceipt && await run.stopReceipt) {
+      settle();
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : "Unknown send error.";
     const message = rejectionConfirmed ? errorMessage : run.runId
       ? "OpenClaw accepted this message. Its reply could not be confirmed. Check the conversation history."
