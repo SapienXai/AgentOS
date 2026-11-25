@@ -168,7 +168,7 @@ function resolveFixtureResponse(prompt: string, messages: unknown): FixtureRespo
   const knowledgePath = [...prompt.matchAll(/WORKFORCE_READ_PROOF (docs\/library\/[a-z]+\/[a-z0-9-]+\.md)/g)].at(-1)?.[1];
   if (knowledgePath && Array.isArray(messages)) {
     const callId = "agentos-library-read";
-    const result = messages.find(entry => entry?.role === "tool" && entry.tool_call_id === callId);
+    const result = messages.findLast(entry => entry?.role === "tool" || entry?.role === "toolResult");
     if (!result) return { toolCall: { id: callId, name: "read", arguments: { path: knowledgePath } } };
     const match = readMessageContent(result.content).match(/The specimen proof code is [A-Za-z]+ [0-9]+\./);
     return { content: match?.[0] ?? "The source did not return a specimen proof code." };
