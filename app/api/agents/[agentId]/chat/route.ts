@@ -3,79 +3,48 @@ import { z } from "zod";
 
 import { clearMissionControlCaches, getMissionControlSnapshot, updateAgent } from "@/lib/agentos/control-plane";
 import {
-  buildAgentChatPrompt,
-  buildWorkspaceTeamPrompt,
-  normalizeAgentChatHistory
-} from "@/lib/openclaw/agent-chat-prompt";
-import {
-  buildDirectAgentIdentityReply,
-  isDirectAgentIdentityQuestion,
-  isStaleAgentChatContextRecoveryText
-} from "@/lib/openclaw/agent-chat-guards";
-import {
-  conflictedAgentChatSessionMessage,
-  completedEmptyAgentChatResponseMessage,
   emptyAgentChatResponseMessage,
   extractAgentChatEmptyResponseDiagnosticText,
   extractAssistantTextFromAgentChatStreamLine,
   extractAgentChatMessagesFromSessionHistory,
-  extractLatestAssistantTextFromSessionHistory,
-  isCompletedEmptyAgentChatResponse,
   recoverStreamedAgentChatResponse,
   resolveAgentChatContextFailureMessage,
   resolveAgentChatRuntimeFailureMessage,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
-import {
-  readAgentChatTranscriptMessages,
-  readLatestAgentChatTurn
-} from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import {
-  ensureOpenAiAuthOrderForAgent
-} from "@/lib/openclaw/application/model-auth-service";
 import { isOpenClawAgentModelReady, readKnownAgentChatModelIssue } from "@/lib/openclaw/application/model-provider-state-service";
 import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
-  forgetAgentChatSession,
-  markAgentChatSessionActive,
-  markAgentChatSessionInactive,
-  readAgentChatSessionsForAgent,
-  recordAgentChatSession,
-  resolveAgentChatSessionId
+  buildDirectAgentChatSessionKey,
+  directAgentChatSubmissionId,
+  readDirectAgentChatSubmissionId
 } from "@/lib/openclaw/domains/agent-chat-sessions";
 import { persistRuntimeSmokeTest } from "@/lib/openclaw/domains/control-plane-settings";
-import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
-import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import { isOpenAiAuthFailure } from "@/lib/openclaw/model-auth-errors";
-import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
-import {
-  resolveOpenClawRuntimeFailureMessage,
-  resolveOpenClawRuntimePreflightError
-} from "@/lib/openclaw/runtime-compatibility";
+import { resolveOpenClawRuntimeFailureMessage } from "@/lib/openclaw/runtime-compatibility";
 import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
-import { renderWorkspaceSurfaceCoordinationMarkdownForAgent } from "@/lib/openclaw/surface-coordination";
+import type { StatusPayload } from "@/lib/openclaw/client/types";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
-import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
-import type { ControlPlaneSnapshot, MissionDispatchStatus, MissionResponse } from "@/lib/agentos/contracts";
-import type { TranscriptTurn } from "@/lib/openclaw/domains/runtime-transcript";
+import { canAgentOsActorUseProductPermission, requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+import type { MissionDispatchStatus, MissionResponse } from "@/lib/agentos/contracts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const chatSchema = z.object({
-  message: z.string().min(1),
-  rawMessage: z.string().min(1).optional(),
-  thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
-  idempotencyKey: z.string().trim().min(1).max(240).optional()
-});
+const conversationSchema = z.string().uuid().transform((value) => value.toLowerCase()).optional();
 
-const activeAgentChatSessionTurns = new Map<string, { lockId: symbol; startedAt: number }>();
-const agentChatSessionTurnLockTtlMs = 130_000;
+const chatSchema = z.object({
+  conversationId: conversationSchema,
+  message: z.string().trim().min(1),
+  rawMessage: z.string().trim().min(1).optional(),
+  thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
+  idempotencyKey: z.string().trim().min(1).max(180).optional()
+});
 
 type AgentChatPayloadEntry = {
   text?: string;
@@ -106,6 +75,10 @@ type AgentChatCommandPayload = {
 };
 
 type AgentChatStreamEvent =
+  | {
+      type: "admitted";
+      runId: string;
+    }
   | {
       type: "status";
       message: string;
@@ -147,18 +120,50 @@ export async function GET(
       return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
     }
 
-    const snapshot = await getMissionControlSnapshot({ includeHidden: true });
-    const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
+    const agent = await readDirectChatAgent(agentId, request.signal);
 
     if (!agent) {
       return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
     }
 
-    const { sessionId, messages, available } = await readCanonicalAgentChat(agentId, agent.workspacePath);
+    const url = new URL(request.url);
     const headers = { "Cache-Control": "private, no-store" };
-    if (!available) {
-      return NextResponse.json({ error: "OpenClaw chat history is temporarily unavailable." }, { status: 503, headers });
+    if (url.searchParams.get("conversations") === "1") {
+      const prefix = `${buildDirectAgentChatSessionKey(agent, permission.actor.actorId)}:`;
+      const { sessions } = await getOpenClawAdapter().listSessions(
+        { search: prefix, agentId, limit: 50 },
+        { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
+      );
+      const conversations = sessions.flatMap(({ key, updatedAt }) => {
+        if (!key?.startsWith(prefix)) return [];
+        const id = conversationSchema.safeParse(key.slice(prefix.length));
+        return id.success && id.data ? [{ id: id.data, updatedAt: updatedAt ?? null }] : [];
+      });
+      return NextResponse.json({ conversations }, { headers });
     }
+    const conversation = conversationSchema.safeParse(url.searchParams.get("conversation") ?? undefined);
+    if (!conversation.success) {
+      return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
+    }
+    const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, conversation.data);
+    if (url.searchParams.get("watch") === "1") {
+      return streamAgentChatInvalidations(request, sessionKey);
+    }
+    const history = await getOpenClawAdapter().getSessionHistory(
+      { sessionKey, limit: 120 },
+      { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
+    );
+    const sessionId = history.sessionId ?? null;
+    const messages: RehydratedAgentChatMessage[] = extractAgentChatMessagesFromSessionHistory(history)
+      .map((message, index) => ({
+        id: `openclaw-history:${sessionId ?? sessionKey}:${message.id}`,
+        role: message.role,
+        text: message.text,
+        createdAt: normalizeAgentChatMessageTimestamp(message.timestamp, index),
+        status: "sent",
+        submissionId: readDirectAgentChatSubmissionId(sessionKey, message.idempotencyKey),
+        messageSeq: message.messageSeq
+      }));
     return NextResponse.json(redactSecrets({
       agentId,
       sessionId,
@@ -170,7 +175,7 @@ export async function GET(
       {
         error: redactErrorMessage(error, "OpenClaw chat history is unavailable.")
       },
-      { status: 500 }
+      { status: 503, headers: { "Cache-Control": "private, no-store" } }
     );
   }
 }
@@ -186,20 +191,31 @@ export async function POST(
     return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
   }
 
-  const authorization = await requireAgentOsOpenClawPreflight(request, {
-    operation: "agent.chat",
-    method: "chat.send",
-    params: { agentId },
-    targetKind: "agent-session",
-    targetId: agentId,
-    securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli",
-    productPermission: "runtime.use"
-  });
-  if ("response" in authorization) return authorization.response;
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
 
   try {
     const input = chatSchema.parse(await request.json());
+    const agent = await readDirectChatAgent(agentId, request.signal);
+    if (!agent) {
+      return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
+    }
+
+    const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, input.conversationId);
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: "agent.chat",
+      method: "chat.send",
+      params: { sessionKey },
+      targetKind: "agent-session",
+      targetId: agentId,
+      securityClass: "privileged-mutation",
+      executionPath: "gateway-native",
+      productPermission: "runtime.use"
+    });
+    if ("response" in authorization) return authorization.response;
+    if (authorization.actor.actorId !== permission.actor.actorId) {
+      return NextResponse.json({ error: "The active operator changed. Reopen the conversation." }, { status: 403 });
+    }
 
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
@@ -237,31 +253,12 @@ export async function POST(
 
     void (async () => {
       let latestAssistantText = "";
-      let latestStreamAction: MissionControlAction | null = null;
-      let latestStatusMessage = "";
-      let latestTurnStatus: TranscriptTurn["status"] | null = null;
-      let keepPolling = true;
       let streamStdoutBuffer = "";
-      let activeAgentModelId: string | null = null;
-
-      const stopPolling = () => {
-        keepPolling = false;
-      };
-
-      const wait = (ms: number) => new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+      const activeAgentModelId = agent.modelId;
 
       const emitAssistantText = async (value: string | null | undefined) => {
         const sanitizedText = sanitizeAgentChatReplyText(value);
-        if (extractAgentChatSessionConflict(sanitizedText)) {
-          return;
-        }
-
-        const extracted = extractMissionControlAction(sanitizedText);
         const currentText = sanitizeAgentChatVisibleText(sanitizedText);
-
-        if (!latestStreamAction && extracted.action) {
-          latestStreamAction = extracted.action;
-        }
 
         if (!currentText || currentText === latestAssistantText) {
           return;
@@ -274,40 +271,6 @@ export async function POST(
         });
       };
 
-      const pollTranscript = async (agentId: string, sessionId: string, workspacePath?: string) => {
-        const turn = await readLatestAgentChatTurn(agentId, sessionId, workspacePath);
-
-        if (!turn) {
-          return;
-        }
-
-        const statusMessage = resolveChatStatusMessage(turn);
-        if (turn.status !== latestTurnStatus || statusMessage !== latestStatusMessage) {
-          latestTurnStatus = turn.status;
-          latestStatusMessage = statusMessage;
-          await send({
-            type: "status",
-            message: statusMessage
-          });
-        }
-
-        const currentText = typeof turn.finalText === "string" ? sanitizePolledAssistantText(turn.finalText) : "";
-        await emitAssistantText(currentText);
-      };
-
-      const pollGatewayHistory = async (agentId: string, session: { sessionId: string; sessionKey?: string }) => {
-        const history = await getOpenClawAdapter().getSessionHistory(
-          {
-            agentId,
-            sessionId: session.sessionId,
-            sessionKey: session.sessionKey,
-            limit: 40
-          },
-          { timeoutMs: 1000 }
-        );
-        await emitAssistantText(extractLatestAssistantTextFromSessionHistory(history));
-      };
-
       const handleCommandStdout = async (chunk: string) => {
         streamStdoutBuffer += chunk;
         const lines = streamStdoutBuffer.split(/\r?\n/);
@@ -318,78 +281,34 @@ export async function POST(
         }
       };
 
-      const waitForLateAssistantText = async (
-        agentId: string,
-        session: { sessionId: string; sessionKey?: string },
-        workspacePath?: string
-      ) => {
-        const startedAt = Date.now();
-
-        while (!latestAssistantText && Date.now() - startedAt < 6000 && !request.signal.aborted) {
-          await wait(300);
-
-          try {
-            await pollTranscript(agentId, session.sessionId, workspacePath);
-          } catch {
-            // Transcript files can appear slightly after the Gateway marks a turn complete.
-          }
-
-          if (latestAssistantText) {
-            return;
-          }
-
-          try {
-            await pollGatewayHistory(agentId, session);
-          } catch {
-            // Older Gateways may not expose chat history for explicit sessions.
-          }
-        }
-      };
-
-      const handleAbort = () => {
-        stopPolling();
-      };
-
-      request.signal.addEventListener("abort", handleAbort);
-
       try {
         await send({
           type: "status",
           message: "Starting agent turn..."
         });
 
-        const snapshot = await getMissionControlSnapshot({ includeHidden: true });
-        const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
-
-        if (!agent) {
-          await send({
-            type: "done",
-            ok: false,
-            message: "Agent could not be found."
+        const operatorMessage = input.rawMessage ?? input.message;
+        const directRename = extractDirectAgentRenameName(operatorMessage);
+        const canManageAgents = canAgentOsActorUseProductPermission(authorization.actor, "agents.manage");
+        if (directRename && canManageAgents) {
+          const renameAuthorization = await requireAgentOsOpenClawPreflight(request, {
+            operation: "agent.rename-from-chat",
+            method: "agents.update",
+            params: { agentId },
+            targetKind: "agent",
+            targetId: agentId,
+            securityClass: "privileged-mutation",
+            executionPath: "gateway-native",
+            productPermission: "agents.manage"
           });
-          return;
-        }
-        activeAgentModelId = agent.modelId;
-
-        const resolvedDefaultModelId = resolveReadyDefaultAgentModelId(snapshot);
-        if (agent.modelId === "unassigned" && resolvedDefaultModelId) {
-          await updateAgent({
-            id: agentId,
-            modelId: resolvedDefaultModelId
-          }, authorization.commandOptions);
-          agent.modelId = resolvedDefaultModelId;
-          activeAgentModelId = agent.modelId;
-        }
-
-        const operatorMessage = input.rawMessage?.trim() || input.message.trim();
-        const { messages } = await readCanonicalAgentChat(agentId, agent.workspacePath);
-        const history = normalizeAgentChatHistory(messages.slice(-16));
-        const directRename = resolveDirectAgentRenameRequest(operatorMessage, history);
-        if (directRename) {
+          if ("response" in renameAuthorization || renameAuthorization.actor.actorId !== authorization.actor.actorId) {
+            await send({ type: "done", ok: false, message: "OpenClaw authorization is required to rename this agent." });
+            return;
+          }
           await updateAgent({
             id: agentId,
             name: directRename
-          }, authorization.commandOptions);
+          }, { ...renameAuthorization.commandOptions, allowCliFallback: false });
           clearMissionControlCaches();
 
           const response = applyMissionControlActionMetadata(
@@ -426,247 +345,115 @@ export async function POST(
           return;
         }
 
-        const runtimePreflightError = resolveOpenClawRuntimePreflightError(snapshot);
-        if (runtimePreflightError) {
-          await send({
-            type: "done",
-            ok: false,
-            message: runtimePreflightError
-          });
-          return;
-        }
-
-        const modelReadinessError = resolveOpenClawModelReadinessIssue(
-          snapshot,
-          agent.modelId === "unassigned" ? null : agent.modelId
-        );
-        const agentModelReady = modelReadinessError && agent.modelId !== "unassigned"
-          ? await isOpenClawAgentModelReady({
-              agentId,
-              modelId: agent.modelId
-            })
-          : false;
-        if (modelReadinessError && !agentModelReady) {
-          await send({
-            type: "done",
-            ok: false,
-            message: `${modelReadinessError} Connect a provider and choose a default model before starting a chat.`
-          });
-          return;
-        }
-
-        const runtimeState = await inspectOpenClawRuntimeState(openClawStateRootPath, [agentId], {
-          agentDirs: {
-            [agentId]: agent.agentDir
-          },
-          touch: true
-        });
-        if (runtimeState.issues.length > 0) {
-          await send({
-            type: "done",
-            ok: false,
-            message:
-              "AgentOS cannot write the OpenClaw session store for this agent. Start AgentOS outside the sandbox or grant write access to ~/.openclaw, then retry the chat."
-          });
-          clearMissionControlCaches();
-          return;
-        }
-
-        const compatibilityIssue = await readKnownAgentChatModelIssue({
-          agentId, modelId: agent.modelId, gatewayVersion: snapshot.diagnostics.version
-        });
-        if (compatibilityIssue) {
-          await send({ type: "done", ok: false, message: compatibilityIssue });
-          return;
-        }
-
-        await ensureOpenAiAuthOrderForAgent({
-          agentId,
-          modelId: agent.modelId
-        });
-
-        const message = buildAgentChatPrompt(history, operatorMessage, {
-          agentId,
-          agentName: formatAgentDisplayName(agent),
-          agentDir: agent.agentDir,
-          workspacePath: agent.workspacePath,
-          workspaceTeamPrompt: buildWorkspaceTeamPrompt(snapshot, agent),
-          workspaceSurfacePrompt: renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot)
-        });
-
-        const sessionId = await resolveAgentChatSessionId({
-          agentId,
-          workspacePath: agent.workspacePath,
-          reuse: false
-        });
-
-        const inFlightKey = createAgentChatSessionInFlightKey(agentId, sessionId);
-        const inFlightLock = acquireAgentChatSessionTurnLock(inFlightKey);
-        if (!inFlightLock) {
-          await send({
-            type: "done",
-            ok: false,
-            message: conflictedAgentChatSessionMessage
-          });
-          return;
-        }
-
-        let activeSession: { sessionId: string; sessionKey?: string } | undefined;
-        let persistSession = Promise.resolve();
-        const trackSession = (reference: { sessionId?: string | null; sessionKey?: string | null }) => {
-          const nextSession = {
-            sessionId: reference.sessionId?.trim() || activeSession?.sessionId || sessionId,
-            sessionKey: reference.sessionKey?.trim() || activeSession?.sessionKey
-          };
-          if (activeSession?.sessionId === nextSession.sessionId && activeSession.sessionKey === nextSession.sessionKey) {
-            return activeSession;
+        if (!activeAgentModelId || isOpenAiBackedModel(activeAgentModelId)) {
+          const readiness = await getMissionControlSnapshot({ includeHidden: true });
+          const modelReadinessError = resolveOpenClawModelReadinessIssue(readiness, activeAgentModelId);
+          const agentModelReady = modelReadinessError && activeAgentModelId
+            ? await isOpenClawAgentModelReady({ agentId, modelId: activeAgentModelId })
+            : false;
+          if (modelReadinessError && !agentModelReady) {
+            await send({
+              type: "done",
+              ok: false,
+              message: `${modelReadinessError} Connect a provider and choose a default model before starting a chat.`
+            });
+            return;
           }
-          if (activeSession) markAgentChatSessionInactive({ agentId, sessionId: activeSession.sessionId });
-          activeSession = nextSession;
-          markAgentChatSessionActive({ agentId, sessionId: nextSession.sessionId });
-          persistSession = persistSession.then(() => recordAgentChatSession({
+        }
+        if (activeAgentModelId?.includes("gpt-6.2-sol")) {
+          const gatewayInfo = await getOpenClawAdapter().getGatewaySurfacePort?.()
+            .probeNativeGateway<StatusPayload>("status", {}, { timeoutMs: 5_000, signal: request.signal });
+          const compatibilityIssue = await readKnownAgentChatModelIssue({
             agentId,
-            ...nextSession,
-            workspacePath: agent.workspacePath
-          })).catch(() => {
-            console.warn("AgentOS could not persist the direct chat session reference.");
+            modelId: activeAgentModelId,
+            gatewayVersion: gatewayInfo?.runtimeVersion ?? gatewayInfo?.version
           });
-          return nextSession;
-        };
+          if (compatibilityIssue) {
+            await send({ type: "done", ok: false, message: compatibilityIssue });
+            return;
+          }
+        }
 
-        try {
-          const commandPromise = getOpenClawAdapter().streamAgentTurn(
-            {
-              agentId,
-              sessionId,
-              message,
-              thinking: input.thinking,
-              timeoutSeconds: 90,
-              workspace: agent.workspacePath,
-              idempotencyKey: input.idempotencyKey,
-              local: !snapshot.diagnostics.rpcOk
-            },
-            {
-              onStdout: handleCommandStdout,
-              onSession: (reference) => {
-                if (reference.sessionId) trackSession(reference);
-              }
-            },
-            {
-              timeoutMs: 120000,
-              signal: request.signal,
-              ...authorization.commandOptions
+        request.signal.throwIfAborted();
+        const result: AgentChatCommandPayload = await getOpenClawAdapter().streamAgentTurn(
+          {
+            agentId,
+            sessionKey,
+            message: operatorMessage,
+            thinking: input.thinking,
+            timeoutSeconds: 90,
+            idempotencyKey: input.idempotencyKey
+              ? directAgentChatSubmissionId(sessionKey, input.idempotencyKey)
+              : undefined
+          },
+          {
+            onStdout: handleCommandStdout,
+            onAdmission: (runId) => { void send({ type: "admitted", runId }); },
+            onToolStart: (name) => {
+              const tool = name.trim().replace(/[_-]+/g, " ").slice(0, 80);
+              void send({ type: "status", message: tool ? `Agent is using ${tool}…` : "Agent is using a tool…" });
             }
-          ) as Promise<AgentChatCommandPayload>;
+          },
+          {
+            timeoutMs: 120_000,
+            ...authorization.commandOptions,
+            allowCliFallback: false
+          }
+        );
+        if (streamStdoutBuffer.trim()) {
+          await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
+        }
+        if (result.status === "cancelled" || result.stopReason === "aborted") {
+          await send({ type: "done", ok: false, message: "OpenClaw stopped this reply." });
+          return;
+        }
 
-          void (async () => {
-            while (keepPolling && !request.signal.aborted) {
-              try {
-                if (activeSession) await pollTranscript(agentId, activeSession.sessionId, agent.workspacePath);
-              } catch {
-                // Ignore transient transcript reads while the session is still booting.
+        let response = toAgentChatResponse(agentId, result);
+        if (latestAssistantText && response.payloads.length === 0) {
+          response = {
+            ...response,
+            summary: latestAssistantText,
+            payloads: [
+              {
+                text: latestAssistantText,
+                mediaUrl: null
               }
+            ]
+          };
+        }
+        response = recoverStreamedAgentChatResponse(response, latestAssistantText);
+        const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
+          modelId: activeAgentModelId
+        });
+        const contextFailure = [
+          response.summary,
+          ...response.payloads.map(({ text }) => text),
+          emptyResponseDiagnosticMessage ?? ""
+        ]
+          .map(resolveAgentChatContextFailureMessage)
+          .find(Boolean);
+        if (contextFailure) {
+          await send({ type: "done", ok: false, message: contextFailure });
+          return;
+        }
 
-              await wait(250);
-            }
-          })();
-
-          const result = await commandPromise;
-          const admittedSession = trackSession(result);
-          await persistSession;
-          if (streamStdoutBuffer.trim()) {
-            await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
-            streamStdoutBuffer = "";
-          }
-          stopPolling();
-
-          try {
-            await pollTranscript(agentId, admittedSession.sessionId, agent.workspacePath);
-          } catch {
-            // Ignore a last transient read failure.
-          }
-
-          let response = toAgentChatResponse(agentId, result);
-          if (isEmptyAgentChatResponse(response) && !latestAssistantText) {
-            await waitForLateAssistantText(agentId, admittedSession, agent.workspacePath);
-          }
-
-          if (latestAssistantText && response.payloads.length === 0) {
-            response = {
-              ...response,
-              summary: latestAssistantText,
-              payloads: [
-                {
-                  text: latestAssistantText,
-                  mediaUrl: null
-                }
-              ]
-            };
-          }
-          response = recoverStreamedAgentChatResponse(response, latestAssistantText);
-          const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
-            modelId: activeAgentModelId
-          });
-          const contextFailure = [
-            response.summary,
-            ...response.payloads.map(({ text }) => text),
-            emptyResponseDiagnosticMessage ?? ""
-          ]
-            .map(resolveAgentChatContextFailureMessage)
-            .find(Boolean);
-          if (contextFailure) {
-            await send({ type: "done", ok: false, message: contextFailure });
-            return;
-          }
-
-          response = recoverSilentOpenAiChatFailure(response, activeAgentModelId);
-          response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
-          response = attachStreamMissionControlAction(response, latestStreamAction);
-          response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
-          const responseConflict = extractAgentChatSessionConflict(readAgentChatResponseDiagnosticText(response));
-          if (responseConflict) {
-            await forgetAgentChatSession(responseConflict).catch(() => {});
-            await send({
-              type: "done",
-              ok: false,
-              message: conflictedAgentChatSessionMessage
-            });
-            return;
-          }
-
-          if (isEmptyAgentChatResponse(response)) {
-            await send({
-              type: "done",
-              ok: false,
-              message: emptyResponseDiagnosticMessage ?? emptyAgentChatResponseMessage
-            });
-            return;
-          }
-
-          const action = readMissionControlAction(response.meta);
-
-          if (action?.type === "rename_agent") {
-            await updateAgent({
-              id: agentId,
-              name: action.name
-            }, authorization.commandOptions);
-          }
-
-          clearMissionControlCaches();
-
+        response = recoverSilentOpenAiChatFailure(response, activeAgentModelId);
+        if (isEmptyAgentChatResponse(response) || response.status !== "completed") {
           await send({
             type: "done",
-            ok: true,
-            message: response.summary,
-            response: applyMissionControlActionMetadata(response, action)
+            ok: false,
+            message: emptyResponseDiagnosticMessage || response.summary || emptyAgentChatResponseMessage
           });
-        } finally {
-          if (activeSession) markAgentChatSessionInactive({ agentId, sessionId: activeSession.sessionId });
-          releaseAgentChatSessionTurnLock(inFlightKey, inFlightLock);
+          return;
         }
-      } catch (error) {
-        stopPolling();
 
+        await send({
+          type: "done",
+          ok: true,
+          message: response.summary,
+          response
+        });
+      } catch (error) {
         if (request.signal.aborted) {
           return;
         }
@@ -680,11 +467,6 @@ export async function POST(
           (error instanceof Error
             ? redactSecretText(error.message)
             : "OpenClaw could not send the message right now. Please try again.");
-
-        const conflictedSession = extractAgentChatSessionConflict(rawFailure);
-        if (conflictedSession) {
-          await forgetAgentChatSession(conflictedSession).catch(() => {});
-        }
 
         if (agentRegistryFailureMessage) {
           clearMissionControlCaches();
@@ -708,8 +490,6 @@ export async function POST(
           message: failureMessage
         });
       } finally {
-        stopPolling();
-        request.signal.removeEventListener("abort", handleAbort);
         await closeWriter();
       }
     })();
@@ -721,80 +501,141 @@ export async function POST(
       }
     });
   } catch (error) {
+    const invalidInput = error instanceof z.ZodError || error instanceof SyntaxError;
     return NextResponse.json(
       {
         error:
           redactErrorMessage(error, "OpenClaw could not send the message right now. Please try again.")
       },
-      { status: 400 }
+      { status: invalidInput ? 400 : 503, headers: { "Cache-Control": "private, no-store" } }
     );
   }
 }
 
-async function readCanonicalAgentChat(agentId: string, workspacePath?: string) {
-  const sessions = await readAgentChatSessionsForAgent({ agentId, workspacePath, limit: 5 });
-  const transcripts = await Promise.all(sessions.map(async (session) => {
-    const history = await readAgentChatHistoryMessages(agentId, session);
-    if (history?.length) return history;
-    const transcript = await readAgentChatTranscriptMessages(agentId, session.sessionId, session.workspacePath ?? workspacePath);
-    return transcript.length > 0 ? transcript : history;
-  }));
-  return {
-    sessionId: sessions[0]?.sessionId ?? null,
-    available: transcripts.length === 0 || transcripts.some((transcript) => transcript !== null),
-    messages: dedupeRehydratedAgentChatMessages(transcripts.reverse().flatMap((transcript) => transcript ?? [])).slice(-60)
-  };
-}
+export async function PATCH(request: Request, context: { params: Promise<{ agentId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
 
-async function readAgentChatHistoryMessages(
-  agentId: string,
-  { sessionId, sessionKey }: { sessionId: string; sessionKey?: string }
-): Promise<RehydratedAgentChatMessage[] | null> {
+  const input = z.object({
+    conversationId: conversationSchema,
+    runId: z.string().trim().min(1).max(240)
+  }).safeParse(await request.json().catch(() => null));
+  if (!input.success) return NextResponse.json({ error: "A valid chat run is required." }, { status: 400 });
+
+  const { agentId } = await context.params;
   try {
-    const history = await getOpenClawAdapter().getSessionHistory(
-      {
-        agentId,
-        sessionId,
-        sessionKey,
-        limit: 60
-      },
-      { timeoutMs: 1500 }
+    const agent = await readDirectChatAgent(agentId, request.signal);
+    if (!agent) return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
+    const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, input.data.conversationId);
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: "agent.chat.stop",
+      method: "sessions.abort",
+      params: { key: sessionKey, runId: input.data.runId },
+      targetKind: "agent-session",
+      targetId: agentId,
+      securityClass: "privileged-mutation",
+      executionPath: "gateway-native",
+      productPermission: "runtime.use"
+    });
+    if ("response" in authorization) return authorization.response;
+    if (authorization.actor.actorId !== permission.actor.actorId) {
+      return NextResponse.json({ error: "The active operator changed. Reopen the conversation." }, { status: 403 });
+    }
+    const result = await getOpenClawAdapter().abortAgentTurn(
+      { sessionKey, agentId, runId: input.data.runId },
+      { ...authorization.commandOptions, allowCliFallback: false }
     );
-
-    return extractAgentChatMessagesFromSessionHistory(history).map((message, index) => ({
-      id: message.id ? `openclaw-history:${sessionId}:${message.id}` : `openclaw-history:${sessionId}:${index}`,
-      role: message.role,
-      text: message.text,
-      createdAt: normalizeAgentChatMessageTimestamp(message.timestamp, index),
-      status: "sent" as const,
-      runId: null,
-      submissionId: message.idempotencyKey,
-      messageSeq: message.messageSeq
-    }));
-  } catch {
-    return null;
+    return NextResponse.json({ aborted: result.status === "aborted" }, {
+      headers: { "Cache-Control": "private, no-store" }
+    });
+  } catch (error) {
+    return NextResponse.json({
+      error: redactErrorMessage(error, "OpenClaw could not stop this reply.")
+    }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
   }
 }
 
-function dedupeRehydratedAgentChatMessages(messages: RehydratedAgentChatMessage[]) {
-  const byId = new Map<string, RehydratedAgentChatMessage>();
-
-  for (const message of messages) {
-    const text = message.text.replace(/\s+/g, " ").trim();
-    if (!text) {
-      continue;
-    }
-
-    const existing = byId.get(message.id);
-    if (!existing || message.createdAt > existing.createdAt) {
-      byId.set(message.id, {
-        ...message,
-        text
-      });
-    }
+async function readDirectChatAgent(agentId: string, signal: AbortSignal) {
+  const adapter = getOpenClawAdapter();
+  if (!adapter.getGatewaySurfacePort?.().canProbeNativeGateway()) {
+    throw new Error("Direct chat requires a native OpenClaw Gateway.");
   }
+  const { agents } = await adapter.listAgents({
+    signal,
+    timeoutMs: 5_000,
+    allowCliFallback: false
+  });
+  const agent = agents.find(({ id }) => id === agentId);
+  if (!agent) return null;
+  const workspace = agent.workspace?.trim();
+  if (!workspace) throw new Error("OpenClaw did not expose the agent's workspace for direct chat.");
+  return { id: agent.id, workspaceId: workspace, modelId: agent.model?.primary ?? null };
+}
 
-  return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt);
+function streamAgentChatInvalidations(request: Request, sessionKey: string) {
+  const encoder = new TextEncoder();
+  const lifetime = AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]);
+  let close: ((cancelled?: boolean) => void) | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let subscription: { close: () => void } | undefined;
+      let closed = false;
+      const invalidate = () => {
+        if (!closed && (controller.desiredSize ?? 0) > 0) {
+          controller.enqueue(encoder.encode("event: history\ndata: {}\n\n"));
+        }
+      };
+      close = (cancelled = false) => {
+        if (closed) return;
+        closed = true;
+        lifetime.removeEventListener("abort", onAbort);
+        subscription?.close();
+        if (!cancelled) controller.close();
+      };
+      const onAbort = () => close?.();
+      if (lifetime.aborted) {
+        close();
+        return;
+      }
+      lifetime.addEventListener("abort", onAbort, { once: true });
+      controller.enqueue(encoder.encode("retry: 5000\n\n"));
+      try {
+        subscription = await getOpenClawAdapter().subscribeNativeRuntimeEvents?.(
+          { includeSessions: false, sessionKeys: [sessionKey] },
+          {
+            onEvent: ({ event, payload }) => {
+              if ((event === "session.message" || event === "sessions.changed" || event === "chat") &&
+                isRecord(payload) && (payload.sessionKey === sessionKey || payload.key === sessionKey)) {
+                invalidate();
+              }
+            },
+            onGap: invalidate,
+            onReconnected: invalidate
+          },
+          { signal: lifetime, timeoutMs: 5_000, allowCliFallback: false }
+        );
+        if (!subscription) {
+          close();
+        } else if (closed) {
+          subscription.close();
+        } else {
+          invalidate();
+        }
+      } catch {
+        close();
+      }
+    },
+    cancel() {
+      close?.(true);
+    }
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "private, no-store, no-transform",
+      "X-Accel-Buffering": "no"
+    }
+  });
 }
 
 function normalizeAgentChatMessageTimestamp(value: string | number | null, index: number) {
@@ -809,63 +650,7 @@ function normalizeAgentChatMessageTimestamp(value: string | number | null, index
     }
   }
 
-  return Date.now() + index;
-}
-
-function resolveReadyDefaultAgentModelId(snapshot: ControlPlaneSnapshot) {
-  if (!snapshot.diagnostics.modelReadiness.defaultModelReady) {
-    return null;
-  }
-
-  return (
-    snapshot.diagnostics.modelReadiness.resolvedDefaultModel?.trim() ||
-    snapshot.diagnostics.modelReadiness.defaultModel?.trim() ||
-    null
-  );
-}
-
-function resolveChatStatusMessage(turn: TranscriptTurn) {
-  if (turn.status === "completed") {
-    return "Agent composed a reply.";
-  }
-
-  if (turn.status === "stalled") {
-    return "Agent hit a snag while composing the reply.";
-  }
-
-  if (turn.status === "cancelled") {
-    return "Agent reply was cancelled.";
-  }
-
-  const latestItem = turn.items.at(-1);
-
-  if (latestItem?.role === "toolCall") {
-    return `Agent is using ${formatAgentChatToolName(latestItem.toolName)}...`;
-  }
-
-  if (latestItem?.role === "toolResult") {
-    return `Agent received a result from ${formatAgentChatToolName(latestItem.toolName)}.`;
-  }
-
-  if (turn.finalText && turn.finalText.trim().length > 0) {
-    return "Agent is finalizing the reply...";
-  }
-
-  return "Agent is thinking...";
-}
-
-function formatAgentChatToolName(toolName: string | undefined) {
-  const normalized = toolName?.trim().replace(/[_-]+/g, " ");
-
-  if (!normalized) {
-    return "a tool";
-  }
-
-  return `the ${normalized} tool`;
-}
-
-function sanitizePolledAssistantText(value: string) {
-  return sanitizeAgentChatVisibleText(value);
+  return index;
 }
 
 function toAgentChatResponse(agentId: string, payload: AgentChatCommandPayload): MissionResponse {
@@ -927,80 +712,6 @@ function isEmptyAgentChatResponse(response: MissionResponse) {
   return response.meta?.emptyAgentChatResponse === true;
 }
 
-function createAgentChatSessionInFlightKey(agentId: string, sessionId: string) {
-  return `${agentId.trim()}:${sessionId.trim()}`;
-}
-
-function acquireAgentChatSessionTurnLock(key: string) {
-  const now = Date.now();
-  const existing = activeAgentChatSessionTurns.get(key);
-
-  if (existing && now - existing.startedAt < agentChatSessionTurnLockTtlMs) {
-    return null;
-  }
-
-  const lockId = Symbol(key);
-  activeAgentChatSessionTurns.set(key, {
-    lockId,
-    startedAt: now
-  });
-
-  return lockId;
-}
-
-function releaseAgentChatSessionTurnLock(key: string, lockId: symbol) {
-  if (activeAgentChatSessionTurns.get(key)?.lockId === lockId) {
-    activeAgentChatSessionTurns.delete(key);
-  }
-}
-
-function extractAgentChatSessionConflict(rawFailure: string) {
-  const match = rawFailure.match(/reply session initialization conflicted for agent:([^:\s]+):explicit:([0-9a-f-]+)/i);
-
-  if (!match?.[1] || !match[2]) {
-    return null;
-  }
-
-  return {
-    agentId: match[1],
-    sessionId: match[2],
-    sessionKey: `agent:${match[1]}:explicit:${match[2]}`
-  };
-}
-
-function readAgentChatResponseDiagnosticText(response: MissionResponse) {
-  return [
-    response.summary,
-    ...response.payloads.map((entry) => entry.text)
-  ].join("\n");
-}
-
-function resolveDirectAgentRenameRequest(
-  operatorMessage: string,
-  history: Array<{ role: "user" | "assistant"; text: string }>
-) {
-  const explicitName = extractDirectAgentRenameName(operatorMessage);
-  if (explicitName) {
-    return explicitName;
-  }
-
-  if (!/\b(?:change|update|set)\b.*\b(?:card|display|name)\b/i.test(operatorMessage) &&
-    !/(?:kart|card).*(?:ad|name)|(?:ad|name).*(?:kart|card)/i.test(operatorMessage)) {
-    return null;
-  }
-
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const entry = history[index];
-    const historyName = extractDirectAgentRenameName(entry.text) || extractAcceptedAgentName(entry.text);
-
-    if (historyName) {
-      return historyName;
-    }
-  }
-
-  return null;
-}
-
 function extractDirectAgentRenameName(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
   const patterns = [
@@ -1021,13 +732,6 @@ function extractDirectAgentRenameName(value: string) {
   return null;
 }
 
-function extractAcceptedAgentName(value: string) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  const match = normalized.match(/(?:ad(?:ı|i)n|name)(?:\s+(?:is|art(?:ı|i)k))?\s+\*{0,2}(.{1,80}?)\*{0,2}(?:[.!?]|$)/i);
-
-  return normalizeDirectAgentRenameName(match?.[1]);
-}
-
 function normalizeDirectAgentRenameName(value: unknown) {
   if (typeof value !== "string") {
     return null;
@@ -1044,34 +748,6 @@ function normalizeDirectAgentRenameName(value: unknown) {
   }
 
   return stripped;
-}
-
-function recoverCompletedEmptyAgentChatResponse(
-  response: MissionResponse,
-  diagnosticMessage?: string | null
-): MissionResponse {
-  if (!isCompletedEmptyAgentChatResponse(response)) {
-    return response;
-  }
-
-  const message = diagnosticMessage ?? completedEmptyAgentChatResponseMessage;
-
-  return {
-    ...response,
-    status: "completed",
-    summary: message,
-    payloads: [
-      {
-        text: message,
-        mediaUrl: null
-      }
-    ],
-    meta: {
-      ...response.meta,
-      emptyAgentChatResponse: false,
-      emptyAgentChatCompletedWithoutText: true
-    }
-  };
 }
 
 function recoverSilentOpenAiChatFailure(response: MissionResponse, modelId?: string | null): MissionResponse {
@@ -1121,30 +797,6 @@ function resolveEmptyAgentChatDiagnosticMessage(
   );
 }
 
-function recoverDirectIdentityResponse(response: MissionResponse, agentName: string, operatorMessage: string): MissionResponse {
-  if (!isDirectAgentIdentityQuestion(operatorMessage)) {
-    return response;
-  }
-
-  const responseText = [response.summary, ...response.payloads.map((entry) => entry.text)].join("\n\n");
-  if (!isStaleAgentChatContextRecoveryText(responseText)) {
-    return response;
-  }
-
-  const text = buildDirectAgentIdentityReply(agentName);
-
-  return {
-    ...response,
-    summary: text,
-    payloads: [
-      {
-        text,
-        mediaUrl: null
-      }
-    ]
-  };
-}
-
 function normalizeStatus(value: string): MissionDispatchStatus {
   return value === "running" || value === "completed" || value === "stalled" || value === "cancelled"
     ? value
@@ -1187,25 +839,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function readMissionControlAction(meta: MissionResponse["meta"]): MissionControlAction | null {
-  const candidate = meta?.missionControlAction;
-
-  if (!candidate || typeof candidate !== "object") {
-    return null;
-  }
-
-  const action = candidate as Record<string, unknown>;
-
-  if (action.type !== "rename_agent" || typeof action.name !== "string" || action.name.trim().length === 0) {
-    return null;
-  }
-
-  return {
-    type: "rename_agent",
-    name: action.name.trim()
-  };
-}
-
 function applyMissionControlActionMetadata(response: MissionResponse, action: MissionControlAction | null): MissionResponse {
   if (!action) {
     return response;
@@ -1220,23 +853,6 @@ function applyMissionControlActionMetadata(response: MissionResponse, action: Mi
         ...action,
         applied: true
       }
-    }
-  };
-}
-
-function attachStreamMissionControlAction(
-  response: MissionResponse,
-  action: MissionControlAction | null
-): MissionResponse {
-  if (!action || readMissionControlAction(response.meta)) {
-    return response;
-  }
-
-  return {
-    ...response,
-    meta: {
-      ...response.meta,
-      missionControlAction: action
     }
   };
 }

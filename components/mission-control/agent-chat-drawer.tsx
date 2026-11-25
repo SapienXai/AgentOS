@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { ArrowDown, Bot, KeyRound, LoaderCircle, SendHorizontal } from "lucide-react";
+import { ArrowDown, Bot, KeyRound, LoaderCircle, SendHorizontal, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,7 @@ import {
   type AgentChatMessage
 } from "@/components/mission-control/agent-chat-storage";
 import {
+  agentChatConversationKey,
   getAgentChatRunSnapshot,
   sendAgentChatMessage,
   type AgentChatRunSnapshot
@@ -183,10 +184,24 @@ export function AgentChatDrawer({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onConnectModelProvider?: (provider: AddModelsProviderId) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [selection, setSelection] = useState<{ agentId: string; id?: string }>();
+  const conversationId = selection?.agentId === agent.id ? selection.id : undefined;
+  const chatKey = agentChatConversationKey(agent.id, conversationId);
+  const endpoint = `/api/agents/${encodeURIComponent(agent.id)}/chat`;
+  const conversationLabelId = useId();
+  const [catalog, setCatalog] = useState<{
+    agentId: string;
+    conversations: Array<{ id: string; updatedAt: number | null }>;
+  }>();
+  const conversations = catalog?.agentId === agent.id ? catalog.conversations : [];
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[chatKey] ?? "";
+  const setDraft = (text: string) => setDrafts((current) => ({ ...current, [chatKey]: text }));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [runSnapshot, setRunSnapshot] = useState<AgentChatRunSnapshot>(() => getAgentChatRunSnapshot(agent.id));
   const [repairingGatewayMessageId, setRepairingGatewayMessageId] = useState<string | null>(null);
+  const [stoppingReply, setStoppingReply] = useState(false);
+  const [historyUnavailableFor, setHistoryUnavailableFor] = useState<string>();
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -194,7 +209,8 @@ export function AgentChatDrawer({
   const isVisibleRef = useRef(isVisible);
   const isNearBottomRef = useRef(true);
   const agentLabel = formatAgentDisplayName(agent);
-  const inboxItems = snapshot.agentInbox.filter((item) => item.agentId === agent.id);
+  const inboxItems = useMemo(() => conversationId ? [] : snapshot.agentInbox.filter((item) => item.agentId === agent.id),
+    [agent.id, conversationId, snapshot.agentInbox]);
   const quickPrompts = [
     { label: "Status", text: "Summarize your current work, progress, and next step." },
     { label: "Blockers", text: "What is blocking you right now, if anything?" },
@@ -242,15 +258,27 @@ export function AgentChatDrawer({
   }, [agent.id, isVisible]);
 
   useEffect(() => {
+    if (!isVisible || runSnapshot.isRunning) return;
+    const controller = new AbortController();
+    void fetch(`${endpoint}?conversations=1`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const result = await response.json() as { conversations: NonNullable<typeof catalog>["conversations"] };
+        if (!controller.signal.aborted) setCatalog({ agentId: agent.id, conversations: result.conversations });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [agent.id, endpoint, isVisible, runSnapshot.isRunning]);
+
+  useEffect(() => {
     const syncAgentChatState = () => {
-      const nextRunSnapshot = getAgentChatRunSnapshot(agent.id);
+      const nextRunSnapshot = getAgentChatRunSnapshot(chatKey);
 
       setRunSnapshot(nextRunSnapshot);
-      setMessages(readVisibleAgentChatMessages(agent.id, nextRunSnapshot));
+      setMessages(readVisibleAgentChatMessages(chatKey, nextRunSnapshot));
     };
 
     syncAgentChatState();
-    setDraft("");
     isNearBottomRef.current = true;
     setIsNearBottom(true);
     setHasUnreadBelow(false);
@@ -258,7 +286,7 @@ export function AgentChatDrawer({
     const handleChatStateChange = (event: Event) => {
       const detail = (event as CustomEvent<{ agentId?: string }>).detail;
 
-      if (!detail || detail.agentId === agent.id) {
+      if (!detail || detail.agentId === chatKey) {
         syncAgentChatState();
       }
     };
@@ -268,7 +296,7 @@ export function AgentChatDrawer({
     return () => {
       window.removeEventListener(agentChatStateEventName, handleChatStateChange as EventListener);
     };
-  }, [agent.id]);
+  }, [chatKey]);
 
   useEffect(() => {
     if (!isVisible || runSnapshot.isRunning) {
@@ -276,19 +304,30 @@ export function AgentChatDrawer({
     }
 
     const controller = new AbortController();
+    const params = new URLSearchParams();
+    if (conversationId) params.set("conversation", conversationId);
+    const historyUrl = conversationId ? `${endpoint}?${params}` : endpoint;
+    params.set("watch", "1");
     let syncing = false;
+    let needsSync = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const syncHistory = async () => {
-      if (syncing || document.visibilityState !== "visible" || getAgentChatRunSnapshot(agent.id).isRunning) return;
+      if (document.visibilityState !== "visible" || getAgentChatRunSnapshot(chatKey).isRunning) return;
+      if (syncing) {
+        needsSync = true;
+        return;
+      }
       syncing = true;
       try {
-        const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/chat`, {
+        const response = await fetch(historyUrl, {
           method: "GET",
           cache: "no-store",
           signal: controller.signal
         });
 
         if (!response.ok) {
+          if (!controller.signal.aborted) setHistoryUnavailableFor(chatKey);
           return;
         }
 
@@ -296,34 +335,50 @@ export function AgentChatDrawer({
           messages?: AgentChatMessage[];
         } | null;
 
-        if (controller.signal.aborted || getAgentChatRunSnapshot(agent.id).isRunning || !Array.isArray(payload?.messages)) {
+        if (controller.signal.aborted || getAgentChatRunSnapshot(chatKey).isRunning || !Array.isArray(payload?.messages)) {
           return;
         }
+        setHistoryUnavailableFor((current) => current === chatKey ? undefined : current);
 
-        const currentMessages = readAgentChatMessages(agent.id);
+        const currentMessages = readAgentChatMessages(chatKey);
         const mergedMessages = reconcileAgentChatMessages(currentMessages, payload.messages);
 
         if (agentChatMessagesEqual(currentMessages, mergedMessages)) {
           return;
         }
 
-        writeAgentChatMessages(agent.id, mergedMessages);
+        writeAgentChatMessages(chatKey, mergedMessages);
       } catch {
-        // Keep this tab's current messages until the server can respond again.
+        if (!controller.signal.aborted) setHistoryUnavailableFor(chatKey);
       } finally {
         syncing = false;
+        if (needsSync && !controller.signal.aborted) {
+          needsSync = false;
+          scheduleSync();
+        }
       }
     };
+    const scheduleSync = () => {
+      if (timer !== undefined || controller.signal.aborted) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        void syncHistory();
+      }, 150);
+    };
+    const events = new EventSource(`${endpoint}?${params}`);
+    events.addEventListener("history", scheduleSync);
     void syncHistory();
-    const timer = window.setInterval(syncHistory, 5_000);
-    document.addEventListener("visibilitychange", syncHistory);
+    document.addEventListener("visibilitychange", scheduleSync);
+    window.addEventListener("focus", scheduleSync);
 
     return () => {
       controller.abort();
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", syncHistory);
+      events.close();
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", scheduleSync);
+      window.removeEventListener("focus", scheduleSync);
     };
-  }, [agent.id, isVisible, runSnapshot.isRunning]);
+  }, [chatKey, conversationId, endpoint, isVisible, runSnapshot.isRunning]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -372,9 +427,11 @@ export function AgentChatDrawer({
       return;
     }
 
-    markAgentChatAsSeen(agent.id, messages);
-    markAgentInboxAsSeen(agent.id, inboxItems);
-  }, [agent.id, messages, inboxItems, isVisible]);
+    if (!conversationId) {
+      markAgentChatAsSeen(agent.id, messages);
+      markAgentInboxAsSeen(agent.id, inboxItems);
+    }
+  }, [agent.id, conversationId, messages, inboxItems, isVisible]);
 
   useEffect(() => {
     if (!isVisible || !listRef.current) {
@@ -396,6 +453,27 @@ export function AgentChatDrawer({
 
   const hasConversation = messages.length > 0 || inboxItems.length > 0;
 
+  const stopReply = async () => {
+    if (!runSnapshot.runId || stoppingReply) return;
+    setStoppingReply(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId, runId: runSnapshot.runId })
+      });
+      const result = await response.json().catch(() => null) as { aborted?: boolean; error?: string } | null;
+      if (!response.ok) throw new Error(result?.error || "OpenClaw could not stop this reply.");
+      if (result?.aborted === false) toast.info("This reply is no longer active.");
+    } catch (error) {
+      toast.error("Could not stop reply.", {
+        description: error instanceof Error ? error.message : undefined
+      });
+    } finally {
+      setStoppingReply(false);
+    }
+  };
+
   const send = async () => {
     const text = draft.trim();
     if (!text || runSnapshot.isRunning) return;
@@ -407,7 +485,7 @@ export function AgentChatDrawer({
     try {
       await sendAgentChatMessage({
         agentId: agent.id,
-        agentName: agentLabel,
+        conversationId,
         text,
         onRefresh,
         onSnapshotChange,
@@ -422,13 +500,8 @@ export function AgentChatDrawer({
     }
   };
 
-  const repairGatewayAccessAndRetry = async (
-    messageId: string,
-    text: string,
-    action: AgentChatGatewayRepairAction
-  ) => {
-    const retryText = text.trim();
-    if (!retryText || repairingGatewayMessageId || runSnapshot.isRunning) {
+  const repairGatewayAccess = async (messageId: string, action: AgentChatGatewayRepairAction) => {
+    if (repairingGatewayMessageId || runSnapshot.isRunning) {
       return;
     }
 
@@ -461,20 +534,9 @@ export function AgentChatDrawer({
       }
 
       toast.success(`${action.label} repaired.`, {
-        description: "Retrying the chat message."
+        description: "Check the conversation before resending the message."
       });
       await onRefresh?.().catch(() => undefined);
-      setRepairingGatewayMessageId(null);
-      await sendAgentChatMessage({
-        agentId: agent.id,
-        agentName: agentLabel,
-        text: retryText,
-        onRefresh,
-        onSnapshotChange,
-        onError: (message) => {
-          toast.error("Chat message failed.", { description: message });
-        }
-      });
     } catch (error) {
       toast.error("Gateway repair failed.", {
         description: error instanceof Error ? error.message : "Unable to repair Gateway access."
@@ -494,6 +556,47 @@ export function AgentChatDrawer({
         surface === "transparent" ? "bg-transparent" : "bg-background"
       )}
     >
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 py-1.5 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <label htmlFor={conversationLabelId} className="sr-only">Conversation</label>
+          <select
+            id={conversationLabelId}
+            value={conversationId ?? ""}
+            disabled={runSnapshot.isRunning}
+            onChange={(event) => setSelection({ agentId: agent.id, id: event.target.value || undefined })}
+            className="min-h-12 min-w-0 rounded-md border border-input bg-background px-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:text-sm"
+          >
+            <option value="">Default conversation</option>
+            {conversationId && !conversations.some(({ id }) => id === conversationId) ? (
+              <option value={conversationId}>New conversation</option>
+            ) : null}
+            {conversations.map(({ id, updatedAt }) => (
+              <option key={id} value={id}>
+                {updatedAt ? `${formatChatDate(updatedAt)} · ${formatChatTime(updatedAt)}` : id.slice(0, 8)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={runSnapshot.isRunning}
+          className="min-h-12 shrink-0 sm:min-h-9"
+          onClick={() => {
+            const id = globalThis.crypto?.randomUUID?.();
+            if (id) setSelection({ agentId: agent.id, id });
+            else toast.error("Starting a new conversation requires a secure connection.");
+          }}
+        >
+          New chat
+        </Button>
+      </div>
+      {historyUnavailableFor === chatKey ? (
+        <p role="status" className="shrink-0 border-b border-border/70 px-4 py-2 text-sm text-muted-foreground sm:px-6">
+          OpenClaw chat history is unavailable. Reopen this chat after the Gateway reconnects.
+        </p>
+      ) : null}
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
@@ -593,7 +696,7 @@ export function AgentChatDrawer({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => void repairGatewayAccessAndRetry(entry.id, entry.text, gatewayRepairAction)}
+                              onClick={() => void repairGatewayAccess(entry.id, gatewayRepairAction)}
                               disabled={Boolean(repairingGatewayMessageId) || runSnapshot.isRunning}
                               title={gatewayRepairAction.detail}
                               className="h-7 rounded-full px-2 text-xs font-medium text-foreground hover:bg-muted"
@@ -676,13 +779,13 @@ export function AgentChatDrawer({
 
             <Button
               type="button"
-              aria-label={runSnapshot.isRunning ? "Agent is responding" : "Send message"}
-              disabled={!canSend}
+              aria-label={runSnapshot.runId ? "Stop reply" : runSnapshot.isRunning ? "Agent is responding" : "Send message"}
+              disabled={runSnapshot.runId ? stoppingReply : !canSend}
               className="absolute bottom-1.5 right-1.5 h-10 w-10 rounded-full p-0 shadow-none"
-              onClick={send}
+              onClick={runSnapshot.runId ? stopReply : send}
             >
-              {runSnapshot.isRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-              <span className="sr-only">Send</span>
+              {runSnapshot.runId && !stoppingReply ? <Square className="h-4 w-4 fill-current" /> :
+                runSnapshot.isRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
             </Button>
           </div>
         </div>

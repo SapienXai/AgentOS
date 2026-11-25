@@ -608,6 +608,9 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   async getSessionHistory(input: OpenClawSessionHistoryInput = {}, options: OpenClawCommandOptions = {}) {
+    if (options.allowCliFallback === false) {
+      throw new OpenClawGatewayClientError("Direct chat history requires a native OpenClaw Gateway.", "unsupported");
+    }
     let lastError: unknown = null;
     const candidates = [
       ["chat.history", buildChatHistoryParams(input)] as const,
@@ -1166,6 +1169,9 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     callbacks: OpenClawStreamCallbacks = {},
     options: OpenClawCommandOptions = {}
   ) {
+    if (options.allowCliFallback === false) {
+      return Promise.reject(new OpenClawGatewayClientError("Direct chat requires a native OpenClaw Gateway.", "unsupported"));
+    }
     return runOpenClawJsonStream<MissionCommandPayload>(buildAgentTurnArgs(input), {
       ...options,
       ...callbacks

@@ -157,6 +157,8 @@ export interface OpenClawStreamCallbacks {
   onStdout?: (text: string) => Promise<void> | void;
   onStderr?: (text: string) => Promise<void> | void;
   onSession?: (session: OpenClawTurnSession) => void;
+  onAdmission?: (runId: string) => void;
+  onToolStart?: (name: string) => void;
 }
 
 export type OpenClawTurnSession = {

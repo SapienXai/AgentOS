@@ -1501,23 +1501,22 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.doesNotMatch(drawerSource, /Show details|Reading your message|Live activity/);
   assert.match(runnerSource, /statusHistory: string\[\]/);
   assert.match(runnerSource, /maxAgentChatStatusHistory = 5/);
-  assert.match(routeSource, /latestItem\?\.role === "toolCall"/);
-  assert.match(routeSource, /latestItem\?\.role === "toolResult"/);
+  assert.match(routeSource, /onToolStart: \(name\)/);
+  assert.match(routeSource, /onAdmission: \(runId\)/);
   assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
   assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);
 });
 
-test("agent chat loads model context from the same server history shown to the browser", () => {
+test("agent chat gives OpenClaw ownership of message history and context", () => {
   const routeSource = readFileSync(path.join(rootDir, "app/api/agents/[agentId]/chat/route.ts"), "utf8");
   const runnerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-runner.ts"), "utf8");
   const [getRoute, postRoute] = routeSource.split("export async function POST(");
 
-  assert.match(getRoute, /await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
-  assert.match(postRoute, /const \{ messages \} = await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
-  assert.match(postRoute, /buildAgentChatPrompt\(history, operatorMessage/);
-  assert.doesNotMatch(postRoute, /input\.history/);
-  assert.doesNotMatch(runnerSource, /history:\s*promptHistory/);
+  assert.match(getRoute, /getSessionHistory\(\s*\{ sessionKey, limit: 120 \}/);
+  assert.match(postRoute, /streamAgentTurn\(\s*\{\s*agentId,\s*sessionKey,\s*message: operatorMessage/);
+  assert.doesNotMatch(routeSource, /readLatestAgentChatTurn|pollTranscript|buildAgentChatPrompt/);
+  assert.doesNotMatch(runnerSource, /history:\s*promptHistory|previousAssistantTexts/);
 });
 
 test("mobile light sidebar uses an opaque surface and hides its launcher while open", () => {

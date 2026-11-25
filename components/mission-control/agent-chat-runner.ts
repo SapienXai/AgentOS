@@ -8,15 +8,14 @@ import {
   writeAgentChatMessages
 } from "@/components/mission-control/agent-chat-storage";
 import { consumeNdjsonStream } from "@/lib/ndjson";
-import {
-  buildDirectAgentIdentityReply,
-  isDirectAgentIdentityQuestion,
-  isStaleAgentChatContextRecoveryText
-} from "@/lib/openclaw/agent-chat-guards";
 import { sanitizeAgentChatVisibleText } from "@/lib/openclaw/agent-chat-response";
 import type { MissionControlSnapshot, MissionResponse } from "@/lib/agentos/contracts";
 
 type AgentChatStreamEvent =
+  | {
+      type: "admitted";
+      runId: string;
+    }
   | {
       type: "status";
       message: string;
@@ -35,6 +34,7 @@ type AgentChatStreamEvent =
 type ActiveAgentChatRun = {
   userMessageId: string;
   assistantMessageId: string;
+  runId: string | null;
   statusMessage: string | null;
   statusHistory: string[];
   promise: Promise<void>;
@@ -44,13 +44,14 @@ export type AgentChatRunSnapshot = {
   isRunning: boolean;
   userMessageId: string | null;
   assistantMessageId: string | null;
+  runId: string | null;
   statusMessage: string | null;
   statusHistory: string[];
 };
 
 export type SendAgentChatMessageOptions = {
   agentId: string;
-  agentName: string;
+  conversationId?: string;
   text: string;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -67,14 +68,19 @@ export function getAgentChatRunSnapshot(agentId: string): AgentChatRunSnapshot {
     isRunning: Boolean(run),
     userMessageId: run?.userMessageId ?? null,
     assistantMessageId: run?.assistantMessageId ?? null,
+    runId: run?.runId ?? null,
     statusMessage: run?.statusMessage ?? null,
     statusHistory: run?.statusHistory ?? []
   };
 }
 
+export function agentChatConversationKey(agentId: string, conversationId?: string) {
+  return conversationId ? `${agentId}:${conversationId}` : agentId;
+}
+
 export function sendAgentChatMessage({
   agentId,
-  agentName,
+  conversationId,
   text,
   onRefresh,
   onSnapshotChange,
@@ -86,7 +92,8 @@ export function sendAgentChatMessage({
     return Promise.resolve();
   }
 
-  const existingRun = activeAgentChatRuns.get(agentId);
+  const chatKey = agentChatConversationKey(agentId, conversationId);
+  const existingRun = activeAgentChatRuns.get(chatKey);
   if (existingRun) {
     return existingRun.promise;
   }
@@ -94,7 +101,7 @@ export function sendAgentChatMessage({
   const createdAt = Date.now();
   const userMessageId = globalThis.crypto?.randomUUID?.() || `user:${createdAt}`;
   const assistantMessageId = globalThis.crypto?.randomUUID?.() || `assistant:${createdAt}`;
-  const existingMessages = readAgentChatMessages(agentId);
+  const existingMessages = readAgentChatMessages(chatKey);
 
   const userMessage: AgentChatMessage = {
     id: userMessageId,
@@ -116,24 +123,17 @@ export function sendAgentChatMessage({
   const run: ActiveAgentChatRun = {
     userMessageId,
     assistantMessageId,
+    runId: null,
     statusMessage: "Starting agent turn...",
     statusHistory: ["Starting agent turn..."],
     promise: Promise.resolve()
   };
 
-  activeAgentChatRuns.set(agentId, run);
-  writeAgentChatMessages(agentId, [...existingMessages, userMessage, assistantMessage].slice(-maxAgentChatMessages));
-  dispatchAgentChatStateChange(agentId);
-
-  const previousAssistantTexts = new Set(existingMessages
-    .filter(
-      (entry) => entry.role === "assistant" && entry.status !== "error" && entry.text.trim().length > 0
-    )
-    .slice(-16)
-    .map((entry) => normalizeAgentChatText(entry.text))
-    .filter(Boolean));
+  activeAgentChatRuns.set(chatKey, run);
+  writeAgentChatMessages(chatKey, [...existingMessages, userMessage, assistantMessage].slice(-maxAgentChatMessages));
 
   const payload = {
+    conversationId,
     message: trimmedText,
     rawMessage: trimmedText,
     idempotencyKey: userMessageId
@@ -141,11 +141,10 @@ export function sendAgentChatMessage({
 
   run.promise = runAgentChatTurn({
     agentId,
+    chatKey,
     payload,
-    agentName,
-    userMessageId,
+      userMessageId,
     assistantMessageId,
-    previousAssistantTexts,
     run,
     onRefresh,
     onSnapshotChange,
@@ -157,27 +156,26 @@ export function sendAgentChatMessage({
 
 async function runAgentChatTurn({
   agentId,
+  chatKey,
   payload,
-  agentName,
   userMessageId,
   assistantMessageId,
-  previousAssistantTexts,
   run,
   onRefresh,
   onSnapshotChange,
   onError
 }: {
   agentId: string;
+  chatKey: string;
   payload: {
+    conversationId?: string;
     message: string;
     rawMessage: string;
     idempotencyKey: string;
     thinking?: "off" | "minimal" | "low" | "medium" | "high";
   };
-  agentName: string;
   userMessageId: string;
   assistantMessageId: string;
-  previousAssistantTexts: Set<string>;
   run: ActiveAgentChatRun;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -195,7 +193,7 @@ async function runAgentChatTurn({
     }
 
     heartbeatIndex += 1;
-    updateAgentChatStatus(agentId, run, resolveAgentChatWaitStatusMessage(threshold, assistantTextReceived));
+    updateAgentChatStatus(chatKey, run, resolveAgentChatWaitStatusMessage(threshold, assistantTextReceived));
   }, 1000);
 
   try {
@@ -214,36 +212,28 @@ async function runAgentChatTurn({
     let finalResponse: MissionResponse | null = null;
 
     await consumeNdjsonStream<AgentChatStreamEvent>(response, async (event) => {
+      if (event.type === "admitted") {
+        run.runId = event.runId;
+        dispatchAgentChatStateChange(chatKey);
+        return;
+      }
       if (event.type === "status") {
-        updateAgentChatStatus(agentId, run, event.message);
+        updateAgentChatStatus(chatKey, run, event.message);
         return;
       }
 
       if (event.type === "assistant") {
         const eventText = sanitizeAgentChatVisibleText(event.text);
-        const normalizedEventText = normalizeAgentChatText(eventText);
-        const isStaleIdentityRecovery =
-          isDirectAgentIdentityQuestion(payload.rawMessage) && isStaleAgentChatContextRecoveryText(eventText);
         if (!eventText) {
-          updateAgentChatStatus(agentId, run, "Agent is thinking...");
-          return;
-        }
-
-        if (isStaleIdentityRecovery) {
-          updateAgentChatStatus(agentId, run, "Agent is drafting a reply...");
-          return;
-        }
-
-        if (!assistantTextReceived && normalizedEventText && previousAssistantTexts.has(normalizedEventText)) {
-          updateAgentChatStatus(agentId, run, "Agent is drafting a reply...");
+          updateAgentChatStatus(chatKey, run, "Agent is thinking...");
           return;
         }
 
         assistantTextReceived = true;
         latestAssistantText = eventText;
-        updateAgentChatStatus(agentId, run, "Agent is drafting a reply...");
+        updateAgentChatStatus(chatKey, run, "Agent is drafting a reply...");
 
-        updateAgentChatMessages(agentId, (current) =>
+        updateAgentChatMessages(chatKey, (current) =>
           current.map((entry) => {
             if (entry.id === userMessageId) {
               return entry;
@@ -265,11 +255,7 @@ async function runAgentChatTurn({
       }
 
       finalResponse = event.response ?? null;
-      const finalText = recoverDirectIdentityText(
-        finalResponse ? renderAgentReplyText(finalResponse) : latestAssistantText,
-        agentName,
-        payload.rawMessage
-      );
+      const finalText = finalResponse ? renderAgentReplyText(finalResponse) : latestAssistantText;
 
       if (finalResponse) {
         latestAssistantText = finalText;
@@ -277,7 +263,7 @@ async function runAgentChatTurn({
       const renamedTo = finalResponse ? readRenamedAgent(finalResponse.meta) : null;
       const localAction = Boolean(renamedTo && !finalResponse?.runId);
 
-      updateAgentChatMessages(agentId, (current) =>
+      updateAgentChatMessages(chatKey, (current) =>
         current.map((entry) => {
           if (entry.id === userMessageId) {
             const admission = readOpenClawAdmission(finalResponse?.meta);
@@ -285,7 +271,6 @@ async function runAgentChatTurn({
               ...entry,
               localAction,
               status: "sent" as const,
-              submissionId: admission?.idempotencyKey ?? entry.submissionId,
               messageSeq: admission?.messageSeq ?? entry.messageSeq
             };
           }
@@ -308,7 +293,7 @@ async function runAgentChatTurn({
         onSnapshotChange((current) => applyAgentRename(current, agentId, renamedTo));
       }
 
-      void onRefresh?.().catch(() => null);
+      if (renamedTo) void onRefresh?.().catch(() => null);
     });
 
     if (!finalResponse) {
@@ -318,11 +303,13 @@ async function runAgentChatTurn({
     const message = error instanceof Error ? error.message : "Unknown send error.";
     const partialText = assistantTextReceived ? latestAssistantText.trim() : "";
 
-    updateAgentChatMessages(agentId, (current) =>
+    updateAgentChatMessages(chatKey, (current) =>
       current
         .map((entry) => {
           if (entry.id === userMessageId) {
-            return { ...entry, status: "error" as const, errorMessage: message };
+            return run.runId
+              ? { ...entry, status: "sent" as const, runId: run.runId }
+              : { ...entry, status: "error" as const, errorMessage: message };
           }
 
           if (entry.id === assistantMessageId) {
@@ -341,8 +328,8 @@ async function runAgentChatTurn({
     onError?.(message);
   } finally {
     globalThis.clearInterval(heartbeatTimer);
-    activeAgentChatRuns.delete(agentId);
-    dispatchAgentChatStateChange(agentId);
+    activeAgentChatRuns.delete(chatKey);
+    dispatchAgentChatStateChange(chatKey);
   }
 }
 
@@ -375,18 +362,6 @@ function renderAgentReplyText(result: MissionResponse) {
     .filter(Boolean)
     .join("\n\n");
   return payloadText || sanitizeAgentChatVisibleText(result.summary);
-}
-
-function recoverDirectIdentityText(text: string, agentName: string, operatorMessage: string) {
-  if (!isDirectAgentIdentityQuestion(operatorMessage) || !isStaleAgentChatContextRecoveryText(text)) {
-    return text;
-  }
-
-  return buildDirectAgentIdentityReply(agentName);
-}
-
-function normalizeAgentChatText(value: string) {
-  return value.replace(/\s+/g, " ").trim();
 }
 
 function resolveAgentChatWaitStatusMessage(thresholdMs: number, assistantTextReceived: boolean) {
@@ -430,7 +405,6 @@ function readOpenClawAdmission(meta: MissionResponse["meta"]) {
 
   const record = candidate as Record<string, unknown>;
   return {
-    idempotencyKey: typeof record.idempotencyKey === "string" ? record.idempotencyKey : null,
     messageSeq: typeof record.messageSeq === "number" ? record.messageSeq : null
   };
 }

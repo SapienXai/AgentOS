@@ -2390,6 +2390,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {}
   ) {
     if (options.forceCli || this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      if (options.allowCliFallback === false) {
+        throw new OpenClawGatewayClientError("Direct chat requires a native OpenClaw Gateway.", "unsupported");
+      }
       this.assertVerifiedCliMutationFallback("chat.send", {
         sessionKey: input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId)
       }, options);
@@ -2416,6 +2419,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         earlyEvents.push(frame);
         return;
       }
+      if (options.allowCliFallback === false) {
+        const payload = frame.payload;
+        if (!dispatchedRunId || !isObjectRecord(payload) ||
+          payload.runId !== dispatchedRunId || payload.sessionKey !== session.sessionKey) return;
+        if (frame.event === "agent" && payload.stream === "tool" && isObjectRecord(payload.data) &&
+          payload.data.phase === "start" && typeof payload.data.name === "string") {
+          callbacks.onToolStart?.(payload.data.name);
+        }
+        if (frame.event !== "chat") return;
+      }
       const event = normalizeGatewayTurnEvent(frame, session.sessionKey, dispatchedRunId, session.sessionId);
       if (!event) return;
       if (event.text && event.text !== lastAssistantText) {
@@ -2436,7 +2449,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       if (!keyChanged && subscription) return;
       closeSubscription();
       subscription = await this.subscribeNativeEvents(
-        { subscribeSessions: true, sessionKeys: [next.sessionKey] },
+        { subscribeSessions: options.allowCliFallback !== false, sessionKeys: [next.sessionKey] },
         {
           onEvent: receiveEvent,
           onError: (error) => {
@@ -2462,6 +2475,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       dispatchedRunId = dispatchPayload.runId ?? null;
       dispatchConfirmed = true;
       callbacks.onSession?.(admittedSession);
+      if (dispatchedRunId) callbacks.onAdmission?.(dispatchedRunId);
       await subscribeToSession(admittedSession).catch((error: unknown) => {
         void callbacks.onStderr?.(error instanceof Error ? `${error.message}\n` : `${String(error)}\n`);
       });
@@ -2482,7 +2496,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     } catch (error) {
       this.options.onNativeFailure?.(error, "streamAgentTurn");
       const method = error instanceof NativeGatewayRequestError ? error.method : "streamAgentTurn";
-      if (!shouldUseCliFallback(error, method, { safety: "mutation" })) {
+      if (!shouldUseCliFallback(error, method, {
+        safety: "mutation",
+        allowCliFallback: options.allowCliFallback
+      })) {
         throw this.cliFallbackDisabledError(method, error);
       }
       this.assertVerifiedCliMutationFallback(method, {
@@ -3029,6 +3046,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     input: OpenClawSessionHistoryInput,
     options: OpenClawCommandOptions
   ) {
+    if (options.allowCliFallback === false) {
+      return this.nativeOnly<OpenClawSessionHistoryPayload>(
+        "chat.history",
+        buildChatHistoryParams(input),
+        options,
+        (payload) => parseObjectGatewayPayload<OpenClawSessionHistoryPayload>("chat.history", payload)
+      );
+    }
     if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
       return this.fallback.getSessionHistory(input, options);
     }
