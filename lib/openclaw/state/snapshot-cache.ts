@@ -25,11 +25,8 @@ export class SnapshotCacheController<TSnapshot> {
     return this.generation;
   }
 
-  clear(options: { incrementGeneration?: boolean } = {}) {
-    if (options.incrementGeneration) {
-      this.generation += 1;
-    }
-
+  clear() {
+    this.generation += 1;
     this.cache = null;
   }
 

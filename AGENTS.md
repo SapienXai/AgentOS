@@ -6,6 +6,10 @@ AgentOS is the human operating layer above OpenClaw.
 
 OpenClaw is the backend, runtime, orchestration, agent, tool, model, session, and gateway layer. AgentOS must not clone or replace OpenClaw. AgentOS should provide the operator-facing workspace, control, visibility, policy, and coordination layer on top of OpenClaw.
 
+**As OpenClaw grows, AgentOS should gain capabilities, not maintenance costs.**
+
+Discover native capabilities at runtime, adopt verified upstream replacements, and retire obsolete compatibility paths. OpenClaw owns runtime state, sessions, memory, execution, scheduling, credentials, and authorization. AgentOS owns organizational intent, operator experience, product policy, and derived projections. Judge changes by complexity, RPC overhead, synchronization, and operator outcomes.
+
 When in doubt:
 - Use OpenClaw as the source of truth.
 - Keep AgentOS as the control/UI/application layer.

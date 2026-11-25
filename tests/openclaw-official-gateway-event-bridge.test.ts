@@ -135,15 +135,22 @@ test("official event delivery invalidates the snapshot before SSE subscribers re
 
   const order: string[] = [];
   let suggestionVisible = false;
+  let loads = 0;
+  const releaseFirstLoad = Promise.withResolvers<void>();
+  const firstLoadStarted = Promise.withResolvers<void>();
   const freshnessCache = new MissionControlCacheService<{ suggestionVisible: boolean }>({
     ttlMs: 30_000,
     load: async () => {
       const value = { suggestionVisible };
+      if (++loads === 1) {
+        firstLoadStarted.resolve();
+        await releaseFirstLoad.promise;
+      }
       return { visible: value, full: value };
     }
   });
-  assert.equal((await freshnessCache.getSnapshot({ force: true })).suggestionVisible, false);
-  assert.equal((await freshnessCache.getSnapshot()).suggestionVisible, false);
+  const earlierSnapshot = freshnessCache.getSnapshot();
+  await firstLoadStarted.promise;
   registerMissionControlSnapshotInvalidator(() => {
     freshnessCache.clear();
     order.push("invalidate");
@@ -165,7 +172,12 @@ test("official event delivery invalidates the snapshot before SSE subscribers re
       "subscriber:session.sharing.evidence"
     ]);
     assert.equal((await freshnessCache.getSnapshot()).suggestionVisible, true);
+    releaseFirstLoad.resolve();
+    assert.equal((await earlierSnapshot).suggestionVisible, true);
+    assert.equal((await freshnessCache.getSnapshot()).suggestionVisible, true);
+    assert.equal(loads, 2);
   } finally {
+    releaseFirstLoad.resolve();
     unsubscribe();
   }
 });
