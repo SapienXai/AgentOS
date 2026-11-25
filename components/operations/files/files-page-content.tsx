@@ -679,7 +679,7 @@ function FilePreviewDialog({
           <div className="space-y-4">
             {reference && <p className="text-sm text-muted-foreground">Open the link to read the content on its website.</p>}
             {isJson ? <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">{content}</pre> :
-              <AgentChatMessageContent text={format ? content.replace(/^# [^\r\n]+\n\n/, "") : content} className="break-words" />}
+              <AgentChatMessageContent text={format ? content.replace(/^# [^\r\n]+\n\n/, "") : content} className="workforce-source-preview break-words" />}
             {!reference && <p className="border-t border-border pt-3 text-sm text-muted-foreground">Shared in {file.workspaceName}. Employee memory assignments are managed separately.</p>}
           </div>
         ) : null}

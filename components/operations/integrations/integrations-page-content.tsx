@@ -562,6 +562,8 @@ function IntegrationInspector({
   actionBusy: boolean;
   onReconnect: () => void;
 }) {
+  const unverified = integration.status === "unknown";
+  const error = integration.errorMessage === integration.connectionHealth.detail ? null : integration.errorMessage;
   return (
     <>
       <div className="flex items-start gap-3">
@@ -575,8 +577,12 @@ function IntegrationInspector({
       </div>
       <section aria-label="Connection status" className="border-t border-border pt-4">
         <h2 className="workforce-section-title">Connection</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">{integration.connectionHealth.detail}</p>
-        {integration.errorMessage && <p role="alert" className="mt-2 text-sm text-destructive">{integration.errorMessage}</p>}
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {unverified
+            ? integration.actionSupport.reconnect.supported ? "Refresh status to check this connection." : "Check the setup details for this connection."
+            : integration.connectionHealth.detail}
+        </p>
+        {error && !unverified && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
         {integration.missingConfiguration.length > 0 && <ul aria-label="Required setup" className="mt-2 list-inside list-disc text-sm text-muted-foreground">
           {integration.missingConfiguration.map(item => <li key={item}>{item}</li>)}
         </ul>}
@@ -598,6 +604,7 @@ function IntegrationInspector({
       <details className="border-t border-border pt-4">
         <summary className="cursor-pointer text-sm font-medium">Advanced connection details</summary>
         <div className="mt-2 space-y-2 text-sm">
+          {unverified && <p className="text-muted-foreground">{error ?? integration.connectionHealth.detail}</p>}
           <KeyValue label="Last sync" value={integration.lastSyncLabel} />
           <KeyValue label="Uptime" value={integration.uptimeLabel} />
           <KeyValue label="Rate limit" value={integration.rateLimitLabel} />

@@ -192,3 +192,6 @@
 .workforce-main .workforce-workspace-diagnostic { display: none; }
 .workforce-collection { min-block-size: 2.75rem; }
 .workforce-collections { align-content: start; }
+
+.workforce-source-preview pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.workforce-source-preview pre code { white-space: inherit; }
