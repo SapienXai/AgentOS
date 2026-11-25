@@ -1515,7 +1515,8 @@ test("agent chat gives OpenClaw ownership of message history and context", () =>
   const runnerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-runner.ts"), "utf8");
   const [getRoute, postRoute] = routeSource.split("export async function POST(");
 
-  assert.match(getRoute, /getSessionHistory\(\s*\{ sessionKey, limit: 120 \}/);
+  assert.match(getRoute, /getSessionHistory\(\s*\{ sessionKey,[^}]*cursor: cursor\.data \}/);
+  assert.match(getRoute, /before: typeof history\.olderCursor === "string"/);
   assert.match(postRoute, /streamAgentTurn\(\s*\{\s*agentId,\s*sessionKey,\s*message: operatorMessage/);
   assert.doesNotMatch(routeSource, /readLatestAgentChatTurn|pollTranscript|buildAgentChatPrompt/);
   assert.doesNotMatch(runnerSource, /history:\s*promptHistory|previousAssistantTexts/);
