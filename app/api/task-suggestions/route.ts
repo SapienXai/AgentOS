@@ -17,7 +17,7 @@ const mutationSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "tasks.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   try {
     const snapshot = await getMissionControlSnapshot();
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "tasks.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
 
   let input: z.infer<typeof mutationSchema>;
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     targetId: input.taskId,
     securityClass: "privileged-mutation",
     executionPath: "gateway-native",
-    productPermission: "tasks.use"
+    productPermission: "runtime.inspect"
   });
   if ("response" in preflight) return preflight.response;
 

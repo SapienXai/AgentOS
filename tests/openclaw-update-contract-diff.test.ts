@@ -119,6 +119,27 @@ test("OpenClaw 2026.10 descriptor constants and read-sharing metadata remain str
   );
 });
 
+test("candidate descriptor imports preserve observation and session policy metadata", () => {
+  const descriptors = `
+    import { OBSERVATION, UNADVERTISED, UNADVERTISED_OBSERVATION } from "./core-descriptor-options.js";
+    const CORE_GATEWAY_METHOD_SPECS = [
+      ["agent.wait", "agent", "operator.read", "<=2026.7", OBSERVATION],
+      ["device.scopes.waitUpgrade", null, "operator.read", "2026.9", UNADVERTISED_OBSERVATION],
+    ] as const;
+  `;
+  const options = `
+    export const UNADVERTISED = { advertise: false } as const;
+    export const OBSERVATION = { lifetime: "observation" } as const;
+    export const UNADVERTISED_OBSERVATION = { ...UNADVERTISED, ...OBSERVATION } as const;
+  `;
+  const methods = parseOpenClawCoreMethodSpecs(descriptors, options);
+  assert.deepEqual(methods.map(({ name, advertise, lifetime }) => ({ name, advertise, lifetime })), [
+    { name: "agent.wait", advertise: true, lifetime: "observation" },
+    { name: "device.scopes.waitUpgrade", advertise: false, lifetime: "observation" }
+  ]);
+  assert.throws(() => parseOpenClawCoreMethodSpecs(descriptors), /unsupported shared policy constant/);
+});
+
 test("changing read-sharing keys is runtime-required evidence, not silently accepted", () => {
   const current = parseOpenClawCoreMethodSpecs(`const CORE_GATEWAY_METHOD_SPECS = [
     ["models.list", "models", "operator.read", "<=2026.7"],

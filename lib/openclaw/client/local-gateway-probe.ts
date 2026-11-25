@@ -7,9 +7,16 @@ import os from "node:os";
 import path from "node:path";
 
 import type { GatewayStatusPayload } from "@/lib/openclaw/client/gateway-client";
+import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { isLoopbackHost } from "@/lib/security/local-operator";
 
-export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStatusPayload | null> {
-  const ready = await probeGatewayReadyEndpoint(port, 750);
+export async function probeLocalGatewayStatus(explicitPort?: number): Promise<GatewayStatusPayload | null> {
+  const endpoint = URL.parse(explicitPort === undefined ? resolveGatewayUrl() : `ws://127.0.0.1:${explicitPort}`);
+  if (!endpoint || endpoint.protocol !== "ws:" || !isLoopbackHost(endpoint.host) ||
+      endpoint.username || endpoint.password || endpoint.pathname !== "/" || endpoint.search || endpoint.hash) return null;
+  const port = Number(endpoint.port || 80);
+  const hostname = endpoint.hostname.replace(/^\[|\]$/g, "");
+  const ready = await probeGatewayReadyEndpoint(new URL("/readyz", `http://${endpoint.host}`), 750);
 
   if (ready !== null) {
     return {
@@ -20,7 +27,7 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
       gateway: {
         bindMode: "loopback",
         port,
-        probeUrl: `ws://127.0.0.1:${port}`
+        probeUrl: endpoint.origin
       },
       rpc: {
         ok: ready,
@@ -29,7 +36,7 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
     };
   }
 
-  const reachable = await probeTcpPort("127.0.0.1", port, 400);
+  const reachable = await probeTcpPort(hostname, port, 400);
 
   if (!reachable) {
     return null;
@@ -43,7 +50,7 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
     gateway: {
       bindMode: "loopback",
       port,
-      probeUrl: `ws://127.0.0.1:${port}`
+      probeUrl: endpoint.origin
     }
   };
 }
@@ -149,12 +156,12 @@ export function resolveLocalGatewayConfigPath(options: {
   return env.OPENCLAW_CONFIG_PATH?.trim() || path.join(stateDir, "openclaw.json");
 }
 
-async function probeGatewayReadyEndpoint(port: number, timeoutMs: number): Promise<boolean | null> {
+async function probeGatewayReadyEndpoint(url: URL, timeoutMs: number): Promise<boolean | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/readyz`, {
+    const response = await fetch(url, {
       method: "GET",
       cache: "no-store",
       signal: controller.signal

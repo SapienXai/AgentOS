@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import {
   comparePinnedMethodScopes,
   parsePinnedCoreDescriptorScopes,
@@ -217,8 +218,7 @@ function createEvidence(identity: { version: string; sourceCommit: string | null
       release: identity.version,
       source: identity.sourceCommit,
       gatewayProtocol: 4,
-      gatewayClient: OPENCLAW_IDENTITY_CONTRACT_VERSION,
-      gatewayProtocolPackage: OPENCLAW_IDENTITY_CONTRACT_VERSION,
+      ...readInstalledOpenClawSdkVersions(),
       buildId: identity.buildId,
       packageHash: identity.packageHash,
       packageRoot: "[DISPOSABLE_EXACT_PACKAGE]"

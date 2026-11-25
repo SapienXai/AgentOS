@@ -20,11 +20,11 @@ export class MissionControlCacheService<TSnapshot> {
     return this.controller.getGeneration();
   }
 
-  clear(options: { incrementGeneration?: boolean } = {}) {
-    this.controller.clear(options);
+  clear() {
+    this.controller.clear();
   }
 
-  getSnapshot(options: { force?: boolean; includeHidden?: boolean } = {}) {
+  getSnapshot(options: { force?: boolean; includeHidden?: boolean; loadProfile?: SnapshotLoadProfile } = {}) {
     return this.controller.get(options);
   }
 }

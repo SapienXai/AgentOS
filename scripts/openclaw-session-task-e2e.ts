@@ -11,6 +11,9 @@ import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtim
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
+import { buildDirectAgentChatSessionKey, directAgentChatSubmissionId } from "@/lib/openclaw/domains/agent-chat-sessions";
+import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
+import { extractAgentChatMessagesFromSessionHistory } from "@/lib/openclaw/agent-chat-response";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
@@ -29,6 +32,9 @@ const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_SESSION_TASK_E2E_OUTPUT?.trim() || path.resolve(`docs/evidence/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-session-task-alignment.json`);
 const REQUEST_TIMEOUT_MS = 10_000;
+const DIRECT_CHAT_MATRIX = process.env.OPENCLAW_DIRECT_CHAT_MATRIX === "1";
+const DIRECT_CHAT_QUEUE = process.env.OPENCLAW_DIRECT_CHAT_QUEUE === "1";
+const DIRECT_CHAT_BENCHMARK = process.env.OPENCLAW_DIRECT_CHAT_BENCHMARK === "1";
 
 async function main() {
   if (!PACKAGE_INPUT) {
@@ -158,6 +164,7 @@ async function main() {
       sameSession: false
     },
     restartContinuity: [] as Array<Record<string, unknown>>,
+    directChatContinuity: null as Record<string, unknown> | null,
     multiUserSemantics: {
       connectionStrategy: "shared trusted service",
       OpenClawAttribution: "shared service operator; no per-human credential is claimed",
@@ -404,6 +411,24 @@ async function main() {
     evidence.staleStateHandling.exactSessionReListAfterRestart = Boolean(recovered);
     assert.ok(recovered);
     assert.equal(sessionsAfterRestart.sessions.filter((entry) => entry.key === sessionKey).length, 1);
+    if (DIRECT_CHAT_MATRIX) {
+      evidence.directChatContinuity = await verifyDirectChat(reconnected, fixture, () => {
+        client?.close("direct chat client restarted");
+        client = createClient(port, token, "agentos-direct-chat-restart");
+        return client;
+      });
+      if (DIRECT_CHAT_QUEUE && client) {
+        const peer = createClient(port, token, "agentos-direct-chat-queue-peer");
+        try {
+          evidence.directChatContinuity = {
+            ...evidence.directChatContinuity,
+            queue: await verifyDirectChatQueue(client, peer, fixture)
+          };
+        } finally {
+          peer.close("direct chat queue fixture done");
+        }
+      }
+    }
     success = true;
   } finally {
     if (client) client.close("session/task E2E cleanup");
@@ -431,6 +456,223 @@ async function main() {
   }
   console.log(`OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} SESSION/TASK ALIGNMENT GATE: PASS`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
+}
+
+async function verifyDirectChat(
+  client: OfficialBackedGatewayClient,
+  fixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>>,
+  restartClient: () => OfficialBackedGatewayClient
+) {
+  const agent = { id: "main", workspaceId: "disposable-workspace" };
+  const key = buildDirectAgentChatSessionKey(agent, "fixture-owner");
+  const otherActor = buildDirectAgentChatSessionKey(agent, "fixture-member");
+  const newConversation = buildDirectAgentChatSessionKey(agent, "fixture-owner", "fca6821f-b3d9-4613-a4e7-0e38b45a986c");
+  const options = { timeoutMs: REQUEST_TIMEOUT_MS, allowCliFallback: false };
+  assert.equal(readAssistantMessages(await client.getSessionHistory({ sessionKey: key }, options)).length, 0);
+  const admissionMs: number[] = [];
+  let streamedTurns = 0;
+  const runIds = new Set<string>();
+  const nativeInputBytes: number[] = [];
+  const turn = async (sessionKey: string, cursor: string) => {
+    const startedAt = performance.now();
+    let streamed = false;
+    const message = `AGENTOS_DIRECT_CHAT_TURN_${cursor}`;
+    if (sessionKey === key) nativeInputBytes.push(Buffer.byteLength(message));
+    const result = await client.streamAgentTurn({
+      agentId: agent.id,
+      sessionKey,
+      message,
+      idempotencyKey: directAgentChatSubmissionId(sessionKey, cursor),
+      timeoutSeconds: 5
+    }, {
+      onSession: () => { if (sessionKey === key) admissionMs.push(performance.now() - startedAt); },
+      onStdout: () => { streamed = true; }
+    }, options);
+    return { result, streamed };
+  };
+  for (let cursor = 1; cursor <= 50; cursor++) {
+    const { result, streamed } = await turn(key, String(cursor));
+    assert.equal(result.status, "completed", `turn ${cursor} must complete`);
+    assert.ok(result.runId);
+    runIds.add(result.runId);
+    if (streamed) streamedTurns++;
+  }
+  assert.equal(runIds.size, 50);
+  assert.equal(streamedTurns, 50);
+  const before = await client.getSessionHistory({ sessionKey: key, limit: 120 }, options);
+  assert.ok(before.sessionId);
+  assert.equal(readAssistantMessages(before).length, 50);
+  const providerCalls = fixture.stats.completionCount;
+  const duplicate = await turn(key, "50");
+  assert.equal(duplicate.result.runId, directAgentChatSubmissionId(key, "50"));
+  assert.equal(fixture.stats.completionCount, providerCalls);
+  assert.equal(readAssistantMessages(await client.getSessionHistory({ sessionKey: otherActor }, options)).length, 0);
+  assert.equal((await turn(newConversation, "1")).result.status, "completed");
+  assert.equal(readAssistantMessages(await client.getSessionHistory({ sessionKey: newConversation }, options)).length, 1);
+  const catalog = await client.listSessions({ agentId: agent.id, search: `${key}:`, limit: 50 }, options);
+  assert.ok(catalog.sessions.some(({ key }) => key === newConversation), "native catalog must find the alternate conversation");
+  assert.ok(catalog.sessions.every(({ key: listed }) => listed?.startsWith(`${key}:`)), "catalog results must match the actor prefix");
+  client = restartClient();
+  const reopened = await client.getSessionHistory({ sessionKey: key, limit: 120 }, options);
+  assert.equal(reopened.sessionId, before.sessionId);
+  assert.equal(readAssistantMessages(reopened).length, 50);
+  const continuation = await turn(key, "51");
+  assert.equal(continuation.result.status, "completed");
+  const continued = await client.getSessionHistory({ sessionKey: key, limit: 120 }, options);
+  assert.equal(continued.sessionId, before.sessionId);
+  assert.equal(readAssistantMessages(continued).length, 51);
+  const abortKey = buildDirectAgentChatSessionKey(agent, "abort-fixture");
+  const runId = directAgentChatSubmissionId(abortKey, "abort");
+  let abortResult: ReturnType<OfficialBackedGatewayClient["abortAgentTurn"]> | undefined;
+  const stopped = await client.streamAgentTurn({
+    agentId: agent.id,
+    sessionKey: abortKey,
+    message: "WORKFORCE_ACCEPTANCE_CHILD",
+    idempotencyKey: runId,
+    timeoutSeconds: 5
+  }, {
+    onAdmission: (nativeRunId) => {
+      abortResult = client.abortAgentTurn({ sessionKey: abortKey, agentId: agent.id, runId: nativeRunId }, options);
+    }
+  }, options);
+  assert.equal((await abortResult)?.status, "aborted");
+  assert.equal(stopped.status, "cancelled");
+  const measuredAdmissions = admissionMs.slice(0, 50);
+  const baseline = DIRECT_CHAT_BENCHMARK ? await benchmarkFragmentedChat(client, agent, options) : undefined;
+  return {
+    result: "PASS",
+    provider: "loopback OpenAI-compatible fixture",
+    nativeSessionCount: 1,
+    streamedTurns,
+    turnsAfterClientRestart: 51,
+    duplicateRequestsToProvider: 0,
+    actorScopeHistoryEntries: 0,
+    explicitConversationHistoryEntries: 1,
+    nativeCatalogSearch: "PASS",
+    nativeAbort: "PASS",
+    nativeAdapterAdmissionP95Ms: percentile95(measuredAdmissions),
+    ...(baseline ? {
+      benchmark: {
+        scope: "Warm native adapter, setup/history requests through dispatch admission; model execution and browser excluded",
+        before: baseline,
+        after: {
+          turns: 50,
+          nativeAdapterAdmissionP95Ms: percentile95(measuredAdmissions),
+          nativeHistoryReadsBeforeDispatch: 0,
+          explicitSessionCreationsBeforeDispatch: 0,
+          messageInputBytesP95: percentile95(nativeInputBytes.slice(0, 50))
+        }
+      }
+    } : {})
+  };
+}
+
+async function verifyDirectChatQueue(
+  client: OfficialBackedGatewayClient,
+  peer: OfficialBackedGatewayClient,
+  fixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>>
+) {
+  const agent = { id: "main", workspaceId: "disposable-workspace" };
+  const sessionKey = buildDirectAgentChatSessionKey(agent, "queue-fixture");
+  const firstRunId = directAgentChatSubmissionId(sessionKey, "queue-first");
+  const secondRunId = directAgentChatSubmissionId(sessionKey, "queue-second");
+  const options = { timeoutMs: 15_000, allowCliFallback: false };
+  const providerCalls = fixture.stats.completionCount;
+  const first = client.streamAgentTurn({
+    agentId: agent.id, sessionKey, message: "WORKFORCE_ACCEPTANCE_CHILD queue first",
+    idempotencyKey: firstRunId, queueMode: "followup", timeoutSeconds: 12
+  }, {}, options);
+  // Wait for provider execution so the second submit crosses a real active turn.
+  for (let attempt = 0; fixture.stats.completionCount === providerCalls && attempt < 200; attempt++) {
+    await wait(20);
+  }
+  assert.equal(fixture.stats.completionCount, providerCalls + 1);
+
+  const secondAdmitted = Promise.withResolvers<string>();
+  const secondStarted = performance.now();
+  const second = peer.streamAgentTurn({
+    agentId: agent.id, sessionKey, message: "AGENTOS_QUEUE_SECOND",
+    idempotencyKey: secondRunId, queueMode: "followup", timeoutSeconds: 12
+  }, { onAdmission: secondAdmitted.resolve }, options);
+  const result = Promise.all([first, second]);
+  void result.catch(() => {});
+  const queuedReceiptDeadline = Date.now() + 2_000;
+  let queued = false;
+  while (!queued && Date.now() < queuedReceiptDeadline) {
+    const receipt = await peer.callNative<{ inputReceipts?: Array<{ runId: string; queued?: boolean }> }>(
+      "chat.history", { sessionKey, inputRunIds: [secondRunId] }, options
+    );
+    queued = receipt.inputReceipts?.some((input) => input.runId === secondRunId && input.queued === true) ?? false;
+    if (!queued) await wait(25);
+  }
+
+  const [firstTurn, secondTurn] = await result;
+  assert.equal(firstTurn.status, "completed", "First queue turn must complete via its native event");
+  assert.ok(secondTurn.status === "completed" || secondTurn.status === "ok",
+    `Second queue turn must complete via its native event or agent.wait, observed ${secondTurn.status}`);
+  assert.equal(firstTurn.runId, firstRunId);
+  assert.equal(secondTurn.runId, secondRunId);
+  assert.equal(await secondAdmitted.promise, secondRunId);
+  assert.equal(fixture.stats.completionCount - providerCalls, 2);
+  assert.equal(queued, true, "Native chat.history must expose the second message's queued receipt.");
+  const history = await peer.getSessionHistory({ sessionKey }, options);
+  const messages = extractAgentChatMessagesFromSessionHistory(history);
+  assert.deepEqual(messages.filter(({ role }) => role === "user").map(({ text }) => text), [
+    "WORKFORCE_ACCEPTANCE_CHILD queue first", "AGENTOS_QUEUE_SECOND"
+  ]);
+  assert.equal(messages.filter(({ role }) => role === "assistant").length, 2);
+  return {
+    separateGatewayConnections: true,
+    queuedReceipt: true,
+    distinctRuns: 2,
+    providerExecutions: 2,
+    nativeOrder: "PASS",
+    terminalResult: secondTurn.status,
+    secondTurnElapsedMs: Math.round(performance.now() - secondStarted)
+  };
+}
+
+async function benchmarkFragmentedChat(
+  client: OfficialBackedGatewayClient,
+  agent: { id: string },
+  options: { timeoutMs: number; allowCliFallback: boolean }
+) {
+  const sessionIds: string[] = [];
+  const admissionMs: number[] = [];
+  const messageBytes: number[] = [];
+  let historyReads = 0;
+  for (let turn = 1; turn <= 50; turn++) {
+    const startedAt = performance.now();
+    const fragments = sessionIds.slice(-5);
+    historyReads += fragments.length;
+    const histories = await Promise.all(fragments.map((sessionId) => client.getSessionHistory({
+      agentId: agent.id, sessionId, limit: 60
+    }, options)));
+    const message = buildAgentChatPrompt(
+      histories.flatMap(extractAgentChatMessagesFromSessionHistory).slice(-16),
+      `AGENTOS_DIRECT_CHAT_TURN_${turn}`,
+      { agentId: agent.id, agentName: "Fixture worker" }
+    );
+    messageBytes.push(Buffer.byteLength(message));
+    const sessionId = crypto.randomUUID();
+    sessionIds.push(sessionId);
+    const result = await client.streamAgentTurn({
+      agentId: agent.id, sessionId, message, timeoutSeconds: 5
+    }, { onSession: () => { admissionMs.push(performance.now() - startedAt); } }, options);
+    assert.equal(result.status, "completed");
+  }
+  return {
+    turns: 50,
+    nativeAdapterAdmissionP95Ms: percentile95(admissionMs),
+    nativeHistoryReadsBeforeDispatch: historyReads,
+    explicitSessionCreationsBeforeDispatch: sessionIds.length,
+    messageInputBytesP95: percentile95(messageBytes)
+  };
+}
+
+function percentile95(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return Number(sorted[Math.ceil(sorted.length * 0.95) - 1].toFixed(1));
 }
 
 async function runTurn(

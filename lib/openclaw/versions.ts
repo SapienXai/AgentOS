@@ -1,7 +1,7 @@
-// AgentOS 0.9.0 starts with one OpenClaw production baseline.
+// The release candidate targets OpenClaw 2026.11.10 and retains the 2026.11.5 compatibility floor.
 export const OPENCLAW_SUPPORTED_BASELINE_VERSION: string = "2026.11.5";
 export const OPENCLAW_RECOMMENDED_VERSION: string = "2026.11.5";
-export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.11.5";
+export const OPENCLAW_NATIVE_CONTRACT_VERSION: string = "2026.11.10";
 export const OPENCLAW_INSTALL_TARGET_VERSION: string = OPENCLAW_NATIVE_CONTRACT_VERSION;
 export const OPENCLAW_FINAL_CERTIFICATION_PHASE = "pre-merge-final-certification" as const;
 

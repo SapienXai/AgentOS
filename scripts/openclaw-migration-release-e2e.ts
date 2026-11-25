@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { access, cp, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -26,6 +26,7 @@ const OUTPUT_PATH = path.resolve(
 );
 const SOURCE_PACKAGE = readEnv("OPENCLAW_MIGRATION_SOURCE_PACKAGE", "OPENCLAW_MIGRATION_9_3_PACKAGE");
 const TARGET_PACKAGE = readEnv("OPENCLAW_MIGRATION_TARGET_PACKAGE", "OPENCLAW_MIGRATION_9_4_PACKAGE");
+const VERIFY_ROLLBACK = readEnv("OPENCLAW_MIGRATION_VERIFY_ROLLBACK") === "1";
 
 type PackageIdentity = {
   version: string;
@@ -70,6 +71,7 @@ async function main() {
     migration: null,
     target: null,
     recovery: null,
+    rollback: { status: VERIFY_ROLLBACK ? "pending" : "not-tested" },
     errorPhase: null,
     checks: {},
     cleanup: { status: "pending", gatewayProcessesStopped: false, disposableRootRemoved: false },
@@ -95,7 +97,7 @@ async function main() {
     evidence.provenance = { ...(evidence.provenance as Record<string, unknown>), sourcePackage: sourceIdentity, targetPackage: targetIdentity };
 
     phase = "prepare-source-state";
-    fixtureRoot = await mkdtemp(path.join(os.tmpdir(), `agentos-openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-`));
+    fixtureRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), `agentos-openclaw-${SOURCE_VERSION}-to-${TARGET_VERSION}-`)));
     const stateDir = path.join(fixtureRoot, "state");
     const homeDir = path.join(fixtureRoot, "home");
     const workspaceDir = path.join(fixtureRoot, "workspace");
@@ -259,6 +261,62 @@ async function main() {
       schemaStillTarget: afterRecovery.stateSchema === TARGET_STATE_SCHEMA,
       representativeStateStillIntact: sameRepresentativeState(afterRuntime, afterRecovery)
     };
+
+    if (VERIFY_ROLLBACK) {
+      phase = "restore-source-state";
+      const restoreRoot = path.join(fixtureRoot, "restored-source");
+      await installRuntimePackage(path.resolve(SOURCE_PACKAGE), runtimePackagePath);
+      // Stage using the source runtime and an empty context so the source
+      // launcher cannot attempt to open the migrated database.
+      const restored = await runCommand(path.join(runtimePackagePath, "openclaw.mjs"), [
+        "backup", "restore", archive, "--target", restoreRoot, "--json"
+      ], {
+        OPENCLAW_STATE_DIR: path.join(fixtureRoot, "rollback-command-state"),
+        OPENCLAW_CONFIG_PATH: path.join(fixtureRoot, "rollback-command.json"),
+        HOME: homeDir
+      });
+      if (restored.code !== 0) throw new Error(`Native backup restore failed: ${sanitizeError(restored.stderr)}`);
+      const { archiveRoot } = JSON.parse(restored.stdout) as { archiveRoot: string };
+      const manifest = JSON.parse(await readFileText(path.join(restoreRoot, archiveRoot, "manifest.json"))) as {
+        assets: Array<{ sourcePath: string; archivePath: string }>;
+      };
+      const destinations = [stateDir, configPath, workspaceDir];
+      const assets = await Promise.all(destinations.map(async (destination) => {
+        const canonicalDestination = await realpath(destination);
+        for (const asset of manifest.assets) {
+          if (await realpath(asset.sourcePath).catch(() => null) === canonicalDestination) {
+            return { destination, staged: path.join(restoreRoot, asset.archivePath) };
+          }
+        }
+        throw new Error("Native backup did not contain a required rollback asset.");
+      }));
+      for (const [index, { destination, staged }] of assets.entries()) {
+        await rename(destination, path.join(fixtureRoot, `post-upgrade-asset-${index}`));
+        await rename(staged, destination);
+      }
+
+      phase = "verify-restored-source-runtime";
+      const restoredState = await inspectFixture({ stateDir, configPath, workspaceDir, agentSchema: sourceIdentity.agentSchema });
+      sourceGateway = await startGateway(runtimePackagePath, stateDir, homeDir, configPath, token, sourcePort);
+      sourceClient = createClient(sourcePort, token, stateDir);
+      const restoredHandshake = await sourceClient.probeNativeHandshake({ timeoutMs: 10_000 });
+      await waitForSessionStorageReadiness(sourceClient);
+      const restoredHistory = await waitForHistory(sourceClient, rootSessionKey, 1);
+      const restoredAgents = await sourceClient.callNative<Record<string, unknown>>("agents.list", {}, readPolicy());
+      const rolledBack = restoredHandshake.server?.version === SOURCE_VERSION &&
+        restoredState.stateSchema === SOURCE_STATE_SCHEMA &&
+        allAgentDatabasesMatch(restoredState, SOURCE_AGENT_SCHEMA) &&
+        sameRepresentativeState(before, restoredState) &&
+        countRecords(restoredAgents, "agents") >= 2 && countAssistantMessages(restoredHistory) >= 1;
+      if (!rolledBack) throw new Error("Restored source runtime or representative state failed verification.");
+      evidence.rollback = {
+        status: "PASS",
+        version: restoredHandshake.server?.version,
+        stateSchema: restoredState.stateSchema,
+        agentSchema: SOURCE_AGENT_SCHEMA,
+        assistantMessagesRestored: countAssistantMessages(restoredHistory)
+      };
+    }
 
     const migration = evidence.migration as Record<string, unknown>;
     const source = evidence.source as Record<string, unknown>;

@@ -1454,7 +1454,7 @@ test("agent chat keeps the send action in the composer bottom-right", () => {
 
   assert.match(
     source,
-    /absolute bottom-1\.5 right-1\.5 h-10 w-10 rounded-full p-0 shadow-none/
+    /absolute bottom-1\.5 right-1\.5 flex gap-1[\s\S]*type="submit"[\s\S]*aria-label="Send message"/
   );
   assert.doesNotMatch(source, /absolute bottom-1\.5 right-1\.5[\s\S]*lg:top-3/);
 });
@@ -1495,29 +1495,31 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(drawerSource, /previousActivity/);
   assert.match(drawerSource, /agent-chat-activity-label/);
   assert.match(drawerSource, /<details[\s\S]*Recent activity/);
-  assert.match(drawerSource, /statusHistory=\{runSnapshot\.statusHistory\}/);
+  assert.match(drawerSource, /statusHistory=\{activeRun\.statusHistory\}/);
   assert.match(drawerSource, /<AgentChatMessageContent text=\{entry\.text\}/);
   assert.doesNotMatch(drawerSource, /rounded-\[14px\] border px-3 py-2\.5/);
   assert.doesNotMatch(drawerSource, /Show details|Reading your message|Live activity/);
   assert.match(runnerSource, /statusHistory: string\[\]/);
   assert.match(runnerSource, /maxAgentChatStatusHistory = 5/);
-  assert.match(routeSource, /latestItem\?\.role === "toolCall"/);
-  assert.match(routeSource, /latestItem\?\.role === "toolResult"/);
+  assert.match(routeSource, /onToolStart: \(name\)/);
+  assert.match(routeSource, /onAdmission: \(runId\)/);
+  assert.match(routeSource, /await send\(\{ type: "cancelled" \}\)/);
+  assert.match(runnerSource, /if \(!finalResponse && !settled\)/);
   assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
   assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);
 });
 
-test("agent chat loads model context from the same server history shown to the browser", () => {
+test("agent chat gives OpenClaw ownership of message history and context", () => {
   const routeSource = readFileSync(path.join(rootDir, "app/api/agents/[agentId]/chat/route.ts"), "utf8");
   const runnerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-runner.ts"), "utf8");
   const [getRoute, postRoute] = routeSource.split("export async function POST(");
 
-  assert.match(getRoute, /await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
-  assert.match(postRoute, /const \{ messages \} = await readCanonicalAgentChat\(agentId, agent\.workspacePath\)/);
-  assert.match(postRoute, /buildAgentChatPrompt\(history, operatorMessage/);
-  assert.doesNotMatch(postRoute, /input\.history/);
-  assert.doesNotMatch(runnerSource, /history:\s*promptHistory/);
+  assert.match(getRoute, /getSessionHistory\(\s*\{ sessionKey,[^}]*cursor: cursor\.data \}/);
+  assert.match(getRoute, /before: typeof history\.olderCursor === "string"/);
+  assert.match(postRoute, /streamAgentTurn\(\s*\{\s*agentId,\s*sessionKey,\s*message: operatorMessage/);
+  assert.doesNotMatch(routeSource, /readLatestAgentChatTurn|pollTranscript|buildAgentChatPrompt/);
+  assert.doesNotMatch(runnerSource, /history:\s*promptHistory|previousAssistantTexts/);
 });
 
 test("mobile light sidebar uses an opaque surface and hides its launcher while open", () => {

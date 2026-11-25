@@ -1302,6 +1302,7 @@ export type WorkerEffectiveCapabilitiesPayload = {
     profile: string | null;
   };
   capabilities: EffectiveCapability[];
+  mcpTools?: Array<{ id: string; available: boolean }> | null;
   skills: SkillLibraryItem[];
   skillLibrary: {
     supported: boolean;

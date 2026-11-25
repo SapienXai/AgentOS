@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-capability-truthfulness-skills-runtime-certification",
+  "generatedAt": "2026-11-25T14:47:59.302Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "",
+    "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+    "openClaw": {
+      "release": "2026.11.10",
+      "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
+      "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
+      "packageHash": "efa510a740b56e46bb3cdb0c344c4a814ad1126c19f010f066b6407c93e3ae4c",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    },
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.11.10",
+    "gatewayProtocolPackage": "2026.11.10"
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "stateIsolation": true,
+    "configIsolation": true,
+    "userGatewayUntouched": true,
+    "realProviderCredentials": false
+  },
+  "skillsLibrary": {
+    "exactMethods": [
+      {
+        "method": "skills.library.list",
+        "scope": "operator.read",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.read",
+        "scope": "operator.read",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.save",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.mutate",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.activate",
+        "scope": "operator.write",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.import",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.upload",
+        "scope": "operator.write",
+        "integrated": false
+      }
+    ],
+    "list": "PASS",
+    "read": "PASS",
+    "save": "PASS",
+    "upload": "SKIPPED",
+    "activate": "PASS",
+    "ownership": "PASS",
+    "revisionIdentity": "PASS",
+    "sessionSelectionShape": "PASS",
+    "skipReasons": [],
+    "certificationFixture": {
+      "enabled": true,
+      "seedMethod": "skills.library.save",
+      "seed": "PASS",
+      "skillId": "7da0e4d8-8b25-4305-8989-dfe666f98931",
+      "revision": "caa23bc1754c04f9298bf007b9d92eba5344f0f2688c08c1f6541de54817d257",
+      "read": "PASS",
+      "revisionIdentity": "PASS",
+      "activateAttach": "PASS",
+      "nextTurn": "SKIPPED",
+      "sessionSelection": "PASS",
+      "detach": "PASS",
+      "skillCleanup": "PASS",
+      "skipReason": null
+    }
+  },
+  "tools": {
+    "catalog": "PASS",
+    "effective": "PASS",
+    "catalogPresenceIsNotAvailability": "PASS",
+    "catalogToolCount": 77,
+    "effectiveToolCount": 61,
+    "catalogOnlyTool": "code_execution"
+  },
+  "capabilityResolver": {
+    "statuses": {
+      "AVAILABLE": "PASS",
+      "REQUIRES_APPROVAL": "SKIPPED",
+      "NEEDS_SETUP": "SKIPPED",
+      "BLOCKED": "SKIPPED",
+      "UNAVAILABLE": "PASS",
+      "UNKNOWN": "SKIPPED"
+    },
+    "matrixSource": "deterministic resolver contract tests"
+  },
+  "capabilityTruthfulness": {
+    "effectiveToolsSuccessPresent": "AVAILABLE",
+    "effectiveToolsSuccessAbsent": "UNAVAILABLE",
+    "effectiveToolsDeniedBySession": "BLOCKED",
+    "effectiveToolsReadTimeout": "UNKNOWN",
+    "effectiveToolsReadAuthorizationFailure": "UNKNOWN",
+    "explicitRuntimeUnavailable": "UNAVAILABLE",
+    "unknownReasonCode": "effective_state_unavailable",
+    "unknownExplanation": "AgentOS could not verify this capability from the current OpenClaw runtime.",
+    "source": "deterministic resolver contract tests"
+  },
+  "skillDetailRevisionTruth": {
+    "latestRevisionSource": "skills.library.read.entry.revision",
+    "sessionRevisionSource": "skills.library.list.session.selections[].revision",
+    "joinIdentity": "skillId",
+    "selectedSessionRevisionIsPreserved": true,
+    "knownUnselectedState": false,
+    "failedSelectionReadState": null,
+    "noSessionContextState": null,
+    "source": "deterministic application-service contract tests"
+  },
+  "sessionRevision": {
+    "status": "PASS",
+    "reason": "OpenClaw returned the exact selected skillId and revision in skills.library.list(sessionKey)."
+  },
+  "authorization": {
+    "staticScopes": {
+      "skills.library.list": [
+        "operator.read"
+      ],
+      "skills.library.read": [
+        "operator.read"
+      ],
+      "skills.library.activate": [
+        "operator.write"
+      ],
+      "tools.catalog": [
+        "operator.read"
+      ],
+      "tools.effective": [
+        "operator.read"
+      ]
+    },
+    "readScopeReads": "PASS",
+    "writeScopeActivation": "EXPECTED-DENIAL",
+    "gatewayFinalAuthority": true
+  },
+  "events": {
+    "nativeInventory": [
+      "skills.changed",
+      "sessions.changed",
+      "session.tool",
+      "session.approval",
+      "exec.approval.requested",
+      "exec.approval.resolved",
+      "plugin.approval.requested",
+      "plugin.approval.resolved"
+    ],
+    "observed": [
+      "plugins.changed",
+      "chat.metadata.changed",
+      "skills.changed",
+      "health",
+      "update.available",
+      "sessions.changed"
+    ],
+    "cacheInvalidation": "covered by event-bridge contract tests",
+    "coalescing": "existing AgentOS event bridge"
+  },
+  "performance": {
+    "capabilityServiceGraph": "one agent read + one bounded session read + parallel catalog/effective/library/account reads",
+    "nativeCertificationRpcCounts": {
+      "skills.library.save": 1,
+      "skills.library.list": 3,
+      "skills.library.read": 1,
+      "skills.library.activate": 2,
+      "tools.catalog": 1,
+      "tools.effective": 1,
+      "skills.library.mutate": 1
+    },
+    "oneRpcPerTool": false,
+    "rootDashboardFullResolution": false,
+    "observedTimingMs": 200
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "skillContentTrustedAsSystemInstruction": false,
+    "centralRedaction": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true
+  },
+  "checks": {
+    "exactPackage": true,
+    "nativeTransport": true,
+    "skillsListContract": true,
+    "skillsActivationContract": "PASS",
+    "toolsCatalogContract": true,
+    "toolsEffectiveContract": true,
+    "catalogNotAvailability": "PASS",
+    "availableFixture": "PASS",
+    "sessionSelectionShape": true,
+    "disposableSkillSeed": "PASS",
+    "disposableSkillRead": "PASS",
+    "disposableSkillActivation": "PASS",
+    "disposableSkillSessionSelection": "PASS",
+    "disposableSkillDetach": "PASS",
+    "disposableSkillCleanup": "PASS",
+    "exactScopes": true,
+    "insufficientScopeDenied": "EXPECTED-DENIAL",
+    "noCliFallback": true,
+    "cleanup": true
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "deterministicCapabilityMatrix": "PASS",
+    "nativeTransportContract": "PASS",
+    "fullSuite": "run separately"
+  },
+  "skips": [
+    "Approval, account-missing, explicit-policy-block, and runtime-missing fixtures are covered by deterministic tests; the exact disposable runtime did not naturally expose each state.",
+    "The Gateway confirmed next-turn selection; actual model use of the skill was not exercised."
+  ],
+  "gate": "OPENCLAW 2026.11.10 SKILLS + EFFECTIVE CAPABILITIES GATE: PASS",
+  "success": true
+}

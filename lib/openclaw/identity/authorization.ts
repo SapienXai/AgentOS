@@ -44,7 +44,8 @@ const SESSION_PATCH_WRITE_FIELDS = new Set([
   "agentId",
   "expectedSessionId",
   "expectedLifecycleRevision",
-  "expectedMarkedUnreadAt"
+  "expectedMarkedUnreadAt",
+  "expectedArchived"
 ]);
 
 const ADMIN_ONLY_NODE_COMMANDS = new Set([

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { setTimeout as wait } from "node:timers/promises";
+
 /**
  * Shared AgentOS domain/policy client. Its historical class name is retained
  * for compatibility while production always injects the official transport.
@@ -1023,16 +1025,43 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
-  inspectWorktreeBranches(
+  async inspectWorktreeBranches(
     input: { repoRoot: string; includeRepositoryStatus?: boolean },
     options: OpenClawCommandOptions = {}
   ) {
-    return this.nativeOnly<OpenClawWorktreesBranchesPayload>(
+    const read = () => this.nativeOnly<OpenClawWorktreesBranchesPayload>(
       "worktrees.branches",
       { ...input },
       options,
       (payload) => parseObjectGatewayPayload<OpenClawWorktreesBranchesPayload>("worktrees.branches", payload)
     );
+    if (!input.includeRepositoryStatus || this.options.forceCli || isCliGatewayClientForcedByEnv()) return read();
+
+    const refreshed = Promise.withResolvers<void>();
+    const subscription = await this.subscribeNativeEvents({}, {
+      onEvent: ({ event, payload }) => {
+        if (event === "worktrees.branches.changed" && isObjectRecord(payload) &&
+            payload.repoRoot === input.repoRoot) refreshed.resolve();
+      }
+    }, options);
+    const timer = new AbortController();
+    try {
+      const result = await read();
+      if (!result.refreshing) return result;
+
+      const signal = options.signal ? AbortSignal.any([options.signal, timer.signal]) : timer.signal;
+      await Promise.race([
+        refreshed.promise,
+        wait(Math.min(options.timeoutMs ?? 5_000, 5_000), undefined, { signal, ref: false })
+      ]);
+      // A cold branch listing is a snapshot while the Gateway refreshes.
+      // Reread at most once, including when an invalidation could have been lost.
+      this.requestPolicy.invalidateReadCache();
+      return await read();
+    } finally {
+      timer.abort();
+      subscription.close();
+    }
   }
 
   createSession(input: OpenClawSessionCreateInput, options: OpenClawCommandOptions = {}) {
@@ -2390,6 +2419,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {}
   ) {
     if (options.forceCli || this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      if (options.allowCliFallback === false) {
+        throw new OpenClawGatewayClientError("Direct chat requires a native OpenClaw Gateway.", "unsupported");
+      }
       this.assertVerifiedCliMutationFallback("chat.send", {
         sessionKey: input.sessionKey?.trim() || buildAgentSessionKey(input.agentId, input.sessionId)
       }, options);
@@ -2416,8 +2448,23 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         earlyEvents.push(frame);
         return;
       }
+      if (options.allowCliFallback === false) {
+        const payload = frame.payload;
+        if (!dispatchedRunId || !isObjectRecord(payload) ||
+          payload.runId !== dispatchedRunId || payload.sessionKey !== session.sessionKey) return;
+        if (frame.event === "agent" && payload.stream === "tool" && isObjectRecord(payload.data) &&
+          payload.data.phase === "start" && typeof payload.data.name === "string") {
+          callbacks.onToolStart?.(payload.data.name);
+        }
+        if (frame.event !== "chat") return;
+      }
       const event = normalizeGatewayTurnEvent(frame, session.sessionKey, dispatchedRunId, session.sessionId);
-      if (!event) return;
+      if (!event) {
+        if (options.allowCliFallback === false && isObjectRecord(frame.payload) && frame.payload.state === "final") {
+          resolveFinal({ runId: dispatchedRunId ?? undefined, status: "ok" });
+        }
+        return;
+      }
       if (event.text && event.text !== lastAssistantText) {
         lastAssistantText = event.text;
         void callbacks.onStdout?.(`${JSON.stringify({ type: "assistant", text: event.text })}\n`);
@@ -2436,7 +2483,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       if (!keyChanged && subscription) return;
       closeSubscription();
       subscription = await this.subscribeNativeEvents(
-        { subscribeSessions: true, sessionKeys: [next.sessionKey] },
+        { subscribeSessions: options.allowCliFallback !== false, sessionKeys: [next.sessionKey] },
         {
           onEvent: receiveEvent,
           onError: (error) => {
@@ -2462,6 +2509,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       dispatchedRunId = dispatchPayload.runId ?? null;
       dispatchConfirmed = true;
       callbacks.onSession?.(admittedSession);
+      if (dispatchedRunId) callbacks.onAdmission?.(dispatchedRunId);
       await subscribeToSession(admittedSession).catch((error: unknown) => {
         void callbacks.onStderr?.(error instanceof Error ? `${error.message}\n` : `${String(error)}\n`);
       });
@@ -2482,7 +2530,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     } catch (error) {
       this.options.onNativeFailure?.(error, "streamAgentTurn");
       const method = error instanceof NativeGatewayRequestError ? error.method : "streamAgentTurn";
-      if (!shouldUseCliFallback(error, method, { safety: "mutation" })) {
+      if (!shouldUseCliFallback(error, method, {
+        safety: "mutation",
+        allowCliFallback: options.allowCliFallback
+      })) {
         throw this.cliFallbackDisabledError(method, error);
       }
       this.assertVerifiedCliMutationFallback(method, {
@@ -2509,7 +2560,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       : undefined;
     const prepared = await this.prepareNativeSession(input, requestedKey, options);
     let session = prepared ?? { sessionKey: requestedKey };
-    const messageParams = { message: input.message, thinking: input.thinking, timeoutMs, idempotencyKey };
+    const messageParams = { message: input.message, thinking: input.thinking, timeoutMs, idempotencyKey, attachments: input.attachments };
     const attachSession = (payload: MissionCommandPayload) => withChatAdmission({
       ...payload,
       sessionKey: readNonEmptyString(payload.sessionKey) ?? session.sessionKey,
@@ -2517,13 +2568,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }, session.sessionKey, idempotencyKey);
     const sendChat = async () => attachSession(await this.callNative<MissionCommandPayload>("chat.send", {
       ...session,
-      ...messageParams
+      ...messageParams,
+      queueMode: input.queueMode
     }, options));
 
     await beforeSend?.(session);
     try {
       return await sendChat();
     } catch (error) {
+      if (input.queueMode && isGatewayMethodUnsupported(error)) throw error;
       if (!isGatewayMethodUnsupported(error)) {
         if (isGatewayAgentNotFoundError(error, input.agentId)) {
           const registryState = await this.checkGatewayAgentRegistry(input.agentId, options);
@@ -3029,6 +3082,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     input: OpenClawSessionHistoryInput,
     options: OpenClawCommandOptions
   ) {
+    if (options.allowCliFallback === false) {
+      return this.nativeOnly<OpenClawSessionHistoryPayload>(
+        "chat.history",
+        buildChatHistoryParams(input),
+        options,
+        (payload) => parseObjectGatewayPayload<OpenClawSessionHistoryPayload>("chat.history", payload)
+      );
+    }
     if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
       return this.fallback.getSessionHistory(input, options);
     }

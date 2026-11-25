@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import {
   assertPinnedMethodAbsent,
   comparePinnedMethodScopes,
@@ -79,8 +80,7 @@ async function main() {
         release: packageIdentity.version,
         sourceCommit: packageIdentity.sourceCommit,
         gatewayProtocol: 4,
-        gatewayClient: packageIdentity.version,
-        gatewayProtocolPackage: packageIdentity.version,
+        ...readInstalledOpenClawSdkVersions(),
         buildId: packageIdentity.buildId,
         packageHash: packageIdentity.packageHash,
         packageRoot: "[DISPOSABLE_EXACT_PACKAGE]"

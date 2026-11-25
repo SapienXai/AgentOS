@@ -110,23 +110,35 @@ export async function GET(request: Request) {
   const refresh = url.searchParams.get("refresh") === "1";
   const agentId = url.searchParams.get("agentId")?.trim() || undefined;
   const sessionKey = url.searchParams.get("sessionKey")?.trim() || undefined;
+  const canManageSecrets = canAgentOsActorUseProductPermission(permission.actor, "secrets.manage");
+  const headers = { "Cache-Control": "private, no-store" };
+  if (!canManageSecrets && (includeSetup || refresh || sessionKey)) {
+    return NextResponse.json({
+      error: "Provider accounts and session-specific model settings require an authorized operator."
+    }, { status: 403, headers });
+  }
 
   try {
     const state = await readModelManagementState({ view, includeSetup, refresh, agentId, sessionKey });
     return NextResponse.json(
       redactSecrets({
-        ...state,
+        ...(canManageSecrets ? state : {
+          checkedAt: state.checkedAt,
+          models: state.models,
+          selection: state.selection,
+          diagnostics: { catalogWarning: state.diagnostics.catalogWarning }
+        }),
         permissions: {
           canManageModels: canAgentOsActorUseProductPermission(permission.actor, "models.manage"),
-          canManageSecrets: canAgentOsActorUseProductPermission(permission.actor, "secrets.manage")
+          canManageSecrets
         }
       }),
-      { status: 200 }
+      { status: 200, headers }
     );
   } catch (error) {
     return NextResponse.json(
       { error: redactErrorMessage(error, "OpenClaw model management is temporarily unavailable.") },
-      { status: 503 }
+      { status: 503, headers }
     );
   }
 }
@@ -137,9 +149,7 @@ export async function POST(request: Request) {
     rawAction?.action as "set-default" | "set-fallbacks" | "set-policy"
   )
     ? ("models.manage" as const)
-    : rawAction?.action === "wizard-status"
-      ? ("runtime.use" as const)
-      : ("secrets.manage" as const);
+    : ("secrets.manage" as const);
   const permission = await requireAgentOsProductPermission(request, requiredPermission);
   if ("response" in permission) return permission.response;
 

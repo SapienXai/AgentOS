@@ -42,7 +42,7 @@ const runtimeIssueActionSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   try {
     const snapshot = await getMissionControlSnapshot({ force: true });
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
-  const productPermission = await requireAgentOsProductPermission(request, "runtime.use");
+  const productPermission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in productPermission) return productPermission.response;
 
   try {
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         targetKind: "gateway-device",
         targetId: input.issueId,
         securityClass: "read",
-        productPermission: "runtime.use"
+        productPermission: "runtime.inspect"
       });
       if ("response" in authorization) return authorization.response;
       const result = await inspectRuntimeIssueDevices(input.issueId);

@@ -55,7 +55,7 @@ export async function POST(
     targetId: taskId,
     securityClass: "privileged-mutation",
     executionPath: "gateway-native",
-    productPermission: "tasks.use"
+    productPermission: "runtime.inspect"
   });
   if ("response" in authorization) return authorization.response;
 

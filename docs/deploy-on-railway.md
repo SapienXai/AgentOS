@@ -1,14 +1,14 @@
 # Deploy AgentOS on Railway
 
-The Railway application image packages AgentOS with OpenClaw `2026.11.5` in the
+The Railway application image packages AgentOS with OpenClaw `2026.11.10` in the
 public application service; interactive Chromium runs in a separate private
 browser worker service. OpenClaw remains the runtime and source of truth;
 AgentOS connects to its native Gateway over `ws://127.0.0.1:18789`. Only AgentOS
 is exposed through Railway's HTTPS domain.
 
 The candidate image in this branch is pinned to the official OpenClaw
-`2026.11.5` multi-architecture index
-`sha256:9c74476e3e79b5a1595fd5cf904286eaba3471c10c640aaa9a361a89b41d0882`.
+`2026.11.10` multi-architecture index
+`sha256:230afbdd8344310cac1e2d8e5dfad67315e82f3757692014310e77653639acb0`.
 The official image reports the Node.js 24.22.1 runtime required by OpenClaw.
 This repository change has not been deployed to Railway.
 
@@ -222,7 +222,7 @@ prove compatibility with a third-party website and does not use real login
 credentials.
 
 OpenClaw is pinned in `Dockerfile.railway`. This branch's candidate pin is the
-exact `2026.11.5` multi-architecture index recorded above. Upgrade it only
+exact `2026.11.10` multi-architecture index recorded above. Upgrade it only
 together with AgentOS compatibility checks and update the pin, recommended
 version, and deployment documentation in the same change. OpenClaw remains the owner of
 runtime updates, migrations, restart, backup, rollback, and recovery; this image

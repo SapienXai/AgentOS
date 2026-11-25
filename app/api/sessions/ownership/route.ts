@@ -60,7 +60,7 @@ const collaborationSchema = z.union([
 ]);
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "sessions.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   const sessionKey = new URL(request.url).searchParams.get("sessionKey");
 
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
     targetId: sessionKey,
     securityClass: "read",
     executionPath: "gateway-native",
-    productPermission: "sessions.use"
+    productPermission: "runtime.inspect"
   });
   if ("response" in memberPreflight) return memberPreflight.response;
 
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     targetId: sessionKey,
     securityClass: "read",
     executionPath: "gateway-native",
-    productPermission: "sessions.use"
+    productPermission: "runtime.inspect"
   });
   if ("response" in evidencePreflight) return evidencePreflight.response;
 

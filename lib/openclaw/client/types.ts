@@ -1,3 +1,4 @@
+import type { SkillLibrarySelection } from "@openclaw/gateway-protocol";
 import type { EventFrame } from "@openclaw/gateway-protocol/frame-guards";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import type {
@@ -157,6 +158,8 @@ export interface OpenClawStreamCallbacks {
   onStdout?: (text: string) => Promise<void> | void;
   onStderr?: (text: string) => Promise<void> | void;
   onSession?: (session: OpenClawTurnSession) => void;
+  onAdmission?: (runId: string) => void;
+  onToolStart?: (name: string) => void;
 }
 
 export type OpenClawTurnSession = {
@@ -628,11 +631,7 @@ export type OpenClawSkillLibraryEntry = {
   canEdit: boolean;
 };
 
-export type OpenClawSkillLibrarySelection = {
-  skillId: string;
-  revision: string;
-  name: string;
-  ownerProfileId: string | null;
+export type OpenClawSkillLibrarySelection = SkillLibrarySelection & {
   slug: string;
   description: string;
   ownerLabel: string;
@@ -688,7 +687,7 @@ export type OpenClawSkillLibraryActivateInput = {
 
 export type OpenClawSkillLibraryActivatePayload = {
   sessionKey: string;
-  selections: OpenClawSkillLibrarySelection[];
+  selections: SkillLibrarySelection[];
   sessionActivation: "next-turn";
 };
 
@@ -1062,6 +1061,7 @@ export type OpenClawModelAuthLogoutPayload = {
 };
 
 export interface OpenClawListSessionsInput {
+  archived?: boolean | "all";
   limit?: number;
   activeMinutes?: number;
   includeGlobal?: boolean;
@@ -1076,6 +1076,7 @@ export interface OpenClawListSessionsInput {
 
 export type OpenClawSessionsPayload = {
   sessions: Array<Record<string, unknown> & {
+    archived?: boolean;
     agentId?: string;
     key?: string;
     sessionId?: string;
@@ -1729,6 +1730,9 @@ export interface OpenClawAgentTurnInput {
   sessionId?: string;
   message: string;
   thinking?: OpenClawThinkingLevel;
+  /** Ask the Gateway to hold this input behind active work on the same session. */
+  queueMode?: "followup" | "steer";
+  attachments?: import("@/lib/openclaw/chat-attachments").DirectChatAttachment[];
   timeoutSeconds?: number;
   workspace?: string | null;
   dispatchId?: string | null;
@@ -1778,6 +1782,7 @@ export interface OpenClawWorktreesBranchesPayload {
   defaultBranch?: string;
   headBranch?: string;
   repositoryStatus?: "git" | "not_git" | "unavailable";
+  refreshing?: boolean;
 }
 
 export interface OpenClawTaskSuggestion {

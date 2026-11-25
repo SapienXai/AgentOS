@@ -17,8 +17,6 @@ import {
 } from "@/lib/openclaw/siwc-onboarding";
 
 const siwcChoice = "openai-token-sharing";
-const defaultSiwcModel = "openai/gpt-6-luna";
-const defaultSiwcThinking = "low";
 const lifetimeMs = 6 * 60_000;
 const credentialRecoveryRetryDelaysMs = [1_500, 3_000, 6_000, 6_000];
 const rosterSchema = z.object({
@@ -34,10 +32,10 @@ const savedCandidateSchema = z.object({
   kind: z.string(),
   brandId: z.literal("openai"),
   label: z.string(),
-  modelRef: z.string().startsWith("openai/")
+  modelRef: z.string().regex(/^openai\/[\w.-]{1,120}$/)
 });
 type SavedCandidate = z.infer<typeof savedCandidateSchema>;
-type SavedSignIn = { agentId: string; candidate: SavedCandidate; restartAttempted?: true };
+type SavedSignIn = { agentId: string; candidate: SavedCandidate; reused: boolean; restartAttempted?: true };
 type RestartGateway = (signal: AbortSignal) => Promise<boolean>;
 const modelCatalogSchema = z.object({
   models: z.array(z.object({
@@ -78,8 +76,8 @@ export function getSiwcAuthorizationUrl(owner: string, flowId: string, redirectB
   return flow.url;
 }
 
-export function startSiwcFlow(owner: string, ownerActive: () => Promise<boolean> = async () => true, restartGateway?: RestartGateway) {
-  return runSiwcFlow(owner, ownerActive, restartGateway);
+export function startSiwcFlow(owner: string, ownerActive: () => Promise<boolean> = async () => true, restartGateway?: RestartGateway, fresh = false) {
+  return runSiwcFlow(owner, ownerActive, restartGateway, undefined, fresh);
 }
 
 export function retrySavedSiwcFlow(owner: string, ownerActive: () => Promise<boolean>, restartGateway?: RestartGateway) {
@@ -87,7 +85,7 @@ export function retrySavedSiwcFlow(owner: string, ownerActive: () => Promise<boo
   return runSiwcFlow(owner, ownerActive, restartGateway, flow.saved);
 }
 
-function runSiwcFlow(owner: string, ownerActive: () => Promise<boolean>, restartGateway?: RestartGateway, saved?: SavedSignIn) {
+function runSiwcFlow(owner: string, ownerActive: () => Promise<boolean>, restartGateway?: RestartGateway, saved?: SavedSignIn, fresh = false) {
   if (modelApplyInProgress) return failed("busy");
   if (flow && !flow.completedAt) {
     return flow.owner === owner ? flow.state : failed("busy");
@@ -102,7 +100,7 @@ function runSiwcFlow(owner: string, ownerActive: () => Promise<boolean>, restart
     }, () => started.signal.abort("owner"));
   }, 2_000);
   ownerCheck.unref();
-  started.settled = execute(started, restartGateway).finally(() => {
+  started.settled = execute(started, restartGateway, fresh).finally(() => {
     clearTimeout(deadline);
     clearInterval(ownerCheck);
     started.url = undefined;
@@ -167,7 +165,7 @@ async function prepareSiwcModelSelection(owner: string, signal: AbortSignal) {
     models.set(id, { id, name: entry.name?.slice(0, 100) || entry.id, thinkingLevels: SIWC_THINKING_LEVELS.filter((level) => levels.has(level)) });
   }
   const catalog: SiwcModelCatalog = { scope, models: [...models.values()] };
-  return { adapter, native, agentId, candidate, catalog };
+  return { adapter, agentId, candidate, catalog };
 }
 
 export async function applySiwcModel(
@@ -184,10 +182,10 @@ export async function applySiwcModel(
     if (!target || !selected) return { ok: false, reason: "unavailable" };
     if (thinking && !selected.thinkingLevels.includes(thinking)) return { ok: false, reason: "level" };
     if (!await ownerActive()) return { ok: false, reason: "unavailable" };
-    const { adapter, native, agentId, candidate } = target;
-    const result = activationSchema.parse(await native.probeNativeGateway("openclaw.setup.activate", {
+    const { adapter, agentId, candidate } = target;
+    const result = activationSchema.parse(await adapter.call("openclaw.setup.activate", {
       kind: candidate.kind, modelRef: selected.id, agentId
-    }, { timeoutMs: 115_000 }));
+    }, { timeoutMs: 115_000, allowCliFallback: false }));
     if (result.gatewayRestartRequired) return { ok: false, reason: "restart" };
     if (!result.ok || result.modelRef !== selected.id) return { ok: false, reason: "verification" };
 
@@ -225,7 +223,7 @@ export function selectSiwcAccount(owner: string, index: number) {
   return true;
 }
 
-async function execute(current: Flow, restartGateway?: RestartGateway) {
+async function execute(current: Flow, restartGateway: RestartGateway | undefined, fresh: boolean) {
   const signal = current.signal.signal;
   let failure: SiwcFailure = "gateway";
   try {
@@ -248,27 +246,30 @@ async function execute(current: Flow, restartGateway?: RestartGateway) {
         current.state = failed("verification");
         return;
       }
-      await verifySavedSignIn(current, adapter, native, current.saved, restartGateway);
+      await verifySavedSignIn(current, adapter, current.saved, restartGateway);
       return;
     }
 
-    // A working configured route is reusable regardless of provider. The
-    // upstream existing-model activation tests it without writing a new model.
-    const existing = activationSchema.safeParse(await native.probeNativeGateway(
-      "openclaw.setup.activate", { kind: "existing-model", agentId }, { signal, timeoutMs: 35_000 }
-    ).catch(() => null));
-    signal.throwIfAborted();
-    if (existing.success && existing.data.ok && existing.data.modelRef && !existing.data.gatewayRestartRequired) {
-      current.state = { phase: "ready", model: existing.data.modelRef, reused: true };
-      return;
-    }
-
-    // Resolve this exact manifest choice in OpenClaw's wizard. Discovery is
-    // advisory; it can omit unfeatured choices or fail independently.
-    failure = "unsupported";
-    current.state = { phase: "preparing" };
     const before = await readSavedSignIns(native, agentId, signal).catch(() => null);
     signal.throwIfAborted();
+    if (!fresh && before?.length) {
+      let candidate = before[0];
+      if (before.length > 1) {
+        const index = await chooseAccount(current, [
+          ...before.map((_, index) => `Saved ChatGPT account ${index + 1}`),
+          "Connect another account"
+        ]);
+        candidate = before[index];
+      }
+      if (candidate) {
+        await verifySavedSignIn(current, adapter, { agentId, candidate, reused: true }, restartGateway);
+        return;
+      }
+    }
+
+    // OpenClaw owns authorization and selects the eligible model for a saved grant.
+    failure = "unsupported";
+    current.state = { phase: "preparing" };
     const started = await startModelSetupWizard({
       method: "openclaw.setup.prepare.start", authChoice: siwcChoice, agentId,
       actorId: current.owner, signal, nativeOnly: true,
@@ -305,7 +306,7 @@ async function execute(current: Flow, restartGateway?: RestartGateway) {
       const added = before && after?.filter((candidate) => !before.some(({ kind }) => kind === candidate.kind));
       const candidate = added?.length === 1 ? added[0] : added?.length === 0 && after?.length === 1 ? after[0] : undefined;
       if (candidate) {
-        await verifySavedSignIn(current, adapter, native, { agentId, candidate }, restartGateway);
+        await verifySavedSignIn(current, adapter, { agentId, candidate, reused: false }, restartGateway);
       } else {
         current.state = failed("verification");
       }
@@ -347,27 +348,24 @@ async function readOpenAiSetupCandidates(native: OpenClawGatewaySurfacePort, age
   });
 }
 
-async function verifySavedSignIn(current: Flow, adapter: OpenClawAdapter, native: OpenClawGatewaySurfacePort, saved: SavedSignIn, restartGateway?: RestartGateway) {
+async function verifySavedSignIn(current: Flow, adapter: OpenClawAdapter, saved: SavedSignIn, restartGateway?: RestartGateway) {
   current.saved = saved;
   const signal = current.signal.signal;
+  const model = saved.candidate.modelRef;
   let recoveryRetryIndex: number | undefined;
   for (;;) {
     signal.throwIfAborted();
     current.state = { phase: "verifying" };
-    const activation = await native.probeNativeGateway("openclaw.setup.activate", {
-      kind: saved.candidate.kind, modelRef: defaultSiwcModel, agentId: saved.agentId
-    }, { signal, timeoutMs: 115_000 }).then((payload) => activationSchema.parse(payload))
+    const activation = await adapter.call("openclaw.setup.activate", {
+      kind: saved.candidate.kind, modelRef: model, agentId: saved.agentId
+    }, { signal, timeoutMs: 115_000, allowCliFallback: false }).then((payload) => activationSchema.parse(payload))
       .catch((error: unknown): z.infer<typeof activationSchema> => ({ ok: false, error: error instanceof Error ? error.message : "" }));
     signal.throwIfAborted();
     const authorityUnavailable = !activation.ok && isCredentialAuthorityError(activation.error ?? "");
-    let needsRestart = Boolean(activation.gatewayRestartRequired || authorityUnavailable);
-    if (activation.ok && activation.modelRef === defaultSiwcModel && !needsRestart) {
-      needsRestart = await saveModelThinking(adapter, defaultSiwcModel, defaultSiwcThinking);
-      signal.throwIfAborted();
-      if (!needsRestart) {
-        current.state = { phase: "ready", model: defaultSiwcModel, thinking: defaultSiwcThinking, reused: false };
-        return;
-      }
+    const needsRestart = Boolean(activation.gatewayRestartRequired || authorityUnavailable);
+    if (activation.ok && activation.modelRef === model && !needsRestart) {
+      current.state = { phase: "ready", model, reused: saved.reused };
+      return;
     }
     if (!needsRestart) {
       current.state = { phase: "saved" };
@@ -427,20 +425,7 @@ async function resolveStep(current: Flow, step: ModelSetupWizardStep) {
     if (!options?.length || !step.message?.startsWith("Reconnect a ChatGPT account")) {
       throw new Error("SIWC requires an unsupported interactive setup decision.");
     }
-    current.state = {
-      phase: "choose-account",
-      options: options.map(({ label }) => label.slice(0, 150))
-    };
-    const index = await new Promise<number>((resolve, reject) => {
-      const signal = current.signal.signal;
-      const abort = () => reject(signal.reason);
-      signal.throwIfAborted();
-      signal.addEventListener("abort", abort, { once: true });
-      current.answer = (index) => {
-        signal.removeEventListener("abort", abort);
-        resolve(index);
-      };
-    });
+    const index = await chooseAccount(current, options.map(({ label }) => label.slice(0, 150)));
     current.state = { phase: "preparing" };
     return { stepId: step.id, value: options[index].value };
   } else if (step.type !== "note") {
@@ -450,6 +435,20 @@ async function resolveStep(current: Flow, step: ModelSetupWizardStep) {
     current.state = { phase: "verifying" };
   }
   return { stepId: step.id };
+}
+
+async function chooseAccount(current: Flow, options: string[]) {
+  const signal = current.signal.signal;
+  signal.throwIfAborted();
+  current.state = { phase: "choose-account", options };
+  return new Promise<number>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    current.answer = (index) => {
+      signal.removeEventListener("abort", abort);
+      resolve(index);
+    };
+  });
 }
 
 export function classifySiwcFailure(message: string, fallback: SiwcFailure): SiwcFailure {

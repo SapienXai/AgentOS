@@ -118,14 +118,20 @@ import {
 } from "@/lib/openclaw/application/mission-control/snapshot-utils";
 import { buildSystemReadinessSnapshot } from "@/lib/openclaw/application/mission-control/system-readiness-snapshot";
 
-let agentPayloadCache: CachedPayload<AgentPayload> | null = null;
-let agentConfigPayloadCache: CachedPayload<AgentConfigPayload> | null = null;
-let modelsPayloadCache: CachedPayload<ModelsPayload> | null = null;
-let modelsStatusPayloadCache: CachedPayload<ModelsStatusPayload> | null = null;
-let sessionsPayloadCache: CachedPayload<SessionsPayload> | null = null;
-let runtimeSnapshotPayloadCache: CachedPayload<OpenClawRuntimeSnapshotPayload> | null = null;
-let taskListPayloadCache: CachedPayload<OpenClawTaskListPayload> | null = null;
-let presencePayloadCache: CachedPayload<PresencePayload> | null = null;
+function createMissionControlPayloadCaches() {
+  return {
+    agent: null as CachedPayload<AgentPayload> | null,
+    agentConfig: null as CachedPayload<AgentConfigPayload> | null,
+    models: null as CachedPayload<ModelsPayload> | null,
+    modelsStatus: null as CachedPayload<ModelsStatusPayload> | null,
+    sessions: null as CachedPayload<SessionsPayload> | null,
+    runtimeSnapshot: null as CachedPayload<OpenClawRuntimeSnapshotPayload> | null,
+    taskList: null as CachedPayload<OpenClawTaskListPayload> | null,
+    presence: null as CachedPayload<PresencePayload> | null
+  };
+}
+
+let payloadCaches = createMissionControlPayloadCaches();
 const runtimeHistoryStore = createMissionControlRuntimeHistoryStore();
 const statusPayloadCache = new CachedPayloadController<StatusPayload>();
 const updateStatusPayloadCache = new CachedPayloadController<UpdateStatusPayload>();
@@ -152,18 +158,11 @@ export function clearMissionControlRuntimeHistoryCache() {
 }
 
 function clearMissionControlPayloadCaches() {
-  agentPayloadCache = null;
-  agentConfigPayloadCache = null;
-  modelsPayloadCache = null;
-  modelsStatusPayloadCache = null;
-  sessionsPayloadCache = null;
-  runtimeSnapshotPayloadCache = null;
-  taskListPayloadCache = null;
-  presencePayloadCache = null;
+  payloadCaches = createMissionControlPayloadCaches();
 }
 
 export function clearMissionControlCaches() {
-  missionControlCacheService.clear({ incrementGeneration: true });
+  missionControlCacheService.clear();
   runtimeDiagnosticsStateCache.clear();
   gatewayStatusCache.clear();
   statusPayloadCache.clear();
@@ -172,9 +171,13 @@ export function clearMissionControlCaches() {
   clearRuntimeHistoryCache();
 }
 
-export function invalidateMissionControlSnapshotCache() {
+export function invalidateMissionControlSnapshotCache(event?: string) {
   missionControlCacheService.clear();
+  const modelsStatus = event === "sessions.changed" ? payloadCaches.modelsStatus : null;
   clearMissionControlPayloadCaches();
+  // Session updates change session overrides, while explicit model changes and
+  // the existing slow-payload expiration govern the global provider inventory.
+  payloadCaches.modelsStatus = modelsStatus;
 }
 
 registerMissionControlSnapshotInvalidator(invalidateMissionControlSnapshotCache);
@@ -196,9 +199,12 @@ async function loadMissionControlSnapshots({
   profile?: SnapshotLoadProfile;
   generation?: number;
 } = {}): Promise<SnapshotPair<MissionControlSnapshot>> {
+  const loadPayloadCaches = payloadCaches;
   const stateRoot = getOpenClawStateRootPath();
-  const localGatewayStatus = await probeLocalGatewayStatus();
-  const openclawCliInstalled = await detectOpenClaw();
+  const [localGatewayStatus, openclawCliInstalled] = await Promise.all([
+    probeLocalGatewayStatus(),
+    detectOpenClaw()
+  ]);
   const openclawInstalled = openclawCliInstalled || Boolean(localGatewayStatus?.rpc?.ok);
 
   if (!openclawInstalled) {
@@ -251,7 +257,7 @@ async function loadMissionControlSnapshots({
     const statusCacheNeedsRefresh = statusPayloadCache.shouldRefresh();
     const gatewayStatusCacheNeedsRefresh = gatewayStatusCache.shouldRefresh();
     const modelStatusCacheNeedsRefresh =
-      !modelsStatusPayloadCache || Date.now() - modelsStatusPayloadCache.capturedAt > SLOW_PAYLOAD_CACHE_TTL_MS;
+      !loadPayloadCaches.modelsStatus || Date.now() - loadPayloadCaches.modelsStatus.capturedAt > SLOW_PAYLOAD_CACHE_TTL_MS;
 
     if (profile === "interactive" || systemProfile) {
       const shouldHydrateGatewayStatus = gatewayStatusCacheNeedsRefresh;
@@ -343,7 +349,7 @@ async function loadMissionControlSnapshots({
     }
 
     if (!resolvedGatewayStatus.value) {
-      const probedGatewayStatus = await probeLocalGatewayStatus(gatewayStatusCache.getCachedPort());
+      const probedGatewayStatus = await probeLocalGatewayStatus();
 
       if (probedGatewayStatus) {
         gatewayStatusCache.write(probedGatewayStatus);
@@ -360,8 +366,8 @@ async function loadMissionControlSnapshots({
         ? normalizeGatewayRemoteUrlConfigValue(gatewayRemoteUrlResult.value)
         : undefined;
     const resolvedStatus = statusPayloadCache.resolve(statusResult);
-    const resolvedAgentConfig = resolveCachedPayload(agentConfigResult, agentConfigPayloadCache, (entry) => {
-      agentConfigPayloadCache = entry;
+    const resolvedAgentConfig = resolveCachedPayload(agentConfigResult, loadPayloadCaches.agentConfig, (entry) => {
+      loadPayloadCaches.agentConfig = entry;
     });
     const agentConfig = resolvedAgentConfig.value ?? [];
     const configuredModelIds = configuredModelIdsResult.status === "fulfilled"
@@ -370,46 +376,42 @@ async function loadMissionControlSnapshots({
     const credentialProviderIds = credentialProviderIdsResult.status === "fulfilled"
       ? credentialProviderIdsResult.value
       : [];
-    if (isDeferredPayloadResult(agentsResult) && !systemProfile) {
-      agentsResult = await settleAgentPayloadFromOpenClaw(agentConfig);
-    }
-    const sessionsResult: PromiseSettledResult<SessionsPayload> = systemProfile
-      ? createDeferredPayloadResult<SessionsPayload>()
-      : await settleSessionsPayloadFromOpenClaw(agentConfig);
     const runtimeSnapshotMode = getCachedOpenClawCapabilityMatrix()?.operations?.runtimeSnapshot?.mode;
     const shouldHydrateRuntimeSnapshot =
       !systemProfile &&
       runtimeSnapshotMode !== "degraded" &&
       runtimeSnapshotMode !== "disabled" &&
       runtimeSnapshotMode !== "cli-fallback";
-    const runtimeSnapshotResult: PromiseSettledResult<OpenClawRuntimeSnapshotPayload> = systemProfile
-      ? createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>()
-      : shouldHydrateRuntimeSnapshot
-        ? await settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
-        : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>();
-    if (!systemProfile) {
-      taskListResult = await settleTaskListPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000);
-    }
-    const resolvedAgents = resolveCachedPayload(agentsResult, agentPayloadCache, (entry) => {
-      agentPayloadCache = entry;
+    const [agentPayload, sessionsResult, runtimeSnapshotResult, tasksPayload] = await Promise.all([
+      isDeferredPayloadResult(agentsResult) ? settleAgentPayloadFromOpenClaw(agentConfig) : agentsResult,
+      settleSessionsPayloadFromOpenClaw(agentConfig),
+      shouldHydrateRuntimeSnapshot
+        ? settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
+        : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>(),
+      settleTaskListPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
+    ]);
+    agentsResult = agentPayload;
+    taskListResult = tasksPayload;
+    const resolvedAgents = resolveCachedPayload(agentsResult, loadPayloadCaches.agent, (entry) => {
+      loadPayloadCaches.agent = entry;
     });
-    const resolvedModels = resolveCachedPayload(modelsResult, modelsPayloadCache, (entry) => {
-      modelsPayloadCache = entry;
+    const resolvedModels = resolveCachedPayload(modelsResult, loadPayloadCaches.models, (entry) => {
+      loadPayloadCaches.models = entry;
     });
-    const resolvedModelStatus = resolveCachedPayload(modelStatusResult, modelsStatusPayloadCache, (entry) => {
-      modelsStatusPayloadCache = entry;
+    const resolvedModelStatus = resolveCachedPayload(modelStatusResult, loadPayloadCaches.modelsStatus, (entry) => {
+      loadPayloadCaches.modelsStatus = entry;
     });
-    const resolvedSessions = resolveCachedPayload(sessionsResult, sessionsPayloadCache, (entry) => {
-      sessionsPayloadCache = entry;
+    const resolvedSessions = resolveCachedPayload(sessionsResult, loadPayloadCaches.sessions, (entry) => {
+      loadPayloadCaches.sessions = entry;
     });
-    const resolvedRuntimeSnapshot = resolveCachedPayload(runtimeSnapshotResult, runtimeSnapshotPayloadCache, (entry) => {
-      runtimeSnapshotPayloadCache = entry;
+    const resolvedRuntimeSnapshot = resolveCachedPayload(runtimeSnapshotResult, loadPayloadCaches.runtimeSnapshot, (entry) => {
+      loadPayloadCaches.runtimeSnapshot = entry;
     });
-    const resolvedTaskList = resolveCachedPayload(taskListResult, taskListPayloadCache, (entry) => {
-      taskListPayloadCache = entry;
+    const resolvedTaskList = resolveCachedPayload(taskListResult, loadPayloadCaches.taskList, (entry) => {
+      loadPayloadCaches.taskList = entry;
     });
-    const resolvedPresence = resolveCachedPayload(presenceResult, presencePayloadCache, (entry) => {
-      presencePayloadCache = entry;
+    const resolvedPresence = resolveCachedPayload(presenceResult, loadPayloadCaches.presence, (entry) => {
+      loadPayloadCaches.presence = entry;
     });
     const status = resolvedStatus.value;
     const statusHasUpdateRegistry = hasStatusUpdateRegistry(status);

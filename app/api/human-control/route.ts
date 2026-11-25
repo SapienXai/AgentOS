@@ -16,7 +16,7 @@ const filterSchema = z.object({
 }).strict();
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
 
   const url = new URL(request.url);

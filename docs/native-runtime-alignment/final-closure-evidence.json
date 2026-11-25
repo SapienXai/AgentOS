@@ -1,0 +1,83 @@
+{
+  "agentosCodeCommit": "45647bbe5858f919d9db2f399a32d3fad7974322",
+  "runtime": "2026.11.10",
+  "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
+  "gatewayClient": "2026.11.10",
+  "gatewayProtocolPackage": "2026.11.10",
+  "protocol": 4,
+  "isolation": "Disposable native Gateway with loopback fixtures, independent suite home and AgentOS sidecar",
+  "artifacts": {
+    "fresh-baseline": {
+      "sha256": "59877152d215bbf93f83e904c290dd8bd55789f215d61e2277dea5c8f9857375",
+      "status": "executed"
+    },
+    "runtime-certification": {
+      "sha256": "f2f48238e47ec2111b17e9c000d8203ec5d1e06feb9c2bb5a0368cb7b71d8700",
+      "status": "executed"
+    },
+    "lifecycle-certification": {
+      "sha256": "babf83cb22cfc6159e9ca05871525016da56833cb2be1fe6d275c2463106b753",
+      "status": "executed"
+    },
+    "identity-authorization": {
+      "sha256": "cd2c14cf885cd7158c748f58fbf5d2f5ab174ac47a49fc78e2b0a93cb76b72cb",
+      "status": "executed"
+    },
+    "multi-user": {
+      "sha256": "84d789ab25b6d0f0db45d66656854f9facb389366aff7a8a31458eca82c0b566",
+      "status": "executed"
+    },
+    "multi-user-identity-collaboration": {
+      "sha256": "0efaa28c080a67b8e4c9157292d602d0f12b67134e6cc48257a36dbdc44bf338",
+      "status": "executed"
+    },
+    "automation-cron-alignment": {
+      "sha256": "88332a5c3733204285d9ccc37078be7d82347550c57c4356a202dd86897d8a5f",
+      "status": "executed"
+    },
+    "session-task-alignment": {
+      "sha256": "4a22d5df7c8e39fe68daa4b4e0ef03bb08da998962359e2a6ef7901bbc390e4e",
+      "status": "executed"
+    },
+    "workforce-acceptance": {
+      "sha256": "4dbe915449ce7f68755990405074739426037cfa45c009fe0c7b2f30a4b2beb1",
+      "status": "executed"
+    },
+    "official-transport-certification": {
+      "sha256": "e80fc0d274430a0f7e6b44c4a7764a10acdeedf76e1581cbd2e5832ccb5e1073",
+      "status": "executed"
+    },
+    "official-gateway-lifecycle-certification": {
+      "sha256": "82a81b939d97e00bb0faad53a3582aa6238765f39937af3998120db508618ac0",
+      "status": "executed"
+    },
+    "final-official-runtime-certification": {
+      "sha256": "782237fa5bc3a7f510fa89a501012802373e7dfdbc9887940c28c6e433ada340",
+      "status": "executed"
+    },
+    "native-work-hardening": {
+      "sha256": "3186b6bd8ad4a60243de3c3f8781a717be5be8f1311b339a5471d308e7f85a6e",
+      "status": "executed"
+    },
+    "skills-effective-capabilities": {
+      "sha256": "1b2fbdd15a1737a6644da1910901113549eb769428fd45a83922a453d719362d",
+      "status": "executed"
+    },
+    "native-memory": {
+      "sha256": "dc89bf5f0879a86f902667f5a76aad446069e7a2c676868e210cf57390f20337",
+      "status": "executed"
+    },
+    "doctor-update-recovery": {
+      "sha256": "59598b02f16a8fcc494b47dc65d44effd729fa800882cf517028991c61b9a1c7",
+      "status": "executed"
+    },
+    "doctor-update-recovery-hardening": {
+      "sha256": "001d84f48a440b2afb6cf8c457fbc75b310d502a648fd4c1652afc5c036f5bfa",
+      "status": "executed"
+    },
+    "human-control-inbox": {
+      "sha256": "e3a1a66b23f226d93bb4c161f69ee681f43f3ed8e0c57a835a6d497d2b81036a",
+      "status": "executed"
+    }
+  }
+}

@@ -201,7 +201,9 @@ test("offline mode uses local fallback manifest", () => {
     ),
     true
   );
-  assert.equal(snapshot.candidateVersions.length, 0);
+  assert.deepEqual(snapshot.candidateVersions.map(({ version, status }) => ({ version, status })), [
+    { version: "2026.11.10", status: "candidate" }
+  ]);
 });
 
 test("an older local override cannot hide a newer shipped compatibility entry", () => {

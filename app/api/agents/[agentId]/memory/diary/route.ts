@@ -17,7 +17,8 @@ export async function GET(request: Request, context: { params: Promise<{ agentId
     targetId: agentId,
     securityClass: "read",
     executionPath: "gateway-native",
-    productPermission: "runtime.use"
+    requireNativeIdentity: true,
+    productPermission: "agents.manage"
   });
   if ("response" in preflight) return preflight.response;
 

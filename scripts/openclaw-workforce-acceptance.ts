@@ -19,7 +19,12 @@ import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { parseRuntimeOutputFromSessionHistory } from "@/lib/openclaw/domains/runtime-transcript";
-import { projectApprovalRecords, projectQuestionRecords } from "@/lib/openclaw/application/human-control-inbox-service";
+import {
+  getHumanControlInbox,
+  projectApprovalRecords,
+  projectQuestionRecords,
+  resolveAttentionItem
+} from "@/lib/openclaw/application/human-control-inbox-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
 import { REQUIRED_WORKFORCE_PRODUCT_CHECKS } from "@/scripts/lib/workforce-certification-requirements";
@@ -131,10 +136,7 @@ async function main() {
 
     const selectedModel = `openai/${fixture.modelId}`;
     try {
-      const [modelCatalog, modelStatus] = await Promise.all([
-        client.listModels({ view: "configured", all: true }, { timeoutMs: TIMEOUT_MS }),
-        client.getModelStatus({ timeoutMs: TIMEOUT_MS })
-      ]);
+      const [modelCatalog, modelStatus] = await readFixtureModelState(client, selectedModel);
       evidence.modelReadiness = {
         selectedModel,
         readiness: resolveModelReadiness(modelCatalog.models, modelStatus, [selectedModel]),
@@ -400,10 +402,28 @@ async function main() {
     };
 
     await runHumanControlJourneys(client, evidence, cleanupRefs);
+    const missionQuestion = await client.callNative<Record<string, unknown>>("question.request", {
+      sessionKey,
+      agentId: "main",
+      questions: [{ questionId: "mission_decision", header: "Scope", question: "Which fixture scope?", options: [{ label: "Narrow" }, { label: "Broad" }] }],
+      timeoutMs: 30_000
+    }, mutationOptions());
+    const missionQuestionId = readString(missionQuestion.id);
+    assert.ok(missionQuestionId);
+    cleanupRefs.questionIds.push(missionQuestionId);
+    const snapshotWithQuestion = await getMissionControlSnapshot({ force: true });
+    const { items } = await getHumanControlInbox({ snapshot: snapshotWithQuestion });
+    const projectedQuestion = items.find((item) => item.id === `question:${missionQuestionId}`);
+    assert.ok(projectedQuestion?.mission && projectedQuestion.source.taskId);
+    assert.equal(projectedQuestion.source.sessionKey, sessionKey);
+    assert.equal(projectedQuestion.status, "pending");
+    await resolveAttentionItem(projectedQuestion.id, "answer", { answers: { answers: { mission_decision: ["Narrow"] } } });
+    const answer = await client.callNative<Record<string, unknown>>("question.waitAnswer", { id: missionQuestionId, timeoutMs: 1_000 }, readOptions());
+    assert.equal(answer.status, "answered");
     evidence.checks["human-control-product-path"] = {
-      status: "SKIPPED",
+      status: "PASS",
       evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS],
-      detail: "Native Human Control projection and resolution passed, but the safe fixture did not expose a mission-linked task/session request for the AgentOS mutation path. No unrelated approval was relabelled as Mission-linked evidence."
+      detail: "A native question tied to the Mission session appeared with task provenance in AgentOS Human Control. Answering through the application service settled that exact native question."
     };
 
     client.close("workforce acceptance reconnect");
@@ -475,6 +495,27 @@ async function main() {
   if (evidence.summary.failed > 0) throw new Error(`Workforce acceptance failed. Evidence: ${OUTPUT_PATH}`);
   console.log(`OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} WORKFORCE ACCEPTANCE: PASS`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
+}
+
+async function readFixtureModelState(client: GatewayClient, modelId: string) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      const result = await Promise.all([
+        client.listModels({ view: "configured", all: true, agentId: "main" }, { timeoutMs: TIMEOUT_MS }),
+        client.getAgentModelStatus({ agentId: "main" }, { timeoutMs: TIMEOUT_MS })
+      ]);
+      if (resolveModelReadiness(result[0].models, result[1], [modelId]).ready || Date.now() >= deadline) {
+        return result;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/metadata is starting|startup inspection|startup preparation/i.test(message) || Date.now() >= deadline) {
+        throw error;
+      }
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
 }
 
 async function runHumanControlJourneys(client: GatewayClient, evidence: ReturnType<typeof createEvidence>, cleanupRefs: { questionIds: string[]; approvalId: string | null }) {

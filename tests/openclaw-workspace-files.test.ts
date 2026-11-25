@@ -5,7 +5,10 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 
 import {
+  listWorkspaceManagedFiles,
   listWorkspaceManagedFilesForPath,
+  readWorkspaceManagedFile,
+  writeWorkspaceManagedFile,
   readWorkspaceManagedFileForPath,
   resolveWorkspaceManagedFileForPath,
   writeWorkspaceManagedFileForPath
@@ -228,3 +231,19 @@ async function createWorkspaceRoot() {
   await mkdir(workspacePath, { recursive: true });
   return workspacePath;
 }
+
+
+test("managed workspace file operations reject a configured remote Gateway before resolving host paths", async (context) => {
+  const previous = process.env.AGENTOS_OPENCLAW_GATEWAY_URL;
+  process.env.AGENTOS_OPENCLAW_GATEWAY_URL = "wss://gateway.example.test";
+  context.after(() => {
+    if (previous === undefined) delete process.env.AGENTOS_OPENCLAW_GATEWAY_URL;
+    else process.env.AGENTOS_OPENCLAW_GATEWAY_URL = previous;
+  });
+  const operation = { workspaceId: "remote-workspace", path: "AGENTS.md" };
+  const unavailable = /Workspace file access is unavailable for a remote OpenClaw Gateway/;
+
+  await assert.rejects(listWorkspaceManagedFiles(operation.workspaceId), unavailable);
+  await assert.rejects(readWorkspaceManagedFile(operation), unavailable);
+  await assert.rejects(writeWorkspaceManagedFile({ ...operation, content: "must stay remote" }), unavailable);
+});

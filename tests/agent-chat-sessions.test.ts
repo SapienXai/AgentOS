@@ -2,10 +2,32 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDirectAgentChatSessionKey,
+  directAgentChatSubmissionId,
+  readDirectAgentChatSubmissionId,
   resolveAgentChatSessionId,
   selectReusableAgentChatSessions,
   type AgentChatSessionRecord
 } from "@/lib/openclaw/domains/agent-chat-sessions";
+
+test("direct chat keys and native submission ids isolate actors, agents, workspaces, and conversations", () => {
+  const agent = { id: "worker", workspaceId: "workspace" };
+  const key = buildDirectAgentChatSessionKey(agent, "actor");
+  assert.match(key, /^agent:worker:agentos-direct:[0-9a-f]{64}$/);
+  assert.equal(buildDirectAgentChatSessionKey({ ...agent }, "actor"), key);
+  const alternatives = [
+    buildDirectAgentChatSessionKey(agent, "another-actor"),
+    buildDirectAgentChatSessionKey({ ...agent, id: "worker-2" }, "actor"),
+    buildDirectAgentChatSessionKey({ ...agent, workspaceId: "other" }, "actor"),
+    buildDirectAgentChatSessionKey(agent, "actor", "another-conversation")
+  ];
+  assert.equal(new Set([key, ...alternatives]).size, 5);
+  const submission = directAgentChatSubmissionId(key, "request-1");
+  assert.equal(readDirectAgentChatSubmissionId(key, submission), "request-1");
+  for (const alternative of alternatives) {
+    assert.equal(readDirectAgentChatSubmissionId(alternative, submission), undefined);
+  }
+});
 
 test("agent chat session reuse prefers the latest session for the same agent and workspace", () => {
   const sessions: AgentChatSessionRecord[] = [

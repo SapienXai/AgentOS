@@ -289,9 +289,10 @@ export function normalizeGatewayTurnEvent(
     readNonEmptyString(payload.detail);
   const done = /final|complete|completed|aborted|abort|error|failed|stalled/i.test(state ?? "");
   const isError = /error|failed|stalled/i.test(state ?? "");
+  const isAborted = /aborted|abort/i.test(state ?? "");
   const summary = text ?? resolveGatewayTurnFailureSummary(payload, state);
 
-  if (done && !text && !isError) {
+  if (done && !text && !isError && !isAborted) {
     return null;
   }
 
@@ -301,7 +302,7 @@ export function normalizeGatewayTurnEvent(
     payload: {
       runId: eventRunId ?? runId ?? undefined,
       sessionId: eventSessionId ?? undefined,
-      status: isError ? "stalled" : done ? "completed" : "running",
+      status: isAborted ? "cancelled" : isError ? "stalled" : done ? "completed" : "running",
       summary,
       payloads: text ? [{ text, mediaUrl: null }] : []
     }

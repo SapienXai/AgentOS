@@ -11,12 +11,14 @@ import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export type AgentOsProductPermission =
   | "runtime.use"
+  | "runtime.inspect"
   | "sessions.use"
   | "sessions.collaborate"
   | "sessions.place"
   | "tasks.use"
   | "automations.manage"
   | "missions.use"
+  | "agents.chat"
   | "agents.read"
   | "agents.manage"
   | "workspace.manage"
@@ -46,10 +48,12 @@ const MEMBER_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "automations.manage",
   "gateway.manage",
@@ -59,10 +63,12 @@ const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "automations.manage",
   "workspace.manage",
@@ -78,12 +84,14 @@ const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
 
 const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
+  "runtime.inspect",
   "sessions.use",
   "sessions.collaborate",
   "sessions.place",
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "workspace.manage",
   "profile.manage",

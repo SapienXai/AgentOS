@@ -97,9 +97,7 @@ test("agent chat display keeps only the active turn pending", () => {
   ];
 
   const visibleMessages = normalizeAgentChatMessagesForDisplay(messages, {
-    isRunning: true,
-    userMessageId: "active-user",
-    assistantMessageId: "active-assistant"
+    runs: [{ userMessageId: "active-user", assistantMessageId: "active-assistant" }]
   });
 
   assert.deepEqual(

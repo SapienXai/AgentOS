@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
@@ -29,6 +29,30 @@ const maxAgentChatSessionRecords = 200;
 const maxAgentChatSessionAgeMs = 14 * 24 * 60 * 60 * 1000;
 const activeAgentChatSessionKeys = new Set<string>();
 let pendingRegistryWrite = Promise.resolve();
+
+export function buildDirectAgentChatSessionKey(
+  agent: { id: string; workspaceId: string },
+  actorId: string,
+  conversationId?: string
+) {
+  // The Gateway stores the conversation. This namespace keeps a shared AgentOS
+  // Gateway credential from selecting another operator's drawer conversation.
+  const scope = createHash("sha256")
+    .update(JSON.stringify([actorId, agent.workspaceId, agent.id]))
+    .digest("hex");
+  const key = `agent:${agent.id}:agentos-direct:${scope}`;
+  return conversationId ? `${key}:${conversationId}` : key;
+}
+
+export function directAgentChatSubmissionId(sessionKey: string, submissionId: string) {
+  const scope = createHash("sha256").update(sessionKey).digest("hex").slice(0, 32);
+  return `${scope}.${submissionId}`;
+}
+
+export function readDirectAgentChatSubmissionId(sessionKey: string, nativeId?: string | null) {
+  const prefix = directAgentChatSubmissionId(sessionKey, "");
+  return nativeId?.startsWith(prefix) ? nativeId.slice(prefix.length) : undefined;
+}
 
 export function markAgentChatSessionActive(input: { agentId: string; sessionId: string }) {
   const key = createAgentChatSessionKey(input.agentId.trim(), input.sessionId.trim());

@@ -106,7 +106,7 @@ const deleteAgentSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "agents.read");
+  const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
   const snapshot = await getMissionControlSnapshot();
   return NextResponse.json(redactSecrets({

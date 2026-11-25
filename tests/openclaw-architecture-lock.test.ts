@@ -95,16 +95,16 @@ test("AgentOS policy and event layers remain above the official transport", asyn
   assert.match(bridge, /onConnectionStateChange/);
 });
 
-test("OpenClaw 11.5 client pins match the production baseline", async () => {
+test("OpenClaw SDK pins match the candidate while updates retain the certified baseline", async () => {
   const packageJson = JSON.parse(await source("package.json")) as { dependencies?: Record<string, string> };
   const lockfile = await source("pnpm-lock.yaml");
 
-  assert.equal(packageJson.dependencies?.["@openclaw/gateway-client"], "2026.11.5");
-  assert.equal(packageJson.dependencies?.["@openclaw/gateway-protocol"], "2026.11.5");
-  assert.match(lockfile, /'@openclaw\/gateway-client':\n\s+specifier: 2026\.11\.5\n\s+version: 2026\.11\.5/);
-  assert.match(lockfile, /'@openclaw\/gateway-protocol':\n\s+specifier: 2026\.11\.5\n\s+version: 2026\.11\.5/);
+  assert.equal(packageJson.dependencies?.["@openclaw/gateway-client"], "2026.11.10");
+  assert.equal(packageJson.dependencies?.["@openclaw/gateway-protocol"], "2026.11.10");
+  assert.match(lockfile, /'@openclaw\/gateway-client':\n\s+specifier: 2026\.11\.10\n\s+version: 2026\.11\.10/);
+  assert.match(lockfile, /'@openclaw\/gateway-protocol':\n\s+specifier: 2026\.11\.10\n\s+version: 2026\.11\.10/);
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.11.5");
-  assert.equal(OPENCLAW_NATIVE_CONTRACT_VERSION, "2026.11.5");
+  assert.equal(OPENCLAW_NATIVE_CONTRACT_VERSION, "2026.11.10");
   assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.11.5");
   assert.deepEqual(OPENCLAW_GATEWAY_PROTOCOL_RANGE, { min: 4, max: 4 });
 });

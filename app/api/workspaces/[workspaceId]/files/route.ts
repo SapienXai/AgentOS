@@ -18,7 +18,7 @@ const fileWriteSchema = z.object({
 });
 
 export async function GET(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
   if ("response" in permission) return permission.response;
 
   try {
@@ -32,11 +32,11 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
         path: filePath
       });
 
-      return NextResponse.json(redactSecrets(file));
+      return NextResponse.json(redactSecrets(file), { headers: { "Cache-Control": "private, no-store" } });
     }
 
     const files = await listWorkspaceManagedFiles(workspaceId);
-    return NextResponse.json(redactSecrets(files));
+    return NextResponse.json(redactSecrets(files), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return NextResponse.json(
       {
@@ -60,7 +60,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
       content: input.content
     });
 
-    return NextResponse.json(redactSecrets(file));
+    return NextResponse.json(redactSecrets(file), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const message = redactErrorMessage(error, "Unable to save workspace file.");
     const status = message.includes("exceeds") ? 413 : 400;

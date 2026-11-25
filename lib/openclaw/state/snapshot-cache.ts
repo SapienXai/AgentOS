@@ -11,7 +11,7 @@ type SnapshotCacheEntry<TSnapshot> = SnapshotPair<TSnapshot> & {
 
 export class SnapshotCacheController<TSnapshot> {
   private cache: SnapshotCacheEntry<TSnapshot> | null = null;
-  private promise: Promise<SnapshotPair<TSnapshot>> | null = null;
+  private pending: { generation: number; promise: Promise<SnapshotPair<TSnapshot>> } | null = null;
   private generation = 0;
 
   constructor(
@@ -25,15 +25,12 @@ export class SnapshotCacheController<TSnapshot> {
     return this.generation;
   }
 
-  clear(options: { incrementGeneration?: boolean } = {}) {
-    if (options.incrementGeneration) {
-      this.generation += 1;
-    }
-
+  clear() {
+    this.generation += 1;
     this.cache = null;
   }
 
-  async get(options: { force?: boolean; includeHidden?: boolean; loadProfile?: SnapshotLoadProfile } = {}) {
+  async get(options: { force?: boolean; includeHidden?: boolean; loadProfile?: SnapshotLoadProfile } = {}): Promise<TSnapshot> {
     const cachedSnapshot = this.cache;
     const cacheIsFresh = Boolean(cachedSnapshot && cachedSnapshot.expiresAt > Date.now());
 
@@ -42,12 +39,8 @@ export class SnapshotCacheController<TSnapshot> {
     }
 
     if (!options.force && cachedSnapshot) {
-      if (!this.promise) {
-        this.promise = this.loadForCurrentGeneration("interactive");
-        void this.promise.catch(() => {});
-        void this.promise.finally(() => {
-          this.promise = null;
-        }).catch(() => {});
+      if (this.pending?.generation !== this.generation) {
+        this.loadForCurrentGeneration("interactive");
       }
 
       return selectSnapshot(cachedSnapshot, options.includeHidden);
@@ -56,37 +49,25 @@ export class SnapshotCacheController<TSnapshot> {
     if (options.force) {
       this.generation += 1;
       this.cache = null;
-      this.promise = this.loadForCurrentGeneration(options.loadProfile ?? "refresh");
-      void this.promise.catch(() => {});
-
-      try {
-        const nextSnapshot = await this.promise;
-        return selectSnapshot(nextSnapshot, options.includeHidden);
-      } finally {
-        this.promise = null;
-      }
     }
 
-    if (this.promise) {
-      const pending = await this.promise;
-      return selectSnapshot(pending, options.includeHidden);
-    }
+    const pending = this.pending?.generation === this.generation
+      ? this.pending
+      : this.loadForCurrentGeneration(options.force ? options.loadProfile ?? "refresh" : "interactive");
+    const result = await pending.promise;
+    if (pending.generation === this.generation) return selectSnapshot(result, options.includeHidden);
 
-    this.promise = this.loadForCurrentGeneration("interactive");
-    void this.promise.catch(() => {});
-
-    try {
-      const nextSnapshot = await this.promise;
-      return selectSnapshot(nextSnapshot, options.includeHidden);
-    } finally {
-      this.promise = null;
-    }
+    // Invalidation alone must not start another load on behalf of this
+    // request. Native events can invalidate every load during sustained use.
+    const newer = this.pending;
+    const replacement = newer?.generation === this.generation ? await newer.promise : result;
+    return selectSnapshot(this.cache ?? replacement, options.includeHidden);
   }
 
   private loadForCurrentGeneration(profile: SnapshotLoadProfile) {
     const generation = this.generation;
 
-    return this.options.load(profile, generation).then((nextSnapshot) => {
+    const promise = this.options.load(profile, generation).then((nextSnapshot) => {
       if (generation === this.generation) {
         this.cache = {
           ...nextSnapshot,
@@ -96,6 +77,12 @@ export class SnapshotCacheController<TSnapshot> {
 
       return nextSnapshot;
     });
+    const pending = { generation, promise };
+    this.pending = pending;
+    void promise.finally(() => {
+      if (this.pending === pending) this.pending = null;
+    }).catch(() => {});
+    return pending;
   }
 }
 

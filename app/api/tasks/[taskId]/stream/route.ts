@@ -36,7 +36,7 @@ export async function GET(
   let abortListener: (() => void) | undefined;
   const relatedIds = new Set([taskId, dispatchId].filter((value): value is string => Boolean(value)));
 
-  const authorization = await requireAgentOsProductPermission(request, "tasks.use");
+  const authorization = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in authorization) return authorization.response;
 
   const visibleSnapshot = await getMissionControlSnapshot({ includeHidden: false });
@@ -109,19 +109,31 @@ export async function GET(
         return;
       }
 
+      const canContinue = async () => {
+        const current = await requireAgentOsProductPermission(request, "runtime.inspect").catch(() => null);
+        if (!current || "response" in current || current.actor.actorId !== authorization.actor.actorId) {
+          closeStream();
+          return false;
+        }
+        return !closed;
+      };
+
       const sendTask = async () => {
         if (closed) {
           return;
         }
         try {
+          if (!(await canContinue())) return;
           const detail = await getTaskDetail(taskId, {
             dispatchId,
             taskHistoryCursor,
             taskHistoryLimit
           });
+          if (!(await canContinue())) return;
           indexTaskDetailIds(detail, relatedIds);
           sendEvent("task", { type: "task", detail });
         } catch (error) {
+          if (!(await canContinue())) return;
           sendEvent("task-error", {
             type: "error",
             error: redactErrorMessage(error, "Unable to load task detail.")
@@ -129,7 +141,9 @@ export async function GET(
         }
       };
 
-      refreshController = createTaskDetailStreamRefreshController(sendTask, { onHeartbeat: sendHeartbeat });
+      refreshController = createTaskDetailStreamRefreshController(sendTask, {
+        onHeartbeat: () => { void canContinue().then((allowed) => { if (allowed) sendHeartbeat(); }); }
+      });
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents((frame) => {
         if (gatewayEventMatchesTask(frame, relatedIds)) {
           refreshController?.scheduleEventRefresh();
@@ -154,7 +168,7 @@ export async function GET(
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Cache-Control": "private, no-store, no-transform",
       Connection: "keep-alive"
     }
   });
