@@ -1,6 +1,11 @@
 import "server-only";
 
 import path from "node:path";
+import { isAssignableDocument } from "@/lib/agentos/domains/knowledge-import-formats";
+import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { isLoopbackHost } from "@/lib/security/local-operator";
+import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
+import { readWorkspaceManagedFile } from "@/lib/openclaw/application/workspace-file-service";
 
 import {
   readKnowledgeSnapshot,
@@ -140,6 +145,68 @@ export class WorkspaceNativeKnowledgeBindingError extends Error {
 export function buildWorkspaceNativeKnowledgeConfigPath(agentId: string) {
   const normalizedAgentId = normalizeAgentId(agentId);
   return `agents.entries[${JSON.stringify(normalizedAgentId)}].memory.search.extraPaths`;
+}
+
+export async function readEmployeeDocumentAssignments(input: {
+  workspaceId: string;
+  agentId: string;
+  commandOptions?: OpenClawCommandOptions;
+  adapter?: OpenClawAdapter;
+}) {
+  const state = await readEmployeeDocumentAssignmentState(input);
+  return state.paths.flatMap((item) => {
+    const path = typeof item === "string" ? item : item.pattern ? null : item.path;
+    return path && isAssignableDocument(path) ? [path] : [];
+  });
+}
+
+export async function assignEmployeeDocument(input: {
+  workspaceId: string;
+  agentId: string;
+  path: string;
+  selected: boolean;
+  commandOptions?: OpenClawCommandOptions;
+  adapter?: OpenClawAdapter;
+}) {
+  if (!isAssignableDocument(input.path)) throw new Error("Choose a Markdown document in this workspace. References and JSON cannot be assigned to memory search.");
+  const state = await readEmployeeDocumentAssignmentState(input);
+  if (input.selected) {
+    const source = await readWorkspaceManagedFile({ workspaceId: input.workspaceId, path: input.path });
+    if (!source.file.exists || source.file.path !== input.path) throw new Error("This document is no longer available.");
+  }
+  const matches = (entry: NativeMemoryExtraPath) => typeof entry === "string"
+    ? entry === input.path : entry.path === input.path && !entry.pattern;
+  if (state.paths.some(matches) === input.selected) return { status: "configured" as const };
+  if (!state.hash) throw new Error("OpenClaw did not provide a config revision. Refresh before trying again.");
+  const next = input.selected ? [...state.paths, { path: input.path }] : state.paths.filter(entry => !matches(entry));
+  const result = readConfigMutation(await state.adapter.setConfig(state.configPath, next, {
+    ...input.commandOptions, baseHash: state.hash, strictJson: true
+  }));
+  if (result.pending || result.restartRequired) return { status: "pending" as const };
+  const confirmed = await readEmployeeDocumentAssignmentState(input);
+  return { status: confirmed.paths.some(matches) === input.selected ? "configured" as const : "pending" as const };
+}
+
+async function readEmployeeDocumentAssignmentState(input: {
+  workspaceId: string;
+  agentId: string;
+  commandOptions?: OpenClawCommandOptions;
+  adapter?: OpenClawAdapter;
+}) {
+  if (!isLoopbackHost(new URL(resolveGatewayUrl()).host)) throw new Error("Document assignment requires a local OpenClaw workspace.");
+  const snapshot = await getMissionControlSnapshot({ includeHidden: true });
+  const agent = snapshot.agents.find(item => item.id === input.agentId && item.workspaceId === input.workspaceId);
+  if (!agent?.workspacePath) throw new Error("Choose an employee in this workspace.");
+  const adapter = input.adapter ?? getOpenClawAdapter();
+  const native = await readNativeConfigSnapshot(adapter, input.commandOptions);
+  const entry = readNativeAgentEntries(native.config ?? {})[agent.id];
+  if (!isRecord(entry) || typeof entry.workspace !== "string" || path.resolve(entry.workspace) !== path.resolve(agent.workspacePath)) {
+    throw new Error("OpenClaw did not confirm this employee’s workspace.");
+  }
+  return {
+    adapter, configPath: buildWorkspaceNativeKnowledgeConfigPath(agent.id),
+    paths: readNativeExtraPaths(entry, agent.id), hash: native.hash ?? native.configRevisionHash ?? native.appliedConfigHash
+  };
 }
 
 /** Read and plan the AgentOS-owned native binding without mutating OpenClaw config. */

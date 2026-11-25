@@ -15,7 +15,18 @@ const nextConfig = {
   // resolves it from its package boundary. Keep that native client external
   // so Turbopack does not rewrite its runtime resolver into a build-machine
   // absolute path.
-  serverExternalPackages: ["@openclaw/gateway-client"],
+  serverExternalPackages: ["@openclaw/gateway-client", "pdfjs-dist"],
+  outputFileTracingIncludes: {
+    "/api/workspaces/*/knowledge": [
+      "./lib/agentos/application/knowledge-pdf-worker.cjs",
+      "./node_modules/pdfjs-dist/package.json",
+      "./node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/package.json"
+    ]
+  },
   output: "standalone",
   async headers() {
     return [
