@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-human-control-inbox-certification",
-  "generatedAt": "2026-11-25T14:46:59.533Z",
-  "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+  "generatedAt": "2026-11-25T17:54:56.265Z",
+  "certifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
   "openClaw": {
     "release": "2026.11.10",
     "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -104,8 +104,7 @@
   "events": {
     "observed": [
       "question.requested",
-      "question.resolved",
-      "plugins.changed"
+      "question.resolved"
     ],
     "cacheInvalidation": "existing event bridge",
     "reconnectReconciliation": "native inventories"

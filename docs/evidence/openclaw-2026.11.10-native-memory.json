@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-memory-certification",
-  "generatedAt": "2026-11-25T14:48:08.198Z",
+  "generatedAt": "2026-11-25T17:54:40.004Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+    "certifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
     "branch": "",
     "openClaw": {
       "release": "2026.11.10",
@@ -31,7 +31,7 @@
     "memory.search": {
       "scope": "operator.read",
       "status": "PASS",
-      "result": "hybrid:0"
+      "result": "fts-only:0"
     },
     "doctor.memory.status": {
       "scope": "operator.read",
@@ -87,11 +87,11 @@
     "disposableRootRemoved": true
   },
   "retrieval": {
-    "status": "PASS",
-    "persistedFact": true,
-    "isolatedAgent": true,
-    "afterRestart": true,
-    "embeddingRequests": 12
+    "status": "NOT_VERIFIED",
+    "persistedFact": false,
+    "isolatedAgent": false,
+    "afterRestart": false,
+    "embeddingRequests": 0
   },
   "rpcCounts": {
     "doctor.memory.status": 1,

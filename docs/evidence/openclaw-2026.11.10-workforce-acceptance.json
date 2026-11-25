@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-workforce-acceptance",
-  "generatedAt": "2026-11-25T14:47:11.715Z",
+  "generatedAt": "2026-11-25T17:53:49.367Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosCommit": "45647bbe5858f919d9db2f399a32d3fad7974322",
+    "agentosCommit": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
     "openClaw": {
       "version": "2026.11.10",
       "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -101,12 +101,12 @@
     "persistedSidecar": true,
     "missionListFromPersistedSidecar": true,
     "missionDetailFromPersistedSidecar": true,
-    "requestId": "workforce-product-path-1795618036108",
-    "dispatchId": "dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e",
+    "requestId": "workforce-product-path-1795629239202",
+    "dispatchId": "dispatch-869002f1-56b7-4f81-992e-33f539b9fe86",
     "agentId": "main",
     "workspaceId": "workspace",
-    "sessionKey": "agent:main:explicit:dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e",
-    "runId": "dispatch-110f4b04-d8f0-4593-9c8a-0d70d1d5ce3e"
+    "sessionKey": "agent:main:explicit:dispatch-869002f1-56b7-4f81-992e-33f539b9fe86",
+    "runId": "dispatch-869002f1-56b7-4f81-992e-33f539b9fe86"
   },
   "concurrentAdmission": {
     "unrelatedRequestCount": 2,

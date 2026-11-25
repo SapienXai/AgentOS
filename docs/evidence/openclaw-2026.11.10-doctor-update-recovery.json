@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-doctor-update-recovery-certification",
-  "generatedAt": "2026-11-25T14:46:44.113Z",
-  "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+  "generatedAt": "2026-11-25T17:55:13.884Z",
+  "certifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
   "openClaw": {
     "release": "2026.11.10",
     "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -100,23 +100,23 @@
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
       "status": "PASS",
-      "result": "ready"
+      "result": "busy"
     },
     "gateway.suspend.status": {
       "scope": "operator.read",
       "params": "{suspensionId}",
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
-      "status": "PASS",
-      "result": "native response shape accepted"
+      "status": "SKIPPED",
+      "result": "No suspension lease was issued by the disposable runtime."
     },
     "gateway.suspend.resume": {
       "scope": "operator.admin",
       "params": "{suspensionId}",
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
-      "status": "PASS",
-      "result": "native response shape accepted"
+      "status": "SKIPPED",
+      "result": "No suspension lease was issued by the disposable runtime."
     }
   },
   "runtime": {
@@ -177,7 +177,7 @@
     "upstreamScopeSource": {
       "kind": "pinned-openclaw-source-descriptor",
       "path": "src/gateway/methods/core-descriptors.ts",
-      "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
+      "sourceCommit": null,
       "descriptorSha256": "2e34c20366260ad0a2fe9d71a49bf637c62f45076c75915dacc8720ac910b492"
     },
     "upstreamScopes": {
@@ -238,9 +238,7 @@
     "update.status": 1,
     "gateway.restart.preflight": 1,
     "update.hold": 1,
-    "gateway.suspend.prepare": 1,
-    "gateway.suspend.status": 1,
-    "gateway.suspend.resume": 1
+    "gateway.suspend.prepare": 1
   },
   "cleanup": {
     "status": "complete",
