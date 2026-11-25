@@ -131,10 +131,7 @@ async function main() {
 
     const selectedModel = `openai/${fixture.modelId}`;
     try {
-      const [modelCatalog, modelStatus] = await Promise.all([
-        client.listModels({ view: "configured", all: true }, { timeoutMs: TIMEOUT_MS }),
-        client.getModelStatus({ timeoutMs: TIMEOUT_MS })
-      ]);
+      const [modelCatalog, modelStatus] = await readFixtureModelState(client, selectedModel);
       evidence.modelReadiness = {
         selectedModel,
         readiness: resolveModelReadiness(modelCatalog.models, modelStatus, [selectedModel]),
@@ -475,6 +472,27 @@ async function main() {
   if (evidence.summary.failed > 0) throw new Error(`Workforce acceptance failed. Evidence: ${OUTPUT_PATH}`);
   console.log(`OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} WORKFORCE ACCEPTANCE: PASS`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
+}
+
+async function readFixtureModelState(client: GatewayClient, modelId: string) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      const result = await Promise.all([
+        client.listModels({ view: "configured", all: true, agentId: "main" }, { timeoutMs: TIMEOUT_MS }),
+        client.getAgentModelStatus({ agentId: "main" }, { timeoutMs: TIMEOUT_MS })
+      ]);
+      if (resolveModelReadiness(result[0].models, result[1], [modelId]).ready || Date.now() >= deadline) {
+        return result;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/metadata is starting|startup inspection|startup preparation/i.test(message) || Date.now() >= deadline) {
+        throw error;
+      }
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
 }
 
 async function runHumanControlJourneys(client: GatewayClient, evidence: ReturnType<typeof createEvidence>, cleanupRefs: { questionIds: string[]; approvalId: string | null }) {

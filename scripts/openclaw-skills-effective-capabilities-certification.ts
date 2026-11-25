@@ -248,8 +248,7 @@ async function main() {
     },
     skips: [
       ...(SEED_DISPOSABLE_SKILL ? [] : ["No disposable library entry was created because skills.library.save/mutate are certification-only methods and are not product-integrated."]),
-      "Approval, account-missing, explicit-policy-block, and runtime-missing fixtures are covered by deterministic tests; the exact disposable runtime did not naturally expose each state.",
-      "Exact session revision comparison is skipped because the disposable library was empty."
+      "Approval, account-missing, explicit-policy-block, and runtime-missing fixtures are covered by deterministic tests; the exact disposable runtime did not naturally expose each state."
     ],
     gate: `OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} SKILLS + EFFECTIVE CAPABILITIES GATE: FAIL`,
     success: false
@@ -385,7 +384,7 @@ async function main() {
       evidence.checks.skillsActivationContract = "PASS";
       if (seededSkillId) {
         evidence.skillsLibrary.certificationFixture.activateAttach = "PASS";
-        evidence.skillsLibrary.certificationFixture.nextTurn = "PASS";
+        evidence.skips.push("The Gateway confirmed next-turn selection; actual model use of the skill was not exercised.");
         evidence.checks.disposableSkillActivation = "PASS";
         count("skills.library.list");
         const attached = await client.listSkillLibrary({ scope: "all", sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
@@ -412,6 +411,7 @@ async function main() {
         throw new Error("The seeded Skills Library entry was not returned by the subsequent native list.");
       }
       evidence.skillsLibrary.skipReasons.push("No entry was available for the exact read, revision, ownership, or activation contract calls.");
+      evidence.skips.push("Exact session revision comparison was skipped because no disposable skill was available.");
     }
 
     count("tools.catalog");
