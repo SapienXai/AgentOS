@@ -35,6 +35,7 @@ import {
 } from "@/components/mission-control/workspace-creation-activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ClawHubTemplateCatalog } from "@/components/mission-control/workspace-create/clawhub-template-catalog";
 import { WORKSPACE_CREATION_PROFILES, normalizeWorkspaceCreationProfile, type WorkspaceCreationDepth } from "@/lib/agentos/domains/workspace-creation-policy";
 import { presentWorkspaceCreationDisplay } from "@/lib/agentos/ui/workspace-creation-display";
 import { Textarea } from "@/components/ui/textarea";
@@ -1358,6 +1359,8 @@ function IntakeView({
         maxLength={12000}
         className={cn("min-h-[120px] resize-y rounded-2xl px-5 py-4 text-base leading-7 shadow-none md:min-h-[140px] md:text-[17px]", isLight ? "border-[#ded2c6] bg-white text-[#382d25] placeholder:text-[#aa9a8d] focus-visible:border-[#b8895f] focus-visible:ring-[#b8895f]/20" : "border-white/10 bg-white/[0.055] text-slate-100 placeholder:text-slate-500 focus-visible:border-violet-300/40 focus-visible:ring-violet-300/15")}
       />
+
+      <ClawHubTemplateCatalog />
 
       <div>
       <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 pb-1" aria-label="Add project context">

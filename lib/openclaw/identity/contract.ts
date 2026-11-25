@@ -405,6 +405,8 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "doctor.memory.dedupeDreamDiary": ["operator.write"],
   "tools.catalog": ["operator.read"],
   "tools.effective": ["operator.read"],
+  "templates.catalog.search": ["operator.read"],
+  "templates.catalog.detail": ["operator.read"],
   "tools.invoke": ["operator.write"],
   "node.list": ["operator.read"],
   "node.describe": ["operator.read"],
