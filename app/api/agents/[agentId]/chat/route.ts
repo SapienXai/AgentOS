@@ -28,6 +28,7 @@ import { isOpenAiAuthFailure } from "@/lib/openclaw/model-auth-errors";
 import { resolveOpenClawRuntimeFailureMessage } from "@/lib/openclaw/runtime-compatibility";
 import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import type { StatusPayload } from "@/lib/openclaw/client/types";
+import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { canAgentOsActorUseProductPermission, requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -37,11 +38,40 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const conversationSchema = z.string().uuid().transform((value) => value.toLowerCase()).optional();
+const nativeIdSchema = z.string().trim().min(1).max(240);
+const queueItemSchema = z.object({
+  id: nativeIdSchema,
+  runId: nativeIdSchema.optional(),
+  message: z.unknown(),
+  state: z.enum(["queued", "cancelled", "interrupted"]),
+  steerNow: z.object({
+    status: z.enum(["available", "blocked"]),
+    tools: z.array(z.string())
+  }).optional()
+});
+const queueSchema = z.object({
+  items: z.array(queueItemSchema).max(20),
+  total: z.number().int().nonnegative()
+});
+const stopSchema = z.object({
+  conversationId: conversationSchema,
+  runId: nativeIdSchema
+}).strict();
+const queueActionSchema = z.discriminatedUnion("action", [
+  stopSchema.extend({ action: z.literal("steer"), sessionId: nativeIdSchema }),
+  z.object({
+    action: z.literal("dismiss"),
+    conversationId: conversationSchema,
+    sessionId: nativeIdSchema,
+    inputId: nativeIdSchema
+  }).strict()
+]);
 
 const chatSchema = z.object({
   conversationId: conversationSchema,
   message: z.string().trim().min(1),
   rawMessage: z.string().trim().min(1).optional(),
+  queueMode: z.enum(["followup", "steer"]).default("followup"),
   thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
   idempotencyKey: z.string().trim().min(1).max(180).optional()
 });
@@ -125,6 +155,7 @@ export async function GET(
     const url = new URL(request.url);
     const catalog = url.searchParams.get("conversations") === "1";
     const watch = url.searchParams.get("watch") === "1";
+    const queueOnly = url.searchParams.get("queue") === "1";
     const authorization = await requireAgentOsOpenClawPreflight(request, {
       operation: "agent.chat.read",
       method: catalog ? "sessions.list" : watch ? "sessions.messages.subscribe" : "chat.history",
@@ -134,7 +165,14 @@ export async function GET(
       requireNativeIdentity: true,
       productPermission: "agents.chat"
     });
-    if ("response" in authorization) return authorization.response;
+    if ("response" in authorization) {
+      if (watch && authorization.response.status === 503) {
+        return new Response("retry: 5000\n\n", {
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "private, no-store" }
+        });
+      }
+      return authorization.response;
+    }
     if (authorization.actor.actorId !== permission.actor.actorId) {
       return NextResponse.json({ error: "The active operator changed. Reopen the conversation." }, { status: 403 });
     }
@@ -166,10 +204,19 @@ export async function GET(
     const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, conversation.data);
     if (watch) return streamAgentChatInvalidations(request, sessionKey, permission.actor.actorId);
     const history = await getOpenClawAdapter().getSessionHistory(
-      { sessionKey, limit: 120 },
+      { sessionKey, limit: queueOnly ? 20 : 120 },
       { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
     );
-    const sessionId = history.sessionId ?? null;
+    const sessionId = typeof history.sessionId === "string" ? history.sessionId : null;
+    const queuePage = queueSchema.safeParse(history.pendingInputs);
+    const pendingInputs = queuePage.success ? {
+      total: queuePage.data.total,
+      items: queuePage.data.items.map(({ message, ...entry }) => ({
+        ...entry,
+        text: extractAgentChatMessagesFromSessionHistory({ messages: [message] })[0]?.text ?? ""
+      }))
+    } : null;
+    if (queueOnly) return NextResponse.json(redactSecrets({ sessionId, pendingInputs }), { headers });
     const messages: RehydratedAgentChatMessage[] = extractAgentChatMessagesFromSessionHistory(history)
       .map((message, index) => ({
         id: `openclaw-history:${sessionId ?? sessionKey}:${message.id}`,
@@ -183,6 +230,7 @@ export async function GET(
     return NextResponse.json(redactSecrets({
       agentId,
       sessionId,
+      pendingInputs,
       source: "openclaw-session",
       messages
     }), { headers });
@@ -269,6 +317,7 @@ export async function POST(
 
     void (async () => {
       let latestAssistantText = "";
+      let admittedRunId: string | undefined;
       let streamStdoutBuffer = "";
       const activeAgentModelId = agent.modelId;
 
@@ -397,15 +446,17 @@ export async function POST(
             sessionKey,
             message: operatorMessage,
             thinking: input.thinking,
-            queueMode: "followup",
-            timeoutSeconds: 90,
+            queueMode: input.queueMode,
             idempotencyKey: input.idempotencyKey
               ? directAgentChatSubmissionId(sessionKey, input.idempotencyKey)
               : undefined
           },
           {
             onStdout: handleCommandStdout,
-            onAdmission: (runId) => { void send({ type: "admitted", runId }); },
+            onAdmission: (runId) => {
+              admittedRunId = runId;
+              void send({ type: "admitted", runId });
+            },
             onToolStart: (name) => {
               const tool = name.trim().replace(/[_-]+/g, " ").slice(0, 80);
               void send({ type: "status", message: tool ? `Agent is using ${tool}…` : "Agent is using a tool…" });
@@ -422,6 +473,11 @@ export async function POST(
         }
         if (result.status === "cancelled" || result.stopReason === "aborted") {
           await send({ type: "cancelled" });
+          return;
+        }
+        if (admittedRunId && result.status &&
+            ["accepted", "started", "queued", "in_flight", "timeout"].includes(result.status)) {
+          // agent.wait can time out while an accepted turn is still executing.
           return;
         }
 
@@ -483,6 +539,12 @@ export async function POST(
           return;
         }
 
+        if (admittedRunId && classifyNativeMutationError(error).disposition === "ambiguous-outcome") {
+          // End observation without declaring a runtime outcome. The client retains
+          // the admission and reconciles through the scoped native conversation.
+          return;
+        }
+
         const rawFailure = redactSecretText(stringifyCommandFailure(error) || redactErrorMessage(error, ""));
         const agentRegistryFailureMessage = resolveGatewayAgentRegistryFailureMessage(rawFailure, agentId);
         const failureMessage =
@@ -541,21 +603,25 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
   const permission = await requireAgentOsProductPermission(request, "agents.chat");
   if ("response" in permission) return permission.response;
 
-  const input = z.object({
-    conversationId: conversationSchema,
-    runId: z.string().trim().min(1).max(240)
-  }).safeParse(await request.json().catch(() => null));
-  if (!input.success) return NextResponse.json({ error: "A valid chat run is required." }, { status: 400 });
+  const parsed = z.union([stopSchema, queueActionSchema]).safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "A valid conversation action is required." }, { status: 400 });
+  const input = parsed.data;
 
   const { agentId } = await context.params;
   try {
     const agent = await readDirectChatAgent(agentId, request.signal);
     if (!agent) return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
-    const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, input.data.conversationId);
+    const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, input.conversationId);
+    const action = "action" in input ? input.action : "stop";
+    const method = action === "steer" ? "chat.steerNow" :
+      action === "dismiss" ? "chat.pendingInputs.dismiss" : "sessions.abort";
+    const params = !("action" in input) ? { key: sessionKey, runId: input.runId } :
+      input.action === "steer" ? { sessionKey, sessionId: input.sessionId, runId: input.runId } :
+        { sessionKey, sessionId: input.sessionId, inputIds: [input.inputId] };
     const authorization = await requireAgentOsOpenClawPreflight(request, {
-      operation: "agent.chat.stop",
-      method: "sessions.abort",
-      params: { key: sessionKey, runId: input.data.runId },
+      operation: `agent.chat.${action}`,
+      method,
+      params,
       targetKind: "agent-session",
       targetId: agentId,
       securityClass: "privileged-mutation",
@@ -566,16 +632,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
     if (authorization.actor.actorId !== permission.actor.actorId) {
       return NextResponse.json({ error: "The active operator changed. Reopen the conversation." }, { status: 403 });
     }
-    const result = await getOpenClawAdapter().abortAgentTurn(
-      { sessionKey, agentId, runId: input.data.runId },
-      { ...authorization.commandOptions, allowCliFallback: false }
-    );
-    return NextResponse.json({ aborted: result.status === "aborted" }, {
-      headers: { "Cache-Control": "private, no-store" }
-    });
+    const adapter = getOpenClawAdapter();
+    const options = { ...authorization.commandOptions, allowCliFallback: false, signal: request.signal };
+    const headers = { "Cache-Control": "private, no-store" };
+    if ("action" in input) {
+      const result = await adapter.call<Record<string, unknown>>(method, params, options);
+      return NextResponse.json(redactSecrets({ status: result.status, dismissedIds: result.dismissedIds }), { headers });
+    }
+    const result = await adapter.abortAgentTurn({ sessionKey, agentId, runId: input.runId }, options);
+    return NextResponse.json({ aborted: result.status === "aborted" }, { headers });
   } catch (error) {
     return NextResponse.json({
-      error: redactErrorMessage(error, "OpenClaw could not stop this reply.")
+      error: redactErrorMessage(error, "OpenClaw could not complete this conversation action.")
     }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
   }
 }

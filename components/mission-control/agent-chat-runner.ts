@@ -49,6 +49,7 @@ export type AgentChatRunSnapshot = {
 export type SendAgentChatMessageOptions = {
   agentId: string;
   conversationId?: string;
+  queueMode?: "steer";
   text: string;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -70,6 +71,7 @@ export function agentChatConversationKey(agentId: string, conversationId?: strin
 export function sendAgentChatMessage({
   agentId,
   conversationId,
+  queueMode,
   text,
   onRefresh,
   onSnapshotChange,
@@ -121,6 +123,7 @@ export function sendAgentChatMessage({
 
   const payload = {
     conversationId,
+    queueMode,
     message: trimmedText,
     rawMessage: trimmedText,
     idempotencyKey: userMessageId
@@ -154,6 +157,7 @@ async function runAgentChatTurn({
   chatKey: string;
   payload: {
     conversationId?: string;
+    queueMode?: "steer";
     message: string;
     rawMessage: string;
     idempotencyKey: string;

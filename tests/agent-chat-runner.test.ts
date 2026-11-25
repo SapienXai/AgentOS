@@ -49,3 +49,21 @@ test("overlapping sends keep distinct submission IDs and retire only their own r
   ]);
   assert.deepEqual(errors, []);
 });
+
+test("a disconnected observer preserves the admitted message and does not replay it", async (context) => {
+  const agentId = "disconnect-fixture";
+  const fetchMock = context.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
+    assert.equal(JSON.parse(String(options.body)).queueMode, "steer");
+    return new Response('{"type":"admitted","runId":"native-run"}\n', {
+      headers: { "Content-Type": "application/x-ndjson" }
+    });
+  });
+  const errors: string[] = [];
+  await sendAgentChatMessage({ agentId, text: "Keep this input", queueMode: "steer", onError: (error) => errors.push(error) });
+  assert.equal(fetchMock.mock.callCount(), 1);
+  assert.equal(getAgentChatRunSnapshot(agentId).isRunning, false);
+  assert.deepEqual(readAgentChatMessages(agentId).map(({ text, status, runId }) => ({ text, status, runId })), [
+    { text: "Keep this input", status: "sent", runId: "native-run" }
+  ]);
+  assert.match(errors[0], /accepted this message/);
+});

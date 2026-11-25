@@ -37,6 +37,17 @@ import { cn } from "@/lib/utils";
 
 type ChatMessage = AgentChatMessage;
 
+type NativeChatQueue = {
+  total: number;
+  items: Array<{
+    id: string;
+    runId?: string;
+    text: string;
+    state: "queued" | "cancelled" | "interrupted";
+    steerNow?: { status: "available" | "blocked"; tools: string[] };
+  }>;
+};
+
 function formatChatTime(timestamp: number) {
   if (!Number.isFinite(timestamp)) {
     return "now";
@@ -208,6 +219,14 @@ export function AgentChatDrawer({
   const [stoppingReply, setStoppingReply] = useState(false);
   const [historyUnavailableFor, setHistoryUnavailableFor] = useState<string>();
   const [chatAccessDeniedFor, setChatAccessDeniedFor] = useState<string>();
+  const [queueSnapshot, setQueueSnapshot] = useState<{
+    chatKey: string;
+    sessionId: string | null;
+    pendingInputs: NativeChatQueue | null;
+  }>();
+  const queue = queueSnapshot?.chatKey === chatKey ? queueSnapshot : undefined;
+  const [queueAction, setQueueAction] = useState<{ chatKey: string; inputId: string }>();
+  const refreshConversation = useRef<() => void>(() => {});
   const chatAccessDenied = chatAccessDeniedFor === chatKey;
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
@@ -312,20 +331,24 @@ export function AgentChatDrawer({
     const params = new URLSearchParams();
     if (conversationId) params.set("conversation", conversationId);
     const historyUrl = conversationId ? `${endpoint}?${params}` : endpoint;
+    params.set("queue", "1");
+    const queueUrl = `${endpoint}?${params}`;
+    params.delete("queue");
     params.set("watch", "1");
     let syncing = false;
     let needsSync = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const syncHistory = async () => {
-      if (document.visibilityState !== "visible" || getAgentChatRunSnapshot(chatKey).isRunning) return;
+      if (document.visibilityState !== "visible") return;
       if (syncing) {
         needsSync = true;
         return;
       }
       syncing = true;
+      const queueOnly = getAgentChatRunSnapshot(chatKey).isRunning;
       try {
-        const response = await fetch(historyUrl, {
+        const response = await fetch(queueOnly ? queueUrl : historyUrl, {
           method: "GET",
           cache: "no-store",
           signal: controller.signal
@@ -333,6 +356,7 @@ export function AgentChatDrawer({
 
         if (!response.ok) {
           if (!controller.signal.aborted) {
+            setQueueSnapshot((current) => current?.chatKey === chatKey ? undefined : current);
             if (response.status === 401 || response.status === 403) {
               setChatAccessDeniedFor(chatKey);
               writeAgentChatMessages(chatKey, []);
@@ -345,13 +369,19 @@ export function AgentChatDrawer({
 
         const payload = (await response.json().catch(() => null)) as {
           messages?: AgentChatMessage[];
+          sessionId?: string | null;
+          pendingInputs?: NativeChatQueue | null;
         } | null;
 
-        if (controller.signal.aborted || getAgentChatRunSnapshot(chatKey).isRunning || !Array.isArray(payload?.messages)) {
-          return;
-        }
+        if (controller.signal.aborted || !payload) return;
+        setQueueSnapshot({
+          chatKey,
+          sessionId: payload.sessionId ?? null,
+          pendingInputs: payload.pendingInputs ?? null
+        });
         setHistoryUnavailableFor((current) => current === chatKey ? undefined : current);
         setChatAccessDeniedFor((current) => current === chatKey ? undefined : current);
+        if (queueOnly || getAgentChatRunSnapshot(chatKey).isRunning || !Array.isArray(payload.messages)) return;
 
         const currentMessages = readAgentChatMessages(chatKey);
         const mergedMessages = reconcileAgentChatMessages(currentMessages, payload.messages);
@@ -362,7 +392,10 @@ export function AgentChatDrawer({
 
         writeAgentChatMessages(chatKey, mergedMessages);
       } catch {
-        if (!controller.signal.aborted) setHistoryUnavailableFor(chatKey);
+        if (!controller.signal.aborted) {
+          setQueueSnapshot((current) => current?.chatKey === chatKey ? undefined : current);
+          setHistoryUnavailableFor(chatKey);
+        }
       } finally {
         syncing = false;
         if (needsSync && !controller.signal.aborted) {
@@ -380,11 +413,13 @@ export function AgentChatDrawer({
     };
     const events = new EventSource(`${endpoint}?${params}`);
     events.addEventListener("history", scheduleSync);
+    events.addEventListener("open", scheduleSync);
+    refreshConversation.current = scheduleSync;
     let wasRunning = getAgentChatRunSnapshot(chatKey).isRunning;
     const reconcileAfterSend = (event: Event) => {
       if ((event as CustomEvent<{ agentId: string }>).detail?.agentId !== chatKey) return;
       const isRunning = getAgentChatRunSnapshot(chatKey).isRunning;
-      if (wasRunning && !isRunning) scheduleSync();
+      if (wasRunning !== isRunning) scheduleSync();
       wasRunning = isRunning;
     };
     window.addEventListener(agentChatStateEventName, reconcileAfterSend);
@@ -395,6 +430,7 @@ export function AgentChatDrawer({
     return () => {
       controller.abort();
       events.close();
+      refreshConversation.current = () => {};
       window.removeEventListener(agentChatStateEventName, reconcileAfterSend);
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", scheduleSync);
@@ -497,7 +533,36 @@ export function AgentChatDrawer({
     }
   };
 
-  const send = async () => {
+  const updateQueue = async (item: NativeChatQueue["items"][number], action: "steer" | "dismiss") => {
+    const resultInput = action === "steer" ? { runId: item.runId } : { inputId: item.id };
+    if (!queue?.sessionId || queueAction?.chatKey === chatKey || (action === "steer" && !item.runId)) return;
+    const operation = { chatKey, inputId: item.id };
+    setQueueAction(operation);
+    try {
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, conversationId, sessionId: queue.sessionId, ...resultInput })
+      });
+      const result = await response.json().catch(() => null) as
+        { status?: string; dismissedIds?: string[]; error?: string } | null;
+      if (!response.ok) throw new Error(result?.error || "OpenClaw could not update the queue.");
+      if (action === "dismiss") {
+        toast.info(result?.dismissedIds?.includes(item.id) ? "Input dismissed." : "This input is no longer pending.");
+      } else {
+        toast.info(result?.status === "interrupted" ? "OpenClaw interrupted the delaying tools." :
+          result?.status === "blocked" ? "The running tools cannot be interrupted." :
+            "This input no longer has tools that OpenClaw can interrupt.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "OpenClaw could not update the queue.");
+    } finally {
+      refreshConversation.current();
+      setQueueAction((current) => current === operation ? undefined : current);
+    }
+  };
+
+  const send = async (queueMode?: "steer") => {
     const text = draft.trim();
     if (chatAccessDenied || !text || (submittedDraft.current?.chatKey === chatKey && submittedDraft.current.text === text)) return;
 
@@ -508,6 +573,7 @@ export function AgentChatDrawer({
 
     try {
       await sendAgentChatMessage({
+        queueMode,
         agentId: agent.id,
         conversationId,
         text,
@@ -774,6 +840,36 @@ export function AgentChatDrawer({
         )}
       >
         <div className="mx-auto w-full max-w-2xl">
+          {!chatAccessDenied && queue?.pendingInputs && queue.pendingInputs.total > 0 ? (
+            <details className="mb-2 rounded-lg border border-border px-3 py-2 text-sm">
+              <summary className="cursor-pointer font-medium">
+                Pending inputs ({queue.pendingInputs.total})
+              </summary>
+              <ul className="mt-2 max-h-44 space-y-2 overflow-y-auto">
+                {queue.pendingInputs.items.map((item) => (
+                  <li key={item.id} className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {item.text ? <p className="truncate" title={item.text}>{item.text}</p> : null}
+                      <p className="text-xs capitalize text-muted-foreground">
+                        {item.state}{item.steerNow?.status === "blocked" ? " · Running tools cannot be interrupted" : ""}
+                      </p>
+                    </div>
+                    {item.state !== "queued" || (item.steerNow?.status === "available" && item.runId) ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!queue.sessionId || queueAction?.chatKey === chatKey}
+                        onClick={() => void updateQueue(item, item.state === "queued" ? "steer" : "dismiss")}
+                      >
+                        {item.state === "queued" ? "Steer now" : "Dismiss"}
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           <form
             aria-label="Send an agent message"
             className="relative rounded-[22px] border border-border bg-card shadow-sm"
@@ -834,6 +930,11 @@ export function AgentChatDrawer({
               </Button>
             </div>
           </form>
+          {runSnapshot.isRunning || queue?.pendingInputs?.items.some(({ state }) => state === "queued") ? (
+            <Button type="button" size="sm" variant="ghost" disabled={!canSend} onClick={() => void send("steer")}>
+              Send as steering input
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

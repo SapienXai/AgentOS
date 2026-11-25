@@ -1729,7 +1729,7 @@ export interface OpenClawAgentTurnInput {
   message: string;
   thinking?: OpenClawThinkingLevel;
   /** Ask the Gateway to hold this input behind active work on the same session. */
-  queueMode?: "followup";
+  queueMode?: "followup" | "steer";
   timeoutSeconds?: number;
   workspace?: string | null;
   dispatchId?: string | null;
