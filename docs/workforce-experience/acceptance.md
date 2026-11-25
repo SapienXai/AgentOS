@@ -1,0 +1,49 @@
+# Acceptance evidence
+
+The development branch starts at AgentOS main `49cf636241e2d00df79245d07a56a29b339687b1`. The tested product revision is `ef1c941714c97405bbb38211cfb2f23bbf08b377`. Browser fixtures used a production Next.js build, Chromium and the exact npm OpenClaw `2026.11.10` Gateway, upstream commit `6ea542fd97e2876aa4c871ccc494ed5419a03c5c`, protocol 4. The product recommendation remains `2026.11.5`. The package and desktop wrapper both identify the unpublished candidate as `0.11.0` under the existing stable-version metadata requirement.
+
+## Screen index
+
+| Surface | Desktop light | Desktop dark | Phone light | Phone dark |
+| --- | --- | --- | --- | --- |
+| Primary destinations | [1440 × 900](evidence/light-1440-screens.jpg) | [1440 × 900](evidence/dark-1440-screens.jpg) | [390 × 844](evidence/light-390-screens.jpg) | [390 × 844](evidence/dark-390-screens.jpg) |
+| Onboarding | [Connect, provider, workspace and team](evidence/light-1440-onboarding.jpg) | [Connect, provider, workspace and team](evidence/dark-1440-onboarding.jpg) | [Connect, provider, workspace and team](evidence/light-390-onboarding.jpg) | [Connect, provider, workspace and team](evidence/dark-390-onboarding.jpg) |
+| Matched canvas crops | [1440 × 900](evidence/canvas-light-1440-before-after.jpg) | [1440 × 900](evidence/canvas-dark-1440-before-after.jpg) | [390 × 788](evidence/canvas-light-390-before-after.jpg) | [390 × 788](evidence/canvas-dark-390-before-after.jpg) |
+
+Read each primary contact sheet left to right, top to bottom. It shows Canvas, workspace switching, Team, Add employee, Identity, employee Knowledge, Capabilities, Intelligence, Chat, Tasks, Assign task, Needs you, schedules, task detail, company Knowledge, Integrations, Settings, and Runtime. [First workspace and conversation](evidence/first-use-result.jpg), [canvas node action and saved drag](evidence/canvas-interactions.jpg), [360 × 470 focused composer](evidence/short-composer.jpg).
+
+## Canvas preservation
+
+The protected canvas implementation, graph/layout/persistence/motion, nodes, edges, status tones, global styles and existing canvas tests have zero diff against the base. The browser verified graph geometry, fit and zoom, both themes, node actions, the mobile inspector, and overlapping agent drag persistence across reloads on both revisions. The candidate switched to Northline Press without showing Fieldwork Studio employees in either Canvas or Team.
+
+The comparison uses DPR 1, reduced motion, identical native employee IDs and graph topology, and hides surrounding chrome in the capture only. The phone candidate viewport was 390 × 844 with 56 px reserved for the dock. The baseline viewport was 390 × 788, so both canvas elements measured 390 × 788. Desktop measured 1440 × 900 on both. Ordered node types, graph coordinates and dimensions all matched. Matching view transforms varied at most by 0.032 CSS px in translation and 0.000024 in scale. Raw screenshot mean absolute channel difference was 0.045–0.280 on a 0–255 scale. The fixtures had different generated task identifiers, native clock values and live visual states. The channel suite exercised channel management through its browser fixture. A separate controlled browser fixture rendered a Telegram route and a permitted login target on the populated canvas in both themes. The node IDs, coordinates, dimensions and tether paths matched exactly, with 8 of 8 checks on each revision including pan and the task inspector. The fixture supplied the connection state and required zero external account authorization. Live animation phases and task filter parity remain unverified. [Desktop connections, light](evidence/canvas-light-1440-connections.jpg), [desktop connections, dark](evidence/canvas-dark-1440-connections.jpg), [phone connections, light](evidence/canvas-light-390-connections.jpg), [phone connections, dark](evidence/canvas-dark-390-connections.jpg), [task inspector](evidence/canvas-task-inspector-before-after.jpg), [geometry and checks](evidence/canvas-connections.json).
+
+## Browser and access
+
+- The populated production-build sweep covered 1440 × 900, 1280 × 800, 820 × 1180, 844 × 390, 390 × 844 and 360 × 800 in both themes. It passed 241 of 243 checks. The two desktop drag checks looked up the wrong persisted key in that run. The corrected harness passed those checks on both themes for both revisions, 14 of 14 in each canvas run.
+- The unconfigured-provider fixture passed 8 of 8 browser checks. The configured fixture passed 14 of 14, including manual launch, the real employee node, and the first persisted direct chat response.
+- For a configured provider, the measured manual journey from the canvas took five action choices through the first reply: Create workspace, Build team manually, Launch workspace, open Chat, and Send message. It required a company name, purpose, and message. The latest run measured 12.9 seconds from Launch workspace to the canvas and 22.4 seconds to the first reply, including browser assertions and fixture inference. Stage 1 and interactive authorization were outside that timed journey.
+- Add employee created Morgan on the native Gateway. Chat persisted its response across navigation and reload. The constrained composer passed viewport checks at 360 and 390 px wide. Physical keyboards and Safari/WebView behavior remain unverified.
+- Guest and member requests to the new destinations received redirects and protected snapshot/stream requests were denied. A promoted owner received snapshot/SSE access. Downgrade and disable closed an active stream and caused a new connection to return HTTP 401. The repository smoke script passed with the disposable owner session. The service bearer alone correctly failed to unlock the protected fixture.
+- The sampled Tasks view showed a real fixture task awaiting review because its global model readiness was degraded. Independently, the native workforce suite verified successful mission execution. The production browser sweep verified the Tasks, Needs you, schedules and detail surfaces, without a live approval decision or connected-account OAuth transaction.
+- Live provider authorization, cancellation and account reuse against an external provider, interruption and persistent manual draft recovery, full keyboard and assistive-technology audit, and physical device acceptance remain unverified. The proposed-team flow uses the existing architect review. Rich editable responsibility and permission fields for each proposal remain incomplete. The manual route verifies native read-back and directs a partially provisioned company to the Team recovery path. Arbitrary runtime file upload remains unavailable through the existing managed file API.
+
+## Local product checks
+
+The production build, lint, route type generation, type checking, release consistency, 2,275 repository tests, 35 focused canvas/onboarding tests, six channel browser scenarios and simulated stable compatibility passed. The macOS arm64 desktop package passed host-Node preparation, structural checks and packaged loopback server smoke. Tests used disposable state. There were no OpenClaw contract, SDK, auth route, gateway or hosting workflow changes. New routes reuse the server-side trusted-operator guard.
+
+## Native certification
+
+The current evaluator and freshness gate passed. All 18 required artifacts were regenerated against the frozen code. The report records 90 skipped statuses and 69 expected authorization denials. The skipped workforce scenarios cover delegation, waiting on a worker, native cancellation and child failure. Native transport reported an optional unsupported `tasks.list` probe. Hosted production, real provider credentials, public package distribution and signed installers are outside this fixture evidence. The evidence input commit is `fc32c12564a4afd1a269d6e5565d5fd8074c5e23`. [Final native report](../evidence/openclaw-2026.11.10-pre-merge-final-certification.json), [browser matrix](evidence/browser-results.json).
+
+## Performance
+
+The repository benchmark used an Apple M5 Pro MacBook Pro with 48 GB RAM, Node 24.22.1, exact OpenClaw 2026.11.10, a production build, two Chromium clients, two raw SSE clients and five native-to-DOM update samples per scale. It compares the same read workload on the main baseline and candidate.
+
+| Agents / sessions | Cold main → candidate, ms | Warm main → candidate, ms | Event-to-DOM p95, ms | Cold native calls |
+| --- | --- | --- | --- | --- |
+| 1 / 1 | 1,082–1,109 → 1,103–1,116 | 240–256 → 222–242 | 2,112 → 2,169 | 17 → 17 |
+| 10 / 100 | 1,093–1,109 → 8,152–8,153 | 253–265 → 244–255 | 2,335 → 2,349 | 17 → 38 |
+| 50 / 500 | 6,636–6,648 → 1,108–1,132 | 274–341 → 278–368 | 2,758 → 5,384 | 38 → 17 |
+
+All 30 DOM update samples arrived. Warm render stayed under 500 ms. Initial HTML fell by 1,637 bytes at each size. The 10-agent cold candidate run exceeded three seconds. The 50-agent candidate p95 exceeded main, although the approximate delta-stream arrival p95 at that size was 1,329 ms versus 1,396 ms on main. A connected-canvas QA pair started during the last candidate workload. A prior run also showed a slower 50-agent candidate p95 (3,363 ms versus 2,038 ms), so the large-workspace DOM latency remains open. Sampled AgentOS RSS was 280–428 MiB on the candidate and 292–380 MiB on main. [Raw benchmark with CPU, RSS, wire size and per-client timings](evidence/performance.json).

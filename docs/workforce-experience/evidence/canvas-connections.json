@@ -1,0 +1,375 @@
+{
+  "method": "Controlled browser interception supplied a Telegram route badge and a permitted fixture login target to the real production graph. All other snapshot data came from the disposable OpenClaw fixture. No external account was authorized.",
+  "baseline": {
+    "checks": [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-pan",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "task-selected",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 788
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-pan",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "task-selected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 788
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      }
+    ],
+    "viewports": {
+      "light-1440": {
+        "transform": "translate(170.95px, 19.1333px) scale(0.877778)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "dark-1440": {
+        "transform": "translate(170.95px, 19.1333px) scale(0.877778)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "light-390": {
+        "transform": "translate(-67.71px, 187.36px) scale(0.42)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "dark-390": {
+        "transform": "translate(-67.71px, 187.36px) scale(0.42)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      }
+    }
+  },
+  "candidate": {
+    "checks": [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-pan",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "task-selected",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-pan",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "task-selected",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-connected",
+        "result": "PASS"
+      }
+    ],
+    "viewports": {
+      "light-1440": {
+        "transform": "translate(170.95px, 19.1333px) scale(0.877778)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "dark-1440": {
+        "transform": "translate(170.95px, 19.1333px) scale(0.877778)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "light-390": {
+        "transform": "translate(-67.7085px, 187.36px) scale(0.420002)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      },
+      "dark-390": {
+        "transform": "translate(-67.71px, 187.36px) scale(0.42)",
+        "nodes": [
+          {
+            "id": "surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "xy": "translate(-18px, 82px)",
+            "width": 64,
+            "height": 64
+          },
+          {
+            "id": "account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "xy": "translate(-18px, 158px)",
+            "width": 64,
+            "height": 64
+          }
+        ],
+        "tethers": [
+          {
+            "id": "edge:fieldwork-studio-ada:surface-module-v1:fieldwork-studio:fieldwork-studio-ada:telegram",
+            "path": "M111,162 C111,138 83,114 55,114"
+          },
+          {
+            "id": "edge:fieldwork-studio-ada:account-module-v1:fieldwork-studio:fieldwork-studio-ada:editorial",
+            "path": "M111,162 C111,176 83,190 55,190"
+          }
+        ]
+      }
+    }
+  }
+}
