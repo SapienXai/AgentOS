@@ -2560,7 +2560,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       : undefined;
     const prepared = await this.prepareNativeSession(input, requestedKey, options);
     let session = prepared ?? { sessionKey: requestedKey };
-    const messageParams = { message: input.message, thinking: input.thinking, timeoutMs, idempotencyKey };
+    const messageParams = { message: input.message, thinking: input.thinking, timeoutMs, idempotencyKey, attachments: input.attachments };
     const attachSession = (payload: MissionCommandPayload) => withChatAdmission({
       ...payload,
       sessionKey: readNonEmptyString(payload.sessionKey) ?? session.sessionKey,

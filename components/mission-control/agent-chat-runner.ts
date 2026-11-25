@@ -9,6 +9,7 @@ import {
 } from "@/components/mission-control/agent-chat-storage";
 import { consumeNdjsonStream } from "@/lib/ndjson";
 import { sanitizeAgentChatVisibleText } from "@/lib/openclaw/agent-chat-response";
+import type { DirectChatAttachment } from "@/lib/openclaw/chat-attachments";
 import type { MissionControlSnapshot, MissionResponse } from "@/lib/agentos/contracts";
 
 type AgentChatStreamEvent =
@@ -50,6 +51,7 @@ export type SendAgentChatMessageOptions = {
   agentId: string;
   conversationId?: string;
   queueMode?: "steer";
+  attachments?: DirectChatAttachment[];
   text: string;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -72,6 +74,7 @@ export function sendAgentChatMessage({
   agentId,
   conversationId,
   queueMode,
+  attachments,
   text,
   onRefresh,
   onSnapshotChange,
@@ -124,6 +127,7 @@ export function sendAgentChatMessage({
   const payload = {
     conversationId,
     queueMode,
+    attachments,
     message: trimmedText,
     rawMessage: trimmedText,
     idempotencyKey: userMessageId
@@ -158,6 +162,7 @@ async function runAgentChatTurn({
   payload: {
     conversationId?: string;
     queueMode?: "steer";
+    attachments?: DirectChatAttachment[];
     message: string;
     rawMessage: string;
     idempotencyKey: string;

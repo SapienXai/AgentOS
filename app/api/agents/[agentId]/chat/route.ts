@@ -14,6 +14,7 @@ import {
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
+import { directChatAttachmentBytes, directChatAttachmentCount, directChatAttachmentTypes } from "@/lib/openclaw/chat-attachments";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { isOpenClawAgentModelReady, readKnownAgentChatModelIssue } from "@/lib/openclaw/application/model-provider-state-service";
 import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
@@ -72,6 +73,15 @@ const chatSchema = z.object({
   message: z.string().trim().min(1),
   rawMessage: z.string().trim().min(1).optional(),
   queueMode: z.enum(["followup", "steer"]).default("followup"),
+  attachments: z.array(z.object({
+    mimeType: z.enum(directChatAttachmentTypes),
+    fileName: z.string().trim().min(1).max(160).refine((value) =>
+      !value.includes("/") && !value.includes("\\") && Array.from(value).every((character) => character.charCodeAt(0) > 31)),
+    origin: z.literal("file"),
+    content: z.string().min(4).max(Math.ceil(directChatAttachmentBytes / 3) * 4)
+      .refine((value) => value.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(value) &&
+        Buffer.byteLength(value, "base64") <= directChatAttachmentBytes)
+  }).strict()).max(directChatAttachmentCount).optional(),
   thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
   idempotencyKey: z.string().trim().min(1).max(180).optional()
 });
@@ -450,6 +460,7 @@ export async function POST(
             message: operatorMessage,
             thinking: input.thinking,
             queueMode: input.queueMode,
+            attachments: input.attachments,
             idempotencyKey: input.idempotencyKey
               ? directAgentChatSubmissionId(sessionKey, input.idempotencyKey)
               : undefined

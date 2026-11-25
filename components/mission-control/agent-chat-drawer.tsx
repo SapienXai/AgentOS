@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { ArrowDown, Bot, KeyRound, LoaderCircle, SendHorizontal, Square } from "lucide-react";
+import { ArrowDown, Bot, KeyRound, LoaderCircle, Paperclip, SendHorizontal, Square, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,11 +31,27 @@ import {
   type AgentChatGatewayRepairAction
 } from "@/lib/openclaw/chat-auth-actions";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
+import {
+  directChatAttachmentBytes, directChatAttachmentCount, directChatAttachmentTypes, type DirectChatAttachment
+} from "@/lib/openclaw/chat-attachments";
 import type { AddModelsProviderId } from "@/lib/openclaw/types";
 import type { MissionControlSnapshot, AgentRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = AgentChatMessage;
+
+function readDirectChatAttachment(file: File): Promise<DirectChatAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("The attachment could not be read."));
+    reader.onload = () => {
+      const data = typeof reader.result === "string" ? reader.result.split(",", 2).at(1) : undefined;
+      if (data) resolve({ fileName: file.name, content: data, mimeType: file.type as DirectChatAttachment["mimeType"], origin: "file" });
+      else reject(new Error("The attachment could not be read."));
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 type NativeChatQueue = {
   total: number;
@@ -207,6 +223,11 @@ export function AgentChatDrawer({
   }>();
   const conversations = catalog?.agentId === agent.id ? catalog.conversations : [];
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftFiles, setDraftFiles] = useState<Record<string, File[]>>({});
+  const files = draftFiles[chatKey] ?? [];
+  const attachmentInput = useRef<HTMLInputElement | null>(null);
+  const preparingFiles = useRef(new Set<string>());
+  const [preparingFilesFor, setPreparingFilesFor] = useState<string>();
   const draft = drafts[chatKey] ?? "";
   const submittedDraft = useRef<{ chatKey: string; text: string } | null>(null);
   const setDraft = (text: string) => {
@@ -522,7 +543,7 @@ export function AgentChatDrawer({
     }
   }, [agent.id, inboxItems.length, isVisible, messages]);
 
-  const canSend = !chatAccessDenied && Boolean(draft.trim());
+  const canSend = !chatAccessDenied && preparingFilesFor !== chatKey && Boolean(draft.trim());
   const stopRunId = runSnapshot.runs[0]?.runId;
 
   const displayedMessages = useMemo(() => {
@@ -620,7 +641,24 @@ export function AgentChatDrawer({
 
   const send = async (queueMode?: "steer") => {
     const text = draft.trim();
-    if (chatAccessDenied || !text || (submittedDraft.current?.chatKey === chatKey && submittedDraft.current.text === text)) return;
+    if (chatAccessDenied || !text || preparingFiles.current.has(chatKey) ||
+        (submittedDraft.current?.chatKey === chatKey && submittedDraft.current.text === text)) return;
+
+    let attachments: DirectChatAttachment[] | undefined;
+    if (files.length) {
+      preparingFiles.current.add(chatKey);
+      setPreparingFilesFor(chatKey);
+      try {
+        attachments = await Promise.all(files.map(readDirectChatAttachment));
+      } catch {
+        toast.error("An attachment could not be read. Select the file again.");
+        return;
+      } finally {
+        preparingFiles.current.delete(chatKey);
+        setPreparingFilesFor((current) => current === chatKey ? undefined : current);
+      }
+      setDraftFiles((current) => ({ ...current, [chatKey]: [] }));
+    }
 
     requestAgentChatSound("send");
     setDraft("");
@@ -630,6 +668,7 @@ export function AgentChatDrawer({
     try {
       await sendAgentChatMessage({
         queueMode,
+        attachments,
         agentId: agent.id,
         conversationId,
         text,
@@ -961,11 +1000,30 @@ export function AgentChatDrawer({
                 event.currentTarget.form?.requestSubmit();
               }}
               placeholder={`Message ${agentLabel}…`}
-              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-14 pr-28 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-24 pr-28 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
 
-            <div className="absolute bottom-1.5 left-1.5 z-10">
+            <div className="absolute bottom-1.5 left-1.5 z-10 flex gap-1">
               <AgentChatSoundSettings />
+              <input type="file" multiple hidden ref={attachmentInput} accept={directChatAttachmentTypes.join(",")}
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  if (!selected.length) return;
+                  if (files.length + selected.length > directChatAttachmentCount || selected.some((file) =>
+                    file.size === 0 || file.size > directChatAttachmentBytes ||
+                    !directChatAttachmentTypes.some((type) => type === file.type))) {
+                    toast.error("Attach up to three JPEG, PNG, WebP, PDF, or plain text files, up to 2 MB each.");
+                    return;
+                  }
+                  setDraftFiles((current) => ({ ...current, [chatKey]: [...files, ...selected] }));
+                }}
+              />
+              <Button type="button" variant="ghost" aria-label="Attach files" className="h-10 w-10 rounded-full p-0"
+                disabled={chatAccessDenied || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
+                onClick={() => attachmentInput.current?.click()}>
+                <Paperclip className="h-4 w-4" aria-hidden="true" />
+              </Button>
             </div>
 
             <div className="absolute bottom-1.5 right-1.5 flex gap-1">
@@ -992,6 +1050,20 @@ export function AgentChatDrawer({
               </Button>
             </div>
           </form>
+          {files.length ? (
+            <ul className="mt-2 flex flex-wrap gap-2" aria-label="Attachments to send">
+              {files.map((file, index) => (
+                <li key={`${file.name}:${file.lastModified}:${index}`} className="flex min-w-0 max-w-full items-center gap-1 rounded-lg border border-border pl-2 text-xs">
+                  <span className="truncate" title={file.name}>{file.name}</span>
+                  <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${file.name}`}
+                    disabled={preparingFilesFor === chatKey}
+                    onClick={() => setDraftFiles((current) => ({ ...current, [chatKey]: files.filter((_, fileIndex) => index !== fileIndex) }))}>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {runSnapshot.isRunning || queue?.pendingInputs?.items.some(({ state }) => state === "queued") ? (
             <Button type="button" size="sm" variant="ghost" disabled={!canSend} onClick={() => void send("steer")}>
               Send as steering input
