@@ -117,7 +117,7 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
                     <span className="capitalize">{abilityName(id)} <span className="text-muted-foreground">· {key === "skillIds" ? "Skill" : "Tool"}</span></span>
                   </label>
                 )))}
-                <DraftAbilities selected={employee.toolIds} onChange={toolIds => edit(employee.id, { toolIds })} />
+                <DraftAbilities selected={employee.toolIds} proposed={proposed[index].toolIds} onChange={toolIds => edit(employee.id, { toolIds })} />
                 {!proposed[index].skillIds.length && !proposed[index].toolIds.length ? <p className="text-sm text-muted-foreground">No additional capabilities are proposed.</p> : null}
               </fieldset>
             </fieldset>

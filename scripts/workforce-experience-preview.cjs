@@ -16,11 +16,13 @@ const serve = process.argv.includes("--serve");
 const baseline = process.argv.includes("--baseline");
 const matchedCanvas = process.argv.includes("--matched-canvas");
 const connect = process.argv.includes("--connect");
+const verifyNativeKnowledge = process.argv.includes("--native-knowledge");
 const suggested = process.argv.includes("--suggested");
 const fresh = connect || suggested || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
 const { createManagedAgentOsUser, updateManagedAgentOsUserRole, updateManagedAgentOsUserStatus } = require(repo + "/lib/agentos/application/agentos-account-service.ts");
 const next = require.resolve(repo + "/node_modules/next/dist/bin/next");
+const { createOfficialBackedOpenClawGatewayClient } = require(repo + "/lib/openclaw/client/official-gateway-factory.ts");
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function port() {
   const server = net.createServer();
@@ -51,6 +53,7 @@ async function run() {
   const children = [];
   const fixture = await createOpenClawRuntimeProviderFixture();
   let browser;
+  let nativeClient;
   try {
     const [gatewayPort, appPort] = await Promise.all([port(), port()]);
     const token = randomUUID();
@@ -75,6 +78,10 @@ async function run() {
     await writeFile(config, JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } },
       ...(connect ? {} : { models: { mode: "merge", providers: { "agentos-fixture": { baseUrl: fixture.baseUrl, api: "openai-completions", apiKey: "fixture-only", models: [{ id: fixture.modelId, name: "Fixture model", input: ["text"], contextWindow: 32768, maxTokens: 256 }] } } } }),
+      ...(verifyNativeKnowledge ? { memory: { search: {
+        provider: "openai", model: "text-embedding-3-small", fallback: "none",
+        remote: { baseUrl: fixture.baseUrl, apiKey: "fixture-only" }
+      } } } : {}),
       agents: { ownership: "explicit", defaults: { systemAgent: {agentId:"main"}, ...(!connect ? { model: { primary:defaultModel } } : {}) }, entries: { main: { name: "System assistant", workspace: mainWorkspace } } }
     }), {mode:0o600});
     const env = {
@@ -93,9 +100,11 @@ async function run() {
     }
     const owner = await enableInstanceProtection({ username: "fixture-owner", password: process.env.WORKFORCE_PREVIEW_PASSWORD || randomUUID() }, env);
     const cookie = INSTANCE_PROTECTION_COOKIE + "=" + owner.session;
-    const gw = start([openclaw,"gateway","run","--port", String(gatewayPort),"--allow-unconfigured"]);
+    const launchGateway = () => start([openclaw,"gateway","run","--port",String(gatewayPort),"--allow-unconfigured"]);
+    let gw = launchGateway();
     await ready("http://127.0.0.1:" + gatewayPort + "/healthz", gw);
-    const app = start([next,"start","--hostname","127.0.0.1","--port",String(appPort)]);
+    const launchApp = () => start([next,"start","--hostname","127.0.0.1","--port",String(appPort)]);
+    let app = launchApp();
     await ready(base + "/api/auth/status", app);
     const headers = { Cookie: cookie, "Content-Type":"application/json", Origin: base };
     async function createWorkspace(name, specs) {
@@ -122,6 +131,11 @@ async function run() {
     }));
     const scopeKey = "mission-control-active-workspace-id:" + snap.diagnostics.workspaceRoot;
     const worker = first ? snap.agents.find(agent => agent.workspaceId === first.workspaceId) : null;
+    function connectNative() {
+      return createOfficialBackedOpenClawGatewayClient({ url: gatewayUrl, token, role: "operator",
+        scopes: ["operator.admin", "operator.read", "operator.write"], timeoutMs: 10000,
+        clientName: "gateway-client", sharedStateMode: "read-only" });
+    }
     let taskId = null;
     if (worker) {
       const task = await fetch(base + "/api/mission", {method:"POST", headers, body:JSON.stringify({
@@ -226,10 +240,19 @@ async function run() {
             });
             await record("reviewed-team-edits", async () => {
               const lead = page.locator("details.workforce-person").first();
-              await lead.locator("summary").click();
+              await lead.locator(":scope > summary").click();
               await lead.getByLabel("Name", { exact: true }).fill("Harbor Lead");
               await lead.getByLabel("Role", { exact: true }).fill("Managing editor");
               await lead.getByLabel("Working instructions and knowledge to consult").fill("Consult company guidelines before publishing.");
+              const abilities = lead.locator("details").filter({hasText:"Browse abilities"});
+              await abilities.getByText("Browse abilities",{exact:true}).click();
+              const available = abilities.getByRole("checkbox").first();
+              await expect(available).toBeVisible({timeout:12000});
+              const abilityText = await available.locator("..").innerText();
+              const chosen = Object.entries({read:"Read workspace files",web_search:"Search the web",web_fetch:"Read web pages"})
+                .find(([, label]) => abilityText.includes(label))?.[0];
+              assert(chosen,"No supported ability was offered.");
+              await available.check();
               const apply = page.getByRole("button", { name: "Save team changes" });
               await expect(page.getByRole("button", { name: "Launch workspace", exact: true })).toBeDisabled();
               const saved = page.waitForResponse(response => response.request().method() === "POST" && /\/creation-runs\/[^/]+\/revise$/.test(response.url()));
@@ -238,10 +261,40 @@ async function run() {
               assert(revision.ok(), `Employee review returned ${revision.status()}.`);
               const result = await revision.json();
               assert.equal(result.result.blueprint.workforce.primaryAgent.role, "Managing editor");
+              assert(result.result.blueprint.workforce.primaryAgent.toolIds.includes(chosen), "The plan did not retain the selected native tool.");
               assert.deepEqual(result.result.blueprint.workforce.primaryAgent.responsibilities, ["Consult company guidelines before publishing."]);
-              await expect(lead.locator("summary")).toContainText("Managing editor");
+              await expect(lead.locator(":scope > summary")).toContainText("Managing editor");
               await expect(apply).toBeDisabled();
             });
+            if (theme === "light" && size === stageSizes.at(-1)) {
+              const started = performance.now();
+              await record("launch-reviewed-team", async () => {
+                await page.getByRole("button", { name: "Launch workspace", exact: true }).click();
+                const open = page.getByRole("button", { name: "Open Workspace", exact: true });
+                await expect(open.or(page.getByText("Your workspace is ready",{exact:true})).first()).toBeVisible({timeout:70000});
+                if (await open.isVisible()) await open.click().catch(() => {});
+                await expect(page.locator(".react-flow__node-agent")).toHaveCount(1, { timeout: 20000 });
+                const response = await fetch(base + "/api/snapshot?force=true", { headers });
+                assert(response.ok);
+                const workers = (await response.json()).agents;
+                const employee = workers.find(agent => agent.name === "Harbor Lead");
+                assert(employee, "The edited employee was not in the native roster.");
+                assert.equal(employee.workerProfile?.employment.role, "Managing editor");
+                assert.equal(employee.workerProfile?.employment.behaviorInstructions, "Consult company guidelines before publishing.");
+                const node = page.locator(`.react-flow__node-agent[data-id="${employee.id}"]`);
+                await page.getByRole("button", {name:"Fit canvas to view"}).click();
+                await expect(node).toBeInViewport();
+                console.log(`Proposed fixture launch to verified canvas: ${Math.round(performance.now() - started)} ms.`);
+                await screenshot("launch-reviewed-canvas");
+                await go("/chat?employee=" + encodeURIComponent(employee.id));
+                await page.getByRole("textbox", {name:"Message Harbor Lead",exact:true}).fill("Draft the introduction for our first issue.");
+                await page.getByRole("button", {name:"Send message"}).click();
+                await expect(page.getByText("AGENTOS_FIXTURE_FIRST_REPLY",{exact:true})).toBeVisible({timeout:25000});
+                console.log(`Proposed fixture launch to first reply: ${Math.round(performance.now() - started)} ms.`);
+              });
+              await context.close();
+              continue;
+            }
             await record("discard-reviewed-draft", async () => {
               await page.getByRole("button", { name: "Start over", exact: true }).click();
               await expect(page.getByRole("dialog", { name: "Start a new workspace?" })).toBeVisible();
@@ -387,7 +440,7 @@ async function run() {
           await expect(page.getByLabel("What should they do?")).toBeVisible();
         });
         const employeePath = `/agents/${encodeURIComponent(worker.id)}`;
-        for (const [name, tab] of [["identity", "behavior"], ["employee-knowledge", "knowledge"], ["capabilities", "capabilities"], ["intelligence", "intelligence"]]) {
+        for (const [name, tab] of [["employee-overview", "overview"], ["identity", "behavior"], ["employee-knowledge", "knowledge"], ["capabilities", "capabilities"], ["employee-activity", "sessions"], ["intelligence", "intelligence"]]) {
           await record(name, async () => {
             await go(`${employeePath}?tab=${tab}`);
             await expect(page.getByRole("heading", { name: "Ada", exact: true })).toBeVisible();
@@ -445,42 +498,140 @@ async function run() {
         for (const [name, route, heading] of [["knowledge", "/knowledge", "Knowledge"], ["integrations", "/integrations", "Integrations"],
           ["settings", "/settings", "Settings"], ["runtime", "/settings#runtime", "Runtime"]]) {
           await record(name, async () => {
-            await go(route);
+            await go(name === "knowledge" ? route + "?workspaceId=" + encodeURIComponent(first.workspaceId) : route);
             await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
-            if (name === "knowledge") await expect(page.getByRole("heading", { name:"Shared documents" })).toBeVisible();
+            if (name === "knowledge") {
+              await expect(page.getByRole("heading", { name:"Documents", exact:true })).toBeVisible();
+              await expect(page.getByRole("region", { name:"Documents", exact:true })).toHaveAttribute("aria-busy", "false");
+            }
           });
         }
-        if (theme === "light" && size === stageSizes.at(-1)) await record("knowledge-upload", async () => {
-          await go("/knowledge");
-          await page.getByRole("button", {name:"Upload document",exact:true}).click();
-          await page.getByLabel("Markdown or JSON document").setInputFiles({
-            name:"Editorial standards.md", mimeType:"text/markdown",
-            buffer:Buffer.from("# Editorial standards\nCheck the source before publication.\n")
+        if (theme === "light" && size === stageSizes.at(-1)) {
+          const knowledge = "/knowledge?workspaceId=" + encodeURIComponent(first.workspaceId);
+          const assignments = "/api/workspaces/" + encodeURIComponent(first.workspaceId) + "/knowledge/assignments";
+          const fileFor = async agentId => {
+            const response = await fetch(base + assignments + "?employee=" + encodeURIComponent(agentId), { headers });
+            assert.equal(response.status, 200);
+            return (await response.json()).paths.find(value => /^docs\/library\/pdf\/press-guide-/.test(value));
+          };
+          await record("knowledge-import-dialog", async () => {
+            await go(knowledge);
+            await page.getByRole("button", {name:"Add knowledge",exact:true}).first().click();
+            await expect(page.getByRole("dialog", {name:"Add knowledge",exact:true})).toBeVisible();
           });
-          await page.getByRole("button", {name:"Save to workspace",exact:true}).click();
-          const document = page.getByRole("button", {name:/Editorial standards/i});
-          await expect(document).toBeVisible({timeout:10000});
-          await document.click();
-          await expect(page.getByText("Check the source before publication.", {exact:false}).first()).toBeVisible();
-        });
-        if (theme === "light" && size === stageSizes.at(-1)) await record("knowledge-reference", async () => {
-          await go("/knowledge");
-          await page.getByRole("button", { name: "Add reference", exact: true }).click();
-          await page.getByLabel("Reference name").fill("Newsroom handbook");
-          await page.getByLabel("Website address").fill("https://example.com/newsroom");
-          await page.getByRole("button", { name: "Save to workspace", exact: true }).click();
-          await page.getByRole("button", { name: /Newsroom handbook/i }).click();
-          await expect(page.getByText("https://example.com/newsroom", { exact: false }).first()).toBeVisible();
-        });
-        if (theme === "light" && size === stageSizes.at(-1)) await record("native-employee-created", async () => {
-          await go("/team");
-          await page.getByRole("button", { name: "Add employee", exact: true }).last().click();
-          const form = page.getByRole("dialog", { name: "Add employee" });
-          await form.getByLabel("Start with a role").selectOption("Researcher");
-          await form.getByLabel("Name", { exact: true }).fill("Morgan");
-          await form.getByRole("button", { name: "Add employee", exact: true }).click();
-          await expect(page.getByRole("link", { name: "Morgan", exact: true })).toBeVisible({ timeout: 25000 });
-        });
+          await record("knowledge-upload", async () => {
+            await page.getByLabel("Choose a document").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.pdf"));
+            await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
+            const document = page.getByRole("button", {name:/^Press Guide.*PDF/i});
+            await expect(document).toBeVisible({timeout:15000});
+            await document.click();
+            await expect(page.getByText("The specimen proof code is Fieldwork 903.", {exact:false}).first()).toBeVisible();
+          });
+          await record("knowledge-reference", async () => {
+            await go(knowledge);
+            await page.getByRole("button", {name:"Add knowledge",exact:true}).first().click();
+            await page.getByText("Website link", {exact:true}).click();
+            await page.getByLabel("Name", {exact:true}).fill("Newsroom handbook");
+            await page.getByLabel("Website address").fill("https://example.com/newsroom");
+            await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
+            await page.getByRole("button", {name: /^Newsroom handbook/i}).click();
+            await expect(page.getByText("https://example.com/newsroom", {exact:false}).first()).toBeVisible();
+          });
+          await record("knowledge-assigned", async () => {
+            await go(employeePath + "?tab=knowledge");
+            const assign = page.getByRole("button", {name:/^Assign press guide$/i});
+            await expect(assign).toBeVisible({timeout:15000});
+            await assign.click();
+            await expect(page.getByRole("button", {name:/^Remove assignment for press guide$/i})).toBeVisible({timeout:30000});
+            await page.reload({waitUntil:"domcontentloaded"});
+            await expect(page.getByRole("button", {name:/^Remove assignment for press guide$/i})).toBeVisible({timeout:20000});
+          });
+          await record("integration-detail", async () => {
+            await go("/integrations");
+            const details = page.getByRole("button", {name:"Details",exact:true}).first();
+            await expect(details).toBeVisible();
+            await details.click();
+            await expect(page.getByRole("dialog")).toBeVisible();
+            await expect(page.getByRole("heading", {name:"Employee access",exact:true})).toBeVisible();
+          });
+          await record("hire-preparation", async () => {
+            await go("/team?workspaceId=" + encodeURIComponent(first.workspaceId));
+            await page.getByRole("button", {name:"Add employee", exact:true}).last().click();
+            const form = page.getByRole("dialog", {name:"Add employee"});
+            await form.getByLabel("Start with a role").selectOption("Researcher");
+            await form.getByLabel("Name", {exact:true}).fill("Morgan");
+            await form.getByText("Knowledge", {exact:true}).click();
+            const document = form.getByLabel("Document to assign");
+            const option = document.locator("option", {hasText:/press guide/i});
+            await expect(option).toBeAttached({timeout:15000});
+            await document.selectOption(await option.getAttribute("value"));
+            await form.getByText("Abilities", {exact:true}).click();
+            await form.getByText("Browse abilities", {exact:true}).click();
+            const read = form.getByRole("checkbox", { name: /Read workspace files/ });
+            await expect(read).toBeVisible({timeout:12000});
+            await read.check();
+          });
+          await record("native-employee-created", async () => {
+            const form = page.getByRole("dialog", {name:"Add employee"});
+            await form.getByRole("button", {name:"Add employee", exact:true}).click();
+            await expect(page.getByRole("link", {name:"Morgan", exact:true})).toBeVisible({timeout:25000});
+          });
+          if (verifyNativeKnowledge) await record("native-knowledge-restart-and-revocation", async () => {
+            const snapshot = await (await fetch(base + "/api/snapshot?force=true", {headers})).json();
+            const employee = snapshot.agents.find(item => item.name === "Morgan" && item.workspaceId === first.workspaceId);
+            const outside = snapshot.agents.find(item => item.name === "Sam" && item.workspaceId !== first.workspaceId);
+            assert(employee && outside, "Expected employees in separate native workspaces.");
+            await expect.poll(() => fileFor(employee.id), {timeout:20000}).toMatch(/press-guide/);
+            const documentPath = await fileFor(employee.id);
+            const denied = await fetch(base + assignments, {
+              method:"PATCH", headers, body:JSON.stringify({agentId:outside.id, path:documentPath, selected:true})
+            });
+            assert.equal(denied.status, 400, "Cross-workspace assignment was admitted.");
+            const missing = await fetch(base + assignments, {
+              method:"PATCH", headers, body:JSON.stringify({agentId:employee.id, path:"docs/library/md/missing-12345678123456781234.md", selected:true})
+            });
+            assert.equal(missing.status, 400, "Missing document was assigned.");
+            nativeClient = connectNative();
+            const hasProof = async target => {
+              const result = await nativeClient.searchMemory({ agentId:target, query:"specimen proof code Fieldwork", maxResults:10, minScore:0 }, {timeoutMs:12000});
+              return result?.results.some(item => item.snippet?.includes("Fieldwork 903")) ?? false;
+            };
+            await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
+            assert.equal(await hasProof(outside.id), false);
+            await go("/chat?employee=" + encodeURIComponent(employee.id));
+            await page.getByRole("textbox", {name:"Message Morgan",exact:true}).fill("WORKFORCE_READ_PROOF " + documentPath);
+            await page.getByRole("button", {name:"Send message"}).click();
+            await expect(page.getByText("The specimen proof code is Fieldwork 903.", {exact:true}).last()).toBeVisible({timeout:45000});
+            const { sessions } = await nativeClient.listSessions({agentId:employee.id,limit:10});
+            const actualSession = sessions.find(session => session.key?.startsWith("agent:" + employee.id + ":"))?.key;
+            assert(actualSession, "Expected a native session created by Chat.");
+            const toolset = await nativeClient.getEffectiveTools({agentId:employee.id,sessionKey:actualSession});
+            assert(toolset.groups.some(group => group.tools.some(tool => tool.id === "read" && !tool.deniedBySession)), "Read is not effective for the employee.");
+            await screenshot("native-employee-document-reply");
+            nativeClient.close("isolated restart");
+            await stop(app);
+            await stop(gw);
+            gw = launchGateway();
+            await ready("http://127.0.0.1:" + gatewayPort + "/healthz", gw);
+            app = launchApp();
+            await ready(base + "/api/auth/status", app);
+            nativeClient = connectNative();
+            assert.equal(await fileFor(employee.id), documentPath);
+            await expect.poll(() => hasProof(employee.id), {timeout:40000}).toBe(true);
+            const result = await fetch(base + assignments, {
+              method:"PATCH", headers, body:JSON.stringify({agentId:employee.id,path:documentPath,selected:false})
+            });
+            assert(result.ok, "Could not revoke document assignment.");
+            await expect.poll(() => fileFor(employee.id), {timeout:15000}).toBeUndefined();
+            await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(false);
+            assert(fixture.stats.embeddingCount > 0);
+            await writeFile(path.join(output,"native-knowledge.json"),JSON.stringify({
+              import: "PDF text", retrieval: "native memory.search", authorizedTool: "read", chatReadBack: true,
+              crossWorkspaceAssignmentDenied: true, differentWorkspaceNotRetrieved: true, staleSourceAssignmentDenied: true,
+              persistenceAfterGatewayAndAppRestart: true, retrievedAfterRemoval: false, embeddingRequests: fixture.stats.embeddingCount
+            },null,2) + "\n");
+          });
+        }
         await context.close();
       }
     }
@@ -492,7 +643,9 @@ async function run() {
         assert.equal(unauthenticated.status, 307);
         assert(!((await unauthenticated.text()).includes("Fieldwork Studio")));
       }
-      for (const route of ["/api/snapshot", "/api/stream", "/api/missions", "/api/human-control"]) {
+      const knowledgeApi = "/api/workspaces/" + encodeURIComponent(first.workspaceId) + "/knowledge";
+      const assignmentsApi = knowledgeApi + "/assignments?employee=" + encodeURIComponent(worker.id);
+      for (const route of ["/api/snapshot", "/api/stream", "/api/missions", "/api/human-control", assignmentsApi]) {
         const unauthenticated = await fetch(base + route, { redirect: "manual" });
         assert.equal(unauthenticated.status, 401);
       }
@@ -506,9 +659,15 @@ async function run() {
         assert(denied.headers.get("location")?.endsWith("/operator-access"));
         assert(!((await denied.text()).includes("Fieldwork Studio")));
       }
-      for (const route of ["/api/snapshot", "/api/stream"]) {
+      for (const route of ["/api/snapshot", "/api/stream", assignmentsApi]) {
         const denied = await fetch(base+route, { headers:memberHeaders });
         assert.equal(denied.status, 403);
+      }
+      for (const [route, method] of [[knowledgeApi,"POST"],[assignmentsApi,"PATCH"]]) {
+        const anon = await fetch(base+route, { method, headers:{Origin:base} });
+        const member = await fetch(base+route, { method, headers:{...memberHeaders, Origin:base} });
+        assert.equal(anon.status,401);
+        assert.equal(member.status,403);
       }
       await updateManagedAgentOsUserRole(member.actorId, "owner", env);
       const promoted = await loginToInstance({ username:"fixture-member", password, rateKey:"workforce-browser-promoted" }, env);
@@ -538,6 +697,7 @@ async function run() {
     for (const child of children) console.error(child.diagnostic());
     throw error;
   } finally {
+    nativeClient?.close("disposable fixture complete");
     await browser?.close();
     for (const child of children.reverse()) await stop(child);
     await fixture.close();
