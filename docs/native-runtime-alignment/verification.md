@@ -1,5 +1,7 @@
 # AgentOS 0.10.0 engineering verification
 
+This report records the first iteration. [Current integration and certification status](phase-ii.md)
+
 The engineering branch is `codex/agentos-0.10.0-native-alignment`. The final application code is at `570b93aaac66fdc3b7485228fa797b580815b775`, and the complete test suite ran at `7787b5da1cb4bd5570e41c38c6cf814c8b3d3c2c`. The branch has no remote CI run. The installed-customer recommendation, published package metadata, desktop distribution and checked-in Railway runtime pin retain the existing 0.9.0 distribution and OpenClaw 2026.11.5 policy. The disposable tests below qualify specific scenarios on candidate OpenClaw 2026.11.10. [Initial audit and main CI](audit.md), [evidence and per-probe revisions](evidence.json)
 
 ## Phase status
