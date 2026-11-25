@@ -34,19 +34,16 @@ export function SettingsPage({
   return (
     <>
       <PikoLoader open={isSettingsOperationInProgress} title={settingsOperationTitle} description={settingsOperationDescription} />
-      <main className={cn(
-        "relative z-10 min-h-screen",
-        surfaceTheme === "light" ? "text-foreground" : "bg-[#080d16] text-slate-100"
-      )}>
+      <main className="relative z-10 min-h-screen text-foreground">
         <section className={cn("px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-[76px] lg:px-8 lg:pb-12 lg:pt-[92px]", sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]")}>
           <div className="mx-auto max-w-[1080px]">
-            <header className="mb-7">
+            <header className="mb-6 border-b border-border/65 pb-4">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className={cn("font-display text-[1.65rem] leading-tight sm:text-[2rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>Settings</h1>
+                <h1 className="workforce-heading font-display font-semibold leading-tight">Settings</h1>
                 <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
               </div>
-              <p className={cn("mt-1.5 text-sm", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>Configure AgentOS around the work you want to do.</p>
-              <OperatorScopeFreshness projection={operatorRuntime} className="mt-2" />
+              <p className="mt-2 text-sm text-muted-foreground">Manage your workspace, AI models and security.</p>
+              {activeSection === "runtime" ? <OperatorScopeFreshness projection={operatorRuntime} className="mt-2" /> : null}
             </header>
 
             <div className="grid items-start gap-8 lg:grid-cols-[180px_minmax(0,680px)]">

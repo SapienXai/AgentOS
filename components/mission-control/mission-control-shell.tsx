@@ -4612,13 +4612,10 @@ export function MissionControlShell({
     return (
       <div
         className={cn(
-          "mission-shell relative min-h-screen overflow-hidden",
+          "mission-shell workforce-main relative min-h-screen overflow-hidden",
           surfaceTheme === "light" && "mission-shell--light"
         )}
       >
-        <div className="mission-canvas-backdrop fixed inset-0 z-0">
-          <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
-        </div>
         <div
           className={cn(
             "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
@@ -4742,7 +4739,6 @@ export function MissionControlShell({
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">Settings</p>
-              <p className={cn("truncate text-[0.68rem]", surfaceTheme === "light" ? "text-[#7a6658]" : "text-slate-400")}>System control center</p>
             </div>
           </div>
         ) : null}
