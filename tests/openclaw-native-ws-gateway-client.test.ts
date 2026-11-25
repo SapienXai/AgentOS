@@ -4844,11 +4844,14 @@ test("native WS gateway client uses the exact Skills Library read and activation
     updatedAt: 1756857600000,
     canEdit: true
   };
-  const selection = {
+  const activationSelection = {
     skillId: skill.skillId,
     revision: skill.revision,
     name: skill.name,
-    ownerProfileId: skill.ownerProfileId,
+    ownerProfileId: skill.ownerProfileId
+  };
+  const selection = {
+    ...activationSelection,
     slug: skill.slug,
     description: skill.description,
     ownerLabel: skill.ownerLabel
@@ -4884,7 +4887,7 @@ test("native WS gateway client uses the exact Skills Library read and activation
                 }
               : {
                   sessionKey: "agent:worker:main",
-                  selections: [selection],
+                  selections: [activationSelection],
                   sessionActivation: "next-turn"
                 }
       });
@@ -4899,7 +4902,11 @@ test("native WS gateway client uses the exact Skills Library read and activation
 
   assert.equal((await client.listSkillLibrary({ scope: "all", sessionKey: "agent:worker:main" })).entries[0]?.revision, skill.revision);
   assert.equal((await client.readSkillLibrary({ skillId: skill.skillId, revision: skill.revision, sessionKey: "agent:worker:main" })).revisions[0]?.revision, skill.revision);
-  assert.equal((await client.activateSkillLibrary({ sessionKey: "agent:worker:main", action: "attach", skillId: skill.skillId, revision: skill.revision })).sessionActivation, "next-turn");
+  const activation = await client.activateSkillLibrary({
+    sessionKey: "agent:worker:main", action: "attach", skillId: skill.skillId, revision: skill.revision
+  });
+  assert.equal(activation.sessionActivation, "next-turn");
+  assert.deepEqual(activation.selections, [activationSelection]);
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
     "skills.library.list",

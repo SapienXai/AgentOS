@@ -186,11 +186,14 @@ const skillLibrarySelectionSchema = z.object({
   skillId: z.string(),
   revision: z.string(),
   name: z.string(),
-  ownerProfileId: z.string().nullable(),
+  ownerProfileId: z.string().nullable()
+}).passthrough();
+
+const skillLibrarySelectionListSchema = skillLibrarySelectionSchema.extend({
   slug: z.string(),
   description: z.string(),
   ownerLabel: z.string()
-}).passthrough();
+});
 
 export const skillLibraryListPayloadSchema = z.object({
   entries: z.array(skillLibraryEntrySchema),
@@ -202,7 +205,7 @@ export const skillLibraryListPayloadSchema = z.object({
   defaultSelectionNotice: z.string().optional(),
   session: z.object({
     sessionKey: z.string(),
-    selections: z.array(skillLibrarySelectionSchema),
+    selections: z.array(skillLibrarySelectionListSchema),
     attachable: z.array(skillLibraryEntrySchema)
   }).passthrough().optional()
 }).passthrough();

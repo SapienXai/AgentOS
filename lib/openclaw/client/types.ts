@@ -1,3 +1,4 @@
+import type { SkillLibrarySelection } from "@openclaw/gateway-protocol";
 import type { EventFrame } from "@openclaw/gateway-protocol/frame-guards";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import type {
@@ -630,11 +631,7 @@ export type OpenClawSkillLibraryEntry = {
   canEdit: boolean;
 };
 
-export type OpenClawSkillLibrarySelection = {
-  skillId: string;
-  revision: string;
-  name: string;
-  ownerProfileId: string | null;
+export type OpenClawSkillLibrarySelection = SkillLibrarySelection & {
   slug: string;
   description: string;
   ownerLabel: string;
@@ -690,7 +687,7 @@ export type OpenClawSkillLibraryActivateInput = {
 
 export type OpenClawSkillLibraryActivatePayload = {
   sessionKey: string;
-  selections: OpenClawSkillLibrarySelection[];
+  selections: SkillLibrarySelection[];
   sessionActivation: "next-turn";
 };
 
