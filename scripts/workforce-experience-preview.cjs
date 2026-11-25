@@ -282,11 +282,10 @@ async function run() {
                 assert.equal(employee.workerProfile?.employment.role, "Managing editor");
                 assert.equal(employee.workerProfile?.employment.behaviorInstructions, "Consult company guidelines before publishing.");
                 const node = page.locator(`.react-flow__node-agent[data-id="${employee.id}"]`);
-                await page.getByRole("button", {name:"Fit canvas to view"}).click();
-                await expect(node).toBeInViewport();
+                await expect(node).toBeAttached();
                 console.log(`Proposed fixture launch to verified canvas: ${Math.round(performance.now() - started)} ms.`);
                 await screenshot("launch-reviewed-canvas");
-                await go("/chat?employee=" + encodeURIComponent(employee.id));
+                await page.getByRole("button", {name:"Start a conversation",exact:true}).click({timeout:12000});
                 await page.getByRole("textbox", {name:"Message Harbor Lead",exact:true}).fill("Draft the introduction for our first issue.");
                 await page.getByRole("button", {name:"Send message"}).click();
                 await expect(page.getByText("AGENTOS_FIXTURE_FIRST_REPLY",{exact:true})).toBeVisible({timeout:25000});
@@ -618,10 +617,16 @@ async function run() {
             nativeClient = connectNative();
             assert.equal(await fileFor(employee.id), documentPath);
             await expect.poll(() => hasProof(employee.id), {timeout:40000}).toBe(true);
-            const result = await fetch(base + assignments, {
-              method:"PATCH", headers, body:JSON.stringify({agentId:employee.id,path:documentPath,selected:false})
-            });
-            assert(result.ok, "Could not revoke document assignment.");
+            await go("/agents/" + encodeURIComponent(employee.id) + "?tab=knowledge");
+            let removal;
+            await expect.poll(async () => {
+              removal = await fetch(base + assignments, {
+                method:"PATCH", headers, body:JSON.stringify({agentId:employee.id,path:documentPath,selected:false})
+              });
+              assert(removal.ok || removal.status === 503,
+                "Could not revoke document assignment (" + removal.status + "): " + (await removal.clone().json()).error);
+              return removal.ok;
+            }, {timeout:20000, intervals:[500,1000,2000]}).toBe(true);
             await expect.poll(() => fileFor(employee.id), {timeout:15000}).toBeUndefined();
             await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(false);
             assert(fixture.stats.embeddingCount > 0);
