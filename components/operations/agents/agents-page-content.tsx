@@ -33,6 +33,8 @@ import {
 import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle } from "@/components/operations/operations-ui";
 import { agentFilterLabel, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
+type ActiveWork = { title: string; status: "running" | "queued" };
+
 export function AgentsPageContent({
   snapshot,
   rootSnapshot,
@@ -51,16 +53,18 @@ export function AgentsPageContent({
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const activeWork = useMemo(() => {
-    const items = new Map<string, string>();
+    const items = new Map<string, ActiveWork>();
     for (const task of snapshot.tasks) {
-      if (task.primaryAgentId && (task.status === "running" || task.status === "queued") && !items.has(task.primaryAgentId)) {
-        items.set(task.primaryAgentId, task.mission || task.title);
+      if (!task.primaryAgentId || (task.status !== "running" && task.status !== "queued")) continue;
+      const current = items.get(task.primaryAgentId);
+      if (!current || (current.status === "queued" && task.status === "running")) {
+        items.set(task.primaryAgentId, { title: task.mission || task.title, status: task.status });
       }
     }
     return items;
   }, [snapshot.tasks]);
   const agents = useMemo(
-    () => buildAgentViews(snapshot).map(agent => agent.status === "running" && !activeWork.has(agent.id)
+    () => buildAgentViews(snapshot).map(agent => agent.status === "running" && !agent.source?.activeRuntimeIds.length && activeWork.get(agent.id)?.status !== "running"
       ? { ...agent, status: "ready" as const, statusLabel: "Ready", statusTone: "success" as const }
       : agent),
     [activeWork, snapshot]
@@ -357,7 +361,7 @@ function AgentCard({
   onManageProfile
 }: {
   agent: AgentView;
-  currentWork: string | undefined;
+  currentWork: ActiveWork | undefined;
   connectionBadges: AgentConnectionBadge[];
   selected: boolean;
   list: boolean;
@@ -369,7 +373,10 @@ function AgentCard({
   const role = agent.source?.workerProfile?.employment.role || agent.policyLabel;
   const chatHref = `/chat?employee=${encodeURIComponent(agent.id)}`;
 
-  const activity = currentWork || (agent.statusTone === "danger" || agent.statusLabel === "Needs approval" ? agent.statusLabel : "No active task");
+  const activity = currentWork
+    ? `${currentWork.status === "running" ? "Working on" : "Queued"}: ${currentWork.title}`
+    : agent.status === "running" ? "Working"
+      : agent.status === "needs-approval" ? "Needs approval" : "No active task";
 
   return (
     <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list && "workforce-person--list")}>
@@ -387,7 +394,7 @@ function AgentCard({
       <div className="workforce-person-work min-w-0">
         {agent.purpose !== role ? <p className="line-clamp-2 text-sm leading-6 text-foreground">{agent.purpose}</p> : null}
         <p className="flex items-start gap-2 text-sm leading-5 text-muted-foreground">
-          <span aria-hidden="true" className={cn("mt-[0.42rem] size-2 shrink-0 rounded-full bg-muted-foreground/45", currentWork && "bg-[hsl(var(--status-success))]")} />
+          <span aria-hidden="true" className={cn("mt-[0.42rem] size-2 shrink-0 rounded-full bg-muted-foreground/45", (agent.status === "running" || currentWork?.status === "running") && "bg-[hsl(var(--status-success))]")} />
           {activity}
         </p>
         {connectionBadges.length ? (
