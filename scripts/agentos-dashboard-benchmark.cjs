@@ -14,6 +14,10 @@ const openclaw = path.join(path.resolve(packageRoot), "openclaw.mjs");
 const app = require.resolve("next/dist/bin/next");
 const productRoot = process.env.AGENTOS_BENCH_APP_ROOT || process.cwd();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const mutationCount = Number(process.env.AGENTOS_BENCH_MUTATIONS || 10);
+const browserUpdateCount = Number(process.env.AGENTOS_BENCH_DOM_SAMPLES || 5);
+const settleMs = Number(process.env.AGENTOS_BENCH_SETTLE_MS || 0);
+const rawStreams = process.env.AGENTOS_BENCH_NO_RAW_SSE === "1" ? [] : ["", "?delta=1"];
 
 async function reservePort() {
   const socket = net.createServer();
@@ -126,7 +130,8 @@ async function runScale(agentCount, sessionCount, browser) {
       OPENCLAW_CONFIG_PATH: config, OPENCLAW_STATE_DIR: state, OPENCLAW_GATEWAY_TOKEN: token,
       OPENCLAW_GATEWAY_PORT: String(gatewayPort), OPENCLAW_BIN: openclaw,
       AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl, AGENTOS_OPENCLAW_GATEWAY_TOKEN: token,
-      AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_API_TOKEN: apiToken, NODE_ENV: "production"
+      AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control"),
+      AGENTOS_API_TOKEN: apiToken, NODE_ENV: "production"
     };
     const nativeRpcCounts = {};
     const launch = (args, observeOutput, cwd) => {
@@ -157,12 +162,14 @@ async function runScale(agentCount, sessionCount, browser) {
       stateDir: state, ensureDeviceIdentity: true, includeDeviceIdentityWithExplicitAuth: true, sharedStateMode: "read-only",
       clientName: "gateway-client", clientVersion: "2026.11.10"
     });
+    const gatewayRssBeforeSeedKiB = processSample(gateway).rssKiB;
     const keys = Array.from({ length: sessionCount }, (_, index) => `agent:${ids[index % ids.length]}:benchmark-${index}`);
     for (let index = 0; index < keys.length; index += 10) {
       await Promise.all(keys.slice(index, index + 10).map((key) =>
         client.callNative("sessions.create", { key }, { safety: "mutation", timeoutMs: 12_000 })
       ));
     }
+    const gatewayRssAfterSeedKiB = processSample(gateway).rssKiB;
     const product = launch([app, "start", "--hostname", "127.0.0.1", "--port", String(appPort)], undefined, productRoot);
     await waitReady(appUrl + "/api/auth/status", product);
     const headers = { Authorization: `Bearer ${apiToken}` };
@@ -194,7 +201,7 @@ async function runScale(agentCount, sessionCount, browser) {
     const calculateDomUpdates = async () => {
       const samples = [];
       let missed = 0;
-      for (let index = 0; index < 5; index++) {
+      for (let index = 0; index < browserUpdateCount; index++) {
         const label = `Benchmark agent update ${index + 1}`;
         const started = performance.now();
         await client.callNative("agents.update", { agentId: "main", name: label }, { safety: "mutation", timeoutMs: 12_000 });
@@ -207,19 +214,23 @@ async function runScale(agentCount, sessionCount, browser) {
         if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
         else missed++;
       }
-      return { samples: samples.length, missed, p95Ms: percentile(samples, 0.95) };
+      return { samples: samples.length, missed, p95Ms: percentile(samples, 0.95), timingsMs: samples.map((value) => Number(value.toFixed(1))) };
     };
-    const streams = await Promise.all(["", "?delta=1"].map((query) =>
+    const streams = await Promise.all(rawStreams.map((query) =>
       watchStream(appUrl + "/api/stream" + query, headers, signal.signal)
     ));
-    const initialTimeout = setTimeout(() => signal.abort(), 30000);
-    await Promise.race([Promise.all(streams.map(({ initial }) => initial)), Promise.race(streams.map(({ completion }) => completion))]);
-    clearTimeout(initialTimeout);
-    assert.ok(streams.every(({ metrics }) => metrics.initialSnapshotBytes > 0));
+    if (streams.length > 0) {
+      const initialTimeout = setTimeout(() => signal.abort(), 30000);
+      await Promise.race([Promise.all(streams.map(({ initial }) => initial)), Promise.race(streams.map(({ completion }) => completion))]);
+      clearTimeout(initialTimeout);
+      assert.ok(streams.every(({ metrics }) => metrics.initialSnapshotBytes > 0));
+    }
+    if (settleMs > 0) await delay(settleMs);
     const measuredStarted = performance.now();
     const cpuStart = { agentos: processSample(product), gateway: processSample(gateway) };
+    const beforeMutations = { ...nativeRpcCounts };
     const mutations = [];
-    for (let index = 0; index < 10; index++) {
+    for (let index = 0; index < mutationCount; index++) {
       mutations.push(performance.now());
       await client.callNative("sessions.patch", {
         key: keys[index % keys.length], label: `Benchmark update ${index + 1}`
@@ -235,6 +246,7 @@ async function runScale(agentCount, sessionCount, browser) {
       return { rssKiB: sample.rssKiB, cpuAveragePercent: Number((100 * (sample.cpuSeconds - initial.cpuSeconds) / measuredSeconds).toFixed(1)) };
     };
     const processSamples = { agentos: sampleWorkload(product, cpuStart.agentos), gateway: sampleWorkload(gateway, cpuStart.gateway) };
+    const mutationRpcCounts = countDelta(beforeMutations, nativeRpcCounts);
     const visibleUpdate = await calculateDomUpdates();
     const summarize = ({ metrics, arrivals }) => ({
       ...metrics,
@@ -244,11 +256,11 @@ async function runScale(agentCount, sessionCount, browser) {
       }), 0.95)
     });
     return {
-      agents: agentCount, nativeSessionsCreated: keys.length, browserClients: browserContexts.length,
+      agents: agentCount, nativeSessionsCreated: keys.length, browserClients: browserContexts.length, rawSseClients: streams.length,
       cold: cold.map(({ timings }) => timings), warm: warm.map(({ timings }) => timings),
-      coldRpcCounts, visibleUpdate, nativeMutations: mutations.length,
-      fullStream: summarize(streams[0]), deltaStream: summarize(streams[1]),
-      processSamples
+      coldRpcCounts, mutationRpcCounts, visibleUpdate, nativeMutations: mutations.length, settleMs,
+      fullStream: streams[0] && summarize(streams[0]), deltaStream: streams[1] && summarize(streams[1]),
+      processSamples, gatewayRssBeforeSeedKiB, gatewayRssAfterSeedKiB
     };
   } finally {
     signal.abort();
@@ -260,6 +272,9 @@ async function runScale(agentCount, sessionCount, browser) {
 }
 
 async function main() {
+  assert.ok(Number.isSafeInteger(mutationCount) && mutationCount > 0);
+  assert.ok(Number.isSafeInteger(browserUpdateCount) && browserUpdateCount > 0);
+  assert.ok(Number.isSafeInteger(settleMs) && settleMs >= 0);
   const metadata = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
   assert.equal(metadata.version, "2026.11.10");
   const browser = await chromium.launch({ channel: "chrome", headless: true });

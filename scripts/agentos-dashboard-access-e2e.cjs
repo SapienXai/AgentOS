@@ -104,7 +104,8 @@ async function main() {
     const env = createDisposableOpenClawEnvironment({ homeDir: root, overrides: {
       TMPDIR: root, NODE_ENV: "production", OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: config,
       OPENCLAW_GATEWAY_PORT: String(gatewayPort), OPENCLAW_GATEWAY_TOKEN: gatewayToken, OPENCLAW_BIN: runtime,
-      AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl,
+      AGENTOS_RUNTIME_DIR: path.join(root, "agentos"), AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control"),
+      AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl,
       AGENTOS_OPENCLAW_GATEWAY_TOKEN: gatewayToken, AGENTOS_API_TOKEN: apiToken
     } });
     const launch = (cwd, ...args) => {
