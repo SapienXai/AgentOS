@@ -2,6 +2,8 @@ import "server-only";
 
 import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { isLoopbackHost } from "@/lib/security/local-operator";
 import path from "node:path";
 
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
@@ -353,6 +355,11 @@ export async function resolveWorkspaceManagedFileForPath(workspacePath: string, 
 }
 
 async function resolveWorkspace(workspaceId: string) {
+  const gateway = new URL(resolveGatewayUrl());
+  if (!isLoopbackHost(gateway.host)) {
+    throw new Error("Workspace file access is unavailable for a remote OpenClaw Gateway.");
+  }
+
   const normalizedWorkspaceId = workspaceId.trim();
 
   if (!normalizedWorkspaceId) {
