@@ -58,12 +58,16 @@ test("a disconnected observer preserves the admitted message and does not replay
       headers: { "Content-Type": "application/x-ndjson" }
     });
   });
-  const errors: string[] = [];
-  await sendAgentChatMessage({ agentId, text: "Keep this input", queueMode: "steer", onError: (error) => errors.push(error) });
+  const errors: Array<{ message: string; confirmed: boolean }> = [];
+  await sendAgentChatMessage({
+    agentId, text: "Keep this input", queueMode: "steer",
+    onError: (message, confirmed) => errors.push({ message, confirmed })
+  });
   assert.equal(fetchMock.mock.callCount(), 1);
   assert.equal(getAgentChatRunSnapshot(agentId).isRunning, false);
   assert.deepEqual(readAgentChatMessages(agentId).map(({ text, status, runId }) => ({ text, status, runId })), [
     { text: "Keep this input", status: "sent", runId: "native-run" }
   ]);
-  assert.match(errors[0], /accepted this message/);
+  assert.equal(errors[0].confirmed, false);
+  assert.match(errors[0].message, /accepted this message/);
 });

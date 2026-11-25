@@ -203,8 +203,10 @@ export async function GET(
     }
     const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, conversation.data);
     if (watch) return streamAgentChatInvalidations(request, sessionKey, permission.actor.actorId);
+    const cursor = z.string().trim().min(1).max(4096).optional().safeParse(url.searchParams.get("before") ?? undefined);
+    if (!cursor.success) return NextResponse.json({ error: "Invalid conversation history cursor." }, { status: 400 });
     const history = await getOpenClawAdapter().getSessionHistory(
-      { sessionKey, limit: queueOnly ? 20 : 120 },
+      { sessionKey, limit: queueOnly ? 20 : cursor.data ? 60 : 120, cursor: cursor.data },
       { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
     );
     const sessionId = typeof history.sessionId === "string" ? history.sessionId : null;
@@ -219,7 +221,7 @@ export async function GET(
     if (queueOnly) return NextResponse.json(redactSecrets({ sessionId, pendingInputs }), { headers });
     const messages: RehydratedAgentChatMessage[] = extractAgentChatMessagesFromSessionHistory(history)
       .map((message, index) => ({
-        id: `openclaw-history:${sessionId ?? sessionKey}:${message.id}`,
+        id: `openclaw-history:${sessionId ?? sessionKey}:${message.messageSeq ?? message.id}`,
         role: message.role,
         text: message.text,
         createdAt: normalizeAgentChatMessageTimestamp(message.timestamp, index),
@@ -231,6 +233,7 @@ export async function GET(
       agentId,
       sessionId,
       pendingInputs,
+      before: typeof history.olderCursor === "string" ? history.olderCursor : null,
       source: "openclaw-session",
       messages
     }), { headers });
@@ -471,7 +474,8 @@ export async function POST(
         if (streamStdoutBuffer.trim()) {
           await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
         }
-        if (result.status === "cancelled" || result.stopReason === "aborted") {
+        if (result.status === "cancelled" || result.stopReason === "aborted" ||
+            (result.status === "timeout" && result.summary === "aborted")) {
           await send({ type: "cancelled" });
           return;
         }

@@ -223,8 +223,19 @@ export function AgentChatDrawer({
     chatKey: string;
     sessionId: string | null;
     pendingInputs: NativeChatQueue | null;
+    before: string | null;
   }>();
   const queue = queueSnapshot?.chatKey === chatKey ? queueSnapshot : undefined;
+  const [olderHistory, setOlderHistory] = useState<{
+    chatKey: string;
+    sessionId: string;
+    before: string | null;
+    messages: ChatMessage[];
+  }>();
+  const olderPage = olderHistory?.chatKey === chatKey && olderHistory.sessionId === queue?.sessionId ? olderHistory : undefined;
+  const olderCursor = olderPage ? olderPage.before : queue?.before;
+  const pageLoad = useRef<AbortController | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [queueAction, setQueueAction] = useState<{ chatKey: string; inputId: string }>();
   const refreshConversation = useRef<() => void>(() => {});
   const chatAccessDenied = chatAccessDeniedFor === chatKey;
@@ -359,6 +370,7 @@ export function AgentChatDrawer({
             setQueueSnapshot((current) => current?.chatKey === chatKey ? undefined : current);
             if (response.status === 401 || response.status === 403) {
               setChatAccessDeniedFor(chatKey);
+              setOlderHistory((current) => current?.chatKey === chatKey ? undefined : current);
               writeAgentChatMessages(chatKey, []);
             } else {
               setHistoryUnavailableFor(chatKey);
@@ -371,14 +383,17 @@ export function AgentChatDrawer({
           messages?: AgentChatMessage[];
           sessionId?: string | null;
           pendingInputs?: NativeChatQueue | null;
+          before?: string | null;
         } | null;
 
         if (controller.signal.aborted || !payload) return;
-        setQueueSnapshot({
+        setQueueSnapshot((current) => ({
           chatKey,
           sessionId: payload.sessionId ?? null,
-          pendingInputs: payload.pendingInputs ?? null
-        });
+          pendingInputs: payload.pendingInputs ?? null,
+          before: queueOnly && current?.chatKey === chatKey && current.sessionId === payload.sessionId
+            ? current.before : payload.before ?? null
+        }));
         setHistoryUnavailableFor((current) => current === chatKey ? undefined : current);
         setChatAccessDeniedFor((current) => current === chatKey ? undefined : current);
         if (queueOnly || getAgentChatRunSnapshot(chatKey).isRunning || !Array.isArray(payload.messages)) return;
@@ -429,6 +444,7 @@ export function AgentChatDrawer({
 
     return () => {
       controller.abort();
+      pageLoad.current?.abort();
       events.close();
       refreshConversation.current = () => {};
       window.removeEventListener(agentChatStateEventName, reconcileAfterSend);
@@ -509,7 +525,47 @@ export function AgentChatDrawer({
   const canSend = !chatAccessDenied && Boolean(draft.trim());
   const stopRunId = runSnapshot.runs[0]?.runId;
 
-  const hasConversation = messages.length > 0 || inboxItems.length > 0;
+  const displayedMessages = useMemo(() => {
+    if (chatAccessDenied) return [];
+    if (!olderPage) return messages;
+    const currentIds = new Set(messages.map(({ id }) => id));
+    return [...olderPage.messages.filter(({ id }) => !currentIds.has(id)), ...messages];
+  }, [chatAccessDenied, messages, olderPage]);
+  const hasConversation = displayedMessages.length > 0 || inboxItems.length > 0;
+
+  const loadOlder = async () => {
+    if (!olderCursor || !queue?.sessionId || (pageLoad.current && !pageLoad.current.signal.aborted)) return;
+    const controller = new AbortController();
+    pageLoad.current = controller;
+    setLoadingOlder(true);
+    const params = new URLSearchParams({ before: olderCursor });
+    if (conversationId) params.set("conversation", conversationId);
+    try {
+      const response = await fetch(`${endpoint}?${params}`, { signal: controller.signal, cache: "no-store" });
+      if (response.status === 401 || response.status === 403) {
+        setChatAccessDeniedFor(chatKey);
+        setOlderHistory((current) => current?.chatKey === chatKey ? undefined : current);
+        writeAgentChatMessages(chatKey, []);
+        return;
+      }
+      if (!response.ok) throw new Error("OpenClaw could not load older messages.");
+      const page = await response.json() as { sessionId: string; before: string | null; messages: ChatMessage[] };
+      if (controller.signal.aborted || page.sessionId !== queue.sessionId) return;
+      setOlderHistory({
+        chatKey,
+        sessionId: page.sessionId,
+        before: page.before === olderCursor ? null : page.before,
+        messages: [...page.messages, ...(olderPage?.messages ?? [])]
+      });
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "OpenClaw could not load older messages.");
+    } finally {
+      if (pageLoad.current === controller) {
+        pageLoad.current = null;
+        setLoadingOlder(false);
+      }
+    }
+  };
 
   const stopReply = async () => {
     if (!stopRunId || stoppingReply) return;
@@ -579,8 +635,9 @@ export function AgentChatDrawer({
         text,
         onRefresh,
         onSnapshotChange,
-        onError: (message) => {
-          toast.error("Chat message failed.", { description: message });
+        onError: (message, confirmed) => {
+          if (confirmed) toast.error("Chat message failed.", { description: message });
+          else toast.info(message);
         }
       });
     } finally {
@@ -696,6 +753,11 @@ export function AgentChatDrawer({
           className="h-full min-h-0 overflow-y-auto overscroll-contain"
         >
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-7 px-5 py-6 sm:px-8 sm:py-7">
+            {!chatAccessDenied && olderCursor ? (
+              <Button type="button" size="sm" variant="ghost" className="self-center" disabled={loadingOlder} onClick={() => void loadOlder()}>
+                {loadingOlder ? "Loading older messages…" : "Load older messages"}
+              </Button>
+            ) : null}
             {!hasConversation ? (
               <div className="flex min-h-[min(58dvh,560px)] w-full items-center justify-center py-8">
                 <AgentChatWelcome
@@ -707,7 +769,7 @@ export function AgentChatDrawer({
               </div>
             ) : null}
             {inboxItems.map((item) => <AgentInboxItemBubble key={item.id} item={item} />)}
-            {messages.map((entry, index) => {
+            {displayedMessages.map((entry, index) => {
               const isUser = entry.role === "user";
               const isSystem = entry.role === "system";
               const activeRun = runSnapshot.runs.find((run) => run.assistantMessageId === entry.id);
@@ -718,7 +780,7 @@ export function AgentChatDrawer({
               const authAction = !gatewayRepairAction
                 ? resolveAgentChatMessageAuthAction(entry.status, errorMessage, agent.modelId)
                 : null;
-              const showDateSeparator = shouldShowChatDateSeparator(messages[index - 1]?.createdAt, entry.createdAt);
+              const showDateSeparator = shouldShowChatDateSeparator(displayedMessages[index - 1]?.createdAt, entry.createdAt);
 
               return (
                 <div key={entry.id} className="w-full">

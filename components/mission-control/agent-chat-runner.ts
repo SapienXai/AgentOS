@@ -53,7 +53,7 @@ export type SendAgentChatMessageOptions = {
   text: string;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, confirmed: boolean) => void;
 };
 
 const activeAgentChatRuns = new Map<string, Set<ActiveAgentChatRun>>();
@@ -168,7 +168,7 @@ async function runAgentChatTurn({
   run: ActiveAgentChatRun;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
-  onError?: (message: string) => void;
+  onError?: SendAgentChatMessageOptions["onError"];
 }) {
   let latestAssistantText = "";
   let assistantTextReceived = false;
@@ -330,7 +330,7 @@ async function runAgentChatTurn({
         .filter((entry) => entry.id !== assistantMessageId || partialText.length > 0)
     );
 
-    onError?.(message);
+    onError?.(message, rejectionConfirmed);
   } finally {
     globalThis.clearInterval(heartbeatTimer);
     const runs = activeAgentChatRuns.get(chatKey);
