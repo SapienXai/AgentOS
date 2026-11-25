@@ -130,7 +130,7 @@ export async function GET(request: Request) {
               if (sendEvent("snapshot", snapshot)) publishedSnapshot = next;
               return;
             }
-            if ((delta.diagnostics || delta.runtimes || Object.keys(delta.changes).length) &&
+            if ((delta.diagnostics || delta.runtimes || delta.tasks || Object.keys(delta.changes).length) &&
                 sendEvent("snapshot-delta", delta)) publishedSnapshot = next;
           } catch (error) {
             sendEvent("error", {
