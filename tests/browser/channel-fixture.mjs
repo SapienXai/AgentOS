@@ -426,6 +426,7 @@ export class ChannelAcceptanceFixture {
       titleSource: "observed",
       configured: true,
       connectedAgentId,
+      bindingMatch: connectedAgentId ? "exact" : "none",
       historicalAgentId: null,
       source: "openclaw-config",
       sources: ["openclaw-config"],
