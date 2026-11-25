@@ -1,0 +1,15 @@
+{
+  "totalBrowserTests": 6,
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26
+  },
+  "discordBrowserAcceptance": {
+    "passed": true
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "reason": "A real external account was not used in the authorized disposable fixture."
+  }
+}

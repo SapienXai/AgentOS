@@ -1,0 +1,464 @@
+{
+  "reviewedSource": "e63791dce1b5a2a3951581ae8a1b5c011eb0b254",
+  "result": "PASS",
+  "matrix": [
+    {
+      "theme": "dark",
+      "viewport": 1440,
+      "dimensions": {
+        "width": 1440,
+        "height": 900
+      },
+      "nodeGeometry": [
+        {
+          "id": "fieldwork-studio",
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "id": "fieldwork-studio-ada",
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "task",
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "id": "fieldwork-studio-ellis",
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "fieldwork-studio-mira",
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ],
+      "transforms": [
+        "translate(154.711px, 19.1333px) scale(0.877778)",
+        "translate(159.064px, 20.637px) scale(0.876788)"
+      ],
+      "meanAbsoluteChannelDifference": 0.1001
+    },
+    {
+      "theme": "dark",
+      "viewport": 390,
+      "dimensions": {
+        "width": 390,
+        "height": 788
+      },
+      "nodeGeometry": [
+        {
+          "id": "fieldwork-studio",
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "id": "fieldwork-studio-ada",
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "task",
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 358,
+          "height": 285
+        },
+        {
+          "id": "fieldwork-studio-ellis",
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "fieldwork-studio-mira",
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ],
+      "transforms": [
+        "translate(-74.48px, 187.36px) scale(0.42)",
+        "translate(-74.48px, 187.36px) scale(0.42)"
+      ],
+      "meanAbsoluteChannelDifference": 0.0631
+    },
+    {
+      "theme": "light",
+      "viewport": 1440,
+      "dimensions": {
+        "width": 1440,
+        "height": 900
+      },
+      "nodeGeometry": [
+        {
+          "id": "fieldwork-studio",
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "id": "fieldwork-studio-ada",
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "task",
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "id": "fieldwork-studio-ellis",
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "fieldwork-studio-mira",
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ],
+      "transforms": [
+        "translate(154.711px, 19.1333px) scale(0.877778)",
+        "translate(154.711px, 19.1333px) scale(0.877778)"
+      ],
+      "meanAbsoluteChannelDifference": 0.0551
+    },
+    {
+      "theme": "light",
+      "viewport": 390,
+      "dimensions": {
+        "width": 390,
+        "height": 788
+      },
+      "nodeGeometry": [
+        {
+          "id": "fieldwork-studio",
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "id": "fieldwork-studio-ada",
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "task",
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 358,
+          "height": 285
+        },
+        {
+          "id": "fieldwork-studio-ellis",
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "id": "fieldwork-studio-mira",
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ],
+      "transforms": [
+        "translate(-74.48px, 187.36px) scale(0.42)",
+        "translate(-74.48px, 187.36px) scale(0.42)"
+      ],
+      "meanAbsoluteChannelDifference": 0.071
+    }
+  ],
+  "checks": [
+    [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-node-menu",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-drag-restored",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-inspector",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-node-menu",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-drag-restored",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-inspector",
+        "result": "PASS"
+      }
+    ],
+    [
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-node-menu",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-drag-restored",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "dark",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-inspector",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-node-menu",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "name": "canvas-drag-restored",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-zoom",
+        "result": "PASS"
+      },
+      {
+        "theme": "light",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "name": "canvas-inspector",
+        "result": "PASS"
+      }
+    ]
+  ]
+}

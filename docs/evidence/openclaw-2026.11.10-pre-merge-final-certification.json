@@ -2,16 +2,16 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.10-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-25T17:58:00.736Z",
-  "certifiedAt": "2026-11-25T17:58:00.736Z",
-  "agentosHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
+  "generatedAt": "2026-11-25T20:39:36.009Z",
+  "certifiedAt": "2026-11-25T20:39:36.009Z",
+  "agentosHead": "2d12152b4e82788431e06d5246428fe50367fb7d",
   "openclawVersion": "2026.11.10",
   "openclawSourceSha": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
   "upstreamEvidenceHashes": {},
   "contractAudit": null,
   "compatibility": {
     "report": {
-      "generatedAt": "2026-11-25T17:57:59.945Z",
+      "generatedAt": "2026-11-25T20:30:09.213Z",
       "target": {
         "name": "simulated-stable",
         "kind": "simulated",
@@ -3792,18 +3792,27 @@
     }
   },
   "runtimeAcceptance": null,
-  "telegramBrowserAcceptance": null,
-  "discordBrowserAcceptance": null,
-  "liveTelegram": null,
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26
+  },
+  "discordBrowserAcceptance": {
+    "passed": true
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "reason": "A real external account was not used in the authorized disposable fixture."
+  },
   "knownExceptions": [
     "Compatibility degraded optional surfaces: Agent identity sync, Channel logs, Channel provisioning, Channel removal, Config patch, Device access repair, Device token lifecycle, Environment preparation, Gateway restart control, Gmail webhook setup, Model auth order, Model authentication, Model scan, Native plugin discovery catalog, Node pairing, Secret reload and resolution, Session recovery, Setup wizard, Update status.",
     "Compatibility unsupported optional surfaces: Browser profiles, GitHub profile and session publication, Managed worktrees, Operator questions, Session collaboration and ownership, Skills library, Task assignment, Task history, Task suggestions."
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "ef1c941714c97405bbb38211cfb2f23bbf08b377",
-    "evidenceCommit": "fc32c12564a4afd1a269d6e5565d5fd8074c5e23",
-    "branch": "codex/agentos-0.11.0-workforce-experience",
+    "certifiedCodeHead": "2d12152b4e82788431e06d5246428fe50367fb7d",
+    "evidenceCommit": "e2cd91a75bd1d36957b7beedbc0a7bf96044e677",
+    "branch": "",
     "node": "v24.22.1",
     "openClaw": {
       "version": "2026.11.10",
@@ -4023,14 +4032,14 @@
       "doctor": {
         "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery.json",
         "status": "PASS",
-        "skips": 4,
+        "skips": 2,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
       "doctor-hardening": {
         "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
         "status": "PASS",
-        "skips": 2,
+        "skips": 4,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
@@ -4165,14 +4174,14 @@
     "doctor": {
       "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery.json",
       "status": "PASS",
-      "skips": 4,
+      "skips": 2,
       "environmentLimited": 0,
       "expectedDenials": 0
     },
     "doctor-hardening": {
       "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
       "status": "PASS",
-      "skips": 2,
+      "skips": 4,
       "environmentLimited": 0,
       "expectedDenials": 0
     },

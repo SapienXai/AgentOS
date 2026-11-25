@@ -1,0 +1,74 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-connected",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-pan",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "task-selected",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-connected",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-connected",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-pan",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "task-selected",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-connected",
+    "result": "PASS"
+  }
+]

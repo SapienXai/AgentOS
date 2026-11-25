@@ -53,3 +53,5 @@ To reproduce screenshots and route checks, omit `--serve` and set `WORKFORCE_EVI
 ## Evidence
 
 See [acceptance evidence](acceptance.md) for the screen index, canvas comparison, verification results and known limitations.
+
+See [Iteration II](iteration-ii.md) for its updated workflows, full-resolution captures, measurements and preview instructions.

@@ -1,0 +1,1181 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-node-menu",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-drag-restored",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "chat-constrained-height",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-node-menu",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-drag-restored",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "workspace-switcher",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "workspace-switch-confirmed",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "team",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "add-employee",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "identity",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "employee-knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "capabilities",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "intelligence",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "chat",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "chat-constrained-height",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "tasks",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "assign-task",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "needs-you",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "scheduled",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "task-detail",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "knowledge",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "integrations",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "settings",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "runtime",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "knowledge-upload",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "knowledge-reference",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "native-employee-created",
+    "result": "PASS"
+  }
+]
