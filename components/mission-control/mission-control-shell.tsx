@@ -1089,7 +1089,7 @@ export function MissionControlShell({
   const onlyBootstrapWorkspace = Boolean(bootstrapWorkspace?.id === "workspace" &&
     !bootstrapWorkspace.bootstrap?.template && snapshot.agents.length === 1 && snapshot.agents[0]?.id === "main");
   const shouldOfferFirstWorkspace = (snapshot.mode === "live" || enteredAfterSiwc) &&
-    (!hasProject || onlyBootstrapWorkspace) && snapshot.tasks.length === 0;
+    (!hasProject || onlyBootstrapWorkspace);
 
   const needsChatGptSetup = snapshot.mode === "live" && !hasProject &&
     !snapshot.diagnostics.modelReadiness.ready &&
@@ -4583,6 +4583,14 @@ export function MissionControlShell({
     </>
   );
 
+  const firstWorkspaceAction = (
+    <button type="button" className="min-h-11 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline focus-visible:outline-ring"
+      onClick={canStartWorkspaceSetup ? openFirstWorkspace : () => openSetupWizard()}>
+      {canStartWorkspaceSetup ? "Create workspace" : "Connect your AI"}
+    </button>
+  );
+
+
   if (mode === "settings") {
     return (
       <div
@@ -4979,18 +4987,9 @@ export function MissionControlShell({
           />
         </div>
       </div>
-      {shouldOfferFirstWorkspace && !shouldShowOnboarding && !isWorkspaceWizardOpen ? (
-        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-5">
-          <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-panel">
-            <h2 className="text-lg font-semibold">{canStartWorkspaceSetup ? "Create your first workspace" : "Connect your AI"}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {canStartWorkspaceSetup ? "Give your workspace a name and decide who will help." : "Choose a provider to start building your team."}
-            </p>
-            <button type="button" className="mt-4 min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-              onClick={canStartWorkspaceSetup ? openFirstWorkspace : () => openSetupWizard()}>
-              {canStartWorkspaceSetup ? "Create workspace" : "Connect your AI"}
-            </button>
-          </div>
+      {shouldOfferFirstWorkspace && !isFloatingHeaderHidden && !isInspectorOpen ? (
+        <div className="pointer-events-auto absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-[24] lg:bottom-auto lg:left-[316px] lg:right-auto lg:top-9">
+          {firstWorkspaceAction}
         </div>
       ) : null}
 

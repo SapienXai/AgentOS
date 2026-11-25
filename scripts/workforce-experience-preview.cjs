@@ -255,7 +255,7 @@ async function run() {
         if (size.width === 1440) await record("canvas-node-menu", async () => {
           const action = page.getByRole("button", { name: "Ada actions", exact: true });
           await action.click();
-          await expect(action).toHaveAttribute("aria-expanded", "true");
+          await expect(page.locator(".agent-node__action-menu")).toBeVisible();
         });
         if (size.width === 390) await record("canvas-inspector", async () => {
           await page.getByRole("button", { name: "Open inspector", exact: true }).click();
@@ -350,6 +350,7 @@ async function run() {
       }
     }
 
+    await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
     if (!fresh && !baseline) {
       for (const route of ["/chat", "/team", "/knowledge", "/missions", "/integrations", "/settings"]) {
         const unauthenticated = await fetch(base + route, { redirect: "manual" });
@@ -374,17 +375,17 @@ async function run() {
         const denied = await fetch(base+route, { headers:memberHeaders });
         assert.equal(denied.status, 403);
       }
-      await updateManagedAgentOsUserRole(member.actorId, "admin", env);
-      const admin = await loginToInstance({ username:"fixture-member", password, rateKey:"workforce-browser-admin" }, env);
-      const adminHeaders = { Cookie: INSTANCE_PROTECTION_COOKIE + "=" + admin.session };
-      const allowed = await fetch(base + "/api/snapshot", { headers:adminHeaders });
-      assert(allowed.ok, `Admin snapshot returned ${allowed.status}.`);
+      await updateManagedAgentOsUserRole(member.actorId, "owner", env);
+      const promoted = await loginToInstance({ username:"fixture-member", password, rateKey:"workforce-browser-promoted" }, env);
+      const promotedHeaders = { Cookie: INSTANCE_PROTECTION_COOKIE + "=" + promoted.session };
+      const allowed = await fetch(base + "/api/snapshot", { headers:promotedHeaders });
+      assert(allowed.ok, `Promoted owner snapshot returned ${allowed.status}.`);
+      await updateManagedAgentOsUserRole(member.actorId, "member", env);
       await updateManagedAgentOsUserStatus(member.actorId, "disabled", env);
-      const revoked = await fetch(base + "/api/stream", { headers:adminHeaders, redirect:"manual" });
+      const revoked = await fetch(base + "/api/stream", { headers:promotedHeaders, redirect:"manual" });
       assert.equal(revoked.status, 401);
-      console.log("Unauthenticated and member route/API checks passed. Admin revocation denied a new SSE connection.");
+      console.log("Unauthenticated and member route/API checks passed. Revocation denied a new SSE connection.");
     }
-    await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
     const failures = report.filter(result => result.result === "FAIL");
     console.log(`Captured ${report.length - failures.length}/${report.length} checks to ${output}.`);
     if (failures.length) {
