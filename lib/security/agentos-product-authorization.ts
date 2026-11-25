@@ -17,6 +17,7 @@ export type AgentOsProductPermission =
   | "tasks.use"
   | "automations.manage"
   | "missions.use"
+  | "agents.chat"
   | "agents.read"
   | "agents.manage"
   | "workspace.manage"
@@ -50,6 +51,7 @@ const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "automations.manage",
   "gateway.manage",
@@ -63,6 +65,7 @@ const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "automations.manage",
   "workspace.manage",
@@ -84,6 +87,7 @@ const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "tasks.use",
   "missions.use",
   "agents.read",
+  "agents.chat",
   "agents.manage",
   "workspace.manage",
   "profile.manage",

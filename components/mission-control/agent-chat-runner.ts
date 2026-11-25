@@ -13,6 +13,7 @@ import type { MissionControlSnapshot, MissionResponse } from "@/lib/agentos/cont
 
 type AgentChatStreamEvent =
   | { type: "cancelled" }
+  | { type: "settled" }
   | {
       type: "admitted";
       runId: string;
@@ -38,16 +39,11 @@ type ActiveAgentChatRun = {
   runId: string | null;
   statusMessage: string | null;
   statusHistory: string[];
-  promise: Promise<void>;
 };
 
 export type AgentChatRunSnapshot = {
   isRunning: boolean;
-  userMessageId: string | null;
-  assistantMessageId: string | null;
-  runId: string | null;
-  statusMessage: string | null;
-  statusHistory: string[];
+  runs: ActiveAgentChatRun[];
 };
 
 export type SendAgentChatMessageOptions = {
@@ -59,20 +55,12 @@ export type SendAgentChatMessageOptions = {
   onError?: (message: string) => void;
 };
 
-const activeAgentChatRuns = new Map<string, ActiveAgentChatRun>();
+const activeAgentChatRuns = new Map<string, Set<ActiveAgentChatRun>>();
 const agentChatWaitHeartbeatMs = [15_000, 45_000, 90_000];
 
-export function getAgentChatRunSnapshot(agentId: string): AgentChatRunSnapshot {
-  const run = activeAgentChatRuns.get(agentId);
-
-  return {
-    isRunning: Boolean(run),
-    userMessageId: run?.userMessageId ?? null,
-    assistantMessageId: run?.assistantMessageId ?? null,
-    runId: run?.runId ?? null,
-    statusMessage: run?.statusMessage ?? null,
-    statusHistory: run?.statusHistory ?? []
-  };
+export function getAgentChatRunSnapshot(chatKey: string): AgentChatRunSnapshot {
+  const runs = Array.from(activeAgentChatRuns.get(chatKey) ?? [], (run) => ({ ...run }));
+  return { isRunning: runs.length > 0, runs };
 }
 
 export function agentChatConversationKey(agentId: string, conversationId?: string) {
@@ -94,14 +82,10 @@ export function sendAgentChatMessage({
   }
 
   const chatKey = agentChatConversationKey(agentId, conversationId);
-  const existingRun = activeAgentChatRuns.get(chatKey);
-  if (existingRun) {
-    return existingRun.promise;
-  }
-
   const createdAt = Date.now();
-  const userMessageId = globalThis.crypto?.randomUUID?.() || `user:${createdAt}`;
-  const assistantMessageId = globalThis.crypto?.randomUUID?.() || `assistant:${createdAt}`;
+  const userMessageId = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const assistantMessageId = `${userMessageId}:reply`;
   const existingMessages = readAgentChatMessages(chatKey);
 
   const userMessage: AgentChatMessage = {
@@ -118,7 +102,8 @@ export function sendAgentChatMessage({
     role: "assistant",
     text: "",
     createdAt: createdAt + 1,
-    status: "sending"
+    status: "sending",
+    submissionId: userMessageId
   };
 
   const run: ActiveAgentChatRun = {
@@ -126,11 +111,12 @@ export function sendAgentChatMessage({
     assistantMessageId,
     runId: null,
     statusMessage: "Starting agent turn...",
-    statusHistory: ["Starting agent turn..."],
-    promise: Promise.resolve()
+    statusHistory: ["Starting agent turn..."]
   };
 
-  activeAgentChatRuns.set(chatKey, run);
+  const runs = activeAgentChatRuns.get(chatKey) ?? new Set<ActiveAgentChatRun>();
+  runs.add(run);
+  activeAgentChatRuns.set(chatKey, runs);
   writeAgentChatMessages(chatKey, [...existingMessages, userMessage, assistantMessage].slice(-maxAgentChatMessages));
 
   const payload = {
@@ -140,19 +126,17 @@ export function sendAgentChatMessage({
     idempotencyKey: userMessageId
   };
 
-  run.promise = runAgentChatTurn({
+  return runAgentChatTurn({
     agentId,
     chatKey,
     payload,
-      userMessageId,
+    userMessageId,
     assistantMessageId,
     run,
     onRefresh,
     onSnapshotChange,
     onError
   });
-
-  return run.promise;
 }
 
 async function runAgentChatTurn({
@@ -184,6 +168,7 @@ async function runAgentChatTurn({
 }) {
   let latestAssistantText = "";
   let assistantTextReceived = false;
+  let rejectionConfirmed = false;
   const startedAt = Date.now();
   let heartbeatIndex = 0;
   const heartbeatTimer = globalThis.setInterval(() => {
@@ -206,16 +191,17 @@ async function runAgentChatTurn({
 
     const contentType = response.headers.get("content-type") || "";
     if (!response.ok || !contentType.includes("application/x-ndjson")) {
+      rejectionConfirmed = response.status >= 400 && response.status < 500;
       const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new Error(errorPayload?.error || "OpenClaw rejected the message.");
     }
 
     let finalResponse: MissionResponse | null = null;
-    let cancelled = false;
+    let settled = false;
 
     await consumeNdjsonStream<AgentChatStreamEvent>(response, async (event) => {
-      if (event.type === "cancelled") {
-        cancelled = true;
+      if (event.type === "cancelled" || event.type === "settled") {
+        settled = true;
         updateAgentChatMessages(chatKey, (current) => current.flatMap((entry) => {
           if (entry.id === userMessageId) return [{ ...entry, status: "sent", runId: run.runId }];
           if (entry.id !== assistantMessageId) return [entry];
@@ -225,7 +211,7 @@ async function runAgentChatTurn({
       }
       if (event.type === "admitted") {
         run.runId = event.runId;
-        dispatchAgentChatStateChange(chatKey);
+        updateAgentChatStatus(chatKey, run, "Accepted by OpenClaw…");
         return;
       }
       if (event.type === "status") {
@@ -262,6 +248,7 @@ async function runAgentChatTurn({
       }
 
       if (!event.ok) {
+        rejectionConfirmed = true;
         throw new Error(event.message);
       }
 
@@ -307,11 +294,14 @@ async function runAgentChatTurn({
       if (renamedTo) void onRefresh?.().catch(() => null);
     });
 
-    if (!finalResponse && !cancelled) {
+    if (!finalResponse && !settled) {
       throw new Error("OpenClaw completed without returning a response.");
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown send error.";
+    const errorMessage = error instanceof Error ? error.message : "Unknown send error.";
+    const message = rejectionConfirmed ? errorMessage : run.runId
+      ? "OpenClaw accepted this message. Its reply could not be confirmed. Check the conversation history."
+      : "Delivery could not be confirmed. Check the conversation history before sending again.";
     const partialText = assistantTextReceived ? latestAssistantText.trim() : "";
 
     updateAgentChatMessages(chatKey, (current) =>
@@ -339,7 +329,9 @@ async function runAgentChatTurn({
     onError?.(message);
   } finally {
     globalThis.clearInterval(heartbeatTimer);
-    activeAgentChatRuns.delete(chatKey);
+    const runs = activeAgentChatRuns.get(chatKey);
+    runs?.delete(run);
+    if (!runs?.size) activeAgentChatRuns.delete(chatKey);
     dispatchAgentChatStateChange(chatKey);
   }
 }

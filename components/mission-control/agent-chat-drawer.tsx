@@ -189,6 +189,7 @@ export function AgentChatDrawer({
   const chatKey = agentChatConversationKey(agent.id, conversationId);
   const endpoint = `/api/agents/${encodeURIComponent(agent.id)}/chat`;
   const conversationLabelId = useId();
+  const composerId = useId();
   const [catalog, setCatalog] = useState<{
     agentId: string;
     conversations: Array<{ id: string; updatedAt: number | null }>;
@@ -196,12 +197,18 @@ export function AgentChatDrawer({
   const conversations = catalog?.agentId === agent.id ? catalog.conversations : [];
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draft = drafts[chatKey] ?? "";
-  const setDraft = (text: string) => setDrafts((current) => ({ ...current, [chatKey]: text }));
+  const submittedDraft = useRef<{ chatKey: string; text: string } | null>(null);
+  const setDraft = (text: string) => {
+    submittedDraft.current = null;
+    setDrafts((current) => ({ ...current, [chatKey]: text }));
+  };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [runSnapshot, setRunSnapshot] = useState<AgentChatRunSnapshot>(() => getAgentChatRunSnapshot(agent.id));
   const [repairingGatewayMessageId, setRepairingGatewayMessageId] = useState<string | null>(null);
   const [stoppingReply, setStoppingReply] = useState(false);
   const [historyUnavailableFor, setHistoryUnavailableFor] = useState<string>();
+  const [chatAccessDeniedFor, setChatAccessDeniedFor] = useState<string>();
+  const chatAccessDenied = chatAccessDeniedFor === chatKey;
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -299,9 +306,7 @@ export function AgentChatDrawer({
   }, [chatKey]);
 
   useEffect(() => {
-    if (!isVisible || runSnapshot.isRunning) {
-      return;
-    }
+    if (!isVisible) return;
 
     const controller = new AbortController();
     const params = new URLSearchParams();
@@ -327,7 +332,14 @@ export function AgentChatDrawer({
         });
 
         if (!response.ok) {
-          if (!controller.signal.aborted) setHistoryUnavailableFor(chatKey);
+          if (!controller.signal.aborted) {
+            if (response.status === 401 || response.status === 403) {
+              setChatAccessDeniedFor(chatKey);
+              writeAgentChatMessages(chatKey, []);
+            } else {
+              setHistoryUnavailableFor(chatKey);
+            }
+          }
           return;
         }
 
@@ -339,6 +351,7 @@ export function AgentChatDrawer({
           return;
         }
         setHistoryUnavailableFor((current) => current === chatKey ? undefined : current);
+        setChatAccessDeniedFor((current) => current === chatKey ? undefined : current);
 
         const currentMessages = readAgentChatMessages(chatKey);
         const mergedMessages = reconcileAgentChatMessages(currentMessages, payload.messages);
@@ -367,6 +380,14 @@ export function AgentChatDrawer({
     };
     const events = new EventSource(`${endpoint}?${params}`);
     events.addEventListener("history", scheduleSync);
+    let wasRunning = getAgentChatRunSnapshot(chatKey).isRunning;
+    const reconcileAfterSend = (event: Event) => {
+      if ((event as CustomEvent<{ agentId: string }>).detail?.agentId !== chatKey) return;
+      const isRunning = getAgentChatRunSnapshot(chatKey).isRunning;
+      if (wasRunning && !isRunning) scheduleSync();
+      wasRunning = isRunning;
+    };
+    window.addEventListener(agentChatStateEventName, reconcileAfterSend);
     void syncHistory();
     document.addEventListener("visibilitychange", scheduleSync);
     window.addEventListener("focus", scheduleSync);
@@ -374,11 +395,12 @@ export function AgentChatDrawer({
     return () => {
       controller.abort();
       events.close();
+      window.removeEventListener(agentChatStateEventName, reconcileAfterSend);
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", scheduleSync);
       window.removeEventListener("focus", scheduleSync);
     };
-  }, [chatKey, conversationId, endpoint, isVisible, runSnapshot.isRunning]);
+  }, [chatKey, conversationId, endpoint, isVisible]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -448,19 +470,19 @@ export function AgentChatDrawer({
     }
   }, [agent.id, inboxItems.length, isVisible, messages]);
 
-  const canSend = Boolean(draft.trim()) && !runSnapshot.isRunning;
-  const streamingAssistantId = runSnapshot.assistantMessageId;
+  const canSend = !chatAccessDenied && Boolean(draft.trim());
+  const stopRunId = runSnapshot.runs[0]?.runId;
 
   const hasConversation = messages.length > 0 || inboxItems.length > 0;
 
   const stopReply = async () => {
-    if (!runSnapshot.runId || stoppingReply) return;
+    if (!stopRunId || stoppingReply) return;
     setStoppingReply(true);
     try {
       const response = await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, runId: runSnapshot.runId })
+        body: JSON.stringify({ conversationId, runId: stopRunId })
       });
       const result = await response.json().catch(() => null) as { aborted?: boolean; error?: string } | null;
       if (!response.ok) throw new Error(result?.error || "OpenClaw could not stop this reply.");
@@ -477,10 +499,11 @@ export function AgentChatDrawer({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || runSnapshot.isRunning) return;
+    if (chatAccessDenied || !text || (submittedDraft.current?.chatKey === chatKey && submittedDraft.current.text === text)) return;
 
     requestAgentChatSound("send");
     setDraft("");
+    submittedDraft.current = { chatKey, text };
     scrollToLatest();
 
     try {
@@ -563,7 +586,6 @@ export function AgentChatDrawer({
           <select
             id={conversationLabelId}
             value={conversationId ?? ""}
-            disabled={runSnapshot.isRunning}
             onChange={(event) => setSelection({ agentId: agent.id, id: event.target.value || undefined })}
             className="min-h-12 min-w-0 rounded-md border border-input bg-background px-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:text-sm"
           >
@@ -582,7 +604,6 @@ export function AgentChatDrawer({
           type="button"
           variant="ghost"
           size="sm"
-          disabled={runSnapshot.isRunning}
           className="min-h-12 shrink-0 sm:min-h-9"
           onClick={() => {
             const id = globalThis.crypto?.randomUUID?.();
@@ -593,7 +614,11 @@ export function AgentChatDrawer({
           New chat
         </Button>
       </div>
-      {historyUnavailableFor === chatKey ? (
+      {chatAccessDenied ? (
+        <p role="status" className="shrink-0 border-b border-border/70 px-4 py-2 text-sm text-muted-foreground sm:px-6">
+          Direct chat requires an authorized operator and a native OpenClaw Gateway connection.
+        </p>
+      ) : historyUnavailableFor === chatKey ? (
         <p role="status" className="shrink-0 border-b border-border/70 px-4 py-2 text-sm text-muted-foreground sm:px-6">
           OpenClaw chat history is unavailable. Reopen this chat after the Gateway reconnects.
         </p>
@@ -619,10 +644,9 @@ export function AgentChatDrawer({
             {messages.map((entry, index) => {
               const isUser = entry.role === "user";
               const isSystem = entry.role === "system";
-              const isAssistant = entry.role === "assistant";
-              const isActiveAssistant = isAssistant && entry.id === streamingAssistantId && runSnapshot.isRunning;
-              const isPendingAssistant = isActiveAssistant && !entry.text.trim();
-              const isPendingUser = isUser && entry.id === runSnapshot.userMessageId && runSnapshot.isRunning;
+              const activeRun = runSnapshot.runs.find((run) => run.assistantMessageId === entry.id);
+              const isPendingAssistant = Boolean(activeRun && !entry.text.trim());
+              const isPendingUser = isUser && runSnapshot.runs.some((run) => run.userMessageId === entry.id);
               const errorMessage = entry.errorMessage?.trim();
               const gatewayRepairAction = errorMessage ? resolveAgentChatGatewayRepairAction(errorMessage) : null;
               const authAction = !gatewayRepairAction
@@ -665,10 +689,10 @@ export function AgentChatDrawer({
                         </time>
                       ) : null}
 
-                      {isActiveAssistant ? (
+                      {activeRun ? (
                         <AssistantThinkingActivity
-                          statusMessage={runSnapshot.statusMessage}
-                          statusHistory={runSnapshot.statusHistory}
+                          statusMessage={activeRun.statusMessage}
+                          statusHistory={activeRun.statusHistory}
                         />
                       ) : null}
 
@@ -750,45 +774,66 @@ export function AgentChatDrawer({
         )}
       >
         <div className="mx-auto w-full max-w-2xl">
-          <div
+          <form
+            aria-label="Send an agent message"
             className="relative rounded-[22px] border border-border bg-card shadow-sm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
+            }}
             onPointerDown={(event) => {
               const target = event.target as HTMLElement | null;
               if (!target || target.closest("textarea") || target.closest("button")) return;
               textareaRef.current?.focus();
             }}
           >
+            <label htmlFor={composerId} className="sr-only">Message {agentLabel}</label>
             <Textarea
+              id={composerId}
+              name="message"
+              disabled={chatAccessDenied}
               ref={textareaRef}
               rows={1}
-              aria-label={`Message ${agentLabel}`}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={async (event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  await send();
-                }
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey) return;
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
               }}
               placeholder={`Message ${agentLabel}…`}
-              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-14 pr-16 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-14 pr-28 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
 
             <div className="absolute bottom-1.5 left-1.5 z-10">
               <AgentChatSoundSettings />
             </div>
 
-            <Button
-              type="button"
-              aria-label={runSnapshot.runId ? "Stop reply" : runSnapshot.isRunning ? "Agent is responding" : "Send message"}
-              disabled={runSnapshot.runId ? stoppingReply : !canSend}
-              className="absolute bottom-1.5 right-1.5 h-10 w-10 rounded-full p-0 shadow-none"
-              onClick={runSnapshot.runId ? stopReply : send}
-            >
-              {runSnapshot.runId && !stoppingReply ? <Square className="h-4 w-4 fill-current" /> :
-                runSnapshot.isRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-            </Button>
-          </div>
+            <div className="absolute bottom-1.5 right-1.5 flex gap-1">
+              {stopRunId ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label="Stop reply"
+                  disabled={stoppingReply}
+                  className="h-10 w-10 rounded-full p-0"
+                  onClick={stopReply}
+                >
+                  {stoppingReply ? <LoaderCircle className="h-4 w-4 animate-spin" /> :
+                    <Square className="h-4 w-4 fill-current" />}
+                </Button>
+              ) : null}
+              <Button
+                type="submit"
+                aria-label="Send message"
+                disabled={!canSend}
+                className="h-10 w-10 rounded-full p-0 shadow-none"
+              >
+                <SendHorizontal className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

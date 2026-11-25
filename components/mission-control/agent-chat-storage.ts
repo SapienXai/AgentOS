@@ -23,9 +23,7 @@ const agentChatMessages = new Map<string, AgentChatMessage[]>();
 let clearedLegacyChat = false;
 
 export type AgentChatVisibleRunSnapshot = {
-  isRunning: boolean;
-  userMessageId: string | null;
-  assistantMessageId: string | null;
+  runs: readonly { userMessageId: string; assistantMessageId: string }[];
 };
 
 function getLastSeenStorageKey(agentId: string) {
@@ -81,11 +79,9 @@ export function normalizeAgentChatMessagesForDisplay(
   messages: readonly AgentChatMessage[],
   runSnapshot: AgentChatVisibleRunSnapshot
 ) {
-  const activeMessageIds = new Set(
-    [runSnapshot.userMessageId, runSnapshot.assistantMessageId].filter(
-      (value): value is string => typeof value === "string" && value.length > 0
-    )
-  );
+  const activeMessageIds = new Set(runSnapshot.runs.flatMap(({ userMessageId, assistantMessageId }) =>
+    [userMessageId, assistantMessageId]
+  ));
 
   return messages
     .map((entry) => {
@@ -93,7 +89,7 @@ export function normalizeAgentChatMessagesForDisplay(
         return entry;
       }
 
-      if (runSnapshot.isRunning && activeMessageIds.has(entry.id)) {
+      if (activeMessageIds.has(entry.id)) {
         return entry;
       }
 
@@ -103,7 +99,7 @@ export function normalizeAgentChatMessagesForDisplay(
       (entry) =>
         entry.role !== "assistant" ||
         entry.text.trim().length > 0 ||
-        (runSnapshot.isRunning && entry.id === runSnapshot.assistantMessageId)
+        activeMessageIds.has(entry.id)
     );
 }
 

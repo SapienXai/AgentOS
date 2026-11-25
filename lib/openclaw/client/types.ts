@@ -1728,6 +1728,8 @@ export interface OpenClawAgentTurnInput {
   sessionId?: string;
   message: string;
   thinking?: OpenClawThinkingLevel;
+  /** Ask the Gateway to hold this input behind active work on the same session. */
+  queueMode?: "followup";
   timeoutSeconds?: number;
   workspace?: string | null;
   dispatchId?: string | null;

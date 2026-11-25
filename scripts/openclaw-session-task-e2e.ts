@@ -33,6 +33,7 @@ const PACKAGE_INPUT = process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_SESSION_TASK_E2E_OUTPUT?.trim() || path.resolve(`docs/evidence/openclaw-${OPENCLAW_IDENTITY_CONTRACT_VERSION}-session-task-alignment.json`);
 const REQUEST_TIMEOUT_MS = 10_000;
 const DIRECT_CHAT_MATRIX = process.env.OPENCLAW_DIRECT_CHAT_MATRIX === "1";
+const DIRECT_CHAT_QUEUE = process.env.OPENCLAW_DIRECT_CHAT_QUEUE === "1";
 const DIRECT_CHAT_BENCHMARK = process.env.OPENCLAW_DIRECT_CHAT_BENCHMARK === "1";
 
 async function main() {
@@ -416,6 +417,17 @@ async function main() {
         client = createClient(port, token, "agentos-direct-chat-restart");
         return client;
       });
+      if (DIRECT_CHAT_QUEUE && client) {
+        const peer = createClient(port, token, "agentos-direct-chat-queue-peer");
+        try {
+          evidence.directChatContinuity = {
+            ...evidence.directChatContinuity,
+            queue: await verifyDirectChatQueue(client, peer, fixture)
+          };
+        } finally {
+          peer.close("direct chat queue fixture done");
+        }
+      }
     }
     success = true;
   } finally {
@@ -552,6 +564,71 @@ async function verifyDirectChat(
         }
       }
     } : {})
+  };
+}
+
+async function verifyDirectChatQueue(
+  client: OfficialBackedGatewayClient,
+  peer: OfficialBackedGatewayClient,
+  fixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>>
+) {
+  const agent = { id: "main", workspaceId: "disposable-workspace" };
+  const sessionKey = buildDirectAgentChatSessionKey(agent, "queue-fixture");
+  const firstRunId = directAgentChatSubmissionId(sessionKey, "queue-first");
+  const secondRunId = directAgentChatSubmissionId(sessionKey, "queue-second");
+  const options = { timeoutMs: 15_000, allowCliFallback: false };
+  const providerCalls = fixture.stats.completionCount;
+  const first = client.streamAgentTurn({
+    agentId: agent.id, sessionKey, message: "WORKFORCE_ACCEPTANCE_CHILD queue first",
+    idempotencyKey: firstRunId, queueMode: "followup", timeoutSeconds: 12
+  }, {}, options);
+  // Wait for provider execution so the second submit crosses a real active turn.
+  for (let attempt = 0; fixture.stats.completionCount === providerCalls && attempt < 200; attempt++) {
+    await wait(20);
+  }
+  assert.equal(fixture.stats.completionCount, providerCalls + 1);
+
+  const secondAdmitted = Promise.withResolvers<string>();
+  const secondStarted = performance.now();
+  const second = peer.streamAgentTurn({
+    agentId: agent.id, sessionKey, message: "AGENTOS_QUEUE_SECOND",
+    idempotencyKey: secondRunId, queueMode: "followup", timeoutSeconds: 12
+  }, { onAdmission: secondAdmitted.resolve }, options);
+  const result = Promise.all([first, second]);
+  void result.catch(() => {});
+  const queuedReceiptDeadline = Date.now() + 2_000;
+  let queued = false;
+  while (!queued && Date.now() < queuedReceiptDeadline) {
+    const receipt = await peer.callNative<{ inputReceipts?: Array<{ runId: string; queued?: boolean }> }>(
+      "chat.history", { sessionKey, inputRunIds: [secondRunId] }, options
+    );
+    queued = receipt.inputReceipts?.some((input) => input.runId === secondRunId && input.queued === true) ?? false;
+    if (!queued) await wait(25);
+  }
+
+  const [firstTurn, secondTurn] = await result;
+  assert.equal(firstTurn.status, "completed", "First queue turn must complete via its native event");
+  assert.ok(secondTurn.status === "completed" || secondTurn.status === "ok",
+    `Second queue turn must complete via its native event or agent.wait, observed ${secondTurn.status}`);
+  assert.equal(firstTurn.runId, firstRunId);
+  assert.equal(secondTurn.runId, secondRunId);
+  assert.equal(await secondAdmitted.promise, secondRunId);
+  assert.equal(fixture.stats.completionCount - providerCalls, 2);
+  assert.equal(queued, true, "Native chat.history must expose the second message's queued receipt.");
+  const history = await peer.getSessionHistory({ sessionKey }, options);
+  const messages = extractAgentChatMessagesFromSessionHistory(history);
+  assert.deepEqual(messages.filter(({ role }) => role === "user").map(({ text }) => text), [
+    "WORKFORCE_ACCEPTANCE_CHILD queue first", "AGENTOS_QUEUE_SECOND"
+  ]);
+  assert.equal(messages.filter(({ role }) => role === "assistant").length, 2);
+  return {
+    separateGatewayConnections: true,
+    queuedReceipt: true,
+    distinctRuns: 2,
+    providerExecutions: 2,
+    nativeOrder: "PASS",
+    terminalResult: secondTurn.status,
+    secondTurnElapsedMs: Math.round(performance.now() - secondStarted)
   };
 }
 

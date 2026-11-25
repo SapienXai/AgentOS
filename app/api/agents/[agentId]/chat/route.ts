@@ -76,6 +76,7 @@ type AgentChatCommandPayload = {
 
 type AgentChatStreamEvent =
   | { type: "cancelled" }
+  | { type: "settled" }
   | {
       type: "admitted";
       runId: string;
@@ -110,7 +111,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ agentId: string }> }
 ) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "agents.chat");
   if ("response" in permission) return permission.response;
 
   try {
@@ -121,15 +122,31 @@ export async function GET(
       return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
     }
 
+    const url = new URL(request.url);
+    const catalog = url.searchParams.get("conversations") === "1";
+    const watch = url.searchParams.get("watch") === "1";
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: "agent.chat.read",
+      method: catalog ? "sessions.list" : watch ? "sessions.messages.subscribe" : "chat.history",
+      targetKind: "agent-session",
+      targetId: agentId,
+      securityClass: "read",
+      requireNativeIdentity: true,
+      productPermission: "agents.chat"
+    });
+    if ("response" in authorization) return authorization.response;
+    if (authorization.actor.actorId !== permission.actor.actorId) {
+      return NextResponse.json({ error: "The active operator changed. Reopen the conversation." }, { status: 403 });
+    }
+
     const agent = await readDirectChatAgent(agentId, request.signal);
 
     if (!agent) {
       return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
     }
 
-    const url = new URL(request.url);
     const headers = { "Cache-Control": "private, no-store" };
-    if (url.searchParams.get("conversations") === "1") {
+    if (catalog) {
       const prefix = `${buildDirectAgentChatSessionKey(agent, permission.actor.actorId)}:`;
       const { sessions } = await getOpenClawAdapter().listSessions(
         { search: prefix, agentId, limit: 50 },
@@ -147,9 +164,7 @@ export async function GET(
       return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
     }
     const sessionKey = buildDirectAgentChatSessionKey(agent, permission.actor.actorId, conversation.data);
-    if (url.searchParams.get("watch") === "1") {
-      return streamAgentChatInvalidations(request, sessionKey);
-    }
+    if (watch) return streamAgentChatInvalidations(request, sessionKey, permission.actor.actorId);
     const history = await getOpenClawAdapter().getSessionHistory(
       { sessionKey, limit: 120 },
       { timeoutMs: 5_000, signal: request.signal, allowCliFallback: false }
@@ -192,7 +207,7 @@ export async function POST(
     return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
   }
 
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "agents.chat");
   if ("response" in permission) return permission.response;
 
   try {
@@ -211,7 +226,7 @@ export async function POST(
       targetId: agentId,
       securityClass: "privileged-mutation",
       executionPath: "gateway-native",
-      productPermission: "runtime.use"
+      productPermission: "agents.chat"
     });
     if ("response" in authorization) return authorization.response;
     if (authorization.actor.actorId !== permission.actor.actorId) {
@@ -382,6 +397,7 @@ export async function POST(
             sessionKey,
             message: operatorMessage,
             thinking: input.thinking,
+            queueMode: "followup",
             timeoutSeconds: 90,
             idempotencyKey: input.idempotencyKey
               ? directAgentChatSubmissionId(sessionKey, input.idempotencyKey)
@@ -406,6 +422,14 @@ export async function POST(
         }
         if (result.status === "cancelled" || result.stopReason === "aborted") {
           await send({ type: "cancelled" });
+          return;
+        }
+
+        // agent.wait can confirm completion after a missed terminal chat event.
+        // A fresh native history read reconciles the reply independently.
+        if (result.status === "ok" && result.runId && !latestAssistantText &&
+            !result.payloads?.length && !result.result?.payloads?.length) {
+          await send({ type: "settled" });
           return;
         }
 
@@ -514,7 +538,7 @@ export async function POST(
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ agentId: string }> }) {
-  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  const permission = await requireAgentOsProductPermission(request, "agents.chat");
   if ("response" in permission) return permission.response;
 
   const input = z.object({
@@ -536,7 +560,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ agent
       targetId: agentId,
       securityClass: "privileged-mutation",
       executionPath: "gateway-native",
-      productPermission: "runtime.use"
+      productPermission: "agents.chat"
     });
     if ("response" in authorization) return authorization.response;
     if (authorization.actor.actorId !== permission.actor.actorId) {
@@ -573,18 +597,36 @@ async function readDirectChatAgent(agentId: string, signal: AbortSignal) {
   return { id: agent.id, workspaceId: workspace, modelId: agent.model?.primary ?? null };
 }
 
-function streamAgentChatInvalidations(request: Request, sessionKey: string) {
+function streamAgentChatInvalidations(request: Request, sessionKey: string, actorId: string) {
   const encoder = new TextEncoder();
   const lifetime = AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]);
   let close: ((cancelled?: boolean) => void) | undefined;
+  let pendingInvalidation = false;
+  let flush: (() => void) | undefined;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let subscription: { close: () => void } | undefined;
       let closed = false;
-      const invalidate = () => {
-        if (!closed && (controller.desiredSize ?? 0) > 0) {
+      let checkingPermission = false;
+      flush = () => {
+        if (closed || !pendingInvalidation || checkingPermission || (controller.desiredSize ?? 0) <= 0) return;
+        checkingPermission = true;
+        void requireAgentOsProductPermission(request, "agents.chat").then((permission) => {
+          if (closed) return;
+          if ("response" in permission || permission.actor.actorId !== actorId) {
+            close?.();
+            return;
+          }
+          pendingInvalidation = false;
           controller.enqueue(encoder.encode("event: history\ndata: {}\n\n"));
-        }
+        }).catch(() => close?.()).finally(() => {
+          checkingPermission = false;
+          flush?.();
+        });
+      };
+      const invalidate = () => {
+        pendingInvalidation = true;
+        flush?.();
       };
       close = (cancelled = false) => {
         if (closed) return;
@@ -625,6 +667,9 @@ function streamAgentChatInvalidations(request: Request, sessionKey: string) {
       } catch {
         close();
       }
+    },
+    pull() {
+      flush?.();
     },
     cancel() {
       close?.(true);

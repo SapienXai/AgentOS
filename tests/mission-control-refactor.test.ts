@@ -1454,7 +1454,7 @@ test("agent chat keeps the send action in the composer bottom-right", () => {
 
   assert.match(
     source,
-    /absolute bottom-1\.5 right-1\.5 h-10 w-10 rounded-full p-0 shadow-none/
+    /absolute bottom-1\.5 right-1\.5 flex gap-1[\s\S]*type="submit"[\s\S]*aria-label="Send message"/
   );
   assert.doesNotMatch(source, /absolute bottom-1\.5 right-1\.5[\s\S]*lg:top-3/);
 });
@@ -1495,7 +1495,7 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(drawerSource, /previousActivity/);
   assert.match(drawerSource, /agent-chat-activity-label/);
   assert.match(drawerSource, /<details[\s\S]*Recent activity/);
-  assert.match(drawerSource, /statusHistory=\{runSnapshot\.statusHistory\}/);
+  assert.match(drawerSource, /statusHistory=\{activeRun\.statusHistory\}/);
   assert.match(drawerSource, /<AgentChatMessageContent text=\{entry\.text\}/);
   assert.doesNotMatch(drawerSource, /rounded-\[14px\] border px-3 py-2\.5/);
   assert.doesNotMatch(drawerSource, /Show details|Reading your message|Live activity/);
@@ -1504,7 +1504,7 @@ test("agent chat exposes real OpenClaw activity as a subdued live feed", () => {
   assert.match(routeSource, /onToolStart: \(name\)/);
   assert.match(routeSource, /onAdmission: \(runId\)/);
   assert.match(routeSource, /await send\(\{ type: "cancelled" \}\)/);
-  assert.match(runnerSource, /if \(!finalResponse && !cancelled\)/);
+  assert.match(runnerSource, /if \(!finalResponse && !settled\)/);
   assert.match(globalStyles, /@keyframes agent-chat-activity-dot/);
   assert.match(globalStyles, /\.agent-chat-activity-label \{[\s\S]*color: hsl\(var\(--muted-foreground\)\)/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);

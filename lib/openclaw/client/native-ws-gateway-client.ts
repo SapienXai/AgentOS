@@ -2430,7 +2430,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         if (frame.event !== "chat") return;
       }
       const event = normalizeGatewayTurnEvent(frame, session.sessionKey, dispatchedRunId, session.sessionId);
-      if (!event) return;
+      if (!event) {
+        if (options.allowCliFallback === false && isObjectRecord(frame.payload) && frame.payload.state === "final") {
+          resolveFinal({ runId: dispatchedRunId, status: "ok" });
+        }
+        return;
+      }
       if (event.text && event.text !== lastAssistantText) {
         lastAssistantText = event.text;
         void callbacks.onStdout?.(`${JSON.stringify({ type: "assistant", text: event.text })}\n`);
@@ -2534,13 +2539,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }, session.sessionKey, idempotencyKey);
     const sendChat = async () => attachSession(await this.callNative<MissionCommandPayload>("chat.send", {
       ...session,
-      ...messageParams
+      ...messageParams,
+      queueMode: input.queueMode
     }, options));
 
     await beforeSend?.(session);
     try {
       return await sendChat();
     } catch (error) {
+      if (input.queueMode && isGatewayMethodUnsupported(error)) throw error;
       if (!isGatewayMethodUnsupported(error)) {
         if (isGatewayAgentNotFoundError(error, input.agentId)) {
           const registryState = await this.checkGatewayAgentRegistry(input.agentId, options);

@@ -32,6 +32,7 @@ export type AgentOsOpenClawPreflightInput = {
   securityClass: "read" | "mutation" | "privileged-mutation" | "internal-recovery";
   executionPath?: "gateway-native" | "gateway-or-verified-cli";
   productPermission?: AgentOsProductPermission;
+  requireNativeIdentity?: boolean;
 };
 
 export type AgentOsOpenClawPreflightResult =
@@ -139,7 +140,7 @@ export async function requireAgentOsOpenClawPreflight(
   }
 
   if (authorization.state === "unsupported" || (
-    input.securityClass !== "read" &&
+    (input.securityClass !== "read" || input.requireNativeIdentity) &&
     authorization.state === "unknown"
   )) {
     await recordAgentOsAuditEvent({
