@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-25T20:37:19.201Z",
+  "generatedAt": "2026-11-25T22:00:34.449Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "",
-    "codeCommitUnderTest": "2d12152b4e82788431e06d5246428fe50367fb7d",
+    "codeCommitUnderTest": "228912e297fba6f465965e6231475d56589b7694",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -172,7 +172,7 @@
     {
       "label": "Owner A",
       "actorIdClassification": "stable-uuid",
-      "actorId": "69f24753-7648-45a5-b3a9-83fab28e32c5",
+      "actorId": "c343f6e2-9824-4bdf-bae6-142d7d0e48e6",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "owner"
@@ -180,7 +180,7 @@
     {
       "label": "Member B",
       "actorIdClassification": "stable-uuid",
-      "actorId": "ee351373-12ca-48cd-8cc4-6a0d979e5c4f",
+      "actorId": "4ac5d1ec-f8b9-49ca-a554-a9e0889c79a1",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "member"
@@ -221,7 +221,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "e8ed682c-cdcf-43b5-bd16-bed284a82ecc",
+        "connectionId": "e4f2325d-4790-4ebc-9a7a-dbf5295b6b96",
         "authenticated": true,
         "source": "native-handshake"
       },
@@ -240,7 +240,7 @@
           "id": "gateway-owner"
         },
         "label": "Kazım Akgül",
-        "avatarUrl": "/api/users/gateway-owner/avatar?v=1795639039355"
+        "avatarUrl": "/api/users/gateway-owner/avatar?v=1795644034551"
       },
       "owner": {
         "actor": {
@@ -251,7 +251,7 @@
             "id": "gateway-owner"
           },
           "label": "Kazım Akgül",
-          "avatarUrl": "/api/users/gateway-owner/avatar?v=1795639039355"
+          "avatarUrl": "/api/users/gateway-owner/avatar?v=1795644034551"
         }
       },
       "visibility": "shared",

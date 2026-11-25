@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-doctor-update-recovery-hardening-certification",
-  "generatedAt": "2026-11-25T20:37:21.990Z",
-  "certifiedCodeHead": "2d12152b4e82788431e06d5246428fe50367fb7d",
+  "generatedAt": "2026-11-25T22:04:48.022Z",
+  "certifiedCodeHead": "228912e297fba6f465965e6231475d56589b7694",
   "openClaw": {
     "release": "2026.11.10",
     "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",

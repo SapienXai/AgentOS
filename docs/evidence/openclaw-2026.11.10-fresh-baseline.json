@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-25T20:36:46.944Z",
+  "generatedAt": "2026-11-25T22:00:05.046Z",
   "provenance": {
-    "agentosCommit": "2d12152b4e82788431e06d5246428fe50367fb7d",
+    "agentosCommit": "228912e297fba6f465965e6231475d56589b7694",
     "targetVersion": "2026.11.10",
     "targetCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
     "targetBuildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
@@ -38,7 +38,7 @@
     "agentToAgentAllow": []
   },
   "gateway": {
-    "url": "ws://127.0.0.1:55250/",
+    "url": "ws://127.0.0.1:58419/",
     "protocol": 4,
     "installedVersion": "2026.11.10",
     "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z"
@@ -46,9 +46,9 @@
   "runtimeCertification": {
     "runtime": {
       "schemaVersion": 2,
-      "generatedAt": "2026-11-25T20:36:09.913Z",
+      "generatedAt": "2026-11-25T21:59:51.119Z",
       "targetVersion": "2026.11.10",
-      "gatewayUrl": "ws://127.0.0.1:55250/",
+      "gatewayUrl": "ws://127.0.0.1:58419/",
       "installedVersion": "2026.11.10",
       "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
       "protocolVersion": 4,
@@ -9809,13 +9809,13 @@
           "currentScope": null,
           "targetScope": null,
           "affectedOperations": [],
-          "message": "The GitHub changed-file listing and complete tag-tree fallback were incomplete; implementation and protocol path counts are unknown (This operation was aborted)."
+          "message": "The GitHub changed-file listing and complete tag-tree fallback were incomplete; implementation and protocol path counts are unknown (OpenClaw contract source returned HTTP 403.)."
         }
       ],
       "blockerCount": 0,
       "warningCount": 33,
       "unknownCount": 17,
-      "error": "This operation was aborted"
+      "error": "OpenClaw compatibility evidence exceeded the safe response size limit."
     },
     "evidenceBridge": {
       "schemaVersion": 2,
