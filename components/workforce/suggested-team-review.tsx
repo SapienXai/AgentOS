@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import type { WorkspaceBlueprint, WorkspaceEmployeeDraftEdit } from "@/lib/agentos/domains/workspace-blueprint";
 
-export function SuggestedTeamReview({ blueprint, busy, onSave, onChangePending, children }: {
+export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSave, onChangePending, children }: {
   blueprint: WorkspaceBlueprint;
   busy: boolean;
+  customizeWorkspace: boolean;
   onSave: (employees: WorkspaceEmployeeDraftEdit[]) => Promise<boolean>;
   onChangePending: (pending: boolean) => void;
   children: ReactNode;
@@ -24,6 +25,13 @@ export function SuggestedTeamReview({ blueprint, busy, onSave, onChangePending, 
   const [instructions, setInstructions] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const advancedReview = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (customizeWorkspace && advancedReview.current) {
+      advancedReview.current.open = true;
+      advancedReview.current.scrollIntoView({ block: "start" });
+    }
+  }, [customizeWorkspace]);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
 
   function edit(id: string, patch: Partial<WorkspaceEmployeeDraftEdit>) {
@@ -107,7 +115,7 @@ export function SuggestedTeamReview({ blueprint, busy, onSave, onChangePending, 
         </Button>
         {dirty ? <p role="status" className="text-sm text-muted-foreground">Save your edits to refresh the launch plan.</p> : null}
       </form>
-      <details className="workforce-panel px-4 py-3">
+      <details ref={advancedReview} className="workforce-panel px-4 py-3">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
           <ArrowRight aria-hidden="true" className="size-4" /> Review workspace plan and advanced setup
         </summary>

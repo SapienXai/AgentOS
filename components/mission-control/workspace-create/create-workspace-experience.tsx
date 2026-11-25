@@ -28,6 +28,7 @@ import {
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
 import { FirstWorkspaceForms, firstEmployeeDraft, type FirstEmployeeDraft } from "@/components/workforce/first-workspace-forms";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SuggestedTeamReview } from "@/components/workforce/suggested-team-review";
 import { redactSecretText } from "@/lib/security/redaction";
 import { OnboardingProgress } from "@/components/workforce/onboarding-progress";
@@ -1398,15 +1399,10 @@ export function CreateWorkspaceExperience({
             onApproveBasicDraft={() => void approveBasicDraft()}
             onRebuildPlan={() => void rebuildPlan()}
             isRebuildingPlan={isRebuildingPlan}
-            showStartOverConfirmation={showStartOverConfirmation}
-            isStartingOver={isStartingOver}
-            startOverError={startOverError}
-            onKeepDraft={() => setShowStartOverConfirmation(false)}
-            onConfirmStartOver={() => void startOver()}
           />;
             return firstWorkspace && result ? (
               <SuggestedTeamReview key={`${creationRun?.runId}:${creationRun?.snapshot.revision?.number ?? 0}`}
-                blueprint={result.blueprint} busy={isRevising} onSave={revise} onChangePending={setTeamEditsPending}>
+                blueprint={result.blueprint} busy={isRevising} customizeWorkspace={isCustomizing} onSave={revise} onChangePending={setTeamEditsPending}>
                 {reviewContent}
               </SuggestedTeamReview>
             ) : reviewContent;
@@ -1414,6 +1410,25 @@ export function CreateWorkspaceExperience({
         )}
       </div>
       </MissionControlDialogShell>
+      <Dialog open={open && showStartOverConfirmation} onOpenChange={next => {
+        if (!next && !isStartingOver) setShowStartOverConfirmation(false);
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Start a new workspace?</DialogTitle>
+            <DialogDescription>
+              This draft will be discarded. {provisioningRun ? "Any partial workspace remains available for recovery." : "No workspace has been created yet."}
+            </DialogDescription>
+          </DialogHeader>
+          {startOverError ? <p role="alert" className="text-sm text-destructive">{startOverError}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="secondary" disabled={isStartingOver} onClick={() => setShowStartOverConfirmation(false)}>Keep draft</Button>
+            <Button type="button" variant="destructive" disabled={isStartingOver} onClick={() => void startOver()}>
+              {isStartingOver ? "Starting…" : "Start new workspace"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -1988,12 +2003,7 @@ function ReviewView({
   basicDraftApproved,
   onApproveBasicDraft,
   onRebuildPlan,
-  isRebuildingPlan,
-  showStartOverConfirmation,
-  isStartingOver,
-  startOverError,
-  onKeepDraft,
-  onConfirmStartOver
+  isRebuildingPlan
 }: {
   isLight: boolean;
   profile: WorkspaceCreationDepth;
@@ -2030,17 +2040,11 @@ function ReviewView({
   onApproveBasicDraft: () => void;
   onRebuildPlan: () => void;
   isRebuildingPlan: boolean;
-  showStartOverConfirmation: boolean;
-  isStartingOver: boolean;
-  startOverError: string | null;
-  onKeepDraft: () => void;
-  onConfirmStartOver: () => void;
 }) {
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
   const showTechnicalFallback = profile === "high";
-  const hasFailedProvisioningAttempt = provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" || Boolean(provisioningError);
   const recovery = presentWorkspaceReviewRecovery({
     readiness,
     provisioningRun,
@@ -2176,18 +2180,6 @@ function ReviewView({
           <ReviewDetailSections isLight={isLight} model={model} />
         </details>
       </section>
-
-      {showStartOverConfirmation ? (
-        <div className={cn("fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-5", isLight ? "backdrop-blur-sm" : "backdrop-blur-md")} role="dialog" aria-modal="true" aria-labelledby="start-over-heading">
-          <div className={cn("w-full max-w-sm rounded-2xl border p-5 shadow-2xl", isLight ? "border-[#e5dbd0] bg-white text-[#3d3027]" : "border-white/10 bg-[#111827] text-white")}>
-            <h2 id="start-over-heading" className="text-base font-semibold">Start a new workspace?</h2>
-            <p className={cn("mt-2 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>This draft will be discarded.</p>
-            <p className={cn("mt-1 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>{hasFailedProvisioningAttempt ? "Any partial provisioning remains available for recovery; AgentOS will not delete existing OpenClaw state." : "Nothing has been created yet."}</p>
-            {startOverError ? <p className={cn("mt-3 rounded-lg border px-3 py-2 text-xs", isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-400/20 bg-red-400/10 text-red-100")} role="alert">{startOverError}</p> : null}
-            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onKeepDraft} disabled={isStartingOver}>Keep draft</Button><Button type="button" variant="secondary" onClick={onConfirmStartOver} disabled={isStartingOver}>{isStartingOver ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" /> : null}{isStartingOver ? "Starting…" : "Start new workspace"}</Button></div>
-          </div>
-        </div>
-      ) : null}
 
       <section className={cn("mt-4 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/[0.08] bg-white/[0.035]")} aria-labelledby="revision-heading">
         <div className="flex items-center gap-2"><WandSparkles className={cn("h-4 w-4", isLight ? "text-[#9a6d45]" : "text-violet-300")} /><h2 id="revision-heading" className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Want to change something?</h2></div>

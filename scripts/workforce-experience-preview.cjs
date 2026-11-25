@@ -238,6 +238,12 @@ async function run() {
               await expect(lead.locator("summary")).toContainText("Managing editor");
               await expect(apply).toBeDisabled();
             });
+            await record("discard-reviewed-draft", async () => {
+              await page.getByRole("button", { name: "Start over", exact: true }).click();
+              await expect(page.getByRole("dialog", { name: "Start a new workspace?" })).toBeVisible();
+              await page.getByRole("button", { name: "Start new workspace", exact: true }).click();
+              await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue("");
+            });
             await context.close();
             continue;
           }
