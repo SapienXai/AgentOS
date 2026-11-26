@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-25T22:00:37.468Z",
+  "generatedAt": "2026-11-26T06:09:22.634Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "",
-    "codeCommitUnderTest": "228912e297fba6f465965e6231475d56589b7694",
+    "codeCommitUnderTest": "b6b47f7276ae5e59f7ebafa03928341145d9faaa",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -188,7 +188,7 @@
     "explicitConversationHistoryEntries": 1,
     "nativeCatalogSearch": "PASS",
     "nativeAbort": "PASS",
-    "nativeAdapterAdmissionP95Ms": 37.7,
+    "nativeAdapterAdmissionP95Ms": 49.8,
     "queue": {
       "separateGatewayConnections": true,
       "queuedReceipt": true,
@@ -196,7 +196,7 @@
       "providerExecutions": 2,
       "nativeOrder": "PASS",
       "terminalResult": "ok",
-      "secondTurnElapsedMs": 6247
+      "secondTurnElapsedMs": 6217
     }
   },
   "multiUserSemantics": {
