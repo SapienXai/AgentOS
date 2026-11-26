@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-26T12:05:04.519Z",
+  "generatedAt": "2026-11-26T12:08:42.680Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "codeCommitUnderTest": "34f318352d546f745e1a3eb44b72b80c7cead754",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -177,7 +177,28 @@
       "continuationAfterRestart": "PASS"
     }
   ],
-  "directChatContinuity": null,
+  "directChatContinuity": {
+    "result": "PASS",
+    "provider": "loopback OpenAI-compatible fixture",
+    "nativeSessionCount": 1,
+    "streamedTurns": 50,
+    "turnsAfterClientRestart": 51,
+    "duplicateRequestsToProvider": 0,
+    "actorScopeHistoryEntries": 0,
+    "explicitConversationHistoryEntries": 1,
+    "nativeCatalogSearch": "PASS",
+    "nativeAbort": "PASS",
+    "nativeAdapterAdmissionP95Ms": 43.6,
+    "queue": {
+      "separateGatewayConnections": true,
+      "queuedReceipt": true,
+      "distinctRuns": 2,
+      "providerExecutions": 2,
+      "nativeOrder": "PASS",
+      "terminalResult": "ok",
+      "secondTurnElapsedMs": 6190
+    }
+  },
   "multiUserSemantics": {
     "connectionStrategy": "shared trusted service",
     "OpenClawAttribution": "shared service operator; no per-human credential is claimed",
