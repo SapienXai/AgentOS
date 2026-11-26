@@ -2,16 +2,16 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.10-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-26T08:09:11.048Z",
-  "certifiedAt": "2026-11-26T08:09:11.048Z",
-  "agentosHead": "91d5359b9f8ec2a5fbc07dffc068a92a82ae026d",
+  "generatedAt": "2026-11-26T12:09:32.423Z",
+  "certifiedAt": "2026-11-26T12:09:32.423Z",
+  "agentosHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
   "openclawVersion": "2026.11.10",
   "openclawSourceSha": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
   "upstreamEvidenceHashes": {},
   "contractAudit": null,
   "compatibility": {
     "report": {
-      "generatedAt": "2026-11-26T07:56:24.140Z",
+      "generatedAt": "2026-11-26T12:07:46.408Z",
       "target": {
         "name": "simulated-stable",
         "kind": "simulated",
@@ -3802,7 +3802,7 @@
   },
   "liveTelegram": {
     "classification": "BLOCKED_BY_ENVIRONMENT",
-    "reason": "No owner-authorized live credentials or chat were supplied for final acceptance."
+    "reason": "Disposable browser fixtures do not use live Telegram credentials."
   },
   "knownExceptions": [
     "Compatibility degraded optional surfaces: Agent identity sync, Channel logs, Channel provisioning, Channel removal, Config patch, Device access repair, Device token lifecycle, Environment preparation, Gateway restart control, Gmail webhook setup, Model auth order, Model authentication, Model scan, Native plugin discovery catalog, Node pairing, Secret reload and resolution, Session recovery, Setup wizard, Update status.",
@@ -3810,8 +3810,8 @@
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "91d5359b9f8ec2a5fbc07dffc068a92a82ae026d",
-    "evidenceCommit": "5213f83988ec4597a14f197a7fab1ca6d7261a5a",
+    "certifiedCodeHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "evidenceCommit": "593ff2d8fa61e946be0bdcc5e9862f4b829185d6",
     "branch": "main",
     "node": "v24.22.1",
     "openClaw": {
@@ -4004,7 +4004,7 @@
       "official-production": {
         "path": "docs/evidence/openclaw-2026.11.10-final-official-runtime-certification.json",
         "status": "PASS",
-        "skips": 25,
+        "skips": 24,
         "environmentLimited": 0,
         "expectedDenials": 1
       },
@@ -4039,7 +4039,7 @@
       "doctor-hardening": {
         "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
         "status": "PASS",
-        "skips": 4,
+        "skips": 2,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
@@ -4052,7 +4052,7 @@
       }
     }
   },
-  "skips": 91,
+  "skips": 88,
   "expectedAuthorizationDenials": 69,
   "production": {
     "status": "not-tested",
@@ -4146,7 +4146,7 @@
     "official-production": {
       "path": "docs/evidence/openclaw-2026.11.10-final-official-runtime-certification.json",
       "status": "PASS",
-      "skips": 25,
+      "skips": 24,
       "environmentLimited": 0,
       "expectedDenials": 1
     },
@@ -4181,7 +4181,7 @@
     "doctor-hardening": {
       "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
       "status": "PASS",
-      "skips": 4,
+      "skips": 2,
       "environmentLimited": 0,
       "expectedDenials": 0
     },
@@ -4196,7 +4196,7 @@
   "classification": {
     "pass": 18,
     "fail": 0,
-    "skipped": 91,
+    "skipped": 88,
     "environmentLimited": 0,
     "expectedAuthorizationDenials": 69,
     "productionGatewayTouched": false,
