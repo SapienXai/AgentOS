@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-26T06:07:46.757Z",
+  "generatedAt": "2026-11-26T08:08:06.869Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosHead": "b6b47f7276ae5e59f7ebafa03928341145d9faaa",
-    "certifiedCodeHead": "b6b47f7276ae5e59f7ebafa03928341145d9faaa",
-    "branch": "",
+    "agentosHead": "91d5359b9f8ec2a5fbc07dffc068a92a82ae026d",
+    "certifiedCodeHead": "91d5359b9f8ec2a5fbc07dffc068a92a82ae026d",
+    "branch": "main",
     "workingTreeClean": true,
     "repositoryDirtyFilesCount": 0,
-    "gitDescribe": "archive/codex/agentos-v0.9.0-rc-84-gb6b47f72",
+    "gitDescribe": "archive/codex/agentos-v0.9.0-rc-91-g91d5359b",
     "openClaw": {
       "version": "2026.11.10",
       "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -120,8 +120,8 @@
       "taskSuggestions.acceptModes",
       "talk-session-close-disposition"
     ],
-    "connectionId": "2df90193-0da6-4091-9a55-dd5cc8367953",
-    "deviceId": "ab0aa834a1317794a08e4b6929a5214d7cb226bc8673f214c20ea7e89e6ee0c3"
+    "connectionId": "5c3ca77c-5c73-4f9f-8784-800f32253d88",
+    "deviceId": "2f17569a3d3a32c3c3c7a59738c923e574bb2d07bfe21fb37e679d345f29451a"
   },
   "auth": {
     "defaultSharedStateMode": "managed-write",
@@ -467,9 +467,8 @@
       "surface": "config",
       "operation": "disposable config.unset",
       "method": "config.unset",
-      "status": "PASS",
-      "reason": "Native production-selected Gateway operation completed.",
-      "fallbackTotal": 3
+      "status": "SKIPPED",
+      "reason": "config.patch persisted but was not applied to the active Gateway (unclaimed); run config.get, then use config.apply to reapply the saved config or restart the Gateway Gateway-native operation failed; CLI fallback disabled for this operation. Recovery: Start or restart the OpenClaw Gateway, verify the endpoint, or keep using CLI fallback only for recovery."
     },
     {
       "surface": "cron",
@@ -665,8 +664,8 @@
     }
   ],
   "observations": {
-    "firstConnectionId": "2df90193-0da6-4091-9a55-dd5cc8367953",
-    "reconnectConnectionId": "9ac5a778-f01e-432a-a7b2-084594856243",
+    "firstConnectionId": "5c3ca77c-5c73-4f9f-8784-800f32253d88",
+    "reconnectConnectionId": "5306a56e-e3b4-4f78-b99b-d5e35aaa8e2a",
     "deviceIdStableAcrossRestart": true,
     "eventBridgeStarted": true,
     "eventBridgeReconnected": true,
@@ -682,9 +681,9 @@
   },
   "summary": {
     "total": 71,
-    "passed": 46,
+    "passed": 45,
     "failed": 0,
-    "skipped": 24,
+    "skipped": 25,
     "expectedDenials": 1,
     "notApplicable": 0
   },
