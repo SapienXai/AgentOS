@@ -864,7 +864,7 @@ async function run() {
               const result = await nativeClient.searchMemory({ agentId:employee.id, query:"Fieldwork press color ochre", maxResults:10, minScore:0 }, {timeoutMs:12000});
               return result?.results.some(item => item.snippet?.includes("press color is ochre")) ?? false;
             };
-            await expect.poll(hasDocxFact, {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
+            await expect.poll(hasDocxFact, {message: "DOCX is included in initial native memory search", timeout:45000, intervals:[500,1000,2000]}).toBe(true);
             assert.equal(await hasProof(outside.id), false);
             await go("/chat?employee=" + encodeURIComponent(employee.id));
             await page.getByRole("textbox", {name:"Message Morgan",exact:true}).fill("WORKFORCE_READ_PROOF " + documentPath);
@@ -900,7 +900,7 @@ async function run() {
             }, {timeout:20000, intervals:[500,1000,2000]}).toBe(true);
             await expect.poll(() => fileFor(employee.id), {timeout:15000}).toBeUndefined();
             await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(false);
-            await expect.poll(hasDocxFact, {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
+            await expect.poll(hasDocxFact, {message: "DOCX remains indexed after the PDF assignment is removed", timeout:45000, intervals:[500,1000,2000]}).toBe(true);
             const afterRemoval = (await (await fetch(base + assignments + "?employee=" + encodeURIComponent(employee.id), {headers})).json()).paths;
             assert(afterRemoval.includes(docxPath), "Selective removal discarded a second document.");
             assert(fixture.stats.embeddingCount > 0);

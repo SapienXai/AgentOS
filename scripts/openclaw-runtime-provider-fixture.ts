@@ -91,11 +91,13 @@ async function handleRequest(
     try {
       const payload = JSON.parse(await readBody(request)) as { input: string | string[]; model?: string };
       const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
-      const data = inputs.map((input, index) => ({
-        object: "embedding",
-        index,
-        embedding: /halcyon/i.test(input) ? [1, 0, 0] : [0, 1, 0]
-      }));
+      const data = inputs.map((input, index) => {
+        const embedding = /halcyon/i.test(input) ? [1, 0, 0]
+          : /ochre/i.test(input) ? [0, 0, 1]
+          : /specimen proof code/i.test(input) ? [0, 0, -1]
+          : [0, 1, 0];
+        return { object: "embedding", index, embedding };
+      });
       stats.embeddingCount += data.length;
       writeJson(response, 200, { object: "list", model: payload.model, data, usage: { prompt_tokens: 1, total_tokens: 1 } });
     } catch {
