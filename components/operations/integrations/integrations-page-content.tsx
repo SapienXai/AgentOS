@@ -35,7 +35,7 @@ export function IntegrationsPageContent({
   const [category, setCategory] = useState("All Categories");
   const [status, setStatus] = useState<"All Statuses" | IntegrationStatus>("All Statuses");
   const [sort, setSort] = useState<IntegrationSortMode>("last-active");
-  const [view, setView] = useState<"grid" | "list">("list");
+  const [discoveryView, setView] = useState<"grid" | "list">("grid");
   const [section, setSection] = useState<"discover" | "connected" | "attention">("discover");
   const [showAllMobileIntegrations, setShowAllMobileIntegrations] = useState(true);
   const [selectedId, setSelectedId] = useState("");
@@ -169,6 +169,7 @@ export function IntegrationsPageContent({
     ["failed", "needs-authentication", "missing-credentials", "stopped"].includes(integration.status));
   const available = apps.filter(integration => !connected.includes(integration) && !needsAttention.includes(integration));
   const directory = section === "connected" ? connected : section === "attention" ? needsAttention : available;
+  const view = section === "discover" ? discoveryView : "list";
   const visibleIntegrations = showAllMobileIntegrations ? nativeCapabilities : nativeCapabilities.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
@@ -390,7 +391,6 @@ export function IntegrationsPageContent({
               onSearchChange={setSearch}
               searchPlaceholder="Find an integration"
               surfaceTheme={surfaceTheme}
-              right={<div className="hidden sm:block"><ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} /></div>}
             >
               <ToolbarButton surfaceTheme={surfaceTheme} icon={Layers3} label={category} chevron onClick={() => setCategory((current) => categories[(categories.indexOf(current) + 1) % categories.length])} />
               <ToolbarButton surfaceTheme={surfaceTheme} icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
@@ -403,6 +403,7 @@ export function IntegrationsPageContent({
                   className={cn("min-h-11 border-b-2 px-3 py-2 text-sm font-medium",
                     section === id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{label}</button>
               )}
+              {section === "discover" && <div className="ml-auto hidden sm:block"><ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} /></div>}
             </nav>
             {directory.length ? (
               <div className={cn(view === "grid" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "workforce-panel divide-y divide-border/80 overflow-hidden")}>
@@ -525,9 +526,9 @@ function IntegrationCard({
   onReconnect: () => void;
 }) {
   return (
-    <article className={cn("flex min-w-0 gap-3 px-4 py-4", list ? "flex-wrap items-start sm:items-center" : "workforce-panel flex-col", selected && "bg-muted/45")}>
+    <article className={cn("flex min-w-0 gap-3 px-4 py-4", list ? "flex-wrap items-start sm:items-center" : "workforce-panel workforce-app-tile flex-col", selected && "bg-muted/45")}>
       <ApplicationIcon integration={integration} />
-      <div className="min-w-0 flex-1 basis-[10rem]">
+      <div className={cn("min-w-0 flex-1", list && "basis-[10rem]")}>
         <h3 className="break-words text-base font-semibold">{integration.name}</h3>
         <p className="mt-1 text-sm leading-5 text-muted-foreground">{integration.description}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -542,9 +543,9 @@ function IntegrationCard({
             {integration.status === "connected" || integration.status === "running" ? "Manage" : "Set up"}
           </Button>
         ) : null}
-        {integration.actionSupport.reconnect.supported ? (
+        {list && integration.actionSupport.reconnect.supported ? (
           <Button variant="ghost" size="icon" disabled={actionBusy} aria-label={`Refresh ${integration.name} status`} onClick={onReconnect}>
-            <RefreshCw className={cn("size-4", actionBusy && "animate-spin")} />
+            <RefreshCw className={cn("size-4", actionBusy && "motion-safe:animate-spin")} />
           </Button>
         ) : null}
         <Button variant="ghost" size="sm" aria-expanded={selected} onClick={onSelect}>{selected ? "Hide details" : "Details"}</Button>

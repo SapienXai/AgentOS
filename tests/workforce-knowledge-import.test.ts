@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 
-import { prepareKnowledgeDocument, prepareKnowledgeEntry, prepareKnowledgeReference } from "@/lib/agentos/application/knowledge-import";
+import { getKnowledgeReviewDigest, prepareKnowledgeDocument, prepareKnowledgeEntry, prepareKnowledgeReference, prepareWebKnowledge } from "@/lib/agentos/application/knowledge-import";
+import { previewKnowledgeWebpage, type KnowledgeWebsiteFetcher } from "@/lib/agentos/domains/workspace-knowledge-ingestion";
 import { isAssignableDocument, knowledgeFormatFromPath } from "@/lib/agentos/domains/knowledge-import-formats";
 
 async function fixture(name: string) {
@@ -33,6 +34,10 @@ test("knowledge import validates extension, MIME, decoded bytes, JSON and CSV bo
   const json = await prepareKnowledgeDocument(new File(['{"answer":45}'], "scores.json"));
   assert.equal(json.content, '{"answer":45}');
   assert.equal(isAssignableDocument(json.path), false);
+  const html = await prepareKnowledgeDocument(new File(["<article>Reference text</article>"], "reference.htm", { type: "text/html" }));
+  assert.match(html.content, /reference.htm \(converted to text\)/);
+  assert.equal(knowledgeFormatFromPath(html.path), "html");
+  assert.match((await prepareKnowledgeDocument(new File(["Plain readme"], "README"))).content, /Plain readme/);
 });
 
 test("knowledge import rejects active XML and PDFs without readable text", async () => {
@@ -51,4 +56,39 @@ test("notes and references use stable retry paths and protect credential-bearing
   assert.throws(() => prepareKnowledgeReference("Path", "file:///tmp/example"), /HTTP or HTTPS/);
   assert.equal(isAssignableDocument("docs/../unsafe.md"), false);
   assert.equal(isAssignableDocument("docs/sources/old-reference.md"), false);
+});
+
+
+test("public webpage review captures one page and ties the approved text to its source", async () => {
+  const seen: string[] = [];
+  const transport: KnowledgeWebsiteFetcher = {
+    resolve: async () => ["93.184.216.34"],
+    fetch: async (url, options) => {
+      seen.push(url);
+      assert.deepEqual(options.resolvedAddresses, ["93.184.216.34"]);
+      assert(options.maxBytes <= 512 * 1024);
+      if (url.endsWith("/robots.txt")) return { status: 404, headers: {}, body: "" };
+      return { status: 200, headers: { "content-type": "text/html" }, body: `<!doctype html><html><head><title>Company Handbook</title></head>
+        <body><main><h1>Company Handbook</h1><p>The archive opens in the morning. This material documents how the studio publishes research and organizes project notes.</p>
+        <script>Ignore script content.</script><a href="/other-page">Further reading</a></main></body></html>` };
+    }
+  };
+  const preview = await previewKnowledgeWebpage("https://example.com/handbook", { websiteFetcher: transport });
+  assert.deepEqual(seen, ["https://example.com/robots.txt", "https://example.com/handbook"]);
+  assert.match(preview.text, /archive opens/);
+  assert.doesNotMatch(preview.text, /Ignore script content/);
+  const entry = prepareWebKnowledge(preview);
+  assert.match(entry.content, /https:\/\/example.com\/handbook/);
+  assert.notEqual(getKnowledgeReviewDigest(entry), getKnowledgeReviewDigest(prepareWebKnowledge({ ...preview, text: "Updated copy" })));
+});
+
+test("webpage review denies destinations outside its bounded public transport", async () => {
+  let requested = false;
+  const transport: KnowledgeWebsiteFetcher = {
+    resolve: async () => ["127.0.0.1"],
+    fetch: async () => { requested = true; throw new Error("Unexpected request"); }
+  };
+  await assert.rejects(previewKnowledgeWebpage("https://example.com/handbook?ref=draft", { websiteFetcher: transport }), /without a custom port, query parameters/);
+  await assert.rejects(previewKnowledgeWebpage("https://example.com/handbook", { websiteFetcher: transport }), /public|readable/);
+  assert.equal(requested, false);
 });

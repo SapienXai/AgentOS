@@ -1,5 +1,5 @@
 import { DRAFT_TOOL_LABELS } from "@/lib/agentos/domains/draft-abilities";
-import { listOpenClawTools, normalizeOpenClawToolsCatalog } from "@/lib/openclaw/application/catalog-service";
+import { listGuidedAbilities } from "@/lib/agentos/application/guided-abilities";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -597,10 +597,7 @@ export async function reviseWorkspaceCreationRun(
         );
         const confirmedTools = new Set<string>();
         if (wantsNewTool) {
-          const catalog = await listOpenClawTools({ includePlugins: false }, { timeoutMs: 5000 });
-          for (const tool of normalizeOpenClawToolsCatalog(catalog)) {
-            if (tool.category === "builtin" && Object.hasOwn(DRAFT_TOOL_LABELS, tool.name)) confirmedTools.add(tool.name);
-          }
+          for (const tool of await listGuidedAbilities()) confirmedTools.add(tool.name);
         }
         const blueprint = {
           ...reviewEmployeeEdits(oldResult.blueprint, input.employeeReview.employees, confirmedTools),
@@ -1242,7 +1239,14 @@ async function completeWorkspaceComposition(
   const composerTimeout = composerAttempts > 0
     ? Math.max(5_000, Math.min(budget.maxComposerAttemptMs, Math.floor(remaining / composerAttempts)))
     : 0;
-  if (run.snapshot.cancelRequested || controller.signal.aborted) return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+  run = await readWorkspaceCreationRunFile(filePath) ?? run;
+  const deadlineReached = controller.signal.aborted && Date.now() >= deadline;
+  if (run.snapshot.cancelRequested || (controller.signal.aborted && !deadlineReached)) {
+    return failRun(filePath, run, dependencies, failure("cancelled", "cancelled", "cancelled", "Workspace creation was cancelled."), "cancelled");
+  }
+  if (deadlineReached && policy.compositionStrategy !== "deterministic-safe") {
+    return failRun(filePath, run, dependencies, failure("timeout", "budget-exhausted", "terminal", "The analysis budget ended before the workspace plan could be reviewed."));
+  }
   if (!canUseModel) {
     const fallback = createDeterministicWorkspaceComposition(compositionInput, {
       runId: compositionRunId(run, compositionRunSuffix),

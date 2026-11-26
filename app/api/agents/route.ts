@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { validateGuidedToolIds } from "@/lib/agentos/application/guided-abilities";
 import { createAgent, deleteAgent, getMissionControlSnapshot, updateAgent } from "@/lib/agentos/control-plane";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -75,6 +76,7 @@ const createAgentSchema = z.object({
   channelIds: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   tools: z.array(z.string()).optional(),
+  guidedToolIds: z.array(z.string().max(100)).max(12).optional(),
   workerProfile: workerProfileSchema.optional(),
   toolPolicy: toolPolicySchema.nullable().optional(),
   sandbox: sandboxSchema.nullable().optional(),
@@ -127,7 +129,7 @@ export async function POST(request: Request) {
 
   let targetId: string | undefined;
   try {
-    const input = createAgentSchema.parse(await request.json());
+    const { guidedToolIds, ...input } = createAgentSchema.parse(await request.json());
     targetId = input.id;
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
@@ -136,7 +138,8 @@ export async function POST(request: Request) {
       targetId,
       result: "started"
     }).catch(() => {});
-    const created = await createAgent(input, authorization.commandOptions);
+    const guided = await validateGuidedToolIds(guidedToolIds ?? [], authorization.commandOptions);
+    const created = await createAgent(guided.length ? { ...input, tools: [...new Set([...(input.tools ?? []), ...guided])] } : input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.create",

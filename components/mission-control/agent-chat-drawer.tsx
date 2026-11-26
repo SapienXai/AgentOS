@@ -38,6 +38,7 @@ import {
 } from "@/lib/openclaw/chat-attachments";
 import type { AddModelsProviderId } from "@/lib/openclaw/types";
 import type { MissionControlSnapshot, AgentRecord } from "@/lib/agentos/contracts";
+import { redactSecretText } from "@/lib/security/redaction";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = AgentChatMessage;
@@ -201,6 +202,7 @@ export function AgentChatDrawer({
   snapshot,
   isVisible,
   surface = "default",
+  draftWorkspaceId,
   onRefresh,
   onSnapshotChange,
   onConnectModelProvider
@@ -209,6 +211,7 @@ export function AgentChatDrawer({
   snapshot: MissionControlSnapshot;
   isVisible: boolean;
   surface?: "default" | "transparent";
+  draftWorkspaceId?: string;
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onConnectModelProvider?: (provider: AddModelsProviderId) => void;
@@ -236,9 +239,26 @@ export function AgentChatDrawer({
   const [preparingFilesFor, setPreparingFilesFor] = useState<string>();
   const draft = drafts[chatKey] ?? "";
   const submittedDraft = useRef<{ chatKey: string; text: string } | null>(null);
+  const draftStorageKey = draftWorkspaceId ? `agentos-workforce-chat:${encodeURIComponent(draftWorkspaceId)}:${encodeURIComponent(chatKey)}` : null;
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    try {
+      const text = sessionStorage.getItem(draftStorageKey);
+      if (text && text.length <= 12000 && redactSecretText(text) === text) {
+        setDrafts(current => current[chatKey] === undefined ? { ...current, [chatKey]: text } : current);
+      }
+    } catch { /* Storage is optional for an unsent draft. */ }
+  }, [chatKey, draftStorageKey]);
+
   const setDraft = (text: string) => {
     submittedDraft.current = null;
     setDrafts((current) => ({ ...current, [chatKey]: text }));
+    if (draftStorageKey) {
+      try {
+        if (text.trim() && text.length <= 12000 && redactSecretText(text) === text) sessionStorage.setItem(draftStorageKey, text);
+        else sessionStorage.removeItem(draftStorageKey);
+      } catch { /* The in-memory composer remains usable. */ }
+    }
   };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [runSnapshot, setRunSnapshot] = useState<AgentChatRunSnapshot>(() => getAgentChatRunSnapshot(agent.id));
@@ -1085,7 +1105,7 @@ export function AgentChatDrawer({
                   setDraftFiles((current) => ({ ...current, [chatKey]: [...files, ...selected] }));
                 }}
               />
-              <Button type="button" variant="ghost" aria-label="Attach files" className="h-10 w-10 rounded-full p-0"
+              <Button type="button" variant="ghost" aria-label="Attach files" title={draftWorkspaceId ? "Up to 3 attachments, 2 MB each" : undefined} className="h-10 w-10 rounded-full p-0"
                 disabled={chatAccessDenied || archived || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
                 onClick={() => attachmentInput.current?.click()}>
                 <Paperclip className="h-4 w-4" aria-hidden="true" />

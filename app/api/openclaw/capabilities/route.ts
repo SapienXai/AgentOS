@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { DRAFT_TOOL_LABELS } from "@/lib/agentos/domains/draft-abilities";
+import { listGuidedAbilities } from "@/lib/agentos/application/guided-abilities";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   getOpenClawPluginCatalog,
@@ -54,12 +54,11 @@ export async function GET(request: Request) {
 
   const searchParams = Object.fromEntries(new URL(request.url).searchParams.entries());
   if (searchParams.view === "guided-abilities") {
-    const catalog = await listOpenClawTools({ includePlugins: false }, { timeoutMs: 5000 }).catch(() => null);
-    const tools = catalog && normalizeOpenClawToolsCatalog(catalog);
+    const manage = await requireAgentOsProductPermission(request, "agents.manage");
+    if ("response" in manage) return manage.response;
+    const tools = await listGuidedAbilities().catch(() => null);
     if (!tools) return NextResponse.json({ error: "Current ability inventory unavailable." }, { status: 503 });
-    return NextResponse.json({ tools: tools
-      .filter(item => item.category === "builtin" && Object.hasOwn(DRAFT_TOOL_LABELS, item.name))
-      .map(({ name, description }) => ({ name, description })) }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json(redactSecrets({ tools }), { headers: { "Cache-Control": "private, no-store" } });
   }
   const parsedQuery = pluginCatalogQuerySchema.safeParse(searchParams);
   if (!parsedQuery.success) {

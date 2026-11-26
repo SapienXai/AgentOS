@@ -8,6 +8,16 @@ const defaultAllowedDevOrigins = [
   ...readLocalNetworkHosts()
 ];
 
+const knowledgeParserTraceFiles = [
+  "./lib/agentos/application/knowledge-pdf-worker.cjs",
+  "./node_modules/pdfjs-dist/package.json",
+  "./node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+  "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/package.json"
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   allowedDevOrigins: defaultAllowedDevOrigins,
@@ -17,15 +27,15 @@ const nextConfig = {
   // absolute path.
   serverExternalPackages: ["@openclaw/gateway-client", "pdfjs-dist"],
   outputFileTracingIncludes: {
-    "/api/workspaces/*/knowledge": [
-      "./lib/agentos/application/knowledge-pdf-worker.cjs",
-      "./node_modules/pdfjs-dist/package.json",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.mjs",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.mjs",
-      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/package.json"
-    ]
+    // The external SDK resolves WebSocket and optional SDK entry points at runtime.
+    "/*": [
+      "./node_modules/ws/{package.json,wrapper.mjs,index.js,lib/**/*.js}",
+      "./node_modules/.pnpm/ws@*/node_modules/ws/{package.json,wrapper.mjs,index.js,lib/**/*.js}",
+      "./node_modules/@openclaw/gateway-*/{package.json,dist/**/*.mjs}",
+      "./node_modules/.pnpm/@openclaw+gateway-*@*/node_modules/@openclaw/gateway-*/{package.json,dist/**/*.mjs}"
+    ],
+    "/api/workspaces/*/knowledge": knowledgeParserTraceFiles,
+    "/api/workspaces/creation-runs": knowledgeParserTraceFiles
   },
   output: "standalone",
   async headers() {

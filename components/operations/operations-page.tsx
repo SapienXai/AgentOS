@@ -20,13 +20,15 @@ export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "kno
 
 export function OperationsPage({
   initialSnapshot,
-  page
+  page,
+  preferredWorkspaceId
 }: {
   initialSnapshot: MissionControlSnapshot;
   page: OperationsPageId;
+  preferredWorkspaceId?: string | null;
 }) {
   return (
-    <OperationsShell initialSnapshot={initialSnapshot}>
+    <OperationsShell initialSnapshot={initialSnapshot} preferredWorkspaceId={preferredWorkspaceId}>
       {(context) => {
         if (page === "dashboard") {
           return (
@@ -50,6 +52,7 @@ export function OperationsPage({
               rootSnapshot={context.rootSnapshot}
               activeWorkspaceId={context.activeWorkspaceId}
               surfaceTheme={context.surfaceTheme}
+              workspaceSelectionReady={context.workspaceSelectionReady}
               pendingAgentNames={context.pendingAgentNames}
               refresh={context.refresh}
               setSnapshot={context.setSnapshot}
@@ -77,6 +80,7 @@ export function OperationsPage({
           return (
             <FilesPageContent
               knowledge={page === "knowledge"}
+              workspaceSelectionReady={page !== "knowledge" || context.workspaceSelectionReady}
               snapshot={context.snapshot}
               activeWorkspaceId={context.activeWorkspaceId}
               surfaceTheme={context.surfaceTheme}

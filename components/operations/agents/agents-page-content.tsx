@@ -39,6 +39,7 @@ export function AgentsPageContent({
   snapshot,
   rootSnapshot,
   activeWorkspaceId,
+  workspaceSelectionReady = true,
   surfaceTheme,
   pendingAgentNames,
   refresh,
@@ -47,6 +48,7 @@ export function AgentsPageContent({
   snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  workspaceSelectionReady?: boolean;
   surfaceTheme: "dark" | "light";
   pendingAgentNames: readonly Pick<PendingAgentProjection, "workspaceId" | "name">[];
   refresh: () => Promise<void>;
@@ -63,17 +65,20 @@ export function AgentsPageContent({
     }
     return items;
   }, [snapshot.tasks]);
-  const agents = useMemo(
-    () => buildAgentViews(snapshot).map(agent => agent.status === "running" && !agent.source?.activeRuntimeIds.length && activeWork.get(agent.id)?.status !== "running"
+  const agents = useMemo(() => {
+    const running = new Set(snapshot.runtimes.filter(runtime => runtime.status === "running" &&
+      (runtime.source === "turn" || runtime.source === "cron" || runtime.runId)).map(runtime => runtime.id));
+    return buildAgentViews(snapshot).map(agent => agent.status === "running" &&
+      !agent.source?.activeRuntimeIds.some(id => running.has(id)) && activeWork.get(agent.id)?.status !== "running"
       ? { ...agent, status: "ready" as const, statusLabel: "Ready", statusTone: "success" as const }
-      : agent),
-    [activeWork, snapshot]
-  );
+      : agent);
+  }, [activeWork, snapshot]);
   const { loginTargets, accessRules } = useAccountsData(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
   const [sort, setSort] = useState<"last-active" | "name" | "status" | "workspace">("last-active");
-  const [view, setView] = useState<"grid" | "list">("list");
+  const [preferredView, setView] = useState<"grid" | "list" | null>(null);
+  const view = preferredView ?? (agents.length > 6 ? "list" : "grid");
   const [selectedId, setSelectedId] = useState("");
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [modelAgentId, setModelAgentId] = useState<string | null>(null);
@@ -201,6 +206,7 @@ export function AgentsPageContent({
                   trigger={
                     <Button
                       size="sm"
+                      disabled={!workspaceSelectionReady}
                       className="min-h-11 px-4"
                     >
                       <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -375,15 +381,15 @@ function AgentCard({
 
   const activity = currentWork
     ? `${currentWork.status === "running" ? "Working on" : "Queued"}: ${currentWork.title}`
-    : agent.status === "running" ? "Working"
+    : agent.status === "running" ? "Active session"
       : agent.status === "needs-approval" ? "Needs approval" : "No active task";
 
   return (
-    <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list && "workforce-person--list")}>
+    <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list ? "workforce-person--list" : "workforce-directory-card")}>
       <div className="flex min-w-0 items-center gap-4">
-        <EmployeeAvatar agent={agent.source} name={agent.name} className={cn("size-16 rounded-2xl text-lg", list && "size-14 rounded-xl")} />
+        <EmployeeAvatar agent={agent.source} name={agent.name} className={cn("size-20 rounded-2xl text-lg", list && "size-14 rounded-xl")} />
         <div className="min-w-0 flex-1">
-          <h2 className={cn("break-words font-display text-xl font-semibold leading-tight", list && "text-lg")}>
+          <h2 className={cn("break-words font-display text-2xl font-semibold leading-tight", list && "text-lg")}>
             <Link href={`/agents/${encodeURIComponent(agent.id)}`} className="rounded-sm hover:underline focus-visible:outline focus-visible:outline-ring">
               {agent.name} <ArrowUpRight className="ml-1 inline size-3 text-muted-foreground" aria-hidden="true" />
             </Link>
@@ -399,7 +405,7 @@ function AgentCard({
         </p>
         {connectionBadges.length ? (
           <details className="workforce-disclosure">
-            <summary>{connectionBadges.length === 1 ? "1 connection" : `${connectionBadges.length} connections`}</summary>
+            <summary>Connections</summary>
             <div className="pt-2"><AgentConnectionIconRow badges={connectionBadges} /></div>
           </details>
         ) : null}
@@ -416,7 +422,7 @@ function AgentCard({
         <Button type="button" variant="ghost" size="sm" className="min-h-11 sm:min-h-8" onClick={onRunTask}>
           <Play className="mr-1.5 size-3.5" /> Assign task
         </Button>
-        <Button type="button" variant="ghost" size="icon" className="ml-auto min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
+        <Button type="button" variant="ghost" size="icon" title="Quick details" className="ml-auto min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
           aria-label={`Quick details for ${agent.name}`} aria-expanded={selected} onClick={onSelect}>
           <SlidersHorizontal className="size-3.5" />
         </Button>

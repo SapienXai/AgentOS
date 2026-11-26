@@ -9,6 +9,7 @@ const repo = process.cwd();
 const { chromium, expect } = require(repo + "/node_modules/@playwright/test");
 const { createOpenClawRuntimeProviderFixture } = require(repo + "/scripts/openclaw-runtime-provider-fixture.ts");
 const packageRoot = process.env.WORKFORCE_OPENCLAW_PACKAGE;
+const standalone = process.env.WORKFORCE_STANDALONE_DIR;
 assert(packageRoot, "Set WORKFORCE_OPENCLAW_PACKAGE to the exact OpenClaw 2026.11.10 package root.");
 assert.equal(require(path.resolve(packageRoot, "package.json")).version, "2026.11.10");
 const openclaw = path.resolve(packageRoot, "openclaw.mjs");
@@ -90,8 +91,8 @@ async function run() {
       AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl, AGENTOS_OPENCLAW_GATEWAY_TOKEN: token, AGENTOS_RUNTIME_DIR: path.join(root, "agentos"),
       AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control"), AGENTOS_API_TOKEN: appToken
     };
-    function start(args) {
-      const child = spawn(process.execPath, args, { env, cwd: repo, stdio:["ignore","pipe","pipe"] });
+    function start(args, overrides = {}) {
+      const child = spawn(process.execPath, args, { env: { ...env, ...overrides }, cwd: repo, stdio:["ignore","pipe","pipe"] });
       let logs = "";
       for (const stream of [child.stdout,child.stderr]) stream.on("data", chunk => { logs = (logs + chunk).replaceAll(token,"[REDACTED]").replaceAll(appToken,"[REDACTED]").slice(-3000); });
       child.diagnostic = () => logs;
@@ -113,7 +114,9 @@ async function run() {
     const launchGateway = () => start([openclaw,"gateway","run","--port",String(gatewayPort),"--allow-unconfigured"]);
     let gw = launchGateway();
     await ready("http://127.0.0.1:" + gatewayPort + "/healthz", gw);
-    const launchApp = () => start([next,"start","--hostname","127.0.0.1","--port",String(appPort)]);
+    const launchApp = () => standalone
+      ? start([path.resolve(standalone, "server.js")], { PORT: String(appPort), HOSTNAME: "127.0.0.1" })
+      : start([next,"start","--hostname","127.0.0.1","--port",String(appPort)]);
     let app = launchApp();
     await ready(base + "/api/auth/status", app);
     const headers = { Cookie: cookie, "Content-Type":"application/json", Origin: base };
@@ -195,6 +198,7 @@ async function run() {
           if (workspaceId && !sessionStorage.getItem(scopeKey)) sessionStorage.setItem(scopeKey, workspaceId);
         }, { theme, scopeKey, workspaceId: first?.workspaceId });
         const page = await context.newPage();
+        const timings = {};
         const screenshot = name => page.screenshot({ path: path.join(output, key + "-" + name + ".jpg"), type: "jpeg", quality: 82, animations: "disabled" });
         const record = async (name, runCheck) => {
           try {
@@ -202,9 +206,11 @@ async function run() {
             const viewportFits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
             assert(viewportFits, "Page has horizontal overflow.");
             await screenshot(name);
-            report.push({ theme, viewport: size, name, result: "PASS" });
+            report.push({ theme, viewport: size, name, result: "PASS", ...(Number.isFinite(timings[name]) ? { usableMs: timings[name] } : {}) });
           } catch (error) {
-            report.push({ theme, viewport: size, name, result: "FAIL", problem: error.message.split("\n")[0] });
+            const problem = error.message.split("\n").slice(0, 6).join("\n");
+            report.push({ theme, viewport: size, name, result: "FAIL", problem });
+            console.error(`${key} ${name}: ${problem}`);
             await screenshot(name + "-failed").catch(() => {});
           }
         };
@@ -238,9 +244,21 @@ async function run() {
             await expect(page.getByLabel("What are you working on?")).toBeVisible();
           });
           if (suggested) {
+            page.on("response", async response => {
+              if (!response.url().includes("/api/workspaces/creation-runs")) return;
+              const body = await response.json().catch(() => null);
+              if (!response.ok() || ["failed", "cancelled"].includes(body?.snapshot?.state)) {
+                console.error("Workspace review fixture", response.request().method(), response.status(), body?.snapshot?.stage, body?.snapshot?.architect?.failure?.message || body?.error);
+              }
+            });
             await record("suggested-team", async () => {
               await page.getByLabel("Workspace name", { exact: true }).fill("Harbor Review");
               await page.getByLabel("What are you working on?").fill("Research and publish a monthly neighborhood newsletter. Propose a lead editor and a research specialist.");
+              if (theme === "light" && size === stageSizes.at(-1)) {
+                await page.getByText("Add documents, a website or a note", {exact:true}).click();
+                await page.getByLabel("Company documents").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.docx"));
+                await expect(page.getByText("press-guide.docx", {exact:false}).first()).toBeVisible();
+              }
               await page.getByRole("button", { name: "Suggest a team", exact: true }).click();
               await expect(page.getByRole("heading", { name: "Meet your proposed team" })).toBeVisible({ timeout: 55000 });
               const dialog = await page.getByRole("dialog", { name: "Build your team" }).boundingBox();
@@ -256,10 +274,10 @@ async function run() {
               await lead.getByLabel("Working instructions and knowledge to consult").fill("Consult company guidelines before publishing.");
               const abilities = lead.locator("details").filter({hasText:"Browse abilities"});
               await abilities.getByText("Browse abilities",{exact:true}).click();
-              const available = abilities.getByRole("checkbox").first();
+              const available = abilities.getByRole("checkbox", {name:/Read workspace files|Search the web|Read web pages|Check current session status|Search native memory/}).and(abilities.locator("input:not([disabled])")).first();
               await expect(available).toBeVisible({timeout:12000});
               const abilityText = await available.locator("..").innerText();
-              const chosen = Object.entries({read:"Read workspace files",web_search:"Search the web",web_fetch:"Read web pages"})
+              const chosen = Object.entries({read:"Read workspace files",web_search:"Search the web",web_fetch:"Read web pages",session_status:"Check current session status",memory_search:"Search native memory"})
                 .find(([, label]) => abilityText.includes(label))?.[0];
               assert(chosen,"No supported ability was offered.");
               await available.check();
@@ -316,6 +334,11 @@ async function run() {
           await record("build-team", async () => {
             await page.getByLabel("Workspace name", {exact: true}).fill("Harbor Review");
             await page.getByLabel("What are you working on?").fill("Research and publish a monthly neighborhood newsletter.");
+            if (theme === "light" && size === stageSizes.at(-1)) {
+              await page.getByText("Add documents, a website or a note", {exact:true}).click();
+              await page.getByLabel("Setup note").fill("The policy desk checks every geographic name before publication.");
+              await page.getByLabel("Company documents").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.xlsx"));
+            }
             await page.getByRole("button", {name:"Build team manually"}).click();
             await expect(page.getByRole("heading", {name:"Choose your first employees"})).toBeVisible();
           });
@@ -326,6 +349,9 @@ async function run() {
               await expect(page.getByRole("heading", {name:"Choose your first employees"})).toBeVisible();
               await page.getByRole("button", {name:"Back",exact:true}).click();
               await expect(page.getByLabel("Workspace name", {exact:true})).toHaveValue("Harbor Review");
+              await expect(page.getByText(/Reattach press-guide.xlsx/)).toBeVisible();
+              await expect(page.getByLabel("Setup note")).toHaveValue("The policy desk checks every geographic name before publication.");
+              await page.getByLabel("Company documents").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.xlsx"));
               await page.getByRole("button", {name:"Build team manually"}).click();
             });
             const startTime = performance.now();
@@ -334,6 +360,19 @@ async function run() {
               await expect(page.getByRole("dialog")).toHaveCount(0, {timeout: 45000});
               await expect(page.locator('.react-flow__node-agent[data-id="harbor-review-assistant"]')).toBeVisible({timeout: 10000});
               console.log(`Manual fixture launch to verified canvas: ${Math.round(performance.now() - startTime)} ms.`);
+            });
+            await record("manual-deferred-documents", async () => {
+              const snapshot = await (await fetch(base + "/api/snapshot?force=true", { headers })).json();
+              const employee = snapshot.agents.find(agent => agent.id === "harbor-review-assistant");
+              assert(employee, "Manual workspace employee unavailable.");
+              const brief = await (await fetch(base + "/api/workspaces/" + encodeURIComponent(employee.workspaceId) + "/files?path=docs%2Fbrief.md",{headers})).json();
+              assert.match(brief.content, /policy desk checks every geographic name/);
+              await expect.poll(async () => {
+                const result = await (await fetch(base + "/api/workspaces/" + encodeURIComponent(employee.workspaceId) + "/files",{headers})).json();
+                return result.files?.some(file => /docs\/library\/xlsx\/press-guide-/.test(file.path));
+              }, {timeout:30000}).toBe(true);
+              await go("/knowledge?workspaceId=" + encodeURIComponent(employee.workspaceId));
+              await expect(page.getByRole("button", {name:/Press Guide.*XLSX/i})).toBeVisible({timeout:12000});
             });
             await record("first-conversation", async () => {
               await go("/chat?employee=harbor-review-assistant");
@@ -439,9 +478,11 @@ async function run() {
           await page.evaluate(({ scopeKey, workspaceId }) => sessionStorage.setItem(scopeKey, workspaceId), {scopeKey, workspaceId:first.workspaceId});
         });
         await record("team", async () => {
-          await go("/team");
+          const started = performance.now();
+          await go("/team?workspaceId=" + encodeURIComponent(first.workspaceId));
           await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
           await expect(page.getByRole("link", { name: "Ada", exact: true })).toBeVisible({ timeout: 12000 });
+          timings.team = Math.round(performance.now() - started);
         });
         await record("add-employee", async () => {
           await page.getByRole("button", { name: "Add employee", exact: true }).last().click();
@@ -507,11 +548,14 @@ async function run() {
         for (const [name, route, heading] of [["knowledge", "/knowledge", "Knowledge"], ["integrations", "/integrations", "Integrations"],
           ["settings", "/settings", "Settings"], ["runtime", "/settings#runtime", "Runtime"]]) {
           await record(name, async () => {
+            const started = performance.now();
             await go(name === "knowledge" ? route + "?workspaceId=" + encodeURIComponent(first.workspaceId) : route);
             await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
             if (name === "knowledge") {
               await expect(page.getByRole("heading", { name:"Documents", exact:true })).toBeVisible();
               await expect(page.getByRole("region", { name:"Documents", exact:true })).toHaveAttribute("aria-busy", "false");
+              await expect(page.getByRole("button", {name:/Company brief/})).toHaveCount(0);
+              timings.knowledge = Math.round(performance.now() - started);
             }
           });
         }
@@ -529,17 +573,49 @@ async function run() {
             await expect(page.getByRole("dialog", {name:"Add knowledge",exact:true})).toBeVisible();
           });
           await record("knowledge-upload", async () => {
-            await page.getByLabel("Choose a document").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.pdf"));
+            await page.getByLabel("Choose documents").setInputFiles(path.join(repo, "tests/fixtures/workforce-knowledge/press-guide.pdf"));
             await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
             const document = page.getByRole("button", {name:/^Press Guide.*PDF/i});
             await expect(document).toBeVisible({timeout:15000});
             await document.click();
             await expect(page.getByText("The specimen proof code is Fieldwork 903.", {exact:false}).first()).toBeVisible();
           });
+          await record("knowledge-batch-partial", async () => {
+            await go(knowledge);
+            await expect(page.getByRole("button", {name:/^Press Guide.*PDF/i})).toBeVisible({timeout:15000});
+            await page.getByRole("button", {name:"Add knowledge",exact:true}).first().click();
+            await page.getByLabel("Choose documents").setInputFiles(["press-guide.docx", "press-guide.xlsx", "empty.pdf"].map(name => path.join(repo, "tests/fixtures/workforce-knowledge", name)));
+            const start = performance.now();
+            await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
+            await expect(page.getByText("Saved to workspace", {exact:true})).toHaveCount(2, {timeout:30000});
+            await expect(page.getByText(/no selectable text/i)).toBeVisible();
+            await expect(page.getByRole("button", {name:"Retry remaining"})).toBeEnabled();
+            timings["knowledge-batch-partial"] = Math.round(performance.now() - start);
+          });
+          const batchDone = page.getByRole("button", {name:"Done",exact:true});
+          if (await batchDone.isVisible()) await batchDone.click();
+          await record("knowledge-source-assignments", async () => {
+            await page.getByRole("button", {name:/^Assign press guide \(PDF\)$/i}).first().click();
+            const dialog = page.getByRole("dialog");
+            await expect(dialog.getByRole("checkbox", {name:/Ada/})).toBeVisible({timeout:12000});
+          });
+          if (process.env.WORKFORCE_PUBLIC_WEBPAGE) await record("knowledge-public-webpage", async () => {
+            await go(knowledge);
+            await page.getByRole("button", {name:"Add knowledge",exact:true}).first().click();
+            await page.getByText("Import webpage",{exact:true}).click();
+            await page.getByLabel("Website address").fill(process.env.WORKFORCE_PUBLIC_WEBPAGE);
+            await page.getByRole("button", {name:"Preview webpage"}).click();
+            const preview = page.getByRole("region",{name:"Webpage preview"});
+            await expect(preview.getByRole("heading")).toBeVisible({timeout:16000});
+            const title = await preview.getByRole("heading").textContent();
+            await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
+            await page.getByRole("button", {name:new RegExp(title + ".*Imported webpage", "i")}).click();
+            await expect(page.getByRole("button",{name:"Refresh webpage"})).toBeVisible({timeout:10000});
+          });
           await record("knowledge-reference", async () => {
             await go(knowledge);
             await page.getByRole("button", {name:"Add knowledge",exact:true}).first().click();
-            await page.getByText("Website link", {exact:true}).click();
+            await page.getByText("Save link", {exact:true}).click();
             await page.getByLabel("Name", {exact:true}).fill("Newsroom handbook");
             await page.getByLabel("Website address").fill("https://example.com/newsroom");
             await page.getByRole("button", {name:"Add to workspace",exact:true}).click();
@@ -548,12 +624,34 @@ async function run() {
           });
           await record("knowledge-assigned", async () => {
             await go(employeePath + "?tab=knowledge");
-            const assign = page.getByRole("button", {name:/^Assign press guide$/i});
+            const assign = page.getByRole("button", {name:/^Assign press guide \(PDF\)$/i});
             await expect(assign).toBeVisible({timeout:15000});
             await assign.click();
-            await expect(page.getByRole("button", {name:/^Remove assignment for press guide$/i})).toBeVisible({timeout:30000});
+            await expect(page.getByRole("button", {name:/^Remove assignment for press guide \(PDF\)$/i})).toBeVisible({timeout:30000});
             await page.reload({waitUntil:"domcontentloaded"});
-            await expect(page.getByRole("button", {name:/^Remove assignment for press guide$/i})).toBeVisible({timeout:20000});
+            await expect(page.getByRole("button", {name:/^Remove assignment for press guide \(PDF\)$/i})).toBeVisible({timeout:20000});
+          });
+          await record("chat-draft-restored", async () => {
+            await go("/chat?employee=" + encodeURIComponent(worker.id));
+            const draft = page.getByRole("textbox", {name:"Message Ada", exact:true});
+            await draft.fill("Outline the next edition as three talking points.");
+            await page.reload({waitUntil:"domcontentloaded"});
+            await expect(draft).toHaveValue("Outline the next edition as three talking points.", {timeout:10000});
+            await draft.fill("");
+          });
+          await record("task-dispatch-acceptance", async () => {
+            await go("/missions");
+            await page.getByRole("button", {name:"Assign task",exact:true}).click();
+            const dialog = page.getByRole("dialog", {name:"Assign task"});
+            const goal = "Summarize the research draft and flag two open questions.";
+            await dialog.getByLabel("What should they do?").fill(goal);
+            await dialog.getByLabel("Employee").selectOption(worker.id);
+            const submitted = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/api/mission"));
+            await dialog.getByRole("button", {name:"Start task"}).click();
+            const accepted = await submitted;
+            assert(accepted.ok(), "Native task request did not succeed.");
+            await expect(page).toHaveURL(/\/missions\/[^/?]+$/, {timeout:25000});
+            await expect(page.getByText(goal,{exact:true}).first()).toBeVisible({timeout:12000});
           });
           await record("integration-detail", async () => {
             await go("/integrations");
@@ -569,16 +667,23 @@ async function run() {
             const form = page.getByRole("dialog", {name:"Add employee"});
             await form.getByLabel("Start with a role").selectOption("Researcher");
             await form.getByLabel("Name", {exact:true}).fill("Morgan");
-            await form.getByText("Knowledge", {exact:true}).click();
-            const document = form.getByLabel("Document to assign");
-            const option = document.locator("option", {hasText:/press guide/i});
-            await expect(option).toBeAttached({timeout:15000});
-            await document.selectOption(await option.getAttribute("value"));
-            await form.getByText("Abilities", {exact:true}).click();
+            await form.locator("summary").filter({hasText:/^Knowledge/}).click();
+            const document = form.getByRole("checkbox", {name:/press guide.*PDF/i});
+            await expect(document).toBeVisible({timeout:15000});
+            await document.check();
+            await form.locator("summary").filter({hasText:/^Abilities/}).click();
             await form.getByText("Browse abilities", {exact:true}).click();
+            const pickerStarted = performance.now();
             const read = form.getByRole("checkbox", { name: /Read workspace files/ });
             await expect(read).toBeVisible({timeout:12000});
-            await read.check();
+            if (await read.isEnabled()) await read.check();
+            else await expect(read).toBeChecked();
+            const status = form.getByRole("checkbox", { name: /Check current session status/ });
+            await expect(status).toBeVisible();
+            if (await status.isEnabled()) await status.check();
+            timings["hire-preparation"] = Math.round(performance.now() - pickerStarted);
+            await form.locator("summary").filter({hasText:/^Abilities/}).first().click();
+            await form.getByRole("checkbox", {name:/press guide.*DOCX/i}).check();
           });
           await record("native-employee-created", async () => {
             const form = page.getByRole("dialog", {name:"Add employee"});
@@ -592,6 +697,8 @@ async function run() {
             assert(employee && outside, "Expected employees in separate native workspaces.");
             await expect.poll(() => fileFor(employee.id), {timeout:20000}).toMatch(/press-guide/);
             const documentPath = await fileFor(employee.id);
+            const docxPath = (await (await fetch(base + assignments + "?employee=" + encodeURIComponent(employee.id), {headers})).json()).paths.find(value => /library\/docx\/press-guide-/.test(value));
+            assert(docxPath, "DOCX was not assigned alongside the PDF.");
             const denied = await fetch(base + assignments, {
               method:"PATCH", headers, body:JSON.stringify({agentId:outside.id, path:documentPath, selected:true})
             });
@@ -626,6 +733,8 @@ async function run() {
             await ready(base + "/api/auth/status", app);
             nativeClient = connectNative();
             assert.equal(await fileFor(employee.id), documentPath);
+            const restartAssignment = (await (await fetch(base + assignments + "?employee=" + encodeURIComponent(employee.id), {headers})).json()).paths;
+            assert(restartAssignment.includes(docxPath));
             await expect.poll(() => hasProof(employee.id), {timeout:40000}).toBe(true);
             await go("/agents/" + encodeURIComponent(employee.id) + "?tab=knowledge");
             let removal;
@@ -639,9 +748,11 @@ async function run() {
             }, {timeout:20000, intervals:[500,1000,2000]}).toBe(true);
             await expect.poll(() => fileFor(employee.id), {timeout:15000}).toBeUndefined();
             await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(false);
+            const afterRemoval = (await (await fetch(base + assignments + "?employee=" + encodeURIComponent(employee.id), {headers})).json()).paths;
+            assert(afterRemoval.includes(docxPath), "Selective removal discarded a second document.");
             assert(fixture.stats.embeddingCount > 0);
             await writeFile(path.join(output,"native-knowledge.json"),JSON.stringify({
-              import: "PDF text", retrieval: "native memory.search", authorizedTool: "read", chatReadBack: true,
+              import: "PDF and DOCX assigned together; XLSX imported with partial batch recovery", selectiveRemovalPreservedOtherAssignment: true, retrieval: "native memory.search", authorizedTool: "read", chatReadBack: true,
               crossWorkspaceAssignmentDenied: true, differentWorkspaceNotRetrieved: true, staleSourceAssignmentDenied: true,
               persistenceAfterGatewayAndAppRestart: true, retrievedAfterRemoval: false, embeddingRequests: fixture.stats.embeddingCount
             },null,2) + "\n");
@@ -674,7 +785,7 @@ async function run() {
         assert(denied.headers.get("location")?.endsWith("/operator-access"));
         assert(!((await denied.text()).includes("Fieldwork Studio")));
       }
-      for (const route of ["/api/snapshot", "/api/stream", assignmentsApi]) {
+      for (const route of ["/api/snapshot", "/api/stream", assignmentsApi, "/api/openclaw/capabilities?view=guided-abilities"]) {
         const denied = await fetch(base+route, { headers:memberHeaders });
         assert.equal(denied.status, 403);
       }

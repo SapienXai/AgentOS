@@ -324,7 +324,7 @@ export function AgentDetailPageContent({
       />
       <AgentModelPickerDialog open={modelOpen} agentId={agent.id} snapshot={rootSnapshot} onOpenChange={setModelOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} onOpenAddModels={openAddModels} surfaceTheme={surfaceTheme} />
       <AddModelsDialog open={addModelsOpen} onOpenChange={handleAddModelsOpenChange} snapshot={rootSnapshot} initialProvider={modelProviderToConnect} onSnapshotChange={setSnapshot} surfaceTheme={surfaceTheme} />
-      <AgentCapabilityEditorDialog open={capabilityOpen} agentId={agent.id} initialFocus={capabilityFocus} snapshot={rootSnapshot} onOpenChange={setCapabilityOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} surfaceTheme={surfaceTheme} />
+      <AgentCapabilityEditorDialog workforce open={capabilityOpen} agentId={agent.id} initialFocus={capabilityFocus} snapshot={rootSnapshot} onOpenChange={setCapabilityOpen} onSnapshotChange={(updater) => setSnapshot((current) => updater(current))} onRefresh={refresh} surfaceTheme={surfaceTheme} />
       <MissionDispatchDialog open={dispatchOpen} agent={agentView} onOpenChange={setDispatchOpen} onSubmitted={refresh} />
     </>
   );

@@ -7,6 +7,7 @@ import { CreateAgentDialog } from "@/components/mission-control/create-agent-dia
 import {
   AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS
 } from "@/components/mission-control/agent-creation-progress.utils";
+import { usePathname } from "next/navigation";
 import { WorkforceMobileNavigation } from "@/components/mission-control/workforce-mobile-navigation";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
@@ -41,6 +42,7 @@ export type OperationsShellContext = {
   rootSnapshot: MissionControlSnapshot;
   activeWorkspace: WorkspaceRecord | null;
   activeWorkspaceId: string | null;
+  workspaceSelectionReady: boolean;
   connectionState: "connecting" | "live" | "retrying";
   attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
@@ -111,6 +113,7 @@ export function OperationsShell({
   preferredWorkspaceId?: string | null;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
+  const teamPage = usePathname() === "/team";
   const { snapshot, connectionState, hasReceivedLiveSnapshot, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
@@ -424,6 +427,7 @@ export function OperationsShell({
           connectionState={connectionState}
           collapsed={!sidebarExpanded}
           sidebarPinned={isSidebarPinned}
+          hideCreateAgent={teamPage}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -467,8 +471,8 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] w-[min(86vw,292px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 [&_button]:min-h-11 lg:hidden",
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] w-[min(86vw,292px)] overflow-hidden mission-ease-smooth bg-[#050a12] transition-[transform,box-shadow] duration-300 motion-reduce:transition-none [&_button]:min-h-11 lg:hidden",
+          mobileSidebarOpen ? "translate-x-0 shadow-[18px_0_60px_rgba(0,0,0,0.42)]" : "-translate-x-full"
         )}
         aria-hidden={!mobileSidebarOpen}
         inert={!mobileSidebarOpen}
@@ -487,6 +491,7 @@ export function OperationsShell({
           requestedAgentAction={null}
           connectionState={connectionState}
           collapsed={false}
+          hideCreateAgent={teamPage}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -574,6 +579,7 @@ export function OperationsShell({
             rootSnapshot: uiSnapshot,
             activeWorkspace,
             activeWorkspaceId,
+            workspaceSelectionReady: loadedWorkspaceSelectionRoot === snapshot.diagnostics.workspaceRoot,
             connectionState,
             attentionRefreshGeneration,
             surfaceTheme,

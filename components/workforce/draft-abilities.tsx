@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SelectionList } from "@/components/workforce/selection-list";
 import { DRAFT_TOOL_LABELS } from "@/lib/agentos/domains/draft-abilities";
 
 export function abilityName(id: string) {
@@ -26,21 +27,20 @@ export function DraftAbilities({ selected, proposed, onChange }: { selected: str
     return () => abort.abort();
   }, [attempt]);
 
-  const choices = options?.filter(item => !proposed?.includes(item.name));
+  const choices = options;
 
   return (
     <details className="border-t border-border/75 pt-3" onToggle={event => { if (event.currentTarget.open && !attempt) setAttempt(1); }}>
       <summary className="cursor-pointer text-sm font-medium">Browse abilities</summary>
       <div className="mt-2 space-y-1">
         {!options && !error ? <p role="status" className="text-xs text-muted-foreground">Checking what OpenClaw offers…</p> : null}
-        {choices?.map(item => (
-          <label key={item.name} className="workforce-row flex cursor-pointer items-start gap-3 px-2 py-2">
-            <input type="checkbox" className="mt-1 size-4 shrink-0 accent-primary" checked={selected.includes(item.name)}
-              onChange={event => onChange(event.target.checked ? [...selected, item.name] : selected.filter(id => id !== item.name))} />
-            <span><span className="block text-sm font-medium">{abilityName(item.name)}</span><span className="text-xs leading-5 text-muted-foreground">{item.description}</span></span>
-          </label>
-        ))}
-        {choices?.length === 0 && <p className="text-xs text-muted-foreground">No additional abilities are available for guided setup.</p>}
+        {choices && <SelectionList label="Abilities" selected={selected} onChange={onChange}
+          items={choices.map(item => ({
+            id: item.name, label: abilityName(item.name),
+            detail: proposed?.includes(item.name) ? "Already included in this employee’s setup" : item.description,
+            included: proposed?.includes(item.name)
+          }))}
+          empty="No additional abilities are available for guided setup." />}
         {error && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span role="status">The current abilities could not be verified.</span>
           <button type="button" className="min-h-9 text-primary underline" onClick={() => { setError(false); setAttempt(value => value + 1); }}>Try again</button>

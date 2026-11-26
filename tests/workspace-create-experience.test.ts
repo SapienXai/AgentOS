@@ -396,8 +396,9 @@ test("create mode is Blueprint-first and does not enter the legacy Planner", asy
   assert.match(source, /function buildUrlSource\(draft: SourceDraft\)/);
   assert.match(source, /const pendingSourceResult = sourceDraft\.value\.trim\(\) \? buildUrlSource\(sourceDraft\) : null/);
   assert.match(source, /const nextSources = pendingSource \? \[\.\.\.sources, pendingSource\] : sources/);
-  assert.match(source, /formData\.set\("sources", JSON\.stringify\(nextSources\)\)/);
-  assert.match(source, /pollCreationRun\(initial\.runId, controller, initial, nextSources\)/);
+  assert.match(source, /const runSources = setupNoteSource \? \[\.\.\.nextSources, setupNoteSource\] : nextSources/);
+  assert.match(source, /formData\.set\("sources", JSON\.stringify\(runSources\)\)/);
+  assert.match(source, /pollCreationRun\(initial\.runId, controller, initial, runSources\)/);
   assert.match(source, /Why this agent/);
   assert.match(source, /Sources analyzed/);
   assert.match(source, /Trigger:/);

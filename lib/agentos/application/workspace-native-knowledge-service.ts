@@ -1,11 +1,11 @@
 import "server-only";
 
 import path from "node:path";
-import { isAssignableDocument } from "@/lib/agentos/domains/knowledge-import-formats";
+import { isAssignableDocument, MAX_KNOWLEDGE_ASSIGNMENT_CHANGES, type KnowledgeAssignmentChange } from "@/lib/agentos/domains/knowledge-import-formats";
 import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
 import { isLoopbackHost } from "@/lib/security/local-operator";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
-import { readWorkspaceManagedFile } from "@/lib/openclaw/application/workspace-file-service";
+import { readWorkspaceManagedFileForPath } from "@/lib/openclaw/application/workspace-file-service";
 
 import {
   readKnowledgeSnapshot,
@@ -153,10 +153,22 @@ export async function readEmployeeDocumentAssignments(input: {
   commandOptions?: OpenClawCommandOptions;
   adapter?: OpenClawAdapter;
 }) {
-  const state = await readEmployeeDocumentAssignmentState(input);
-  return state.paths.flatMap((item) => {
-    const path = typeof item === "string" ? item : item.pattern ? null : item.path;
-    return path && isAssignableDocument(path) ? [path] : [];
+  return getAssignedDocuments((await readEmployeeDocumentAssignmentState(input)).paths);
+}
+
+export async function readDocumentEmployeeAssignments(workspaceId: string, document: string, options?: OpenClawCommandOptions) {
+  if (!isAssignableDocument(document)) throw new Error("Choose a managed Markdown document.");
+  if (!isLoopbackHost(new URL(resolveGatewayUrl()).host)) throw new Error("Document assignments require a local OpenClaw workspace.");
+  const snapshot = await getMissionControlSnapshot({ includeHidden: true });
+  const workspace = snapshot.workspaces.find(item => item.id === workspaceId);
+  if (!workspace?.path) throw new Error("Choose a workspace.");
+  const native = await readNativeConfigSnapshot(getOpenClawAdapter(), options);
+  const entries = readNativeAgentEntries(native.config ?? {});
+  return snapshot.agents.flatMap(agent => {
+    if (agent.workspaceId !== workspaceId || !agent.workspacePath || path.resolve(agent.workspacePath) !== path.resolve(workspace.path)) return [];
+    const entry = entries[agent.id];
+    if (!isRecord(entry) || typeof entry.workspace !== "string" || path.resolve(entry.workspace) !== path.resolve(agent.workspacePath)) return [];
+    return [{ id: agent.id, selected: getAssignedDocuments(readNativeExtraPaths(entry, agent.id)).includes(document) }];
   });
 }
 
@@ -168,28 +180,64 @@ export async function assignEmployeeDocument(input: {
   commandOptions?: OpenClawCommandOptions;
   adapter?: OpenClawAdapter;
 }) {
-  if (!isAssignableDocument(input.path)) throw new Error("Choose a Markdown document in this workspace. References and JSON cannot be assigned to memory search.");
-  const state = await readEmployeeDocumentAssignmentState(input);
-  if (input.selected) {
-    const source = await readWorkspaceManagedFile({ workspaceId: input.workspaceId, path: input.path });
-    if (!source.file.exists || source.file.path !== input.path) throw new Error("This document is no longer available.");
+  return assignEmployeeDocuments({ ...input, changes: [{ path: input.path, selected: input.selected }] });
+}
+
+export async function assignEmployeeDocuments(input: {
+  workspaceId: string;
+  agentId: string;
+  changes: readonly KnowledgeAssignmentChange[];
+  commandOptions?: OpenClawCommandOptions;
+  adapter?: OpenClawAdapter;
+}) {
+  if (!input.changes.length || input.changes.length > MAX_KNOWLEDGE_ASSIGNMENT_CHANGES) {
+    throw new Error("Review up to 32 document assignment changes at a time.");
   }
-  const matches = (entry: NativeMemoryExtraPath) => typeof entry === "string"
-    ? entry === input.path : entry.path === input.path && !entry.pattern;
-  if (state.paths.some(matches) === input.selected) return { status: "configured" as const };
+  const changes = new Map(input.changes.map(change => [change.path, change.selected]));
+  if (changes.size !== input.changes.length || [...changes.keys()].some(path => !isAssignableDocument(path))) {
+    throw new Error("Choose distinct Markdown documents in this workspace. References and JSON cannot be assigned to memory search.");
+  }
+  const state = await readEmployeeDocumentAssignmentState(input);
+  const before = new Set(getAssignedDocuments(state.paths));
+  const additions = [...changes].flatMap(([path, selected]) => selected && !before.has(path) ? [path] : []);
+  // Read and validate each new managed path from the reviewed native workspace.
+  // Keeping this sequential bounds file reads and avoids a new snapshot per file.
+  for (const path of additions) {
+    const source = await readWorkspaceManagedFileForPath(state.workspacePath, path);
+    if (!source.file.exists || source.file.path !== path) throw new Error("A selected document is no longer available. Refresh the library and try again.");
+  }
+  const remaining = state.paths.filter(entry => changes.get(exactDocumentPath(entry) ?? "") !== false);
+  const next = [...remaining, ...additions.map(path => ({ path }))];
+  if (jsonValuesEqual(next, state.paths)) return { status: "configured" as const, paths: [...before] };
   if (!state.hash) throw new Error("OpenClaw did not provide a config revision. Refresh before trying again.");
-  const next = input.selected ? [...state.paths, { path: input.path }] : state.paths.filter(entry => !matches(entry));
   const result = readConfigMutation(await state.adapter.setConfig(state.configPath, next, {
     ...input.commandOptions,
     baseHash: state.hash,
     strictJson: true,
     // Gateway protects shrinking arrays. Explicitly replace only this employee's
     // extraPaths, using the exact previous revision and preserving other entries.
-    ...(!input.selected ? { replacePaths: [state.replacementPath] } : {})
+    ...(remaining.length < state.paths.length ? { replacePaths: [state.replacementPath] } : {})
   }));
-  if (result.pending || result.restartRequired) return { status: "pending" as const };
+  if (result.pending || result.restartRequired) return { status: "pending" as const, paths: [...before] };
+
   const confirmed = await readEmployeeDocumentAssignmentState(input);
-  return { status: confirmed.paths.some(matches) === input.selected ? "configured" as const : "pending" as const };
+  const paths = getAssignedDocuments(confirmed.paths);
+  const actual = new Set(paths);
+  return {
+    status: [...changes].every(([path, selected]) => actual.has(path) === selected) ? "configured" as const : "pending" as const,
+    paths
+  };
+}
+
+function exactDocumentPath(entry: NativeMemoryExtraPath) {
+  return typeof entry === "string" ? entry : entry.pattern ? null : entry.path;
+}
+
+function getAssignedDocuments(entries: readonly NativeMemoryExtraPath[]) {
+  return [...new Set(entries.flatMap(entry => {
+    const path = exactDocumentPath(entry);
+    return path && isAssignableDocument(path) ? [path] : [];
+  }))];
 }
 
 async function readEmployeeDocumentAssignmentState(input: {
@@ -201,7 +249,8 @@ async function readEmployeeDocumentAssignmentState(input: {
   if (!isLoopbackHost(new URL(resolveGatewayUrl()).host)) throw new Error("Document assignment requires a local OpenClaw workspace.");
   const snapshot = await getMissionControlSnapshot({ includeHidden: true });
   const agent = snapshot.agents.find(item => item.id === input.agentId && item.workspaceId === input.workspaceId);
-  if (!agent?.workspacePath) throw new Error("Choose an employee in this workspace.");
+  const workspace = snapshot.workspaces.find(item => item.id === input.workspaceId);
+  if (!agent?.workspacePath || !workspace?.path || path.resolve(workspace.path) !== path.resolve(agent.workspacePath)) throw new Error("Choose an employee in this workspace.");
   const adapter = input.adapter ?? getOpenClawAdapter();
   const native = await readNativeConfigSnapshot(adapter, input.commandOptions);
   const entry = readNativeAgentEntries(native.config ?? {})[agent.id];
@@ -209,7 +258,7 @@ async function readEmployeeDocumentAssignmentState(input: {
     throw new Error("OpenClaw did not confirm this employee’s workspace.");
   }
   return {
-    adapter, configPath: buildWorkspaceNativeKnowledgeConfigPath(agent.id),
+    adapter, workspacePath: agent.workspacePath, configPath: buildWorkspaceNativeKnowledgeConfigPath(agent.id),
     replacementPath: `agents.entries.${normalizeAgentId(agent.id)}.memory.search.extraPaths`,
     paths: readNativeExtraPaths(entry, agent.id), hash: native.hash ?? native.configRevisionHash ?? native.appliedConfigHash
   };

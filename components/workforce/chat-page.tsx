@@ -91,9 +91,13 @@ function ChatPageContent({ snapshot, rootSnapshot, activeWorkspaceId, surfaceThe
                 <h2 ref={heading} tabIndex={-1} className="truncate text-base font-semibold outline-none">{conversationTitle}</h2>
                 <Link href={`/agents/${encodeURIComponent(employee.id)}`} className="text-xs font-medium text-muted-foreground hover:underline">{employee.workerProfile?.employment.role || "Employee"} · Profile</Link>
               </div>
+              <div className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
+                <Link href={`/agents/${encodeURIComponent(employee.id)}?tab=knowledge`} className="hover:underline">Knowledge</Link>
+                <Link href={`/agents/${encodeURIComponent(employee.id)}?tab=capabilities`} className="hover:underline">Abilities</Link>
+              </div>
             </header>
             <div className="min-h-0 flex-1">
-              <AgentChatDrawer agent={employee} snapshot={rootSnapshot} isVisible surface="transparent"
+              <AgentChatDrawer agent={employee} snapshot={rootSnapshot} isVisible surface="transparent" draftWorkspaceId={employee.workspaceId}
                 onRefresh={refresh} onSnapshotChange={setSnapshot} onConnectModelProvider={setProvider} />
             </div>
           </>

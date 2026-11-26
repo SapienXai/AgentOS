@@ -483,12 +483,12 @@ export function ModelStage({
             </>
           ) : (
             <>
-              <ModelDefaultSummary
+              {(defaultModelLabel || hasPendingModelSwitch) && <ModelDefaultSummary
                 surfaceTheme={surfaceTheme}
                 defaultModelLabel={defaultModelLabel}
                 switchTargetLabel={switchTargetLabel}
                 hasPendingModelSwitch={hasPendingModelSwitch}
-              />
+              />}
 
               <OpenClawOnboardingProviderFlow
                 snapshot={effectiveSnapshot}
@@ -598,22 +598,15 @@ function ConnectAiStage({
         chatGptBrowserAuth ? "min-h-[220px] py-5 sm:min-h-[250px] sm:py-6" : "min-h-[320px] py-8"
       )}
     >
-      <p
-        className={cn(
-          "text-[8px] uppercase tracking-[0.2em]",
-          surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500"
-        )}
-      >
-        {chatGptBrowserAuth ? "ChatGPT sign-in" : null}
-      </p>
-      <h2 className={cn("mt-2 text-[22px] font-medium tracking-[-0.02em]", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
+      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
         {showModelSelection ? connectedTitle : chatGptBrowserAuth ? "Sign in to continue" : "Connect your AI"}
       </h2>
-      <p className={cn("mt-2 max-w-[420px] text-[12px] leading-5", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
+      <p className={cn("mt-2 max-w-[420px] text-sm leading-6", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
         {showModelSelection
           ? isLocalOllamaSelected
             ? "Your local Ollama runtime is connected. Select a model or continue with the current default."
-            : "Your ChatGPT account is connected. Select a model or continue with the current default."
+            : connectedTitle === "ChatGPT connected" ? "Select a model or continue with your current ChatGPT default."
+              : "Select a model or continue with your current default."
           : chatGptBrowserAuth
             ? "Complete sign-in in the browser, then return here."
             : isLocalOllamaSelected
@@ -690,7 +683,7 @@ function ConnectAiStage({
                   onChange={(event) => setRedirectUrl(event.target.value)}
                   placeholder="http://localhost:1455/auth/callback?..."
                   className={cn(
-                    "mt-2 h-8 w-full rounded-md border bg-transparent px-2.5 text-[10px] outline-none",
+                    "mt-2 min-h-11 w-full rounded-md border bg-transparent px-2.5 text-base outline-none sm:text-sm",
                     surfaceTheme === "light"
                       ? "border-sky-300 bg-white placeholder:text-sky-900/35 focus:border-sky-500"
                       : "border-sky-200/25 placeholder:text-sky-100/35 focus:border-sky-200/60"
@@ -703,7 +696,7 @@ function ConnectAiStage({
                     setRedirectUrl("");
                   }}
                   disabled={!redirectUrl.trim()}
-                  className="mt-2 h-8 w-full rounded-md text-[10px]"
+                  className="mt-2 min-h-11 w-full rounded-md text-sm"
                 >
                   Finish sign-in
                 </Button>
@@ -765,7 +758,7 @@ function ConnectAiStage({
               type="button"
               onClick={() => onConnectChatGPT(isError)}
               disabled={isBusy}
-              className="chatgpt-connect-button group relative mt-6 h-10 min-w-[220px] overflow-hidden rounded-md border border-slate-200/90 !bg-white !px-4 text-[12px] font-semibold !text-slate-900 !shadow-[0_2px_0_rgba(15,23,42,0.12),0_8px_18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-y-0.5 hover:!bg-white hover:!shadow-[0_3px_0_rgba(15,23,42,0.12),0_10px_22px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] active:translate-y-[1px] focus-visible:ring-slate-400/70 focus-visible:ring-offset-2 disabled:hover:translate-y-0"
+              className="chatgpt-connect-button group relative mt-6 min-h-11 min-w-[220px] overflow-hidden rounded-md border border-slate-200/90 !bg-white !px-4 text-[12px] font-semibold !text-slate-900 !shadow-[0_2px_0_rgba(15,23,42,0.12),0_8px_18px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-y-0.5 hover:!bg-white hover:!shadow-[0_3px_0_rgba(15,23,42,0.12),0_10px_22px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] active:translate-y-[1px] focus-visible:ring-slate-400/70 focus-visible:ring-offset-2 disabled:hover:translate-y-0"
             >
               <span className="relative z-10 inline-flex items-center gap-2">
                 <ProviderLogo provider="openai" className="h-5 w-5 rounded-md border-slate-200/80 bg-white" />
@@ -779,7 +772,7 @@ function ConnectAiStage({
               onClick={onUseAnotherProvider}
               disabled={isBusy}
               className={cn(
-                "group relative mt-6 h-10 min-w-[220px] rounded-md border px-4 text-[12px] font-semibold",
+                "group relative mt-6 min-h-11 min-w-[220px] rounded-md border px-4 text-[12px] font-semibold",
                 surfaceTheme === "light"
                   ? "border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100"
                   : "border-violet-300/25 bg-violet-300/10 text-violet-100 hover:bg-violet-300/15"

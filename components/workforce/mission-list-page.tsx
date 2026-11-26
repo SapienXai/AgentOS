@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Bot, Loader2, Plus, Search } from "lucide-react";
 
@@ -45,6 +46,7 @@ export function MissionListPage({
   surfaceTheme: "light" | "dark";
   view: TaskView;
 }) {
+  const router = useRouter();
   const [payload, setPayload] = useState(initial);
   const [search, setSearch] = useState("");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -122,9 +124,9 @@ export function MissionListPage({
       </div>
 
       {(view === "all" || view === "needs-you") && sections.needsYou.length > 0 ? <MissionSection title="Needs you" detail="These tasks need an operator decision or recovery." missions={sections.needsYou} tone="warning" /> : null}
-      {showingActive && sections.active.length > 0 ? <MissionSection title="Active" detail="Current task state follows confirmed OpenClaw runtime evidence." missions={sections.active} tone="info" /> : null}
-      {showingActive && sections.queued.length > 0 ? <MissionSection title="Queued" detail="Tasks admitted and waiting for runtime start." missions={sections.queued} tone="purple" /> : null}
-      {showingCompleted && sections.history.length > 0 ? <MissionSection title="History" detail="Completed and cancelled tasks remain available with their captured evidence." missions={sections.history} tone="muted" /> : null}
+      {showingActive && sections.active.length > 0 ? <MissionSection title="In progress" detail="Work your team is carrying out." missions={sections.active} tone="info" /> : null}
+      {showingActive && sections.queued.length > 0 ? <MissionSection title="Queued" detail="Accepted tasks waiting to start." missions={sections.queued} tone="purple" /> : null}
+      {showingCompleted && sections.history.length > 0 ? <MissionSection title="History" detail="Review results from completed and cancelled tasks." missions={sections.history} tone="muted" /> : null}
 
       {displayedTaskCount === 0 && !loading && !loadError && view !== "needs-you" ? (
         <EmptyState title={view === "all" && !search ? "No tasks yet" : "No tasks match"}
@@ -137,8 +139,8 @@ export function MissionListPage({
         snapshot={snapshot}
         activeWorkspaceId={activeWorkspaceId}
         onSubmitted={async (missionId) => {
-          await refresh();
-          window.location.assign(`/missions/${encodeURIComponent(missionId)}`);
+          router.push(`/missions/${encodeURIComponent(missionId)}`);
+          void refresh().catch(() => undefined);
         }}
       />
     </div>
@@ -230,6 +232,8 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
     setError(null);
   }, [open]);
 
+  const assignee = agentId || (eligibleAgents.length === 1 ? eligibleAgents[0].id : "");
+
   async function submit() {
     const mission = goal.trim();
     if (!mission) {
@@ -240,13 +244,13 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
       setError("Select an available agent in the current workspace.");
       return;
     }
-    if (!agentId || !eligibleAgents.some((agent) => agent.id === agentId)) {
+    if (!assignee || !eligibleAgents.some((agent) => agent.id === assignee)) {
       setError("Choose an employee for this task.");
       return;
     }
     if (submitting) return;
-    if (request.current?.goal !== mission || request.current.agentId !== agentId) {
-      request.current = { goal: mission, agentId, id: `task:${crypto.randomUUID()}` };
+    if (request.current?.goal !== mission || request.current.agentId !== assignee) {
+      request.current = { goal: mission, agentId: assignee, id: `task:${crypto.randomUUID()}` };
     }
     setSubmitting(true);
     setError(null);
@@ -257,8 +261,8 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
         body: JSON.stringify({
           mission,
           requestId: request.current.id,
-          agentId,
-          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === agentId)?.workspaceId
+          agentId: assignee,
+          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === assignee)?.workspaceId
         })
       });
       const result = (await response.json()) as { dispatchId?: string; error?: string };
@@ -283,23 +287,23 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
         <form id="workforce-assign-task" className="space-y-4 py-1" onSubmit={event => { event.preventDefault(); void submit(); }}>
           <div>
             <Label htmlFor="mission-goal">What should they do?</Label>
-            <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-sm" disabled={submitting} />
+            <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-base sm:text-sm" disabled={submitting} />
           </div>
           <div>
             <Label htmlFor="mission-agent">Employee</Label>
-            <select id="mission-agent" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <select id="mission-agent" value={assignee} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-base text-foreground sm:text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
               <option value="">Choose an employee</option>
               {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
             <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only employees in the current workspace are available here.</p>
           </div>
-          {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>OpenClaw is not fully ready. Start will validate the live Gateway before creating runtime work.</span></div> : null}
+          {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>AI runtime needs attention. Starting a task checks the connection first.</span></div> : null}
           {error ? <p className="text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}</p> : null}
           <Link className="inline-flex min-h-10 items-center text-sm font-medium text-primary hover:underline" href="/missions?view=scheduled">Set up recurring work</Link>
         </form>
         <DialogFooter className="gap-2 sm:justify-end">
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button type="submit" form="workforce-assign-task" disabled={submitting || eligibleAgents.length === 0 || !agentId}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
+          <Button type="submit" form="workforce-assign-task" disabled={submitting || eligibleAgents.length === 0 || !assignee}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

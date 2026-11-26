@@ -282,22 +282,55 @@ async function runScale(agentCount, sessionCount, browser) {
     const warm = await Promise.all(browserContexts.map(render));
     const calculateDomUpdates = async () => {
       const samples = [];
+      const admission = [];
       let missed = 0;
       for (let index = 0; index < browserUpdateCount; index++) {
         const label = `Benchmark agent update ${index + 1}`;
+        await Promise.all(warm.map(({ page }) => page.evaluate(expected => {
+          window.agentOsUpdate?.observer.disconnect();
+          const update = { observedAt: null, observer: null };
+          const inspect = () => {
+            const node = document.querySelector(`.react-flow__node-agent [aria-label="${expected}"]`)?.closest(".react-flow__node-agent");
+            const action = node?.querySelector(`button[aria-label="Message ${expected}"]`);
+            const bounds = node?.getBoundingClientRect();
+            if (!action || action.disabled || !bounds || bounds.right <= 0 || bounds.bottom <= 0 ||
+              bounds.top >= innerHeight || bounds.left >= innerWidth) return;
+            update.observedAt = performance.timeOrigin + performance.now();
+            update.observer.disconnect();
+          };
+          update.observer = new MutationObserver(inspect);
+          update.observer.observe(document, { childList: true, attributes: true, attributeFilter: ["aria-label", "disabled"], subtree: true });
+          window.agentOsUpdate = update;
+        }, label)));
         const started = performance.now();
         await client.callNative("agents.update", { agentId: "main", name: label }, { safety: "mutation", timeoutMs: 12_000 });
+        const agentAck = performance.now();
         // Wake the existing snapshot subscription with the same native session
         // event used in the stream workload. Observe the new roster name in the DOM.
         await client.callNative("sessions.patch", { key: keys[0], label }, { safety: "mutation", timeoutMs: 12_000 });
-        const visible = await Promise.allSettled(warm.map(({ page }) =>
+        const eventAck = performance.now();
+        const both = Promise.allSettled(warm.map(({ page }) =>
           page.getByText(label, { exact: true }).first().waitFor({ timeout: 5000 })
-        ));
-        if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
-        else missed++;
+        )).then(visible => {
+          if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
+          else missed++;
+        });
+        const actionable = await Promise.all(warm.map(async ({ page }) => {
+          try {
+            const mark = await page.waitForFunction(() => window.agentOsUpdate?.observedAt, undefined, { timeout: 5000 });
+            return (await mark.jsonValue()) - performance.timeOrigin;
+          } catch { return null; }
+        }));
+        await both;
+        admission.push({
+          agentRpcMs: Number((agentAck - started).toFixed(1)),
+          eventRpcMs: Number((eventAck - agentAck).toFixed(1)),
+          actionableMs: actionable.map(time => time === null ? null : Number((time - started).toFixed(1))),
+          postRpcActionableMs: actionable.map(time => time === null ? null : Number((time - eventAck).toFixed(1)))
+        });
       }
       return { samples: samples.length, missed, medianMs: percentile(samples, .50), p95Ms: percentile(samples, 0.95),
-        worstMs: samples.length ? Math.max(...samples) : null, timingsMs: samples.map((value) => Number(value.toFixed(1))) };
+        worstMs: samples.length ? Math.max(...samples) : null, timingsMs: samples.map((value) => Number(value.toFixed(1))), admission };
     };
     const streams = await Promise.all(rawStreams.map((query) =>
       watchStream(appUrl + "/api/stream" + query, headers, signal.signal)

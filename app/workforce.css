@@ -195,3 +195,38 @@
 
 .workforce-source-preview pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .workforce-source-preview pre code { white-space: inherit; }
+
+.workforce-hire-layout {
+  display: grid;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--workforce-line);
+}
+.workforce-hire-preview {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .workforce-hire-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 2rem; }
+}
+
+.workforce-library .workforce-row > button:first-child { min-block-size: 4.5rem; }
+.workforce-source-icon { background: var(--workforce-inset); color: hsl(var(--foreground) / .8); }
+
+.workforce-main .workforce-directory-card {
+  align-content: start;
+  gap: 1rem;
+  padding: 1.125rem;
+}
+.workforce-directory-card .workforce-person-work { min-block-size: 4.25rem; }
+.workforce-app-tile { min-block-size: 13rem; }
+.workforce-app-tile > div:last-child { margin-top: auto; }
+
+.workforce-hire-fields { display: grid; gap: 1rem; }
+@media (min-width: 640px) {
+  .workforce-hire-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .workforce-hire-fields > :last-child { grid-column: 1 / -1; }
+}

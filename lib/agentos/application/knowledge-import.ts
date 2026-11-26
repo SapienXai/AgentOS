@@ -20,6 +20,8 @@ let activePdfImports = 0;
 const mimeTypes: Record<KnowledgeImportFormat, string[]> = {
   md: ["text/markdown", "text/plain"], txt: ["text/plain"], csv: ["text/csv", "text/plain", "application/vnd.ms-excel"],
   json: ["application/json", "text/plain"], pdf: ["application/pdf"],
+  yaml: ["application/yaml", "application/x-yaml", "text/yaml", "text/plain"], toml: ["application/toml", "text/plain"],
+  html: ["text/html", "text/plain"], xml: ["application/xml", "text/xml", "text/plain"],
   docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
 };
@@ -45,7 +47,7 @@ function checkText(text: string) {
 }
 
 export function prepareKnowledgeEntry(
-  title: string, content: string, kind: KnowledgeImportFormat | "note" | "reference"
+  title: string, content: string, kind: KnowledgeImportFormat | "note" | "reference" | "web"
 ) {
   const label = documentName(title);
   if (!label) throw new Error("Enter a name for this source.");
@@ -67,11 +69,25 @@ export function prepareKnowledgeReference(title: string, address: string) {
   return prepareKnowledgeEntry(title, `# ${documentName(title)}\n\n<${url.href}>\n`, "reference");
 }
 
+export function prepareWebKnowledge(page: { title: string; url: string; text: string }) {
+  const title = documentName(page.title);
+  const origin = new URL(page.url);
+  const reference = prepareKnowledgeReference(title, origin.href);
+  return prepareKnowledgeEntry(title, reference.content + "\n" + page.text, "web");
+}
+
+export function getKnowledgeReviewDigest(entry: { title: string; content: string }) {
+  return createHash("sha256").update(entry.title).update("\0").update(entry.content).digest("hex");
+}
+
 export async function prepareKnowledgeDocument(file: File, signal?: AbortSignal) {
   if (!file.size || file.size > KNOWLEDGE_IMPORT_INPUT_BYTES) throw new Error("Choose a file between 1 byte and 4 MiB.");
-  const extension = file.name.split(".").at(-1)?.toLowerCase();
-  const format = KNOWLEDGE_IMPORT_FORMATS.find(value => value === extension);
-  if (!format || !file.name.includes(".")) throw new Error("This file format is unavailable for import.");
+  const extensionAt = file.name.lastIndexOf(".");
+  const extension = extensionAt > 0 ? file.name.slice(extensionAt + 1).toLowerCase() : "";
+  const alias = extension === "markdown" ? "md" : extension === "htm" ? "html" : extension === "yml" ? "yaml" :
+    !extension && /^(readme|makefile)$/i.test(file.name) ? "txt" : extension;
+  const format = KNOWLEDGE_IMPORT_FORMATS.find(value => value === alias);
+  if (!format) throw new Error("This file format is unavailable for import.");
   if (file.type && file.type !== "application/octet-stream" && !mimeTypes[format].includes(file.type)) {
     throw new Error("The file type does not match its extension.");
   }
@@ -92,7 +108,7 @@ export async function prepareKnowledgeDocument(file: File, signal?: AbortSignal)
     if (format === "csv" && text.split("\n").length > maxRows + 1) throw new Error("The CSV exceeds 1,000 lines. Split the table and try again.");
   }
   checkText(text);
-  const title = file.name.slice(0, file.name.lastIndexOf("."));
+  const title = extensionAt > 0 ? file.name.slice(0, extensionAt) : file.name;
   if (format === "md" || format === "json") return prepareKnowledgeEntry(title, text, format);
   // Fence imported text so it remains reference material when presented as Markdown.
   const longestFence = (text.match(/`{3,}/g) ?? []).reduce((length, run) => Math.max(length, run.length), 2);

@@ -133,6 +133,7 @@ type MissionSidebarProps = {
   connectionState: "connecting" | "live" | "retrying";
   collapsed: boolean;
   sidebarPinned?: boolean;
+  hideCreateAgent?: boolean;
   modelManager: {
     runState: "idle" | "running" | "success" | "error";
     statusMessage: string | null;
@@ -217,6 +218,7 @@ export function MissionSidebar({
   connectionState,
   collapsed,
   sidebarPinned = false,
+  hideCreateAgent = false,
   onExpandCollapsed,
   onToggleCollapsed,
   onToggleTheme,
@@ -571,6 +573,7 @@ export function MissionSidebar({
           onAgentCreatedVisible={onAgentCreatedVisible}
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
           operatorProfile={operatorProfile}
+          hideCreateAgent={hideCreateAgent}
         />
       ) : (
         <aside
@@ -611,7 +614,7 @@ export function MissionSidebar({
                 onSnapshotChange={onSnapshotChange}
               />
 
-              <SidebarCreateAgentAction
+              {!hideCreateAgent && <SidebarCreateAgentAction
                 snapshot={snapshot}
                 activeWorkspaceId={activeWorkspace?.id ?? null}
                 pendingCreatedAgents={pendingCreatedAgents}
@@ -621,7 +624,7 @@ export function MissionSidebar({
                 onAgentCreationPending={onAgentCreationPending}
                 onAgentCreatedVisible={onAgentCreatedVisible}
                 onOpenCreateAgent={onOpenCreateAgent}
-              />
+              />}
             </div>
 
             <nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
@@ -2670,7 +2673,8 @@ function CollapsedSidebar({
   onAgentCreatedVisible,
   onOpenCreateAgent,
   onExpandCollapsed,
-  operatorProfile
+  operatorProfile,
+  hideCreateAgent
 }: {
   pathname: string;
   surfaceTheme: "dark" | "light";
@@ -2687,6 +2691,7 @@ function CollapsedSidebar({
   onOpenCreateAgent?: () => void;
   onExpandCollapsed: () => void;
   operatorProfile: OperatorProfileSummary;
+  hideCreateAgent: boolean;
 }) {
   return (
     <aside className="agentos-sidebar-surface relative flex h-full w-full flex-col items-center overflow-hidden border-r border-border bg-card px-1 py-4 text-card-foreground shadow-panel">
@@ -2723,7 +2728,7 @@ function CollapsedSidebar({
         </button>
       </RailTooltip>
 
-      <RailTooltip label="Add employee" side="right" surfaceTheme={surfaceTheme}>
+      {!hideCreateAgent && <RailTooltip label="Add employee" side="right" surfaceTheme={surfaceTheme}>
         <SidebarCreateAgentAction
           snapshot={snapshot}
           activeWorkspaceId={activeWorkspaceId}
@@ -2736,7 +2741,7 @@ function CollapsedSidebar({
           onAgentCreatedVisible={onAgentCreatedVisible}
           onOpenCreateAgent={onOpenCreateAgent}
         />
-      </RailTooltip>
+      </RailTooltip>}
 
       <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto pb-2 overscroll-contain">
         {sidebarSections.map((section) => (

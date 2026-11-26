@@ -6,6 +6,7 @@ import { ArrowRight, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { SelectionList } from "@/components/workforce/selection-list";
 import { DraftAbilities, abilityName } from "@/components/workforce/draft-abilities";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import type { WorkspaceBlueprint, WorkspaceEmployeeDraftEdit } from "@/lib/agentos/domains/workspace-blueprint";
@@ -97,15 +98,11 @@ export function SuggestedTeamReview({ blueprint, busy, customizeWorkspace, onSav
                 <fieldset className="space-y-2">
                   <legend className="text-sm font-medium">Shared sources to consult</legend>
                   <p className="text-xs text-muted-foreground">Selections become working guidance. All workspace members retain their existing access.</p>
-                  {blueprint.knowledge.sources.map(source => {
-                    const selected = employee.knowledgeSourceIds ?? [];
-                    return <label key={source.id} className="flex min-h-10 items-center gap-2 text-sm">
-                      <input type="checkbox" checked={selected.includes(source.id)} onChange={event => edit(employee.id, {
-                        knowledgeSourceIds: event.target.checked ? [...selected, source.id] : selected.filter(id => id !== source.id)
-                      })} />
-                      {source.label} <span className="text-xs text-muted-foreground">{source.status === "ready" ? "Source prepared" : "Reference or pending setup"}</span>
-                    </label>;
-                  })}
+                  <SelectionList label="Proposed employee sources" selected={employee.knowledgeSourceIds ?? []}
+                    onChange={knowledgeSourceIds => edit(employee.id, { knowledgeSourceIds })}
+                    empty="No shared sources were attached."
+                    items={blueprint.knowledge.sources.map(source => ({ id: source.id, label: source.label,
+                      detail: source.status === "ready" ? "Source prepared" : "Reference or pending setup" }))} />
                 </fieldset>
               ) : null}
               <fieldset className="space-y-2">

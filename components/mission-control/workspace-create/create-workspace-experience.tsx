@@ -41,6 +41,8 @@ import {
   readWorkspaceCreationMinimizedRunId
 } from "@/components/mission-control/workspace-creation-activity";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/sonner";
+import { deferredSetupDocumentsKey, KNOWLEDGE_IMPORT_ACCEPT } from "@/lib/agentos/domains/knowledge-import-formats";
 import { Button } from "@/components/ui/button";
 import { ClawHubTemplateCatalog } from "@/components/mission-control/workspace-create/clawhub-template-catalog";
 import { WORKSPACE_CREATION_PROFILES, normalizeWorkspaceCreationProfile, type WorkspaceCreationDepth } from "@/lib/agentos/domains/workspace-creation-policy";
@@ -213,6 +215,8 @@ export function CreateWorkspaceExperience({
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
   const [sourceStates, setSourceStates] = useState<Record<string, ContextSourceState>>({});
   const [uploadGroups, setUploadGroups] = useState<UploadGroup[]>([]);
+  const [reattachNames, setReattachNames] = useState<string[]>([]);
+  const [setupNote, setSetupNote] = useState("");
   const [draftContextId, setDraftContextId] = useState<string | null>(null);
   const [materialization, setMaterialization] = useState<WorkspaceMaterialization>({ mode: "empty" });
   const [stage, setStage] = useState<CreateStage>("intake");
@@ -334,7 +338,12 @@ export function CreateWorkspaceExperience({
     try {
       const raw = sessionStorage.getItem(firstWorkspaceDraftKey);
       if (raw) {
-        const saved = JSON.parse(raw) as { name?: unknown; brief?: unknown; manual?: unknown; team?: FirstEmployeeDraft[] };
+        const saved = JSON.parse(raw) as { name?: unknown; brief?: unknown; manual?: unknown; team?: FirstEmployeeDraft[]; filenames?: unknown[]; note?: unknown; website?: unknown };
+        if (Array.isArray(saved.filenames)) {
+          setReattachNames(saved.filenames.filter((name): name is string => typeof name === "string").slice(0, 12));
+        }
+        if (typeof saved.note === "string") setSetupNote(saved.note.slice(0, 1800));
+        if (typeof saved.website === "string") setSourceDraft({kind: "website", value: saved.website});
         if (typeof saved.name === "string") setFirstName(saved.name.slice(0, 80));
         if (typeof saved.brief === "string") setBrief(saved.brief.slice(0, 3000));
         if (Array.isArray(saved.team) && saved.team.length && saved.team.every(person =>
@@ -352,16 +361,26 @@ export function CreateWorkspaceExperience({
   useEffect(() => {
     if (!firstWorkspace || !open || !draftLoaded || stage !== "intake" || (!firstName && !brief)) return;
     try {
+      const website = (() => {
+        try {
+          const address = new URL(sourceDraft.value);
+          return ["http:", "https:"].includes(address.protocol) && !address.search && !address.username && !address.password &&
+            redactSecretText(address.href) === address.href ? address.href.slice(0, 4096) : undefined;
+        } catch { return undefined; }
+      })();
       sessionStorage.setItem(firstWorkspaceDraftKey, JSON.stringify({
         name: redactSecretText(firstName),
         brief: redactSecretText(brief),
         manual: manualReview,
+        note: redactSecretText(setupNote),
+        website,
+        filenames: [...new Set([...reattachNames, ...uploadGroups.flatMap(group => group.files.map(file => redactSecretText(file.name).slice(0, 200)))])].slice(0, 12),
         team: manualTeam.map(person => ({ id: person.id, name: redactSecretText(person.name), role: redactSecretText(person.role) }))
       }));
     } catch {
       // The workspace flow also works when a browser disallows session storage.
     }
-  }, [brief, draftLoaded, firstName, firstWorkspace, manualReview, manualTeam, open, stage]);
+  }, [brief, draftLoaded, firstName, firstWorkspace, manualReview, manualTeam, open, reattachNames, setupNote, sourceDraft.value, stage, uploadGroups]);
 
   const resetCreationState = () => {
     abortControllerRef.current?.abort();
@@ -376,6 +395,8 @@ export function CreateWorkspaceExperience({
       try { sessionStorage.removeItem(firstWorkspaceDraftKey); } catch {}
     }
     setManualProgress(null);
+    setReattachNames([]);
+    setSetupNote("");
     setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
@@ -489,10 +510,19 @@ export function CreateWorkspaceExperience({
     }
   };
 
+  const setupNoteSource = firstWorkspace && setupNote.trim() ? createWorkspaceKnowledgeSource({
+    id: "setup-note", kind: "prompt", label: "Setup note", summary: "Context shared by the workspace owner during setup.",
+    locator: { kind: "prompt", text: redactSecretText(setupNote.trim()) }, provenance: "operator"
+  }) : null;
+
   const generate = async () => {
     const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating" || (firstWorkspace && abortControllerRef.current)) return;
 
+    if (firstWorkspace && reattachNames.length) {
+      setManualError("Reattach the selected documents or continue without them.");
+      return;
+    }
     const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
     if (pendingSourceResult && "error" in pendingSourceResult) {
       setSourceError(pendingSourceResult.error);
@@ -505,6 +535,7 @@ export function CreateWorkspaceExperience({
     }
     const pendingSource = pendingSourceResult && "source" in pendingSourceResult ? pendingSourceResult.source : null;
     const nextSources = pendingSource ? [...sources, pendingSource] : sources;
+    const runSources = setupNoteSource ? [...nextSources, setupNoteSource] : nextSources;
     const pendingRepositoryUrl = pendingSource?.locator.kind === "repository" ? pendingSource.locator.remoteUrl : undefined;
     const nextMaterialization: WorkspaceMaterialization = pendingRepositoryUrl
       ? { mode: "clone", repoUrl: pendingRepositoryUrl }
@@ -533,13 +564,16 @@ export function CreateWorkspaceExperience({
       const idempotencyKey = crypto.randomUUID();
       formData.set("idempotencyKey", idempotencyKey);
       formData.set("brief", nextBrief);
-      if (firstWorkspace) formData.set("workspaceName", firstName.trim());
+      if (firstWorkspace) {
+        formData.set("workspaceName", firstName.trim());
+        formData.set("prepareDocuments", "true");
+      }
       formData.set("mode", !firstWorkspace && mode === "automatic" ? "automatic" : "review");
       formData.set("profile", profile);
       formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation && !firstWorkspace));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
       formData.set("materialization", JSON.stringify(nextMaterialization));
-      formData.set("sources", JSON.stringify(nextSources));
+      formData.set("sources", JSON.stringify(runSources));
       if (draftContextId) formData.set("draftContextId", draftContextId);
       const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
       for (const group of uploadGroups) {
@@ -555,7 +589,7 @@ export function CreateWorkspaceExperience({
       hasLocalDraftRef.current = true;
       setCreationRun(initial);
       setDraftContextId(initial.draftContextId);
-      const completedRun = await pollCreationRun(initial.runId, controller, initial, nextSources);
+      const completedRun = await pollCreationRun(initial.runId, controller, initial, runSources);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
@@ -1026,7 +1060,16 @@ export function CreateWorkspaceExperience({
 
   const handleFiles = (fileList: FileList | null, kind: "file" | "folder") => {
     if (!fileList?.length) return;
+    if (firstWorkspace && uploadGroups.reduce((count, group) => count + group.files.length, 0) + fileList.length > 12) {
+      setManualError("Choose up to 12 setup documents across all selections.");
+      return;
+    }
     const files = Array.from(fileList).slice(0, kind === "folder" ? 120 : 12);
+    if (firstWorkspace) {
+      const names = new Set(files.map(file => redactSecretText(file.name).slice(0, 200)));
+      setReattachNames(current => current.filter(name => !names.has(name)));
+      setManualError(null);
+    }
     const folderName = files[0]?.webkitRelativePath?.split("/")[0] || files[0]?.name || "Local project";
     const source = createWorkspaceKnowledgeSource({
       id: `${kind}-${slugify(folderName)}-${Date.now()}`,
@@ -1092,8 +1135,49 @@ export function CreateWorkspaceExperience({
   const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
+  async function importFilesAfterLaunch(workspaceId: string, files: File[]) {
+    const notice = toast.loading("Adding the documents selected during setup…");
+    const intentKey = deferredSetupDocumentsKey(workspaceId);
+    const pending = new Set(files.map(file => redactSecretText(file.name).slice(0, 200)));
+    const updateIntent = () => {
+      try {
+        if (pending.size) sessionStorage.setItem(intentKey, JSON.stringify([...pending]));
+        else sessionStorage.removeItem(intentKey);
+      } catch { /* The live upload and its recovery toast still work. */ }
+    };
+    updateIntent();
+    const remaining: File[] = [];
+    for (const file of files) {
+      try {
+        const body = new FormData();
+        body.set("document", file);
+        const response = await fetch("/api/workspaces/" + encodeURIComponent(workspaceId) + "/knowledge", {
+          method: "POST", body, signal: AbortSignal.timeout(30_000)
+        });
+        if (!response.ok) remaining.push(file);
+        else { pending.delete(redactSecretText(file.name).slice(0, 200)); updateIntent(); }
+      } catch { remaining.push(file); }
+    }
+    toast.dismiss(notice);
+    if (remaining.length) {
+      toast.error(remaining.length + " setup document" + (remaining.length === 1 ? " still needs" : "s still need") + " to be added.", {
+        description: remaining.map(file => redactSecretText(file.name)).join(", "),
+        action: { label: "Retry", onClick: () => void importFilesAfterLaunch(workspaceId, remaining) }
+      });
+    } else {
+      toast.success(files.length + (files.length === 1 ? " document added" : " documents added"), {
+        action: { label: "Open Knowledge", onClick: () => window.location.assign("/knowledge?workspaceId=" + encodeURIComponent(workspaceId)) }
+      });
+    }
+  }
+
   const launchManualWorkspace = async () => {
     if (manualLaunching) return;
+    if (reattachNames.length) {
+      setManualReview(false);
+      setManualError("Reattach the selected documents or continue without them.");
+      return;
+    }
     setManualLaunching(true);
     setManualError(null);
     setManualProgress(null);
@@ -1103,18 +1187,18 @@ export function CreateWorkspaceExperience({
       sessionStorage.setItem(storageKey, idempotencyKey);
       const website = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
       if (website && "error" in website) throw new Error(website.error);
-      if (uploadGroups.length) throw new Error("To include attached files during setup, use Suggest a team. You can also add them after launch.");
+      const attachedDocuments = uploadGroups.flatMap(group => group.files);
       const response = await fetch("/api/workspaces", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: firstName.trim(),
-          brief: brief.trim(),
+          brief: setupNoteSource?.locator.kind === "prompt" ? brief.trim() + "\n\nSetup note\n" + setupNoteSource.locator.text : brief.trim(),
           modelId: defaultModel || undefined,
           sourceMode: "empty",
           teamPreset: "custom",
           stream: true,
-          knowledgeSources: website ? [website.source] : [],
+          knowledgeSources: [...(website ? [website.source] : []), ...(setupNoteSource ? [setupNoteSource] : [])],
           rules: { workspaceOnly: true, generateStarterDocs: true, generateMemory: true, kickoffMission: false },
           creation: { source: "launchpad", idempotencyKey },
           agents: manualTeam.map(({ id, name, role }, index) => ({
@@ -1143,6 +1227,7 @@ export function CreateWorkspaceExperience({
         throw new Error("The workspace was saved. Launch again to check when OpenClaw can see the team.");
       }
       sessionStorage.removeItem(storageKey);
+      if (attachedDocuments.length) void importFilesAfterLaunch(created.workspaceId, attachedDocuments);
       onWorkspaceCreated?.(created);
       resetCreationState();
       onOpenChange(false);
@@ -1286,22 +1371,31 @@ export function CreateWorkspaceExperience({
             onName={setFirstName} onBrief={setBrief} onTeam={setManualTeam}
             error={manualError ?? notice?.description}
             information={manualLaunching ? manualProgress?.steps.find(step => step.status === "active")?.detail
-              || "Creating your team in OpenClaw…" : null}
+              || "Creating your team in OpenClaw…" : manualReview && uploadGroups.length
+                ? "Selected documents will be added to Knowledge when your workspace opens." : null}
             onGenerate={() => void generate()}
             onManual={() => { setNotice(null); setManualError(null); setManualReview(true); }}
             onBack={() => { setManualError(null); setManualReview(false); }}
             onLaunch={() => void launchManualWorkspace()}
           >
-            <details className="rounded-lg border border-border bg-card px-3.5 text-sm">
-              <summary className="cursor-pointer py-3 font-medium">Add a website or documents</summary>
+            <details open={reattachNames.length > 0 || undefined} className="rounded-lg border border-border bg-card px-3.5 text-sm">
+              <summary className="cursor-pointer py-3 font-medium">Add documents, a website or a note</summary>
               <div className="space-y-3 pb-3">
                 <Label htmlFor="workforce-website">Website</Label>
                 <Input id="workforce-website" name="website" type="url" value={sourceDraft.value} placeholder="https://"
                   className="min-h-12 text-base sm:text-sm"
                   onChange={(event) => setSourceDraft({ kind: "website", value: event.target.value })} />
-                <Label htmlFor="workforce-documents">Documents for team suggestions</Label>
-                <Input id="workforce-documents" name="documents" type="file" multiple accept={WORKSPACE_KNOWLEDGE_FILE_ACCEPT}
-                  className="min-h-12 text-base sm:text-sm" onChange={(event) => void handleFiles(event.target.files, "file")} />
+                <Label htmlFor="workforce-note">Setup note</Label>
+                <Textarea id="workforce-note" value={setupNote} maxLength={1800} rows={3} className="text-base sm:text-sm"
+                  placeholder="Add facts or working guidelines the team should know." onChange={event => setSetupNote(event.target.value)} />
+                <Label htmlFor="workforce-documents">Company documents</Label>
+                {reattachNames.length > 0 && <div className="rounded-lg bg-muted p-3 text-xs">
+                  <p>Reattach {reattachNames.join(", ")}. For privacy, this browser keeps only the file names.</p>
+                  <Button type="button" variant="ghost" size="sm" className="mt-1 px-0" onClick={() => { setReattachNames([]); setManualError(null); }}>Continue without these files</Button>
+                </div>}
+                <p className="text-xs text-muted-foreground">PDF, Word, Excel and text documents, including Markdown, CSV and JSON. With team suggestions, choose files under 1 MB.</p>
+                <Input id="workforce-documents" name="documents" type="file" multiple accept={KNOWLEDGE_IMPORT_ACCEPT}
+                  className="min-h-12 text-base sm:text-sm" onChange={(event) => { handleFiles(event.target.files, "file"); event.currentTarget.value = ""; }} />
                 {sources.filter((source) => source.kind === "file").map((source) => (
                   <div key={source.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                     <span>{source.label}</span>

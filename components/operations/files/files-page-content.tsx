@@ -7,6 +7,7 @@ import { AgentChatMessageContent } from "@/components/mission-control/agent-chat
 import { MissionControlDialogShell } from "@/components/mission-control/mission-control-dialog-shell";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { CompanyKnowledge, knowledgeTitle } from "@/components/workforce/company-knowledge";
+import { KnowledgeImportDialog } from "@/components/workforce/knowledge-import-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,9 +25,11 @@ export function FilesPageContent({
   snapshot,
   activeWorkspaceId,
   surfaceTheme,
+  workspaceSelectionReady = true,
   knowledge = false
 }: {
   knowledge?: boolean;
+  workspaceSelectionReady?: boolean;
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
@@ -35,8 +38,8 @@ export function FilesPageContent({
     ? snapshot.workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
     : null;
   const visibleWorkspaces = useMemo(
-    () => (activeWorkspaceId ? (activeWorkspace ? [activeWorkspace] : []) : snapshot.workspaces),
-    [activeWorkspace, activeWorkspaceId, snapshot.workspaces]
+    () => !workspaceSelectionReady ? [] : (activeWorkspaceId ? (activeWorkspace ? [activeWorkspace] : []) : snapshot.workspaces),
+    [activeWorkspace, activeWorkspaceId, snapshot.workspaces, workspaceSelectionReady]
   );
   const workspaceList = JSON.stringify(visibleWorkspaces.map(({ id, name }) => ({ id, name })));
   const [filesByWorkspace, setFilesByWorkspace] = useState<Record<string, WorkspaceManagedFile[]>>({});
@@ -159,7 +162,7 @@ export function FilesPageContent({
       {knowledge ? (
         <div className="space-y-5">
           <CompanyKnowledge key={activeWorkspaceId ?? "all"} files={fileViews} employees={snapshot.agents}
-            workspaceId={activeWorkspace?.id ?? null} loading={isLoadingFiles} surfaceTheme={surfaceTheme} onOpen={setPreviewFile}
+            workspaceId={workspaceSelectionReady ? activeWorkspace?.id ?? null : null} loading={!workspaceSelectionReady || isLoadingFiles} surfaceTheme={surfaceTheme} onOpen={setPreviewFile}
             onManageFiles={() => setWorkspaceFilesOpen(true)} onChanged={() => setFileReloadKey(key => key + 1)}>
             {fileError ? <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 p-4 text-sm">
               <span>{fileError}</span><Button type="button" variant="secondary" onClick={() => setFileReloadKey(key => key + 1)}>Retry</Button>
@@ -563,6 +566,7 @@ function FilePreviewDialog({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [refreshWebsite, setRefreshWebsite] = useState(false);
   const canRead = Boolean(file?.workspaceId && file?.source?.exists);
   const canSave = Boolean(file?.workspaceId && file?.source?.editable && content !== savedContent && !loading && !saving);
 
@@ -651,11 +655,21 @@ function FilePreviewDialog({
     const format = knowledgeFormatFromPath(file.relativePath);
     const reference = format === "reference";
     const isJson = file.source?.language === "json";
+    const origin = format === "web" ? /^# [^\r\n]+\n\n<(https?:\/\/[^>\r\n]+)>/.exec(savedContent)?.[1] : undefined;
+    const extracted = format && ["pdf", "docx", "txt"].includes(format)
+      ? /^# [^\r\n]+\n\n(Source: [^\r\n]+)\n\n(`{3,})\n([\s\S]+)\n\2\n?$/.exec(content) : null;
     // Import-generated headings can carry a friendly original name. The path remains in Advanced.
     const heading = savedContent.match(/^# ([^\r\n]{1,120})\n\n/)?.[1];
     const title = format && heading && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(heading) ? heading : knowledgeTitle(file);
     const subtitle = reference ? "Saved reference · " + file.workspaceName :
-      (format ? format === "note" ? "Workspace note" : format.toUpperCase() + " document" : "Workspace source") + " · " + file.workspaceName;
+      (format ? format === "web" ? "Imported webpage" : format === "note" ? "Workspace note" : format.toUpperCase() + " document" : "Workspace source") + " · " + file.workspaceName;
+    if (refreshWebsite && origin && file.workspaceId) return <KnowledgeImportDialog workspaceId={file.workspaceId}
+      surfaceTheme={surfaceTheme} initialWebsite={origin} onClose={() => setRefreshWebsite(false)} onImported={() => {
+        setRefreshWebsite(false);
+        onSaved();
+        onOpenChange(false);
+        toast.success("Reviewed page saved to Knowledge.");
+      }} />;
     return (
       <MissionControlDialogShell open={open} onOpenChange={value => { if (!saving) onOpenChange(value); }}
         surfaceTheme={surfaceTheme} title={<span className="break-words capitalize">{title}</span>}
@@ -667,6 +681,7 @@ function FilePreviewDialog({
           <Button disabled={!canSave} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save source"}</Button>
         </> : <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+          {origin && !loading && !error && <Button variant="secondary" onClick={() => setRefreshWebsite(true)}>Refresh webpage</Button>}
           {file.source?.editable && !loading && !error ? <Button variant="secondary" onClick={() => setEditing(true)}>Edit source</Button> : null}
         </>}>
         {error ? <div role="alert" className="mb-3 space-y-2 text-sm text-destructive">
@@ -678,7 +693,10 @@ function FilePreviewDialog({
         ) : !error ? (
           <div className="space-y-4">
             {reference && <p className="text-sm text-muted-foreground">Open the link to read the content on its website.</p>}
-            {isJson ? <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">{content}</pre> :
+            {extracted ? <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">{extracted[1]}</p>
+              <p className="whitespace-pre-wrap break-words text-sm leading-7">{extracted[3]}</p>
+            </div> : isJson ? <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm">{content}</pre> :
               <AgentChatMessageContent text={format ? content.replace(/^# [^\r\n]+\n\n/, "") : content} className="workforce-source-preview break-words" />}
             {!reference && <p className="border-t border-border pt-3 text-sm text-muted-foreground">Shared in {file.workspaceName}. Employee memory assignments are managed separately.</p>}
           </div>
