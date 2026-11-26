@@ -122,7 +122,17 @@ test("ChatGPT return stays on model selection until the user confirms", () => {
   assert.match(modelSetDefaultSource, /await continueFromAi\(thinking\);\s*return;/);
   assert.match(shellSource, /const enterAgentOS = useCallback\(async \(readySnapshot\?: MissionControlSnapshot\)/);
   assert.match(shellSource, /const refreshedSnapshot = await refreshSnapshot\(\{ force: true \}\)/);
-  assert.match(shellSource, /void enterAgentOS\(readySnapshot\)/);
+  assert.match(shellSource, /await enterAgentOS\(readySnapshot\)/);
+});
+
+test("onboarding enters the existing canvas when OpenClaw already provisioned a workspace and agent", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const enterAgentOS = source.slice(source.indexOf("const enterAgentOS ="), source.indexOf("const continueFromAi ="));
+
+  assert.match(enterAgentOS, /if \(!hasAgentOSWorkspaceSetup\(entrySnapshot\)\) \{\s*openFirstWorkspace\(\);\s*return;/);
+  assert.match(enterAgentOS, /openWorkspaceOnCanvas\(targetWorkspaceId\)/);
+  assert.match(source, /onCreateFirstWorkspace=\{hasWorkspaceSetup \? undefined : openFirstWorkspace\}/);
+  assert.doesNotMatch(enterAgentOS, /hasProjectWorkspace/);
 });
 
 test("Continue to AgentOS advances the onboarding stage after model selection", () => {

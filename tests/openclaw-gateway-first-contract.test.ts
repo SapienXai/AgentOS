@@ -313,6 +313,58 @@ test("mission dispatch uses native chat when capability matrix supports it", asy
   assert.deepEqual(calls, [`run:agent-1:${response.dispatchId}:agent:agent-1:explicit:${response.dispatchId}:true`]);
 });
 
+test("mission dispatch recognizes a configured model with its exact native auth profile", async () => {
+  const modelKey = "openai/gpt-6.2-sol";
+  const profileId = "openai:token-sharing:fixture";
+  const snapshot = createSnapshot();
+  snapshot.agents[0].modelId = `${modelKey}@${profileId}`;
+  snapshot.diagnostics.modelReadiness.ready = false;
+  const catalogReads: Array<{ agentId?: string; view?: string }> = [];
+  let sessionCreates = 0;
+  let catalogProfileId = profileId;
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async listModels(input, options) {
+      catalogReads.push({ agentId: input?.agentId, view: input?.view });
+      assert.equal(options?.allowCliFallback, false);
+      return {
+        models: [{ key: modelKey, name: "GPT-6.2 Sol", input: "text", contextWindow: null, local: false, available: true, tags: [], missing: false }],
+        providerOutcomes: [{ provider: "openai", status: "ready", profileId: catalogProfileId }]
+      };
+    },
+    async createSession(input) {
+      sessionCreates++;
+      return { key: input.key, sessionId: "profile-bound-session" };
+    },
+    async runAgentTurn() {
+      return { runId: "profile-bound-run", status: "running" };
+    }
+  }));
+  const deps = {
+    getMissionControlSnapshot: async () => snapshot,
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  };
+
+  const accepted = await submitMissionDispatch({ mission: "Confirm model readiness" }, deps);
+  trackMissionDispatch(accepted.dispatchId);
+  assert.equal(accepted.runId, "profile-bound-run");
+  assert.deepEqual(catalogReads, [{ agentId: "agent-1", view: "configured" }]);
+
+  catalogProfileId = "openai:token-sharing:different-profile";
+  const rejected = await submitMissionDispatch({ mission: "Reject a different account" }, deps);
+  trackMissionDispatch(rejected.dispatchId);
+  assert.equal(rejected.status, "stalled");
+  assert.equal(rejected.runId, null);
+
+  snapshot.diagnostics.rpcOk = false;
+  const offline = await submitMissionDispatch({ mission: "Reject an offline Gateway" }, deps);
+  trackMissionDispatch(offline.dispatchId);
+  assert.match(offline.summary ?? "", /system readiness/);
+  assert.equal(catalogReads.length, 2);
+  assert.equal(sessionCreates, 1);
+});
+
 test("mission dispatch returns after Gateway admission without waiting for execution", async () => {
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,

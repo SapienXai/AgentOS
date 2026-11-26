@@ -23,7 +23,7 @@ import {
   resolveMissionDispatchCompletionDetail
 } from "@/lib/openclaw/domains/mission-dispatch-model";
 import type { MissionDispatchRecordLike } from "@/lib/openclaw/domains/mission-dispatch-model";
-import { resolveMissionDispatchReadinessError } from "@/lib/openclaw/readiness";
+import { resolveMissionDispatchReadinessError, resolveOpenClawSystemReadinessIssue } from "@/lib/openclaw/readiness";
 import type {
   MissionAbortResponse,
   MissionControlSnapshot,
@@ -50,6 +50,24 @@ export type MissionDispatchWorkflowDependencies = {
 };
 
 const missionSubmissionLocks = new Map<string, Promise<void>>();
+
+async function hasReadyNativeModelProfile(agentId: string, modelRef: string, options: OpenClawCommandOptions) {
+  // OpenClaw publishes model keys and the selected auth profile separately.
+  // Match the complete reference so another account cannot satisfy the check.
+  const catalog = await getOpenClawAdapter().listModels(
+    { view: "configured", agentId },
+    { ...options, timeoutMs: 8_000, allowCliFallback: false }
+  ).catch(() => null);
+
+  return catalog?.models.some((model) =>
+    model.available === true && !model.missing && !model.disabled &&
+    catalog.providerOutcomes?.some((outcome) =>
+      outcome.status === "ready" && outcome.profileId &&
+      outcome.provider === model.key.split("/", 1)[0] &&
+      `${model.key}@${outcome.profileId}` === modelRef
+    )
+  ) ?? false;
+}
 
 export async function submitMissionDispatch(
   input: MissionSubmission,
@@ -174,10 +192,11 @@ async function submitMissionDispatchOnce(
         missionAgent ? { id: missionAgent.id, name: missionAgent.name } : null
       )
     : mission;
-  const readinessError = resolveMissionDispatchReadinessError(
-    snapshot,
-    missionAgent?.modelId === "unassigned" ? null : missionAgent?.modelId
-  );
+  const requestedModelId = missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null;
+  const readinessError = resolveMissionDispatchReadinessError(snapshot, requestedModelId);
+  const hasNativeModelEvidence = readinessError && requestedModelId?.includes("@") &&
+    !resolveOpenClawSystemReadinessIssue(snapshot) &&
+    await hasReadyNativeModelProfile(agentId, requestedModelId, gatewayOptions);
 
   let dispatchRecord = createMissionDispatchRecord({
     clientRequestId: requestId,
@@ -185,7 +204,7 @@ async function submitMissionDispatchOnce(
     mission,
     routedMission,
     thinking,
-    requestedModelId: missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null,
+    requestedModelId,
     workspaceId: missionWorkspace?.id ?? null,
     workspacePath: missionWorkspace?.path ?? null,
     browserAccountId: input.browserAccount?.accountId.trim() || input.browserAccountId?.trim() || null,
@@ -204,7 +223,7 @@ async function submitMissionDispatchOnce(
 
   await writeMissionDispatchRecord(dispatchRecord);
 
-  if (readinessError) {
+  if (readinessError && !hasNativeModelEvidence) {
     dispatchRecord = {
       ...dispatchRecord,
       status: "stalled",

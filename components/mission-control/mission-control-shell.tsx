@@ -1088,11 +1088,8 @@ export function MissionControlShell({
   const workspaceModelCandidate = snapshot.diagnostics.modelReadiness.recommendedModelId;
   const canStartWorkspaceSetup = isOpenClawOnboardingModelReady ||
     (isOpenClawOnboardingSystemReady && Boolean(workspaceModelCandidate));
-  const bootstrapWorkspace = snapshot.workspaces.length === 1 ? snapshot.workspaces[0] : null;
-  const onlyBootstrapWorkspace = Boolean(bootstrapWorkspace?.id === "workspace" &&
-    !bootstrapWorkspace.bootstrap?.template && snapshot.agents.length === 1 && snapshot.agents[0]?.id === "main");
   const shouldOfferFirstWorkspace = (snapshot.mode === "live" || enteredAfterSiwc) &&
-    (!hasProject || onlyBootstrapWorkspace);
+    !hasWorkspaceSetup;
 
   const needsChatGptSetup = snapshot.mode === "live" && !hasProject &&
     !snapshot.diagnostics.modelReadiness.ready &&
@@ -3567,7 +3564,7 @@ export function MissionControlShell({
 
     let entrySnapshot = currentSnapshot;
 
-    if (!hasCompleteAgentOSWorkspaceSnapshot(entrySnapshot)) {
+    if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
       const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
 
       if (refreshedSnapshot) {
@@ -3583,7 +3580,7 @@ export function MissionControlShell({
       return;
     }
 
-    if (!hasProjectWorkspace(entrySnapshot)) {
+    if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
       openFirstWorkspace();
       return;
     }
@@ -3633,13 +3630,8 @@ export function MissionControlShell({
       return;
     }
 
-    if (hasProjectWorkspace(readySnapshot)) {
-      void enterAgentOS(readySnapshot);
-      return;
-    }
-
-    openFirstWorkspace();
-  }, [enterAgentOS, openFirstWorkspace, refreshSnapshot, setSnapshot, snapshot]);
+    await enterAgentOS(readySnapshot);
+  }, [enterAgentOS, refreshSnapshot, setSnapshot, snapshot]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);
@@ -4430,7 +4422,7 @@ export function MissionControlShell({
           onLeaveSiwc={leaveSiwcOnboarding}
           resumeSiwc={resumeSiwc}
           onEnterAfterSiwc={enterAfterSiwc}
-          onCreateFirstWorkspace={hasProject ? undefined : openFirstWorkspace}
+          onCreateFirstWorkspace={hasWorkspaceSetup ? undefined : openFirstWorkspace}
           onRunModelSetDefault={runModelSetDefault}
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
@@ -5684,7 +5676,7 @@ export function MissionControlShell({
             onLeaveSiwc={leaveSiwcOnboarding}
             resumeSiwc={resumeSiwc}
             onEnterAfterSiwc={enterAfterSiwc}
-            onCreateFirstWorkspace={hasProject ? undefined : openFirstWorkspace}
+            onCreateFirstWorkspace={hasWorkspaceSetup ? undefined : openFirstWorkspace}
             onRunModelSetDefault={runModelSetDefault}
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
