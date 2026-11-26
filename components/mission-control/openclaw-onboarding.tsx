@@ -1120,9 +1120,6 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
           <p className="text-[11px] font-medium text-muted-foreground">
             OpenClaw setup target: <span className="font-semibold text-primary">v{OPENCLAW_INSTALL_TARGET_VERSION}</span>
           </p>
-          <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
-            Candidate target; final AgentOS compatibility certification is pending.
-          </p>
         </div>
       </div>
     </div>

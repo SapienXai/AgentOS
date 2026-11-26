@@ -702,7 +702,7 @@ export function resolveOnboardingAction(
   if (!cliInstalled) {
     return {
       label: "Install OpenClaw",
-      description: `Install OpenClaw v${OPENCLAW_INSTALL_TARGET_VERSION} and get AgentOS ready. This candidate is not yet compatibility-certified by AgentOS.`
+      description: `Install OpenClaw v${OPENCLAW_INSTALL_TARGET_VERSION} and get AgentOS ready.`
     };
   }
 
