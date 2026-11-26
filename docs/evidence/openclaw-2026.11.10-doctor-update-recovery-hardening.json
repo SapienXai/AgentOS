@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-doctor-update-recovery-hardening-certification",
-  "generatedAt": "2026-11-26T08:05:23.796Z",
-  "certifiedCodeHead": "91d5359b9f8ec2a5fbc07dffc068a92a82ae026d",
+  "generatedAt": "2026-11-26T12:07:05.053Z",
+  "certifiedCodeHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
   "openClaw": {
     "release": "2026.11.10",
     "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -100,23 +100,23 @@
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
       "status": "PASS",
-      "result": "busy"
+      "result": "ready"
     },
     "gateway.suspend.status": {
       "scope": "operator.read",
       "params": "{suspensionId}",
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
-      "status": "SKIPPED",
-      "result": "No suspension lease was issued by the disposable runtime."
+      "status": "PASS",
+      "result": "native response shape accepted"
     },
     "gateway.suspend.resume": {
       "scope": "operator.admin",
       "params": "{suspensionId}",
       "productIntegration": "typed-only",
       "authority": "OpenClaw-native",
-      "status": "SKIPPED",
-      "result": "No suspension lease was issued by the disposable runtime."
+      "status": "PASS",
+      "result": "native response shape accepted"
     }
   },
   "runtime": {
@@ -238,7 +238,9 @@
     "update.status": 1,
     "gateway.restart.preflight": 1,
     "update.hold": 1,
-    "gateway.suspend.prepare": 1
+    "gateway.suspend.prepare": 1,
+    "gateway.suspend.status": 1,
+    "gateway.suspend.resume": 1
   },
   "cleanup": {
     "status": "complete",

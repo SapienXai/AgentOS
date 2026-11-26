@@ -9,6 +9,6 @@
   },
   "liveTelegram": {
     "classification": "BLOCKED_BY_ENVIRONMENT",
-    "reason": "No owner-authorized live credentials or chat were supplied for final acceptance."
+    "reason": "Disposable browser fixtures do not use live Telegram credentials."
   }
 }
