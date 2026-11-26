@@ -99,7 +99,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const blocked = requireSameOriginMutation(request);
+  const blocked = await requireSameOriginMutation(request);
   if (blocked) return blocked;
   const owner = await getOwner(request);
   if (owner.response) return owner.response;

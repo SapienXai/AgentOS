@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const permission = await requireAgentOsProductPermission(request, "runtime.inspect");
   if ("response" in permission) return permission.response;
-  const origin = requireSameOriginMutation(request);
+  const origin = await requireSameOriginMutation(request);
   if (origin) return origin;
   try {
     const snapshot = await getMissionControlSnapshot({ force: true });

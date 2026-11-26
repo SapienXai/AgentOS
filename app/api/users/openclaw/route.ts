@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const blocked = requireSameOriginMutation(request);
+  const blocked = await requireSameOriginMutation(request);
   if (blocked) return blocked;
   const permission = await requireAgentOsProductPermission(request, "openclaw.roles.manage");
   if ("response" in permission) return permission.response;

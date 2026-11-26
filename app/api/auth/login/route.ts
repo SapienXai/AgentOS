@@ -17,7 +17,7 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const blocked = requireSameOriginMutation(request);
+  const blocked = await requireSameOriginMutation(request);
   if (blocked) return blocked;
 
   try {

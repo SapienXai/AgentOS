@@ -109,7 +109,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const actor = await requireAgentOsProductPermission(request, permission);
   if ("response" in actor) return actor.response;
-  const origin = requireSameOriginMutation(request);
+  const origin = await requireSameOriginMutation(request);
   if (origin) return origin;
   const parsed = input.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

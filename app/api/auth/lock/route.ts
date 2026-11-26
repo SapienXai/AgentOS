@@ -9,7 +9,7 @@ import {
 import { instanceProtectionErrorResponse, requireSameOriginMutation } from "@/lib/security/instance-protection-route";
 
 export async function POST(request: Request) {
-  const blocked = requireSameOriginMutation(request);
+  const blocked = await requireSameOriginMutation(request);
   if (blocked) return blocked;
 
   try {

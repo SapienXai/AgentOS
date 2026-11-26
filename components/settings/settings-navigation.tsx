@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Bot, Folder, LockKeyhole, Settings2, Wrench } from "lucide-react";
+import { Activity, Bot, Folder, LockKeyhole, Settings2, Wifi, Wrench } from "lucide-react";
 
 import type { SettingsArea } from "@/components/settings/settings-types";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ const sections: Array<{ id: SettingsArea; label: string; scope: string; icon: ty
   { id: "workspace", label: "Workspace", scope: "Company", icon: Folder },
   { id: "runtime", label: "Runtime", scope: "Instance", icon: Activity },
   { id: "security", label: "Security", scope: "Instance", icon: LockKeyhole },
+  { id: "access", label: "Access", scope: "Remote sign-in", icon: Wifi },
   { id: "advanced", label: "Advanced", scope: "Instance", icon: Wrench }
 ];
 

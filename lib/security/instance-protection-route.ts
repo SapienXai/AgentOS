@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
-import { InstanceProtectionError } from "@/lib/security/instance-protection";
+import { InstanceProtectionError, readManagedRemoteOrigins } from "@/lib/security/instance-protection";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 
-export function requireSameOriginMutation(request: Request) {
+export async function requireSameOriginMutation(request: Request) {
   const decision = evaluateLocalOperatorRequest({
     method: request.method,
     url: request.url,
     headers: request.headers,
-    allowSafeMethods: false
+    allowSafeMethods: false,
+    managedOrigins: await readManagedRemoteOrigins(request).catch(() => [])
   });
   if (decision.ok) return null;
   return NextResponse.json({ error: decision.message, code: decision.code }, { status: decision.status });

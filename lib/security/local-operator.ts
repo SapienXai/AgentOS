@@ -20,10 +20,13 @@ export function evaluateLocalOperatorRequest(input: {
   headers: Headers;
   allowSafeMethods?: boolean;
   allowTrustedRemote?: boolean;
+  requireTrustedRemoteOnReads?: boolean;
+  managedOrigins?: readonly string[];
   env?: Record<string, string | undefined>;
 }): LocalOperatorGuardDecision {
   const method = input.method.toUpperCase();
-  if (input.allowSafeMethods !== false && SAFE_API_METHODS.has(method)) {
+  const safeMethod = input.allowSafeMethods !== false && SAFE_API_METHODS.has(method);
+  if (safeMethod && !input.requireTrustedRemoteOnReads) {
     return { ok: true };
   }
 
@@ -36,6 +39,8 @@ export function evaluateLocalOperatorRequest(input: {
       requestUrl,
       headers: input.headers,
       observedHosts,
+      requireOrigin: !safeMethod,
+      managedOrigins: input.managedOrigins ?? [],
       env: input.env ?? process.env
     })) {
       return { ok: true };
@@ -43,9 +48,11 @@ export function evaluateLocalOperatorRequest(input: {
 
     return blocked(
       "unsafe-host",
-      `Unsafe remote mutation blocked. Use same-origin localhost or configure an exact HTTPS origin with ${AGENTOS_TRUSTED_OPERATOR_ORIGINS_ENV}.`
+      `Remote access requires an approved HTTPS address. Use localhost to manage Access settings or configure ${AGENTOS_TRUSTED_OPERATOR_ORIGINS_ENV}.`
     );
   }
+
+  if (safeMethod) return { ok: true };
 
   const forwardedFor = splitHeaderValues(input.headers.get("x-forwarded-for"));
   const unsafeForwardedClient = forwardedFor.find((address) => !isLoopbackAddress(address));
@@ -80,22 +87,31 @@ function isTrustedRemoteOperatorRequest(input: {
   requestUrl: URL;
   headers: Headers;
   observedHosts: string[];
+  requireOrigin: boolean;
+  managedOrigins: readonly string[];
   env: Record<string, string | undefined>;
 }) {
   const trustedOrigins = readTrustedOperatorOrigins(input.env);
+  for (const value of input.managedOrigins) {
+    const parsed = parseHttpsOrigin(value);
+    if (parsed) trustedOrigins.add(parsed.origin);
+  }
   if (trustedOrigins.size === 0) {
     return false;
   }
 
-  const origin = parseHttpsOrigin(input.headers.get("origin"));
+  const originHeader = input.headers.get("origin");
+  const hosts = input.observedHosts.filter((host) => !isLoopbackHost(host));
+  const origin = originHeader || input.requireOrigin
+    ? parseHttpsOrigin(originHeader)
+    : parseHttpsOrigin(`https://${hosts[0]}`);
   if (!origin || !trustedOrigins.has(origin.origin)) {
     return false;
   }
 
-  const nonLoopbackHosts = input.observedHosts.filter((host) => !isLoopbackHost(host));
   if (
-    nonLoopbackHosts.length === 0 ||
-    nonLoopbackHosts.some((host) => normalizeHost(host) !== origin.host.toLowerCase())
+    hosts.length === 0 ||
+    hosts.some((host) => normalizeHost(host) !== origin.host.toLowerCase())
   ) {
     return false;
   }
@@ -103,7 +119,7 @@ function isTrustedRemoteOperatorRequest(input: {
   return buildTargetOrigins(input.headers, input.requestUrl).has(origin.origin);
 }
 
-function readTrustedOperatorOrigins(env: Record<string, string | undefined>) {
+export function readTrustedOperatorOrigins(env: Record<string, string | undefined> = process.env) {
   const origins = new Set<string>();
 
   for (const value of (env[AGENTOS_TRUSTED_OPERATOR_ORIGINS_ENV] ?? "").split(",")) {
@@ -120,9 +136,9 @@ function readTrustedOperatorOrigins(env: Record<string, string | undefined>) {
   return origins;
 }
 
-function parseHttpsOrigin(value: string | null) {
+export function parseHttpsOrigin(value: string | null) {
   const trimmed = value?.trim();
-  if (!trimmed || trimmed.includes("*")) return null;
+  if (!trimmed || !/^https:\/\/[^/?#\\*]+\/?$/i.test(trimmed)) return null;
 
   try {
     const parsed = new URL(trimmed);
@@ -146,6 +162,10 @@ export function isLoopbackHost(host: string) {
   const hostname = parseHostName(host);
 
   return Boolean(hostname && isLoopbackAddress(hostname));
+}
+
+export function isLocalOperatorHostRequest(request: { url: string; headers: Headers }) {
+  return readObservedHosts(request.headers, new URL(request.url).host).every(isLoopbackHost);
 }
 
 function blocked(code: LocalOperatorBlockCode, message: string): LocalOperatorGuardDecision {

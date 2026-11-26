@@ -110,12 +110,16 @@ export function evaluateAuthenticatedAgentOsApiRequest(input: {
   url: string;
   headers: Headers;
   env?: Record<string, string | undefined>;
+  managedOrigins?: readonly string[];
+  requireTrustedRemoteOnReads?: boolean;
 }): ApiAuthDecision {
   const localDecision = evaluateLocalOperatorRequest({
     method: input.method,
     url: input.url,
     headers: input.headers,
-    env: input.env ?? process.env
+    env: input.env ?? process.env,
+    managedOrigins: input.managedOrigins,
+    requireTrustedRemoteOnReads: input.requireTrustedRemoteOnReads
   });
 
   return localDecision.ok

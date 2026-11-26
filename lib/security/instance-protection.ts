@@ -2,6 +2,11 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
+import { isLocalOperatorHostRequest, parseHttpsOrigin } from "@/lib/security/local-operator";
+import {
+  EMPTY_REMOTE_ACCESS, getLanHttpsOrigins, MAX_REMOTE_ORIGINS,
+  type RemoteAccessChange, type RemoteAccessSettings
+} from "@/lib/security/remote-access-policy";
 import {
   createPasswordSalt,
   hashPassword,
@@ -40,6 +45,7 @@ export type InstanceProtectionState = {
   updatedAt: string;
   lockedActorId: string | null;
   lockedAt: string | null;
+  remoteAccess?: RemoteAccessSettings;
 };
 
 export type InstanceProtectionStatus = {
@@ -432,6 +438,48 @@ export function verifyInstanceSession(cookieValue: string | null, state: Instanc
   return !state.lockedActorId && Boolean(readInstanceSessionIdentity(cookieValue, state));
 }
 
+export async function readManagedRemoteOrigins(request: { url: string; headers: Headers }) {
+  if (isLocalOperatorHostRequest(request)) return [];
+  const settings = (await readInstanceProtectionState())?.remoteAccess;
+  if (!settings) return [];
+  const origins = Array.isArray(settings.origins) ? settings.origins.filter((value) => typeof value === "string") : [];
+  return settings.lanEnabled === true ? [...origins, ...getLanHttpsOrigins()] : origins;
+}
+
+export function manageInstanceRemoteAccess(cookie: string | null, change?: RemoteAccessChange, env = process.env) {
+  return withProtectionMutation(env, async () => {
+    const state = await readInstanceProtectionState(env);
+    const session = state ? await resolveActiveInstanceSession(cookie, state, env) : null;
+    if (!state || session?.user.role !== "owner") {
+      throw new InstanceProtectionError("Sign in locally as the AgentOS owner to manage remote access.", 403, "owner-required");
+    }
+    const access = state.remoteAccess ?? EMPTY_REMOTE_ACCESS;
+    if (!change) return access;
+
+    let next: RemoteAccessSettings;
+    if (change.action === "lan") {
+      if (change.enabled && !getLanHttpsOrigins(env).length) {
+        throw new InstanceProtectionError("No private IPv4 address is available for LAN access.", 400, "lan-unavailable");
+      }
+      next = { ...access, lanEnabled: change.enabled };
+    } else {
+      const origin = parseHttpsOrigin(change.origin);
+      if (!origin || isLocalOperatorHostRequest({ url: origin.href, headers: new Headers() })) {
+        throw new InstanceProtectionError("Enter an external HTTPS address without a path, query, or fragment.", 400, "invalid-origin");
+      }
+      const origins = new Set(access.origins);
+      if (change.action === "add" && !origins.has(origin.origin) && origins.size >= MAX_REMOTE_ORIGINS) {
+        throw new InstanceProtectionError("Remove an existing address before adding another.", 400, "origin-limit");
+      }
+      if (change.action === "add") origins.add(origin.origin);
+      else origins.delete(origin.origin);
+      next = { ...access, origins: [...origins].sort() };
+    }
+    await writeInstanceProtectionState({ ...state, remoteAccess: next }, env);
+    return next;
+  });
+}
+
 /**
  * Canonical protected-session validation used by both status reporting and
  * actor resolution. A signed cookie is not authenticated until its actor is
@@ -519,7 +567,7 @@ export function isSecureRequest(request: { url: string; headers: Headers }) {
 export class InstanceProtectionError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 401 | 409 | 429,
+    readonly status: 400 | 401 | 403 | 409 | 429,
     readonly code: string,
     readonly retryAfterSeconds?: number
   ) {

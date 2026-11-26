@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { evaluateAgentOsApiRequest, evaluateAuthenticatedAgentOsApiRequest } from "@/lib/security/api-auth";
-import { getInstanceProtectionStatus, readInstanceSessionCookie } from "@/lib/security/instance-protection";
+import { getInstanceProtectionStatus, readInstanceSessionCookie, readManagedRemoteOrigins } from "@/lib/security/instance-protection";
 
 const publicInstanceApiPaths = new Set([
   "/api/auth/status",
@@ -56,13 +56,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (!isApiRequest) return NextResponse.next();
+  if (!isApiRequest && !status.protectionEnabled) return NextResponse.next();
 
   const decision = status.protectionEnabled
     ? evaluateAuthenticatedAgentOsApiRequest({
         method: request.method,
         url: request.url,
-        headers: request.headers
+        headers: request.headers,
+        managedOrigins: await readManagedRemoteOrigins(request).catch(() => []),
+        requireTrustedRemoteOnReads: true
       })
     : evaluateAgentOsApiRequest({
         method: request.method,
@@ -71,6 +73,12 @@ export async function proxy(request: NextRequest) {
       });
 
   if (decision.ok) return NextResponse.next();
+  if (!isApiRequest) {
+    return new NextResponse(decision.message, {
+      status: decision.status,
+      headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" }
+    });
+  }
 
   return NextResponse.json(
     {

@@ -9,7 +9,8 @@ import {
 import { browserAccountResponseHeaders } from "@/lib/security/browser-account-route";
 import {
   getInstanceProtectionStatus,
-  readInstanceSessionCookie
+  readInstanceSessionCookie,
+  readManagedRemoteOrigins
 } from "@/lib/security/instance-protection";
 import { resolveAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { canAgentOsActorUseProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -29,11 +30,13 @@ export async function POST(request: Request) {
 
   try {
     const forwardedHeaders = buildForwardedBrowserHeaders(request.headers);
+    const browserUrl = `${forwardedHeaders.get("x-forwarded-proto") ?? "https"}://${forwardedHeaders.get("host") ?? "invalid"}/api/accounts/browser-live/ws`;
     const originDecision = evaluateLocalOperatorRequest({
       method: "POST",
-      url: `${forwardedHeaders.get("x-forwarded-proto") ?? "https"}://${forwardedHeaders.get("host") ?? "invalid"}/api/accounts/browser-live/ws`,
+      url: browserUrl,
       headers: forwardedHeaders,
-      allowSafeMethods: false
+      allowSafeMethods: false,
+      managedOrigins: await readManagedRemoteOrigins({ url: browserUrl, headers: forwardedHeaders })
     });
     if (!originDecision.ok) return denied();
 
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
     if (status.protectionEnabled && !status.authenticated) return denied();
 
     const actor = await resolveAgentOsActorContext(new Request(
-      `${forwardedHeaders.get("x-forwarded-proto") ?? "https"}://${forwardedHeaders.get("host") ?? "invalid"}/api/accounts/browser-live/ws`,
+      browserUrl,
       { method: "POST", headers: forwardedHeaders }
     ));
     if (!actor || !canAgentOsActorUseProductPermission(actor, "runtime.use")) return denied();

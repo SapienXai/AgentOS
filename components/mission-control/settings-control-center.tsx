@@ -136,6 +136,7 @@ type SettingsSectionId =
   | "ai-tools"
   | "runtime"
   | "security"
+  | "access"
   | "advanced"
   | "developer"
   | "overview"
@@ -160,6 +161,7 @@ const settingsSections: SettingsSection[] = [
   { id: "general", label: "General", icon: Wrench, group: "Core" },
   { id: "ai-tools", label: "AI & Models", icon: Bot, group: "Core" },
   { id: "security", label: "Security", icon: ShieldCheck, group: "Core" },
+  { id: "access", label: "Access", icon: ShieldCheck, group: "Core" },
   { id: "workspace", label: "Workspace", icon: Folder, group: "Workspace" },
   { id: "runtime", label: "Runtime", icon: Activity, group: "OpenClaw" },
   { id: "advanced", label: "Advanced", icon: Settings2, group: "System" }
@@ -1292,6 +1294,7 @@ export function SettingsControlCenter(
     renderedActiveSection === "workspace" ||
     renderedActiveSection === "runtime" ||
     renderedActiveSection === "security" ||
+    renderedActiveSection === "access" ||
     renderedActiveSection === "advanced";
 
   if (isSimplifiedSettingsSection) {
@@ -6285,6 +6288,8 @@ function resolveHashSettingsSection(): SettingsSectionId {
       return "runtime";
     case "security":
       return "security";
+    case "access":
+      return "access";
     case "gateway":
       return "gateway";
     case "general":

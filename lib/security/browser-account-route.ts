@@ -30,7 +30,7 @@ export async function requireBrowserAccountActor(
   const agentOsActor = productAuthorization.actor;
 
   if (!isSafeMethod(request.method)) {
-    const originFailure = requireSameOriginMutation(request);
+    const originFailure = await requireSameOriginMutation(request);
     if (originFailure) {
       for (const [name, value] of Object.entries(browserAccountResponseHeaders())) {
         originFailure.headers.set(name, value);

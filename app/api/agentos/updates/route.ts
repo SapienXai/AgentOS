@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const blocked = requireSameOriginMutation(request);
+  const blocked = await requireSameOriginMutation(request);
   if (blocked) return blocked;
   const authorization = await requireAgentOsProductPermission(request, "updates.manage");
   if ("response" in authorization) return authorization.response;

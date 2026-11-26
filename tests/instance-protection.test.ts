@@ -8,6 +8,8 @@ import { test } from "node:test";
 import { NextRequest } from "next/server";
 
 import { POST as loginRoute } from "@/app/api/auth/login/route";
+import { GET as accessRoute, POST as changeAccessRoute } from "@/app/api/auth/access/route";
+import { getLanHttpsOrigins } from "@/lib/security/remote-access-policy";
 import { createManagedAgentOsUser } from "@/lib/agentos/application/agentos-account-service";
 import { resolveAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { bootstrapInitialInstanceProtection } from "@/lib/security/initial-instance-bootstrap";
@@ -307,6 +309,72 @@ test("trusted remote browsers can use password sessions without API token bootst
     restoreEnv("AGENTOS_TRUSTED_OPERATOR_ORIGINS", previous.trustedOrigins);
     restoreEnv("NODE_ENV", previous.nodeEnv);
   }
+});
+
+test("local owners can approve and revoke a remote HTTPS address without changing credentials", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-access-policy-"));
+  const previous = process.env.AGENTOS_RUNTIME_DIR;
+  setEnv("AGENTOS_RUNTIME_DIR", runtimeDir);
+  const local = "http://localhost:3000";
+  const remote = "https://agentos-access-test.example.com";
+  const credentials = { username: "access-owner", password: "fixture password" };
+  const write = (origin: string, path: string, body: object, cookie = "") => new NextRequest(`${origin}${path}`, {
+    method: "POST", headers: { origin, cookie, "Content-Type": "application/json" }, body: JSON.stringify(body)
+  });
+  const read = (origin: string, path: string, cookie: string) => new NextRequest(`${origin}${path}`, { headers: { cookie } });
+  const accessPath = "/api/auth/access";
+
+  try {
+    const { session } = await enableInstanceProtection(credentials);
+    const ownerCookie = `agentos_instance_session=${session}`;
+    const member = { username: "access-member", password: "fixture password" };
+    await createManagedAgentOsUser(member);
+    const { session: memberSession } = await loginToInstance({ ...member, rateKey: "member" });
+    const memberCookie = `agentos_instance_session=${memberSession}`;
+    assert.equal((await accessRoute(read(local, accessPath, ""))).status, 403);
+    assert.equal((await accessRoute(read(local, accessPath, memberCookie))).status, 403);
+    assert.equal((await changeAccessRoute(write(local, accessPath, { action: "add", origin: remote }, memberCookie))).status, 403);
+    assert.equal((await accessRoute(read(remote, accessPath, ownerCookie))).status, 403);
+    assert.equal((await changeAccessRoute(write(remote, accessPath, { action: "add", origin: remote }, ownerCookie))).status, 403);
+    assert.equal((await loginRoute(write(remote, "/api/auth/login", credentials))).status, 403);
+    for (const origin of ["http://agentos-access-test.example.com", "https://*.example.com", `${remote}/path`, `${remote}?`, "https://user:secret@example.com"]) {
+      assert.equal((await changeAccessRoute(write(local, accessPath, { action: "add", origin }, ownerCookie))).status, 400);
+    }
+    const stored = await changeAccessRoute(write(local, accessPath, { action: "add", origin: remote }, ownerCookie));
+    assert.equal(stored.status, 200);
+    assert.deepEqual((await stored.json()).origins, [remote]);
+    assert.deepEqual((await (await accessRoute(read(local, accessPath, ownerCookie))).json()).origins, [remote]);
+    assert.equal((await loginRoute(write(remote.replace("https:", "http:"), "/api/auth/login", credentials))).status, 403);
+
+    const login = await loginRoute(write(remote, "/api/auth/login", credentials));
+    assert.equal(login.status, 200);
+    assert.match(login.headers.get("set-cookie") ?? "", /; Secure/);
+    const remoteCookie = login.headers.get("set-cookie")!.split(";")[0];
+    assert.equal((await proxy(read(remote, "/api/snapshot", ""))).status, 401);
+    assert.equal((await proxy(read(remote, "/api/snapshot", remoteCookie))).status, 200);
+    assert.equal((await proxy(write(remote, "/api/mission", {}, remoteCookie))).status, 200);
+    assert.equal((await proxy(new NextRequest(`${remote}/api/mission`, {
+      method: "POST", headers: { cookie: remoteCookie, origin: "https://untrusted.example.com" }
+    }))).status, 403);
+
+    assert.equal((await changeAccessRoute(write(local, accessPath, { action: "remove", origin: remote }, ownerCookie))).status, 200);
+    assert.equal((await proxy(read(remote, "/settings", remoteCookie))).status, 403);
+    assert.equal((await proxy(read(remote, "/api/snapshot", remoteCookie))).status, 403);
+    assert.equal((await proxy(read(local, "/api/snapshot", ownerCookie))).status, 200);
+  } finally {
+    await resetInstanceProtection();
+    restoreEnv("AGENTOS_RUNTIME_DIR", previous);
+  }
+});
+
+test("LAN access resolves only this host's private IPv4 addresses and approved HTTPS port", () => {
+  const address = (ip: string, internal = false) => ({
+    address: ip, family: "IPv4" as const, netmask: "255.255.255.0", mac: "00:00:00:00:00:00", internal, cidr: null
+  });
+  const interfaces = { eth0: [address("192.168.10.5"), address("203.0.113.10"), address("172.32.0.8")],
+    eth1: [address("172.20.1.2")], lo0: [address("127.0.0.1", true)] };
+  assert.deepEqual(getLanHttpsOrigins({ AGENTOS_LAN_HTTPS_PORT: "3443" }, interfaces), ["https://172.20.1.2:3443", "https://192.168.10.5:3443"]);
+  assert.deepEqual(getLanHttpsOrigins({ AGENTOS_LAN_HTTPS_PORT: "invalid" }, interfaces), []);
 });
 
 test("agentos auth reset removes only the instance protection file", async () => {

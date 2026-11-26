@@ -319,7 +319,7 @@ AgentOS supports trusted operator machines and an explicitly configured hosted d
 
 - The packaged launcher binds locally, generates an API token, starts AgentOS with authentication, and opens an authenticated local URL.
 - API routes are protected before route handlers run.
-- Remote write access remains disabled by default. Operators may opt in exact HTTPS origins with `AGENTOS_TRUSTED_OPERATOR_ORIGINS`; authenticated AgentOS access remains required.
+- Remote operator access remains disabled by default. With Instance Protection enabled, the owner can approve exact HTTPS addresses or allow HTTPS on the host's private IPv4 addresses in **Settings → Access** while signed in on localhost. Operators may also configure exact HTTPS origins with `AGENTOS_TRUSTED_OPERATOR_ORIGINS`.
 - Remote Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is explicitly enabled.
 - Sensitive values are redacted from diagnostics and compatibility reports.
 - Local auth and config files use owner-only permissions where applicable.
@@ -335,6 +335,20 @@ AGENTOS_TRUSTED_OPERATOR_ORIGINS=https://agentos.example.com
 Wildcards, HTTP origins, paths, query strings, and fragments are rejected. Keep AgentOS behind HTTPS and an authenticated reverse proxy, and preserve the public `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto` values. Origin allowlisting is an additional mutation boundary, not a substitute for authentication. Railway's generated `RAILWAY_PUBLIC_DOMAIN` is accepted automatically as one exact HTTPS operator origin; custom domains must still be listed explicitly.
 
 When Instance Protection is enabled, each trusted browser or mobile device can sign in with the configured username and password. The signed Instance Protection session authenticates subsequent API requests, so new devices do not need an `#agentos_token` bootstrap URL. The API token remains required while Instance Protection is disabled and for initial protected-instance setup.
+
+**Settings → Access** stores managed approvals with Instance Protection. Server-configured addresses are displayed as read-only. Removing a managed address stops subsequent protected requests from it unless the server or local-network policy also allows it. A tunnel or custom domain must route to this instance over an HTTPS endpoint and preserve its browser-facing hostname and protocol in the proxy headers. For internet-facing endpoints, configure access control on the proxy or tunnel as well.
+
+For local network access, run AgentOS on loopback behind an HTTPS reverse proxy bound to the host's private address. Use a certificate that covers that IP and is trusted by the phone. The switch approves HTTPS on port 443 by default. Set `AGENTOS_LAN_HTTPS_PORT` to the proxy's port if it differs. For example, with `AGENTOS_LAN_HTTPS_PORT=8443 pnpm dev --hostname 127.0.0.1`, a Caddy proxy for a host at `192.168.1.124` can use:
+
+```caddyfile
+https://192.168.1.124:8443 {
+  bind 192.168.1.124
+  tls internal
+  reverse_proxy 127.0.0.1:3000
+}
+```
+
+Trust the Caddy local CA certificate on your phone before opening the link or scanning the QR code. Open **Settings → Access** at `http://localhost:3000` to turn on local network access. Keep the plain HTTP upstream bound to loopback and leave the private HTTPS port unforwarded on the router. For external hostnames, prefer a built AgentOS server so Next.js development-only asset and hot-reload origin rules do not affect mobile access.
 
 Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and persistent trusted hosts, including the documented Railway container, but not serverless-only deployment. Desktop-only actions such as revealing a host file in Finder do not become remote desktop features on Railway.
 
