@@ -1479,6 +1479,21 @@ async function synthesizeCreationIntelligence(
     }));
     return updateIntelligenceSnapshot(filePath, recoveredRun, dependencies, recovered, partialContext, false);
   }
+  // First-run review already has a bounded native Architect pass. Use the
+  // confirmed extraction here so optional synthesis cannot delay the team.
+  if (run.input.mode === "review" && run.input.workspaceName && normalizeWorkspaceCreationProfile(run.input.profile) === "fast") {
+    signal.throwIfAborted();
+    const extracted = fallbackResult("fast-setup-local-extraction", 0);
+    await dependencies.persistIntelligencePack({
+      actorId,
+      draftContextId: run.draftContextId!,
+      inputFingerprint,
+      pack: extracted.pack,
+      synthesisStatus: "fallback"
+    });
+    const completed = await completeIntelligenceExecution(filePath, extracted);
+    return updateIntelligenceSnapshot(filePath, completed, dependencies, extracted, partialContext, false);
+  }
   const remaining = Math.max(1_000, deadline - Date.now() - budget.architectReserveMs - budget.composerReserveMs);
   const attempts = Math.max(1, Math.min(budget.maxIntelligenceAttempts, Math.floor(remaining / 5_000)));
   const attemptTimeout = Math.max(5_000, Math.min(budget.maxIntelligenceAttemptMs, Math.floor(remaining / attempts)));

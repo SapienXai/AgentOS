@@ -372,7 +372,7 @@ async function run() {
                 return result.files?.some(file => /docs\/library\/xlsx\/press-guide-/.test(file.path));
               }, {timeout:30000}).toBe(true);
               await go("/knowledge?workspaceId=" + encodeURIComponent(employee.workspaceId));
-              await expect(page.getByRole("button", {name:/Press Guide.*XLSX/i})).toBeVisible({timeout:12000});
+              await expect(page.getByRole("button", {name:/^Press Guide XLSX · Harbor Review/i})).toBeVisible({timeout:12000});
             });
             await record("first-conversation", async () => {
               await go("/chat?employee=harbor-review-assistant");
