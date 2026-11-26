@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ArrowDown, Bot, KeyRound, LoaderCircle, Paperclip, SendHorizontal, Square, X } from "lucide-react";
 
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { AgentChatSoundSettings, reportAgentChatVisibility, requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
+import { reportAgentChatVisibility, requestAgentChatSound } from "@/components/mission-control/agent-chat-sounds";
 import { AgentChatMessageContent } from "@/components/mission-control/agent-chat-message-content";
 import {
   agentChatStateEventName,
@@ -285,10 +285,20 @@ export function AgentChatDrawer({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [queueAction, setQueueAction] = useState<{ chatKey: string; inputId: string }>();
   const refreshConversation = useRef<() => void>(() => {});
+  const revealingReplies = useRef(new Set<string>());
+  const handleReplyRevealChange = useCallback((id: string, revealing: boolean) => {
+    const pending = revealingReplies.current;
+    if (revealing) {
+      pending.add(id);
+    } else if (pending.delete(id) && pending.size === 0) {
+      refreshConversation.current();
+    }
+  }, []);
   const chatAccessDenied = chatAccessDeniedFor === chatKey;
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isVisibleRef = useRef(isVisible);
   const isNearBottomRef = useRef(true);
@@ -443,7 +453,7 @@ export function AgentChatDrawer({
         }));
         setHistoryUnavailableFor((current) => current === chatKey ? undefined : current);
         setChatAccessDeniedFor((current) => current === chatKey ? undefined : current);
-        if (queueOnly || getAgentChatRunSnapshot(chatKey).isRunning || !Array.isArray(payload.messages)) return;
+        if (queueOnly || getAgentChatRunSnapshot(chatKey).isRunning || revealingReplies.current.size > 0 || !Array.isArray(payload.messages)) return;
 
         const currentMessages = readAgentChatMessages(chatKey);
         const mergedMessages = reconcileAgentChatMessages(currentMessages, payload.messages);
@@ -539,6 +549,7 @@ export function AgentChatDrawer({
       }
     });
     observer.observe(list);
+    if (timelineRef.current) observer.observe(timelineRef.current);
 
     return () => observer.disconnect();
   }, [isVisible]);
@@ -877,7 +888,7 @@ export function AgentChatDrawer({
           onScroll={handleTimelineScroll}
           className="h-full min-h-0 overflow-y-auto overscroll-contain"
         >
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-7 px-5 py-6 sm:px-8 sm:py-7">
+          <div ref={timelineRef} className="mx-auto flex w-full max-w-2xl flex-col gap-7 px-5 py-6 sm:px-8 sm:py-7">
             {!chatAccessDenied && olderCursor ? (
               <Button type="button" size="sm" variant="ghost" className="self-center" disabled={loadingOlder} onClick={() => void loadOlder()}>
                 {loadingOlder ? "Loading older messages…" : "Load older messages"}
@@ -898,8 +909,9 @@ export function AgentChatDrawer({
               const isUser = entry.role === "user";
               const isSystem = entry.role === "system";
               const activeRun = runSnapshot.runs.find((run) => run.assistantMessageId === entry.id);
-              const isPendingAssistant = Boolean(activeRun && !entry.text.trim());
               const isPendingUser = isUser && runSnapshot.runs.some((run) => run.userMessageId === entry.id);
+              const progressiveReply = isVisible && entry.role === "assistant" && entry.submissionId &&
+                entry.id === `${entry.submissionId}:reply` && entry.status !== "error" && !entry.localAction;
               const errorMessage = entry.errorMessage?.trim();
               const gatewayRepairAction = errorMessage ? resolveAgentChatGatewayRepairAction(errorMessage) : null;
               const authAction = !gatewayRepairAction
@@ -921,7 +933,7 @@ export function AgentChatDrawer({
                   ) : null}
                   <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
                     <div className={cn("min-w-0", isUser ? "max-w-[82%]" : isSystem ? "w-full max-w-xl" : "w-full")}>
-                      {isPendingAssistant ? null : isUser ? (
+                      {isUser ? (
                         <div className={cn("rounded-[20px] bg-muted px-4 py-2.5 text-[14px] leading-6 text-foreground", isPendingUser && "opacity-80")}>
                           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{entry.text}</p>
                         </div>
@@ -930,10 +942,12 @@ export function AgentChatDrawer({
                           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{entry.text}</p>
                         </div>
                       ) : (
-                        <AgentChatMessageContent text={entry.text} className="text-[15px] leading-7" />
+                        <AgentChatMessageContent text={entry.text} className="text-[15px] leading-7"
+                          reveal={progressiveReply ? { id: entry.id, isStreaming: entry.status === "sending", onChange: handleReplyRevealChange } : undefined}
+                        />
                       )}
 
-                      {!isPendingAssistant ? (
+                      {!activeRun ? (
                         <time
                           dateTime={Number.isFinite(entry.createdAt) ? new Date(entry.createdAt).toISOString() : undefined}
                           className={cn("mt-1.5 block text-[10px] leading-4 text-muted-foreground/75", isUser && "text-right")}
@@ -1059,7 +1073,7 @@ export function AgentChatDrawer({
           ) : null}
           <form
             aria-label="Send an agent message"
-            className="relative rounded-[22px] border border-border bg-card shadow-sm"
+            className="agent-chat-composer flex items-end gap-1 rounded-[20px] border bg-card px-1.5 shadow-sm"
             onSubmit={(event) => {
               event.preventDefault();
               void send();
@@ -1070,6 +1084,28 @@ export function AgentChatDrawer({
               textareaRef.current?.focus();
             }}
           >
+            <div className="mb-1 shrink-0">
+              <input type="file" multiple hidden ref={attachmentInput} accept={directChatAttachmentTypes.join(",")}
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  if (!selected.length) return;
+                  if (files.length + selected.length > directChatAttachmentCount || selected.some((file) =>
+                    file.size === 0 || file.size > directChatAttachmentBytes ||
+                    !directChatAttachmentTypes.some((type) => type === file.type))) {
+                    toast.error("Attach up to three JPEG, PNG, WebP, PDF, or plain text files, up to 2 MB each.");
+                    return;
+                  }
+                  setDraftFiles((current) => ({ ...current, [chatKey]: [...files, ...selected] }));
+                }}
+              />
+              <Button type="button" variant="ghost" aria-label="Attach files" title={draftWorkspaceId ? "Up to 3 attachments, 2 MB each" : undefined} className="h-11 w-11 rounded-full p-0"
+                disabled={chatAccessDenied || archived || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
+                onClick={() => attachmentInput.current?.click()}>
+                <Paperclip className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+
             <label htmlFor={composerId} className="sr-only">Message {agentLabel}</label>
             <Textarea
               id={composerId}
@@ -1086,40 +1122,17 @@ export function AgentChatDrawer({
                 event.currentTarget.form?.requestSubmit();
               }}
               placeholder={`Message ${agentLabel}…`}
-              className="min-h-[52px] max-h-[160px] w-full cursor-text resize-none border-0 bg-transparent py-3 pl-24 pr-28 text-[15px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[52px] min-w-0 max-h-[160px] flex-1 cursor-text resize-none border-0 bg-transparent px-1 py-3.5 text-base leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:text-[15px]"
             />
 
-            <div className="absolute bottom-1.5 left-1.5 z-10 flex gap-1">
-              <AgentChatSoundSettings />
-              <input type="file" multiple hidden ref={attachmentInput} accept={directChatAttachmentTypes.join(",")}
-                onChange={(event) => {
-                  const selected = Array.from(event.target.files ?? []);
-                  event.target.value = "";
-                  if (!selected.length) return;
-                  if (files.length + selected.length > directChatAttachmentCount || selected.some((file) =>
-                    file.size === 0 || file.size > directChatAttachmentBytes ||
-                    !directChatAttachmentTypes.some((type) => type === file.type))) {
-                    toast.error("Attach up to three JPEG, PNG, WebP, PDF, or plain text files, up to 2 MB each.");
-                    return;
-                  }
-                  setDraftFiles((current) => ({ ...current, [chatKey]: [...files, ...selected] }));
-                }}
-              />
-              <Button type="button" variant="ghost" aria-label="Attach files" title={draftWorkspaceId ? "Up to 3 attachments, 2 MB each" : undefined} className="h-10 w-10 rounded-full p-0"
-                disabled={chatAccessDenied || archived || preparingFilesFor === chatKey || files.length >= directChatAttachmentCount}
-                onClick={() => attachmentInput.current?.click()}>
-                <Paperclip className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-
-            <div className="absolute bottom-1.5 right-1.5 flex gap-1">
+            <div className="mb-1 flex shrink-0 gap-1">
               {stopRunId ? (
                 <Button
                   type="button"
                   variant="ghost"
                   aria-label="Stop reply"
                   disabled={stoppingReply}
-                  className="h-10 w-10 rounded-full p-0"
+                  className="h-11 w-11 rounded-full p-0"
                   onClick={stopReply}
                 >
                   {stoppingReply ? <LoaderCircle className="h-4 w-4 animate-spin" /> :
@@ -1130,7 +1143,7 @@ export function AgentChatDrawer({
                 type="submit"
                 aria-label="Send message"
                 disabled={!canSend}
-                className="h-10 w-10 rounded-full p-0 shadow-none"
+                className="h-11 w-11 rounded-full p-0 shadow-none"
               >
                 <SendHorizontal className="h-4 w-4" />
               </Button>

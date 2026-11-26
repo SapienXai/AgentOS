@@ -18,7 +18,6 @@ export function SettingsPage({
   activeSection,
   onSelectSection,
   onOpenAdvancedSection,
-  onToggleTheme,
   surfaceTheme,
   connectionState,
   isSettingsOperationInProgress,
@@ -49,7 +48,7 @@ export function SettingsPage({
             <div className="grid items-start gap-5 lg:grid-cols-[180px_minmax(0,680px)] lg:gap-8">
               <SettingsNavigation activeSection={activeSection} onSelect={onSelectSection} surfaceTheme={surfaceTheme} />
               <div className="min-w-0">
-                {activeSection === "general" ? <GeneralSettings {...props} surfaceTheme={surfaceTheme} onToggleTheme={onToggleTheme} /> : null}
+                {activeSection === "general" ? <GeneralSettings {...props} surfaceTheme={surfaceTheme} /> : null}
                 {activeSection === "ai-tools" ? <ToolsSettings {...props} surfaceTheme={surfaceTheme} /> : null}
                 {activeSection === "workspace" ? <WorkspaceSettings {...props} surfaceTheme={surfaceTheme} /> : null}
                 {activeSection === "runtime" ? <RuntimeSettings {...props} surfaceTheme={surfaceTheme} /> : null}

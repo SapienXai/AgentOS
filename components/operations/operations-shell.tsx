@@ -19,7 +19,6 @@ import {
   pendingAgentProjectionStorageKey,
   type PendingAgentProjection
 } from "@/components/mission-control/pending-agent-projection";
-import { useMissionControlPreferences } from "@/components/mission-control/use-mission-control-preferences";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
   buildWorkspaceSelectionStorageKey,
@@ -31,6 +30,7 @@ import {
 import { scopeMissionControlSnapshot } from "@/components/operations/operations-data";
 import { OperationsTopBar } from "@/components/operations/operations-ui";
 import { toast } from "@/components/ui/sonner";
+import { useSurfaceTheme } from "@/components/ui/surface-theme-provider";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import type { MissionControlSnapshot, WorkspaceCreateResult, WorkspacePlanDeployResult, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
@@ -115,7 +115,7 @@ export function OperationsShell({
 }) {
   const teamPage = usePathname() === "/team";
   const { snapshot, connectionState, hasReceivedLiveSnapshot, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
-  const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
+  const { surfaceTheme, toggleSurfaceTheme } = useSurfaceTheme();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     preferredWorkspaceId && initialSnapshot.workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
       ? preferredWorkspaceId
@@ -181,20 +181,6 @@ export function OperationsShell({
     setIsSidebarPinned(nextPinned);
     setSidebarExpanded(nextPinned);
   }, [isSidebarPinned, setIsSidebarPinned]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const hadDarkClass = root.classList.contains("dark");
-    const previousColorScheme = root.style.colorScheme;
-
-    root.classList.toggle("dark", surfaceTheme !== "light");
-    root.style.colorScheme = surfaceTheme === "light" ? "light" : "dark";
-
-    return () => {
-      root.classList.toggle("dark", hadDarkClass);
-      root.style.colorScheme = previousColorScheme;
-    };
-  }, [surfaceTheme]);
 
   useEffect(() => {
     if (!mobileSidebarOpen) {
@@ -420,7 +406,7 @@ export function OperationsShell({
         <MissionSidebar
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
-          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+          onToggleTheme={toggleSurfaceTheme}
           activeWorkspaceId={activeWorkspaceId}
           pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
@@ -485,7 +471,7 @@ export function OperationsShell({
         <MissionSidebar
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
-          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+          onToggleTheme={toggleSurfaceTheme}
           activeWorkspaceId={activeWorkspaceId}
           pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
@@ -557,7 +543,7 @@ export function OperationsShell({
                 void refresh();
               }}
               onSnapshotChange={setSnapshot}
-              onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+              onToggleTheme={toggleSurfaceTheme}
             />
           </div>
           <div className="hidden lg:block">
@@ -571,7 +557,7 @@ export function OperationsShell({
                 void refresh();
               }}
               onSnapshotChange={setSnapshot}
-              onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+              onToggleTheme={toggleSurfaceTheme}
             />
           </div>
           {children({

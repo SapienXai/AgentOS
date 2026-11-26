@@ -67,6 +67,7 @@ import {
 import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
+import { useSurfaceTheme } from "@/components/ui/surface-theme-provider";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import { resolveTaskWorkspaceId } from "@/components/mission-control/canvas.graph";
 import type { OptimisticMissionTask } from "@/components/mission-control/mission-control-shell.utils";
@@ -296,9 +297,8 @@ export function MissionControlShell({
   const [lastMission, setLastMission] = useState<MissionResponse | null>(null);
   const [composeIntent, setComposeIntent] = useState<ComposeIntent | null>(null);
   const reconciledPendingTaskIdsRef = useRef(new Set<string>());
+  const { surfaceTheme, setThemePreference, toggleSurfaceTheme } = useSurfaceTheme();
   const {
-    surfaceTheme,
-    setSurfaceTheme,
     hiddenRuntimeIds,
     setHiddenRuntimeIds,
     hiddenTaskKeys,
@@ -314,20 +314,6 @@ export function MissionControlShell({
   useEffect(() => {
     syncTauriDesktopPlatformMarker();
   }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const hadDarkClass = root.classList.contains("dark");
-    const previousColorScheme = root.style.colorScheme;
-
-    root.classList.toggle("dark", surfaceTheme !== "light");
-    root.style.colorScheme = surfaceTheme === "light" ? "light" : "dark";
-
-    return () => {
-      root.classList.toggle("dark", hadDarkClass);
-      root.style.colorScheme = previousColorScheme;
-    };
-  }, [surfaceTheme]);
 
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
@@ -4043,7 +4029,6 @@ export function MissionControlShell({
     }
 
     const exactKeys = [
-      missionControlPreferenceStorageKeys.surfaceTheme,
       missionControlPreferenceStorageKeys.hiddenRuntimeIds,
       missionControlPreferenceStorageKeys.hiddenTaskKeys,
       missionControlPreferenceStorageKeys.lockedTaskKeys,
@@ -4078,6 +4063,7 @@ export function MissionControlShell({
       }
     }
 
+    setThemePreference("system");
     clearPreferenceState();
     clearTaskReviewState();
   };
@@ -4393,7 +4379,7 @@ export function MissionControlShell({
           key={`onboarding-${onboardingSessionKey}`}
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
-          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+          onToggleTheme={toggleSurfaceTheme}
           stage={effectiveOnboardingStage}
           systemReady={onboardingRunState === "success" || isOpenClawOnboardingSystemReady}
           modelReady={
@@ -4809,7 +4795,7 @@ export function MissionControlShell({
         </div>
 
         <div className="workforce-content">
-          <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))} />
+          <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} />
         </div>
         {!isFloatingHeaderHidden ? <WorkforceMobileNavigation open={isSidebarOpen} onOpen={() => setIsSidebarOpen((current) => !current)} /> : null}
         {!isFloatingHeaderHidden ? (
@@ -4824,9 +4810,7 @@ export function MissionControlShell({
             <MissionControlCanvasTopBar
               settingsRef={settingsRef}
               isSettingsOpen={isSettingsOpen}
-              onToggleTheme={() =>
-                setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
-              }
+              onToggleTheme={toggleSurfaceTheme}
               onToggleSettings={() => setIsSettingsOpen((current) => !current)}
               onSnapshotChange={setSnapshot}
               onRefresh={refresh}
@@ -5020,9 +5004,7 @@ export function MissionControlShell({
             <MissionControlCanvasTopBar
               settingsRef={settingsRef}
               isSettingsOpen={isSettingsOpen}
-              onToggleTheme={() =>
-                setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
-              }
+              onToggleTheme={toggleSurfaceTheme}
               onToggleSettings={() => setIsSettingsOpen((current) => !current)}
               onSnapshotChange={setSnapshot}
               onRefresh={refresh}
@@ -5651,7 +5633,7 @@ export function MissionControlShell({
             key={`onboarding-${onboardingSessionKey}`}
             snapshot={snapshot}
             surfaceTheme={surfaceTheme}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+            onToggleTheme={toggleSurfaceTheme}
             stage={effectiveOnboardingStage}
             systemReady={onboardingRunState === "success" || isOpenClawOnboardingSystemReady}
             modelReady={

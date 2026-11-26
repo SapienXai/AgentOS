@@ -1454,9 +1454,9 @@ test("agent chat keeps the send action in the composer bottom-right", () => {
 
   assert.match(
     source,
-    /absolute bottom-1\.5 right-1\.5 flex gap-1[\s\S]*type="submit"[\s\S]*aria-label="Send message"/
+    /mb-1 flex shrink-0 gap-1[\s\S]*type="submit"[\s\S]*aria-label="Send message"/
   );
-  assert.doesNotMatch(source, /absolute bottom-1\.5 right-1\.5[\s\S]*lg:top-3/);
+  assert.doesNotMatch(source, /AgentChatSoundSettings/);
 });
 
 test("agent chat uses a focused responsive sheet, safe composer, and readable markdown", () => {
@@ -1480,7 +1480,8 @@ test("agent chat uses a focused responsive sheet, safe composer, and readable ma
   assert.match(drawerSource, /env\(safe-area-inset-bottom\)/);
   assert.match(drawerSource, /event\.nativeEvent\.isComposing/);
   assert.match(drawerSource, /prompts=\{quickPrompts\}/);
-  assert.match(markdownSource, /remarkPlugins=\{\[remarkGfm\]\}/);
+  assert.match(markdownSource, /messagePlugins = \[remarkGfm\]/);
+  assert.match(markdownSource, /remarkPlugins=\{messagePlugins\}/);
   assert.match(markdownSource, /skipHtml/);
   assert.match(globalStyles, /max-width: 767px[\s\S]*agent-chat-sheet/);
   assert.match(globalStyles, /prefers-reduced-motion: reduce[\s\S]*agent-chat-activity-dot/);

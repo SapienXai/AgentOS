@@ -2,15 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type SurfaceTheme = "dark" | "light";
-
-const surfaceThemeStorageKey = "mission-control-surface-theme";
 const hiddenRuntimeIdsStorageKey = "mission-control-hidden-runtime-ids";
 const hiddenTaskKeysStorageKey = "mission-control-hidden-task-keys";
 const lockedTaskKeysStorageKey = "mission-control-locked-task-keys";
 
 export const missionControlPreferenceStorageKeys = {
-  surfaceTheme: surfaceThemeStorageKey,
   hiddenRuntimeIds: hiddenRuntimeIdsStorageKey,
   hiddenTaskKeys: hiddenTaskKeysStorageKey,
   lockedTaskKeys: lockedTaskKeysStorageKey
@@ -32,7 +28,6 @@ function parseStoredStringList(value: string | null) {
 }
 
 export function useMissionControlPreferences() {
-  const [surfaceTheme, setSurfaceTheme] = useState<SurfaceTheme>("dark");
   const [hiddenRuntimeIds, setHiddenRuntimeIds] = useState<string[]>([]);
   const [hiddenTaskKeys, setHiddenTaskKeys] = useState<string[]>([]);
   const [lockedTaskKeys, setLockedTaskKeys] = useState<string[]>([]);
@@ -40,26 +35,12 @@ export function useMissionControlPreferences() {
 
   useEffect(() => {
     queueMicrotask(() => {
-      const storedTheme = globalThis.localStorage?.getItem(surfaceThemeStorageKey);
-
-      if (storedTheme === "dark" || storedTheme === "light") {
-        setSurfaceTheme(storedTheme);
-      }
-
       setHiddenRuntimeIds(parseStoredStringList(globalThis.localStorage?.getItem(hiddenRuntimeIdsStorageKey) ?? null));
       setHiddenTaskKeys(parseStoredStringList(globalThis.localStorage?.getItem(hiddenTaskKeysStorageKey) ?? null));
       setLockedTaskKeys(parseStoredStringList(globalThis.localStorage?.getItem(lockedTaskKeysStorageKey) ?? null));
       setIsHydrated(true);
     });
   }, []);
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    globalThis.localStorage?.setItem(surfaceThemeStorageKey, surfaceTheme);
-  }, [isHydrated, surfaceTheme]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -105,8 +86,6 @@ export function useMissionControlPreferences() {
   };
 
   return {
-    surfaceTheme,
-    setSurfaceTheme,
     hiddenRuntimeIds,
     setHiddenRuntimeIds,
     hiddenTaskKeys,

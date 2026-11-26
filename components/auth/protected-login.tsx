@@ -43,12 +43,6 @@ export function ProtectedLogin() {
   const usernameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const storedTheme = localStorage.getItem("mission-control-surface-theme");
-    document.documentElement.classList.toggle("dark", storedTheme !== "light");
-    document.documentElement.style.colorScheme = storedTheme === "light" ? "light" : "dark";
-  }, []);
-
-  useEffect(() => {
     if (loading || !status) return;
     if (!status.protectionEnabled || status.authenticated) {
       router.replace(safeReturnTo(searchParams?.get("returnTo") ?? null));

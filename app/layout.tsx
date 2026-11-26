@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 
 import { Toaster } from "@/components/ui/sonner";
+import { SurfaceThemeProvider } from "@/components/ui/surface-theme-provider";
 import { InstanceProtectionProvider } from "@/components/auth/instance-protection-provider";
 import { AgentChatSoundProvider } from "@/components/mission-control/agent-chat-sounds";
 import { DesktopNativeTitlebar } from "@/components/desktop/native-titlebar";
@@ -109,17 +110,22 @@ export default async function RootLayout({
   );
 
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="color-scheme" content="light dark" />
+      </head>
       <body>
-        <InstanceProtectionProvider initialStatus={initialProtectionStatus}>
-          <AgentChatSoundProvider>
-            {children}
-            <WorkspaceCreationActivityIndicator />
-            <PwaServiceWorkerRegistration />
-            <Toaster theme="system" richColors closeButton />
-          </AgentChatSoundProvider>
-        </InstanceProtectionProvider>
-        <DesktopNativeTitlebar />
+        <SurfaceThemeProvider>
+          <InstanceProtectionProvider initialStatus={initialProtectionStatus}>
+            <AgentChatSoundProvider>
+              {children}
+              <WorkspaceCreationActivityIndicator />
+              <PwaServiceWorkerRegistration />
+              <Toaster richColors closeButton />
+            </AgentChatSoundProvider>
+          </InstanceProtectionProvider>
+          <DesktopNativeTitlebar />
+        </SurfaceThemeProvider>
       </body>
     </html>
   );

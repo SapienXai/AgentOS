@@ -1,3 +1,9 @@
+import { applySurfaceTheme, readThemePreference, systemColorSchemeQuery } from "@/lib/agentos/ui/surface-theme";
+
+const themePreference = readThemePreference();
+const systemTheme = window.matchMedia(systemColorSchemeQuery).matches ? "dark" : "light";
+applySurfaceTheme(themePreference === "system" ? systemTheme : themePreference);
+
 const hash = window.location.hash ? window.location.hash.slice(1) : "";
 const params = new URLSearchParams(hash);
 const token = params.get("agentos_token");

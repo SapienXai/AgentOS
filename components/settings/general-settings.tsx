@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { Check, LoaderCircle, Moon, Plus, Sun } from "lucide-react";
+import { Check, LoaderCircle, Plus } from "lucide-react";
 
+import { AgentChatSoundSettings } from "@/components/mission-control/agent-chat-sounds";
 import { Button } from "@/components/ui/button";
+import { useSurfaceTheme } from "@/components/ui/surface-theme-provider";
 import { SettingsList, SettingsRow, SettingsSection } from "@/components/settings/settings-section";
 import type { SettingsPageProps } from "@/components/settings/settings-types";
+import { parseThemePreference } from "@/lib/agentos/ui/surface-theme";
 import { cn } from "@/lib/utils";
 
 export function GeneralSettings({
@@ -13,9 +16,9 @@ export function GeneralSettings({
   onSelectedModelIdChange,
   modelOnboardingRunState,
   onRunModelSetDefault,
-  onOpenAddModels,
-  onToggleTheme
-}: Pick<SettingsPageProps, "snapshot" | "surfaceTheme" | "selectedModelId" | "onSelectedModelIdChange" | "modelOnboardingRunState" | "onRunModelSetDefault" | "onOpenAddModels" | "onToggleTheme">) {
+  onOpenAddModels
+}: Pick<SettingsPageProps, "snapshot" | "surfaceTheme" | "selectedModelId" | "onSelectedModelIdChange" | "modelOnboardingRunState" | "onRunModelSetDefault" | "onOpenAddModels">) {
+  const { themePreference, setThemePreference } = useSurfaceTheme();
   const defaultModel = snapshot.diagnostics.modelReadiness.resolvedDefaultModel || snapshot.diagnostics.modelReadiness.defaultModel || "";
   const selectedModel = selectedModelId || defaultModel;
   const hasModels = snapshot.models.length > 0;
@@ -25,14 +28,26 @@ export function GeneralSettings({
       <SettingsList surfaceTheme={surfaceTheme}>
         <SettingsRow
           label="Appearance"
-          description="Choose the light or dark AgentOS workspace theme."
+          description="System follows your device’s light or dark mode."
           surfaceTheme={surfaceTheme}
           action={
-            <Button type="button" size="sm" variant="secondary" onClick={onToggleTheme} className="min-h-10 rounded-md text-xs sm:min-h-9">
-              {surfaceTheme === "dark" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
-              {surfaceTheme === "dark" ? "Dark" : "Light"}
-            </Button>
+            <select
+              aria-label="Appearance"
+              value={themePreference}
+              onChange={(event) => setThemePreference(parseThemePreference(event.target.value))}
+              className="min-h-11 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:min-h-9"
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
           }
+        />
+        <SettingsRow
+          label="Chat sounds"
+          description="Adjust the sound cues for messages."
+          surfaceTheme={surfaceTheme}
+          action={<AgentChatSoundSettings />}
         />
         <SettingsRow
           label="Default model"

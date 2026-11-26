@@ -167,7 +167,7 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light dark;
   }
 
   body {
@@ -1514,6 +1514,14 @@
 .agent-chat-activity-label {
   display: block;
   color: hsl(var(--muted-foreground));
+}
+
+.agent-chat-composer {
+  border-color: hsl(var(--muted-foreground) / 0.42);
+}
+
+.agent-chat-composer:focus-within {
+  border-color: hsl(var(--ring) / 0.66);
 }
 
 .agent-chat-markdown {

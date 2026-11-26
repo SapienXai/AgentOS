@@ -10,7 +10,6 @@ export type SettingsPageProps = {
   activeSection: SettingsArea;
   onSelectSection: (section: SettingsArea) => void;
   onOpenAdvancedSection: (section: string) => void;
-  onToggleTheme: () => void;
   snapshot: MissionControlShellSettingsPanelProps["snapshot"];
   connectionState: MissionControlShellSettingsPanelProps["connectionState"];
   surfaceTheme: MissionControlShellSettingsPanelProps["surfaceTheme"];
