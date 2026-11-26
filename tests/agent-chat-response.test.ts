@@ -17,6 +17,26 @@ import {
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
+import { extractDirectAgentRenameName } from "@/lib/openclaw/chat-actions";
+
+test("only standalone rename commands can rename an agent from chat", () => {
+  for (const message of [
+    "sen proje dökümanlarını hazırlamadın mı? ekip arkadaşların erişemiyor sanırım",
+    "Belgeleri hâlâ hazırlamadın mı",
+    "Adın Game Scout mu?",
+    "Adın ne",
+    "What happens if I rename you to Atlas?",
+    "Explain the command rename yourself to Atlas",
+    "Rename yourself to Atlas and review the documents",
+    "Rename yourself to Atlas\nReview the documents"
+  ]) {
+    assert.equal(extractDirectAgentRenameName(message), null, message);
+  }
+
+  assert.equal(extractDirectAgentRenameName("Adın Game Scout olsun."), "Game Scout");
+  assert.equal(extractDirectAgentRenameName("İsmini Atlas yap"), "Atlas");
+  assert.equal(extractDirectAgentRenameName('Please rename yourself to "Game Scout".'), "Game Scout");
+});
 
 test("OpenClaw context recovery notices are failures and ordinary discussion remains a reply", () => {
   assert.match(resolveAgentChatContextFailureMessage(

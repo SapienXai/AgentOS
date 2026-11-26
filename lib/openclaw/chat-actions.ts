@@ -6,6 +6,29 @@ export type MissionControlAction =
       name: string;
     };
 
+export function extractDirectAgentRenameName(value: string) {
+  const message = value.trim();
+  if (/[?？\r\n]/u.test(message)) return null;
+
+  // Only a complete, standalone operator command can change agent identity.
+  const patterns = [
+    /^(?:please\s+)?(?:rename (?:yourself|you|this agent|agent) to|set (?:your )?(?:display )?name to|call yourself)\s+(.+?)[.!]*$/iu,
+    /^(?:lütfen\s+)?(?:ad[ıi]n|[iİ]sm[ıi]n)\s+(.+?)\s+olsun[.!]*$/iu,
+    /^(?:lütfen\s+)?(?:ad[ıi]n[ıi]|[iİ]sm[ıi]n[ıi])\s+(.+?)\s+(?:yap|koy|değiştir|degistir)[.!]*$/iu
+  ];
+
+  for (const pattern of patterns) {
+    const name = normalizeActionName(message.match(pattern)?.[1]);
+    if (name && name.length <= 48 &&
+        /^[\p{L}\p{N}][\p{L}\p{M}\p{N} .’'-]*$/u.test(name) &&
+        !/(?:^|\s)(?:and|then|but|ve|sonra|ama|ne|what|who|kim|neden|why)(?:\s|$)/iu.test(name)) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
 export function extractMissionControlAction(text: unknown): {
   action: MissionControlAction | null;
   cleanText: string;

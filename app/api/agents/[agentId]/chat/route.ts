@@ -10,10 +10,9 @@ import {
   recoverStreamedAgentChatResponse,
   resolveAgentChatContextFailureMessage,
   resolveAgentChatRuntimeFailureMessage,
-  sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
-import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
+import { extractDirectAgentRenameName } from "@/lib/openclaw/chat-actions";
 import { directChatAttachmentBytes, directChatAttachmentCount, directChatAttachmentTypes } from "@/lib/openclaw/chat-attachments";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { isOpenClawAgentModelReady, readKnownAgentChatModelIssue } from "@/lib/openclaw/application/model-provider-state-service";
@@ -341,8 +340,7 @@ export async function POST(
       const activeAgentModelId = agent.modelId;
 
       const emitAssistantText = async (value: string | null | undefined) => {
-        const sanitizedText = sanitizeAgentChatReplyText(value);
-        const currentText = sanitizeAgentChatVisibleText(sanitizedText);
+        const currentText = sanitizeAgentChatVisibleText(value);
 
         if (!currentText || currentText === latestAssistantText) {
           return;
@@ -372,7 +370,9 @@ export async function POST(
         });
 
         const operatorMessage = input.rawMessage ?? input.message;
-        const directRename = extractDirectAgentRenameName(operatorMessage);
+        const directRename = input.queueMode === "followup" && !input.attachments?.length
+          ? extractDirectAgentRenameName(operatorMessage)
+          : null;
         const canManageAgents = canAgentOsActorUseProductPermission(authorization.actor, "agents.manage");
         if (directRename && canManageAgents) {
           const renameAuthorization = await requireAgentOsOpenClawPreflight(request, {
@@ -395,30 +395,15 @@ export async function POST(
           }, { ...renameAuthorization.commandOptions, allowCliFallback: false });
           clearMissionControlCaches();
 
-          const response = applyMissionControlActionMetadata(
-            {
-              runId: null,
-              agentId,
-              status: "completed",
-              summary: `Renamed agent to ${directRename}.`,
-              payloads: [
-                {
-                  text: `Renamed agent to ${directRename}.`,
-                  mediaUrl: null
-                }
-              ],
-              meta: {
-                missionControlAction: {
-                  type: "rename_agent",
-                  name: directRename
-                }
-              }
-            },
-            {
-              type: "rename_agent",
-              name: directRename
-            }
-          );
+          const summary = `Renamed agent to ${directRename}.`;
+          const response: MissionResponse = {
+            runId: null,
+            agentId,
+            status: "completed",
+            summary,
+            payloads: [{ text: summary, mediaUrl: null }],
+            meta: { missionControlAction: { type: "rename_agent", name: directRename, applied: true } }
+          };
 
           await send({
             type: "done",
@@ -795,99 +780,36 @@ function normalizeAgentChatMessageTimestamp(value: string | number | null, index
 
 function toAgentChatResponse(agentId: string, payload: AgentChatCommandPayload): MissionResponse {
   const resultPayload = resolveAgentChatResultPayload(payload);
-  let action: MissionControlAction | null = null;
   const payloads = Array.isArray(resultPayload.payloads)
     ? resultPayload.payloads
         .map((entry) => {
-          const extracted = extractMissionControlAction(sanitizeAgentChatReplyText(resolveAgentChatEntryText(entry)));
-
-          if (!action && extracted.action) {
-            action = extracted.action;
-          }
-
           return {
-            text: extracted.cleanText,
+            text: sanitizeAgentChatVisibleText(resolveAgentChatEntryText(entry)),
             mediaUrl: typeof entry.mediaUrl === "string" || entry.mediaUrl === null ? entry.mediaUrl : null
           };
         })
         .filter((entry) => entry.text.length > 0)
     : [];
-  const extractedSummary = extractMissionControlAction(
-    sanitizeAgentChatReplyText(typeof payload.summary === "string" ? payload.summary : resultPayload.summary)
+  const summaryText = sanitizeAgentChatVisibleText(
+    typeof payload.summary === "string" ? payload.summary : resultPayload.summary
   );
-
-  if (!action && extractedSummary.action) {
-    action = extractedSummary.action;
-  }
-
-  const hasResponseText = Boolean(
-    extractedSummary.cleanText ||
-      payloads.map((entry) => entry.text).filter(Boolean).join("\n\n") ||
-      (action?.type === "rename_agent" ? action.name : "")
-  );
-  const summary =
-    extractedSummary.cleanText ||
-    payloads.map((entry) => entry.text).filter(Boolean).join("\n\n") ||
-    (action?.type === "rename_agent" ? `Renamed agent to ${action.name}.` : "") ||
-    emptyAgentChatResponseMessage;
+  const text = summaryText || payloads.map((entry) => entry.text).join("\n\n");
   const status = normalizeStatus(resolveAgentChatStatus(payload, resultPayload));
-  const meta = action
-    ? {
-        ...resultPayload.meta,
-        missionControlAction: action
-      }
-    : resultPayload.meta;
+  const meta = { ...resultPayload.meta };
+  delete meta.missionControlAction;
 
   return {
     runId: typeof payload.runId === "string" && payload.runId.trim() ? payload.runId : null,
     agentId,
-    status: hasResponseText ? status : "stalled",
-    summary,
+    status: text ? status : "stalled",
+    summary: text || emptyAgentChatResponseMessage,
     payloads,
-    meta: hasResponseText ? meta : { ...meta, emptyAgentChatResponse: true, emptyAgentChatStatus: status }
+    meta: text ? meta : { ...meta, emptyAgentChatResponse: true, emptyAgentChatStatus: status }
   };
 }
 
 function isEmptyAgentChatResponse(response: MissionResponse) {
   return response.meta?.emptyAgentChatResponse === true;
-}
-
-function extractDirectAgentRenameName(value: string) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  const patterns = [
-    /\b(?:rename (?:yourself|you|this agent|agent) to|set (?:your )?(?:display )?name to|call yourself)\s+(.{1,80})$/i,
-    /(?:ad(?:ı|i)n|ism(?:i|ı)n)\s+(.{1,80}?)(?:\s+olsun)?[.!?]*$/i,
-    /(?:ad(?:ı|i)n(?:ı|i)|ism(?:i|ı)n(?:i|ı))\s+(.{1,80}?)\s+(?:yap|koy|de(?:g|ğ)i(?:s|ş)tir)[.!?]*$/i
-  ];
-
-  for (const pattern of patterns) {
-    const match = normalized.match(pattern);
-    const name = normalizeDirectAgentRenameName(match?.[1]);
-
-    if (name) {
-      return name;
-    }
-  }
-
-  return null;
-}
-
-function normalizeDirectAgentRenameName(value: unknown) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const stripped = value
-    .replace(/<[^>]+>/g, "")
-    .replace(/[`*_#"“”‘’'.,!?]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!stripped || stripped.length > 48 || /\b(?:ne|what|who|kim|neden|why)\b/i.test(stripped)) {
-    return null;
-  }
-
-  return stripped;
 }
 
 function recoverSilentOpenAiChatFailure(response: MissionResponse, modelId?: string | null): MissionResponse {
@@ -979,23 +901,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function applyMissionControlActionMetadata(response: MissionResponse, action: MissionControlAction | null): MissionResponse {
-  if (!action) {
-    return response;
-  }
-
-  return {
-    ...response,
-    summary: response.summary.trim() || `Renamed agent to ${action.name}.`,
-    meta: {
-      ...response.meta,
-      missionControlAction: {
-        ...action,
-        applied: true
-      }
-    }
-  };
-}
 
 function resolveGatewayAgentRegistryFailureMessage(output: string, agentId: string) {
   if (!isGatewayAgentRegistryMissingFailure(output, agentId)) {

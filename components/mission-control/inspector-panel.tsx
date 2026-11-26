@@ -3892,7 +3892,7 @@ function InspectorPresenceGroup({
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((item) => (
-        <Badge key={item.id} variant={item.present ? "success" : missingVariant}>
+        <Badge key={`${item.id}:${item.label}`} variant={item.present ? "success" : missingVariant}>
           {item.label}
         </Badge>
       ))}
