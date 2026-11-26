@@ -49,6 +49,10 @@
   content: none;
 }
 
+@media (max-width: 1023px) and (max-height: 480px) {
+  .workforce-chat-panel { min-height: 13rem; }
+}
+
 /* The operations pages and first-run surface share these tokens. */
 .workforce-main,
 .workforce-setup,

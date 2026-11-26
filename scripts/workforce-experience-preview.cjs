@@ -625,6 +625,10 @@ async function run() {
             await page.setViewportSize(size);
           }
         });
+        if (size.width === 844) await record("chat-landscape-composer", async () => {
+          await page.getByRole("textbox", {name:"Message Ada", exact:true}).focus();
+          await expect(page.getByRole("button", { name:"Send message" })).toBeInViewport({ ratio: 1 });
+        });
         await record("tasks", async () => {
           await go("/missions");
           await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();

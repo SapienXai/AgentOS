@@ -282,7 +282,10 @@ function BatchAssignment({ workspaceId, surfaceTheme, sources, employees, onClos
         </select>
       </label>
       <ul aria-label="Selected sources" className="max-h-[min(36dvh,16rem)] divide-y divide-border overflow-y-auto rounded-xl border border-border px-3">
-        {sources.map(source => <li className="break-words py-2 text-sm font-medium" key={source.id}>{knowledgeTitle(source)}</li>)}
+        {sources.map(source => <li className="flex items-baseline justify-between gap-3 py-2.5 text-sm" key={source.id}>
+          <span className="min-w-0 break-words font-medium capitalize">{knowledgeTitle(source)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{knowledgeFormatFromPath(source.relativePath)?.toUpperCase() || "Document"}</span>
+        </li>)}
       </ul>
       <p className="text-sm text-muted-foreground">Shared file access follows your workspace policy. Existing assignments stay in place.</p>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
