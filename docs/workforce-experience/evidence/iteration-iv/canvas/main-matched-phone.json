@@ -1,0 +1,56 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "settled": [
+    {
+      "teamMs": 267,
+      "knowledgeMs": 266
+    },
+    {
+      "teamMs": 64,
+      "knowledgeMs": 141
+    },
+    {
+      "teamMs": 47,
+      "knowledgeMs": 127
+    }
+  ],
+  "importBytes": 414000,
+  "importMs": 85,
+  "assignTwoMs": 1303,
+  "pickerMs": 244
+}

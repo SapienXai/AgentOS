@@ -1,0 +1,13 @@
+{
+  "import": "PDF and DOCX assigned together; XLSX imported with partial batch recovery",
+  "selectiveRemovalPreservedOtherAssignment": true,
+  "retrieval": "native memory.search",
+  "authorizedTool": "read",
+  "chatReadBack": true,
+  "crossWorkspaceAssignmentDenied": true,
+  "differentWorkspaceNotRetrieved": true,
+  "staleSourceAssignmentDenied": true,
+  "persistenceAfterGatewayAndAppRestart": true,
+  "retrievedAfterRemoval": false,
+  "embeddingRequests": 27
+}
