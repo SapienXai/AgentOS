@@ -1,0 +1,92 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "configured-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "create-workspace",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "build-team",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "configured-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "create-workspace",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "build-team",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "resume-workspace-draft",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "launch-workspace",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "manual-deferred-documents",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "first-conversation",
+    "result": "PASS"
+  }
+]

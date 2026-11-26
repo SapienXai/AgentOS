@@ -1,0 +1,14 @@
+{
+  "telegramBrowserAcceptance": {
+    "passed": true,
+    "stepsPassed": 26,
+    "stepsTotal": 26
+  },
+  "discordBrowserAcceptance": {
+    "passed": true
+  },
+  "liveTelegram": {
+    "classification": "BLOCKED_BY_ENVIRONMENT",
+    "reason": "No owner-authorized live credentials or chat were supplied for final acceptance."
+  }
+}

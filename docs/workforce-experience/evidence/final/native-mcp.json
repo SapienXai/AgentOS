@@ -1,0 +1,86 @@
+{
+  "runtime": "2026.11.10",
+  "dispatch": "dispatch_action",
+  "runs": [
+    {
+      "phase": "initial",
+      "via": "gateway",
+      "transport": "stdio",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact 7b1e97a6-96a1-406c-a1cd-3196451d2202 is 54f20c67b29ed1a5c5ae75632e22602d."
+    },
+    {
+      "phase": "initial",
+      "via": "agentos-chat",
+      "transport": "stdio",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact 3e0cc1ac-05c0-4d6d-acd5-5a5c57653a43 is 6771abb916c222b70a420030bf6456f6."
+    },
+    {
+      "phase": "initial",
+      "via": "gateway",
+      "transport": "http",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact 4ffcb1a6-c7cf-4786-abc1-14afc7c22666 is 70f1490285a1b3fe21cc16cc9ab5b894."
+    },
+    {
+      "phase": "initial",
+      "via": "agentos-chat",
+      "transport": "http",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact 4f006791-53b7-471b-b95c-7de3a769d68f is 9f911608db40a07fcb2403cb16fca5a7."
+    },
+    {
+      "phase": "restart",
+      "via": "agentos-chat",
+      "transport": "stdio",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact 44a106bd-e3eb-45ef-96c5-11737966ae21 is 32e4a3d9fffdcec22e6a8997409f3303."
+    },
+    {
+      "phase": "restart",
+      "via": "agentos-chat",
+      "transport": "http",
+      "effective": true,
+      "correlatedCallbacks": 1,
+      "nativeReply": "Workspace fact c96fd315-b26f-4c5e-9931-8124b8a3f78b is 332f539be9808b9b693bce1024340621."
+    },
+    {
+      "phase": "disabled",
+      "via": "gateway",
+      "transport": "stdio",
+      "effective": false,
+      "correlatedCallbacks": 0,
+      "nativeReply": "No MCP result for 80f3ca09-3cce-44fa-af1b-37e391f4c077."
+    },
+    {
+      "phase": "disabled",
+      "via": "agentos-chat",
+      "transport": "stdio",
+      "effective": false,
+      "correlatedCallbacks": 0,
+      "nativeReply": "No MCP result for cb62fb9b-9280-4a9d-afc5-3fecf83c090e."
+    },
+    {
+      "phase": "disabled",
+      "via": "gateway",
+      "transport": "http",
+      "effective": false,
+      "correlatedCallbacks": 0,
+      "nativeReply": "No MCP result for 0d1b0a6e-fff0-4420-b6b5-ffb9df4478a4."
+    },
+    {
+      "phase": "disabled",
+      "via": "agentos-chat",
+      "transport": "http",
+      "effective": false,
+      "correlatedCallbacks": 0,
+      "nativeReply": "No MCP result for 9ca0d023-9644-4ca8-a854-b80a34d6a27f."
+    }
+  ]
+}

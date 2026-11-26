@@ -1,0 +1,144 @@
+{
+  "merged": "64697ffbdcbdfbc57bb2616977e61479d0ea432f",
+  "main": "49cf636241e2d00df79245d07a56a29b339687b1",
+  "matchedAgainstMerged": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0.021,
+        0.0073,
+        0.000005
+      ],
+      "graphMatches": false,
+      "differentPixels": 79311,
+      "maxChannelDelta": 136,
+      "meanMaxChannelDelta": 0.17744
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": true,
+      "differentPixels": 2613,
+      "maxChannelDelta": 128,
+      "meanMaxChannelDelta": 0.00681
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": true,
+      "differentPixels": 8073,
+      "maxChannelDelta": 58,
+      "meanMaxChannelDelta": 0.05253
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": true,
+      "differentPixels": 9220,
+      "maxChannelDelta": 56,
+      "meanMaxChannelDelta": 0.04788
+    }
+  },
+  "matchedAgainstMain": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0.021,
+        0.0073,
+        0.000005
+      ],
+      "graphMatches": false,
+      "differentPixels": 109108,
+      "maxChannelDelta": 247,
+      "meanMaxChannelDelta": 0.80738
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": true,
+      "differentPixels": 123696,
+      "maxChannelDelta": 255,
+      "meanMaxChannelDelta": 0.99131
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": false,
+      "differentPixels": 72790,
+      "maxChannelDelta": 220,
+      "meanMaxChannelDelta": 0.88257
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "nodeGeometryMatches": true,
+      "cameraDelta": [
+        0,
+        0,
+        0
+      ],
+      "graphMatches": false,
+      "differentPixels": 119113,
+      "maxChannelDelta": 177,
+      "meanMaxChannelDelta": 1.06796
+    }
+  }
+}

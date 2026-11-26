@@ -1,0 +1,11 @@
+{
+  "measurement": "Playwright click event to first visible native-provisioning status in the DOM",
+  "manual": {
+    "milliseconds": 2.600000023841858,
+    "text": "Creating your team in OpenClaw…"
+  },
+  "reviewedProposal": {
+    "milliseconds": 2,
+    "text": "Setting up your workspace…"
+  }
+}

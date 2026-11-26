@@ -1,0 +1,128 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-node-menu",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-drag-restored",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-node-menu",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "canvas-drag-restored",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-zoom",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 788
+    },
+    "name": "canvas-inspector",
+    "result": "PASS"
+  }
+]

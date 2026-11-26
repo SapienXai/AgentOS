@@ -1,0 +1,182 @@
+[
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 844,
+      "height": 390
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 844,
+      "height": 390
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "dark",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 820,
+      "height": 1180
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 844,
+      "height": 390
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 844,
+      "height": 390
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "connect-ai",
+    "result": "PASS"
+  },
+  {
+    "theme": "light",
+    "viewport": {
+      "width": 360,
+      "height": 800
+    },
+    "name": "provider-choice",
+    "result": "PASS"
+  }
+]

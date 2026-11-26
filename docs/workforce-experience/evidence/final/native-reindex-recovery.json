@@ -1,0 +1,6 @@
+{
+  "docxRetrievedBeforeRevocation": true,
+  "pdfRemovedFromNativeSearch": true,
+  "docxRetainedAfterReload": false,
+  "docxRetrievedAfterReindexAndRestart": true
+}
