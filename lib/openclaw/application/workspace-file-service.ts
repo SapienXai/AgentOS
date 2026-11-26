@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
@@ -27,6 +28,18 @@ import type {
 import type { WorkspaceProject } from "@/lib/openclaw/types";
 
 export { WORKSPACE_MANAGED_FILE_MAX_BYTES } from "@/lib/openclaw/workspace-file-types";
+
+const pendingWrites = new Map<string, Promise<unknown>>();
+
+export class WorkspaceFileConflictError extends Error {
+  constructor() {
+    super("This source changed while you were editing. Open the latest version before saving again.");
+  }
+}
+
+function fileRevision(content: string) {
+  return createHash("sha256").update(content).digest("hex");
+}
 
 type WorkspaceFileSpec = {
   path: string;
@@ -210,6 +223,7 @@ export async function readWorkspaceManagedFileForPath(
   return {
     file,
     content,
+    revision: fileRevision(content),
     maxFileBytes: WORKSPACE_MANAGED_FILE_MAX_BYTES
   };
 }
@@ -218,9 +232,10 @@ export async function writeWorkspaceManagedFile(input: {
   workspaceId: string;
   path: string;
   content: string;
+  revision?: string;
 }): Promise<WorkspaceManagedFileReadResponse> {
   const workspace = await resolveWorkspace(input.workspaceId);
-  const result = await writeWorkspaceManagedFileForPath(workspace.path, input.path, input.content);
+  const result = await writeWorkspaceManagedFileForPath(workspace.path, input.path, input.content, input.revision);
 
   return {
     workspaceId: workspace.id,
@@ -232,11 +247,13 @@ export async function writeWorkspaceManagedFile(input: {
 export async function writeWorkspaceManagedFileForPath(
   workspacePath: string,
   inputPath: string,
-  content: string
+  content: string,
+  revision?: string
 ): Promise<Omit<WorkspaceManagedFileReadResponse, "workspaceId" | "workspacePath">> {
   const normalizedInputPath = normalizeWorkspaceRelativePath(inputPath);
   const agentProfileId = parseAgentProfileVirtualPath(normalizedInputPath);
   if (agentProfileId) {
+    if (revision) throw new WorkspaceFileConflictError();
     return writeWorkspaceAgentProfileFileForPath(workspacePath, agentProfileId, content);
   }
 
@@ -261,16 +278,27 @@ export async function writeWorkspaceManagedFileForPath(
     }
   }
 
-  const parentPath = path.dirname(absolutePath);
-  await ensureWorkspaceDirectory(parentPath, workspacePath, workspaceRealPath);
-
-  if (file.exists) {
-    await assertExistingFileSafe(absolutePath, workspaceRealPath);
+  const key = path.join(workspaceRealPath, file.path);
+  const previous = pendingWrites.get(key) ?? Promise.resolve();
+  const write = previous.catch(() => {}).then(async () => {
+    const parentPath = path.dirname(absolutePath);
+    await ensureWorkspaceDirectory(parentPath, workspacePath, workspaceRealPath);
+    if (file.exists || revision) {
+      if (revision && !(await lstat(absolutePath).catch(() => null))) throw new WorkspaceFileConflictError();
+      await assertExistingFileSafe(absolutePath, workspaceRealPath);
+    }
+    if (revision && fileRevision(await readFile(absolutePath, "utf8")) !== revision) {
+      throw new WorkspaceFileConflictError();
+    }
+    await writeFile(absolutePath, content, "utf8");
+    return readWorkspaceManagedFileForPath(workspacePath, file.path);
+  });
+  pendingWrites.set(key, write);
+  try {
+    return await write;
+  } finally {
+    if (pendingWrites.get(key) === write) pendingWrites.delete(key);
   }
-
-  await writeFile(absolutePath, content, "utf8");
-
-  return readWorkspaceManagedFileForPath(workspacePath, file.path);
 }
 
 export async function listWorkspaceManagedFilesForPath(workspacePath: string) {
@@ -635,6 +663,8 @@ async function buildFileEntry(
       createable: false,
       editable: fileStat.size <= WORKSPACE_MANAGED_FILE_MAX_BYTES,
       size: fileStat.size,
+      ...(fileStat.birthtimeMs > 0 ? { createdAt: fileStat.birthtime.toISOString() } : {}),
+      updatedAt: fileStat.mtime.toISOString(),
       source: descriptor.source,
       description: descriptor.description,
       usage: descriptor.usage,

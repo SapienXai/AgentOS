@@ -403,7 +403,37 @@ function BehaviorTab({ agent, onEdit }: { agent: MissionControlSnapshot["agents"
 }
 
 function CapabilitiesTab({ agent, capabilities, onRefreshCapabilities, onActivate, onOpenEditor, onEditProfile, focusId }: { agent: MissionControlSnapshot["agents"][number]; capabilities: WorkerEffectiveCapabilitiesState; onRefreshCapabilities: () => void; onActivate: (skill: SkillLibraryItem) => Promise<boolean>; onOpenEditor: (focus: "skills" | "tools") => void; onEditProfile: () => void; focusId: string | null }) {
-  return <div className="space-y-4"><SectionCard title="Employee abilities" action={<Button variant="ghost" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onRefreshCapabilities}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", capabilities.loading && "animate-spin")} />Refresh</Button>}><div className="grid gap-4 p-4 lg:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Configured declarations</p><div className="mt-2 flex flex-wrap gap-2">{agent.skills.map((skill) => <Badge key={skill} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Skill · {skill}</Badge>)}{agent.tools.map((tool) => <Badge key={tool} variant="muted" className="rounded-full px-2 py-1 text-[10px] normal-case tracking-normal">Tool · {tool}</Badge>)}{agent.skills.length === 0 && agent.tools.length === 0 ? <span className="text-xs text-muted-foreground">No explicit declarations.</span> : null}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("skills")}><Sparkles className="mr-1.5 h-3.5 w-3.5" /> Manage skills</Button><Button size="sm" variant="secondary" className="h-8 rounded-lg px-3 text-xs" onClick={() => onOpenEditor("tools")}><Wrench className="mr-1.5 h-3.5 w-3.5" /> Manage tools</Button></div></div><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ready to use</p>{capabilities.loading ? <p className="mt-2 text-xs text-muted-foreground">Checking availability…</p> : capabilities.error ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">{capabilities.error}</p> : capabilities.data ? <div className="mt-2 flex flex-wrap gap-2"><CapabilityCount label="Available" value={capabilities.data.summary.available} tone="success" /><CapabilityCount label="Setup" value={capabilities.data.summary["needs-setup"]} tone="warning" /><CapabilityCount label="Approval" value={capabilities.data.summary["requires-approval"]} tone="info" /><CapabilityCount label="Blocked" value={capabilities.data.summary.blocked} tone="danger" /></div> : <p className="mt-2 text-xs text-muted-foreground">Availability has not been confirmed.</p>}</div></div></SectionCard><EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} focusId={focusId} /><SectionCard title="Guardrails & access" action={<Button size="sm" variant="ghost" className="h-8 rounded-lg px-2.5 text-xs" onClick={onEditProfile}>Edit in Worker Profile</Button>}><div className="grid gap-3 p-4 sm:grid-cols-3"><KeyValue label="Policy" value={agent.policy.preset} /><KeyValue label="File access" value={agent.policy.fileAccess} /><KeyValue label="Network" value={agent.policy.networkAccess} /><KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} /><KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} /><KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} /></div></SectionCard></div>;
+  const configured = [...agent.skills, ...agent.tools];
+  return <div className="space-y-4">
+    <SectionCard title="Employee abilities" action={<Button variant="ghost" size="sm" className="min-h-11 sm:min-h-9"
+      disabled={capabilities.loading} onClick={onRefreshCapabilities}>
+      <RefreshCw aria-hidden="true" className={cn("mr-1.5 size-3.5", capabilities.loading && "animate-spin motion-reduce:animate-none")} />Refresh
+    </Button>}>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <p className="max-w-xl text-sm leading-6 text-muted-foreground">Review tools, skills, and connections for this employee. OpenClaw checks access for each conversation.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" className="min-h-11" onClick={() => onOpenEditor("skills")}><Sparkles aria-hidden="true" className="mr-1.5 size-4" />Manage skills</Button>
+          <Button className="min-h-11" onClick={() => onOpenEditor("tools")}><Wrench aria-hidden="true" className="mr-1.5 size-4" />Manage tools</Button>
+        </div>
+      </div>
+    </SectionCard>
+    <EffectiveCapabilitiesPanel state={capabilities} onActivate={onActivate} focusId={focusId} />
+    <details className="workforce-panel px-4 sm:px-5">
+      <summary className="cursor-pointer py-4 text-sm font-medium">Advanced policy and configuration</summary>
+      <div className="space-y-4 pb-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <KeyValue label="Policy" value={agent.policy.preset} />
+          <KeyValue label="File access" value={agent.policy.fileAccess} />
+          <KeyValue label="Network" value={agent.policy.networkAccess} />
+          <KeyValue label="Sandbox" value={agent.sandbox?.mode || "Inherited"} />
+          <KeyValue label="Sandbox scope" value={agent.sandbox?.scope || "Inherited"} />
+          <KeyValue label="Workspace access" value={agent.sandbox?.workspaceAccess || "Inherited"} />
+        </div>
+        {configured.length ? <p className="break-words text-xs text-muted-foreground">Configured identifiers <code>{configured.join(", ")}</code></p> : null}
+        <Button type="button" variant="secondary" onClick={onEditProfile}>Edit employee policy</Button>
+      </div>
+    </details>
+  </div>;
 }
 
 function ChannelsTab({ agent, workspace, surfaceTheme, onRouteChanged }: { agent: MissionControlSnapshot["agents"][number]; workspace: MissionControlSnapshot["workspaces"][number]; surfaceTheme: "dark" | "light"; onRouteChanged: () => Promise<void> }) {
@@ -418,8 +448,4 @@ function SessionsTab({ sessions, activity, onRefresh, focusKey }: { sessions: Re
 
 function ReadOnlyBlock({ label, value }: { label: string; value: string }) {
   return <div className="rounded-xl border border-border bg-muted/20 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-foreground/85">{value}</p></div>;
-}
-
-function CapabilityCount({ label, value, tone }: { label: string; value: number; tone: StatusTone }) {
-  return <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px]", tone === "success" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200" : tone === "warning" ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-200" : tone === "danger" ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-200" : "border-primary/25 bg-primary/10 text-primary")}><span className="font-semibold">{value}</span> {label}</span>;
 }

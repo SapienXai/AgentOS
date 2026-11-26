@@ -561,6 +561,8 @@ function FilePreviewDialog({
 }) {
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
+  const [revision, setRevision] = useState<string>();
+  const [conflict, setConflict] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -601,6 +603,8 @@ function FilePreviewDialog({
         if (!cancelled) {
           setContent(result.content);
           setSavedContent(result.content);
+          setRevision(result.revision);
+          setConflict(false);
         }
       } catch (error) {
         if (!cancelled) {
@@ -633,15 +637,18 @@ function FilePreviewDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           path: file.relativePath,
-          content
+          content,
+          ...(knowledge && revision ? { revision } : {})
         })
       });
       const result = (await response.json()) as WorkspaceManagedFileReadResponse & { error?: string };
       if (!response.ok || result.error) {
+        if (response.status === 409) setConflict(true);
         throw new Error(result.error || "Workspace file could not be saved.");
       }
       setSavedContent(result.content);
       setContent(result.content);
+      setRevision(result.revision);
       toast.success("Workspace file saved.");
       onSaved();
     } catch (error) {
@@ -674,11 +681,16 @@ function FilePreviewDialog({
       <MissionControlDialogShell open={open} onOpenChange={value => { if (!saving) onOpenChange(value); }}
         surfaceTheme={surfaceTheme} title={<span className="break-words capitalize">{title}</span>}
         description={subtitle} variant="quiet"
-        contentClassName={cn("workforce-setup-card sm:w-[min(92vw,720px)]", surfaceTheme === "light" && "workforce-setup-light")}
+        contentClassName="workforce-setup-card sm:w-[min(92vw,720px)]"
         bodyClassName="px-5 py-4 sm:px-7 sm:py-6"
         footer={editing ? <>
-          <Button variant="ghost" disabled={saving} onClick={() => { setEditing(false); setContent(savedContent); setError(null); }}>Cancel edit</Button>
-          <Button disabled={!canSave} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save source"}</Button>
+          <Button variant="ghost" disabled={saving} onClick={() => {
+            setEditing(false);
+            setContent(savedContent);
+            setError(null);
+            if (conflict) setRetry(value => value + 1);
+          }}>{conflict ? "Discard draft and reload" : "Cancel edit"}</Button>
+          <Button disabled={!canSave || conflict} onClick={() => void saveFile()}>{saving ? "Saving…" : "Save source"}</Button>
         </> : <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
           {origin && !loading && !error && <Button variant="secondary" onClick={() => setRefreshWebsite(true)}>Refresh webpage</Button>}
@@ -703,7 +715,14 @@ function FilePreviewDialog({
         ) : null}
         <details className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
           <summary className="cursor-pointer font-medium">Source details</summary>
-          <p className="mt-2 break-all">{file.relativePath}</p>
+          <dl className="mt-2 space-y-1.5">
+            {file.source?.createdAt && <div><dt className="inline font-medium">Created </dt>
+              <dd className="inline"><time dateTime={file.source.createdAt}>{new Date(file.source.createdAt).toLocaleDateString()}</time></dd></div>}
+            {file.source?.updatedAt && <div><dt className="inline font-medium">Updated </dt>
+              <dd className="inline"><time dateTime={file.source.updatedAt}>{new Date(file.source.updatedAt).toLocaleDateString()}</time></dd></div>}
+            {origin && <div><dt className="font-medium">Original webpage</dt><dd className="break-all">{origin}</dd></div>}
+            <div><dt className="font-medium">Managed file</dt><dd className="break-all">{file.relativePath}</dd></div>
+          </dl>
         </details>
       </MissionControlDialogShell>
     );

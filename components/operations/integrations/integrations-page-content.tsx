@@ -467,7 +467,7 @@ export function IntegrationsPageContent({
         <MissionControlDialogShell open onOpenChange={open => { if (!open) setSelectedId(""); }}
           surfaceTheme={surfaceTheme} variant="quiet" title={selectedIntegration.name}
           description={selectedIntegration.category}
-          contentClassName={cn("workforce-setup-card sm:w-[min(92vw,640px)]", surfaceTheme === "light" && "workforce-setup-light")}
+          contentClassName="workforce-setup-card sm:w-[min(92vw,640px)]"
           bodyClassName="space-y-5 px-5 py-5 sm:px-7"
           footer={<>
             <Button variant="ghost" onClick={() => setSelectedId("")}>Close</Button>

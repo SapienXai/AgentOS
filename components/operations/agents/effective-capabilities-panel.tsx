@@ -29,46 +29,48 @@ export function EffectiveCapabilitiesPanel({
   const data = state.data;
   if (!data) return null;
 
+  const effectiveKnown = Boolean(data.session.key);
   return (
-    <div className="space-y-3 rounded-2xl border border-primary/15 bg-primary/[0.035] p-4">
+    <section aria-label="Effective employee access" className="workforce-panel space-y-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">What this worker can do now</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {data.session.key
-              ? `Based on OpenClaw&apos;s effective tools for session ${shortId(data.session.key)}.`
-              : "OpenClaw has not exposed a session context, so configured tools are not presented as effective capabilities."}
+          <h2 className="workforce-section-title">Access in this conversation</h2>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {effectiveKnown ? "Based on access reported by OpenClaw for the latest conversation."
+              : "Start a conversation to check which tools the employee can actually use."}
           </p>
         </div>
         <CapabilitySummary summary={data.summary} />
       </div>
 
       {data.capabilities.length ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <details open={effectiveKnown || focusId ? true : undefined} className="border-t border-border/70">
+          <summary className="cursor-pointer py-3 text-sm font-medium">Access by capability</summary>
+          <ul className="divide-y divide-border/70">
           {data.capabilities.map((capability) => (
-            <div key={capability.id} data-capability-id={capability.id} className={cn("rounded-xl border border-border bg-background/65 px-3 py-3", focusId === capability.id && "ring-2 ring-primary/40")}>
+            <li key={capability.id} data-capability-id={capability.id} className={cn("py-3", focusId === capability.id && "rounded-md ring-2 ring-primary/40")}>
               <div className="flex items-start gap-2">
                 <span className={cn("mt-0.5 h-2 w-2 shrink-0 rounded-full", capabilityStatusDot(capability.status))} />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-xs font-semibold">{capability.label}</p>
-                    <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{capabilityStatusLabel(capability.status)}</span>
+                    <p className="text-sm font-semibold">{capability.label}</p>
+                    <span className="text-xs text-muted-foreground">{capabilityStatusLabel(capability.status)}</span>
                   </div>
-                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{capability.explanation}</p>
-                  {capability.configured !== null ? <p className="mt-1.5 text-[10px] text-muted-foreground">Configured: {capability.configured ? "yes" : "no"} · Effective: {capability.effective === null ? "unknown" : capability.effective ? "yes" : "no"}</p> : null}
-                  {capability.reasons[0] ? <p className="mt-1 text-[10px] text-muted-foreground/80">Why: {capability.reasons[0].message}</p> : null}
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{capability.reasons[0]?.message || capability.explanation}</p>
+                  {capability.configured === true && capability.effective !== true && <p className="mt-1 text-xs text-muted-foreground">Configured in employee settings</p>}
                 </div>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+          </ul>
+        </details>
       ) : (
         <p className="rounded-xl border border-border bg-background/65 px-3 py-3 text-xs text-muted-foreground">No native capability entries were returned for this worker.</p>
       )}
 
       <SkillLibraryPanel data={data} onActivate={onActivate} />
       <McpIntegrationsPanel effectiveTools={data.mcpTools} />
-    </div>
+    </section>
   );
 }
 

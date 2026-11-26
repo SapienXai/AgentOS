@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
-const { mkdir, mkdtemp, rm, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
@@ -18,6 +18,7 @@ const baseline = process.argv.includes("--baseline");
 const matchedCanvas = process.argv.includes("--matched-canvas");
 const connect = process.argv.includes("--connect");
 const verifyNativeKnowledge = process.argv.includes("--native-knowledge");
+const verifyNativeMcp = process.argv.includes("--native-mcp");
 const suggested = process.argv.includes("--suggested");
 const fresh = connect || suggested || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
@@ -55,6 +56,7 @@ async function run() {
   const fixture = await createOpenClawRuntimeProviderFixture();
   let browser;
   let nativeClient;
+  let mcpHttp;
   try {
     const [gatewayPort, appPort] = await Promise.all([port(), port()]);
     const token = randomUUID();
@@ -63,11 +65,17 @@ async function run() {
     const base = "http://127.0.0.1:" + appPort;
     const state = path.join(root, "openclaw");
     const config = path.join(root, "openclaw.json");
+    const mcpReceipt = path.join(root, "mcp-receipts.jsonl");
     const mainWorkspace = fresh ? path.join(state, "workspace") : path.join(root, "main");
     const defaultModel = "agentos-fixture/" + fixture.modelId;
     await mkdir(state);
     await mkdir(mainWorkspace, { recursive: true });
     await writeFile(path.join(mainWorkspace, "AGENTS.md"), "# Fixture instructions\nUse the isolated sample workspace only.\n");
+    if (verifyNativeMcp) {
+      const sdk = process.env.WORKFORCE_MCP_SDK;
+      assert(sdk, "Set WORKFORCE_MCP_SDK to the installed MCP SDK package root.");
+      mcpHttp = await require("./lib/workforce-mcp-fixture.cjs").startHttpMcpFixture(sdk, mcpReceipt);
+    }
     if (fresh && !connect) {
       const authDir = path.join(state, "agents", "main", "agent");
       await mkdir(authDir, { recursive: true });
@@ -78,6 +86,13 @@ async function run() {
     }
     await writeFile(config, JSON.stringify({
       gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token } },
+      ...(mcpHttp ? {
+        tools: { alsoAllow: ["group:mcp"] },
+        mcp: { servers: {
+          proof_stdio: { command: process.execPath, args: [require.resolve("./lib/workforce-mcp-fixture.cjs"), process.env.WORKFORCE_MCP_SDK, mcpReceipt] },
+          proof_http: { url: mcpHttp.url, transport: "streamable-http" }
+        } }
+      } : {}),
       ...(connect ? {} : { models: { mode: "merge", providers: { "agentos-fixture": { baseUrl: fixture.baseUrl, api: "openai-completions", apiKey: "fixture-only", models: [{ id: fixture.modelId, name: "Fixture model", input: ["text"], contextWindow: 32768, maxTokens: 256 }] } } } }),
       ...(verifyNativeKnowledge ? { memory: { search: {
         provider: "openai", model: "text-embedding-3-small", fallback: "none",
@@ -149,6 +164,91 @@ async function run() {
         scopes: ["operator.admin", "operator.read", "operator.write"], timeoutMs: 10000,
         clientName: "gateway-client", sharedStateMode: "read-only" });
     }
+    if (verifyNativeMcp) {
+      assert(worker && first, "MCP acceptance requires a populated workspace.");
+      browser = await chromium.launch();
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await context.addCookies([{ name: INSTANCE_PROTECTION_COOKIE, value: owner.session, url: base }]);
+      await context.addInitScript(({ scopeKey, workspaceId }) => sessionStorage.setItem(scopeKey, workspaceId),
+        { scopeKey, workspaceId: first.workspaceId });
+      const page = await context.newPage();
+      const history = sessionKey => nativeClient.callNative("chat.history", { sessionKey, limit: 30 }, { timeoutMs: 5000 });
+      const receipts = async () => (await readFile(mcpReceipt, "utf8").catch(error => {
+        if (error.code !== "ENOENT") throw error;
+        return "";
+      })).trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+      const toolId = transport => "proof_" + transport + "__workspace_fact";
+      const available = async (sessionKey, transport) => {
+        const inventory = await nativeClient.getEffectiveTools({ agentId: worker.id, sessionKey });
+        return inventory.groups.some(group => group.source === "mcp" &&
+          group.tools.some(tool => tool.id === toolId(transport) && !tool.deniedBySession));
+      };
+      const rows = [];
+      const sessionKey = "agent:" + worker.id + ":workforce-mcp-parity";
+      async function requestProof(transport, via, phase, permitted = true) {
+        const requestId = randomUUID();
+        const prompt = `WORKFORCE_MCP_PROOF ${transport} ${requestId}`;
+        if (via === "gateway") {
+          await nativeClient.callNative("chat.send", { sessionKey, message: prompt, idempotencyKey: requestId },
+            { safety: "mutation", timeoutMs: 10000 });
+        } else {
+          await page.goto(base + "/chat?employee=" + encodeURIComponent(worker.id));
+          await page.getByRole("textbox", { name: "Message " + worker.name, exact: true }).fill(prompt);
+          await page.getByRole("button", { name: "Send message", exact: true }).click();
+        }
+        let response = "No MCP result for " + requestId + ".";
+        if (permitted) {
+          await expect.poll(async () => (await receipts()).filter(row => row.requestId === requestId).length,
+            { message: `${phase}: ${via} ${transport} callback`, timeout: 20000 }).toBe(1);
+          const receipt = (await receipts()).find(row => row.requestId === requestId);
+          assert.equal(receipt.transport, transport);
+          response = receipt.fact;
+        }
+        if (via === "gateway") {
+          await expect.poll(async () => (await history(sessionKey)).messages.some(message =>
+            message.role === "assistant" && JSON.stringify(message.content).includes(response)), { timeout: 20000 }).toBe(true);
+          assert.equal(await available(sessionKey, transport), permitted);
+        } else {
+          await expect(page.getByText(response, { exact: true }).last()).toBeVisible({ timeout: 20000 });
+          const { sessions } = await nativeClient.listSessions({ agentId: worker.id, limit: 20 });
+          const chatSession = sessions.find(session => session.key?.includes(":agentos-direct:"));
+          assert(chatSession?.key, "Chat did not create its native conversation.");
+          assert.equal(await available(chatSession.key, transport), permitted);
+          await expect.poll(async () => (await history(chatSession.key)).messages.some(message =>
+            message.role === "assistant" && JSON.stringify(message.content).includes(response)), { timeout: 12000 }).toBe(true);
+        }
+        assert.equal((await receipts()).filter(row => row.requestId === requestId).length, permitted ? 1 : 0);
+        rows.push({ phase, via, transport, effective: permitted, correlatedCallbacks: permitted ? 1 : 0, nativeReply: response });
+        console.log(`MCP ${phase}: ${via} ${transport} ${permitted ? "callback and reply verified" : "execution denied"}.`);
+      }
+      nativeClient = connectNative();
+      for (const transport of ["stdio", "http"]) {
+        await requestProof(transport, "gateway", "initial");
+        await requestProof(transport, "agentos-chat", "initial");
+      }
+      nativeClient.close("Gateway restart acceptance");
+      await stop(gw);
+      gw = launchGateway();
+      await ready("http://127.0.0.1:" + gatewayPort + "/healthz", gw);
+      nativeClient = connectNative();
+      for (const transport of ["stdio", "http"]) await requestProof(transport, "agentos-chat", "restart");
+      const revision = await nativeClient.callNative("config.get", {}, { timeoutMs: 10000 });
+      await nativeClient.callNative("config.patch", { baseHash: revision.hash, raw: JSON.stringify({
+        mcp: { servers: { proof_stdio: { enabled: false }, proof_http: { enabled: false } } }
+      }) }, { safety: "mutation", timeoutMs: 10000 });
+      for (const transport of ["stdio", "http"]) {
+        await requestProof(transport, "gateway", "disabled", false);
+        await requestProof(transport, "agentos-chat", "disabled", false);
+      }
+      const output = process.env.WORKFORCE_EVIDENCE;
+      assert(output, "Set WORKFORCE_EVIDENCE to an acceptance output directory.");
+      await mkdir(output, { recursive: true });
+      await writeFile(path.join(output, "native-mcp.json"), JSON.stringify({
+        runtime: "2026.11.10", dispatch: "dispatch_action", runs: rows
+      }, null, 2) + "\n");
+      console.log("Native MCP parity passed for stdio and Streamable HTTP, including restart and revocation.");
+      return;
+    }
     let taskId = null;
     if (worker) {
       const task = await fetch(base + "/api/mission", {method:"POST", headers, body:JSON.stringify({
@@ -203,6 +303,7 @@ async function run() {
         const record = async (name, runCheck) => {
           try {
             await runCheck();
+            await page.waitForFunction(expected => document.documentElement.style.colorScheme === expected, theme, { timeout: 7000 });
             const viewportFits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
             assert(viewportFits, "Page has horizontal overflow.");
             await screenshot(name);
@@ -595,9 +696,51 @@ async function run() {
           const batchDone = page.getByRole("button", {name:"Done",exact:true});
           if (await batchDone.isVisible()) await batchDone.click();
           await record("knowledge-source-assignments", async () => {
-            await page.getByRole("button", {name:/^Assign press guide \(PDF\)$/i}).first().click();
+            const trigger = page.getByRole("button", {name:/^Assign press guide \(PDF\)$/i}).first();
+            await trigger.click();
             const dialog = page.getByRole("dialog");
             await expect(dialog.getByRole("checkbox", {name:/Ada/})).toBeVisible({timeout:12000});
+            const contrast = await dialog.evaluate(element => {
+              const paint = document.createElement("canvas").getContext("2d");
+              const background = getComputedStyle(element).backgroundColor;
+              const sample = foreground => {
+                paint.clearRect(0, 0, 1, 1);
+                paint.fillStyle = background;
+                paint.fillRect(0, 0, 1, 1);
+                if (foreground) {
+                  paint.fillStyle = foreground;
+                  paint.fillRect(0, 0, 1, 1);
+                }
+                const fractions = [...paint.getImageData(0, 0, 1, 1).data].slice(0, 3).map(value => value / 255)
+                  .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+                return fractions[0] * .2126 + fractions[1] * .7152 + fractions[2] * .0722;
+              };
+              const paper = sample();
+              return [...element.querySelectorAll("h2, p.text-muted-foreground, label span.font-medium")].map(text => {
+                const ink = sample(getComputedStyle(text).color);
+                return (Math.max(paper, ink) + .05) / (Math.min(paper, ink) + .05);
+              });
+            });
+            assert(contrast.length >= 3 && contrast.every(ratio => ratio >= 4.5), "Assignment text contrast: " + JSON.stringify(contrast));
+            await screenshot("knowledge-assignment-contrast");
+            await page.keyboard.press("Escape");
+            await expect(trigger).toBeFocused();
+          });
+          await record("knowledge-multi-source", async () => {
+            await page.getByRole("button", { name: "Select sources", exact: true }).click();
+            for (const format of ["PDF", "DOCX"]) await page.getByRole("checkbox", { name: `Select press guide (${format})`, exact: false }).check();
+            await page.getByRole("button", { name: /Assign 2 sources/ }).click();
+            const dialog = page.getByRole("dialog", { name: "Assign selected sources" });
+            const mira = snap.agents.find(agent => agent.name === "Mira");
+            assert(mira);
+            await dialog.getByRole("combobox", { name: "Employee" }).selectOption(mira.id);
+            await screenshot("knowledge-multi-source-review");
+            await dialog.getByRole("button", { name: "Assign sources", exact: true }).click();
+            await expect(dialog).toBeHidden({ timeout: 20000 });
+            await expect.poll(async () => {
+              const response = await fetch(base + assignments + "?employee=" + encodeURIComponent(mira.id), { headers });
+              return (await response.json()).paths.filter(value => /library\/(pdf|docx)\/press-guide/.test(value)).length;
+            }, { timeout: 20000 }).toBe(2);
           });
           if (process.env.WORKFORCE_PUBLIC_WEBPAGE) await record("knowledge-public-webpage", async () => {
             await go(knowledge);
@@ -713,6 +856,11 @@ async function run() {
               return result?.results.some(item => item.snippet?.includes("Fieldwork 903")) ?? false;
             };
             await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
+            const hasDocxFact = async () => {
+              const result = await nativeClient.searchMemory({ agentId:employee.id, query:"Fieldwork press color ochre", maxResults:10, minScore:0 }, {timeoutMs:12000});
+              return result?.results.some(item => item.snippet?.includes("press color is ochre")) ?? false;
+            };
+            await expect.poll(hasDocxFact, {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
             assert.equal(await hasProof(outside.id), false);
             await go("/chat?employee=" + encodeURIComponent(employee.id));
             await page.getByRole("textbox", {name:"Message Morgan",exact:true}).fill("WORKFORCE_READ_PROOF " + documentPath);
@@ -748,11 +896,12 @@ async function run() {
             }, {timeout:20000, intervals:[500,1000,2000]}).toBe(true);
             await expect.poll(() => fileFor(employee.id), {timeout:15000}).toBeUndefined();
             await expect.poll(() => hasProof(employee.id), {timeout:45000, intervals:[500,1000,2000]}).toBe(false);
+            await expect.poll(hasDocxFact, {timeout:45000, intervals:[500,1000,2000]}).toBe(true);
             const afterRemoval = (await (await fetch(base + assignments + "?employee=" + encodeURIComponent(employee.id), {headers})).json()).paths;
             assert(afterRemoval.includes(docxPath), "Selective removal discarded a second document.");
             assert(fixture.stats.embeddingCount > 0);
             await writeFile(path.join(output,"native-knowledge.json"),JSON.stringify({
-              import: "PDF and DOCX assigned together; XLSX imported with partial batch recovery", selectiveRemovalPreservedOtherAssignment: true, retrieval: "native memory.search", authorizedTool: "read", chatReadBack: true,
+              import: "PDF and DOCX assigned together; XLSX imported with partial batch recovery", selectiveRemovalPreservedOtherAssignment: true, retrieval: "native memory.search for distinct PDF and DOCX facts", authorizedTool: "read", chatReadBack: true,
               crossWorkspaceAssignmentDenied: true, differentWorkspaceNotRetrieved: true, staleSourceAssignmentDenied: true,
               persistenceAfterGatewayAndAppRestart: true, retrievedAfterRemoval: false, embeddingRequests: fixture.stats.embeddingCount
             },null,2) + "\n");
@@ -827,6 +976,7 @@ async function run() {
     await browser?.close();
     for (const child of children.reverse()) await stop(child);
     await fixture.close();
+    await mcpHttp?.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5 });
   }
 }

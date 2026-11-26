@@ -7,7 +7,7 @@ import type { SettingsArea } from "@/components/settings/settings-types";
 import { cn } from "@/lib/utils";
 
 const sections: Array<{ id: SettingsArea; label: string; scope: string; icon: typeof Settings2 }> = [
-  { id: "general", label: "General", scope: "Personal", icon: Settings2 },
+  { id: "general", label: "General", scope: "Preferences and defaults", icon: Settings2 },
   { id: "ai-tools", label: "AI & Models", scope: "Instance", icon: Bot },
   { id: "workspace", label: "Workspace", scope: "Company", icon: Folder },
   { id: "runtime", label: "Runtime", scope: "Instance", icon: Activity },

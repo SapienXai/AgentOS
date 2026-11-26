@@ -35,6 +35,7 @@ type MissionControlDialogShellProps = {
   variant?: "default" | "quiet" | "worker-profile";
   disableOutsideDismiss?: boolean;
   onOutsideInteraction?: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
   closeLabel?: string;
 };
 
@@ -58,6 +59,7 @@ export function MissionControlDialogShell({
   variant = "default",
   disableOutsideDismiss = false,
   onOutsideInteraction,
+  onCloseAutoFocus,
   closeLabel
 }: MissionControlDialogShellProps) {
   const isLight = surfaceTheme === "light";
@@ -68,6 +70,7 @@ export function MissionControlDialogShell({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         onInteractOutside={onOutsideInteraction ? (event) => event.preventDefault() : disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
         onPointerDownOutside={onOutsideInteraction ? (event) => { event.preventDefault(); onOutsideInteraction(); } : disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
         closeLabel={closeLabel}

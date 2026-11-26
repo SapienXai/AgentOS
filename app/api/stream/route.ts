@@ -121,9 +121,9 @@ export async function GET(request: Request) {
         snapshotTask = (async () => {
           try {
             if (!(await checkAccess())) return;
-            const snapshot = await getMissionControlSnapshot();
+            // The control-plane boundary already normalizes and redacts every snapshot.
+            const next = await getMissionControlSnapshot();
             if (!(await checkAccess())) return;
-            const next = redactSecrets(snapshot);
             const baseline = publishedSnapshot;
             const delta = deltaEnabled && !reconcile && baseline ? buildDashboardSnapshotDelta(baseline, next) : null;
             if (!delta) {
@@ -155,9 +155,9 @@ export async function GET(request: Request) {
           return;
         }
 
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
+        // Bound the wait from the first event in a burst. A busy Gateway
+        // must not keep pushing the next snapshot further into the future.
+        if (debounceTimer) return;
 
         debounceTimer = setTimeout(() => {
           debounceTimer = undefined;

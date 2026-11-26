@@ -62,7 +62,7 @@
 .workforce-main.mission-shell--light,
 .workforce-setup[data-theme="light"],
 .workforce-setup[data-theme="light"] .workforce-setup-card,
-.workforce-setup-light {
+.workforce-setup-card.agentos-light-modal {
   --workforce-paper: hsl(42 27% 96%);
   --workforce-panel: hsl(43 38% 99%);
   --workforce-inset: hsl(38 22% 91%);

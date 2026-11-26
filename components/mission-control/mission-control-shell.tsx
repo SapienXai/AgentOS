@@ -4745,8 +4745,8 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 [&_button]:min-h-11 lg:hidden",
-            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden mission-ease-smooth bg-[#050a12] transition-transform duration-300 motion-reduce:transition-none [&_button]:min-h-11 lg:hidden",
+            isSidebarOpen ? "translate-x-0 shadow-[18px_0_60px_rgba(0,0,0,0.42)]" : "-translate-x-full"
           )}
           inert={!isSidebarOpen}
           onClickCapture={(event) => {

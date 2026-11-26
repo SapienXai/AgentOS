@@ -18,11 +18,18 @@ function nativePortrait(value: string | undefined | null) {
   }
 }
 
-export function EmployeeAvatar({ agent, name, className }: { agent?: AgentRecord | null; name: string; className?: string }) {
+export const EMPLOYEE_PORTRAITS = Array.from({ length: 8 }, (_, index) => `/assets/workforce/agent${index + 1}.webp`);
+
+export function EmployeeAvatar({ agent, name, avatar, className }: {
+  agent?: AgentRecord | null;
+  name: string;
+  avatar?: string;
+  className?: string;
+}) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const initials = name.trim().split(/\s+/).slice(0, 2).map((part) => [...part][0]).join("").toUpperCase();
   const emoji = agent?.workerProfile?.identity.emoji?.trim() || agent?.identity.emoji?.trim();
-  const custom = nativePortrait(agent?.workerProfile?.identity.avatar ?? agent?.identity.avatar);
+  const custom = nativePortrait(avatar ?? agent?.workerProfile?.identity.avatar ?? agent?.identity.avatar);
   const visual = resolveAgentProfileVisual(agent?.id ?? "", name, agent?.identity.theme);
   const portrait = visual.videoSrc.replace("/agentProfiles/", "/workforce/").replace(/\.webm$/, ".webp");
   const source = custom && failedSource !== custom ? custom : portrait;

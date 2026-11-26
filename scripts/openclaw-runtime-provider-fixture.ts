@@ -17,7 +17,7 @@ export type OpenClawRuntimeProviderFixture = {
 
 type FixtureToolCall = {
   id: string;
-  name: "read" | "write" | "sessions_spawn";
+  name: "read" | "write" | "sessions_spawn" | "dispatch_action";
   arguments: Record<string, unknown>;
 };
 
@@ -110,11 +110,11 @@ async function handleRequest(
   }
 
   try {
-    const payload = JSON.parse(await readBody(request)) as { stream?: boolean; messages?: unknown };
+    const payload = JSON.parse(await readBody(request)) as { stream?: boolean; messages?: unknown; tools?: unknown };
     const stream = payload.stream === true;
     const prompt = readLastUserMessage(payload.messages);
     stats.lastPrompt = prompt;
-    const fixtureResponse = resolveFixtureResponse(prompt, payload.messages);
+    const fixtureResponse = resolveFixtureResponse(prompt, payload.messages, payload.tools);
     stats.completionCount += 1;
     if (stream) stats.streamingCompletionCount += 1;
 
@@ -158,7 +158,26 @@ async function handleRequest(
   }
 }
 
-function resolveFixtureResponse(prompt: string, messages: unknown): FixtureResponse {
+function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknown): FixtureResponse {
+  const mcpProof = [...prompt.matchAll(/WORKFORCE_MCP_PROOF (stdio|http) ([a-f0-9-]{36})/g)].at(-1);
+  if (mcpProof && Array.isArray(messages)) {
+    const [, transport, requestId] = mcpProof;
+    const callId = "mcp_" + requestId.replaceAll("-", "");
+    const latestPrompt = messages.findLastIndex(entry => entry?.role === "user" && readMessageContent(entry.content).includes(requestId));
+    const result = messages.slice(latestPrompt + 1).findLast(entry => entry?.role === "tool" || entry?.role === "toolResult");
+    if (result) {
+      const content = readMessageContent(result.content);
+      const fact = content.match(/Workspace fact ([a-f0-9-]{36}) is ([a-f0-9]{32})\./);
+      return { content: fact?.[1] === requestId ? fact[0] : "No MCP result for " + requestId + "." };
+    }
+    const dispatch = Array.isArray(tools) && tools.some(tool => tool?.function?.name === "dispatch_action");
+    if (!dispatch) return { content: "No MCP result for " + requestId + "." };
+    return { toolCall: {
+      id: callId,
+      name: "dispatch_action",
+      arguments: { id: "proof_" + transport + "__workspace_fact", args: { requestId } }
+    } };
+  }
   const hasToolResult = Array.isArray(messages) && messages.some((entry) => {
     if (!entry || typeof entry !== "object") return false;
     const role = (entry as { role?: unknown }).role;

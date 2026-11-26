@@ -60,6 +60,37 @@ export async function GET(request: Request) {
     if (!tools) return NextResponse.json({ error: "Current ability inventory unavailable." }, { status: 503 });
     return NextResponse.json(redactSecrets({ tools }), { headers: { "Cache-Control": "private, no-store" } });
   }
+  if (searchParams.view === "ability-library") {
+    const manage = await requireAgentOsProductPermission(request, "agents.manage");
+    if ("response" in manage) return manage.response;
+    const [tools, skills] = await Promise.allSettled([
+      listOpenClawTools({ includePlugins: true }, { timeoutMs: 8_000 }),
+      listOpenClawSkills({ timeoutMs: 8_000 })
+    ]);
+    if (tools.status === "rejected" && skills.status === "rejected") {
+      return NextResponse.json({ error: "OpenClaw could not verify the capability library." }, { status: 503 });
+    }
+    return NextResponse.json(redactSecrets({
+      groups: tools.status === "fulfilled" ? tools.value.groups.map(group => ({
+        id: group.id,
+        label: group.label,
+        items: group.tools.map(tool => ({
+          id: tool.id,
+          label: tool.label ?? tool.id,
+          description: tool.description,
+          setup: "Review employee permissions"
+        }))
+      })) : [],
+      skills: skills.status === "fulfilled" ? skills.value.skills.map(skill => ({
+        id: skill.name,
+        label: skill.name,
+        description: skill.description,
+        setup: skill.disabled || skill.blockedByAllowlist ? "Disabled by configuration"
+          : skill.eligible === false ? "Prerequisites needed" : "Review employee access"
+      })) : [],
+      partial: tools.status === "rejected" || skills.status === "rejected"
+    }), { headers: { "Cache-Control": "private, no-store" } });
+  }
   const parsedQuery = pluginCatalogQuerySchema.safeParse(searchParams);
   if (!parsedQuery.success) {
     return NextResponse.json({ error: "Invalid native plugin catalog query." }, { status: 400 });

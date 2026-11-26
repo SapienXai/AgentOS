@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { DraftAbilities } from "@/components/workforce/draft-abilities";
 import { HireKnowledge } from "@/components/workforce/hire-knowledge";
-import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
+import { EMPLOYEE_PORTRAITS, EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, LoaderCircle } from "lucide-react";
 
@@ -288,7 +288,14 @@ export function CreateAgentDialog({
 
     onAgentCreatedVisible?.(createdAgentId);
     onAgentCreated?.(createdAgentId);
-    if (createdAgentWarning) {
+    if (workforce) {
+      const details = {
+        description: createdAgentWarning ?? (selectedWorkspace ? `Added to ${selectedWorkspace.name}.` : "Added to your team."),
+        action: { label: "Open profile", onClick: () => window.location.assign("/agents/" + encodeURIComponent(createdAgentId)) }
+      };
+      if (createdAgentWarning) toast.message("Employee added · setup needs attention", details);
+      else toast.success("Employee joined the team", details);
+    } else if (createdAgentWarning) {
       toast.message("Agent created; setup needs attention.", {
         description: createdAgentWarning
       });
@@ -299,7 +306,7 @@ export function CreateAgentDialog({
     }
     setIsSaving(false);
     setCreateProgress("complete");
-  }, [createdAgentId, createdAgentVisible, createdAgentWarning, createProgress, onAgentCreated, onAgentCreatedVisible, selectedWorkspace, setDialogOpen]);
+  }, [createdAgentId, createdAgentVisible, createdAgentWarning, createProgress, onAgentCreated, onAgentCreatedVisible, selectedWorkspace, workforce]);
 
   useEffect(() => {
     if (createProgress !== "complete" || !createdAgentId) {
@@ -312,7 +319,7 @@ export function CreateAgentDialog({
       setCreatedAgentId(null);
       setCreatedAgentWarning(null);
       setDialogOpen(false);
-    }, 900);
+    }, workforce ? 400 : 900);
 
     return () => {
       if (createCompletionTimeoutRef.current) {
@@ -320,7 +327,7 @@ export function CreateAgentDialog({
         createCompletionTimeoutRef.current = null;
       }
     };
-  }, [createdAgentId, createProgress, setDialogOpen]);
+  }, [createdAgentId, createProgress, setDialogOpen, workforce]);
 
   useEffect(() => {
     if (createProgress !== "syncing" || !createdAgentId || createdAgentVisible) {
@@ -584,7 +591,7 @@ export function CreateAgentDialog({
   return (
     <>
       <PikoLoader
-        open={isSaving}
+        open={isSaving && !workforce}
         title={pikoTitle}
         description={pikoDescription}
       />
@@ -597,7 +604,7 @@ export function CreateAgentDialog({
         title={workforce ? "Add employee" : "Create agent"}
         description={workforce ? "Give your employee a name, a role, and a clear responsibility." : headerDescription}
         contentClassName={cn("sm:h-[min(calc(100dvh-48px),760px)] sm:max-h-[calc(100dvh-48px)] sm:w-[min(92vw,720px)] sm:rounded-xl",
-          workforce && "workforce-setup-card sm:w-[min(94vw,920px)]", workforce && isLight && "workforce-setup-light")}
+          workforce && "workforce-setup-card sm:w-[min(94vw,920px)]")}
         headerClassName="px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7"
         bodyClassName={cn(
           "px-5 py-5 sm:px-7 sm:py-6",
@@ -625,7 +632,7 @@ export function CreateAgentDialog({
           ) : null}
 
           {automaticModelVerificationMessage && !isSaving ? (
-            <p className={cn("text-xs leading-4", isLight ? "text-[#8b5c35]" : "text-amber-200/90")} role="status">
+            <p className={cn("text-xs leading-4", workforce ? "text-muted-foreground" : isLight ? "text-[#8b5c35]" : "text-amber-200/90")} role="status">
               {workforce ? "AgentOS will verify the workspace’s AI model before adding this employee." : automaticModelVerificationMessage}
             </p>
           ) : null}
@@ -686,13 +693,27 @@ export function CreateAgentDialog({
           <div className="workforce-hire-layout">
           <div className="min-w-0">
           <aside className="workforce-hire-preview">
-            <EmployeeAvatar name={draft.name || "Employee"} className="size-16 rounded-2xl text-lg sm:size-24" />
+            <EmployeeAvatar name={draft.name || "Employee"} avatar={draft.avatar} className="size-16 rounded-2xl text-lg sm:size-24" />
             <div className="min-w-0"><p className="break-words font-display text-xl font-semibold">{draft.name.trim() || "New employee"}</p>
               <p className="mt-0.5 break-words text-sm text-muted-foreground">{draft.role.trim() || "Choose a role"}</p>
               {draft.mission.trim() && <p className="mt-3 line-clamp-4 text-sm leading-5 text-muted-foreground">{draft.mission}</p>}
               {!!(knowledgePaths.length || guidedTools.length) && <p className="mt-3 text-xs text-muted-foreground">{knowledgePaths.length} sources · {guidedTools.length} abilities selected</p>}
             </div>
           </aside>
+          <details className="mt-3">
+            <summary className="cursor-pointer py-2 text-sm font-medium">Choose a portrait</summary>
+            <div aria-label="Employee portraits" role="group" className="grid max-w-72 grid-cols-4 gap-1.5 py-2">
+              {EMPLOYEE_PORTRAITS.map((avatar, index) => (
+                <button key={avatar} type="button" aria-label={`Portrait ${index + 1}`} aria-pressed={draft.avatar === avatar}
+                  onClick={() => setDraft(current => ({ ...current, avatar }))}
+                  className="flex min-h-12 items-center justify-center rounded-xl border border-transparent aria-pressed:border-primary aria-pressed:bg-primary/10 hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                  <EmployeeAvatar name="" avatar={avatar} className="size-10 rounded-lg" />
+                </button>
+              ))}
+            </div>
+            {draft.avatar && <button type="button" className="min-h-11 text-sm text-primary hover:underline"
+              onClick={() => setDraft(current => ({ ...current, avatar: "" }))}>Use automatic portrait</button>}
+          </details>
           </div>
           <div className="min-w-0"><FormField label="Start with a role" htmlFor="employee-role-preset" surfaceTheme={surfaceTheme}>
             <select id="employee-role-preset" className={selectClassName(surfaceTheme)} defaultValue=""
@@ -799,12 +820,16 @@ export function CreateAgentDialog({
             <HireKnowledge key={draft.workspaceId} workspaceId={draft.workspaceId} surfaceTheme={surfaceTheme}
               selected={knowledgePaths} onChange={setKnowledgePaths} />
             <details className="border-b border-border/75 py-3">
-              <summary className="min-h-9 cursor-pointer text-sm font-semibold">Abilities</summary>
-              <p className="mb-3 text-xs leading-5 text-muted-foreground">Pick abilities from the live catalog. Assignment does not grant tool approvals.</p>
+              <summary className="min-h-9 cursor-pointer text-sm font-semibold">Abilities
+                <span className="float-right text-xs font-normal text-muted-foreground">{guidedTools.length ? guidedTools.length + " selected" : "Workspace defaults"}</span>
+              </summary>
+              <p className="mb-3 text-xs leading-5 text-muted-foreground">Choose what this employee can use. OpenClaw still checks permissions and approvals when work runs.</p>
               <DraftAbilities selected={guidedTools} proposed={draft.tools} onChange={setGuidedTools} />
             </details>
             <details className="border-b border-border/75 py-3">
-              <summary className="min-h-9 cursor-pointer text-sm font-semibold">Intelligence</summary>
+              <summary className="min-h-9 cursor-pointer text-sm font-semibold">Intelligence
+                <span className="float-right text-xs font-normal text-muted-foreground">{draft.modelId ? "Model selected" : "Workspace default"}</span>
+              </summary>
               <FormField label="AI model" htmlFor="employee-model" surfaceTheme={surfaceTheme}>
                 <select id="employee-model" value={draft.modelId} onChange={event => setDraft(current => ({ ...current, modelId: event.target.value }))}
                   className={selectClassName(surfaceTheme)}>

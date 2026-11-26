@@ -23,6 +23,8 @@ export type WorkspaceManagedFile = {
   createable: boolean;
   editable: boolean;
   size: number | null;
+  createdAt?: string;
+  updatedAt?: string;
   source: WorkspaceManagedFileSource;
   description?: string;
   usage?: string;
@@ -42,5 +44,6 @@ export type WorkspaceManagedFileReadResponse = {
   workspacePath: string;
   file: WorkspaceManagedFile;
   content: string;
+  revision?: string;
   maxFileBytes: number;
 };

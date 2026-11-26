@@ -984,7 +984,8 @@ export function CreateWorkspaceExperience({
 
       if (current.state === "failed" || current.state === "cancelled") {
         setProvisioningError(current.error?.message || "Workspace provisioning did not complete.");
-      } else {
+      } else if (!verifyWorkspace) {
+        // The readiness check already forces a fresh native snapshot.
         await onRefresh?.().catch(() => undefined);
       }
       setStage("review");
@@ -1001,7 +1002,7 @@ export function CreateWorkspaceExperience({
       setIsProvisioningStarting(false);
       if (provisioningPollRef.current === controller) provisioningPollRef.current = null;
     }
-  }, [result, stage, isProvisioningStarting, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh]);
+  }, [result, stage, isProvisioningStarting, creationRun, certifyReview, basicDraftApproved, environmentPreparation, nativeEnvironmentPreparationReady, nativeEnvironmentPreparationMessage, onRefresh, verifyWorkspace]);
 
   const retryProvisioning = useCallback(async () => {
     setProvisioningError(null);
@@ -1267,7 +1268,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && "workforce-setup-card grid-cols-[minmax(0,1fr)]", firstWorkspace && isLight && "workforce-setup-light", isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && "workforce-setup-card grid-cols-[minmax(0,1fr)]", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -1853,7 +1854,8 @@ function CreationProgressView({ run, provisioning, provisioningStarting = false,
   const canExpedite = run && normalizeWorkspaceCreationProfile(run.input.profile) !== "fast" && !run.expediteRequestedAt
     && (run.snapshot.context.status === "ready" || run.snapshot.context.status === "partial" && run.snapshot.context.usableEvidence);
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center px-7 py-10 sm:px-10" aria-busy="true">
+    <main className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center px-6 py-8 sm:px-10">
+      {firstWorkspace && <div className="mb-7"><OnboardingProgress current={3} /></div>}
       <div className="flex items-center justify-between gap-3">
         <p className={cn("flex items-center gap-2 text-xl font-medium tracking-tight", isLight ? "text-[#382d25]" : "text-slate-100")} role="status" aria-live="polite">
           <LoaderCircle className="size-4 shrink-0 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" />
@@ -1863,27 +1865,22 @@ function CreationProgressView({ run, provisioning, provisioningStarting = false,
           {formatElapsed(elapsedMs)}
         </span>
       </div>
-      <ol className="grid gap-2 sm:grid-cols-2" aria-label="Workspace creation progress" aria-live="polite">
+      <ol className="mt-4 divide-y divide-border border-y border-border" aria-label="Workspace creation progress">
         {experience.activities.map((activity) => {
           const isComplete = activity.status === "complete";
           const isActive = activity.status === "active";
           return (
             <li
               key={activity.id}
-              className={cn(
-                "flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs transition-colors",
-                isComplete
-                  ? (isLight ? "border-emerald-200 bg-emerald-50/70 text-emerald-900" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100")
-                  : isActive
-                    ? (isLight ? "border-violet-200 bg-violet-50 text-violet-950" : "border-violet-300/25 bg-violet-300/10 text-violet-100")
-                    : (isLight ? "border-[#e5dbd0] bg-white/70 text-[#8f8074]" : "border-white/10 bg-white/[0.03] text-slate-500")
-              )}
+              aria-current={isActive ? "step" : undefined}
+              className={cn("flex min-h-11 items-center justify-between gap-3 py-2.5 text-sm",
+                isActive ? "font-medium text-foreground" : "text-muted-foreground")}
             >
               <span className="flex min-w-0 items-center gap-2">
                 {isComplete ? <Check className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" /> : isActive ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-violet-400 motion-reduce:animate-none" aria-hidden="true" /> : <span className="size-1.5 shrink-0 rounded-full bg-current opacity-45" aria-hidden="true" />}
-                <span className="truncate">{activity.label}</span>
+                <span className="break-words">{activity.label}</span>
               </span>
-              <span className="shrink-0 text-[10px] opacity-70">{isComplete ? "Complete" : isActive ? "Working" : "Next"}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{isComplete ? "Complete" : isActive ? "Working" : "Next"}</span>
             </li>
           );
         })}

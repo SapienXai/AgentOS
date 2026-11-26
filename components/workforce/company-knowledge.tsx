@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, BookOpen, Brain, FileText, Globe2, Link2, Plus, ScrollText, Search, Table2, UsersRound } from "lucide-react";
 
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { FileView } from "@/components/operations/operations-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import { deferredSetupDocumentsKey, documentLabel, isAssignableDocument, knowledgeFormatFromPath } from "@/lib/agentos/domains/knowledge-import-formats";
+import { deferredSetupDocumentsKey, documentLabel, isAssignableDocument, knowledgeFormatFromPath, MAX_KNOWLEDGE_ASSIGNMENT_CHANGES } from "@/lib/agentos/domains/knowledge-import-formats";
 import { redactSecretText } from "@/lib/security/redaction";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ const groups = [
   { id: "memory", label: "Memory", icon: Brain, description: "Native memory files retained in the workspace." }
 ] as const;
 type Group = typeof groups[number]["id"];
+const sourceDate = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
 
 const managedLabels: Record<string, string> = {
   "docs/brief.md": "Company brief",
@@ -77,12 +78,21 @@ export function CompanyKnowledge({ files, employees, workspaceId, loading, surfa
     return () => window.cancelAnimationFrame(frame);
   }, [workspaceId]);
   const [assignment, setAssignment] = useState<FileView | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const assignmentTrigger = useRef<HTMLButtonElement>(null);
+  const selectionButton = useRef<HTMLButtonElement>(null);
   const selected = groups.find(item => item.id === group)!;
   const query = search.trim().toLowerCase();
   const visible = files.filter(file => groupFor(file) === group && (
     !query || [documentLabel(file.relativePath), managedLabels[file.relativePath], file.workspaceName, knowledgeFormatFromPath(file.relativePath)].join(" ").toLowerCase().includes(query)
   ));
   const SelectedIcon = selected.icon;
+  const canSelect = (file: FileView) => file.workspaceId === workspaceId && isAssignableDocument(file.relativePath);
+  const selectedSources = files.filter(file => selectedIds.includes(file.id) && canSelect(file));
+  const assignableEmployees = employees.filter(employee => employee.workspaceId === workspaceId);
+  const canBatch = Boolean(workspaceId && assignableEmployees.length && visible.some(canSelect));
 
   return (
     <>
@@ -117,6 +127,14 @@ export function CompanyKnowledge({ files, employees, workspaceId, loading, surfa
               <Input value={search} onChange={event => setSearch(event.target.value)} aria-label={"Search " + selected.label.toLowerCase()} placeholder={"Search " + selected.label.toLowerCase()} className="pl-9" />
             </label>}
           </header>
+          {(canBatch || selecting) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/75 px-4 py-1 sm:px-5">
+            <Button ref={selectionButton} size="sm" variant="ghost" className="min-h-11" onClick={() => {
+              setSelecting(!selecting);
+              setSelectedIds([]);
+            }}>{selecting ? "Clear selection" : "Select sources"}</Button>
+            {selecting && <Button size="sm" variant="secondary" disabled={!selectedSources.length} className="min-h-11"
+              onClick={() => setBatchOpen(true)}>Assign {selectedSources.length || ""} {selectedSources.length === 1 ? "source" : "sources"}</Button>}
+          </div>}
           {group === "employees" ? (
             <ul className="divide-y divide-border px-3 py-1">
               {employees.map(employee => <li key={employee.id}>
@@ -134,15 +152,26 @@ export function CompanyKnowledge({ files, employees, workspaceId, loading, surfa
                 const title = knowledgeTitle(file);
                 const FileIcon = format === "web" ? Globe2 : format === "xlsx" || format === "csv" ? Table2 : SelectedIcon;
                 return <li key={file.id} className="workforce-row flex items-center gap-1">
+                  {selecting && canSelect(file) && <label className="grid min-h-11 min-w-10 shrink-0 cursor-pointer place-items-center">
+                    <input type="checkbox" aria-label={"Select " + title + (format ? ` (${format.toUpperCase()})` : "")}
+                      checked={selectedIds.includes(file.id)} className="size-4 accent-primary"
+                      disabled={!selectedIds.includes(file.id) && selectedSources.length >= MAX_KNOWLEDGE_ASSIGNMENT_CHANGES}
+                      onChange={event => setSelectedIds(current => event.target.checked ? [...current, file.id] : current.filter(id => id !== file.id))} />
+                  </label>}
                   <button type="button" onClick={() => onOpen(file)} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left">
                     <span className="workforce-source-icon grid size-11 shrink-0 place-items-center rounded-xl"><FileIcon aria-hidden="true" className="size-4" /></span>
                     <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold capitalize">{title}</span>
-                      <span className="text-xs text-muted-foreground">{format === "reference" ? "Saved reference" : format === "web" ? "Imported webpage" : format === "note" ? "Note" : format?.toUpperCase() || "Workspace file"} · {file.workspaceName}{file.sizeBytes != null ? " · " + new Intl.NumberFormat("en", { style: "unit", unit: "kilobyte", maximumFractionDigits: 1 }).format(file.sizeBytes / 1024) : ""}</span>
+                      <span className="text-xs text-muted-foreground">{format === "reference" ? "Saved reference" : format === "web" ? "Imported webpage" : format === "note" ? "Note" : format?.toUpperCase() || "Workspace file"} · {file.workspaceName}
+                        {file.source?.updatedAt && <> · <time dateTime={file.source.updatedAt}>{sourceDate.format(new Date(file.source.updatedAt))}</time></>}
+                      </span>
                     </span>
                     <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                   </button>
-                  {isAssignableDocument(file.relativePath) && employees.some(employee => employee.workspaceId === file.workspaceId) &&
-                    <Button size="sm" variant="ghost" onClick={() => setAssignment(file)} aria-label={"Assign " + title + (format ? ` (${format.toUpperCase()})` : "")}>Assign</Button>}
+                  {!selecting && isAssignableDocument(file.relativePath) && employees.some(employee => employee.workspaceId === file.workspaceId) &&
+                    <Button size="sm" variant="ghost" className="min-h-11" onClick={event => {
+                      assignmentTrigger.current = event.currentTarget;
+                      setAssignment(file);
+                    }} aria-label={"Assign " + title + (format ? ` (${format.toUpperCase()})` : "")}>Assign</Button>}
                 </li>;
               })}
             </ul>
@@ -182,12 +211,81 @@ export function CompanyKnowledge({ files, employees, workspaceId, loading, surfa
           setImportOpen(false); setSearch(""); setGroup(kind === "reference" ? "sources" : "documents");
           setMessage(results.length > 1 ? results.length + " sources added." : title + (disposition === "already-saved" ? " is already in the workspace." : kind === "reference" ? " saved as a reference." : " added to the workspace.")); onChanged();
         }} /> : null}
-      {assignment?.workspaceId ? <MissionControlDialogShell open variant="quiet" surfaceTheme={surfaceTheme}
-        title={knowledgeTitle(assignment)} description="Employee memory search"
-        contentClassName="workforce-setup-card sm:w-[min(92vw,640px)]"
-        onOpenChange={open => { if (!open) setAssignment(null); }}>
-        <SourceAssignments workspaceId={assignment.workspaceId} path={assignment.relativePath} employees={employees} />
-      </MissionControlDialogShell> : null}
+      {assignment?.workspaceId ? <SourceAssignments surfaceTheme={surfaceTheme} title={knowledgeTitle(assignment)}
+        workspaceId={assignment.workspaceId} path={assignment.relativePath} employees={employees}
+        onCloseAutoFocus={event => {
+          if (!assignmentTrigger.current?.isConnected) return;
+          event.preventDefault();
+          assignmentTrigger.current.focus();
+        }}
+        onClose={() => setAssignment(null)} /> : null}
+      {batchOpen && workspaceId && selectedSources.length ? <BatchAssignment key={workspaceId} workspaceId={workspaceId}
+        surfaceTheme={surfaceTheme} sources={selectedSources} employees={assignableEmployees} onClose={() => setBatchOpen(false)}
+        onCloseAutoFocus={event => {
+          if (!selectionButton.current?.isConnected) return;
+          event.preventDefault();
+          selectionButton.current.focus();
+        }}
+        onAssigned={message => {
+          setBatchOpen(false);
+          setSelecting(false);
+          setSelectedIds([]);
+          setMessage(message);
+          onChanged();
+        }} /> : null}
     </>
   );
+}
+
+function BatchAssignment({ workspaceId, surfaceTheme, sources, employees, onClose, onAssigned, onCloseAutoFocus }: {
+  workspaceId: string;
+  surfaceTheme: "light" | "dark";
+  sources: FileView[];
+  employees: MissionControlSnapshot["agents"];
+  onClose: () => void;
+  onAssigned: (message: string) => void;
+  onCloseAutoFocus: (event: Event) => void;
+}) {
+  const [employeeId, setEmployeeId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const result = await fetch("/api/workspaces/" + encodeURIComponent(workspaceId) + "/knowledge/assignments", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: employeeId, changes: sources.map(file => ({ path: file.relativePath, selected: true })) })
+      });
+      const data = await result.json();
+      if (!result.ok) throw new Error(data.error || "The sources could not be assigned.");
+      onAssigned(data.status === "configured" ? "Sources added to employee memory search." : "Assignments saved. Check the employee profile for OpenClaw confirmation.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "The sources could not be assigned.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <MissionControlDialogShell open variant="quiet" surfaceTheme={surfaceTheme} title="Assign selected sources"
+    description="Add these sources to one employee’s memory search." onOpenChange={open => { if (!open && !saving) onClose(); }}
+    onCloseAutoFocus={onCloseAutoFocus}
+    contentClassName="workforce-setup-card sm:h-auto sm:min-h-80 sm:w-[min(92vw,580px)]"
+    footer={<><Button type="button" variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>
+      <Button type="button" disabled={!employeeId || saving} onClick={() => void save()}>{saving ? "Saving assignments…" : "Assign sources"}</Button></>}>
+    <div className="space-y-4" aria-busy={saving}>
+      <label className="block space-y-1 text-sm font-medium">
+        <span>Employee</span>
+        <select value={employeeId} onChange={event => setEmployeeId(event.target.value)} disabled={saving}
+          className="block min-h-11 w-full rounded-lg border border-input bg-background px-3 text-base sm:text-sm">
+          <option value="">Choose an employee</option>
+          {employees.map(employee => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+        </select>
+      </label>
+      <ul aria-label="Selected sources" className="max-h-[min(36dvh,16rem)] divide-y divide-border overflow-y-auto rounded-xl border border-border px-3">
+        {sources.map(source => <li className="break-words py-2 text-sm font-medium" key={source.id}>{knowledgeTitle(source)}</li>)}
+      </ul>
+      <p className="text-sm text-muted-foreground">Shared file access follows your workspace policy. Existing assignments stay in place.</p>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    </div>
+  </MissionControlDialogShell>;
 }

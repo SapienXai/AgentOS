@@ -118,7 +118,7 @@ export function KnowledgeImportDialog({ workspaceId, surfaceTheme, onClose, onIm
     <MissionControlDialogShell open onOpenChange={open => { if (!open && !working) finish(); }}
       surfaceTheme={surfaceTheme} title={initialWebsite ? "Refresh webpage" : "Add knowledge"}
       description={initialWebsite ? "Review the latest text. A changed page is saved as a new document and existing assignments stay with the original." : "Give your team material they can refer to."}
-      contentClassName={cn("sm:h-[min(660px,calc(100dvh-4rem))] sm:w-[min(92vw,660px)]", surfaceTheme === "light" ? "workforce-setup-card workforce-setup-light" : "workforce-setup-card")}
+      contentClassName="workforce-setup-card sm:h-[min(660px,calc(100dvh-4rem))] sm:w-[min(92vw,660px)]"
       bodyClassName="px-5 py-5 sm:px-7" disableOutsideDismiss={working}
       footer={<>
         <Button type="button" variant="ghost" onClick={() => working ? active.current?.abort() : finish()}>

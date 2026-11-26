@@ -1,18 +1,24 @@
 const { spawn } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
-const { access, mkdir, mkdtemp, readFile, realpath, writeFile } = require("node:fs/promises");
+const { access, lstat, mkdir, mkdtemp, readFile, realpath, writeFile } = require("node:fs/promises");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
 const { Writable } = require("node:stream");
 const { createDisposableOpenClawEnvironment } = require("./lib/disposable-openclaw-env.ts");
-const { enableInstanceProtection } = require("../lib/security/instance-protection.ts");
+const { enableInstanceProtection, getInstanceProtectionStatus } = require("../lib/security/instance-protection.ts");
 
 const version = "2026.11.10";
-const marker = "agentos-0.10.0-owner-acceptance";
-const args = process.argv.slice(2);
-const [openClawInput, buildInput, resumeInput] = args;
+const [versionFlag, candidateVersion, openClawInput, buildInput, resumeInput, ...extraArgs] = process.argv.slice(2);
+
+async function requirePrivateStateEntry(file, kind) {
+  const state = await lstat(file);
+  const expectedType = kind === "directory" ? state.isDirectory() : state.isFile();
+  if (!expectedType || (process.getuid && (state.uid !== process.getuid() || (state.mode & 0o077) !== 0))) {
+    throw new Error("Resume requires an owner-only acceptance state directory with private state files.");
+  }
+}
 
 async function reservePort() {
   const server = net.createServer();
@@ -52,8 +58,8 @@ async function waitReady(url, child) {
 }
 
 async function main() {
-  if (!openClawInput || !buildInput || args.length > 3) {
-    throw new Error("Usage: node -r ./tests/register-paths.cjs -r jiti/register.js scripts/agentos-owner-acceptance.cjs OPENCLAW_PACKAGE AGENTOS_BUILD_ROOT [ACCEPTANCE_STATE]");
+  if (versionFlag !== "--candidate-version" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(candidateVersion || "") || !openClawInput || !buildInput || extraArgs.length) {
+    throw new Error("Usage: node -r ./tests/register-paths.cjs -r jiti/register.js scripts/agentos-owner-acceptance.cjs --candidate-version MAJOR.MINOR.PATCH OPENCLAW_PACKAGE AGENTOS_BUILD_ROOT [ACCEPTANCE_STATE]");
   }
   const packagePath = await realpath(openClawInput);
   const build = await realpath(buildInput);
@@ -66,8 +72,8 @@ async function main() {
   if (actualVersions.some((value) => value !== version)) {
     throw new Error(`The acceptance environment requires OpenClaw and both Gateway SDK packages at ${version}.`);
   }
-  if (await readVersion(path.join(build, "packages", "agentos", "package.json")) !== "0.10.0") {
-    throw new Error("The acceptance environment requires the AgentOS 0.10.0 checkout.");
+  if (await readVersion(path.join(build, "packages", "agentos", "package.json")) !== candidateVersion) {
+    throw new Error(`The build does not match the requested AgentOS ${candidateVersion} candidate.`);
   }
   const serverEntry = path.join(build, "node_modules", "next", "dist", "bin", "next");
   const runtimeEntry = path.join(packagePath, "openclaw.mjs");
@@ -79,7 +85,7 @@ async function main() {
   }
 
   const root = resumeInput ? await realpath(resumeInput) : await mkdtemp(path.join(os.tmpdir(), "agentos-owner-acceptance-"));
-  const receipt = path.join(root, marker);
+  const receipt = path.join(root, `agentos-${candidateVersion}-owner-acceptance`);
   const homeDir = path.join(root, "home");
   const stateDir = path.join(root, "openclaw");
   const runtimeDir = path.join(root, "agentos");
@@ -88,6 +94,11 @@ async function main() {
   const [gatewayPort, appPort] = await Promise.all([reservePort(), reservePort()]);
   let token;
   if (resumeInput) {
+    await Promise.all([
+      ...[root, homeDir, stateDir, runtimeDir, workspace].map(dir => requirePrivateStateEntry(dir, "directory")),
+      requirePrivateStateEntry(receipt, "file"),
+      requirePrivateStateEntry(configPath, "file")
+    ]);
     token = (await readFile(receipt, "utf8")).trim();
     if (!/^[a-f0-9]{64}$/.test(token)) throw new Error("The supplied directory is not an initialized acceptance environment.");
   } else {
@@ -112,6 +123,10 @@ async function main() {
     await enableInstanceProtection({ username: "acceptance-owner", password }, env);
     await writeFile(receipt, token, { mode: 0o600, flag: "wx" });
   }
+  const protection = await getInstanceProtectionStatus(null, env);
+  if (!protection.protectionEnabled || !protection.credentialConfigured || protection.authenticated) {
+    throw new Error("The acceptance state does not have a protected owner account.");
+  }
   const children = [];
   const start = (cwd, ...command) => {
     const child = spawn(process.execPath, command, { cwd, env, stdio: "ignore" });
@@ -133,7 +148,7 @@ async function main() {
     await waitReady(`http://127.0.0.1:${appPort}/api/auth/status`, app);
     console.log(`Open http://127.0.0.1:${appPort}/mission-control and sign in as acceptance-owner.`);
     console.log(`Isolated state: ${root}`);
-    console.log("Press Ctrl+C to stop. Pass the isolated state directory as the third argument to test restart recovery.");
+    console.log("Press Ctrl+C to stop. Append the isolated state directory to the same command to resume.");
     await Promise.race(children.map((child) => new Promise((resolve) => child.once("exit", resolve))));
   } finally {
     stop();

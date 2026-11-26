@@ -4,7 +4,8 @@ import { z } from "zod";
 import {
   listWorkspaceManagedFiles,
   readWorkspaceManagedFile,
-  writeWorkspaceManagedFile
+  writeWorkspaceManagedFile,
+  WorkspaceFileConflictError
 } from "@/lib/openclaw/application/workspace-file-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 
 const fileWriteSchema = z.object({
   path: z.string().min(1),
-  content: z.string()
+  content: z.string(),
+  revision: z.string().regex(/^[a-f0-9]{64}$/).optional()
 });
 
 export async function GET(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
@@ -57,13 +59,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
     const file = await writeWorkspaceManagedFile({
       workspaceId,
       path: input.path,
-      content: input.content
+      content: input.content,
+      revision: input.revision
     });
 
     return NextResponse.json(redactSecrets(file), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const message = redactErrorMessage(error, "Unable to save workspace file.");
-    const status = message.includes("exceeds") ? 413 : 400;
+    const status = error instanceof WorkspaceFileConflictError ? 409 : message.includes("exceeds") ? 413 : 400;
 
     return NextResponse.json(
       {

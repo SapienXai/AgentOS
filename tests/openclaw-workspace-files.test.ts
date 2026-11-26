@@ -11,13 +11,32 @@ import {
   writeWorkspaceManagedFile,
   readWorkspaceManagedFileForPath,
   resolveWorkspaceManagedFileForPath,
-  writeWorkspaceManagedFileForPath
+  writeWorkspaceManagedFileForPath,
+  WorkspaceFileConflictError
 } from "@/lib/openclaw/application/workspace-file-service";
 
 const tempRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("a managed source preserves the first of two concurrent edits to the same revision", async () => {
+  const workspacePath = await createWorkspaceRoot();
+  const source = "docs/brief.md";
+  const opened = await writeWorkspaceManagedFileForPath(workspacePath, source, "Original");
+  assert.ok(opened.revision);
+  assert.ok(opened.file.updatedAt);
+  const edits = await Promise.allSettled([
+    writeWorkspaceManagedFileForPath(workspacePath, source, "First edit", opened.revision),
+    writeWorkspaceManagedFileForPath(workspacePath, source, "Second edit", opened.revision)
+  ]);
+  const saved = edits.find(edit => edit.status === "fulfilled");
+  const rejected = edits.find(edit => edit.status === "rejected");
+  assert.ok(saved);
+  assert.notEqual(saved.value.revision, opened.revision);
+  assert.ok(rejected?.reason instanceof WorkspaceFileConflictError);
+  assert.equal((await readWorkspaceManagedFileForPath(workspacePath, source)).content, saved.value.content);
 });
 
 test("lists official OpenClaw workspace files and discovered safe context files", async () => {

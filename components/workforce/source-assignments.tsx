@@ -4,15 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { Button } from "@/components/ui/button";
+import { MissionControlDialogShell } from "@/components/mission-control/mission-control-dialog-shell";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { SelectionList } from "@/components/workforce/selection-list";
 
 type Binding = { id: string; selected: boolean };
 
-export function SourceAssignments({ workspaceId, path, employees }: {
+export function SourceAssignments({ workspaceId, path, employees, title, surfaceTheme, onClose, onCloseAutoFocus }: {
   workspaceId: string;
   path: string;
   employees: MissionControlSnapshot["agents"];
+  title: string;
+  surfaceTheme: "light" | "dark";
+  onClose: () => void;
+  onCloseAutoFocus: (event: Event) => void;
 }) {
   const [bindings, setBindings] = useState<Binding[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -69,7 +74,18 @@ export function SourceAssignments({ workspaceId, path, employees }: {
     setMessage(confirmed + " confirmed" + (pending ? " · " + pending + " pending OpenClaw confirmation" : "") + ".");
   }
 
-  return <div className="space-y-3">
+  return <MissionControlDialogShell open variant="quiet" surfaceTheme={surfaceTheme}
+    title={title} description="Employee memory search" onOpenChange={open => { if (!open && !working) onClose(); }}
+    onCloseAutoFocus={onCloseAutoFocus} contentClassName="workforce-setup-card sm:h-auto sm:max-h-[min(680px,calc(100dvh-4rem))] sm:w-[min(92vw,640px)]"
+    bodyClassName="space-y-4 px-5 py-4 sm:px-7 sm:py-5" disableOutsideDismiss={working}
+    footer={<>
+      {(error || message) ? <Button size="sm" type="button" variant="ghost" className="min-h-11" disabled={working}
+        onClick={() => { setError(""); void read().catch(failure => setError(failure.message)); }}>Refresh</Button> :
+        <Button type="button" variant="ghost" className="min-h-11" disabled={working} onClick={onClose}>Close</Button>}
+      <Button type="button" className="min-h-11" disabled={working || !changes.length || changes.length > 12} onClick={() => void save()}>
+        {working ? "Saving assignments…" : "Save assignments"}
+      </Button>
+    </>}>
     <p className="text-sm text-muted-foreground">Include this source in employee memory search. Shared file access follows the workspace policy.</p>
     {bindings ? <SelectionList label="Employees" selected={selected} onChange={setSelected} disabled={working}
       empty="No employees with a confirmed local workspace are available."
@@ -77,17 +93,10 @@ export function SourceAssignments({ workspaceId, path, employees }: {
         const employee = byId.get(binding.id);
         return employee ? [{ id: employee.id, label: employee.name,
           icon: <EmployeeAvatar agent={employee} name={employee.name} className="size-8 rounded-lg" />,
-          detail: binding.selected ? "Native search binding confirmed" : "Shared workspace access" }] : [];
+          detail: binding.selected ? "Included in memory search" : "No memory search assignment" }] : [];
       })} /> : !error ? <p role="status" className="text-sm text-muted-foreground">Checking native assignments…</p> : null}
     {changes.length > 12 && <p role="alert" className="text-sm">Save up to 12 employee changes at a time.</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {message && <p role="status" className="text-sm font-medium">{message}</p>}
-    <div className="flex flex-wrap gap-2">
-      <Button size="sm" type="button" disabled={working || !changes.length || changes.length > 12} onClick={() => void save()}>
-        {working ? "Saving assignments…" : "Save assignments"}
-      </Button>
-      {(error || message) && <Button size="sm" type="button" variant="ghost" disabled={working}
-        onClick={() => { setError(""); void read().catch(failure => setError(failure.message)); }}>Refresh</Button>}
-    </div>
-  </div>;
+  </MissionControlDialogShell>;
 }
