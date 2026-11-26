@@ -1,9 +1,5 @@
-import { OperationsPage } from "@/components/operations/operations-page";
-import { getInitialControlPlaneSnapshot } from "@/lib/agentos/initial-snapshot";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function DashboardPage() {
-  const snapshot = await getInitialControlPlaneSnapshot();
-  return <OperationsPage initialSnapshot={snapshot} page="dashboard" />;
+export default function DashboardPage() {
+  redirect("/");
 }

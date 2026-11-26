@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { listGuidedAbilities } from "@/lib/agentos/application/guided-abilities";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   getOpenClawPluginCatalog,
@@ -52,6 +53,13 @@ export async function GET(request: Request) {
   if ("response" in permission) return permission.response;
 
   const searchParams = Object.fromEntries(new URL(request.url).searchParams.entries());
+  if (searchParams.view === "guided-abilities") {
+    const manage = await requireAgentOsProductPermission(request, "agents.manage");
+    if ("response" in manage) return manage.response;
+    const tools = await listGuidedAbilities().catch(() => null);
+    if (!tools) return NextResponse.json({ error: "Current ability inventory unavailable." }, { status: 503 });
+    return NextResponse.json(redactSecrets({ tools }), { headers: { "Cache-Control": "private, no-store" } });
+  }
   const parsedQuery = pluginCatalogQuerySchema.safeParse(searchParams);
   if (!parsedQuery.success) {
     return NextResponse.json({ error: "Invalid native plugin catalog query." }, { status: 400 });

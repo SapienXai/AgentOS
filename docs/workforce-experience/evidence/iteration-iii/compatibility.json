@@ -1,0 +1,72 @@
+{
+  "stable": {
+    "targetName": "simulated-stable",
+    "targetKind": "simulated",
+    "isRealRuntime": false,
+    "isSimulatedRuntime": true,
+    "nativeGatewayCoveragePercent": 67,
+    "cliFallbackCount": 19,
+    "degradedSurfaces": [
+      "Agent identity sync",
+      "Channel logs",
+      "Channel provisioning",
+      "Channel removal",
+      "Config patch",
+      "Device access repair",
+      "Device token lifecycle",
+      "Environment preparation",
+      "Gateway restart control",
+      "Gmail webhook setup",
+      "Model auth order",
+      "Model authentication",
+      "Model scan",
+      "Native plugin discovery catalog",
+      "Node pairing",
+      "Secret reload and resolution",
+      "Session recovery",
+      "Setup wizard",
+      "Update status"
+    ],
+    "unsupportedSurfaces": [
+      "Browser profiles",
+      "GitHub profile and session publication",
+      "Managed worktrees",
+      "Operator questions",
+      "Session collaboration and ownership",
+      "Skills library",
+      "Task assignment",
+      "Task history",
+      "Task suggestions"
+    ],
+    "supportedOpenClawVersion": "2026.11.5",
+    "testedOpenClawVersions": [
+      "2026.11.5"
+    ]
+  },
+  "betaShape": {
+    "targetName": "simulated-beta-shape",
+    "targetKind": "simulated",
+    "isRealRuntime": false,
+    "isSimulatedRuntime": true,
+    "nativeGatewayCoveragePercent": 86,
+    "cliFallbackCount": 10,
+    "degradedSurfaces": [
+      "Config patch",
+      "Device access repair",
+      "Device token lifecycle",
+      "Environment preparation",
+      "Model authentication",
+      "Node pairing",
+      "Operator questions",
+      "Secret reload and resolution",
+      "Setup wizard",
+      "Update status"
+    ],
+    "unsupportedSurfaces": [],
+    "supportedOpenClawVersion": "2026.11.5",
+    "testedOpenClawVersions": [
+      "2026.11.5",
+      "2026.11.5-beta"
+    ]
+  }
+}

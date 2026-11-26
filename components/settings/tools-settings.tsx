@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { CheckCircle2, LoaderCircle, XCircle } from "lucide-react";
 
 import { SettingsList, SettingsRow, SettingsSection } from "@/components/settings/settings-section";
@@ -24,7 +26,11 @@ export function ToolsSettings({
   const values = { browser: browserToolEnabled, "web-fetch": webFetchToolEnabled, "web-search": webSearchToolEnabled };
 
   return (
-    <SettingsSection title="AI & Tools" description="Choose what agents are allowed to use. Changes save automatically." surfaceTheme={surfaceTheme}>
+    <div className="space-y-6">
+      <SettingsSection title="AI & Models" description="Connect an AI provider and manage the models your employees use." surfaceTheme={surfaceTheme}>
+        <Button asChild variant="secondary"><Link href="/models">Manage providers and models</Link></Button>
+      </SettingsSection>
+      <SettingsSection title="Shared tools" description="Manage the tools available through this OpenClaw installation." surfaceTheme={surfaceTheme}>
       <SettingsList surfaceTheme={surfaceTheme}>
         {toolDefinitions.map((tool) => {
           const enabled = values[tool.id];
@@ -58,6 +64,7 @@ export function ToolsSettings({
         {toolSettingsSaveState === "saved" ? <span className="flex items-center gap-1.5 text-xs text-emerald-600" role="status"><CheckCircle2 className="h-3.5 w-3.5" /> Saved</span> : null}
         {toolSettingsSaveState === "error" ? <span className="flex items-center gap-1.5 text-xs text-red-600" role="status"><XCircle className="h-3.5 w-3.5" /> Not saved</span> : null}
       </div>
-    </SettingsSection>
+      </SettingsSection>
+    </div>
   );
 }

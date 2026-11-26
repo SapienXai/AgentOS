@@ -51,9 +51,10 @@ test("Agent Detail server and client query state share bounded canonical parsing
   const route = await readFile("app/agents/[agentId]/page.tsx", "utf8");
   const client = await readFile("components/operations/agents/agent-detail-page-content.tsx", "utf8");
   assert.match(route, /searchParams/);
-  assert.match(route, /initialTab/);
-  assert.match(route, /initialCapabilityFocus/);
-  assert.match(route, /initialSessionFocus/);
+  assert.match(route, /query=\{initialQuery\}/);
+  assert.match(client, /initialTab=\{query\.tab\}/);
+  assert.match(client, /initialCapabilityFocus=\{query\.capabilityFocus\}/);
+  assert.match(client, /initialSessionFocus=\{query\.sessionFocus\}/);
   assert.match(client, /useState<AgentDetailTab>\(initialTab\)/);
 });
 

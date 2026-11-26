@@ -16,6 +16,7 @@ const productRoot = process.env.AGENTOS_BENCH_APP_ROOT || process.cwd();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const mutationCount = Number(process.env.AGENTOS_BENCH_MUTATIONS || 10);
 const browserUpdateCount = Number(process.env.AGENTOS_BENCH_DOM_SAMPLES || 5);
+const coldPairs = Number(process.env.AGENTOS_BENCH_COLD_PAIRS || 1);
 const settleMs = Number(process.env.AGENTOS_BENCH_SETTLE_MS || 0);
 const rawStreams = process.env.AGENTOS_BENCH_NO_RAW_SSE === "1" ? [] : ["", "?delta=1"];
 
@@ -134,8 +135,8 @@ async function runScale(agentCount, sessionCount, browser) {
       AGENTOS_API_TOKEN: apiToken, NODE_ENV: "production"
     };
     const nativeRpcCounts = {};
-    const launch = (args, observeOutput, cwd) => {
-      const child = spawn(process.execPath, args, { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const launch = (args, observeOutput, cwd, overrides = {}) => {
+      const child = spawn(process.execPath, args, { env: { ...env, ...overrides }, cwd, stdio: ["ignore", "pipe", "pipe"] });
       let log = "";
       for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => {
         observeOutput?.(chunk.toString());
@@ -170,11 +171,66 @@ async function runScale(agentCount, sessionCount, browser) {
       ));
     }
     const gatewayRssAfterSeedKiB = processSample(gateway).rssKiB;
-    const product = launch([app, "start", "--hostname", "127.0.0.1", "--port", String(appPort)], undefined, productRoot);
-    await waitReady(appUrl + "/api/auth/status", product);
+    const launchProduct = async (trial) => {
+      const child = launch([app, "start", "--hostname", "127.0.0.1", "--port", String(appPort)], undefined, productRoot, {
+        AGENTOS_RUNTIME_DIR: path.join(root, "agentos-" + trial),
+        AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control-" + trial)
+      });
+      await waitReady(appUrl + "/api/auth/status", child);
+      return child;
+    };
     const headers = { Authorization: `Bearer ${apiToken}` };
     const render = async (context) => {
       const page = await context.newPage();
+      await page.addInitScript(() => {
+        const marks = { canvasMs: null, firstNodeMs: null, nodeReadyMs: null, longTasks: [], stream: [], route: [] };
+        window.agentOsBenchmark = marks;
+        const native = window.EventSource;
+        window.EventSource = class extends native {
+          constructor(url, options) {
+            super(url, options);
+            if (!String(url).includes("/api/stream")) return;
+            for (const kind of ["ready", "snapshot", "snapshot-delta"]) {
+              this.addEventListener(kind, event => {
+                if (marks.stream.length >= 16) return;
+                let payload;
+                try { payload = JSON.parse(event.data); } catch {}
+                marks.stream.push({ kind, ms: Math.round(performance.now()), mode: payload?.mode ?? null,
+                  employees: Array.isArray(payload?.agents) ? payload.agents.length : null });
+              });
+            }
+          }
+        };
+        function inspectNode() {
+          const nodes = document.querySelectorAll(".react-flow__node-agent");
+          // The animated visible label uses non-breaking spaces between glyphs. Its
+          // accessible name is stable and exact, including while an old name exits.
+          const node = document.querySelector('.react-flow__node-agent [aria-label="Benchmark agent 1"]')?.closest(".react-flow__node-agent");
+          const rect = node?.getBoundingClientRect();
+          const label = node?.querySelector('[aria-label="Benchmark agent 1"]');
+          const action = node?.querySelector('button[aria-label="Message Benchmark agent 1"]');
+          return { count: nodes.length, correctName: !!node, nodeId: node?.getAttribute("data-id") ?? null,
+            onscreen: !!rect && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight,
+            labelShows: !!label && Number(getComputedStyle(label).opacity) > 0,
+            actionEnabled: !!action && !action.disabled };
+        }
+        const dom = new MutationObserver(() => {
+          if (marks.canvasMs === null && document.querySelector(".react-flow")) marks.canvasMs = performance.now();
+          if (marks.firstNodeMs === null && document.querySelector(".react-flow__node-agent")) marks.firstNodeMs = performance.now();
+          const result = inspectNode();
+          if (marks.nodeReadyMs === null && result.correctName && result.onscreen && result.labelShows && result.actionEnabled) {
+            marks.nodeReadyMs = performance.now();
+            marks.route.push(result);
+            dom.disconnect();
+          }
+        });
+        dom.observe(document, { childList: true, attributes: true, attributeFilter: ["style", "class", "aria-label", "disabled"], subtree: true });
+        if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+          new PerformanceObserver(list => {
+            marks.longTasks.push(...list.getEntries().slice(0, 24).map(entry => Math.round(entry.duration)));
+          }).observe({ type: "longtask", buffered: true });
+        }
+      });
       const started = performance.now();
       const navigation = await page.goto(appUrl + "/mission-control", { timeout: 45000, waitUntil: "domcontentloaded" });
       await page.getByText("Benchmark agent 1", { exact: true }).first().waitFor({ timeout: 45000 });
@@ -182,39 +238,99 @@ async function runScale(agentCount, sessionCount, browser) {
       const html = await navigation.text();
       const nav = await page.evaluate(() => {
         const entry = performance.getEntriesByType("navigation")[0];
-        return { ttfbMs: Math.round(entry.responseStart), domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd) };
+        const marks = window.agentOsBenchmark;
+        return {
+          ttfbMs: Math.round(entry.responseStart),
+          domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd),
+          canvasMs: marks?.canvasMs == null ? null : Math.round(marks.canvasMs),
+          firstNodeMs: marks?.firstNodeMs == null ? null : Math.round(marks.firstNodeMs),
+          nodeReadyMs: marks?.nodeReadyMs == null ? null : Math.round(marks.nodeReadyMs),
+          observedNativeNode: marks?.route.at(0) ?? null, stream: marks?.stream ?? [],
+          longTaskMs: marks?.longTasks.reduce((total, value) => total + value, 0) ?? null,
+          maxLongTaskMs: marks?.longTasks.length ? Math.max(...marks.longTasks) : null
+        };
       });
       return {
         page,
         timings: { renderMs, ...nav, htmlBytes: Buffer.byteLength(html), rosterInInitialHtml: html.includes("Benchmark agent 1") }
       };
     };
-    const browserContexts = await Promise.all([1, 2].map(() => browser.newContext({ extraHTTPHeaders: headers })));
-    contexts.push(...browserContexts);
+    let browserContexts = [];
+    let product;
     const countDelta = (before, after) => Object.fromEntries(Object.entries(after)
       .map(([method, count]) => [method, count - (before[method] ?? 0)]).filter(([, count]) => count > 0));
-    const beforeCold = { ...nativeRpcCounts };
-    const cold = await Promise.all(browserContexts.map(render));
-    const coldRpcCounts = countDelta(beforeCold, nativeRpcCounts);
-    await Promise.all(cold.map(({ page }) => page.close()));
+    const cold = [];
+    const coldRpcCountsByPair = [];
+    for (let trial = 0; trial < coldPairs; trial++) {
+      product = await launchProduct(trial);
+      browserContexts = await Promise.all([1, 2].map(() => browser.newContext({
+        extraHTTPHeaders: headers, viewport: { width: 1440, height: 900 }
+      })));
+      contexts.push(...browserContexts);
+      const beforeCold = { ...nativeRpcCounts };
+      const pair = await Promise.all(browserContexts.map(render));
+      const calls = countDelta(beforeCold, nativeRpcCounts);
+      coldRpcCountsByPair.push(calls);
+      cold.push(...pair.map(record => record.timings));
+      await Promise.all(pair.map(({ page }) => page.close()));
+      if (trial < coldPairs - 1) {
+        await Promise.all(browserContexts.map(context => context.close()));
+        await stop(product);
+      }
+    }
+    const coldRpcCounts = coldRpcCountsByPair.at(-1);
     const warm = await Promise.all(browserContexts.map(render));
     const calculateDomUpdates = async () => {
       const samples = [];
+      const admission = [];
       let missed = 0;
       for (let index = 0; index < browserUpdateCount; index++) {
         const label = `Benchmark agent update ${index + 1}`;
+        await Promise.all(warm.map(({ page }) => page.evaluate(expected => {
+          window.agentOsUpdate?.observer.disconnect();
+          const update = { observedAt: null, observer: null };
+          const inspect = () => {
+            const node = document.querySelector(`.react-flow__node-agent [aria-label="${expected}"]`)?.closest(".react-flow__node-agent");
+            const action = node?.querySelector(`button[aria-label="Message ${expected}"]`);
+            const bounds = node?.getBoundingClientRect();
+            if (!action || action.disabled || !bounds || bounds.right <= 0 || bounds.bottom <= 0 ||
+              bounds.top >= innerHeight || bounds.left >= innerWidth) return;
+            update.observedAt = performance.timeOrigin + performance.now();
+            update.observer.disconnect();
+          };
+          update.observer = new MutationObserver(inspect);
+          update.observer.observe(document, { childList: true, attributes: true, attributeFilter: ["aria-label", "disabled"], subtree: true });
+          window.agentOsUpdate = update;
+        }, label)));
         const started = performance.now();
         await client.callNative("agents.update", { agentId: "main", name: label }, { safety: "mutation", timeoutMs: 12_000 });
+        const agentAck = performance.now();
         // Wake the existing snapshot subscription with the same native session
         // event used in the stream workload. Observe the new roster name in the DOM.
         await client.callNative("sessions.patch", { key: keys[0], label }, { safety: "mutation", timeoutMs: 12_000 });
-        const visible = await Promise.allSettled(warm.map(({ page }) =>
+        const eventAck = performance.now();
+        const both = Promise.allSettled(warm.map(({ page }) =>
           page.getByText(label, { exact: true }).first().waitFor({ timeout: 5000 })
-        ));
-        if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
-        else missed++;
+        )).then(visible => {
+          if (visible.every(({ status }) => status === "fulfilled")) samples.push(performance.now() - started);
+          else missed++;
+        });
+        const actionable = await Promise.all(warm.map(async ({ page }) => {
+          try {
+            const mark = await page.waitForFunction(() => window.agentOsUpdate?.observedAt, undefined, { timeout: 5000 });
+            return (await mark.jsonValue()) - performance.timeOrigin;
+          } catch { return null; }
+        }));
+        await both;
+        admission.push({
+          agentRpcMs: Number((agentAck - started).toFixed(1)),
+          eventRpcMs: Number((eventAck - agentAck).toFixed(1)),
+          actionableMs: actionable.map(time => time === null ? null : Number((time - started).toFixed(1))),
+          postRpcActionableMs: actionable.map(time => time === null ? null : Number((time - eventAck).toFixed(1)))
+        });
       }
-      return { samples: samples.length, missed, p95Ms: percentile(samples, 0.95), timingsMs: samples.map((value) => Number(value.toFixed(1))) };
+      return { samples: samples.length, missed, medianMs: percentile(samples, .50), p95Ms: percentile(samples, 0.95),
+        worstMs: samples.length ? Math.max(...samples) : null, timingsMs: samples.map((value) => Number(value.toFixed(1))), admission };
     };
     const streams = await Promise.all(rawStreams.map((query) =>
       watchStream(appUrl + "/api/stream" + query, headers, signal.signal)
@@ -255,10 +371,12 @@ async function runScale(agentCount, sessionCount, browser) {
         return last === undefined ? [] : [arrival - last];
       }), 0.95)
     });
+    const coldSamples = cold.map(sample => sample.renderMs);
     return {
       agents: agentCount, nativeSessionsCreated: keys.length, browserClients: browserContexts.length, rawSseClients: streams.length,
-      cold: cold.map(({ timings }) => timings), warm: warm.map(({ timings }) => timings),
-      coldRpcCounts, mutationRpcCounts, visibleUpdate, nativeMutations: mutations.length, settleMs,
+      cold, warm: warm.map(({ timings }) => timings),
+      coldDistribution: { medianMs: percentile(coldSamples, .50), p95Ms: percentile(coldSamples, .95), worstMs: Math.max(...coldSamples) },
+      coldRpcCounts, coldRpcCountsByPair, mutationRpcCounts, visibleUpdate, nativeMutations: mutations.length, settleMs,
       fullStream: streams[0] && summarize(streams[0]), deltaStream: streams[1] && summarize(streams[1]),
       processSamples, gatewayRssBeforeSeedKiB, gatewayRssAfterSeedKiB
     };
@@ -274,6 +392,7 @@ async function runScale(agentCount, sessionCount, browser) {
 async function main() {
   assert.ok(Number.isSafeInteger(mutationCount) && mutationCount > 0);
   assert.ok(Number.isSafeInteger(browserUpdateCount) && browserUpdateCount > 0);
+  assert.ok(Number.isSafeInteger(coldPairs) && coldPairs >= 1 && coldPairs <= 20);
   assert.ok(Number.isSafeInteger(settleMs) && settleMs >= 0);
   const metadata = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
   assert.equal(metadata.version, "2026.11.10");

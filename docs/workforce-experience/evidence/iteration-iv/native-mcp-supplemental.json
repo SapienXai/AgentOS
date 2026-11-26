@@ -1,0 +1,10 @@
+{
+  "openClawVersion": "2026.11.10",
+  "environment": "Exact package, isolated Gateway, disposable stdio MCP server, loopback fixture model",
+  "toolId": "proof__workspace_fact",
+  "observedInNativeEffectiveTools": true,
+  "nativeCallbackObserved": false,
+  "chatReplyDerivedFromMcpResult": false,
+  "status": "FAILED_INVOCATION_PROOF",
+  "detail": "The tool was present in the real session's effective MCP group. The fixture chat tool calls did not reach the test server callback, and the runtime logged its repeated-tool guard. This result establishes the native effective inventory only."
+}

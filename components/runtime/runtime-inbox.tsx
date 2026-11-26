@@ -67,9 +67,11 @@ export function RuntimeIssueIndicator({
   snapshot,
   surfaceTheme,
   onSnapshotChange,
-  onRefresh
+  onRefresh,
+  workforce = false
 }: {
   snapshot: MissionControlSnapshot;
+  workforce?: boolean;
   surfaceTheme: SurfaceTheme;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void> | void;
@@ -113,7 +115,8 @@ export function RuntimeIssueIndicator({
         aria-haspopup="dialog"
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "inline-flex h-8 items-center gap-2 rounded-full border px-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          "inline-flex h-8 items-center gap-2 rounded-full border px-2.5 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          workforce ? "whitespace-nowrap text-xs" : "text-[10px] uppercase tracking-[0.16em]",
           summary.actionCount > 0
             ? surfaceTheme === "light"
               ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
@@ -133,7 +136,7 @@ export function RuntimeIssueIndicator({
             runtimeNeedsAttention ? "bg-amber-500" : "bg-emerald-500"
           )}
         />
-        {summary.actionCount > 0 ? `Action required · ${summary.actionCount}` : summary.openCount > 0 ? `Runtime · ${summary.openCount}` : `Runtime · ${operatorRuntime.stateLabel}`}
+        {workforce ? (runtimeNeedsAttention ? "Needs attention" : "Team status") : summary.actionCount > 0 ? `Action required · ${summary.actionCount}` : summary.openCount > 0 ? `Runtime · ${summary.openCount}` : `Runtime · ${operatorRuntime.stateLabel}`}
         <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (

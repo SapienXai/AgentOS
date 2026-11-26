@@ -1,0 +1,232 @@
+/* Scope chrome changes to workforce navigation and destinations. */
+.workforce-mobile-navigation {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+
+@media (max-width: 1023px) {
+  .workforce-canvas-region {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+
+  .workforce-content {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+.workforce-main {
+  background: hsl(var(--agentos-surface-base));
+}
+
+.workforce-heading {
+  text-wrap: balance;
+  font-size: clamp(1.65rem, 2.7vw, 2.35rem);
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+}
+
+.workforce-chat-panel {
+  height: calc(100vh - 6rem);
+  height: calc(100dvh - 6rem);
+  min-height: 24rem;
+}
+
+@media (max-width: 1023px) {
+  .workforce-chat-panel {
+    height: calc(100vh - 8.5rem - env(safe-area-inset-bottom));
+    height: calc(100dvh - 8.5rem - env(safe-area-inset-bottom));
+    min-height: 17rem;
+  }
+
+  .workforce-main:has(.workforce-chat-panel textarea:focus) .workforce-mobile-navigation {
+    visibility: hidden;
+  }
+}
+
+.workforce-main::before,
+.workforce-main::after {
+  content: none;
+}
+
+/* The operations pages and first-run surface share these tokens. */
+.workforce-main,
+.workforce-setup,
+.workforce-setup-card {
+  --workforce-paper: hsl(230 13% 8%);
+  --workforce-panel: hsl(229 13% 11%);
+  --workforce-inset: hsl(228 13% 15%);
+  --workforce-line: hsl(226 11% 21%);
+  --workforce-radius: 1rem;
+}
+.workforce-main.mission-shell--light,
+.workforce-setup[data-theme="light"],
+.workforce-setup[data-theme="light"] .workforce-setup-card,
+.workforce-setup-light {
+  --workforce-paper: hsl(42 27% 96%);
+  --workforce-panel: hsl(43 38% 99%);
+  --workforce-inset: hsl(38 22% 91%);
+  --workforce-line: hsl(38 15% 84%);
+}
+
+.workforce-main { background: var(--workforce-paper); }
+.workforce-main .workforce-heading {
+  font-size: clamp(1.95rem, 3.05vw, 3.1rem);
+  letter-spacing: -0.055em;
+}
+
+.workforce-person {
+  container: employee / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.125rem;
+  border: 1px solid var(--workforce-line);
+  border-radius: var(--workforce-radius);
+  background: var(--workforce-panel);
+}
+
+.workforce-person--selected { border-color: hsl(var(--primary) / .5); }
+.workforce-person-work { flex: 1; min-block-size: 2.6rem; }
+.workforce-person-work > * + * { margin-block-start: .5rem; }
+.workforce-disclosure { font-size: .8125rem; color: hsl(var(--muted-foreground)); }
+.workforce-disclosure summary { cursor: pointer; }
+.workforce-portrait { box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .09); }
+
+@media (min-width: 640px) {
+  .workforce-person--list { flex-direction: row; align-items: center; gap: 1.5rem; }
+  .workforce-person--list > div:first-child { flex: 0 1 16rem; }
+}
+
+.workforce-panel {
+  background: var(--workforce-panel);
+  border: 1px solid var(--workforce-line);
+  border-radius: var(--workforce-radius);
+}
+
+.workforce-section-title { font-family: var(--font-display), system-ui, sans-serif; font-weight: 600; font-size: 1.15rem; letter-spacing: -.025em; }
+.workforce-detail-grid { container: workforce-detail / inline-size; }
+.workforce-detail-grid-inner { display: grid; gap: 1rem; }
+@container workforce-detail (min-width: 42rem) {
+  .workforce-detail-grid-inner { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+}
+
+.workforce-setup { background: var(--workforce-paper) !important; }
+.workforce-setup-card { background: var(--workforce-panel) !important; background-image: none !important; border-color: var(--workforce-line) !important; }
+.workforce-setup-step { padding-block-end: max(1.5rem, env(safe-area-inset-bottom)); }
+
+.workforce-portrait-bundled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(150deg, transparent 24%, var(--portrait-accent));
+  opacity: .42;
+  mix-blend-mode: multiply;
+}
+
+.workforce-setup-card label {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.workforce-setup-card [role="status"],
+.workforce-setup-card [role="alert"] { overflow-wrap: anywhere; }
+
+@media (max-width: 639px) {
+  .workforce-main .workforce-heading { font-size: 2rem; }
+  .workforce-main .workforce-content > div { gap: 1.25rem; }
+  .workforce-setup-step { scroll-padding-block: 1rem; }
+}
+
+/* Product chrome and content only. Mission Control keeps its own styling. */
+.workforce-main .workforce-heading {
+  font-size: clamp(1.75rem, 2.75vw, 2.65rem);
+  letter-spacing: -.048em;
+}
+.workforce-main .workforce-person {
+  gap: .9rem;
+  padding: 1rem;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.workforce-main .workforce-person:focus-within {
+  border-color: hsl(var(--ring) / .55);
+}
+.workforce-main .workforce-person--list {
+  border-radius: .7rem;
+  background: transparent;
+}
+.workforce-main .workforce-section-title {
+  letter-spacing: -.018em;
+}
+.workforce-row {
+  min-block-size: 3.25rem;
+  border-radius: .65rem;
+  transition: background-color 160ms ease;
+}
+.workforce-row:hover,
+.workforce-row:focus-within { background-color: var(--workforce-inset); }
+
+@media (prefers-reduced-motion: reduce) {
+  .workforce-main .workforce-person, .workforce-row { transition: none; }
+}
+
+.workforce-main .workforce-person--list {
+  border: 0;
+  border-radius: 0;
+  padding: .95rem 1rem;
+}
+.workforce-main .workforce-person--list:hover { background-color: var(--workforce-inset); }
+.workforce-main .workforce-person--list .workforce-person-work { min-block-size: 0; }
+.workforce-main .workforce-person--list .workforce-disclosure { margin-block-start: .25rem; }
+.workforce-person--review summary:hover { opacity: .9; }
+
+@media (min-width: 640px) {
+  .workforce-main .workforce-person--list { gap: 1.25rem; }
+  .workforce-main .workforce-person--list > div:first-child { flex: 0 0 min(32%, 16rem); }
+}
+
+
+.workforce-main .workforce-workspace-trigger { gap: .625rem; padding-inline: .625rem; }
+.workforce-main .workforce-workspace-caption { font-size: .7rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.workforce-main .workforce-workspace-diagnostic { display: none; }
+.workforce-collection { min-block-size: 2.75rem; }
+.workforce-collections { align-content: start; }
+
+.workforce-source-preview pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.workforce-source-preview pre code { white-space: inherit; }
+
+.workforce-hire-layout {
+  display: grid;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--workforce-line);
+}
+.workforce-hire-preview {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .workforce-hire-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 2rem; }
+}
+
+.workforce-library .workforce-row > button:first-child { min-block-size: 4.5rem; }
+.workforce-source-icon { background: var(--workforce-inset); color: hsl(var(--foreground) / .8); }
+
+.workforce-main .workforce-directory-card {
+  align-content: start;
+  gap: 1rem;
+  padding: 1.125rem;
+}
+.workforce-directory-card .workforce-person-work { min-block-size: 4.25rem; }
+.workforce-app-tile { min-block-size: 13rem; }
+.workforce-app-tile > div:last-child { margin-top: auto; }
+
+.workforce-hire-fields { display: grid; gap: 1rem; }
+@media (min-width: 640px) {
+  .workforce-hire-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .workforce-hire-fields > :last-child { grid-column: 1 / -1; }
+}

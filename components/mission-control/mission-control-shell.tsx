@@ -25,10 +25,9 @@ import {
   isInspectorDetailWidth
 } from "@/components/mission-control/inspector-resize";
 import { MissionControlShellDialogs } from "@/components/mission-control/mission-control-shell.dialogs";
-import { OpenClawOnboarding } from "@/components/mission-control/openclaw-onboarding";
 import type { ModelSwitchFeedback } from "@/components/mission-control/openclaw-onboarding.stages";
 import { ResetDialog } from "@/components/mission-control/reset-dialog";
-import { SettingsControlCenter } from "@/components/mission-control/settings-control-center";
+import { WorkforceMobileNavigation } from "@/components/mission-control/workforce-mobile-navigation";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
 import { TaskReviewDialog } from "@/components/mission-control/task-review-dialog";
@@ -49,7 +48,6 @@ import { useMissionControlWorkspaceActions } from "@/components/mission-control/
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceAccountsDialog } from "@/components/mission-control/workspace-accounts-dialog";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
-import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
   workspaceCreationReopenEvent,
   type WorkspaceCreationReopenDetail
@@ -166,6 +164,21 @@ import {
 } from "@/lib/openclaw/model-provider-adapters";
 import { syncTauriDesktopPlatformMarker } from "@/lib/desktop/window-platform";
 import { cn } from "@/lib/utils";
+
+const OpenClawOnboarding = dynamic(
+  () => import("@/components/mission-control/openclaw-onboarding").then(module => module.OpenClawOnboarding),
+  { ssr: false }
+);
+
+const SettingsControlCenter = dynamic(
+  () => import("@/components/mission-control/settings-control-center").then(module => module.SettingsControlCenter),
+  { ssr: false }
+);
+
+const WorkspaceWizardDialog = dynamic(
+  () => import("@/components/mission-control/workspace-wizard/workspace-wizard-dialog").then(module => module.WorkspaceWizardDialog),
+  { ssr: false }
+);
 
 const MissionCanvasView = dynamic(
   () => import("@/components/mission-control/canvas").then((mod) => mod.MissionCanvas),
@@ -1020,6 +1033,11 @@ export function MissionControlShell({
     openWorkspaceOnCanvas
   });
 
+  const [hasOpenedWorkspaceWizard, setHasOpenedWorkspaceWizard] = useState(false);
+  useEffect(() => {
+    if (isWorkspaceWizardOpen) setHasOpenedWorkspaceWizard(true);
+  }, [isWorkspaceWizardOpen]);
+
   const openWorkspaceUpdateReview = useCallback((creationRunId: string) => {
     setWorkspaceCreationReviewRunId(creationRunId);
     openWorkspaceWizard("basic");
@@ -1081,6 +1099,15 @@ export function MissionControlShell({
   );
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
   const hasProject = hasProjectWorkspace(snapshot);
+  const workspaceModelCandidate = snapshot.diagnostics.modelReadiness.recommendedModelId;
+  const canStartWorkspaceSetup = isOpenClawOnboardingModelReady ||
+    (isOpenClawOnboardingSystemReady && Boolean(workspaceModelCandidate));
+  const bootstrapWorkspace = snapshot.workspaces.length === 1 ? snapshot.workspaces[0] : null;
+  const onlyBootstrapWorkspace = Boolean(bootstrapWorkspace?.id === "workspace" &&
+    !bootstrapWorkspace.bootstrap?.template && snapshot.agents.length === 1 && snapshot.agents[0]?.id === "main");
+  const shouldOfferFirstWorkspace = (snapshot.mode === "live" || enteredAfterSiwc) &&
+    (!hasProject || onlyBootstrapWorkspace);
+
   const needsChatGptSetup = snapshot.mode === "live" && !hasProject &&
     !snapshot.diagnostics.modelReadiness.ready &&
     snapshot.diagnostics.modelReadiness.authProviders.some(({ provider, connected }) => provider === "openai" && !connected);
@@ -3251,15 +3278,17 @@ export function MissionControlShell({
     void refreshSnapshot({ force: true }).catch(() => null);
   };
 
-  const openFirstWorkspace = () => {
-    enterAfterSiwc();
+  const openFirstWorkspace = useCallback(() => {
+    setEnteredAfterSiwc(true);
+    dismissOnboarding();
     setIsFirstWorkspace(true);
     openWorkspaceWizard("basic");
-  };
+  }, [dismissOnboarding, openWorkspaceWizard]);
 
   const verifyCreatedWorkspace = useCallback(async (result: WorkspaceCreateResult) => {
     const live = await refreshSnapshot({ force: true });
-    return Boolean(live?.mode === "live" && resolveLaunchpadWorkspaceSetupReadiness(live, result).ready);
+    return Boolean(live?.mode === "live" && resolveLaunchpadWorkspaceSetupReadiness(live, result).ready &&
+      result.agentIds.every(id => live.agents.some(agent => agent.id === id && agent.workspaceId === result.workspaceId)));
   }, [refreshSnapshot]);
 
   const testCreatedWorkspaceAgent = (result: WorkspaceCreateResult) => {
@@ -3568,27 +3597,9 @@ export function MissionControlShell({
       return;
     }
 
-    if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
-      if (entrySnapshot.workspaces.length === 0) {
-        const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
-
-        if (refreshedSnapshot) {
-          entrySnapshot = refreshedSnapshot;
-          setSnapshot(refreshedSnapshot);
-        }
-      }
-
-      if (!hasCompleteAgentOSWorkspaceSnapshot(entrySnapshot)) {
-        toast.message("AgentOS is still syncing.", {
-          description: "Workspace state is not ready yet. Try entering AgentOS again in a moment."
-        });
-        return;
-      }
-
-      if (!hasAgentOSWorkspaceSetup(entrySnapshot) && entrySnapshot.workspaces.length === 0) {
-        void runLaunchpadWorkspaceCreate();
-        return;
-      }
+    if (!hasProjectWorkspace(entrySnapshot)) {
+      openFirstWorkspace();
+      return;
     }
 
     const targetWorkspaceId =
@@ -3608,7 +3619,7 @@ export function MissionControlShell({
     openWorkspaceOnCanvas,
     onboardingAiReady,
     refreshSnapshot,
-    runLaunchpadWorkspaceCreate,
+    openFirstWorkspace,
     setSnapshot,
     snapshot
   ]);
@@ -3636,13 +3647,13 @@ export function MissionControlShell({
       return;
     }
 
-    if (hasAgentOSWorkspaceSetup(readySnapshot)) {
+    if (hasProjectWorkspace(readySnapshot)) {
       void enterAgentOS(readySnapshot);
       return;
     }
 
-    setShowOnboardingReadyState(true);
-  }, [enterAgentOS, refreshSnapshot, setSnapshot, snapshot]);
+    openFirstWorkspace();
+  }, [enterAgentOS, openFirstWorkspace, refreshSnapshot, setSnapshot, snapshot]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);
@@ -4448,20 +4459,16 @@ export function MissionControlShell({
           onCreateWorkspace={runLaunchpadWorkspaceCreate}
           onContinueToModels={continueToModelSetup}
           onBackToSystem={() => setOnboardingStage("system")}
-          onSelectStage={(stage) => {
-            setShowOnboardingReadyState(false);
-            setOnboardingStage(resolveEffectiveWizardStage(stage, isOpenClawOnboardingSystemReady));
-          }}
           launchpadCreateProgress={launchpadWorkspaceCreateProgress}
           launchpadCreateRunState={launchpadWorkspaceCreateRunState}
         />
       ) : null}
 
-      <WorkspaceWizardDialog
+      {(isWorkspaceWizardOpen || hasOpenedWorkspaceWizard) ? <WorkspaceWizardDialog
         firstWorkspace={isFirstWorkspace}
         verifyWorkspace={verifyCreatedWorkspace}
         onTestWorkspaceAgent={testCreatedWorkspaceAgent}
-        defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
+        defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? workspaceModelCandidate}
         key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : isFirstWorkspace ? "workspace-first-create" : "workspace-create"}
         open={isWorkspaceWizardOpen}
         onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
@@ -4482,7 +4489,7 @@ export function MissionControlShell({
         onWorkspaceUpdated={(workspaceId) => {
           openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
-      />
+      /> : null}
 
       <AddModelsDialog
         open={isAddModelsDialogOpen}
@@ -4593,17 +4600,22 @@ export function MissionControlShell({
     </>
   );
 
+  const firstWorkspaceAction = (
+    <button type="button" className="min-h-11 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline focus-visible:outline-ring"
+      onClick={canStartWorkspaceSetup ? openFirstWorkspace : () => openSetupWizard()}>
+      {canStartWorkspaceSetup ? "Create workspace" : "Connect your AI"}
+    </button>
+  );
+
+
   if (mode === "settings") {
     return (
       <div
         className={cn(
-          "mission-shell relative min-h-screen overflow-hidden",
+          "mission-shell workforce-main relative min-h-screen overflow-hidden",
           surfaceTheme === "light" && "mission-shell--light"
         )}
       >
-        <div className="mission-canvas-backdrop fixed inset-0 z-0">
-          <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
-        </div>
         <div
           className={cn(
             "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
@@ -4727,7 +4739,6 @@ export function MissionControlShell({
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">Settings</p>
-              <p className={cn("truncate text-[0.68rem]", surfaceTheme === "light" ? "text-[#7a6658]" : "text-slate-400")}>System control center</p>
             </div>
           </div>
         ) : null}
@@ -4797,7 +4808,10 @@ export function MissionControlShell({
           />
         </div>
 
-        <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))} />
+        <div className="workforce-content">
+          <SettingsControlCenter {...settingsPanelProps} sidebarOpen={isSidebarOpen} onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))} />
+        </div>
+        {!isFloatingHeaderHidden ? <WorkforceMobileNavigation open={isSidebarOpen} onOpen={() => setIsSidebarOpen((current) => !current)} /> : null}
         {!isFloatingHeaderHidden ? (
           <div
             data-tauri-drag-region="deep"
@@ -4840,7 +4854,7 @@ export function MissionControlShell({
           onRecovery={async () => { await refreshSnapshot({ force: true }); }}
         />
       </div>
-      <div className="mission-canvas-backdrop absolute inset-0 z-0">
+      <div className="mission-canvas-backdrop workforce-canvas-region absolute inset-0 z-0">
         <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0" />
         <div className="absolute inset-0 z-10">
           <MissionCanvasView
@@ -4986,15 +5000,9 @@ export function MissionControlShell({
           />
         </div>
       </div>
-      {enteredAfterSiwc && !hasProject && !shouldShowOnboarding && !isWorkspaceWizardOpen ? (
-        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-16">
-          <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card p-5 text-center shadow-panel">
-            <h2 className="text-lg font-semibold">Create your first workspace</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Start with Agents Workspace and your first agent.</p>
-            <button type="button" className="mt-4 min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground" onClick={openFirstWorkspace}>
-              Create workspace
-            </button>
-          </div>
+      {shouldOfferFirstWorkspace && !isFloatingHeaderHidden && !isInspectorOpen ? (
+        <div className="pointer-events-auto absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-[24] lg:hidden">
+          {firstWorkspaceAction}
         </div>
       ) : null}
 
@@ -5025,11 +5033,12 @@ export function MissionControlShell({
           <div
             data-tauri-drag-region="deep"
             className={cn(
-              "pointer-events-auto absolute top-9 z-[60] hidden mission-ease-smooth transition-[left] duration-500 lg:block",
+              "pointer-events-auto absolute top-9 z-[60] hidden items-center gap-2 mission-ease-smooth transition-[left] duration-500 lg:flex",
               isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]"
             )}
           >
             <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
+            {shouldOfferFirstWorkspace && !isInspectorOpen ? firstWorkspaceAction : null}
           </div>
         </>
       ) : null}
@@ -5038,24 +5047,28 @@ export function MissionControlShell({
 
       <div className="relative z-20 min-h-[100dvh] pointer-events-none lg:h-screen">
         {!isFloatingHeaderHidden && !isInspectorOpen ? (
-          <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex items-center justify-between px-3 lg:hidden">
+          <WorkforceMobileNavigation open={isSidebarOpen} onOpen={() => setIsSidebarOpen((current) => !current)} />
+        ) : null}
+        {!isFloatingHeaderHidden && !isInspectorOpen ? (
+          <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[60] flex items-center justify-between gap-2 px-3 lg:hidden">
           {!isSidebarOpen ? (
             <button
               type="button"
-              aria-label="Open navigation"
+              aria-label="Open workspace menu"
               aria-expanded={false}
               onClick={() => {
                 setIsInspectorOpen(false);
                 setIsSidebarOpen(true);
               }}
               className={cn(
-                "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+                "pointer-events-auto inline-flex h-11 min-w-0 max-w-[calc(100%_-_3.25rem)] items-center gap-2 rounded-xl border px-3 text-sm font-semibold backdrop-blur-xl",
                 surfaceTheme === "light"
                   ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
                   : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
               )}
             >
-              <Menu className="h-5 w-5" />
+              <Menu aria-hidden="true" className="size-4 shrink-0" />
+              <span className="truncate">{activeWorkspaceId ? activeWorkspaceForDialogs?.name ?? "Workspace" : "All workspaces"}</span>
             </button>
           ) : (
             <span aria-hidden="true" className="h-11 w-11" />
@@ -5357,7 +5370,7 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+12px)] left-4 right-4 z-40 lg:bottom-6 lg:left-1/2 lg:right-auto lg:block lg:w-[min(800px,calc(100vw-320px))] lg:-translate-x-1/2",
+            "pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] left-4 right-4 z-40 lg:bottom-6 lg:left-1/2 lg:right-auto lg:block lg:w-[min(800px,calc(100vw-320px))] lg:-translate-x-1/2",
             isInspectorOpen && "hidden"
           )}
         >
@@ -5704,20 +5717,16 @@ export function MissionControlShell({
             onCreateWorkspace={runLaunchpadWorkspaceCreate}
             onContinueToModels={continueToModelSetup}
             onBackToSystem={() => setOnboardingStage("system")}
-            onSelectStage={(stage) => {
-              setShowOnboardingReadyState(false);
-              setOnboardingStage(resolveEffectiveWizardStage(stage, isOpenClawOnboardingSystemReady));
-            }}
             launchpadCreateProgress={launchpadWorkspaceCreateProgress}
             launchpadCreateRunState={launchpadWorkspaceCreateRunState}
           />
         ) : null}
 
-        <WorkspaceWizardDialog
+        {(isWorkspaceWizardOpen || hasOpenedWorkspaceWizard) ? <WorkspaceWizardDialog
           firstWorkspace={isFirstWorkspace}
           verifyWorkspace={verifyCreatedWorkspace}
           onTestWorkspaceAgent={testCreatedWorkspaceAgent}
-          defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel}
+          defaultModel={snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? workspaceModelCandidate}
           key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : isFirstWorkspace ? "workspace-first-create" : "workspace-create"}
           open={isWorkspaceWizardOpen}
           onOpenChange={handleWorkspaceWizardOpenChangeWithReview}
@@ -5732,13 +5741,22 @@ export function MissionControlShell({
           creationReopenRequest={workspaceCreationReopenRequest}
           snapshot={snapshot}
           onRefresh={refresh}
-          onWorkspaceCreated={handleWorkspaceCreated}
+          onWorkspaceCreated={(result) => {
+            handleWorkspaceCreated(result);
+            if (isFirstWorkspace && result.primaryAgentId) {
+              toast.success("Your workspace is ready", {
+                action: { label: "Start a conversation", onClick: () => {
+                  window.location.assign(`/chat?employee=${encodeURIComponent(result.primaryAgentId)}`);
+                } }
+              });
+            }
+          }}
           onWorkspaceCreationStarted={handleWorkspaceCreationStarted}
           onWorkspaceCreationFinished={handleWorkspaceCreationFinished}
           onWorkspaceUpdated={(workspaceId) => {
             openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
-        />
+        /> : null}
 
       <AddModelsDialog
         open={isAddModelsDialogOpen}

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { prepareKnowledgeDocument } from "@/lib/agentos/application/knowledge-import";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -82,7 +84,13 @@ export async function POST(request: Request) {
           request.signal
         );
         total += bytes.byteLength;
-        uploads.push({ ...manifest[index], fileName: manifest[index].fileName || file.name, bytes });
+        if (formData.get("prepareDocuments") === "true" && /\.(pdf|docx|xlsx)$/i.test(file.name)) {
+          const converted = await prepareKnowledgeDocument(file, request.signal);
+          const fileName = path.posix.basename(converted.path);
+          uploads.push({ sourceId: manifest[index].sourceId, fileName, relativePath: fileName, bytes: Buffer.from(converted.content, "utf8") });
+        } else {
+          uploads.push({ ...manifest[index], fileName: manifest[index].fileName || file.name, bytes });
+        }
       }
     } else {
       input = jsonSchema.parse(await request.json());

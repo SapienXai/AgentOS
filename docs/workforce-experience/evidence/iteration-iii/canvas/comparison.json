@@ -1,0 +1,188 @@
+{
+  "reviewedCommit": "c16f2033c33d7554bdd373a91e0be775a79c04f1",
+  "mainCommit": "49cf636241e2d00df79245d07a56a29b339687b1",
+  "nativeAgainstReviewed": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 85112,
+      "maxChannelDelta": 155,
+      "meanMaxChannelDelta": 0.21349
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 17478,
+      "maxChannelDelta": 145,
+      "meanMaxChannelDelta": 0.02116
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 8783,
+      "maxChannelDelta": 53,
+      "meanMaxChannelDelta": 0.04228
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 6428,
+      "maxChannelDelta": 51,
+      "meanMaxChannelDelta": 0.02669
+    }
+  },
+  "connectedAgainstReviewed": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 48940,
+      "maxChannelDelta": 132,
+      "meanMaxChannelDelta": 0.05663
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 105608,
+      "maxChannelDelta": 149,
+      "meanMaxChannelDelta": 0.31021
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 11665,
+      "maxChannelDelta": 45,
+      "meanMaxChannelDelta": 0.06455
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 26,
+      "maxChannelDelta": 45,
+      "meanMaxChannelDelta": 0.00042
+    }
+  },
+  "reviewedRepeatability": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 106019,
+      "maxChannelDelta": 165,
+      "meanMaxChannelDelta": 0.3076
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 71869,
+      "maxChannelDelta": 156,
+      "meanMaxChannelDelta": 0.09406
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 9408,
+      "maxChannelDelta": 60,
+      "meanMaxChannelDelta": 0.04549
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 10916,
+      "maxChannelDelta": 57,
+      "meanMaxChannelDelta": 0.05834
+    }
+  },
+  "connectedAgainstMain": {
+    "dark-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 107885,
+      "maxChannelDelta": 227,
+      "meanMaxChannelDelta": 0.40208
+    },
+    "light-1440": {
+      "dimensions": [
+        1440,
+        900
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 105098,
+      "maxChannelDelta": 223,
+      "meanMaxChannelDelta": 0.34987
+    },
+    "dark-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 62965,
+      "maxChannelDelta": 62,
+      "meanMaxChannelDelta": 0.26079
+    },
+    "light-390": {
+      "dimensions": [
+        390,
+        788
+      ],
+      "sameDimensions": true,
+      "graphMatches": true,
+      "differentPixels": 114422,
+      "maxChannelDelta": 125,
+      "meanMaxChannelDelta": 0.40693
+    }
+  }
+}

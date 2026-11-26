@@ -1,6 +1,6 @@
 # @sapienx/agentos
 
-This source tree prepares AgentOS 0.10.0 for release. Published packages and desktop downloads are listed in the [public release history](https://github.com/SapienXai/AgentOS/releases).
+This source tree contains the AgentOS 0.11.0 Workforce Experience development candidate. Published packages and desktop downloads are listed in the [public release history](https://github.com/SapienXai/AgentOS/releases).
 
 License: MIT
 

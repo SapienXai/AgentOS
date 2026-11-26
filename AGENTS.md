@@ -8,6 +8,8 @@ OpenClaw is the backend, runtime, orchestration, agent, tool, model, session, an
 
 **As OpenClaw grows, AgentOS should gain capabilities, not maintenance costs.**
 
+**AgentOS should feel like running a company, with the Mission Control canvas and workforce at the center.**
+
 Discover native capabilities at runtime, adopt verified upstream replacements, and retire obsolete compatibility paths. OpenClaw owns runtime state, sessions, memory, execution, scheduling, credentials, and authorization. AgentOS owns organizational intent, operator experience, product policy, and derived projections. Judge changes by complexity, RPC overhead, synchronization, and operator outcomes.
 
 When in doubt:

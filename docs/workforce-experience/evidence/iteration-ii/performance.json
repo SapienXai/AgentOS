@@ -1,0 +1,2421 @@
+{
+  "environment": {
+    "architecture": "Apple M5 Pro, 48 GB",
+    "macOS": "27.0.1",
+    "node": "24.22.1",
+    "openclaw": "2026.11.10",
+    "build": "production",
+    "domSamplesPerScale": 5,
+    "concurrentQA": false
+  },
+  "runs": {
+    "mainFirstReplay": [
+      {
+        "agents": 1,
+        "nativeSessionsCreated": 1,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1103.9,
+            "ttfbMs": 225,
+            "domContentLoadedMs": 276,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1102.5,
+            "ttfbMs": 225,
+            "domContentLoadedMs": 273,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 236.8,
+            "ttfbMs": 23,
+            "domContentLoadedMs": 54,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 240.2,
+            "ttfbMs": 20,
+            "domContentLoadedMs": 74,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 1,
+          "status": 1,
+          "sessions.subscribe": 1,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 1
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 6,
+          "models.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 1651.2,
+          "timingsMs": [
+            1651.2,
+            1555.6,
+            1548.3,
+            1551.6,
+            1563
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 84754,
+          "updateBytes": 1099339,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              78755
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1273.5
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 84754,
+          "updateBytes": 191637,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              78755
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1262.6
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 284064,
+            "cpuAveragePercent": 4.7
+          },
+          "gateway": {
+            "rssKiB": 1567184,
+            "cpuAveragePercent": 9.1
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 932416,
+        "gatewayRssAfterSeedKiB": 1796560
+      },
+      {
+        "agents": 10,
+        "nativeSessionsCreated": 100,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1077.4,
+            "ttfbMs": 228,
+            "domContentLoadedMs": 263,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1068.1,
+            "ttfbMs": 221,
+            "domContentLoadedMs": 243,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 248.8,
+            "ttfbMs": 27,
+            "domContentLoadedMs": 61,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 251.8,
+            "ttfbMs": 27,
+            "domContentLoadedMs": 59,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2265.4,
+          "timingsMs": [
+            2265.4,
+            1684.7,
+            1642.5,
+            1636.2,
+            1647.2
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 195681,
+          "updateBytes": 1761021,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              80238
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22032
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1250
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 195681,
+          "updateBytes": 551578,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              80238
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22032
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1254.5
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 338912,
+            "cpuAveragePercent": 7.3
+          },
+          "gateway": {
+            "rssKiB": 1723312,
+            "cpuAveragePercent": 10.8
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 842000,
+        "gatewayRssAfterSeedKiB": 2024000
+      },
+      {
+        "agents": 50,
+        "nativeSessionsCreated": 500,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1110.6,
+            "ttfbMs": 261,
+            "domContentLoadedMs": 285,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 10634.6,
+            "ttfbMs": 256,
+            "domContentLoadedMs": 280,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 333.4,
+            "ttfbMs": 41,
+            "domContentLoadedMs": 53,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 245.6,
+            "ttfbMs": 39,
+            "domContentLoadedMs": 67,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 3,
+          "status": 4,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 2,
+          "models.list": 2,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 3070.9,
+          "timingsMs": [
+            1729.6,
+            3070.9,
+            1454.8,
+            2032.6,
+            1481.4
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 585613,
+          "updateBytes": 4097208,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110423
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1274.4
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 585613,
+          "updateBytes": 1520032,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110423
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1294.9
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 434352,
+            "cpuAveragePercent": 11.9
+          },
+          "gateway": {
+            "rssKiB": 2192400,
+            "cpuAveragePercent": 11.5
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 926896,
+        "gatewayRssAfterSeedKiB": 2494928
+      }
+    ],
+    "reviewedFirstReplay": [
+      {
+        "agents": 1,
+        "nativeSessionsCreated": 1,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1082.8,
+            "ttfbMs": 228,
+            "domContentLoadedMs": 284,
+            "htmlBytes": 61598,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1063.2,
+            "ttfbMs": 218,
+            "domContentLoadedMs": 250,
+            "htmlBytes": 61598,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 223.6,
+            "ttfbMs": 18,
+            "domContentLoadedMs": 47,
+            "htmlBytes": 61598,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 214.4,
+            "ttfbMs": 13,
+            "domContentLoadedMs": 29,
+            "htmlBytes": 61598,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2124.6,
+          "timingsMs": [
+            1624.7,
+            2124.6,
+            1568.1,
+            1567.6,
+            1568.9
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 85842,
+          "updateBytes": 1097772,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              79843
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1265.7
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 85842,
+          "updateBytes": 191608,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              79843
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1262.1
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 293312,
+            "cpuAveragePercent": 5.3
+          },
+          "gateway": {
+            "rssKiB": 1687920,
+            "cpuAveragePercent": 4.9
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 907808,
+        "gatewayRssAfterSeedKiB": 1635968
+      },
+      {
+        "agents": 10,
+        "nativeSessionsCreated": 100,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1102.6,
+            "ttfbMs": 246,
+            "domContentLoadedMs": 282,
+            "htmlBytes": 81171,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1079.4,
+            "ttfbMs": 227,
+            "domContentLoadedMs": 275,
+            "htmlBytes": 81171,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 236.1,
+            "ttfbMs": 24,
+            "domContentLoadedMs": 55,
+            "htmlBytes": 81171,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 233.4,
+            "ttfbMs": 20,
+            "domContentLoadedMs": 37,
+            "htmlBytes": 81171,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2251.5,
+          "timingsMs": [
+            2251.5,
+            1649.4,
+            1652.9,
+            1640.2,
+            1658.8
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 195683,
+          "updateBytes": 1761027,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              80238
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22034
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1237.7
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 195683,
+          "updateBytes": 551584,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              80238
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22034
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1241.8
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 338864,
+            "cpuAveragePercent": 7.4
+          },
+          "gateway": {
+            "rssKiB": 1867808,
+            "cpuAveragePercent": 8.2
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 911040,
+        "gatewayRssAfterSeedKiB": 1981392
+      },
+      {
+        "agents": 50,
+        "nativeSessionsCreated": 500,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1103.9,
+            "ttfbMs": 258,
+            "domContentLoadedMs": 291,
+            "htmlBytes": 168731,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1094.4,
+            "ttfbMs": 251,
+            "domContentLoadedMs": 292,
+            "htmlBytes": 168731,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 248.1,
+            "ttfbMs": 36,
+            "domContentLoadedMs": 66,
+            "htmlBytes": 168731,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 245.7,
+            "ttfbMs": 35,
+            "domContentLoadedMs": 51,
+            "htmlBytes": 168731,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 6,
+          "models.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 3268.9,
+          "timingsMs": [
+            1664.9,
+            3268.9,
+            1491.2,
+            2128.1,
+            1514.3
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 584528,
+          "updateBytes": 4082312,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110425
+            ],
+            [
+              "diagnostics",
+              87020
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1379.1
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 584528,
+          "updateBytes": 1598865,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110425
+            ],
+            [
+              "diagnostics",
+              87020
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1356.9
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 451360,
+            "cpuAveragePercent": 11.8
+          },
+          "gateway": {
+            "rssKiB": 2233616,
+            "cpuAveragePercent": 11.9
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 868176,
+        "gatewayRssAfterSeedKiB": 2453072
+      }
+    ],
+    "mainInstrumented": [
+      {
+        "agents": 1,
+        "nativeSessionsCreated": 1,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1108.1,
+            "ttfbMs": 229,
+            "domContentLoadedMs": 257,
+            "canvasMs": 646,
+            "firstNodeMs": 646,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1106,
+            "ttfbMs": 229,
+            "domContentLoadedMs": 273,
+            "canvasMs": 643,
+            "firstNodeMs": 643,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 235.3,
+            "ttfbMs": 18,
+            "domContentLoadedMs": 53,
+            "canvasMs": 203,
+            "firstNodeMs": 203,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 317.9,
+            "ttfbMs": 16,
+            "domContentLoadedMs": 34,
+            "canvasMs": 200,
+            "firstNodeMs": 200,
+            "longTaskMs": 51,
+            "maxLongTaskMs": 51,
+            "htmlBytes": 63235,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 14,
+          "agents.list": 7,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 7,
+          "config.get": 14,
+          "tasks.list": 28,
+          "sessions.list": 14,
+          "worktrees.list": 7,
+          "taskSuggestions.list": 7,
+          "cron.status": 7,
+          "cron.list": 7,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2100.9,
+          "timingsMs": [
+            1650.4,
+            2100.9,
+            1592.5,
+            1558.3,
+            1575.3
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 85841,
+          "updateBytes": 1284721,
+          "updates": 7,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              79842
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 2667.9
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 85841,
+          "updateBytes": 209724,
+          "updates": 7,
+          "deltas": 7,
+          "largestFields": [
+            [
+              "diagnostics",
+              79842
+            ],
+            [
+              "workspaces",
+              1779
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 2674.2
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 295136,
+            "cpuAveragePercent": 5.2
+          },
+          "gateway": {
+            "rssKiB": 1586768,
+            "cpuAveragePercent": 5.4
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 847232,
+        "gatewayRssAfterSeedKiB": 1786512
+      },
+      {
+        "agents": 10,
+        "nativeSessionsCreated": 100,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 10625.5,
+            "ttfbMs": 228,
+            "domContentLoadedMs": 268,
+            "canvasMs": 596,
+            "firstNodeMs": 596,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1075.4,
+            "ttfbMs": 226,
+            "domContentLoadedMs": 249,
+            "canvasMs": 615,
+            "firstNodeMs": 615,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 221.9,
+            "ttfbMs": 26,
+            "domContentLoadedMs": 37,
+            "canvasMs": 202,
+            "firstNodeMs": 202,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 235.8,
+            "ttfbMs": 25,
+            "domContentLoadedMs": 42,
+            "canvasMs": 206,
+            "firstNodeMs": 206,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 82808,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 3,
+          "status": 4,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        "mutationRpcCounts": {
+          "connect": 14,
+          "agents.list": 7,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 7,
+          "config.get": 14,
+          "tasks.list": 28,
+          "sessions.list": 14,
+          "worktrees.list": 7,
+          "taskSuggestions.list": 7,
+          "cron.status": 7,
+          "cron.list": 7,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2271.6,
+          "timingsMs": [
+            2271.6,
+            1658.7,
+            1651.9,
+            1636.7,
+            1639.6
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 196791,
+          "updateBytes": 2061533,
+          "updates": 7,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22035
+            ],
+            [
+              "nativeWork",
+              19390
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 2384.8
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 196791,
+          "updateBytes": 576056,
+          "updates": 7,
+          "deltas": 7,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22035
+            ],
+            [
+              "nativeWork",
+              19390
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 2380.4
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 336384,
+            "cpuAveragePercent": 7.8
+          },
+          "gateway": {
+            "rssKiB": 1849776,
+            "cpuAveragePercent": 7
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 844816,
+        "gatewayRssAfterSeedKiB": 2263664
+      },
+      {
+        "agents": 50,
+        "nativeSessionsCreated": 500,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1100.2,
+            "ttfbMs": 249,
+            "domContentLoadedMs": 285,
+            "canvasMs": 637,
+            "firstNodeMs": 637,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1099.5,
+            "ttfbMs": 250,
+            "domContentLoadedMs": 274,
+            "canvasMs": 635,
+            "firstNodeMs": 635,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 248.1,
+            "ttfbMs": 35,
+            "domContentLoadedMs": 47,
+            "canvasMs": 213,
+            "firstNodeMs": 213,
+            "longTaskMs": 51,
+            "maxLongTaskMs": 51,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 253.5,
+            "ttfbMs": 34,
+            "domContentLoadedMs": 90,
+            "canvasMs": 221,
+            "firstNodeMs": 221,
+            "longTaskMs": 50,
+            "maxLongTaskMs": 50,
+            "htmlBytes": 170368,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 5,
+          "models.list": 5,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2671.4,
+          "timingsMs": [
+            1597.4,
+            2671.4,
+            2038.9,
+            1464.5,
+            2080.5
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 585615,
+          "updateBytes": 4096891,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110425
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1259.2
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 585615,
+          "updateBytes": 1520045,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110425
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1250.3
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 462560,
+            "cpuAveragePercent": 11.2
+          },
+          "gateway": {
+            "rssKiB": 2152656,
+            "cpuAveragePercent": 11.7
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 905392,
+        "gatewayRssAfterSeedKiB": 2466976
+      }
+    ],
+    "candidateInstrumented": [
+      {
+        "agents": 1,
+        "nativeSessionsCreated": 1,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1061.4,
+            "ttfbMs": 205,
+            "domContentLoadedMs": 239,
+            "canvasMs": 578,
+            "firstNodeMs": 578,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1040.1,
+            "ttfbMs": 200,
+            "domContentLoadedMs": 231,
+            "canvasMs": 573,
+            "firstNodeMs": 573,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 217.6,
+            "ttfbMs": 21,
+            "domContentLoadedMs": 52,
+            "canvasMs": 187,
+            "firstNodeMs": 187,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 198.5,
+            "ttfbMs": 13,
+            "domContentLoadedMs": 31,
+            "canvasMs": 175,
+            "firstNodeMs": 175,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2128.6,
+          "timingsMs": [
+            1662.3,
+            2128.6,
+            1604.8,
+            1593,
+            1593.4
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 85840,
+          "updateBytes": 1097760,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              79842
+            ],
+            [
+              "workspaces",
+              1778
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1249.4
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 85840,
+          "updateBytes": 191601,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              79842
+            ],
+            [
+              "workspaces",
+              1778
+            ],
+            [
+              "agents",
+              1085
+            ],
+            [
+              "nativeWork",
+              768
+            ],
+            [
+              "runtimes",
+              717
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1254.6
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 275296,
+            "cpuAveragePercent": 5.1
+          },
+          "gateway": {
+            "rssKiB": 1563056,
+            "cpuAveragePercent": 5
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 874352,
+        "gatewayRssAfterSeedKiB": 1708928
+      },
+      {
+        "agents": 10,
+        "nativeSessionsCreated": 100,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1080.7,
+            "ttfbMs": 222,
+            "domContentLoadedMs": 244,
+            "canvasMs": 600,
+            "firstNodeMs": 600,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1072.7,
+            "ttfbMs": 218,
+            "domContentLoadedMs": 241,
+            "canvasMs": 591,
+            "firstNodeMs": 591,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 223.9,
+            "ttfbMs": 22,
+            "domContentLoadedMs": 53,
+            "canvasMs": 190,
+            "firstNodeMs": 190,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 218.1,
+            "ttfbMs": 21,
+            "domContentLoadedMs": 39,
+            "canvasMs": 186,
+            "firstNodeMs": 186,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2317.5,
+          "timingsMs": [
+            2317.5,
+            1718.5,
+            1656.1,
+            1645.1,
+            1642.6
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 196790,
+          "updateBytes": 1763223,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22032
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1288.9
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 196790,
+          "updateBytes": 552905,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22032
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1279.7
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 324144,
+            "cpuAveragePercent": 7.9
+          },
+          "gateway": {
+            "rssKiB": 1808160,
+            "cpuAveragePercent": 7.2
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 848176,
+        "gatewayRssAfterSeedKiB": 2112704
+      },
+      {
+        "agents": 50,
+        "nativeSessionsCreated": 500,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1122.7,
+            "ttfbMs": 235,
+            "domContentLoadedMs": 258,
+            "canvasMs": 604,
+            "firstNodeMs": 604,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1079.6,
+            "ttfbMs": 235,
+            "domContentLoadedMs": 259,
+            "canvasMs": 607,
+            "firstNodeMs": 607,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 235.2,
+            "ttfbMs": 35,
+            "domContentLoadedMs": 65,
+            "canvasMs": 199,
+            "firstNodeMs": 199,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 228,
+            "ttfbMs": 34,
+            "domContentLoadedMs": 49,
+            "canvasMs": 199,
+            "firstNodeMs": 199,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "device.pair.list": 1,
+          "health": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 6,
+          "models.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2788.7,
+          "timingsMs": [
+            1583.6,
+            2788.7,
+            2115.6,
+            1492.7,
+            2632.2
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 585614,
+          "updateBytes": 4096774,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110424
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1382.6
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 585614,
+          "updateBytes": 1519442,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110424
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1392.2
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 420944,
+            "cpuAveragePercent": 12.4
+          },
+          "gateway": {
+            "rssKiB": 2166048,
+            "cpuAveragePercent": 12.2
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 909904,
+        "gatewayRssAfterSeedKiB": 2479632
+      }
+    ],
+    "candidateSecondInstrumented": [
+      {
+        "agents": 1,
+        "nativeSessionsCreated": 1,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1096.9,
+            "ttfbMs": 255,
+            "domContentLoadedMs": 287,
+            "canvasMs": 614,
+            "firstNodeMs": 614,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 13160.4,
+            "ttfbMs": 254,
+            "domContentLoadedMs": 283,
+            "canvasMs": 610,
+            "firstNodeMs": 610,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 191.5,
+            "ttfbMs": 18,
+            "domContentLoadedMs": 44,
+            "canvasMs": 173,
+            "firstNodeMs": 173,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 190.1,
+            "ttfbMs": 17,
+            "domContentLoadedMs": 31,
+            "canvasMs": 168,
+            "firstNodeMs": 168,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 61835,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 10,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "device.pair.list": 1,
+          "health": 3,
+          "status": 4,
+          "sessions.subscribe": 1,
+          "config.get": 2,
+          "tasks.list": 4,
+          "sessions.list": 2,
+          "worktrees.list": 1,
+          "taskSuggestions.list": 1,
+          "cron.status": 1,
+          "cron.list": 1,
+          "update.status": 1,
+          "system": 1,
+          "channels.status": 1
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2119.9,
+          "timingsMs": [
+            1661.3,
+            2119.9,
+            1575.1,
+            1559.8,
+            1559
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 179768,
+          "updateBytes": 1109244,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              173019
+            ],
+            [
+              "workspaces",
+              1811
+            ],
+            [
+              "runtimes",
+              1247
+            ],
+            [
+              "agents",
+              1123
+            ],
+            [
+              "nativeWork",
+              768
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1222
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 179768,
+          "updateBytes": 106554,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              173019
+            ],
+            [
+              "workspaces",
+              1811
+            ],
+            [
+              "runtimes",
+              1247
+            ],
+            [
+              "agents",
+              1123
+            ],
+            [
+              "nativeWork",
+              768
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1228.5
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 289312,
+            "cpuAveragePercent": 4.4
+          },
+          "gateway": {
+            "rssKiB": 1549328,
+            "cpuAveragePercent": 4.4
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 894544,
+        "gatewayRssAfterSeedKiB": 1573760
+      },
+      {
+        "agents": 10,
+        "nativeSessionsCreated": 100,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1064.4,
+            "ttfbMs": 215,
+            "domContentLoadedMs": 249,
+            "canvasMs": 573,
+            "firstNodeMs": 573,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 1087.4,
+            "ttfbMs": 216,
+            "domContentLoadedMs": 239,
+            "canvasMs": 571,
+            "firstNodeMs": 571,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 202.4,
+            "ttfbMs": 22,
+            "domContentLoadedMs": 46,
+            "canvasMs": 180,
+            "firstNodeMs": 180,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 202.1,
+            "ttfbMs": 21,
+            "domContentLoadedMs": 47,
+            "canvasMs": 179,
+            "firstNodeMs": 179,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 81408,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "health": 1,
+          "device.pair.list": 1,
+          "status": 2,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2289.1,
+          "timingsMs": [
+            2289.1,
+            1736.3,
+            1635.6,
+            1643.9,
+            1647.7
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 196792,
+          "updateBytes": 1763239,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22034
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1228.6
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 196792,
+          "updateBytes": 552921,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "diagnostics",
+              81347
+            ],
+            [
+              "runtimes",
+              58841
+            ],
+            [
+              "workspaces",
+              22034
+            ],
+            [
+              "nativeWork",
+              19392
+            ],
+            [
+              "agents",
+              11010
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1232.7
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 320992,
+            "cpuAveragePercent": 7.3
+          },
+          "gateway": {
+            "rssKiB": 1781008,
+            "cpuAveragePercent": 6.3
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 897120,
+        "gatewayRssAfterSeedKiB": 2037760
+      },
+      {
+        "agents": 50,
+        "nativeSessionsCreated": 500,
+        "browserClients": 2,
+        "rawSseClients": 2,
+        "cold": [
+          {
+            "renderMs": 1091.4,
+            "ttfbMs": 226,
+            "domContentLoadedMs": 247,
+            "canvasMs": 575,
+            "firstNodeMs": 575,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 590.8,
+            "ttfbMs": 225,
+            "domContentLoadedMs": 255,
+            "canvasMs": 573,
+            "firstNodeMs": 573,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "warm": [
+          {
+            "renderMs": 229.1,
+            "ttfbMs": 35,
+            "domContentLoadedMs": 67,
+            "canvasMs": 198,
+            "firstNodeMs": 198,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          },
+          {
+            "renderMs": 229.8,
+            "ttfbMs": 34,
+            "domContentLoadedMs": 52,
+            "canvasMs": 199,
+            "firstNodeMs": 199,
+            "longTaskMs": 0,
+            "maxLongTaskMs": null,
+            "htmlBytes": 168968,
+            "rosterInInitialHtml": true
+          }
+        ],
+        "coldRpcCounts": {
+          "connect": 3,
+          "agents.list": 2,
+          "models.authStatus": 1,
+          "models.list": 1,
+          "status": 2,
+          "health": 1,
+          "device.pair.list": 1,
+          "sessions.subscribe": 1,
+          "config.get": 1,
+          "tasks.list": 2,
+          "sessions.list": 2
+        },
+        "mutationRpcCounts": {
+          "connect": 12,
+          "agents.list": 6,
+          "models.authStatus": 6,
+          "models.list": 6,
+          "device.pair.list": 6,
+          "config.get": 12,
+          "tasks.list": 24,
+          "sessions.list": 12,
+          "worktrees.list": 6,
+          "taskSuggestions.list": 6,
+          "cron.status": 6,
+          "cron.list": 6,
+          "sessions.patch": 10
+        },
+        "visibleUpdate": {
+          "samples": 5,
+          "missed": 0,
+          "p95Ms": 2653.3,
+          "timingsMs": [
+            1525.4,
+            2653.3,
+            1509.3,
+            2073.8,
+            1497.7
+          ]
+        },
+        "nativeMutations": 10,
+        "settleMs": 0,
+        "fullStream": {
+          "initialSnapshotBytes": 585607,
+          "updateBytes": 4096732,
+          "updates": 6,
+          "deltas": 0,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110417
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1305.7
+        },
+        "deltaStream": {
+          "initialSnapshotBytes": 585607,
+          "updateBytes": 1519400,
+          "updates": 6,
+          "deltas": 6,
+          "largestFields": [
+            [
+              "runtimes",
+              296681
+            ],
+            [
+              "workspaces",
+              110417
+            ],
+            [
+              "diagnostics",
+              88107
+            ],
+            [
+              "agents",
+              55330
+            ],
+            [
+              "nativeWork",
+              19504
+            ]
+          ],
+          "eventToWireApproxP95Ms": 1327.1
+        },
+        "processSamples": {
+          "agentos": {
+            "rssKiB": 421936,
+            "cpuAveragePercent": 12.4
+          },
+          "gateway": {
+            "rssKiB": 2152848,
+            "cpuAveragePercent": 11.4
+          }
+        },
+        "gatewayRssBeforeSeedKiB": 859312,
+        "gatewayRssAfterSeedKiB": 2455824
+      }
+    ]
+  }
+}

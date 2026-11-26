@@ -158,7 +158,7 @@ type SettingsSection = {
 
 const settingsSections: SettingsSection[] = [
   { id: "general", label: "General", icon: Wrench, group: "Core" },
-  { id: "ai-tools", label: "AI & Tools", icon: Bot, group: "Core" },
+  { id: "ai-tools", label: "AI & Models", icon: Bot, group: "Core" },
   { id: "security", label: "Security", icon: ShieldCheck, group: "Core" },
   { id: "workspace", label: "Workspace", icon: Folder, group: "Workspace" },
   { id: "runtime", label: "Runtime", icon: Activity, group: "OpenClaw" },

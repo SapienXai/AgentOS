@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   AlertTriangle,
   Bot,
@@ -133,6 +133,7 @@ type MissionSidebarProps = {
   connectionState: "connecting" | "live" | "retrying";
   collapsed: boolean;
   sidebarPinned?: boolean;
+  hideCreateAgent?: boolean;
   modelManager: {
     runState: "idle" | "running" | "success" | "error";
     statusMessage: string | null;
@@ -217,6 +218,7 @@ export function MissionSidebar({
   connectionState,
   collapsed,
   sidebarPinned = false,
+  hideCreateAgent = false,
   onExpandCollapsed,
   onToggleCollapsed,
   onToggleTheme,
@@ -238,7 +240,6 @@ export function MissionSidebar({
   const pathname = usePathname();
   const currentPathname = pathname ?? "/";
   const hasUpdateNotice = hasDiscoverableOpenClawUpdate(snapshot);
-  const [activeHash, setActiveHash] = useState("");
   const [isEditAgentOpen, setIsEditAgentOpen] = useState(false);
   const [showEditIdentityDetails, setShowEditIdentityDetails] = useState(false);
   const [isEditAgentAdvancedOpen, setIsEditAgentAdvancedOpen] = useState(false);
@@ -276,15 +277,6 @@ export function MissionSidebar({
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    const syncHash = () => setActiveHash(window.location.hash.replace(/^#/, ""));
-
-    syncHash();
-    window.addEventListener("hashchange", syncHash);
-
-    return () => window.removeEventListener("hashchange", syncHash);
-  }, []);
-
   const pendingWorkspaceEntries = useMemo(
     () => {
       const liveWorkspaceIds = new Set(snapshot.workspaces.map((workspace) => workspace.id));
@@ -302,7 +294,7 @@ export function MissionSidebar({
         sortRank: resolveWorkspaceMenuSortRank(workspace, index, snapshot.workspaces.length),
         id: workspace.id,
         name: workspace.name,
-        detail: `${workspace.agentIds.length} agents`,
+        detail: `${workspace.agentIds.length} ${workspace.agentIds.length === 1 ? "employee" : "employees"}`,
         pending: false as const
       })),
       ...pendingWorkspaceEntries.map((workspace) => ({
@@ -333,10 +325,6 @@ export function MissionSidebar({
   });
   const statusTone = resolveOperatorStatusTone(operatorRuntime.tone);
   const statusLabel = connectionState === "connecting" ? "Connecting to OpenClaw" : `${operatorRuntime.stateLabel} · ${operatorRuntime.freshness.state === "live" ? "Live" : operatorRuntime.freshness.label}`;
-  const handleNavigate = useCallback((item: SidebarItem) => {
-    setActiveHash(item.hash ?? "");
-  }, []);
-
   const handleEditAgentOpenChange = (nextOpen: boolean) => {
     setIsEditAgentOpen(nextOpen);
     onAgentActionModalOpenChange?.(nextOpen);
@@ -571,7 +559,6 @@ export function MissionSidebar({
       />
       {collapsed ? (
         <CollapsedSidebar
-          activeHash={activeHash}
           pathname={currentPathname}
           surfaceTheme={surfaceTheme}
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
@@ -584,9 +571,9 @@ export function MissionSidebar({
           onSnapshotChange={onSnapshotChange}
           onAgentCreationPending={onAgentCreationPending}
           onAgentCreatedVisible={onAgentCreatedVisible}
-          onItemNavigate={handleNavigate}
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
           operatorProfile={operatorProfile}
+          hideCreateAgent={hideCreateAgent}
         />
       ) : (
         <aside
@@ -627,7 +614,7 @@ export function MissionSidebar({
                 onSnapshotChange={onSnapshotChange}
               />
 
-              <SidebarCreateAgentAction
+              {!hideCreateAgent && <SidebarCreateAgentAction
                 snapshot={snapshot}
                 activeWorkspaceId={activeWorkspace?.id ?? null}
                 pendingCreatedAgents={pendingCreatedAgents}
@@ -637,20 +624,18 @@ export function MissionSidebar({
                 onAgentCreationPending={onAgentCreationPending}
                 onAgentCreatedVisible={onAgentCreatedVisible}
                 onOpenCreateAgent={onOpenCreateAgent}
-              />
+              />}
             </div>
 
             <nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-              <div className="flex flex-col gap-5">
+              <div className="flex min-h-full flex-col gap-5">
                 {sidebarSections.map((section) => (
                   <SidebarSectionGroup
                     key={section.id}
-                    activeHash={activeHash}
-                    pathname={currentPathname}
+          pathname={currentPathname}
                     section={section}
                     updateNotice={hasUpdateNotice}
-                    onNavigate={handleNavigate}
-                  />
+                                      />
                 ))}
               </div>
             </nav>
@@ -1230,8 +1215,8 @@ function SidebarCreateAgentAction({
     <button
       type="button"
       disabled={!hasWorkspace}
-      aria-label="New Agent"
-      title={hasWorkspace ? "New Agent" : "Create a workspace first"}
+      aria-label="Add employee"
+      title={hasWorkspace ? "Add employee" : "Create a workspace first"}
       onPointerDown={(event) => {
         if (!onOpenCreateAgent || !hasWorkspace) {
           return;
@@ -1279,7 +1264,7 @@ function SidebarCreateAgentAction({
       className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3.5 text-[0.84rem] font-semibold text-primary-foreground shadow-[0_12px_26px_hsl(var(--primary)/0.18)] transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Plus className="h-[18px] w-[18px]" />
-      <span>New Agent</span>
+      <span>Add employee</span>
     </button>
   );
 
@@ -1347,6 +1332,7 @@ function WorkspaceSwitcher({
   onForceRefresh?: () => Promise<MissionControlSnapshot>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [workspaceActionsOpenForId, setWorkspaceActionsOpenForId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MissionControlSnapshot["workspaces"][number] | null>(null);
@@ -1707,7 +1693,7 @@ function WorkspaceSwitcher({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((current) => !current)}
-        className="group flex w-full items-center gap-3 rounded-lg border border-border bg-card/75 px-3 py-3 text-left shadow-card transition-all hover:border-primary/25 hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="workforce-workspace-trigger group flex w-full items-center gap-3 rounded-lg border border-border bg-card/75 px-3 py-3 text-left shadow-card transition-all hover:border-primary/25 hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
           <Home className="h-4 w-4" />
@@ -1716,7 +1702,7 @@ function WorkspaceSwitcher({
           <span className="block truncate text-[0.95rem] font-semibold leading-5 text-foreground">
             {activeWorkspaceId === null ? "All workspaces" : workspace?.name || "No workspace"}
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
+          <span className="workforce-workspace-caption mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
             <StatusDot tone={statusTone} pulse={statusTone === "bg-emerald-400"} className="h-2 w-2" />
             {activeWorkspaceId === null ? `${workspaceCount} workspaces` : activeWorkspaceIsPending ? "Creating workspace" : "Workspace"}
           </span>
@@ -1728,7 +1714,7 @@ function WorkspaceSwitcher({
               open && "rotate-180"
             )}
           />
-          <span className="text-[0.6rem] font-medium text-muted-foreground">{statusLabel}</span>
+          <span className="workforce-workspace-diagnostic text-[0.6rem] font-medium text-muted-foreground">{statusLabel}</span>
         </span>
       </button>
 
@@ -1739,8 +1725,8 @@ function WorkspaceSwitcher({
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-[0_22px_54px_hsl(var(--background)/0.22),0_0_0_1px_hsl(var(--foreground)/0.03)] backdrop-blur-xl"
+            transition={{ duration: reduceMotion ? 0 : 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-[0_22px_54px_hsl(var(--background)/0.22),0_0_0_1px_hsl(var(--foreground)/0.03)] backdrop-blur-xl"
           >
             <WorkspaceMenuButton
               label="All workspaces"
@@ -2350,41 +2336,32 @@ function collectWorkspaceDeleteFiles(workspace: MissionControlSnapshot["workspac
 }
 
 function SidebarSectionGroup({
-  activeHash,
-  onNavigate,
   pathname,
   section,
   updateNotice
 }: {
-  activeHash: string;
-  onNavigate: (item: SidebarItem) => void;
   pathname: string;
   section: { id: SidebarSection; label: string };
   updateNotice: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-2" aria-labelledby={`sidebar-${section.id}`}>
-      <h2
-        id={`sidebar-${section.id}`}
-        className={cn(
-          "px-2 text-[0.64rem] font-semibold uppercase leading-none tracking-[0.22em]",
-          section.id === "system" ? "text-muted-foreground/70" : "text-muted-foreground"
-        )}
+    <section className={cn("flex flex-col gap-2", section.id === "system" && "mt-auto border-t border-border pt-3")}>
+      {section.id === "operate" ? <h2
+        className="px-2 text-xs font-medium text-muted-foreground"
       >
         {section.label}
-      </h2>
+      </h2> : null}
       <div className="flex flex-col gap-1">
         {sidebarItems
           .filter((item) => item.section === section.id)
           .map((item) => {
-            const displayedItem = item.id === "updates" && updateNotice ? { ...item, badge: 1 } : item;
+            const displayedItem = item.id === "settings" && updateNotice ? { ...item, badge: 1 } : item;
 
             return (
             <SidebarNavItem
               key={item.id}
               item={displayedItem}
-              active={isSidebarItemActive(displayedItem, pathname, activeHash)}
-              onNavigate={() => onNavigate(item)}
+              active={isNavigationItemActive(displayedItem, pathname)}
             />
             );
           })}
@@ -2395,12 +2372,10 @@ function SidebarSectionGroup({
 
 function SidebarNavItem({
   item,
-  active,
-  onNavigate
+  active
 }: {
   item: SidebarItem;
   active: boolean;
-  onNavigate: () => void;
 }) {
   const Icon = item.icon;
 
@@ -2409,17 +2384,13 @@ function SidebarNavItem({
       href={item.href ?? "#"}
       scroll={item.href?.startsWith("/settings#") ? false : undefined}
       aria-current={active ? "page" : undefined}
-      onClick={onNavigate}
       className={cn(
         "group relative flex h-10 items-center gap-3 rounded-lg border px-3 text-[0.84rem] font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
         active
-          ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.05),0_12px_28px_hsl(var(--primary)/0.08)]"
+          ? "border-transparent bg-primary/10 text-primary"
           : "border-transparent text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground"
       )}
     >
-      {active ? (
-        <span className="absolute left-0 top-2 h-6 w-1 rounded-r-full bg-primary shadow-[0_0_14px_hsl(var(--primary)/0.24)]" />
-      ) : null}
       <Icon className={cn("h-[1.05rem] w-[1.05rem] shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-accent-foreground")} />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {typeof item.badge === "number" ? (
@@ -2688,8 +2659,7 @@ function SidebarUserMenuAction({
 }
 
 function CollapsedSidebar({
-  activeHash,
-  pathname,
+    pathname,
   surfaceTheme,
   workspaceLabel,
   workspaceDetail,
@@ -2702,11 +2672,10 @@ function CollapsedSidebar({
   onAgentCreationPending,
   onAgentCreatedVisible,
   onOpenCreateAgent,
-  onItemNavigate,
   onExpandCollapsed,
-  operatorProfile
+  operatorProfile,
+  hideCreateAgent
 }: {
-  activeHash: string;
   pathname: string;
   surfaceTheme: "dark" | "light";
   workspaceLabel: string;
@@ -2720,9 +2689,9 @@ function CollapsedSidebar({
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
   onOpenCreateAgent?: () => void;
-  onItemNavigate: (item: SidebarItem) => void;
   onExpandCollapsed: () => void;
   operatorProfile: OperatorProfileSummary;
+  hideCreateAgent: boolean;
 }) {
   return (
     <aside className="agentos-sidebar-surface relative flex h-full w-full flex-col items-center overflow-hidden border-r border-border bg-card px-1 py-4 text-card-foreground shadow-panel">
@@ -2759,7 +2728,7 @@ function CollapsedSidebar({
         </button>
       </RailTooltip>
 
-      <RailTooltip label="New Agent" side="right" surfaceTheme={surfaceTheme}>
+      {!hideCreateAgent && <RailTooltip label="Add employee" side="right" surfaceTheme={surfaceTheme}>
         <SidebarCreateAgentAction
           snapshot={snapshot}
           activeWorkspaceId={activeWorkspaceId}
@@ -2772,16 +2741,16 @@ function CollapsedSidebar({
           onAgentCreatedVisible={onAgentCreatedVisible}
           onOpenCreateAgent={onOpenCreateAgent}
         />
-      </RailTooltip>
+      </RailTooltip>}
 
-      <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">
+      <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto pb-2 overscroll-contain">
         {sidebarSections.map((section) => (
-          <div key={section.id} className="flex flex-col items-center gap-1.5">
+          <div key={section.id} className={cn("flex flex-col items-center gap-1.5", section.id === "system" && "mt-auto")}>
             {collapsedSidebarItemsWithUpdates
               .filter((item) => item.section === section.id)
               .map((item) => {
-                const displayedItem = item.id === "updates" && updateNotice ? { ...item, badge: 1 } : item;
-                const active = isSidebarItemActive(item, pathname, activeHash);
+                const displayedItem = item.id === "settings" && updateNotice ? { ...item, badge: 1 } : item;
+                const active = isNavigationItemActive(item, pathname);
                 const Icon = displayedItem.icon;
 
                 return (
@@ -2796,14 +2765,11 @@ function CollapsedSidebar({
                       scroll={displayedItem.href?.startsWith("/settings#") ? false : undefined}
                       aria-label={displayedItem.label}
                       aria-current={active ? "page" : undefined}
-                      onClick={() => {
-                        onItemNavigate(item);
-                      }}
                       className={cn(
                         "relative inline-flex h-10 w-10 items-center justify-center rounded-lg border outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
                         active
-                          ? "border-primary/30 bg-primary text-primary-foreground shadow-[0_14px_30px_hsl(var(--primary)/0.20)]"
-                          : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          ? "border-transparent bg-primary/10 text-primary"
+                          : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -2834,9 +2800,6 @@ function CollapsedSidebar({
   );
 }
 
-function isSidebarItemActive(item: SidebarItem, pathname: string, activeHash: string) {
-  return isNavigationItemActive(item, pathname, activeHash);
-}
 
 function resolveOperatorStatusTone(tone: "success" | "warning" | "danger" | "muted") {
   switch (tone) {

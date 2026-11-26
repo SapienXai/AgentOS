@@ -1,17 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Bot, CheckCircle2, Clock3, Loader2, Plus, Search, ShieldAlert, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ArrowRight, Bot, Loader2, Plus, Search } from "lucide-react";
 
 import {
   EmptyState,
   PageHeader,
   SectionCard,
-  StatCard,
-  StatGrid,
   StatusBadge
 } from "@/components/operations/operations-ui";
+import { HumanControlInbox } from "@/components/operations/human-control-inbox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +33,9 @@ export function MissionListPage({
   activeWorkspaceId,
   connectionState,
   attentionRefreshGeneration,
-  refresh
+  refresh,
+  surfaceTheme,
+  view
 }: {
   initial: WorkforceMissionListResponse;
   snapshot: MissionControlSnapshot;
@@ -41,32 +43,41 @@ export function MissionListPage({
   connectionState: "connecting" | "live" | "retrying";
   attentionRefreshGeneration: number;
   refresh: () => Promise<void>;
+  surfaceTheme: "light" | "dark";
+  view: TaskView;
 }) {
+  const router = useRouter();
   const [payload, setPayload] = useState(initial);
   const [search, setSearch] = useState("");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     const params = new URLSearchParams();
     if (activeWorkspaceId) params.set("workspaceId", activeWorkspaceId);
     if (search.trim()) params.set("search", search.trim());
     const timer = window.setTimeout(async () => {
       setLoading(true);
+      setLoadError(null);
       try {
-        const response = await fetch(`/api/missions${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
+        const response = await fetch(`/api/missions${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store", signal: controller.signal });
         const next = (await response.json()) as WorkforceMissionListResponse & { error?: string };
-        if (!cancelled && response.ok && !next.error) setPayload(next);
+        if (!response.ok || next.error) throw new Error(next.error || "Tasks could not be refreshed.");
+        if (!controller.signal.aborted) setPayload(next);
+      } catch (error) {
+        if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "Tasks could not be refreshed.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, search.trim() ? 180 : 0);
     return () => {
-      cancelled = true;
+      controller.abort();
       window.clearTimeout(timer);
     };
-  }, [activeWorkspaceId, attentionRefreshGeneration, search, snapshot.revision]);
+  }, [activeWorkspaceId, attentionRefreshGeneration, search, snapshot.revision, retry]);
 
   const sections = useMemo(() => {
     const needsYou = payload.missions.filter((mission) => ["waiting-human", "blocked", "failed"].includes(mission.state));
@@ -75,6 +86,12 @@ export function MissionListPage({
     const history = payload.missions.filter((mission) => ["completed", "cancelled"].includes(mission.state));
     return { needsYou, active, queued, history };
   }, [payload.missions]);
+  const showingActive = view === "all" || view === "progress";
+  const showingCompleted = view === "all" || view === "completed";
+  const displayedTaskCount = view === "needs-you" ? sections.needsYou.length :
+    view === "progress" ? sections.active.length + sections.queued.length :
+    view === "completed" ? sections.history.length : payload.missions.length;
+
   const eligibleAgentCount = snapshot.agents.filter((agent) =>
     agent.status !== "offline" && (!activeWorkspaceId || agent.workspaceId === activeWorkspaceId)
   ).length;
@@ -83,21 +100,16 @@ export function MissionListPage({
     <div className="flex min-w-0 flex-col gap-3">
       <PageHeader
         title="Tasks"
-        subtitle="Each task is one goal, its activity, workers, and result. Schedules create separate task executions."
-        primaryAction={{ label: "Create task", icon: Plus, onClick: () => setNewTaskOpen(true), disabled: eligibleAgentCount === 0, title: eligibleAgentCount === 0 ? "Connect an available agent in this workspace before starting a task." : undefined }}
+        subtitle="Assign work, follow the results, and make decisions when your team needs you."
+        primaryAction={{ label: "Assign task", icon: Plus, onClick: () => setNewTaskOpen(true), disabled: eligibleAgentCount === 0, title: eligibleAgentCount === 0 ? "Connect an available employee in this workspace before starting a task." : undefined }}
       />
 
-      <div className="rounded-lg border border-border bg-card/55 px-3 py-2.5 text-xs text-muted-foreground">
-        <span className={cn("mr-2 inline-block h-1.5 w-1.5 rounded-full", connectionState === "live" ? "bg-[hsl(var(--status-success))]" : "bg-[hsl(var(--status-warning))]")} />
-        {connectionState === "live" ? "Live OpenClaw state" : "Reconnecting to OpenClaw; the latest confirmed state is shown."}
-      </div>
-
-      <StatGrid columns={4}>
-        <StatCard label="Needs you" value={String(payload.summary.needsYou)} detail="Approvals, blockers, failures" icon={ShieldAlert} tone="warning" />
-        <StatCard label="Running" value={String(payload.summary.running)} detail="Workers with active work" icon={Users} tone="info" />
-        <StatCard label="Queued" value={String(payload.summary.queued)} detail="Accepted, not started" icon={Clock3} tone="purple" />
-        <StatCard label="Done" value={String(payload.summary.completed)} detail="Recent task results" icon={CheckCircle2} tone="success" />
-      </StatGrid>
+      <TaskViewNavigation view={view} attentionCount={payload.summary.needsYou} />
+      {connectionState !== "live" ? <p role="status" className="text-sm text-muted-foreground">Reconnecting. Showing the last confirmed task state.</p> : null}
+      {view === "needs-you" ? <HumanControlInbox mode="section" surfaceTheme={surfaceTheme} attentionRefreshGeneration={attentionRefreshGeneration} /> : null}
+      {loadError ? <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/25 p-3 text-sm">
+        {loadError}<Button type="button" variant="secondary" onClick={() => setRetry(value => value + 1)}>Retry</Button>
+      </div> : null}
 
       <div className="flex items-center gap-2 rounded-lg border border-border bg-card/45 px-3 py-2">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -111,13 +123,14 @@ export function MissionListPage({
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Refreshing tasks" /> : null}
       </div>
 
-      {sections.needsYou.length > 0 ? <MissionSection title="Needs you" detail="These tasks need an operator decision or recovery." missions={sections.needsYou} tone="warning" /> : null}
-      {sections.active.length > 0 ? <MissionSection title="Active" detail="Current task state follows confirmed OpenClaw runtime evidence." missions={sections.active} tone="info" /> : null}
-      {sections.queued.length > 0 ? <MissionSection title="Queued" detail="Tasks admitted and waiting for runtime start." missions={sections.queued} tone="purple" /> : null}
-      {sections.history.length > 0 ? <MissionSection title="History" detail="Completed and cancelled tasks remain available with their captured evidence." missions={sections.history} tone="muted" /> : null}
+      {(view === "all" || view === "needs-you") && sections.needsYou.length > 0 ? <MissionSection title="Needs you" detail="These tasks need an operator decision or recovery." missions={sections.needsYou} tone="warning" /> : null}
+      {showingActive && sections.active.length > 0 ? <MissionSection title="In progress" detail="Work your team is carrying out." missions={sections.active} tone="info" /> : null}
+      {showingActive && sections.queued.length > 0 ? <MissionSection title="Queued" detail="Accepted tasks waiting to start." missions={sections.queued} tone="purple" /> : null}
+      {showingCompleted && sections.history.length > 0 ? <MissionSection title="History" detail="Review results from completed and cancelled tasks." missions={sections.history} tone="muted" /> : null}
 
-      {payload.missions.length === 0 ? (
-        <EmptyState title="No tasks yet" description="Choose an agent and give it a goal to get started." />
+      {displayedTaskCount === 0 && !loading && !loadError && view !== "needs-you" ? (
+        <EmptyState title={view === "all" && !search ? "No tasks yet" : "No tasks match"}
+          description={view === "all" && !search ? "Assign a task to an employee to get started." : "Change the search or select another view."} />
       ) : null}
 
       <NewMissionDialog
@@ -126,8 +139,8 @@ export function MissionListPage({
         snapshot={snapshot}
         activeWorkspaceId={activeWorkspaceId}
         onSubmitted={async (missionId) => {
-          await refresh();
-          window.location.assign(`/missions/${encodeURIComponent(missionId)}`);
+          router.push(`/missions/${encodeURIComponent(missionId)}`);
+          void refresh().catch(() => undefined);
         }}
       />
     </div>
@@ -138,7 +151,7 @@ function MissionSection({ title, detail, missions, tone }: { title: string; deta
   return (
     <SectionCard title={title} action={<span className="text-[0.65rem] text-muted-foreground">{missions.length}</span>}>
       <p className="border-b border-border px-3 py-2 text-xs leading-5 text-muted-foreground">{detail}</p>
-      <div className="grid gap-2 p-2 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-col divide-y divide-border">
         {missions.map((mission) => <MissionCard key={mission.id} mission={mission} tone={tone} />)}
       </div>
     </SectionCard>
@@ -148,7 +161,7 @@ function MissionSection({ title, detail, missions, tone }: { title: string; deta
 function MissionCard({ mission, tone }: { mission: WorkforceMissionProjection; tone: "warning" | "info" | "purple" | "success" | "muted" }) {
   const activeWorkerCount = mission.activeWorkers.length;
   return (
-    <article className="flex min-w-0 flex-col rounded-xl border border-border bg-background/35 p-3 transition-colors hover:bg-accent/35">
+    <article className="flex min-w-0 flex-col gap-2 px-4 py-3 transition-colors hover:bg-accent/35 motion-reduce:transition-none">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">{mission.title}</h3>
@@ -178,8 +191,34 @@ function MissionCard({ mission, tone }: { mission: WorkforceMissionProjection; t
   );
 }
 
+export type TaskView = "all" | "progress" | "needs-you" | "completed" | "scheduled";
+
+export function TaskViewNavigation({ view, attentionCount }: { view: TaskView; attentionCount?: number }) {
+  const views: Array<{ id: TaskView; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "progress", label: "In progress" },
+    { id: "needs-you", label: "Needs you" },
+    { id: "completed", label: "Completed" },
+    { id: "scheduled", label: "Scheduled" }
+  ];
+  return (
+    <nav aria-label="Task views" className="flex flex-wrap gap-x-1 border-b border-border">
+      {views.map(({ id, label }) => (
+        <Link key={id} href={id === "all" ? "/missions" : `/missions?view=${id}`} scroll={false}
+          aria-current={view === id ? "page" : undefined}
+          className={cn("flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-ring",
+            view === id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+          {label}
+          {id === "needs-you" && attentionCount ? <span className="rounded-md bg-primary/10 px-1.5 text-xs text-primary">{attentionCount}</span> : null}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
 function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onSubmitted }: { open: boolean; onOpenChange: (open: boolean) => void; snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; onSubmitted: (missionId: string) => Promise<void> }) {
   const [goal, setGoal] = useState("");
+  const request = useRef<{ goal: string; agentId: string; id: string } | null>(null);
   const [agentId, setAgentId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,9 +227,12 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
   useEffect(() => {
     if (!open) return;
     setGoal("");
+    request.current = null;
     setAgentId("");
     setError(null);
   }, [open]);
+
+  const assignee = agentId || (eligibleAgents.length === 1 ? eligibleAgents[0].id : "");
 
   async function submit() {
     const mission = goal.trim();
@@ -202,9 +244,13 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
       setError("Select an available agent in the current workspace.");
       return;
     }
-    if (!agentId || !eligibleAgents.some((agent) => agent.id === agentId)) {
-      setError("Choose an agent for this task.");
+    if (!assignee || !eligibleAgents.some((agent) => agent.id === assignee)) {
+      setError("Choose an employee for this task.");
       return;
+    }
+    if (submitting) return;
+    if (request.current?.goal !== mission || request.current.agentId !== assignee) {
+      request.current = { goal: mission, agentId: assignee, id: `task:${crypto.randomUUID()}` };
     }
     setSubmitting(true);
     setError(null);
@@ -214,9 +260,9 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mission,
-          requestId: `task:${crypto.randomUUID()}`,
-          agentId,
-          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === agentId)?.workspaceId
+          requestId: request.current.id,
+          agentId: assignee,
+          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === assignee)?.workspaceId
         })
       });
       const result = (await response.json()) as { dispatchId?: string; error?: string };
@@ -232,31 +278,32 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-[18px] p-4 sm:p-5">
+    <Dialog open={open} onOpenChange={value => { if (!submitting) onOpenChange(value); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] max-w-xl overflow-y-auto rounded-2xl p-4 sm:p-5">
         <DialogHeader>
-          <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>What should this agent accomplish?</DialogDescription>
+          <DialogTitle>Assign task</DialogTitle>
+          <DialogDescription>Describe the result you want and choose who should do the work.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-1">
+        <form id="workforce-assign-task" className="space-y-4 py-1" onSubmit={event => { event.preventDefault(); void submit(); }}>
           <div>
-            <Label htmlFor="mission-goal">Task goal</Label>
-            <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-sm" disabled={submitting} />
+            <Label htmlFor="mission-goal">What should they do?</Label>
+            <Textarea id="mission-goal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="Research our competitors and prepare a launch brief." className="mt-2 min-h-28 resize-y text-base sm:text-sm" disabled={submitting} />
           </div>
           <div>
-            <Label htmlFor="mission-agent">Agent</Label>
-            <select id="mission-agent" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-              <option value="">Choose an agent</option>
-              {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} ({agent.status})</option>)}
+            <Label htmlFor="mission-agent">Employee</Label>
+            <select id="mission-agent" value={assignee} onChange={(event) => setAgentId(event.target.value)} disabled={submitting || eligibleAgents.length === 0} className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-base text-foreground sm:text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+              <option value="">Choose an employee</option>
+              {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
-            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only agents in the current workspace are available here.</p>
+            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only employees in the current workspace are available here.</p>
           </div>
-          {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>OpenClaw is not fully ready. Start will validate the live Gateway before creating runtime work.</span></div> : null}
+          {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>AI runtime needs attention. Starting a task checks the connection first.</span></div> : null}
           {error ? <p className="text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}</p> : null}
-        </div>
+          <Link className="inline-flex min-h-10 items-center text-sm font-medium text-primary hover:underline" href="/missions?view=scheduled">Set up recurring work</Link>
+        </form>
         <DialogFooter className="gap-2 sm:justify-end">
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={submitting || eligibleAgents.length === 0 || !agentId}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
+          <Button type="submit" form="workforce-assign-task" disabled={submitting || eligibleAgents.length === 0 || !assignee}>{submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />}Start task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

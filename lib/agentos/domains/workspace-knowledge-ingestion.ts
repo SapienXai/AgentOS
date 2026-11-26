@@ -1,3 +1,4 @@
+import { redactSecretText } from "@/lib/security/redaction";
 import { createHash, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
@@ -2115,6 +2116,61 @@ function decodeHtmlEntities(value: string) {
     if (hexadecimal) return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
     return ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&apos;": "'", "&nbsp;": " " } as Record<string, string>)[match.toLowerCase()] ?? match;
   });
+}
+
+/** Preview a single selected public page through the architect's bounded HTTP path. */
+export async function previewKnowledgeWebpage(value: string, options: {
+  signal?: AbortSignal;
+  websiteFetcher?: KnowledgeWebsiteFetcher;
+} = {}) {
+  const validate = (value: string) => {
+    const url = normalizeHttpUrl(value);
+    if (url.port || url.search || redactSecretText(url.href) !== url.href) {
+      throw new Error("Use a public page URL without a custom port, query parameters, or credentials.");
+    }
+    return url;
+  };
+  const url = validate(value);
+  const transport = options.websiteFetcher ?? createDefaultWebsiteFetcher();
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(12_000)])
+    : AbortSignal.timeout(12_000);
+  const safeResolve = async (host: string) => {
+    signal.throwIfAborted();
+    let onAbort: (() => void) | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      const addresses = await Promise.race([transport.resolve(host), timeout]);
+      assertPublicAddresses(addresses);
+      // Use the existing pinned transport with public IPv4 for this narrow import.
+      const ipv4Addresses = addresses.filter(address => isIP(address) === 4);
+      if (!ipv4Addresses.length) throw new Error("This import requires a public IPv4 address.");
+      return ipv4Addresses;
+    } finally {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+  };
+  const result = await discoverProjectWebsite({
+    runId: "public-page-preview", sourceId: "selected-page", sourceKind: "website",
+    rootUrl: url.href, signal,
+    limits: { ...resolveLimits(undefined), maxPagesPerSource: 1, maxDepth: 0, maxSitemaps: 0,
+      maxBytesPerDocument: 512 * 1024, maxTotalBytesPerSource: 768 * 1024, maxRedirects: 3,
+      maxConcurrentRequests: 1, requestTimeoutMs: 4500, totalRunTimeoutMs: 12000 },
+    websiteFetcher: {
+      resolve: safeResolve,
+      fetch: (address, opts) => transport.fetch(validate(address).href, opts)
+    },
+    resolveHost: safeResolve,
+    assertPublicAddresses
+  });
+  const page = result.documents[0];
+  if (!page) throw new Error(result.warnings[0] ?? "This page has no readable public content. Save a reference or paste the text instead.");
+  const text = redactSecretText(normalizeImportedText(page.content).content);
+  if (!text) throw new Error("This page has no readable public content.");
+  return { title: redactSecretText(page.title).slice(0, 120), url: validate(page.origin).href, text };
 }
 
 function createDefaultWebsiteFetcher(): KnowledgeWebsiteFetcher {

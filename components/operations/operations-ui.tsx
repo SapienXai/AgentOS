@@ -5,7 +5,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ChevronDown,
   Clock3,
-  Command,
   LayoutGrid,
   List,
   Moon,
@@ -19,10 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
-import { OperatorScopeFreshness, OperatorTruthBadge } from "@/components/operations/operator-truth-indicator";
 import type { AgentOsStatusTone, AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import { presentOperatorRuntime } from "@/lib/agentos/ui/operator-runtime-projection";
 import { cn } from "@/lib/utils";
 
 export type StatusTone = AgentOsStatusTone;
@@ -66,7 +63,6 @@ export function OperationsTopBar({
   onToggleTheme,
   onSnapshotChange,
   compact = false,
-  activeWorkspaceId = null,
   activeWorkspaceName = null
 }: {
   snapshot: MissionControlSnapshot;
@@ -79,26 +75,14 @@ export function OperationsTopBar({
   activeWorkspaceId?: string | null;
   activeWorkspaceName?: string | null;
 }) {
-  const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
-  const operatorRuntime = presentOperatorRuntime(snapshot, {
-    connectionState,
-    scope: {
-      workspaceId: activeWorkspaceId,
-      workspaceName: activeWorkspaceName,
-      workspaceCount: snapshot.workspaces.length
-    }
-  });
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
-    <div className={cn("flex items-center justify-end text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground", compact ? "gap-1" : "gap-2")}>
-      <span className="hidden sm:inline">OpenClaw</span>
-      <span className="hidden font-mono text-muted-foreground/80 sm:inline">
-        v{version}
-      </span>
-      <OperatorTruthBadge projection={operatorRuntime} surfaceTheme={surfaceTheme} compact />
-      <OperatorScopeFreshness projection={operatorRuntime} compact className={compact ? "hidden sm:flex" : "hidden xl:flex"} />
+    <div className={cn("flex items-center text-xs text-muted-foreground", compact ? "gap-1" : "gap-2")}>
+      {!compact && <span className="mr-auto truncate text-sm font-medium text-foreground">{activeWorkspaceName ?? "All workspaces"}</span>}
+      {connectionState === "retrying" ? <span role="status">Reconnecting…</span> : null}
       <RuntimeIssueIndicator
+        workforce
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}
         onSnapshotChange={onSnapshotChange}
@@ -123,6 +107,7 @@ export function OperationsTopBar({
 export function PageHeader({
   title,
   subtitle,
+  icon,
   primaryAction,
   secondaryAction,
   actions,
@@ -130,6 +115,7 @@ export function PageHeader({
 }: {
   title: string;
   subtitle: string;
+  icon?: ReactNode;
   surfaceTheme?: OperationsSurfaceTheme;
   primaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; title?: string };
   secondaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void };
@@ -141,16 +127,13 @@ export function PageHeader({
 
   return (
     <header className="border-b border-border pb-4 pt-1 sm:pt-0">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <h1
-            className="font-display text-[1.48rem] font-semibold leading-tight tracking-normal text-foreground"
-          >
-            {title}
-          </h1>
-          <p className="mt-1.5 max-w-3xl text-[0.78rem] leading-5 text-muted-foreground">
-            {subtitle}
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          {icon}
+          <div className="min-w-0">
+            <h1 className="workforce-heading font-display font-semibold text-foreground">{title}</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">{subtitle}</p>
+          </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 [&>button]:flex-1 sm:w-auto sm:[&>button]:flex-none">
           {actions ?? (
@@ -253,14 +236,11 @@ export function SearchToolbar({
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
+            aria-label={searchPlaceholder}
+            type="search"
             placeholder={searchPlaceholder}
-            className="h-11 rounded-xl bg-card/80 pl-8 pr-11 text-base sm:h-8 sm:rounded-lg sm:text-[0.74rem]"
+            className="h-11 rounded-xl bg-card/80 pl-8 pr-3 text-base sm:h-9 sm:rounded-lg sm:text-sm"
           />
-          <span
-            className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground sm:flex"
-          >
-            <Command className="h-2.5 w-2.5" /> K
-          </span>
         </div>
         {children ? <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">{children}</div> : null}
       </div>

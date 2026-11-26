@@ -442,7 +442,7 @@ test("Create Agent uses one quick-create form without wizard or import placehold
     "utf8"
   );
 
-  assert.match(createDialogSource, /title="Create agent"/);
+  assert.match(createDialogSource, /title=\{workforce \? "Add employee" : "Create agent"\}/);
   assert.match(createDialogSource, /What should this agent own\?/);
   assert.match(createDialogSource, /aria-expanded=\{advancedOpen\}/);
   assert.match(createDialogSource, /Clone existing agent/);
@@ -1444,7 +1444,7 @@ test("inspector moves desktop scope controls into the header and keeps the rail 
   assert.match(globalStyles, /@media \(max-width: 1023px\)[\s\S]*\.mission-shell--light \.mission-inspector-light[\s\S]*background: #fbf7f3 !important;[\s\S]*backdrop-filter: none !important;/);
   assert.match(globalStyles, /\.mission-inspector \{[\s\S]*border-width: 0 !important;[\s\S]*border-radius: 0 !important;/);
   assert.match(shellSource, /fixed inset-0 z-50 h-\[100dvh\] w-full overflow-hidden rounded-none/);
-  assert.match(shellSource, /!isInspectorOpen \? \([\s\S]*fixed inset-x-0 top-3 z-\[60\]/);
+  assert.match(shellSource, /!isInspectorOpen \? \([\s\S]*fixed inset-x-0 top-\[max\(0\.75rem,env\(safe-area-inset-top\)\)\] z-\[60\]/);
   assert.doesNotMatch(shellSource, /h-\[min\(78dvh,720px\)\]/);
   assert.doesNotMatch(shellSource, /rounded-t-\[24px\]/);
 });
@@ -1466,14 +1466,16 @@ test("agent chat uses a focused responsive sheet, safe composer, and readable ma
   const markdownSource = readFileSync(path.join(rootDir, "components/mission-control/agent-chat-message-content.tsx"), "utf8");
   const globalStyles = readFileSync(path.join(rootDir, "app/globals.css"), "utf8");
 
-  assert.match(detailSource, /<AgentChatDialog open=\{chatOpen\}[\s\S]*statusLabel=\{agentView\.statusLabel\}/);
+  const chatSource = readFileSync(path.join(rootDir, "components/workforce/chat-page.tsx"), "utf8");
+  assert.match(detailSource, /\/chat\?employee=/);
+  assert.match(chatSource, /<AgentChatDrawer agent=\{employee\}/);
   assert.match(shellSource, /agent-chat-sheet fixed[\s\S]*h-\[94dvh\]/);
   assert.match(shellSource, /md:w-\[min\(92vw,860px\)\]/);
   assert.match(shellSource, /window\.visualViewport/);
   assert.match(shellSource, /onPointerUp=\{finishDrag\}/);
   assert.match(shellSource, /Back to agent control center/);
-  assert.match(detailSource, /onConnectModelProvider=\{openChatModelProvider\}/);
-  assert.match(detailSource, /initialProvider=\{modelProviderToConnect\}/);
+  assert.match(chatSource, /onConnectModelProvider=\{setProvider\}/);
+  assert.match(chatSource, /initialProvider=\{provider\}/);
   assert.match(drawerSource, /max-w-2xl/);
   assert.match(drawerSource, /env\(safe-area-inset-bottom\)/);
   assert.match(drawerSource, /event\.nativeEvent\.isComposing/);

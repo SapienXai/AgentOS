@@ -2,7 +2,7 @@
 
 import type { MutableRefObject } from "react";
 
-import { ArrowUpCircle, MoonStar, Settings2, SunMedium } from "lucide-react";
+import { ArrowUpCircle, Gauge, MoonStar, Settings2, SunMedium } from "lucide-react";
 import { motion } from "motion/react";
 
 import {
@@ -31,56 +31,12 @@ type CanvasTopBarProps = MissionControlShellSettingsPanelProps & {
 
 export function CanvasTitlePill({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   return (
-    <div
-      className={cn(
-        "flex h-11 items-center gap-2 rounded-full border px-3 shadow-[0_18px_50px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:gap-3 sm:px-4",
-        surfaceTheme === "light"
-          ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/86 shadow-[0_18px_42px_rgba(161,125,101,0.14)]"
-          : "border-cyan-300/10 bg-slate-950/45"
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-[8px] border",
-            surfaceTheme === "light"
-              ? "border-[#d1bcad] bg-[#f5ece4]"
-              : "border-white/[0.08] bg-white/[0.03]"
-          )}
-        >
-          <video
-            aria-hidden="true"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            className="h-full w-full scale-[1.15] object-cover"
-          >
-            <source src="/assets/logo.webm" type="video/webm" />
-          </video>
-        </span>
-        <p
-          className={cn(
-            "text-[10px] tracking-[0.18em]",
-            surfaceTheme === "light" ? "text-[#8a7261]" : "text-slate-500"
-          )}
-        >
-          AgentOS
-        </p>
-      </div>
-      <span
-        aria-hidden="true"
-        className={cn("hidden h-4 w-px sm:block", surfaceTheme === "light" ? "bg-[#cdb7a8]/80" : "bg-white/[0.08]")}
-      />
-      <h2
-        className={cn(
-          "hidden font-display text-[0.88rem] sm:block",
-          surfaceTheme === "light" ? "text-[#816958]/80" : "text-slate-400/75"
-        )}
-      >
-        Control Plane
-      </h2>
+    <div className={cn(
+      "inline-flex h-11 items-center gap-2.5 rounded-xl border px-3.5 backdrop-blur-xl",
+      surfaceTheme === "light" ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/90 text-[#48392e]" : "border-white/10 bg-slate-950/65 text-slate-100"
+    )}>
+      <Gauge aria-hidden="true" className="size-4" />
+      <h1 className="font-display text-sm font-semibold">Mission Control</h1>
     </div>
   );
 }

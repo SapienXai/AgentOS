@@ -1,4 +1,4 @@
-export type AgentDetailTab = "overview" | "behavior" | "capabilities" | "channels" | "sessions";
+export type AgentDetailTab = "overview" | "behavior" | "knowledge" | "capabilities" | "intelligence" | "channels" | "sessions" | "settings";
 
 export type AgentDetailQueryState = {
   tab: AgentDetailTab;
@@ -8,14 +8,28 @@ export type AgentDetailQueryState = {
 
 export const AGENT_DETAIL_TABS: Array<{ id: AgentDetailTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "behavior", label: "Behavior" },
+  { id: "behavior", label: "Identity" },
+  { id: "knowledge", label: "Knowledge" },
   { id: "capabilities", label: "Capabilities" },
-  { id: "channels", label: "Channels" },
-  { id: "sessions", label: "Sessions" }
+  { id: "intelligence", label: "Intelligence" },
+  { id: "channels", label: "Connections" },
+  { id: "sessions", label: "Activity" }
 ];
 
+export const EMPLOYEE_SECTIONS = [
+  { id: "overview", label: "Overview" },
+  { id: "knowledge", label: "Knowledge" },
+  { id: "capabilities", label: "Capabilities" },
+  { id: "sessions", label: "Activity" },
+  { id: "settings", label: "Settings" }
+] as const;
+
+export function getEmployeeSection(tab: AgentDetailTab) {
+  return tab === "behavior" || tab === "intelligence" || tab === "channels" ? "settings" : tab;
+}
+
 export function parseAgentDetailTab(value: string | null | undefined): AgentDetailTab {
-  return AGENT_DETAIL_TABS.some((tab) => tab.id === value) ? value as AgentDetailTab : "overview";
+  return value === "settings" || AGENT_DETAIL_TABS.some((tab) => tab.id === value) ? value as AgentDetailTab : "overview";
 }
 
 export function parseAgentDetailQueryState(input: {

@@ -1,0 +1,12 @@
+{
+  "import": "PDF text",
+  "retrieval": "native memory.search",
+  "authorizedTool": "read",
+  "chatReadBack": true,
+  "crossWorkspaceAssignmentDenied": true,
+  "differentWorkspaceNotRetrieved": true,
+  "staleSourceAssignmentDenied": true,
+  "persistenceAfterGatewayAndAppRestart": true,
+  "retrievedAfterRemoval": false,
+  "embeddingRequests": 26
+}

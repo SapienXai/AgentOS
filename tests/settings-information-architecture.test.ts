@@ -9,7 +9,7 @@ const runtimeSource = readFileSync("components/settings/runtime-settings.tsx", "
 const advancedSource = readFileSync("components/settings/advanced-settings.tsx", "utf8");
 
 test("normal Settings navigation is organized around user intent", () => {
-  for (const label of ["General", "AI & Tools", "Workspace", "Runtime", "Advanced"]) {
+  for (const label of ["General", "AI & Models", "Workspace", "Runtime", "Security", "Advanced"]) {
     assert.match(navigationSource, new RegExp(`label: "${label.replace("&", "\\&")}"`));
   }
 
@@ -39,7 +39,7 @@ test("Advanced links preserve engineering and destructive controls", () => {
 test("Advanced links use unique row keys when sections share an anchor", () => {
   const ids = [...advancedSource.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]);
 
-  assert.equal(ids.length, 8);
+  assert.equal(ids.length, 10);
   assert.equal(new Set(ids).size, ids.length);
   assert.match(advancedSource, /<SettingsRow key=\{entry\.id\}/);
 });

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-2026.11.10-multi-user-identity-collaboration-certification",
-  "generatedAt": "2026-11-25T14:46:01.024Z",
-  "certifiedCodeHead": "45647bbe5858f919d9db2f399a32d3fad7974322",
+  "generatedAt": "2026-11-26T06:09:37.994Z",
+  "certifiedCodeHead": "b6b47f7276ae5e59f7ebafa03928341145d9faaa",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "",

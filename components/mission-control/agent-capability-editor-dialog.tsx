@@ -6,6 +6,9 @@ import { LoaderCircle, Puzzle, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import { AgentCapabilityEditorColumn } from "@/components/mission-control/agent-capability-editor-column";
+import { DraftAbilities, abilityName } from "@/components/workforce/draft-abilities";
+import { SelectionList } from "@/components/workforce/selection-list";
+import { DRAFT_TOOL_LABELS } from "@/lib/agentos/domains/draft-abilities";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
@@ -78,6 +81,7 @@ type AgentCapabilityEditorDialogProps = {
   onRefresh?: () => Promise<void>;
   onSaved?: () => void;
   surfaceTheme?: "dark" | "light";
+  workforce?: boolean;
 };
 
 export function AgentCapabilityEditorDialog({
@@ -89,10 +93,12 @@ export function AgentCapabilityEditorDialog({
   onSnapshotChange,
   onRefresh,
   onSaved,
+  workforce = false,
   surfaceTheme = "dark"
 }: AgentCapabilityEditorDialogProps) {
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
   const workspace = snapshot.workspaces.find((entry) => entry.id === agent?.workspaceId);
+  const [advancedCatalogOpen, setAdvancedCatalogOpen] = useState(false);
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalogResponse | null>(null);
   const [capabilityCatalogError, setCapabilityCatalogError] = useState<string | null>(null);
   const [capabilityCatalogLoading, setCapabilityCatalogLoading] = useState(false);
@@ -109,6 +115,8 @@ export function AgentCapabilityEditorDialog({
   const editorKind = initialFocus === "tools" ? "tools" : "skills";
   const isSkillsEditor = editorKind === "skills";
   const isToolsEditor = editorKind === "tools";
+  const guidedTools = workforce && isToolsEditor;
+  const catalogAgent = workforce ? agent?.id : agent;
   const presetMeta = agent ? getAgentPresetMeta(agent.policy.preset) : null;
 
   const declaredSkills = normalizeCapabilityValues(agent?.skills ?? []);
@@ -153,21 +161,23 @@ export function AgentCapabilityEditorDialog({
         : currentPresetMeta.tools
     );
 
+    if (workforce) setAdvancedCatalogOpen(false);
     setDraftSkills(nextSkills);
     setDraftTools(nextTools);
     setSkillInput("");
     setToolInput("");
     setError(null);
-  }, [agentId, open]);
+  }, [agentId, open, workforce]);
 
   useEffect(() => {
-    if (!open || !agent) {
+    if (!open || !catalogAgent || (guidedTools && !advancedCatalogOpen)) {
       return;
     }
 
     const controller = new AbortController();
     setCapabilityCatalogLoading(true);
     setCapabilityCatalogError(null);
+    const agent = typeof catalogAgent === "string" ? { id: catalogAgent } : catalogAgent;
     const query = new URLSearchParams({ agentId: agent.id });
     if (workspace?.id) {
       query.set("workspaceId", workspace.id);
@@ -199,7 +209,7 @@ export function AgentCapabilityEditorDialog({
       });
 
     return () => controller.abort();
-  }, [agent, open, workspace?.id]);
+  }, [advancedCatalogOpen, catalogAgent, guidedTools, open, workspace?.id]);
 
   const skillOptions = useMemo(
     () =>
@@ -304,7 +314,7 @@ export function AgentCapabilityEditorDialog({
   );
 
   useEffect(() => {
-    if (!open) {
+    if (!open || workforce) {
       return;
     }
 
@@ -314,7 +324,7 @@ export function AgentCapabilityEditorDialog({
     }
 
     toolInputRef.current?.focus();
-  }, [initialFocus, open]);
+  }, [workforce, initialFocus, open]);
 
   if (!agent) {
     return null;
@@ -407,6 +417,66 @@ export function AgentCapabilityEditorDialog({
     }
   };
 
+  const advancedContent = <>
+    <AgentCapabilityEditorColumn
+      title={isSkillsEditor ? "Skills" : "Tools"}
+      selectedValues={isSkillsEditor ? draftSkills : draftTools}
+      selectedTone={isSkillsEditor ? "cyan" : "amber"}
+      selectedEmptyLabel={isSkillsEditor ? "No explicit skills" : "No explicit tools configured"}
+      lockedValues={isToolsEditor ? lockedTools : []}
+      observedValues={isToolsEditor ? observedTools : []}
+      inputRef={isSkillsEditor ? skillInputRef : toolInputRef}
+      inputValue={isSkillsEditor ? skillInput : toolInput}
+      onInputValueChange={isSkillsEditor ? setSkillInput : setToolInput}
+      onRemove={(value) => {
+        if (isSkillsEditor) {
+          setDraftSkills((current) => current.filter((entry) => entry !== value));
+        } else {
+          setDraftTools((current) => current.filter((entry) => entry !== value));
+        }
+      }}
+      onPick={(value) => {
+        if (isSkillsEditor) {
+          setDraftSkills((current) => normalizeCapabilityValues([value, ...current]));
+          setSkillInput("");
+        } else {
+          setDraftTools((current) => normalizeCapabilityValues([value, ...current]));
+          setToolInput("");
+        }
+      }}
+      suggestions={isSkillsEditor ? skillSuggestions : toolSuggestions}
+      emptySuggestionLabel={
+        capabilityCatalogLoading && (isSkillsEditor ? skillSuggestions.length : toolSuggestions.length) === 0
+          ? isSkillsEditor
+            ? "Loading OpenClaw skill catalog..."
+            : "Loading OpenClaw tool catalog..."
+          : isSkillsEditor
+            ? "No matching skills found."
+            : "No matching tools found."
+      }
+      loading={capabilityCatalogLoading}
+      catalogError={capabilityCatalogError}
+      helperLabel={
+        isSkillsEditor
+          ? "Workspace skills and OpenClaw skills are shown first in Available to add."
+          : `${capabilityCatalog?.toolSource === "static-fallback" ? "OpenClaw tool discovery is unavailable; showing static fallback metadata. " : ""}Built-ins, plugins, and groups are shown first in Available to add. Observed tools are read-only.`
+      }
+      currentHintLabel={
+        isSkillsEditor
+          ? "Click × on a current skill to remove it."
+          : "Click × on a current tool to remove it."
+      }
+    />
+
+    <PluginCatalogPanel
+      catalog={capabilityCatalog?.pluginCatalog ?? null}
+      loading={capabilityCatalogLoading}
+      detailLoading={pluginDetailLoading}
+      error={capabilityCatalogError}
+      onInspect={inspectPlugin}
+    />
+  </>;
+
   return (
     <>
       <PikoLoader
@@ -435,7 +505,7 @@ export function AgentCapabilityEditorDialog({
               </div>
               <div className="min-w-0">
                 <DialogTitle className="truncate font-display text-[17px] font-semibold leading-5 text-[var(--cap-text-strong)]">
-                  {`Edit ${isSkillsEditor ? "skills" : "tools"}`}
+                  {workforce ? isSkillsEditor ? "Manage skills" : "Manage abilities" : `Edit ${isSkillsEditor ? "skills" : "tools"}`}
                 </DialogTitle>
                 <p className="mt-0.5 truncate text-xs text-[var(--cap-text-muted)]">{formatAgentDisplayName(agent)}</p>
               </div>
@@ -452,63 +522,25 @@ export function AgentCapabilityEditorDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="px-4 py-4 sm:px-5">
-              <AgentCapabilityEditorColumn
-                title={isSkillsEditor ? "Skills" : "Tools"}
-                selectedValues={isSkillsEditor ? draftSkills : draftTools}
-                selectedTone={isSkillsEditor ? "cyan" : "amber"}
-                selectedEmptyLabel={isSkillsEditor ? "No explicit skills" : "No explicit tools configured"}
-                lockedValues={isToolsEditor ? lockedTools : []}
-                observedValues={isToolsEditor ? observedTools : []}
-                inputRef={isSkillsEditor ? skillInputRef : toolInputRef}
-                inputValue={isSkillsEditor ? skillInput : toolInput}
-                onInputValueChange={isSkillsEditor ? setSkillInput : setToolInput}
-                onRemove={(value) => {
-                  if (isSkillsEditor) {
-                    setDraftSkills((current) => current.filter((entry) => entry !== value));
-                  } else {
-                    setDraftTools((current) => current.filter((entry) => entry !== value));
-                  }
-                }}
-                onPick={(value) => {
-                  if (isSkillsEditor) {
-                    setDraftSkills((current) => normalizeCapabilityValues([value, ...current]));
-                    setSkillInput("");
-                  } else {
-                    setDraftTools((current) => normalizeCapabilityValues([value, ...current]));
-                    setToolInput("");
-                  }
-                }}
-                suggestions={isSkillsEditor ? skillSuggestions : toolSuggestions}
-                emptySuggestionLabel={
-                  capabilityCatalogLoading && (isSkillsEditor ? skillSuggestions.length : toolSuggestions.length) === 0
-                    ? isSkillsEditor
-                      ? "Loading OpenClaw skill catalog..."
-                      : "Loading OpenClaw tool catalog..."
-                    : isSkillsEditor
-                      ? "No matching skills found."
-                      : "No matching tools found."
-                }
-                loading={capabilityCatalogLoading}
-                catalogError={capabilityCatalogError}
-                helperLabel={
-                  isSkillsEditor
-                    ? "Workspace skills and OpenClaw skills are shown first in Available to add."
-                    : `${capabilityCatalog?.toolSource === "static-fallback" ? "OpenClaw tool discovery is unavailable; showing static fallback metadata. " : ""}Built-ins, plugins, and groups are shown first in Available to add. Observed tools are read-only.`
-                }
-                currentHintLabel={
-                  isSkillsEditor
-                    ? "Click × on a current skill to remove it."
-                    : "Click × on a current tool to remove it."
-                }
-              />
-
-              <PluginCatalogPanel
-                catalog={capabilityCatalog?.pluginCatalog ?? null}
-                loading={capabilityCatalogLoading}
-                detailLoading={pluginDetailLoading}
-                error={capabilityCatalogError}
-                onInspect={inspectPlugin}
-              />
+              {guidedTools && <section className="mb-4 space-y-3">
+                <p className="text-sm text-muted-foreground">Review configured abilities. Effective access also depends on the employee’s OpenClaw policy and session approvals.</p>
+                <DraftAbilities selected={draftTools.filter(tool => Object.hasOwn(DRAFT_TOOL_LABELS, tool))}
+                  onChange={ids => setDraftTools(current => [...current.filter(tool => !Object.hasOwn(DRAFT_TOOL_LABELS, tool)), ...ids])} />
+              </section>}
+              {workforce && isSkillsEditor && <section className="mb-4 space-y-3">
+                <p className="text-sm text-muted-foreground">Browse skills reported by OpenClaw. Check effective access for this employee after saving.</p>
+                {capabilityCatalog ? <SelectionList label="Skills" items={capabilityCatalog.skills.map(skill => ({
+                  id: skill.name, label: abilityName(skill.name), detail: skill.eligible ? skill.description : "OpenClaw reports missing prerequisites",
+                  unavailable: !skill.eligible
+                }))} selected={draftSkills.filter(id => capabilityCatalog.skills.some(skill => skill.name === id))}
+                  onChange={ids => setDraftSkills(current => [...current.filter(id => !capabilityCatalog.skills.some(skill => skill.name === id)), ...ids])}
+                  disabled={saving} empty="OpenClaw has not reported skills for this employee." /> :
+                  <p role={capabilityCatalogError ? "alert" : "status"} className="text-sm text-muted-foreground">{capabilityCatalogError || "Checking skills in OpenClaw…"}</p>}
+              </section>}
+              {workforce ? <details className="border-t border-border pt-3" onToggle={event => setAdvancedCatalogOpen(event.currentTarget.open)}>
+                <summary className="mb-3 cursor-pointer text-sm font-medium">Advanced capability configuration</summary>
+                {advancedContent}
+              </details> : advancedContent}
             </div>
 
             {error ? (

@@ -38,7 +38,6 @@ type Props = {
   onAlternative: () => void;
   onEnter: () => void;
   onCreateWorkspace?: () => void;
-  onVerifiedChange: (verified: boolean) => void;
   onBack: () => void;
 };
 
@@ -47,7 +46,7 @@ function active(state: SiwcOnboardingState | null) {
     state?.phase === "verifying" || state?.phase === "restarting" || state?.phase === "authorize" || state?.phase === "choose-account";
 }
 
-export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, onEnter, onCreateWorkspace, onVerifiedChange, onBack }: Props) {
+export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, onEnter, onCreateWorkspace, onBack }: Props) {
   const modelFieldId = useId();
   const reasoningFieldId = useId();
   const [state, setState] = useState<SiwcOnboardingState | null>(null);
@@ -71,7 +70,6 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
   const polling = active(state) && !preparing && !cancelling;
   const ready = state?.phase === "ready";
 
-  useEffect(() => onVerifiedChange(ready), [ready, onVerifiedChange]);
 
   useEffect(() => {
     if (!ready) return;
@@ -475,9 +473,9 @@ export function SiwcWelcome({ systemReady, onPrepare, onStart, onAlternative, on
       {!working && !ready && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1">
           <Button variant="ghost" className="min-h-11 px-2 text-muted-foreground" onClick={onBack}>
-            <ArrowLeft aria-hidden className="mr-1.5 size-4" /> OpenClaw setup
+            <ArrowLeft aria-hidden className="mr-1.5 size-4" /> Setup details
           </Button>
-          <Button variant="ghost" className="min-h-11 px-2" onClick={onAlternative}>Use another provider</Button>
+          <Button variant="ghost" className="min-h-11 px-2" onClick={onAlternative}>Other AI providers</Button>
         </div>
       )}
     </div>

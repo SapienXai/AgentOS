@@ -1447,10 +1447,22 @@ async function applyAgentCapabilities(
     }
     const skills = filterKnownOpenClawSkillIds(desired.skillIds);
     const tools = filterKnownOpenClawToolIds(desired.toolIds);
+    const sourceNames = blueprint.knowledge.sources.filter(source => desired.knowledgeSourceIds?.includes(source.id))
+      .map(source => redactSecretText(source.label).replace(/\s+/g, " ").slice(0, 120));
+    const knowledgeGuidance = sourceNames.length ? "Consult these shared sources when relevant: " + sourceNames.map(name => JSON.stringify(name)).join(", ") + "." : "";
+    const employment = {
+      role: desired.role,
+      mission: desired.purpose,
+      behaviorInstructions: [...desired.responsibilities, knowledgeGuidance].filter(Boolean).join("\n") || null
+    };
+    const currentEmployment = current.workerProfile?.employment;
     if (
       sameStringArray(current.skills, skills)
       && sameStringArray(current.tools, tools)
       && current.name === desired.name
+      && currentEmployment?.role === employment.role
+      && currentEmployment?.mission === employment.mission
+      && currentEmployment?.behaviorInstructions === employment.behaviorInstructions
       && stableStringify(current.policy) === stableStringify(desired.policy)
       && manifestIds.has(agentId)
     ) {
@@ -1465,7 +1477,8 @@ async function applyAgentCapabilities(
         skills,
         tools,
         policy: desired.policy,
-        name: desired.name
+        name: desired.name,
+        workerProfile: { schemaVersion: 1, employment }
       }, dependencies.gatewayOptions);
       manifestIds.add(agentId);
     } catch (error) {

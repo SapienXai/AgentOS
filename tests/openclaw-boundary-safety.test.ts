@@ -599,21 +599,14 @@ test("sidebar exposes config-driven mission and admin navigation routes", () => 
   const navigationSource = readFileSync(path.join(rootDir, "components/mission-control/navigation-config.ts"), "utf8");
 
   assert.match(source, /navigation-config/);
-  assert.match(navigationSource, /NavigationSectionId = "operate" \| "connect" \| "system"/);
+  assert.match(navigationSource, /NavigationSectionId = "operate" \| "system"/);
   assert.match(source, /type SidebarItem = NavigationItem/);
   assert.match(source, /const sidebarItems = navigationItems;/);
-  assert.ok(navigationSource.includes('id: "home", label: "Home", href: "/dashboard"'));
-  assert.ok(navigationSource.includes('id: "mission-control", label: "Mission Control", href: "/"'));
-  assert.ok(navigationSource.includes('id: "agents", label: "Agents", href: "/agents", icon: Bot, section: "operate"'));
-  assert.ok(navigationSource.includes('id: "missions", label: "Tasks", href: "/missions", icon: ClipboardList, section: "operate"'));
-  assert.ok(navigationSource.includes('id: "human-control", label: "Human Control", href: "/human-control", icon: ShieldAlert, section: "operate"'));
-  assert.ok(navigationSource.includes('id: "channels", label: "Channels", href: "/channels", icon: MessageCircle, section: "connect"'));
-  assert.ok(navigationSource.includes('id: "accounts", label: "Accounts", href: "/accounts", icon: KeyRound, section: "connect"'));
-  assert.ok(navigationSource.includes('id: "models", label: "Models", href: "/models", icon: Cpu, section: "system"'));
-  assert.ok(navigationSource.includes('id: "integrations", label: "Integrations", href: "/integrations", icon: Plug, section: "system"'));
-  assert.ok(navigationSource.includes('id: "files", label: "Files", href: "/files", icon: FileText, section: "system"'));
-  assert.ok(navigationSource.includes('id: "operations", label: "Operations", href: "/operations", icon: Activity, section: "system"'));
-  assert.ok(navigationSource.includes('id: "settings", label: "Settings", href: "/settings", icon: Settings2, section: "system"'));
+  assert.match(navigationSource, /href: "\/", aliases: \["\/mission-control", "\/dashboard"\]/);
+  assert.match(navigationSource, /href: "\/team", aliases: \["\/agents"\]/);
+  assert.match(navigationSource, /href: "\/missions", aliases: \["\/tasks", "\/human-control"\]/);
+  assert.match(navigationSource, /href: "\/integrations", aliases: \["\/accounts", "\/channels"\]/);
+  assert.match(navigationSource, /href: "\/settings", aliases: \["\/models", "\/operations", "\/updates", "\/operator-access"\]/);
   assert.match(source, /onOpenWorkspaceCreate: \(\) => void;/);
   assert.match(source, /<span className="block truncate text-\[0\.82rem\] font-medium">Create Workspace<\/span>/);
   assert.match(source, /onOpenWorkspaceCreate\(\);[\s\S]*?setOpen\(false\);/);
@@ -623,17 +616,13 @@ test("sidebar exposes config-driven mission and admin navigation routes", () => 
   assert.doesNotMatch(source, /label: "Audit Logs"/);
 });
 
-test("sidebar resolves active nav items from path and hash", () => {
-  const source = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
-
-  assert.match(source, /const \[activeHash, setActiveHash\] = useState\(""\);/);
-  assert.match(source, /const syncHash = \(\) => setActiveHash\(window\.location\.hash\.replace/);
-  assert.match(source, /window\.addEventListener\("hashchange", syncHash\)/);
-  assert.match(source, /function isSidebarItemActive\(item: SidebarItem, pathname: string, activeHash: string\)/);
-  assert.match(source, /return isNavigationItemActive\(item, pathname, activeHash\)/);
-  const navigationSource = readFileSync(path.join(rootDir, "components/mission-control/navigation-config.ts"), "utf8");
-  assert.match(navigationSource, /pathname === "\/" \|\| pathname === "\/mission-control"/);
-  assert.match(navigationSource, /item\.id === "home"/);
+test("desktop and mobile navigation mark the current destination", () => {
+  const desktop = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+  const mobile = readFileSync(path.join(rootDir, "components/mission-control/workforce-mobile-navigation.tsx"), "utf8");
+  assert.match(desktop, /isNavigationItemActive\(displayedItem, pathname\)/);
+  assert.match(mobile, /isNavigationItemActive\(item, pathname\)/);
+  assert.match(desktop, /aria-current=\{active \? "page" : undefined\}/);
+  assert.match(mobile, /aria-current=\{current \? "page" : undefined\}/);
 });
 
 test("sidebar keeps its header and user footer fixed around scrollable navigation", () => {
@@ -741,14 +730,14 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
     "utf8"
   );
 
-  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
+  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(true\);/);
   assert.match(source, /sidebarPinned=\{isSidebarPinned\}/);
   assert.match(source, /onToggleCollapsed=\{handleSidebarPinToggle\}/);
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
   assert.match(pinningSource, /agentos\.sidebar\.pinned/);
   assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
-  assert.match(operationsUiSource, /OperatorTruthBadge/);
-  assert.match(operationsUiSource, /OperatorScopeFreshness/);
+  assert.match(operationsUiSource, /<RuntimeIssueIndicator/);
+  assert.match(operationsUiSource, /connectionState === "retrying"/);
   assert.doesNotMatch(operationsUiSource, /compact \? "h-11 px-3"/);
 });
 
@@ -897,8 +886,8 @@ test("model setup exposes explicit providers and the custom provider creation fl
   );
 
   assert.match(setupSource, /buildExplicitModelProviderDescriptor\(providerId\)/);
-  assert.match(setupSource, /providerDescriptors\.map\(\(provider\)/);
-  assert.match(setupSource, /aria-label="Add custom provider"/);
+  assert.match(setupSource, /providerDescriptors\.filter\(provider => provider.id !== "ollama"\)\.map\(provider => <option key=\{provider.id\}/);
+  assert.match(setupSource, /<label[\s\S]*<span>AI provider<\/span>[\s\S]*<select/);
   assert.match(setupSource, /onOpenAddModels\("custom"\)/);
   assert.match(librarySource, /isInitialCustomProvider = normalizedInitialProvider === "custom"/);
   assert.match(librarySource, /!open \|\| isInitialCustomProvider \|\| activeProviderId \|\| !defaultProviderId/);
@@ -1091,8 +1080,7 @@ test("system setup shows Piko while runtime verification is running", () => {
   assert.match(source, /<summary[^>]*>\s*Setup details/);
   assert.match(source, /border-slate-200 bg-white shadow-\[0_8px_20px_rgba\(15,23,42,0\.05\)\]/);
   assert.match(source, /border-slate-700\/80 bg-slate-950 shadow-\[0_10px_24px_rgba\(0,0,0,0\.2\)\]/);
-  assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(false\)/);
-  assert.match(source, /window\.matchMedia\("\(max-width: 639px\)"\)/);
+  assert.match(source, /workforce-setup-card/);
   assert.match(source, /h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0/);
 });
 

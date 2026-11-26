@@ -19,7 +19,7 @@ import {
   WandSparkles,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import {
   MissionControlDialogShell,
@@ -27,6 +27,13 @@ import {
   missionControlDialogButtonClassName,
   missionControlDialogControlClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
+import { FirstWorkspaceForms, firstEmployeeDraft, type FirstEmployeeDraft } from "@/components/workforce/first-workspace-forms";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SuggestedTeamReview } from "@/components/workforce/suggested-team-review";
+import { redactSecretText } from "@/lib/security/redaction";
+import { OnboardingProgress } from "@/components/workforce/onboarding-progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import {
   clearWorkspaceCreationMinimizedRun,
@@ -34,6 +41,8 @@ import {
   readWorkspaceCreationMinimizedRunId
 } from "@/components/mission-control/workspace-creation-activity";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/sonner";
+import { deferredSetupDocumentsKey, KNOWLEDGE_IMPORT_ACCEPT } from "@/lib/agentos/domains/knowledge-import-formats";
 import { Button } from "@/components/ui/button";
 import { ClawHubTemplateCatalog } from "@/components/mission-control/workspace-create/clawhub-template-catalog";
 import { WORKSPACE_CREATION_PROFILES, normalizeWorkspaceCreationProfile, type WorkspaceCreationDepth } from "@/lib/agentos/domains/workspace-creation-policy";
@@ -48,11 +57,13 @@ import {
 import type { WorkspaceMaterialization } from "@/lib/agentos/domains/workspace-materialization";
 import type {
   WorkspaceArchitectResult,
+  WorkspaceEmployeeDraftEdit,
   WorkspaceBlueprintFreshnessResult
 } from "@/lib/agentos/domains/workspace-blueprint";
 import type { WorkspaceCreationRun } from "@/lib/agentos/domains/workspace-creation-run";
 import type { WorkspaceCreationReviewReadiness } from "@/lib/agentos/domains/workspace-creation-review";
-import type { WorkspaceCreateResult } from "@/lib/agentos/contracts";
+import type { OperationProgressSnapshot, WorkspaceCreateResult, WorkspaceCreateStreamEvent } from "@/lib/agentos/contracts";
+import { consumeNdjsonStream } from "@/lib/ndjson";
 import type { ExecutionTopologyProjection } from "@/lib/openclaw/domains/execution-topology";
 import {
   formatWorkspaceChannelSetup,
@@ -67,9 +78,8 @@ import { presentWorkspaceCreationExperience } from "@/lib/agentos/ui/workspace-c
 
 type SurfaceTheme = "dark" | "light";
 type CreateStage = "intake" | "generating" | "review" | "provisioning";
-const firstWorkspaceName = "Agents Workspace";
-const firstWorkspaceBrief = "Set up a general-purpose workspace with one assistant to help organize work, answer questions, and plan next steps.";
-const firstWorkspaceKey = "onboarding:agents-workspace";
+const firstWorkspaceKey = "onboarding:workforce-workspace";
+const firstWorkspaceDraftKey = "onboarding:workforce-draft:v1";
 type ContextAction = "website" | "github" | null;
 type SourceDraft = { kind: "website" | "repository"; value: string };
 type UrlSourceBuildResult = { source: WorkspaceKnowledgeSource } | { error: string };
@@ -184,6 +194,14 @@ export function CreateWorkspaceExperience({
 }: CreateWorkspaceExperienceProps) {
   const isLight = surfaceTheme === "light";
   const [brief, setBrief] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [manualTeam, setManualTeam] = useState<FirstEmployeeDraft[]>([firstEmployeeDraft]);
+  const [manualReview, setManualReview] = useState(false);
+  const [manualLaunching, setManualLaunching] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [teamEditsPending, setTeamEditsPending] = useState(false);
+  const [manualProgress, setManualProgress] = useState<OperationProgressSnapshot | null>(null);
   const [workspaceCheck, setWorkspaceCheck] = useState<{ runId: string; status: "checking" | "pending" | "live" } | null>(null);
   const [profile, setProfile] = useState<WorkspaceCreationDepth>("fast");
   const [continueLearningAfterCreation, setContinueLearningAfterCreation] = useState(true);
@@ -197,6 +215,8 @@ export function CreateWorkspaceExperience({
   const [sources, setSources] = useState<WorkspaceKnowledgeSource[]>([]);
   const [sourceStates, setSourceStates] = useState<Record<string, ContextSourceState>>({});
   const [uploadGroups, setUploadGroups] = useState<UploadGroup[]>([]);
+  const [reattachNames, setReattachNames] = useState<string[]>([]);
+  const [setupNote, setSetupNote] = useState("");
   const [draftContextId, setDraftContextId] = useState<string | null>(null);
   const [materialization, setMaterialization] = useState<WorkspaceMaterialization>({ mode: "empty" });
   const [stage, setStage] = useState<CreateStage>("intake");
@@ -313,10 +333,70 @@ export function CreateWorkspaceExperience({
   );
   const isActiveRun = stage === "generating" || stage === "provisioning" || isProvisioningStarting;
 
+  useEffect(() => {
+    if (!firstWorkspace || !open || draftLoaded) return;
+    try {
+      const raw = sessionStorage.getItem(firstWorkspaceDraftKey);
+      if (raw) {
+        const saved = JSON.parse(raw) as { name?: unknown; brief?: unknown; manual?: unknown; team?: FirstEmployeeDraft[]; filenames?: unknown[]; note?: unknown; website?: unknown };
+        if (Array.isArray(saved.filenames)) {
+          setReattachNames(saved.filenames.filter((name): name is string => typeof name === "string").slice(0, 12));
+        }
+        if (typeof saved.note === "string") setSetupNote(saved.note.slice(0, 1800));
+        if (typeof saved.website === "string") setSourceDraft({kind: "website", value: saved.website});
+        if (typeof saved.name === "string") setFirstName(saved.name.slice(0, 80));
+        if (typeof saved.brief === "string") setBrief(saved.brief.slice(0, 3000));
+        if (Array.isArray(saved.team) && saved.team.length && saved.team.every(person =>
+          typeof person?.id === "string" && typeof person.name === "string" && typeof person.role === "string")) {
+          setManualTeam(saved.team.slice(0, 8).map(person => ({ id: person.id.slice(0, 100), name: person.name.slice(0, 64), role: person.role.slice(0, 100) })));
+          setManualReview(saved.manual === true);
+        }
+      }
+    } catch {
+      // Storage is optional. The server retains its own durable creation run.
+    }
+    setDraftLoaded(true);
+  }, [draftLoaded, firstWorkspace, open]);
+
+  useEffect(() => {
+    if (!firstWorkspace || !open || !draftLoaded || stage !== "intake" || (!firstName && !brief)) return;
+    try {
+      const website = (() => {
+        try {
+          const address = new URL(sourceDraft.value);
+          return ["http:", "https:"].includes(address.protocol) && !address.search && !address.username && !address.password &&
+            redactSecretText(address.href) === address.href ? address.href.slice(0, 4096) : undefined;
+        } catch { return undefined; }
+      })();
+      sessionStorage.setItem(firstWorkspaceDraftKey, JSON.stringify({
+        name: redactSecretText(firstName),
+        brief: redactSecretText(brief),
+        manual: manualReview,
+        note: redactSecretText(setupNote),
+        website,
+        filenames: [...new Set([...reattachNames, ...uploadGroups.flatMap(group => group.files.map(file => redactSecretText(file.name).slice(0, 200)))])].slice(0, 12),
+        team: manualTeam.map(person => ({ id: person.id, name: redactSecretText(person.name), role: redactSecretText(person.role) }))
+      }));
+    } catch {
+      // The workspace flow also works when a browser disallows session storage.
+    }
+  }, [brief, draftLoaded, firstName, firstWorkspace, manualReview, manualTeam, open, reattachNames, setupNote, sourceDraft.value, stage, uploadGroups]);
+
   const resetCreationState = () => {
     abortControllerRef.current?.abort();
     provisioningPollRef.current?.abort();
     setBrief("");
+    setFirstName("");
+    setManualReview(false);
+    setManualTeam([firstEmployeeDraft]);
+    setManualError(null);
+    setTeamEditsPending(false);
+    if (firstWorkspace) {
+      try { sessionStorage.removeItem(firstWorkspaceDraftKey); } catch {}
+    }
+    setManualProgress(null);
+    setReattachNames([]);
+    setSetupNote("");
     setWorkspaceCheck(null);
     setProfile("fast");
     setContinueLearningAfterCreation(true);
@@ -405,6 +485,7 @@ export function CreateWorkspaceExperience({
   }, [reopenRequest]);
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && manualLaunching) return;
     if (!nextOpen && isActiveRun) {
       minimizeWorkspaceCreation();
       return;
@@ -429,10 +510,19 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const generate = async (retryFirstWorkspace = false) => {
-    const nextBrief = firstWorkspace ? firstWorkspaceBrief : brief.trim();
+  const setupNoteSource = firstWorkspace && setupNote.trim() ? createWorkspaceKnowledgeSource({
+    id: "setup-note", kind: "prompt", label: "Setup note", summary: "Context shared by the workspace owner during setup.",
+    locator: { kind: "prompt", text: redactSecretText(setupNote.trim()) }, provenance: "operator"
+  }) : null;
+
+  const generate = async () => {
+    const nextBrief = brief.trim();
     if (!nextBrief || stage === "generating" || (firstWorkspace && abortControllerRef.current)) return;
 
+    if (firstWorkspace && reattachNames.length) {
+      setManualError("Reattach the selected documents or continue without them.");
+      return;
+    }
     const pendingSourceResult = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
     if (pendingSourceResult && "error" in pendingSourceResult) {
       setSourceError(pendingSourceResult.error);
@@ -445,6 +535,7 @@ export function CreateWorkspaceExperience({
     }
     const pendingSource = pendingSourceResult && "source" in pendingSourceResult ? pendingSourceResult.source : null;
     const nextSources = pendingSource ? [...sources, pendingSource] : sources;
+    const runSources = setupNoteSource ? [...nextSources, setupNoteSource] : nextSources;
     const pendingRepositoryUrl = pendingSource?.locator.kind === "repository" ? pendingSource.locator.remoteUrl : undefined;
     const nextMaterialization: WorkspaceMaterialization = pendingRepositoryUrl
       ? { mode: "clone", repoUrl: pendingRepositoryUrl }
@@ -463,34 +554,26 @@ export function CreateWorkspaceExperience({
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setStage("generating");
+    setTeamEditsPending(false);
     setIsProvisioningStarting(false);
     setNotice(null);
     setRevisionError(null);
 
     try {
       const formData = new FormData();
-      let idempotencyKey = firstWorkspace ? firstWorkspaceKey : crypto.randomUUID();
-      if (firstWorkspace) {
-        const failedRunId = retryFirstWorkspace && creationRun &&
-          (creationRun.snapshot.state === "failed" || creationRun.snapshot.state === "cancelled")
-          ? creationRun.runId : null;
-        if (failedRunId) idempotencyKey = `${firstWorkspaceKey}:retry:${failedRunId}`;
-        try {
-          if (failedRunId) sessionStorage.setItem(firstWorkspaceKey, idempotencyKey);
-          else idempotencyKey = sessionStorage.getItem(firstWorkspaceKey) || idempotencyKey;
-        } catch {
-          // Browser storage can be disabled. The initial request is still idempotent on the server.
-        }
-      }
+      const idempotencyKey = crypto.randomUUID();
       formData.set("idempotencyKey", idempotencyKey);
       formData.set("brief", nextBrief);
-      if (firstWorkspace) formData.set("workspaceName", firstWorkspaceName);
-      formData.set("mode", firstWorkspace || mode === "automatic" ? "automatic" : "review");
+      if (firstWorkspace) {
+        formData.set("workspaceName", firstName.trim());
+        formData.set("prepareDocuments", "true");
+      }
+      formData.set("mode", !firstWorkspace && mode === "automatic" ? "automatic" : "review");
       formData.set("profile", profile);
       formData.set("continueLearningAfterCreation", String(continueLearningAfterCreation && !firstWorkspace));
       formData.set("operatorConstraints", JSON.stringify(constraints.split("\n").map((line) => line.trim()).filter(Boolean)));
       formData.set("materialization", JSON.stringify(nextMaterialization));
-      formData.set("sources", JSON.stringify(nextSources));
+      formData.set("sources", JSON.stringify(runSources));
       if (draftContextId) formData.set("draftContextId", draftContextId);
       const manifest: Array<{ sourceId: string; relativePath: string; fileName: string }> = [];
       for (const group of uploadGroups) {
@@ -506,12 +589,12 @@ export function CreateWorkspaceExperience({
       hasLocalDraftRef.current = true;
       setCreationRun(initial);
       setDraftContextId(initial.draftContextId);
-      const completedRun = await pollCreationRun(initial.runId, controller, initial, nextSources);
+      const completedRun = await pollCreationRun(initial.runId, controller, initial, runSources);
       setProvisioningRun(null);
       setProvisioningError(null);
       provisioningKeyRef.current = null;
       setStage(
-        (firstWorkspace || mode === "automatic")
+        (!firstWorkspace && mode === "automatic")
           && !environmentPreparation.requested
           && completedRun.snapshot.reviewReadiness?.provisionable === true
           ? "generating"
@@ -540,14 +623,6 @@ export function CreateWorkspaceExperience({
       if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   };
-
-  const startFirstWorkspace = useEffectEvent(() => {
-    void generate();
-  });
-
-  useEffect(() => {
-    if (open && firstWorkspace) startFirstWorkspace();
-  }, [open, firstWorkspace]);
 
   const pollCreationRun = useCallback(async (runId: string, controller: AbortController, initial: WorkspaceCreationRun, sourceList: WorkspaceKnowledgeSource[]) => {
     let afterSequence = initial.events.at(-1)?.sequence ?? 0;
@@ -591,7 +666,7 @@ export function CreateWorkspaceExperience({
   }, []);
 
   useEffect(() => {
-    if (!open || firstWorkspace || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
+    if (!open || hasLocalDraftRef.current && !reviewRunId && !reopenRequest) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -605,6 +680,8 @@ export function CreateWorkspaceExperience({
         const payload = await response.json().catch(() => null) as WorkspaceCreationRun & { runs?: WorkspaceCreationRun[] } | null;
         const activeRun = minimizedRunId ? payload : payload?.runs?.[0];
         if (!response.ok || !activeRun || controller.signal.aborted) return;
+        if (firstWorkspace && (!activeRun.input.workspaceName || activeRun.input.mode !== "review")) return;
+        if (firstWorkspace) setFirstName(activeRun.input.workspaceName ?? "");
         clearWorkspaceCreationMinimizedRun();
         const recoveredSources = activeRun.input.sources as WorkspaceKnowledgeSource[];
         setBrief(activeRun.input.brief);
@@ -703,8 +780,8 @@ export function CreateWorkspaceExperience({
     }
   };
 
-  const revise = async () => {
-    if (!result || !revisionValue.trim() || isRevising) return;
+  const revise = async (employees?: WorkspaceEmployeeDraftEdit[]) => {
+    if (!result || (!employees && !revisionValue.trim()) || isRevising) return false;
 
     setIsRevising(true);
     setRevisionError(null);
@@ -713,7 +790,9 @@ export function CreateWorkspaceExperience({
       const response = await fetch(`/api/workspaces/creation-runs/${creationRun.runId}/revise`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(employees ? {
+          employeeReview: { revision: creationRun.snapshot.revision?.number ?? 0, employees }
+        } : {
           instruction: revisionValue.trim(),
           operatorConstraints: constraints
             .split("\n")
@@ -739,8 +818,11 @@ export function CreateWorkspaceExperience({
       setCustomName(revised.blueprint.identity.name);
       setCustomPrimaryName(revised.blueprint.workforce.primaryAgent.name);
       await certifyReview(payload.runId, false);
+      setTeamEditsPending(false);
+      return true;
     } catch (error) {
       setRevisionError(error instanceof Error ? error.message : "The revision could not be applied.");
+      return false;
     } finally {
       setIsRevising(false);
     }
@@ -978,7 +1060,16 @@ export function CreateWorkspaceExperience({
 
   const handleFiles = (fileList: FileList | null, kind: "file" | "folder") => {
     if (!fileList?.length) return;
+    if (firstWorkspace && uploadGroups.reduce((count, group) => count + group.files.length, 0) + fileList.length > 12) {
+      setManualError("Choose up to 12 setup documents across all selections.");
+      return;
+    }
     const files = Array.from(fileList).slice(0, kind === "folder" ? 120 : 12);
+    if (firstWorkspace) {
+      const names = new Set(files.map(file => redactSecretText(file.name).slice(0, 200)));
+      setReattachNames(current => current.filter(name => !names.has(name)));
+      setManualError(null);
+    }
     const folderName = files[0]?.webkitRelativePath?.split("/")[0] || files[0]?.name || "Local project";
     const source = createWorkspaceKnowledgeSource({
       id: `${kind}-${slugify(folderName)}-${Date.now()}`,
@@ -1031,10 +1122,121 @@ export function CreateWorkspaceExperience({
     const timer = window.setTimeout(() => void checkWorkspaceAvailability(), 0);
     return () => window.clearTimeout(timer);
   }, [open, provisionedWorkspace, checkWorkspaceAvailability]);
+  const handedOffRun = useRef<string | null>(null);
+  useEffect(() => {
+    if (!firstWorkspace || !open || !provisionedWorkspace || !provisionedRunId ||
+        provisioningRun?.state !== "ready" || !canOpenWorkspace || handedOffRun.current === provisionedRunId) return;
+    handedOffRun.current = provisionedRunId;
+    try { sessionStorage.removeItem(firstWorkspaceDraftKey); } catch {}
+    onWorkspaceCreated?.(provisionedWorkspace);
+    onOpenChange(false);
+  }, [firstWorkspace, open, provisionedWorkspace, provisionedRunId, provisioningRun?.state, canOpenWorkspace, onWorkspaceCreated, onOpenChange]);
+
   const isProvisioningInFlight = isProvisioningStarting || stage === "provisioning" || Boolean(provisioningRun);
   const isEnrichmentReview = Boolean(reviewRunId && creationRun?.runId === reviewRunId);
   const title = isEnrichmentReview && stage === "review" ? "Review workspace updates" : experience.title;
-  const firstWorkspaceStarting = firstWorkspace && stage === "intake" && !notice;
+  async function importFilesAfterLaunch(workspaceId: string, files: File[]) {
+    const notice = toast.loading("Adding the documents selected during setup…");
+    const intentKey = deferredSetupDocumentsKey(workspaceId);
+    const pending = new Set(files.map(file => redactSecretText(file.name).slice(0, 200)));
+    const updateIntent = () => {
+      try {
+        if (pending.size) sessionStorage.setItem(intentKey, JSON.stringify([...pending]));
+        else sessionStorage.removeItem(intentKey);
+      } catch { /* The live upload and its recovery toast still work. */ }
+    };
+    updateIntent();
+    const remaining: File[] = [];
+    for (const file of files) {
+      try {
+        const body = new FormData();
+        body.set("document", file);
+        const response = await fetch("/api/workspaces/" + encodeURIComponent(workspaceId) + "/knowledge", {
+          method: "POST", body, signal: AbortSignal.timeout(30_000)
+        });
+        if (!response.ok) remaining.push(file);
+        else { pending.delete(redactSecretText(file.name).slice(0, 200)); updateIntent(); }
+      } catch { remaining.push(file); }
+    }
+    toast.dismiss(notice);
+    if (remaining.length) {
+      toast.error(remaining.length + " setup document" + (remaining.length === 1 ? " still needs" : "s still need") + " to be added.", {
+        description: remaining.map(file => redactSecretText(file.name)).join(", "),
+        action: { label: "Retry", onClick: () => void importFilesAfterLaunch(workspaceId, remaining) }
+      });
+    } else {
+      toast.success(files.length + (files.length === 1 ? " document added" : " documents added"), {
+        action: { label: "Open Knowledge", onClick: () => window.location.assign("/knowledge?workspaceId=" + encodeURIComponent(workspaceId)) }
+      });
+    }
+  }
+
+  const launchManualWorkspace = async () => {
+    if (manualLaunching) return;
+    if (reattachNames.length) {
+      setManualReview(false);
+      setManualError("Reattach the selected documents or continue without them.");
+      return;
+    }
+    setManualLaunching(true);
+    setManualError(null);
+    setManualProgress(null);
+    try {
+      const storageKey = `${firstWorkspaceKey}:${firstName.trim().toLowerCase()}`;
+      const idempotencyKey = sessionStorage.getItem(storageKey) || crypto.randomUUID();
+      sessionStorage.setItem(storageKey, idempotencyKey);
+      const website = sourceDraft.value.trim() ? buildUrlSource(sourceDraft) : null;
+      if (website && "error" in website) throw new Error(website.error);
+      const attachedDocuments = uploadGroups.flatMap(group => group.files);
+      const response = await fetch("/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: firstName.trim(),
+          brief: setupNoteSource?.locator.kind === "prompt" ? brief.trim() + "\n\nSetup note\n" + setupNoteSource.locator.text : brief.trim(),
+          modelId: defaultModel || undefined,
+          sourceMode: "empty",
+          teamPreset: "custom",
+          stream: true,
+          knowledgeSources: [...(website ? [website.source] : []), ...(setupNoteSource ? [setupNoteSource] : [])],
+          rules: { workspaceOnly: true, generateStarterDocs: true, generateMemory: true, kickoffMission: false },
+          creation: { source: "launchpad", idempotencyKey },
+          agents: manualTeam.map(({ id, name, role }, index) => ({
+            id, name: name.trim(), role: role.trim(), enabled: true, isPrimary: index === 0
+          }))
+        })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || "Workspace could not be created.");
+      }
+      const completed: { result?: WorkspaceCreateResult; error?: string } = {};
+      await consumeNdjsonStream<WorkspaceCreateStreamEvent>(response, (event) => {
+        if (event.progress) setManualProgress(event.progress);
+        if (event.type === "done") {
+          completed.result = event.result;
+          if (!event.ok) completed.error = event.error;
+        }
+      });
+      if (completed.error || !completed.result) throw new Error(completed.error || "OpenClaw did not confirm workspace creation.");
+      const created = completed.result;
+      if (created.agentIds.length !== manualTeam.length) {
+        throw new Error(`OpenClaw found ${created.agentIds.length} of ${manualTeam.length} employees. Open the workspace from the switcher and add the remaining employees in Team.`);
+      }
+      if (verifyWorkspace && !await verifyWorkspace(created)) {
+        throw new Error("The workspace was saved. Launch again to check when OpenClaw can see the team.");
+      }
+      sessionStorage.removeItem(storageKey);
+      if (attachedDocuments.length) void importFilesAfterLaunch(created.workspaceId, attachedDocuments);
+      onWorkspaceCreated?.(created);
+      resetCreationState();
+      onOpenChange(false);
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : "Workspace could not be created.");
+    } finally {
+      setManualLaunching(false);
+    }
+  };
 
   return (
     <>
@@ -1047,7 +1249,7 @@ export function CreateWorkspaceExperience({
       open={open && !isMinimized}
       onOpenChange={handleDialogOpenChange}
       surfaceTheme={surfaceTheme}
-      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : firstWorkspace ? firstWorkspaceName : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
+      title={isProvisioned ? (canOpenWorkspace ? "Workspace ready" : "Workspace created") : firstWorkspace ? (stage === "intake" && !manualReview ? "Create your workspace" : "Build your team") : stage === "intake" ? "Create a workspace" : isEnrichmentReview ? title : result?.blueprint.identity.name || "Preparing your workspace"}
       description={isProvisioned ? (canOpenWorkspace ? "Your workspace is ready to open." : "AgentOS is checking the workspace and its agent in OpenClaw.") : <span className="sr-only">Prepare your workspace</span>}
       icon={canOpenWorkspace ? Check : undefined}
       chips={canOpenWorkspace ? <MissionControlDialogChip tone={provisioningRun?.state === "partial" ? "amber" : "emerald"} surfaceTheme={surfaceTheme}>{provisioningRun?.state === "partial" ? "Ready with setup pending" : "Ready to open"}</MissionControlDialogChip> : undefined}
@@ -1065,7 +1267,7 @@ export function CreateWorkspaceExperience({
           <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : null}
-      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", isProvisioned && "sm:w-[min(92vw,820px)]")}
+      contentClassName={cn("sm:w-[min(92vw,680px)] sm:h-[min(90dvh,740px)] sm:rounded-2xl", firstWorkspace && "workforce-setup-card grid-cols-[minmax(0,1fr)]", firstWorkspace && isLight && "workforce-setup-light", isProvisioned && "sm:w-[min(92vw,820px)]")}
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-7 md:pb-4 md:pt-5"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:px-7 md:py-4"
@@ -1108,46 +1310,41 @@ export function CreateWorkspaceExperience({
               </div>
             </div>
           ) : (
-            <div className="flex w-full items-center justify-between gap-3">
-              {!firstWorkspace && (
-                <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" onClick={() => setStage("intake")} className={cn("h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+              {(
+                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                  <Button type="button" variant="ghost" onClick={() => { setTeamEditsPending(false); setStage("intake"); }} className={cn(firstWorkspace ? "min-h-11 px-2 sm:min-h-9" : "h-9 px-2 text-xs", isLight ? "text-[#766e64]" : "text-slate-400")}>
                     <ChevronLeft className="mr-1.5 h-4 w-4" />
                     Back to brief
                   </Button>
-                  <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn("h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
+                  <Button type="button" variant="ghost" onClick={() => { setStartOverError(null); setShowStartOverConfirmation(true); }} className={cn(firstWorkspace ? "min-h-11 px-2 sm:min-h-9" : "h-9 px-2 text-xs", isLight ? "text-[#9a6d45]" : "text-violet-200/80")}>Start over</Button>
                 </div>
               )}
-              <div className="flex flex-col items-end gap-1">
-                <span className={cn("text-[10px]", isLight ? "text-[#766b61]" : "text-slate-400")}>{firstWorkspace && defaultModel ? `Default model · ${defaultModel}` : isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>
+              <div className={cn("flex min-w-0 flex-col items-end gap-1", firstWorkspace && "w-full sm:w-auto")}>
+                {!firstWorkspace ? <span className="text-xs text-muted-foreground">{isEnrichmentReview ? "Review the proposed updates, then apply them." : "Review the draft, then create the workspace."}</span> : null}
+                <div className={cn("flex min-w-0 flex-wrap items-center gap-2", firstWorkspace && "w-full sm:w-auto")}>
+                  <Button type="button" variant="secondary" onClick={() => setIsCustomizing((current) => !current)}
+                    className={firstWorkspace ? "min-h-11 sm:min-h-9" : missionControlDialogButtonClassName("secondary", surfaceTheme)}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
                     Customize
                   </Button>
                   {!(provisioningRun?.state === "failed" || provisioningError) ? (
                     <Button
                       type="button"
-                      disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady}
+                      disabled={!result || !reviewReadiness?.provisionable || !nativeEnvironmentPreparationReady || teamEditsPending || isRevising}
                       onClick={() => void provision()}
                       title={!result || !reviewReadiness?.provisionable ? reviewReadiness?.message || "The workspace review is not ready to create." : !nativeEnvironmentPreparationReady ? nativeEnvironmentPreparationMessage : undefined}
-                      aria-label={isEnrichmentReview ? "Apply workspace updates" : "Create Workspace"}
-                      className={missionControlDialogButtonClassName("primary", surfaceTheme)}
+                      aria-label={isEnrichmentReview ? "Apply workspace updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
+                      className={firstWorkspace ? "min-h-11 flex-1 sm:min-h-9 sm:flex-none" : missionControlDialogButtonClassName("primary", surfaceTheme)}
                     >
-                      {isEnrichmentReview ? "Apply updates" : "Create Workspace"}
+                      {isEnrichmentReview ? "Apply updates" : firstWorkspace ? "Launch workspace" : "Create Workspace"}
                     </Button>
                   ) : null}
                 </div>
               </div>
             </div>
           )
-        ) : firstWorkspace ? (
-          notice ? (
-            <div className="flex w-full justify-end">
-              <Button type="button" onClick={() => void generate(true)} className={missionControlDialogButtonClassName("primary", surfaceTheme)}>Retry setup</Button>
-            </div>
-          ) : null
-        ) : (
+        ) : firstWorkspace ? null : (
           <div className="flex w-full items-center justify-end gap-3">
             <Button
               type="button"
@@ -1162,14 +1359,52 @@ export function CreateWorkspaceExperience({
         )
       }
     >
-      <div className={cn("min-h-0 h-full overflow-y-auto", isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]")}>
-        {firstWorkspaceStarting ? (
-          <CreationProgressView run={null} isLight={isLight} firstWorkspace />
-        ) : firstWorkspace && stage === "intake" ? (
-          <div className="mx-auto max-w-lg space-y-2 px-6 py-10" role="alert">
-            <p className="text-base font-semibold">{notice?.title}</p>
-            <p className="text-sm text-muted-foreground">{notice?.description}</p>
-          </div>
+      <div className={cn("min-h-0 h-full overflow-y-auto", !firstWorkspace && (isLight ? "bg-[#fbf8f3]" : "bg-[hsl(var(--agentos-surface-panel))]"))}>
+        {firstWorkspace && stage === "review" && !isProvisioned ? <div className="px-5 pt-5 sm:px-8"><OnboardingProgress current={3} />
+          {revisionError ? <p role="alert" className="mx-auto mt-3 max-w-2xl text-sm text-destructive">{revisionError}</p> : null}
+          {reviewReadiness && !reviewReadiness.provisionable ? <p role="status" className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground">{reviewReadiness.message}</p> : null}
+        </div> : null}
+        {firstWorkspace && stage === "intake" ? (
+          <FirstWorkspaceForms
+            manual={manualReview}
+            name={firstName} brief={brief} team={manualTeam} working={manualLaunching}
+            onName={setFirstName} onBrief={setBrief} onTeam={setManualTeam}
+            error={manualError ?? notice?.description}
+            information={manualLaunching ? manualProgress?.steps.find(step => step.status === "active")?.detail
+              || "Creating your team in OpenClaw…" : manualReview && uploadGroups.length
+                ? "Selected documents will be added to Knowledge when your workspace opens." : null}
+            onGenerate={() => void generate()}
+            onManual={() => { setNotice(null); setManualError(null); setManualReview(true); }}
+            onBack={() => { setManualError(null); setManualReview(false); }}
+            onLaunch={() => void launchManualWorkspace()}
+          >
+            <details open={reattachNames.length > 0 || undefined} className="rounded-lg border border-border bg-card px-3.5 text-sm">
+              <summary className="cursor-pointer py-3 font-medium">Add documents, a website or a note</summary>
+              <div className="space-y-3 pb-3">
+                <Label htmlFor="workforce-website">Website</Label>
+                <Input id="workforce-website" name="website" type="url" value={sourceDraft.value} placeholder="https://"
+                  className="min-h-12 text-base sm:text-sm"
+                  onChange={(event) => setSourceDraft({ kind: "website", value: event.target.value })} />
+                <Label htmlFor="workforce-note">Setup note</Label>
+                <Textarea id="workforce-note" value={setupNote} maxLength={1800} rows={3} className="text-base sm:text-sm"
+                  placeholder="Add facts or working guidelines the team should know." onChange={event => setSetupNote(event.target.value)} />
+                <Label htmlFor="workforce-documents">Company documents</Label>
+                {reattachNames.length > 0 && <div className="rounded-lg bg-muted p-3 text-xs">
+                  <p>Reattach {reattachNames.join(", ")}. For privacy, this browser keeps only the file names.</p>
+                  <Button type="button" variant="ghost" size="sm" className="mt-1 px-0" onClick={() => { setReattachNames([]); setManualError(null); }}>Continue without these files</Button>
+                </div>}
+                <p className="text-xs text-muted-foreground">PDF, Word, Excel and text documents, including Markdown, CSV and JSON. With team suggestions, choose files under 1 MB.</p>
+                <Input id="workforce-documents" name="documents" type="file" multiple accept={KNOWLEDGE_IMPORT_ACCEPT}
+                  className="min-h-12 text-base sm:text-sm" onChange={(event) => { handleFiles(event.target.files, "file"); event.currentTarget.value = ""; }} />
+                {sources.filter((source) => source.kind === "file").map((source) => (
+                  <div key={source.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>{source.label}</span>
+                    <Button type="button" variant="ghost" onClick={() => removeSource(source.id)}>Remove</Button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </FirstWorkspaceForms>
         ) : stage === "intake" ? (
           <IntakeView
             isLight={isLight}
@@ -1222,7 +1457,8 @@ export function CreateWorkspaceExperience({
         ) : isProvisioned ? (
           <WorkspaceReadyView isLight={isLight} result={result} creationRun={creationRun} provisioningRun={provisioningRun} provisioningError={provisioningError} />
         ) : (
-          <ReviewView
+          (() => {
+            const reviewContent = <ReviewView
             isLight={isLight}
             profile={reviewProfile}
             isEnrichmentReview={isEnrichmentReview}
@@ -1258,15 +1494,36 @@ export function CreateWorkspaceExperience({
             onApproveBasicDraft={() => void approveBasicDraft()}
             onRebuildPlan={() => void rebuildPlan()}
             isRebuildingPlan={isRebuildingPlan}
-            showStartOverConfirmation={showStartOverConfirmation}
-            isStartingOver={isStartingOver}
-            startOverError={startOverError}
-            onKeepDraft={() => setShowStartOverConfirmation(false)}
-            onConfirmStartOver={() => void startOver()}
-          />
+          />;
+            return firstWorkspace && result ? (
+              <SuggestedTeamReview key={`${creationRun?.runId}:${creationRun?.snapshot.revision?.number ?? 0}`}
+                blueprint={result.blueprint} busy={isRevising} customizeWorkspace={isCustomizing} onSave={revise} onChangePending={setTeamEditsPending}>
+                {reviewContent}
+              </SuggestedTeamReview>
+            ) : reviewContent;
+          })()
         )}
       </div>
       </MissionControlDialogShell>
+      <Dialog open={open && showStartOverConfirmation} onOpenChange={next => {
+        if (!next && !isStartingOver) setShowStartOverConfirmation(false);
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Start a new workspace?</DialogTitle>
+            <DialogDescription>
+              This draft will be discarded. {provisioningRun ? "Any partial workspace remains available for recovery." : "No workspace has been created yet."}
+            </DialogDescription>
+          </DialogHeader>
+          {startOverError ? <p role="alert" className="text-sm text-destructive">{startOverError}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="secondary" disabled={isStartingOver} onClick={() => setShowStartOverConfirmation(false)}>Keep draft</Button>
+            <Button type="button" variant="destructive" disabled={isStartingOver} onClick={() => void startOver()}>
+              {isStartingOver ? "Starting…" : "Start new workspace"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -1841,12 +2098,7 @@ function ReviewView({
   basicDraftApproved,
   onApproveBasicDraft,
   onRebuildPlan,
-  isRebuildingPlan,
-  showStartOverConfirmation,
-  isStartingOver,
-  startOverError,
-  onKeepDraft,
-  onConfirmStartOver
+  isRebuildingPlan
 }: {
   isLight: boolean;
   profile: WorkspaceCreationDepth;
@@ -1883,17 +2135,11 @@ function ReviewView({
   onApproveBasicDraft: () => void;
   onRebuildPlan: () => void;
   isRebuildingPlan: boolean;
-  showStartOverConfirmation: boolean;
-  isStartingOver: boolean;
-  startOverError: string | null;
-  onKeepDraft: () => void;
-  onConfirmStartOver: () => void;
 }) {
   if (!model) return null;
   const identity = model.identity;
   const freshnessStatus = model.freshness.status;
   const showTechnicalFallback = profile === "high";
-  const hasFailedProvisioningAttempt = provisioningRun?.state === "failed" || provisioningRun?.state === "cancelled" || Boolean(provisioningError);
   const recovery = presentWorkspaceReviewRecovery({
     readiness,
     provisioningRun,
@@ -2029,18 +2275,6 @@ function ReviewView({
           <ReviewDetailSections isLight={isLight} model={model} />
         </details>
       </section>
-
-      {showStartOverConfirmation ? (
-        <div className={cn("fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-5", isLight ? "backdrop-blur-sm" : "backdrop-blur-md")} role="dialog" aria-modal="true" aria-labelledby="start-over-heading">
-          <div className={cn("w-full max-w-sm rounded-2xl border p-5 shadow-2xl", isLight ? "border-[#e5dbd0] bg-white text-[#3d3027]" : "border-white/10 bg-[#111827] text-white")}>
-            <h2 id="start-over-heading" className="text-base font-semibold">Start a new workspace?</h2>
-            <p className={cn("mt-2 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>This draft will be discarded.</p>
-            <p className={cn("mt-1 text-sm", isLight ? "text-[#766e64]" : "text-slate-300")}>{hasFailedProvisioningAttempt ? "Any partial provisioning remains available for recovery; AgentOS will not delete existing OpenClaw state." : "Nothing has been created yet."}</p>
-            {startOverError ? <p className={cn("mt-3 rounded-lg border px-3 py-2 text-xs", isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-400/20 bg-red-400/10 text-red-100")} role="alert">{startOverError}</p> : null}
-            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onKeepDraft} disabled={isStartingOver}>Keep draft</Button><Button type="button" variant="secondary" onClick={onConfirmStartOver} disabled={isStartingOver}>{isStartingOver ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" /> : null}{isStartingOver ? "Starting…" : "Start new workspace"}</Button></div>
-          </div>
-        </div>
-      ) : null}
 
       <section className={cn("mt-4 rounded-2xl border p-4", isLight ? "border-[#e5dbd0] bg-white" : "border-white/[0.08] bg-white/[0.035]")} aria-labelledby="revision-heading">
         <div className="flex items-center gap-2"><WandSparkles className={cn("h-4 w-4", isLight ? "text-[#9a6d45]" : "text-violet-300")} /><h2 id="revision-heading" className={cn("text-sm font-semibold", isLight ? "text-[#3d3027]" : "text-white")}>Want to change something?</h2></div>

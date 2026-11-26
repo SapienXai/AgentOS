@@ -1,17 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellRing, CircleCheck, Clock3, ExternalLink, Gauge, Layers3, LoaderCircle, MessageCircle, PackageOpen, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
+import { ExternalLink, Layers3, LoaderCircle, MessageCircle, PackageOpen, RefreshCw, SearchCheck, ArrowUpRight, Slack, SlidersHorizontal } from "lucide-react";
 
+import { siDiscord, siGithub, siGmail, siGooglechat, siGooglechrome, siGoogledrive, siLinear, siNotion, siOllama, siOpenrouter, siTelegram, siWhatsapp, siX } from "simple-icons";
+
+import { MissionControlDialogShell } from "@/components/mission-control/mission-control-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { PluginCatalogProjection } from "@/lib/openclaw/domains/plugin-catalog";
 import { cn } from "@/lib/utils";
-import { buildIntegrationViews, integrationStatusIcons, type IntegrationStatus, type IntegrationView } from "@/components/operations/operations-data";
-import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
-import { formatIntegrationSortLabel, formatIntegrationStatusFilterLabel, formatIntegrationStatusLabel, formatManagedBy, integrationStatusToneMap, MetricTile, readClientError, sortIntegrations, statusIconClassName, type IntegrationRuntimeOverride, type IntegrationSortMode } from "@/components/operations/operations-shared";
+import { buildIntegrationViews, type IntegrationStatus, type IntegrationView } from "@/components/operations/operations-data";
+import { EmptyState, EntityIcon, KeyValue, MiniBadge, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatusBadge, ToolbarButton, ViewToggle } from "@/components/operations/operations-ui";
+import { formatIntegrationSortLabel, formatIntegrationStatusFilterLabel, formatIntegrationStatusLabel, formatManagedBy, integrationStatusToneMap, readClientError, sortIntegrations, type IntegrationRuntimeOverride, type IntegrationSortMode } from "@/components/operations/operations-shared";
 
 export function IntegrationsPageContent({
   snapshot,
@@ -31,9 +35,11 @@ export function IntegrationsPageContent({
   const [category, setCategory] = useState("All Categories");
   const [status, setStatus] = useState<"All Statuses" | IntegrationStatus>("All Statuses");
   const [sort, setSort] = useState<IntegrationSortMode>("last-active");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [discoveryView, setView] = useState<"grid" | "list">("grid");
+  const [section, setSection] = useState<"discover" | "connected" | "attention">("discover");
   const [showAllMobileIntegrations, setShowAllMobileIntegrations] = useState(true);
-  const [selectedId, setSelectedId] = useState(baseIntegrations[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,6 +53,7 @@ export function IntegrationsPageContent({
   const [pluginCatalogError, setPluginCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!showAdvanced) return;
     let cancelled = false;
     setPluginCatalogLoading(true);
     setPluginCatalogError(null);
@@ -88,7 +95,7 @@ export function IntegrationsPageContent({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, snapshot.agents]);
+  }, [activeWorkspaceId, showAdvanced, snapshot.agents]);
   const integrations = useMemo(
     () =>
       baseIntegrations.map((integration) => {
@@ -153,19 +160,17 @@ export function IntegrationsPageContent({
     const matchesStatus = status === "All Statuses" || integration.status === status;
     return matchesSearch && matchesCategory && matchesStatus;
   }).sort((left, right) => sortIntegrations(left, right, sort));
-  const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? filteredIntegrations[0] ?? null;
-  const connectedCount = filteredIntegrations.filter((integration) => integration.status === "connected").length;
-  const pendingCount = filteredIntegrations.filter((integration) =>
-    integration.status === "running" ||
-    integration.status === "linked" ||
-    integration.status === "pending-setup" ||
-    integration.status === "configured" ||
-    integration.status === "stopped" ||
-    integration.status === "missing-credentials" ||
-    integration.status === "needs-authentication"
-  ).length;
-  const failedCount = filteredIntegrations.filter((integration) => integration.status === "failed").length;
-  const visibleIntegrations = showAllMobileIntegrations ? filteredIntegrations : filteredIntegrations.slice(0, 6);
+  const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? null;
+  const apps = filteredIntegrations.filter(integration => integration.id !== "cron" && integration.managedBy !== "unsupported" &&
+    (integration.surfaceProvider || integration.modelProvider || integration.accountIds.length));
+  const nativeCapabilities = filteredIntegrations.filter(integration => integration.id !== "cron" && !apps.includes(integration));
+  const connected = apps.filter(integration => integration.status === "connected" || integration.status === "running");
+  const needsAttention = apps.filter(integration =>
+    ["failed", "needs-authentication", "missing-credentials", "stopped"].includes(integration.status));
+  const available = apps.filter(integration => !connected.includes(integration) && !needsAttention.includes(integration));
+  const directory = section === "connected" ? connected : section === "attention" ? needsAttention : available;
+  const view = section === "discover" ? discoveryView : "list";
+  const visibleIntegrations = showAllMobileIntegrations ? nativeCapabilities : nativeCapabilities.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
     void surfaceProvider;
@@ -368,14 +373,11 @@ export function IntegrationsPageContent({
             <PageHeader
               surfaceTheme={surfaceTheme}
               title="Integrations"
-              subtitle="Inspect the native OpenClaw capability catalog, then continue in the canonical surface that owns each capability."
+              subtitle="Connect the apps your company uses and manage what each employee can do."
               actions={
                 <>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/channels")}>
                     <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Channels
-                  </Button>
-                  <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/models")}>
-                    <Gauge className="mr-1.5 h-3.5 w-3.5" /> Models
                   </Button>
                   <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-xs sm:h-8 sm:rounded-lg" onClick={() => router.push("/accounts")}>
                     <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Accounts
@@ -387,77 +389,122 @@ export function IntegrationsPageContent({
             <SearchToolbar
               search={search}
               onSearchChange={setSearch}
-              searchPlaceholder="Search integrations..."
+              searchPlaceholder="Find an integration"
               surfaceTheme={surfaceTheme}
-              right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
             >
               <ToolbarButton surfaceTheme={surfaceTheme} icon={Layers3} label={category} chevron onClick={() => setCategory((current) => categories[(categories.indexOf(current) + 1) % categories.length])} />
               <ToolbarButton surfaceTheme={surfaceTheme} icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
-              <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} />
+              <div className="hidden sm:block"><ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} /></div>
             </SearchToolbar>
 
-            <StatGrid columns={5}>
-              <StatCard label="Total Integrations" value={String(filteredIntegrations.length)} detail={`${integrations.length} registered`} icon={Plug} tone="info" />
-              <StatCard label="Connected" value={String(connectedCount)} detail={`${Math.round((connectedCount / Math.max(1, filteredIntegrations.length)) * 100)}% of filtered`} icon={CircleCheck} tone="success" />
-              <StatCard label="Pending Setup" value={String(pendingCount)} detail="Needs setup or credentials" icon={Clock3} tone="warning" />
-              <StatCard label="Failed" value={String(failedCount)} detail="Real errors only" icon={X} tone="danger" />
-              <StatCard label="Automations Using" value="-" detail="Metrics unavailable from snapshot" icon={Workflow} tone="purple" />
-            </StatGrid>
-
-            <PluginCatalogPanel
-              catalog={pluginCatalog}
-              loading={pluginCatalogLoading}
-              error={pluginCatalogError}
-              onOpenSurface={handleOpenPluginSurface}
-            />
-
-            {filteredIntegrations.length === 0 ? (
-              <EmptyState
-                title="No integrations match"
-                description="Adjust search, category, or status filters to inspect another integration set."
-              />
-            ) : (
-              <div className="space-y-3">
-                {Array.from(new Set(visibleIntegrations.map((integration) => integration.category))).map((section) => (
-                  <section key={section}>
-                    <h2 className="mb-2 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">{section} ({filteredIntegrations.filter((integration) => integration.category === section).length})</h2>
-                    <div className={cn(view === "grid" ? "grid gap-2.5 lg:grid-cols-2 min-[1400px]:grid-cols-3" : "flex flex-col gap-2.5")}>
-                      {visibleIntegrations.filter((integration) => integration.category === section).map((integration) => (
-                        <IntegrationCard
-                          key={integration.id}
-                          integration={integration}
-                          selected={integration.id === selectedIntegration?.id}
-                          list={view === "list"}
-                          actionBusy={runningAction?.startsWith(`${integration.id}:`) ?? false}
-                          onSelect={() => setSelectedId(integration.id)}
-                          onConfigure={() => handleConfigureIntegration(integration)}
-                          onReconnect={() => void handleReconnectIntegration(integration)}
-                        />
-                      ))}
-                    </div>
-                  </section>
+            <nav aria-label="Integration views" className="flex flex-wrap items-center gap-1 border-b border-border/75">
+              {([["discover", "Discover"], ["connected", "Connected"], ["attention", "Needs attention"]] as const).map(([id, label]) =>
+                <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)}
+                  className={cn("min-h-11 border-b-2 px-3 py-2 text-sm font-medium",
+                    section === id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{label}</button>
+              )}
+              {section === "discover" && <div className="ml-auto hidden sm:block"><ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} /></div>}
+            </nav>
+            {directory.length ? (
+              <div className={cn(view === "grid" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "workforce-panel divide-y divide-border/80 overflow-hidden")}>
+                {directory.map(integration => (
+                  <IntegrationCard key={integration.id} integration={integration}
+                    selected={integration.id === selectedIntegration?.id} list={view === "list"}
+                    actionBusy={runningAction?.startsWith(integration.id + ":") ?? false}
+                    onSelect={() => setSelectedId(integration.id)}
+                    onConfigure={() => handleConfigureIntegration(integration)}
+                    onReconnect={() => void handleReconnectIntegration(integration)} />
                 ))}
-                {!showAllMobileIntegrations && filteredIntegrations.length > visibleIntegrations.length ? (
-                  <Button variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileIntegrations(true)}>
-                    Show {filteredIntegrations.length - visibleIntegrations.length} more integrations
-                  </Button>
-                ) : null}
+              </div>
+            ) : (
+              <div className="workforce-panel p-5 sm:p-6">
+                <h2 className="workforce-section-title">{section === "connected" ? "No connected applications" :
+                  section === "attention" ? "No applications need attention" : "No matching applications"}</h2>
+                <p className="mt-2 text-sm text-muted-foreground">{search ? "Clear the search or choose another view." :
+                  section === "connected" ? "Browse applications to set up the ones your company uses." :
+                  "Native capabilities and current configuration are available below."}</p>
+                {section === "connected" && <Button variant="secondary" size="sm" className="mt-4" onClick={() => setSection("discover")}>Discover applications</Button>}
               </div>
             )}
 
-            <AutomationImpactSummary integrations={integrations} />
+            <section className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-5">
+              <div>
+                <h2 className="workforce-section-title">Employee access</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Check which tools, skills and permissions are effective for each person.</p>
+              </div>
+              <Link href="/team" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium hover:underline">Open Team <ArrowUpRight aria-hidden="true" className="size-4" /></Link>
+            </section>
+
+            <details className="workforce-panel space-y-4 p-5" onToggle={event => setShowAdvanced(event.currentTarget.open)}>
+              <summary className="cursor-pointer font-semibold">Native tools, skills, plugins and automation</summary>
+              {showAdvanced ? (
+                <>
+                  <PluginCatalogPanel catalog={pluginCatalog} loading={pluginCatalogLoading} error={pluginCatalogError} onOpenSurface={handleOpenPluginSurface} />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {visibleIntegrations.map(integration => (
+                      <IntegrationCard key={integration.id} integration={integration}
+                        selected={integration.id === selectedIntegration?.id} list={false}
+                        actionBusy={runningAction?.startsWith(`${integration.id}:`) ?? false}
+                        onSelect={() => setSelectedId(current => current === integration.id ? "" : integration.id)}
+                        onConfigure={() => handleConfigureIntegration(integration)}
+                        onReconnect={() => void handleReconnectIntegration(integration)} />
+                    ))}
+                  </div>
+                  {!showAllMobileIntegrations && nativeCapabilities.length > visibleIntegrations.length ? (
+                    <Button variant="secondary" onClick={() => setShowAllMobileIntegrations(true)}>Show all capabilities</Button>
+                  ) : null}
+                  <div className="border-t border-border pt-3 text-sm">
+                    <Link className="font-medium hover:underline" href="/missions?view=scheduled">Manage schedules in Tasks</Link>
+                  </div>
+                </>
+              ) : null}
+            </details>
           </>
         }
-        inspector={selectedIntegration ? (
-          <IntegrationInspector
-            integration={selectedIntegration}
-            actionBusy={runningAction?.startsWith(`${selectedIntegration.id}:`) ?? false}
-            onConfigure={() => handleConfigureIntegration(selectedIntegration)}
-            onReconnect={() => void handleReconnectIntegration(selectedIntegration)}
-          />
-        ) : null}
+        inspector={null}
       />
+      {selectedIntegration ? (
+        <MissionControlDialogShell open onOpenChange={open => { if (!open) setSelectedId(""); }}
+          surfaceTheme={surfaceTheme} variant="quiet" title={selectedIntegration.name}
+          description={selectedIntegration.category}
+          contentClassName={cn("workforce-setup-card sm:w-[min(92vw,640px)]", surfaceTheme === "light" && "workforce-setup-light")}
+          bodyClassName="space-y-5 px-5 py-5 sm:px-7"
+          footer={<>
+            <Button variant="ghost" onClick={() => setSelectedId("")}>Close</Button>
+            {selectedIntegration.actionSupport.configure.supported && <Button onClick={() => {
+              setSelectedId("");
+              handleConfigureIntegration(selectedIntegration);
+            }}>{selectedIntegration.status === "connected" || selectedIntegration.status === "running" ? "Manage connection" : "Set up"}</Button>}
+          </>}>
+          <IntegrationInspector integration={selectedIntegration}
+            actionBusy={runningAction?.startsWith(selectedIntegration.id + ":") ?? false}
+            onReconnect={() => void handleReconnectIntegration(selectedIntegration)} />
+        </MissionControlDialogShell>
+      ) : null}
     </>
+  );
+}
+
+const applicationIcons: Partial<Record<IntegrationView["id"], { path: string; hex: string }>> = {
+  chrome: siGooglechrome, discord: siDiscord, github: siGithub, gmail: siGmail,
+  "google-chat": siGooglechat, "google-drive": siGoogledrive, linear: siLinear,
+  notion: siNotion, ollama: siOllama, openrouter: siOpenrouter,
+  telegram: siTelegram, whatsapp: siWhatsapp, "x-twitter": siX
+};
+
+function ApplicationIcon({ integration }: { integration: IntegrationView }) {
+  const mark = applicationIcons[integration.id];
+  if (!mark && integration.id !== "slack") {
+    return <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />;
+  }
+  return (
+    <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-border bg-background" aria-hidden="true">
+      {mark ? (
+        <svg viewBox="0 0 24 24" className="size-[22px]" fill={mark.hex === "000000" ? "currentColor" : `#${mark.hex}`}>
+          <path d={mark.path} />
+        </svg>
+      ) : <Slack className="size-[22px] text-[#a84d90]" />}
+    </span>
   );
 }
 
@@ -479,223 +526,103 @@ function IntegrationCard({
   onReconnect: () => void;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        "rounded-lg border p-3 text-left transition-all hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        pageSurface,
-        selected && "border-primary/60 bg-primary/10"
-      )}
-    >
-      <div className={cn("flex gap-3", list ? "items-center" : "items-start")}>
-        <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="truncate text-[0.88rem] font-semibold text-foreground">{integration.name}</h3>
-              <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{integration.connectionHealth.label}</p>
-              <p className="mt-1 text-[0.68rem] text-muted-foreground">Linked: {integration.linkedAgentCount} agents</p>
-            </div>
-            <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
-          </div>
-          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              <MiniBadge>{integration.category.split(" ")[0]}</MiniBadge>
-              <MiniBadge>{integration.managedBy}</MiniBadge>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-7 rounded-[8px] px-2"
-                disabled={actionBusy || !integration.actionSupport.configure.supported}
-                title={integration.actionSupport.configure.reason}
-                aria-label={integration.modelProvider ? `Open ${integration.name} model setup` : `Open ${integration.name} setup`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onConfigure();
-                }}
-              >
-                <Gauge className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-7 rounded-[8px] px-2"
-                disabled={actionBusy || !integration.actionSupport.reconnect.supported}
-                title={integration.actionSupport.reconnect.reason}
-                aria-label={`Refresh ${integration.name} status`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onReconnect();
-                }}
-              >
-                <RefreshCw className={cn("h-3 w-3", actionBusy && "animate-spin")} />
-              </Button>
-              <MoreButton />
-            </div>
-          </div>
+    <article className={cn("flex min-w-0 gap-3 px-4 py-4", list ? "flex-wrap items-start sm:items-center" : "workforce-panel workforce-app-tile flex-col", selected && "bg-muted/45")}>
+      <ApplicationIcon integration={integration} />
+      <div className={cn("min-w-0 flex-1", list && "basis-[10rem]")}>
+        <h3 className="break-words text-base font-semibold">{integration.name}</h3>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">{integration.description}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{integration.status === "unknown" ? "Availability unverified" : integration.statusLabel}</span>
+          {integration.linkedAgentCount ? <span className="text-xs text-muted-foreground">{integration.linkedAgentCount} linked</span> : null}
         </div>
       </div>
-    </div>
+      <div className={cn("flex flex-wrap items-center gap-1.5", list && "ml-auto")}>
+        {integration.actionSupport.configure.supported ? (
+          <Button variant="secondary" size="sm" disabled={actionBusy} onClick={onConfigure}
+            aria-label={integration.modelProvider ? `Open ${integration.name} model setup` : `Open ${integration.name} setup`}>
+            {integration.status === "connected" || integration.status === "running" ? "Manage" : "Set up"}
+          </Button>
+        ) : null}
+        {list && integration.actionSupport.reconnect.supported ? (
+          <Button variant="ghost" size="icon" disabled={actionBusy} aria-label={`Refresh ${integration.name} status`} onClick={onReconnect}>
+            <RefreshCw className={cn("size-4", actionBusy && "motion-safe:animate-spin")} />
+          </Button>
+        ) : null}
+        <Button variant="ghost" size="sm" aria-expanded={selected} onClick={onSelect}>{selected ? "Hide details" : "Details"}</Button>
+      </div>
+    </article>
   );
 }
 
 function IntegrationInspector({
   integration,
   actionBusy,
-  onConfigure,
   onReconnect
 }: {
   integration: IntegrationView;
   actionBusy: boolean;
-  onConfigure: () => void;
   onReconnect: () => void;
 }) {
-  const StatusIcon = integrationStatusIcons[integration.status];
+  const unverified = integration.status === "unknown";
+  const error = integration.errorMessage === integration.connectionHealth.detail ? null : integration.errorMessage;
   return (
-    <InspectorPanelFrame>
+    <>
       <div className="flex items-start gap-3">
-        <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">{integration.name}</h2>
-              <StatusBadge label={integration.statusLabel} tone={integration.statusTone} className="mt-1.5" />
-            </div>
-            <MoreButton />
-          </div>
-          <MiniBadge>{integration.category}</MiniBadge>
-          <p className="mt-2.5 text-xs leading-5 text-foreground/80">{integration.description}</p>
+        <ApplicationIcon integration={integration} />
+        <div className="min-w-0">
+          <p className="text-sm leading-6">{integration.description}</p>
+          <p role="status" className="mt-1 text-sm font-medium text-muted-foreground">
+            {integration.status === "unknown" ? "Availability unverified" : integration.statusLabel}
+          </p>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-8 rounded-[9px] px-2 text-xs"
-          disabled={actionBusy || !integration.actionSupport.reconnect.supported}
-          title={integration.actionSupport.reconnect.reason}
-          onClick={onReconnect}
-        >
-          <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", actionBusy && "animate-spin")} />Reconnect
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-8 rounded-[9px] px-2 text-xs"
-          disabled={actionBusy || !integration.actionSupport.configure.supported}
-          title={integration.actionSupport.configure.reason}
-          onClick={onConfigure}
-        >
-          Configure
-        </Button>
-      </div>
-      <SectionCard title="Connection Health" className="mt-3">
-        <div className="px-3 py-2.5">
-          <KeyValue label="Health" value={<span className="inline-flex items-center gap-1.5"><StatusIcon className={cn("h-3.5 w-3.5", statusIconClassName(integration.status))} />{integration.connectionHealth.label}</span>} />
+      <section aria-label="Connection status" className="border-t border-border pt-4">
+        <h2 className="workforce-section-title">Connection</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {unverified
+            ? integration.actionSupport.reconnect.supported ? "Refresh status to check this connection." : "Check the setup details for this connection."
+            : integration.connectionHealth.detail}
+        </p>
+        {error && !unverified && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+        {integration.missingConfiguration.length > 0 && <ul aria-label="Required setup" className="mt-2 list-inside list-disc text-sm text-muted-foreground">
+          {integration.missingConfiguration.map(item => <li key={item}>{item}</li>)}
+        </ul>}
+        {integration.actionSupport.reconnect.supported && <Button className="mt-3" type="button" variant="secondary" size="sm" disabled={actionBusy} onClick={onReconnect}>
+          <RefreshCw className={cn("mr-2 size-4", actionBusy && "motion-safe:animate-spin")} />Refresh status
+        </Button>}
+      </section>
+      <section aria-label="Employee access" className="border-t border-border pt-4">
+        <h2 className="workforce-section-title">Employee access</h2>
+        {integration.linkedAgents.length > 0 ? (
+          <ul className="mt-2 divide-y divide-border">
+            {integration.linkedAgents.map(employee => <li key={employee.id} className="py-2">
+              <Link href={"/agents/" + encodeURIComponent(employee.id) + "?tab=capabilities"} className="font-medium hover:underline">{employee.name}</Link>
+              <p className="text-sm text-muted-foreground">{employee.reason} · {employee.workspaceName}</p>
+            </li>)}
+          </ul>
+        ) : <p className="mt-1 text-sm text-muted-foreground">No employee access has been confirmed.</p>}
+      </section>
+      <details className="border-t border-border pt-4">
+        <summary className="cursor-pointer text-sm font-medium">Advanced connection details</summary>
+        <div className="mt-2 space-y-2 text-sm">
+          {unverified && <p className="text-muted-foreground">{error ?? integration.connectionHealth.detail}</p>}
           <KeyValue label="Last sync" value={integration.lastSyncLabel} />
           <KeyValue label="Uptime" value={integration.uptimeLabel} />
           <KeyValue label="Rate limit" value={integration.rateLimitLabel} />
           <KeyValue label="Source" value={integration.sourceMethods.join(", ")} />
-          <p className="border-t border-border py-2 text-xs leading-5 text-muted-foreground">{integration.connectionHealth.detail}</p>
-          <ProgressBar value={integration.status === "connected" ? 84 : integration.status === "failed" ? 8 : 28} tone={integration.statusTone} />
-        </div>
-      </SectionCard>
-      <SectionCard title="Scopes / Permissions" className="mt-3">
-        <div className="space-y-1.5 p-3 text-xs text-foreground/80">
-          {integration.permissions.map((scope) => (
-            <div key={scope} className="flex items-center gap-1.5"><CircleCheck className="h-3.5 w-3.5 text-[hsl(var(--status-success-foreground))]" />{scope}</div>
-          ))}
-        </div>
-      </SectionCard>
-      <SectionCard title={`Linked Agents (${integration.linkedAgentCount})`} className="mt-3">
-        <div className="divide-y divide-border px-3">
-          {integration.linkedAgents.length > 0 ? integration.linkedAgents.map((agent) => (
-            <div key={agent.id} className="py-2.5 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-foreground/80">{agent.name}</span>
-                <span className="shrink-0 text-muted-foreground">{agent.workspaceName}</span>
-              </div>
-              <p className="mt-1 truncate text-[0.66rem] text-muted-foreground">{agent.reason}</p>
-            </div>
-          )) : (
-            <div className="py-3 text-xs text-muted-foreground">
-              {integration.managedBy === "unsupported" ? "Linkage unavailable until this connector exists." : "No linked agents found in the current workspace snapshot."}
-            </div>
-          )}
-        </div>
-      </SectionCard>
-      <SectionCard title="Setup Notes" className="mt-3">
-        <div className="space-y-2 p-3 text-xs leading-5 text-foreground/80">
           <KeyValue label="Managed by" value={formatManagedBy(integration.managedBy)} />
           <KeyValue label="Provider type" value={integration.providerType} />
-          <KeyValue label="Accounts" value={integration.accountIds.length ? integration.accountIds.join(", ") : "None"} />
-          <KeyValue label="Channels" value={integration.channelIds.length ? integration.channelIds.join(", ") : "None"} />
-          <KeyValue label="Models" value={integration.modelIds.length ? integration.modelIds.join(", ") : "None"} />
-          {integration.errorMessage ? <p className="rounded-[9px] border border-destructive/20 bg-destructive/10 p-2 text-destructive">{integration.errorMessage}</p> : null}
-          {integration.missingConfiguration.length > 0 ? (
-            <div>
-              <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Required setup</p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {integration.missingConfiguration.map((item) => <MiniBadge key={item}>{item}</MiniBadge>)}
-              </div>
-            </div>
-          ) : null}
-          <div className="rounded-[9px] border border-border bg-muted/35 p-2 text-muted-foreground">
-            <p>Configure: {integration.actionSupport.configure.reason}</p>
-            <p>Reconnect: {integration.actionSupport.reconnect.reason}</p>
-            <p>Lifecycle: {integration.surfaceProvider ? "Manage channels in Channels." : integration.modelProvider ? "Manage providers in Models." : "Use the native OpenClaw surface."}</p>
-          </div>
+          <KeyValue label="Accounts" value={integration.accountIds.join(", ") || "None"} />
+          <KeyValue label="Channels" value={integration.channelIds.join(", ") || "None"} />
+          <KeyValue label="Models" value={integration.modelIds.join(", ") || "None"} />
+          {integration.permissions.length > 0 && <ul aria-label="Permissions" className="list-inside list-disc text-muted-foreground">
+            {integration.permissions.map(scope => <li key={scope}>{scope}</li>)}
+          </ul>}
+          {!integration.actionSupport.configure.supported && <p>{integration.actionSupport.configure.reason}</p>}
+          {!integration.actionSupport.reconnect.supported && <p>{integration.actionSupport.reconnect.reason}</p>}
         </div>
-      </SectionCard>
-    </InspectorPanelFrame>
-  );
-}
-
-function AutomationImpactSummary({ integrations }: { integrations: IntegrationView[] }) {
-  const connected = integrations.filter((integration) => integration.status === "connected");
-  const linked = integrations
-    .filter((integration) => integration.linkedAgentCount > 0)
-    .sort((left, right) => right.linkedAgentCount - left.linkedAgentCount);
-  return (
-    <SectionCard title="Automation Impact Summary">
-      <div className="grid gap-2.5 p-3 lg:grid-cols-[repeat(4,minmax(0,1fr))_1.4fr_0.8fr]">
-        <MetricTile icon={Workflow} label="Automations" value="-" detail="OpenClaw metric unavailable" tone="info" />
-        <MetricTile icon={Sparkles} label="Triggers fired" value="-" detail="OpenClaw metric unavailable" tone="success" />
-        <MetricTile icon={BellRing} label="Actions executed" value="-" detail="OpenClaw metric unavailable" tone="purple" />
-        <MetricTile icon={ShieldCheck} label="Success rate" value="-" detail="OpenClaw metric unavailable" tone="success" />
-        <div className="rounded-[10px] border border-border bg-muted/35 p-2.5">
-          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Top linked integrations</p>
-          {linked.slice(0, 3).map((integration) => (
-            <div key={integration.id} className="mb-2 grid grid-cols-[80px_1fr_auto] items-center gap-2 text-[0.68rem]">
-              <span className="truncate text-foreground/80">{integration.name}</span>
-              <ProgressBar value={Math.min(100, 20 + integration.linkedAgentCount * 18)} />
-              <span className="text-muted-foreground">{integration.linkedAgentCount} agents</span>
-            </div>
-          ))}
-          {linked.length === 0 ? <p className="text-[0.68rem] text-muted-foreground">No linked integrations found in the current snapshot.</p> : null}
-        </div>
-        <div className="rounded-[10px] border border-border bg-muted/35 p-2.5">
-          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recently observed</p>
-          {connected.slice(0, 3).map((integration) => (
-            <div key={integration.id} className="flex justify-between gap-2 py-1 text-[0.68rem]">
-              <span className="text-foreground/80">{integration.name}</span>
-              <span className="text-muted-foreground">{integration.lastSyncLabel}</span>
-            </div>
-          ))}
-          {connected.length === 0 ? <p className="text-[0.68rem] text-muted-foreground">No verified connected integrations yet.</p> : null}
-        </div>
-      </div>
-    </SectionCard>
+      </details>
+    </>
   );
 }
 

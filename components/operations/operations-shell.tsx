@@ -7,6 +7,8 @@ import { CreateAgentDialog } from "@/components/mission-control/create-agent-dia
 import {
   AGENT_CREATION_SNAPSHOT_RECONCILIATION_DELAYS_MS
 } from "@/components/mission-control/agent-creation-progress.utils";
+import { usePathname } from "next/navigation";
+import { WorkforceMobileNavigation } from "@/components/mission-control/workforce-mobile-navigation";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { WorkspaceIntelligenceStatusIndicator } from "@/components/mission-control/workspace-intelligence-status-indicator";
 import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
@@ -40,6 +42,7 @@ export type OperationsShellContext = {
   rootSnapshot: MissionControlSnapshot;
   activeWorkspace: WorkspaceRecord | null;
   activeWorkspaceId: string | null;
+  workspaceSelectionReady: boolean;
   connectionState: "connecting" | "live" | "retrying";
   attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
@@ -110,7 +113,8 @@ export function OperationsShell({
   preferredWorkspaceId?: string | null;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
-  const { snapshot, connectionState, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const teamPage = usePathname() === "/team";
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, attentionRefreshGeneration, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     preferredWorkspaceId && initialSnapshot.workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
@@ -118,7 +122,7 @@ export function OperationsShell({
       : resolveDefaultWorkspaceId(initialSnapshot)
   );
   const [sidebarExpandedState, setSidebarExpanded] = useState(false);
-  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
+  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning(true);
   const sidebarExpanded = isSidebarPinned || sidebarExpandedState;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
@@ -231,6 +235,11 @@ export function OperationsShell({
       ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
     ]));
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get("workspaceId");
+    const targetWorkspaceId = preferredWorkspaceId ?? requestedWorkspaceId ?? storedWorkspaceId;
+    // A server seed can have only the system workspace while the shared stream starts.
+    // Wait for the authoritative roster before replacing a selected company.
+    if (!hasReceivedLiveSnapshot && targetWorkspaceId && !selectableWorkspaceIds.includes(targetWorkspaceId)
+      && targetWorkspaceId !== serializeWorkspaceSelection(null)) return;
     const resolvedWorkspaceId = preferredWorkspaceId && selectableWorkspaceIds.includes(preferredWorkspaceId)
       ? preferredWorkspaceId
       : requestedWorkspaceId && selectableWorkspaceIds.includes(requestedWorkspaceId)
@@ -244,6 +253,7 @@ export function OperationsShell({
     setLoadedWorkspaceSelectionRoot(workspaceRoot);
   }, [
     activeWorkspaceId,
+    hasReceivedLiveSnapshot,
     loadedWorkspaceSelectionRoot,
     preferredWorkspaceId,
     visiblePendingCreatedAgents,
@@ -379,24 +389,17 @@ export function OperationsShell({
   return (
     <div
       className={cn(
-        "mission-shell relative min-h-screen overflow-hidden bg-background text-foreground",
+        "mission-shell workforce-main relative min-h-screen overflow-hidden bg-background text-foreground",
         surfaceTheme === "light" && "mission-shell--light"
       )}
     >
       <WorkspaceIntelligenceStatusIndicator workspaceId={activeWorkspace?.id ?? null} surfaceTheme={surfaceTheme} onReviewUpdates={openWorkspaceUpdateReview} />
-      <div className="mission-canvas-backdrop fixed inset-0 z-0">
-        <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0 opacity-60" />
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_54%_0%,hsl(var(--primary)/0.10),transparent_32%),linear-gradient(180deg,hsl(var(--background)/0.10),hsl(var(--background)/0.58))]"
-        />
-      </div>
 
       <div
         className={cn(
           "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
           sidebarExpanded
-            ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
+            ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[236px] lg:max-w-none"
             : "w-[56px]"
         )}
         onMouseEnter={() => {
@@ -424,6 +427,7 @@ export function OperationsShell({
           connectionState={connectionState}
           collapsed={!sidebarExpanded}
           sidebarPinned={isSidebarPinned}
+          hideCreateAgent={teamPage}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -467,8 +471,8 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] w-[min(86vw,292px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 [&_button]:min-h-11 lg:hidden",
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] w-[min(86vw,292px)] overflow-hidden mission-ease-smooth bg-[#050a12] transition-[transform,box-shadow] duration-300 motion-reduce:transition-none [&_button]:min-h-11 lg:hidden",
+          mobileSidebarOpen ? "translate-x-0 shadow-[18px_0_60px_rgba(0,0,0,0.42)]" : "-translate-x-full"
         )}
         aria-hidden={!mobileSidebarOpen}
         inert={!mobileSidebarOpen}
@@ -487,6 +491,7 @@ export function OperationsShell({
           requestedAgentAction={null}
           connectionState={connectionState}
           collapsed={false}
+          hideCreateAgent={teamPage}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -519,17 +524,19 @@ export function OperationsShell({
         />
       </div>
 
+      <WorkforceMobileNavigation open={mobileSidebarOpen} onOpen={() => setMobileSidebarOpen((current) => !current)} />
+
       <main
         className={cn(
-          "operations-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-4 lg:pt-4",
-          sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
+          "operations-content workforce-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-8 lg:pt-6",
+          sidebarExpanded ? "lg:pl-[260px]" : "lg:pl-[80px]"
         )}
       >
-        <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-3">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
           <div className="sticky top-0 z-30 -mx-3 flex min-h-14 items-center gap-3 border-b border-border bg-background/92 px-3 backdrop-blur-xl sm:-mx-5 sm:px-5 lg:hidden">
             <button
               type="button"
-              aria-label="Open navigation"
+              aria-label="Open workspace menu"
               aria-expanded={mobileSidebarOpen}
               onClick={() => setMobileSidebarOpen(true)}
               className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card/80 text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -537,8 +544,7 @@ export function OperationsShell({
               <Menu className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-foreground">{activeWorkspace?.name ?? "All workspaces"}</p>
-              <p className="truncate text-[0.65rem] text-muted-foreground">AgentOS operations</p>
+              <p className="truncate text-sm font-semibold text-foreground">{activeWorkspace?.name ?? "All workspaces"}</p>
             </div>
             <OperationsTopBar
               compact
@@ -573,6 +579,7 @@ export function OperationsShell({
             rootSnapshot: uiSnapshot,
             activeWorkspace,
             activeWorkspaceId,
+            workspaceSelectionReady: loadedWorkspaceSelectionRoot === snapshot.diagnostics.workspaceRoot,
             connectionState,
             attentionRefreshGeneration,
             surfaceTheme,
