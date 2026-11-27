@@ -1,0 +1,69 @@
+{
+  "version": "0.11.0",
+  "candidateCommit": "ab3ec4f7970c8f793de1f5aa5895c66b5594f6fc",
+  "desktopPreviewCandidates": [
+    "windows-x64",
+    "linux-x64-deb"
+  ],
+  "releaseArtifact": {
+    "runId": 46001081875,
+    "id": 15199123798,
+    "sha256": "9f99b49c94c26d576df4d421de790701c13c1a5888e7bc6c10fcc94872f5d79b"
+  },
+  "checks": {
+    "cli-macos-arm64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466931"
+      }
+    },
+    "cli-macos-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466813"
+      }
+    },
+    "cli-windows-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466846"
+      }
+    },
+    "cli-linux-x64": {
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466826"
+      }
+    },
+    "macos-arm64": {
+      "packagedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466966"
+      }
+    },
+    "windows-x64": {
+      "packagedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466854"
+      }
+    },
+    "linux-x64-deb": {
+      "packagedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466948"
+      }
+    },
+    "linux-x64-appimage": {
+      "packagedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466948"
+      }
+    },
+    "linux-x64-rpm": {
+      "packagedLaunch": {
+        "status": "BLOCKED",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466948"
+      }
+    }
+  }
+}

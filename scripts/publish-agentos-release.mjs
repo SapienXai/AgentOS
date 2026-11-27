@@ -25,9 +25,9 @@ export async function verifyCliArchive(root, platform) {
   return digest;
 }
 
-export function selectChannels(plan, verified, windowsInstallerDigest) {
+export function selectChannels(plan, verified, installerProofs) {
   const stableCli = plan.cli.filter((target) => verified.has(target));
-  const desktop = plan.desktop.filter((item) => item.channel !== "withheld" && (!item.verifyInstaller || windowsInstallerDigest));
+  const desktop = plan.desktop.filter((item) => item.channel !== "withheld" && (!item.verifyInstaller || installerProofs.has(item.target)));
   return {
     stableCli,
     stableDesktop: desktop.filter((item) => item.channel === "stable"),
@@ -82,8 +82,12 @@ async function publish(plan, root, proofRoot) {
     verified.set(item, digest);
   }
 
-  const windowsDigest = files.includes("windows-desktop.txt") ? (await readFile(path.join(proofRoot, "windows-desktop.txt"), "utf8")).trim() : null;
-  const { stableCli, stableDesktop, previewDesktop } = selectChannels(plan, verified, windowsDigest);
+  const installerProofs = new Map();
+  for (const item of plan.desktop.filter(({ verifyInstaller }) => verifyInstaller)) {
+    const name = `desktop-${item.target}.txt`;
+    if (files.includes(name)) installerProofs.set(item.target, (await readFile(path.join(proofRoot, name), "utf8")).trim());
+  }
+  const { stableCli, stableDesktop, previewDesktop } = selectChannels(plan, verified, installerProofs);
   const stage = await mkdtemp(path.join(os.tmpdir(), "agentos-publish-"));
   try {
     const stableRoot = path.join(stage, "stable");
@@ -111,8 +115,8 @@ async function publish(plan, root, proofRoot) {
       const expectedUrl = `https://github.com/${repository}/releases/download/agentos-v${plan.version}/${item.update}`;
       const signature = (await readFile(path.join(root, `${item.update}.sig`), "utf8")).trim();
       if (entry?.url !== expectedUrl || entry.signature !== signature) throw new Error(`Updater metadata mismatch for ${item.target}.`);
-      if (item.verifyInstaller && windowsDigest !== await sha256(path.join(root, item.name))) {
-        throw new Error("Windows installation proof does not match the candidate installer.");
+      if (item.verifyInstaller && installerProofs.get(item.target) !== await sha256(path.join(root, item.name))) {
+        throw new Error(`Installation proof does not match the candidate installer for ${item.target}.`);
       }
       await writeFile(signaturePath, Buffer.from(signature, "base64"));
       execFileSync("minisign", ["-Vm", path.join(root, item.update), "-p", publicKeyPath, "-x", signaturePath], { stdio: "inherit" });

@@ -24,6 +24,7 @@ const desktopPackages = [
 const acceptanceSchema = z.object({
   version: z.string(),
   candidateCommit: z.string().regex(/^[0-9a-f]{40}$/),
+  desktopPreviewCandidates: z.array(z.enum(["windows-x64", "linux-x64-deb"])).default([]),
   releaseArtifact: z.object({
     runId: z.number().int().positive(),
     id: z.number().int().positive(),
@@ -72,12 +73,13 @@ async function main() {
     const desktop = desktopPackages.map(({ name, update, launch, platform, target, checks }) => {
       const provenLaunch = pass(launch, "packagedLaunch");
       const stable = provenLaunch && checks.every((check) => pass(platform, check));
+      const candidate = acceptance.desktopPreviewCandidates.some((item) => item === launch);
       return {
         name: `AgentOS-${version}-${name}`,
         update: `AgentOS-${version}-${update}`,
         target,
-        channel: stable ? "stable" : provenLaunch ? "preview" : "withheld",
-        verifyInstaller: launch === "windows-x64"
+        channel: stable ? "stable" : provenLaunch || candidate ? "preview" : "withheld",
+        verifyInstaller: launch === "windows-x64" || launch === "linux-x64-deb"
       };
     });
     console.log(JSON.stringify({ version, commit: freshness.certifiedCodeHead, source: releaseArtifact, cli, cliProofs, cliSmokes, desktop }));

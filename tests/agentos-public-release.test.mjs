@@ -7,16 +7,19 @@ import { selectChannels, sha256, verifyCliArchive } from "../scripts/publish-age
 
 test("publication requires each platform's proof and separates desktop channels", () => {
   const windows = { target: "windows-x86_64-nsis", channel: "preview", verifyInstaller: true };
-  const deb = { target: "linux-x86_64-deb", channel: "preview" };
+  const deb = { target: "linux-x86_64-deb", channel: "preview", verifyInstaller: true };
   const rpm = { target: "linux-x86_64-rpm", channel: "withheld" };
   const mac = { target: "darwin-aarch64-app", channel: "stable" };
   const plan = { cli: ["linux-x64", "win32-x64"], desktop: [windows, deb, rpm, mac] };
   const verifiedCli = new Set(["linux-x64"]);
 
-  assert.deepEqual(selectChannels(plan, verifiedCli, null), {
-    stableCli: ["linux-x64"], stableDesktop: [mac], previewDesktop: [deb]
+  assert.deepEqual(selectChannels(plan, verifiedCli, new Map()), {
+    stableCli: ["linux-x64"], stableDesktop: [mac], previewDesktop: []
   });
-  assert.deepEqual(selectChannels(plan, verifiedCli, "installer proof").previewDesktop, [windows, deb]);
+  const provenWindows = new Map([[windows.target, "installer proof"]]);
+  assert.deepEqual(selectChannels(plan, verifiedCli, provenWindows).previewDesktop, [windows]);
+  provenWindows.set(deb.target, "installer proof");
+  assert.deepEqual(selectChannels(plan, verifiedCli, provenWindows).previewDesktop, [windows, deb]);
 });
 
 test("publication rejects an archive that differs from its SHA-256 sidecar", async (context) => {

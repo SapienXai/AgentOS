@@ -24,6 +24,7 @@ jobs:
       source_digest: ${{ steps.plan.outputs.source_digest }}
       cli_smokes: ${{ steps.plan.outputs.cli_smokes }}
       windows_asset: ${{ steps.plan.outputs.windows_asset }}
+      debian_asset: ${{ steps.plan.outputs.debian_asset }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -58,7 +59,8 @@ jobs:
             echo "source_artifact=$artifact"
             echo "source_digest=$digest"
             echo "cli_smokes=$(jq -c '.cliSmokes' release-plan.json)"
-            echo "windows_asset=$(jq -r '[.desktop[] | select(.verifyInstaller and .channel != "withheld")][0].name // ""' release-plan.json)"
+            echo "windows_asset=$(jq -r '.desktop[] | select(.target == "windows-x86_64-nsis" and .channel != "withheld").name' release-plan.json)"
+            echo "debian_asset=$(jq -r '.desktop[] | select(.target == "linux-x86_64-deb" and .channel != "withheld").name' release-plan.json)"
           } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         with:
@@ -167,15 +169,62 @@ jobs:
               Write-Warning 'The runner will clean up remaining Desktop processes.'
             }
           }
-          (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() | Set-Content windows-desktop.txt -Encoding ascii
+          (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() | Set-Content desktop-windows-x86_64-nsis.txt -Encoding ascii
       - uses: actions/upload-artifact@v6
         with:
           name: publication-proof-windows-desktop
-          path: windows-desktop.txt
+          path: desktop-windows-x86_64-nsis.txt
+          if-no-files-found: error
+
+  debian-installer:
+    needs: production-gate
+    if: needs.production-gate.outputs.debian_asset != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.production-gate.outputs.source_run }}
+          name: agentos-desktop-linux
+          path: desktop
+      - name: Install the Debian package and check the embedded server
+        shell: bash
+        run: |
+          mapfile -t installers < <(find desktop -type f -name '*.deb')
+          test "${#installers[@]}" -eq 1
+          sudo apt-get update
+          sudo apt-get install -y xvfb "./${installers[0]}"
+          xvfb-run -a bash -euo pipefail <<'EOF'
+          agentos-desktop >/dev/null 2>&1 &
+          app=$!
+          trap 'kill "$app" 2>/dev/null || true; wait "$app" 2>/dev/null || true' EXIT
+          for attempt in {1..75}; do
+            kill -0 "$app" || exit 1
+            for child in $(pgrep -P "$app" -x node || true); do
+              listeners=$(ss -H -ltnp | awk -v child="$child" '$0 ~ ("pid=" child ",") {print $4}')
+              for address in $listeners; do
+                [[ "$address" == 127.0.0.1:* ]] || exit 1
+              done
+              for address in $listeners; do
+                if curl --fail --silent --max-time 2 "http://$address/api/auth/status" >/dev/null; then
+                  echo "Installed Desktop returned HTTP 200 on loopback."
+                  exit 0
+                fi
+              done
+            done
+            sleep 1
+          done
+          exit 1
+          EOF
+          sha256sum "${installers[0]}" | cut -d ' ' -f 1 > desktop-linux-x86_64-deb.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: publication-proof-debian-desktop
+          path: desktop-linux-x86_64-deb.txt
           if-no-files-found: error
 
   publish:
-    needs: [production-gate, cli-smoke, windows-installer]
+    needs: [production-gate, cli-smoke, windows-installer, debian-installer]
     if: '!cancelled() && needs.production-gate.result == ''success'''
     runs-on: ubuntu-latest
     environment: agentos-public-release
