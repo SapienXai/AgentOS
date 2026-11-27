@@ -66,13 +66,21 @@
     "windows-x64": {
       "packagedLaunch": {
         "status": "PASS",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027420"
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46011849037/job/140549339655"
+      },
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46011849037/job/140549339655"
       }
     },
     "linux-x64-deb": {
       "packagedLaunch": {
-        "status": "BLOCKED",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466948"
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46011849037/job/140549339585"
+      },
+      "cleanInstall": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46011849037/job/140549339585"
       }
     },
     "linux-x64-appimage": {

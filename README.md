@@ -156,7 +156,7 @@ The initial password only creates the account when no Instance Protection state 
 
 ### Install
 
-AgentOS 0.9.0 is listed in the [published release history](https://github.com/SapienXai/AgentOS/releases). This checkout contains the 0.11.0 Workforce Experience development candidate. Its [release tag](https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.11.0) becomes available after publication. Use the shell installers below to install a verified CLI archive. For desktop previews and platform availability, see the [downloads page](https://agentos.sapienx.app/download).
+The [AgentOS 0.11.0 GitHub release](https://github.com/SapienXai/AgentOS/releases/tag/agentos-v0.11.0) includes checksum-verified CLI packages for macOS, Windows, and Linux. Use the shell installers below. The [downloads page](https://agentos.sapienx.app/download) links to manual Desktop Public Preview installers for Windows x64 and Linux x64 DEB.
 
 The npm registry has its own version history. To install the version currently on that registry:
 
@@ -180,7 +180,7 @@ Windows PowerShell:
 iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
-To pin 0.11.0 after publication, use the following commands.
+Use these commands to pin the GitHub CLI install to 0.11.0.
 
 macOS or Linux:
 
@@ -467,7 +467,7 @@ pnpm smoke:agentos-package
 pnpm check:production-release --plan
 ```
 
-Run **Release AgentOS** to build and verify artifacts. Dispatch **Publish AgentOS** on `main` to publish the platforms that passed their acceptance checks. The workflow requires passing main CI, matching production evidence, the original artifact checksum, and the `agentos-public-release` environment. It creates the release tags from the certified source commit. Desktop Public Preview installers are distributed separately from the stable Desktop updater. See the [0.9.0 release notes](docs/release-notes-agentos-0.9.0.md).
+Run **Release AgentOS** to build and verify artifacts. Dispatch **Publish AgentOS** on `main` to publish the platforms that passed their acceptance checks. The workflow requires passing main CI, matching production evidence, the original artifact checksum, and the `agentos-public-release` environment. It creates the release tags from the certified source commit. Desktop Public Preview installers are distributed separately from the stable Desktop updater. See the [0.11.0 release notes](docs/release-notes-agentos-0.11.0.md).
 
 The release workflow builds and smoke-tests packages for:
 
