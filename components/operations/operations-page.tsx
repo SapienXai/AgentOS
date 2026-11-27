@@ -73,7 +73,7 @@ export function OperationsPage({
         }
 
         if (page === "operations") {
-          return <OperationsJobsPageContent snapshot={context.rootSnapshot} activeWorkspaceId={context.activeWorkspaceId} surfaceTheme={context.surfaceTheme} refresh={context.refresh} />;
+          return <OperationsJobsPageContent snapshot={context.rootSnapshot} activeWorkspaceId={context.activeWorkspaceId} workspaceSelectionReady={context.workspaceSelectionReady} surfaceTheme={context.surfaceTheme} refresh={context.refresh} />;
         }
 
         if (page === "files" || page === "knowledge") {

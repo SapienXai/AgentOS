@@ -27,7 +27,7 @@ function TaskDestination({ initial, context }: { initial: WorkforceMissionListRe
 
   if (view === "scheduled") {
     return <><TaskViewNavigation view={view} /><ScheduledTasks scheduled snapshot={context.rootSnapshot}
-      activeWorkspaceId={context.activeWorkspaceId} surfaceTheme={context.surfaceTheme} refresh={context.refresh} /></>;
+      activeWorkspaceId={context.activeWorkspaceId} workspaceSelectionReady={context.workspaceSelectionReady} surfaceTheme={context.surfaceTheme} refresh={context.refresh} /></>;
   }
   return <MissionListPage initial={initial} snapshot={context.snapshot} activeWorkspaceId={context.activeWorkspaceId}
     connectionState={context.connectionState} attentionRefreshGeneration={context.attentionRefreshGeneration}

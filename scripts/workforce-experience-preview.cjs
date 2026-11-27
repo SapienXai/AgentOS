@@ -990,13 +990,15 @@ async function run() {
             sessionStorage.setItem(scopeKey, workspaceId);
           }, { theme, scopeKey, workspaceId: first.workspaceId });
           const page = await context.newPage();
-          const schedulePath = base + "/missions?view=scheduled";
+          const schedulePath = base + "/missions?view=scheduled&workspaceId=" + encodeURIComponent(first.workspaceId);
           await page.goto(schedulePath, { waitUntil: "domcontentloaded" });
           const job = page.getByRole("article").filter({ hasText: jobName });
           const operationResponse = () => page.waitForResponse(response => response.url() === base + "/api/operations" && response.request().method() === "POST");
           if (width === 1440) {
             await page.getByRole("button", { name: "Schedule task", exact: true }).click();
             const dialog = page.getByRole("dialog");
+            const ownerPicker = dialog.locator("select").filter({ has: page.locator(`option[value="${worker.id}"]`) });
+            await expect(ownerPicker).toHaveValue(worker.id);
             await dialog.getByPlaceholder("Morning operations brief").fill(jobName);
             await dialog.getByPlaceholder("Describe the outcome", { exact: false }).fill(jobPrompt);
             const [created] = await Promise.all([

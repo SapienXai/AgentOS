@@ -17,7 +17,7 @@ import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 import { SuggestedWorkPanel } from "@/components/operations/operations/suggested-work-panel";
 
-export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surfaceTheme, refresh, scheduled = false }: { scheduled?: boolean; snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; surfaceTheme: "dark" | "light"; refresh: () => Promise<void> }) {
+export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, workspaceSelectionReady, surfaceTheme, refresh, scheduled = false }: { scheduled?: boolean; snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; workspaceSelectionReady: boolean; surfaceTheme: "dark" | "light"; refresh: () => Promise<void> }) {
   const [data, setData] = useState<OperationsSnapshot | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(() => new Set());
@@ -36,7 +36,7 @@ export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surface
       title={busyAction?.action === "run" ? "Starting operation" : busyAction?.action === "delete" ? "Deleting operation" : "Updating operation"}
       description="Applying the requested operation change in OpenClaw."
     />
-    <PageHeader surfaceTheme={surfaceTheme} title={scheduled ? "Scheduled tasks" : "Operations & Jobs"} subtitle={scheduled ? "Review and manage work that runs on a schedule." : "Manage OpenClaw jobs, run history, and recovery."} actions={<div className="flex shrink-0 items-center gap-2"><Button variant="secondary" size="sm" className="h-9 rounded-lg px-3" onClick={() => void load()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button><Button size="sm" className="h-9 rounded-lg px-3" disabled={data?.scheduler.state !== "available"} title={data?.scheduler.state !== "available" ? "Cron write capability is unavailable." : undefined} onClick={() => setCreating(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />{scheduled ? "Schedule task" : "New job"}</Button></div>} />
+    <PageHeader surfaceTheme={surfaceTheme} title={scheduled ? "Scheduled tasks" : "Operations & Jobs"} subtitle={scheduled ? "Review and manage work that runs on a schedule." : "Manage OpenClaw jobs, run history, and recovery."} actions={<div className="flex shrink-0 items-center gap-2"><Button variant="secondary" size="sm" className="h-9 rounded-lg px-3" onClick={() => void load()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button><Button size="sm" className="h-9 rounded-lg px-3" disabled={!workspaceSelectionReady || data?.scheduler.state !== "available"} title={!workspaceSelectionReady ? "Restoring the selected workspace." : data?.scheduler.state !== "available" ? "Cron write capability is unavailable." : undefined} onClick={() => setCreating(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />{scheduled ? "Schedule task" : "New job"}</Button></div>} />
     {!scheduled ? <SuggestedWorkPanel nativeWork={snapshot.nativeWork} refresh={refresh} /> : null}
     <StatGrid columns={4}><StatCard label="Active" value={String(counts.active)} detail="Scheduled in OpenClaw" icon={CalendarClock} tone="info" /><StatCard label="Running" value={String(counts.running)} detail="Live cron runs" icon={Activity} tone="warning" /><StatCard label="Failed" value={String(counts.failed)} detail="Needs recovery" icon={AlertTriangle} tone="danger" /><StatCard label="Paused" value={String(counts.paused)} detail="Disabled jobs" icon={CirclePause} tone="muted" /></StatGrid>
     {data?.notices.map((notice) => <div key={notice.title} className="rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs text-muted-foreground"><strong className="text-foreground">{notice.title}</strong><span className="ml-2">{notice.detail}</span></div>)}
@@ -238,7 +238,7 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
     { label: "Daily", detail: "09:00", value: "0 9 * * *" },
     { label: "Hourly", detail: "On the hour", value: "0 * * * *" }
   ];
-  const canSubmit = Boolean(name.trim() && prompt.trim() && agentId && expression.trim() && timezone.trim() && agents.length);
+  const canSubmit = Boolean(name.trim() && prompt.trim() && selectedAgent && expression.trim() && timezone.trim());
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
