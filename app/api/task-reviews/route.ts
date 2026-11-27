@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import { readTaskReviews, writeTaskReview } from "@/lib/agentos/application/task-review-service";
+import { resolveTaskReviewKey } from "@/lib/agentos/workforce/task-review";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
@@ -58,18 +59,4 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Unable to save the task review decision." }, { status: 503 });
   }
-}
-
-function resolveTaskReviewKey(task: {
-  id: string;
-  key: string;
-  dispatchId?: string | null;
-  metadata: Record<string, unknown>;
-}) {
-  const dispatchId = task.dispatchId?.trim();
-  if (dispatchId) return dispatchId;
-  const nativeTaskId = typeof task.metadata.openClawTaskId === "string"
-    ? task.metadata.openClawTaskId.trim()
-    : "";
-  return nativeTaskId || task.key.trim() || task.id;
 }

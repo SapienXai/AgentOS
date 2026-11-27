@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, MessageCircle, Search } from "lucide-react";
+import { ArrowLeft, FileText, MessageCircle, Search } from "lucide-react";
 import dynamic from "next/dynamic";
 
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
@@ -34,6 +34,10 @@ function ChatPageContent({ snapshot, rootSnapshot, activeWorkspaceId, surfaceThe
   const heading = useRef<HTMLHeadingElement>(null);
   const roster = snapshot.agents;
   const employee = requested ? roster.find(agent => agent.id === requested) ?? null : null;
+  const latestResult = employee ? snapshot.tasks.find((task) =>
+    task.primaryAgentId === employee.id && task.workspaceId === employee.workspaceId && task.dispatchId &&
+    (task.status === "completed" || task.status === "stalled" || task.status === "cancelled")
+  ) : null;
   const filtered = roster.filter(agent => formatAgentDisplayName(agent).toLowerCase().includes(search.trim().toLowerCase()));
   const conversationTitle = employee ? formatAgentDisplayName(employee) : "Chat";
 
@@ -96,8 +100,15 @@ function ChatPageContent({ snapshot, rootSnapshot, activeWorkspaceId, surfaceThe
                 <Link href={`/agents/${encodeURIComponent(employee.id)}?tab=capabilities`} className="hover:underline">Abilities</Link>
               </div>
             </header>
+            {latestResult?.dispatchId ? (
+              <Link href={`/missions/${encodeURIComponent(latestResult.dispatchId)}#deliverable`}
+                className="flex min-h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs font-medium text-primary hover:bg-accent sm:px-5">
+                <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">Latest task result · {latestResult.title}</span>
+              </Link>
+            ) : null}
             <div className="min-h-0 flex-1">
-              <AgentChatDrawer agent={employee} snapshot={rootSnapshot} isVisible surface="transparent" draftWorkspaceId={employee.workspaceId}
+              <AgentChatDrawer agent={employee} key={employee.id} snapshot={rootSnapshot} isVisible surface="transparent" draftWorkspaceId={employee.workspaceId}
                 onRefresh={refresh} onSnapshotChange={setSnapshot} onConnectModelProvider={setProvider} />
             </div>
           </>

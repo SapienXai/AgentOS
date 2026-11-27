@@ -77,6 +77,7 @@ export type AgentNodeData = Record<string, unknown> & {
   taskFocused?: boolean;
   creationPulse?: boolean;
   activeTaskCount?: number;
+  activeTaskTitle?: string;
   backgroundTasks?: WorkItemRecord[];
   onInspectBackgroundTask?: TaskNodeData["onInspect"];
   onReviewBackgroundTask?: (task: WorkItemRecord) => void;

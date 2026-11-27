@@ -20,6 +20,7 @@ import { toast } from "@/components/ui/sonner";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { AddModelsProviderId } from "@/lib/openclaw/types";
+import { resolveEmployeeWorkReadiness } from "@/lib/openclaw/readiness";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, More
 import { agentFilterLabel, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
 type ActiveWork = { title: string; status: "running" | "queued" };
+type RecentResult = { missionId: string; title: string; status: "completed" | "stalled" | "cancelled" };
 
 export function AgentsPageContent({
   snapshot,
@@ -64,6 +66,16 @@ export function AgentsPageContent({
       }
     }
     return items;
+  }, [snapshot.tasks]);
+  const recentResults = useMemo(() => {
+    const results = new Map<string, RecentResult>();
+    for (const task of snapshot.tasks) {
+      const { primaryAgentId, dispatchId, title, status } = task;
+      if (!primaryAgentId || !dispatchId || results.has(primaryAgentId) ||
+        (status !== "completed" && status !== "stalled" && status !== "cancelled")) continue;
+      results.set(primaryAgentId, { missionId: dispatchId, title, status });
+    }
+    return results;
   }, [snapshot.tasks]);
   const agents = useMemo(() => {
     const running = new Set(snapshot.runtimes.filter(runtime => runtime.status === "running" &&
@@ -250,12 +262,15 @@ export function AgentsPageContent({
                   key={agent.id}
                   agent={agent}
                   currentWork={activeWork.get(agent.id)}
+                  recentResult={recentResults.get(agent.id)}
+                  readiness={resolveEmployeeWorkReadiness(snapshot, agent.source?.modelId)}
                   connectionBadges={resolveAgentConnectionBadges(agent, loginTargets, accessRules)}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
                   onSelect={() => setSelectedId((current) => current === agent.id ? "" : agent.id)}
                   onMessage={() => setChatAgentId(agent.id)}
                   onRunTask={() => setDispatchAgent(agent)}
+                  onChangeModel={() => setModelAgentId(agent.id)}
                   onManageProfile={() => setProfileAgentId(agent.id)}
                 />
               ))}
@@ -358,22 +373,28 @@ export function AgentsPageContent({
 function AgentCard({
   agent,
   currentWork,
+  recentResult,
+  readiness,
   connectionBadges,
   selected,
   list,
   onSelect,
   onMessage,
   onRunTask,
+  onChangeModel,
   onManageProfile
 }: {
   agent: AgentView;
   currentWork: ActiveWork | undefined;
+  recentResult: RecentResult | undefined;
+  readiness: ReturnType<typeof resolveEmployeeWorkReadiness>;
   connectionBadges: AgentConnectionBadge[];
   selected: boolean;
   list: boolean;
   onSelect: () => void;
   onMessage: () => void;
   onRunTask: () => void;
+  onChangeModel: () => void;
   onManageProfile: () => void;
 }) {
   const role = agent.source?.workerProfile?.employment.role || agent.policyLabel;
@@ -382,7 +403,7 @@ function AgentCard({
   const activity = currentWork
     ? `${currentWork.status === "running" ? "Working on" : "Queued"}: ${currentWork.title}`
     : agent.status === "running" ? "Active session"
-      : agent.status === "needs-approval" ? "Needs approval" : "No active task";
+      : agent.status === "needs-approval" ? "Needs your review" : readiness.label;
 
   return (
     <article className={cn("workforce-person min-w-0", selected && "workforce-person--selected", list ? "workforce-person--list" : "workforce-directory-card")}>
@@ -403,6 +424,18 @@ function AgentCard({
           <span aria-hidden="true" className={cn("mt-[0.42rem] size-2 shrink-0 rounded-full bg-muted-foreground/45", (agent.status === "running" || currentWork?.status === "running") && "bg-[hsl(var(--status-success))]")} />
           {activity}
         </p>
+        {!currentWork && readiness.label === "Connect a model" ? (
+          <button type="button" onClick={onChangeModel} className="min-h-9 text-sm font-medium text-primary hover:underline">
+            Set up model
+          </button>
+        ) : null}
+        {!currentWork && recentResult ? (
+          <Link href={`/missions/${encodeURIComponent(recentResult.missionId)}#deliverable`}
+            className="block truncate text-sm font-medium text-primary hover:underline"
+            title={recentResult.title}>
+            {recentResult.status === "completed" ? "Latest result" : "Last task needs review"} · {recentResult.title}
+          </Link>
+        ) : null}
         {connectionBadges.length ? (
           <details className="workforce-disclosure">
             <summary>Connections</summary>
@@ -487,7 +520,7 @@ function resolveAgentConnectionBadges(
     return [];
   }
 
-  const toolNames = new Set([...(source.tools ?? []), ...(source.observedTools ?? [])].map((tool) => tool.toLowerCase()));
+  const toolNames = new Set((source.observedTools ?? []).map((tool) => tool.toLowerCase()));
   const badges: AgentConnectionBadge[] = [];
 
   if (toolNames.has("gateway")) {

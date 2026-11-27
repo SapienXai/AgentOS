@@ -460,6 +460,12 @@ export function buildAgentPolicyPromptLines(policy: AgentPolicy, setupAgentId?: 
     lines.push("- Operate with the selected policy, keep artifacts reviewable, and avoid surprising side effects.");
   }
 
+  lines.push(
+    "- Start with the available workspace context and permitted tools. Make reasonable assumptions for reversible decisions that do not materially change the outcome.",
+    "- If a prerequisite is unavailable, use a permitted fallback when it can fulfill the objective. Once blocked, describe the specific missing prerequisite and how the operator can resolve it.",
+    "- Ask for clarification when the ambiguity changes the objective, scope, or approval needed. Use native approvals where required and honor the decision."
+  );
+
   switch (policy.missingToolBehavior) {
     case "fallback":
       lines.push(

@@ -1,8 +1,8 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import type { Dirent } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { constants, type Dirent } from "node:fs";
+import { lstat, mkdir, open, opendir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
 import { isLoopbackHost } from "@/lib/security/local-operator";
 import path from "node:path";
@@ -30,6 +30,8 @@ import type { WorkspaceProject } from "@/lib/openclaw/types";
 export { WORKSPACE_MANAGED_FILE_MAX_BYTES } from "@/lib/openclaw/workspace-file-types";
 
 const pendingWrites = new Map<string, Promise<unknown>>();
+const MAX_DELIVERABLE_BYTES = 32 * 1024 * 1024;
+export const MAX_MISSION_DELIVERABLES = 32;
 
 export class WorkspaceFileConflictError extends Error {
   constructor() {
@@ -39,6 +41,98 @@ export class WorkspaceFileConflictError extends Error {
 
 function fileRevision(content: string) {
   return createHash("sha256").update(content).digest("hex");
+}
+
+export function isWorkspaceDeliverablePath(relativePath: string) {
+  if (!relativePath.startsWith("deliverables/") || relativePath.length > 1024 || /[\\:]/.test(relativePath) ||
+    Array.from(relativePath).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
+    return false;
+  }
+  return !isBlockedWorkspacePath(relativePath) &&
+    relativePath.split("/").every((segment) => segment && !segment.startsWith("."));
+}
+
+export async function listWorkspaceDeliverablePaths(workspacePath: string, runDirectory: string) {
+  if (!isWorkspaceDeliverablePath(runDirectory) || runDirectory.split("/").length !== 2 ||
+    !isLoopbackHost(new URL(resolveGatewayUrl()).host)) return [];
+  const root = await realpath(workspacePath).catch(() => null);
+  if (!root) return [];
+  const deliverables = path.join(root, "deliverables");
+  if (!(await lstat(deliverables).catch(() => null))?.isDirectory()) return [];
+
+  const files: string[] = [];
+  const directories = [runDirectory];
+  let inspected = 0;
+  while (directories.length && inspected < 128 && files.length < MAX_MISSION_DELIVERABLES) {
+    const relativeDirectory = directories.shift()!;
+    const directory = path.join(root, relativeDirectory);
+    if (!(await lstat(directory).catch(() => null))?.isDirectory()) continue;
+    const entries = await opendir(directory).catch(() => null);
+    if (!entries) continue;
+    for await (const entry of entries) {
+      if (++inspected > 128 || files.length === MAX_MISSION_DELIVERABLES) break;
+      const relative = `${relativeDirectory}/${entry.name}`;
+      if (!isWorkspaceDeliverablePath(relative)) continue;
+      if (entry.isFile()) files.push(relative);
+      if (entry.isDirectory() && relative.split("/").length <= 5) directories.push(relative);
+    }
+  }
+  return files.sort();
+}
+
+async function resolveWorkspaceDeliverable(workspacePath: string, relativePath: string) {
+  if (!isWorkspaceDeliverablePath(relativePath) || !isLoopbackHost(new URL(resolveGatewayUrl()).host)) return null;
+  const workspaceRealPath = await realpath(workspacePath);
+  const segments = relativePath.split("/");
+  let currentPath = workspaceRealPath;
+  for (const segment of segments.slice(0, -1)) {
+    currentPath = path.join(currentPath, segment);
+    if (!(await lstat(currentPath)).isDirectory()) return null;
+  }
+  const absolutePath = resolveWorkspaceChildPath(workspaceRealPath, relativePath);
+  const stat = await lstat(absolutePath);
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > MAX_DELIVERABLE_BYTES) return null;
+  await assertRealPathInsideWorkspace(absolutePath, workspaceRealPath);
+  return { absolutePath, stat };
+}
+
+export async function inspectWorkspaceDeliverable(workspacePath: string, relativePath: string) {
+  try {
+    return (await resolveWorkspaceDeliverable(workspacePath, relativePath))?.stat.size ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Revalidate the scope and inode around the bounded read through the open handle. */
+export async function readWorkspaceDeliverable(workspacePath: string, relativePath: string) {
+  try {
+    const before = await resolveWorkspaceDeliverable(workspacePath, relativePath);
+    if (!before) return null;
+    const handle = await open(before.absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const opened = await handle.stat();
+      const beforeRead = await resolveWorkspaceDeliverable(workspacePath, relativePath);
+      if (!beforeRead || !opened.isFile() || opened.dev !== beforeRead.stat.dev || opened.ino !== beforeRead.stat.ino ||
+        opened.nlink !== 1 || opened.size > MAX_DELIVERABLE_BYTES) return null;
+
+      const bytes = new Uint8Array(opened.size);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (bytesRead === 0) return null;
+        offset += bytesRead;
+      }
+      const after = await resolveWorkspaceDeliverable(workspacePath, relativePath);
+      if (!after || opened.dev !== after.stat.dev || opened.ino !== after.stat.ino ||
+        opened.size !== after.stat.size || opened.mtimeMs !== after.stat.mtimeMs) return null;
+      return bytes;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 type WorkspaceFileSpec = {

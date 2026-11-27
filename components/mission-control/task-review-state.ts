@@ -1,5 +1,6 @@
 import type { MissionControlSnapshot, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
 import type { TaskReviewResolution, TaskReviewStateMap, TaskReviewStatus } from "@/lib/agentos/workforce/task-review";
+import { resolveTaskReviewKey } from "@/lib/agentos/workforce/task-review";
 
 export const taskReviewStateStorageKey = "mission-control-task-review-state-v1";
 
@@ -13,14 +14,7 @@ export type TaskReviewDisplayOptions = {
   latestEvidenceAt?: string | null;
 };
 
-export function resolveTaskReviewKey(task: Pick<WorkItemRecord, "id" | "key" | "dispatchId"> & { metadata?: Record<string, unknown> }) {
-  const dispatchId = typeof task.dispatchId === "string" ? task.dispatchId.trim() : "";
-  if (dispatchId) return dispatchId;
-  const nativeTaskId = typeof task.metadata?.openClawTaskId === "string" ? task.metadata.openClawTaskId.trim() : "";
-  if (nativeTaskId) return nativeTaskId;
-  const key = typeof task.key === "string" ? task.key.trim() : "";
-  return key || task.id;
-}
+export { resolveTaskReviewKey };
 
 export function createTaskReviewResolution(
   task: WorkItemRecord,

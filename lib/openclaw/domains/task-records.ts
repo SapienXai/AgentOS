@@ -142,6 +142,7 @@ export function buildTaskRecord(
       parentId: firstMetadataString(sortedRuntimes, "parentId"),
       ownerKey: firstMetadataString(sortedRuntimes, "ownerKey"),
       requesterSessionKey: firstMetadataString(sortedRuntimes, "requesterSessionKey"),
+      nativeDelegatedSession: sortedRuntimes.some((runtime) => runtime.metadata.nativeDelegatedSession === true),
       childSessionKey: firstMetadataString(sortedRuntimes, "childSessionKey"),
       flowId: firstMetadataString(sortedRuntimes, "flowId"),
       sourceId: firstMetadataString(sortedRuntimes, "sourceId"),
@@ -291,6 +292,8 @@ function selectTaskSignalRuntimes(runtimes: RuntimeRecord[]) {
 
 function isDirectChatRuntime(runtime: RuntimeRecord) {
   const origin = typeof runtime.metadata.origin === "string" ? runtime.metadata.origin : null;
+
+  if (runtime.metadata.nativeDelegatedSession === true) return false;
 
   if (origin === "mission-dispatch" || origin === "agentos-mission-dispatch") {
     return false;
@@ -487,6 +490,10 @@ function resolveTaskGroupKey(
     return `task:${nativeTaskId}`;
   }
 
+  if (sessionId && runtime.metadata.nativeDelegatedSession === true) {
+    return `session:${sessionId}`;
+  }
+
   if (dispatchId) {
     return `dispatch:${dispatchId}`;
   }
@@ -593,9 +600,18 @@ function resolveTaskStatus(
 ): RuntimeRecord["status"] {
   return resolveCanonicalTaskStatus({
     nativeTaskStatus: resolveNativeTaskStatus(runtimes),
-    runtimeStatuses: runtimes.map((runtime) => runtime.status),
+    runtimeStatuses: resolveTaskRuntimeStatuses(runtimes),
     dispatchStatus
   });
+}
+
+function resolveTaskRuntimeStatuses(runtimes: RuntimeRecord[]): RuntimeRecord["status"][] {
+  const sessionStatus = runtimes.find((runtime) => runtime.metadata.nativeDelegatedSessionStatus)?.metadata.nativeDelegatedSessionStatus;
+  if (sessionStatus === "queued" || sessionStatus === "running" || sessionStatus === "idle" ||
+    sessionStatus === "completed" || sessionStatus === "stalled" || sessionStatus === "cancelled") {
+    return [sessionStatus];
+  }
+  return runtimes.map((runtime) => runtime.status);
 }
 
 function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: RuntimeRecord["status"] | null) {
@@ -607,7 +623,7 @@ function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: Runtim
     return 0;
   }
 
-  return runtimes.filter((runtime) => runtime.status === "running" || runtime.status === "queued").length;
+  return resolveTaskRuntimeStatuses(runtimes).filter((status) => status === "running" || status === "queued").length;
 }
 
 function resolveTaskDispatchStatus(runtimes: RuntimeRecord[]): RuntimeRecord["status"] | null {

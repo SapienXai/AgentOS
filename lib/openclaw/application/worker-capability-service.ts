@@ -39,6 +39,7 @@ type CapabilityAccountFact = {
   provider: string;
   connected: boolean | null;
   accountId: string | null;
+  scope?: "instance";
 };
 
 export type EffectiveToolsReadStatus = "available" | "failed" | "not-requested";
@@ -166,7 +167,8 @@ export function resolveEffectiveCapability(input: CapabilityResolutionInput): Ef
           account: {
             provider: input.account.provider,
             connected: input.account.connected,
-            accountId: input.account.accountId
+            accountId: input.account.accountId,
+            ...(input.account.scope ? { scope: input.account.scope } : {})
           }
         }
       : {}),
@@ -249,6 +251,11 @@ export function resolveEffectiveCapability(input: CapabilityResolutionInput): Ef
     return buildCapability(input, "needs-setup", `Connect a usable ${input.account.provider} account to use this capability.`, evidence, reasons, "connect-account");
   }
 
+  if (input.account?.scope === "instance") {
+    addReason("unknown", "The channel inventory does not establish this worker's authorization to use an account.");
+    return buildCapability(input, "unknown", "Review the employee's channel bindings to verify access.", evidence, reasons, "review-policy");
+  }
+
   if (input.skill && !input.skill.active) {
     addReason("skill_not_active", "The required skill revision is not active for this session.");
     return buildCapability(input, "needs-setup", "Activate the required skill for the next turn.", evidence, reasons, "activate-skill");
@@ -276,6 +283,9 @@ export async function getWorkerEffectiveCapabilities(
   workerId: string,
   options: { sessionKey?: string | null; adapter?: ReturnType<typeof getOpenClawAdapter> } = {}
 ) {
+  if (options.sessionKey && !sessionKeyBelongsToWorker(options.sessionKey, workerId)) {
+    throw new Error("The requested session does not belong to this employee.");
+  }
   const adapter = options.adapter ?? getOpenClawAdapter();
   const [agentsResult, sessionsResult] = await Promise.allSettled([
     adapter.listAgents({ timeoutMs: 8_000 }),
@@ -622,7 +632,8 @@ function resolveAccountFact(tools: CapabilityToolFact[], payload: OpenClawChanne
   return {
     provider: payload.channelLabels[channelId] ?? channelId,
     connected,
-    accountId: connected === true ? accounts.find((account) => account.connected === true)?.accountId ?? null : null
+    accountId: null,
+    scope: "instance"
   };
 }
 
@@ -642,8 +653,13 @@ function selectLatestSession(sessions: Array<Record<string, unknown> & { agentId
       key: readString(session.key) ?? readString(session.sessionKey),
       updatedAt: typeof session.updatedAt === "number" ? session.updatedAt : null
     }))
-    .filter((session): session is { key: string; updatedAt: number | null } => Boolean(session.key))
+    .filter((session): session is { key: string; updatedAt: number | null } =>
+      Boolean(session.key && sessionKeyBelongsToWorker(session.key, agentId)))
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))[0] ?? null;
+}
+
+function sessionKeyBelongsToWorker(sessionKey: string, workerId: string) {
+  return /^agent:([^:]+):/.exec(sessionKey.trim())?.[1] === workerId;
 }
 
 function buildCapability(

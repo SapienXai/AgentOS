@@ -2465,14 +2465,7 @@ async function syncWorkspaceAgentPolicySkills(
         name: agent.name,
         model: normalizeOptionalValue(agent.modelId),
         heartbeat: agent.heartbeat.enabled && agent.heartbeat.every ? { every: agent.heartbeat.every } : null,
-        skills: [...filterAgentPolicySkills(agent.skills), policySkillId],
-        tools: agent.tools.includes("fs.workspaceOnly")
-          ? {
-              fs: {
-                workspaceOnly: true
-              }
-            }
-          : null
+        skills: [...filterAgentPolicySkills(agent.skills), policySkillId]
       },
       snapshot,
       undefined,

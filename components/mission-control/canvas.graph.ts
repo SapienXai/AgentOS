@@ -210,6 +210,8 @@ export function buildCanvasGraph(
       const hasJustCreatedTask = agentOperatorTasks.some((task) => justCreatedTaskIds.includes(task.id));
       const isTaskFocusedAgent = selectedTaskAgentId === agent.id || hasJustCreatedTask;
       const activeTaskCount = agentOperatorTasks.filter((task) => isLiveTask(task)).length;
+      const activeTaskTitle = agentOperatorTasks.find((task) => task.status === "running")?.title ??
+        agentOperatorTasks.find((task) => isLiveTask(task))?.title;
       const isAgentChatOpen = activeChatAgentId === agent.id;
       const agentInboxItems = (snapshot.agentInbox ?? []).filter((item) => item.agentId === agent.id);
       const isPendingCreation = pendingWorkspaceAgentIds.has(agent.id);
@@ -252,6 +254,7 @@ export function buildCanvasGraph(
           taskFocused: isTaskFocusedAgent,
           creationPulse: recentCreatedAgentId === agent.id,
           activeTaskCount,
+          activeTaskTitle,
           backgroundTasks: workspaceTaskRecords.filter((task) => isSystemOwnedMonitorTask(task) && resolveTaskOwnerId(task) === agent.id),
           onInspectBackgroundTask: isPendingCreation ? undefined : onInspectTask,
           onReviewBackgroundTask: isPendingCreation ? undefined : onReviewTask,
@@ -577,11 +580,7 @@ export function buildEdgesForNodes(
       targetHandle: "target-left",
       type: "simplebezier",
       zIndex: 4,
-      animated:
-        isLiveTask(task) ||
-        task.id === selectedNodeId ||
-        justCreatedTaskIds.includes(task.id) ||
-        (isComposerActive && ownerAgentId === composerTargetAgentId),
+      animated: task.status === "running" && task.liveRunCount > 0,
       data: {
         composerFocused: isComposerActive && ownerAgentId === composerTargetAgentId,
         taskFocused: task.id === selectedNodeId || justCreatedTaskIds.includes(task.id),
@@ -634,7 +633,7 @@ export function buildSurfaceTetherEdges(
       targetHandle: node.data.variant === "add" ? "target-surface-action" : "target-surface",
       type: "simplebezier",
       zIndex: 8,
-      animated: true,
+      animated: false,
       data: {
         surfaceTether: true,
         surfaceAccentColor: node.data.accentColor ?? null,

@@ -152,7 +152,65 @@ function JobActionTooltip({ label, detail, children }: { label: string; detail: 
 
 function DeleteOperationDialog({ job, busy, onClose, onConfirm }: { job: OperationJob | null; busy: boolean; onClose: () => void; onConfirm: (job: OperationJob) => Promise<void> }) { return <Dialog open={Boolean(job)} onOpenChange={(open) => { if (!open && !busy) onClose(); }}><DialogContent className="w-[calc(100vw-24px)] max-w-[440px] gap-0 overflow-hidden rounded-[20px] border-border bg-popover p-0"><div className="border-b border-border px-5 py-4 pr-12"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-destructive/20 bg-destructive/10 text-destructive"><Trash2 className="h-4 w-4" /></span><DialogHeader className="space-y-1"><DialogTitle className="text-base">Delete operation?</DialogTitle><DialogDescription>This permanently removes the job from OpenClaw and clears its AgentOS operation metadata.</DialogDescription></DialogHeader></div></div><div className="px-5 py-4"><p className="text-sm font-semibold text-foreground">{job?.name}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Historical runtime evidence already held by OpenClaw may remain available through its session history. Future scheduled runs will stop.</p></div><div className="flex justify-end gap-2 border-t border-border bg-muted/25 px-5 py-3.5"><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button><Button type="button" variant="destructive" disabled={!job || busy} onClick={() => { if (job) void onConfirm(job); }}>{busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}{busy ? "Deleting…" : "Delete job"}</Button></div></DialogContent></Dialog>; }
 
-function JobDetail({ job, runs, busy, onAction }: { job: OperationJob; runs: OperationsSnapshot["runs"]; busy: boolean; onAction: (action: "run" | "pause" | "resume" | "retry" | "disable" | "cancel" | "delete", job: OperationJob) => Promise<void> }) { return <div className="space-y-4"><div><p className="text-sm font-semibold text-foreground">{job.name}</p><p className="mt-1 text-xs text-muted-foreground">{job.description ?? "No description"}</p></div><div className="space-y-2"><KeyValue label="Owner" value={job.agentId ?? "Unknown"} /><KeyValue label="Schedule" value={schedule(job)} /><KeyValue label="Next run" value={job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : "Not scheduled"} /><KeyValue label="Health" value={job.health.degraded ? "Degraded" : job.health.successRate === null ? "No completed runs" : `${Math.round(job.health.successRate * 100)}% success`} /><KeyValue label="Concurrency" value={job.safety?.concurrency ?? "Not managed by AgentOS"} /><KeyValue label="Transport" value={job.capabilities.mutable ? "Native Gateway" : job.capabilities.reason ?? "Read-only"} /></div><div className="grid grid-cols-2 gap-2"><Button size="sm" disabled={busy || !job.capabilities.mutable} onClick={() => void onAction("run", job)}><Zap className="mr-1 h-3.5 w-3.5" />Run once now</Button><Button size="sm" variant="secondary" disabled={busy || !job.capabilities.mutable} onClick={() => void onAction(job.enabled ? "pause" : "resume", job)}>{job.enabled ? "Pause schedule" : "Resume schedule"}</Button></div><SectionCard title="Run history"><div className="divide-y divide-border">{runs.length ? runs.slice(0, 12).map((run) => <div key={run.id} className="px-3 py-2"><div className="flex justify-between gap-2"><StatusBadge label={run.status} tone={tone(run.status)} /><span className="text-[0.65rem] text-muted-foreground">{run.startedAt ? new Date(run.startedAt).toLocaleString() : "Unknown start"}</span></div>{run.error ? <p className="mt-1 text-xs text-destructive">{run.error}</p> : run.output ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{run.output}</p> : null}</div>) : <p className="p-3 text-xs text-muted-foreground">No Gateway run history is available.</p>}</div></SectionCard><p className="text-[0.67rem] leading-4 text-muted-foreground">Cancellation of an already-queued cron run is unavailable because OpenClaw does not expose a documented cron cancel RPC. AgentOS does not simulate it.</p></div>; }
+function JobDetail({ job, runs, busy, onAction }: {
+  job: OperationJob;
+  runs: OperationsSnapshot["runs"];
+  busy: boolean;
+  onAction: (action: "run" | "pause" | "resume" | "retry" | "disable" | "cancel" | "delete", job: OperationJob) => Promise<void>;
+}) {
+  const ordered = [...runs].sort((left, right) =>
+    Date.parse(right.startedAt ?? right.endedAt ?? "") - Date.parse(left.startedAt ?? left.endedAt ?? "")
+  );
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-foreground">{job.name}</p>
+        {job.description ? <p className="mt-1 text-xs text-muted-foreground">{job.description}</p> : null}
+      </div>
+      <div className="space-y-2">
+        <KeyValue label="Owner" value={job.agentId ?? "Unknown"} />
+        <KeyValue label="Schedule" value={schedule(job)} />
+        <KeyValue label="Last run" value={job.lastRunAt ? formatDateTime(job.lastRunAt) : "No run reported"} />
+        <KeyValue label="Next run" value={job.nextRunAt ? formatDateTime(job.nextRunAt) : job.enabled ? "Unavailable" : "Paused"} />
+        <KeyValue label="Health" value={job.health.degraded ? "Degraded" : job.health.successRate === null ? "No completed runs" : `${Math.round(job.health.successRate * 100)}% success`} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button size="sm" disabled={busy || !job.capabilities.mutable} onClick={() => void onAction("run", job)}>
+          <Zap className="mr-1 size-3.5" aria-hidden="true" /> Run now
+        </Button>
+        <Button size="sm" variant="secondary" disabled={busy || !job.capabilities.mutable} onClick={() => void onAction(job.enabled ? "pause" : "resume", job)}>
+          {job.enabled ? "Pause" : "Resume"}
+        </Button>
+      </div>
+      <SectionCard title="Run history">
+        {ordered.length ? (
+          <div className="divide-y divide-border">
+            {ordered.slice(0, 12).map((run, index) => (
+              <details key={run.id} open={index === 0 || undefined} className="px-3 py-2.5">
+                <summary className="flex min-h-9 cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                    {index === 0 ? "Latest run" : run.startedAt ? formatDateTime(run.startedAt) : "Previous run"}
+                  </span>
+                  <StatusBadge label={run.status} tone={tone(run.status)} />
+                </summary>
+                <p className={cn("whitespace-pre-wrap break-words pb-1 text-sm leading-relaxed", run.error ? "text-destructive" : "text-muted-foreground")}>
+                  {run.error || run.output || "The scheduler has no saved result for this run."}
+                </p>
+              </details>
+            ))}
+          </div>
+        ) : <p className="p-3 text-sm text-muted-foreground">No run history is available yet.</p>}
+      </SectionCard>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer py-1 font-medium">Scheduler details</summary>
+        <KeyValue label="Concurrency" value={job.safety?.concurrency ?? "Managed by OpenClaw"} />
+        <KeyValue label="Transport" value={job.capabilities.mutable ? "Native Gateway" : job.capabilities.reason ?? "Read-only"} />
+        <p className="mt-2">Already queued runs can be inspected while they finish.</p>
+      </details>
+    </div>
+  );
+}
 function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }: { snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; onClose: () => void; onCreated: () => Promise<void> }) {
   const agents = snapshot.agents.filter((agent) => !activeWorkspaceId || agent.workspaceId === activeWorkspaceId);
   const [name, setName] = useState("");

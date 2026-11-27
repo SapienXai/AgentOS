@@ -116,6 +116,10 @@ async function handleRequest(
     const stream = payload.stream === true;
     const prompt = readLastUserMessage(payload.messages);
     stats.lastPrompt = prompt;
+    if (/WORKFORCE_ACCEPTANCE_CHILD_PROVIDER_ERROR/i.test(prompt)) {
+      writeJson(response, 400, { error: { message: "The controlled child source is unavailable.", type: "invalid_request_error" } });
+      return;
+    }
     const fixtureResponse = resolveFixtureResponse(prompt, payload.messages, payload.tools);
     stats.completionCount += 1;
     if (stream) stats.streamingCompletionCount += 1;
@@ -195,6 +199,34 @@ function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknow
     return { content: match?.[0] ?? "The source did not return a specimen proof code." };
   }
 
+  if (/WORKFORCE_ACCEPTANCE_RESEARCH|both outputs report the combined count and cite the source/i.test(prompt) && Array.isArray(messages)) {
+    const output = prompt.match(/`(deliverables\/[a-z0-9-]+)\/`/)?.[1];
+    if (!output) return { content: "No assigned output folder." };
+
+    const results = messages.filter((entry) => entry?.role === "tool" || entry?.role === "toolResult");
+    if (!results.length) return { toolCall: {
+      id: "agentos-research-read", name: "read", arguments: { path: "docs/studio-data.csv" }
+    } };
+
+    const source = readMessageContent(results[0].content);
+    const rows = [...source.matchAll(/^(north|south),(\d+)$/gmi)].map((match) => [match[1], Number(match[2])] as const);
+    if (rows.length !== 2) return { content: "The studio source could not be validated." };
+    const total = rows.reduce((sum, row) => sum + row[1], 0);
+    if (results.length === 1) return { toolCall: {
+      id: "agentos-research-markdown", name: "write", arguments: {
+        path: `${output}/studio-brief.md`,
+        content: `# Studio brief\n\nThe combined count is ${total}. Source: docs/studio-data.csv.\n`
+      }
+    } };
+    if (results.length === 2) return { toolCall: {
+      id: "agentos-research-csv", name: "write", arguments: {
+        path: `${output}/studio-summary.csv`,
+        content: `region,count\n${rows.map((row) => row.join(",")).join("\n")}\ntotal,${total}\n`
+      }
+    } };
+    return { content: `The combined count is ${total}. The Markdown brief and CSV summary are saved in the task's deliverables.` };
+  }
+
   if (/WORKFORCE_ACCEPTANCE_ARTIFACT/i.test(prompt) && !hasToolResult) {
     return {
       toolCall: {
@@ -209,28 +241,43 @@ function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknow
   }
 
   if (/WORKFORCE_ACCEPTANCE_DELEGATION/i.test(prompt) && !hasToolResult) {
-    return {
-      toolCall: {
+    const argumentsForSpawn = {
+      task: /WORKFORCE_ACCEPTANCE_DELEGATION_FAILURE/i.test(prompt)
+        ? "WORKFORCE_ACCEPTANCE_CHILD_PROVIDER_ERROR"
+        : "WORKFORCE_ACCEPTANCE_CHILD",
+      taskName: "acceptance-child",
+      label: "Acceptance child",
+      runtime: "subagent",
+      agentId: "main",
+      mode: "run",
+      cleanup: "keep"
+    };
+    const toolNames = Array.isArray(tools) ? tools.map((tool) => tool?.function?.name) : [];
+    if (toolNames.includes("sessions_spawn")) {
+      return { toolCall: {
         id: "agentos-acceptance-spawn",
         name: "sessions_spawn",
-        arguments: {
-          task: "WORKFORCE_ACCEPTANCE_CHILD",
-          taskName: "acceptance-child",
-          label: "Acceptance child",
-          runtime: "subagent",
-          agentId: "main",
-          mode: "run",
-          cleanup: "keep",
-          expectsCompletionMessage: true
-        }
-      }
-    };
+        arguments: argumentsForSpawn
+      } };
+    }
+    if (toolNames.includes("dispatch_action")) {
+      return { toolCall: {
+        id: "agentos-acceptance-spawn",
+        name: "dispatch_action",
+        arguments: { id: "sessions_spawn", args: argumentsForSpawn }
+      } };
+    }
+    return { content: "No native delegation tool was exposed for this turn." };
+  }
+
+  if (/WORKFORCE_ACCEPTANCE_CANCEL/i.test(prompt)) {
+    return { content: "AGENTOS_FIXTURE_CANCEL_REPLY", delayMs: 8_000 };
   }
 
   if (/WORKFORCE_ACCEPTANCE_CHILD/i.test(prompt)) {
     return {
       content: "AGENTOS_FIXTURE_CHILD_REPLY",
-      delayMs: 3_000
+      delayMs: 7_000
     };
   }
 

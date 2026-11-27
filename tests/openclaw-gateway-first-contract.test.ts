@@ -574,6 +574,10 @@ test("mission dispatch converges duplicate client request identities", async () 
     submitMissionDispatch({ mission: "Idempotent mission", workspaceId: "workspace-1", thinking: "high", requestId: "same-request" }, deps),
     /request identity is already in use/i
   );
+  await assert.rejects(
+    submitMissionDispatch({ mission: "Idempotent mission", workspaceId: "workspace-1", expectedOutcome: "A different result", requestId: "same-request" }, deps),
+    /request identity is already in use/i
+  );
 });
 
 test("mission dispatch still attempts Gateway-first path when capabilities are unknown", async () => {

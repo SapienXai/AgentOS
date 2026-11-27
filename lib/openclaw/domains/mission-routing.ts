@@ -1,9 +1,10 @@
-import { mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { DEFAULT_AGENT_PRESET, resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 import { buildAgentPolicyPromptLines } from "@/lib/openclaw/domains/workspace-bootstrap";
-import type { AgentPolicy } from "@/lib/openclaw/types";
+import type { AgentPolicy, MissionSubmission } from "@/lib/openclaw/types";
 
 export interface MissionOutputPlan {
   runFolder: string;
@@ -38,17 +39,20 @@ export function buildMissionOutputFolderName(mission: string) {
   const normalizedMission = mission.replace(/^\[[^\]]+\]\s*/i, "").trim();
   const missionSlug = slugify(normalizedMission).slice(0, 48).replace(/^-+|-+$/g, "") || "task";
 
-  return `${timestamp}-${missionSlug}`;
+  return `${timestamp}-${missionSlug}-${randomUUID()}`;
 }
 
 export async function prepareMissionOutputPlan(workspacePath: string, mission: string): Promise<MissionOutputPlan> {
   const runFolder = buildMissionOutputFolderName(mission);
-  const absoluteOutputDir = path.join(workspacePath, "deliverables", runFolder);
+  const workspaceRoot = await realpath(workspacePath);
+  const outputRoot = path.join(workspaceRoot, "deliverables");
+  const absoluteOutputDir = path.join(outputRoot, runFolder);
   const relativeOutputDir = normalizeWorkspaceRelativePath(path.join("deliverables", runFolder));
   const notesDirRelative = normalizeWorkspaceRelativePath("memory");
 
-  await mkdir(absoluteOutputDir, { recursive: true });
-  await mkdir(path.join(workspacePath, "memory"), { recursive: true });
+  await ensureMissionWorkspaceDirectory(outputRoot);
+  await ensureMissionWorkspaceDirectory(path.join(workspaceRoot, "memory"));
+  await mkdir(absoluteOutputDir);
 
   return {
     runFolder,
@@ -58,13 +62,26 @@ export async function prepareMissionOutputPlan(workspacePath: string, mission: s
   };
 }
 
+async function ensureMissionWorkspaceDirectory(directory: string) {
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+
+  if (!(await lstat(directory)).isDirectory()) {
+    throw new Error("Mission output and memory paths must be regular workspace directories.");
+  }
+}
+
 export function composeMissionWithOutputRouting(
   mission: string,
   outputPlan: Pick<MissionOutputPlan, "relativeOutputDir" | "notesDirRelative">,
   policy?: AgentPolicy,
   setupAgentId?: string | null,
   workspaceSurfacePrompt?: string | null,
-  currentAgent?: { id: string; name?: string | null } | null
+  currentAgent?: { id: string; name?: string | null } | null,
+  intent?: Pick<MissionSubmission, "expectedOutcome" | "acceptanceCriteria">
 ) {
   const resolvedPolicy = policy ?? resolveAgentPolicy(DEFAULT_AGENT_PRESET);
   const agentContextLines = currentAgent
@@ -86,7 +103,11 @@ export function composeMissionWithOutputRouting(
     `- If a file is requested, default to \`${outputPlan.relativeOutputDir}/<descriptive-file-name>\` unless the user explicitly asks for another path.`,
     `- Use \`${outputPlan.notesDirRelative}/\` only for temporary notes or durable workspace memory, not final deliverables.`,
     "- Avoid writing final artifacts to the workspace root.",
+    "- Before reporting a file as delivered, check that it exists, contains the expected content, and can be used. Report its workspace-relative path.",
+    "- Summarize the outcome, its evidence, material assumptions, and any unfinished work or conditions you could not verify.",
     "- Only update shared workspace docs when the change is durable and workspace-wide; task-specific docs should stay inside this run folder.",
+    ...(intent?.expectedOutcome ? ["", "Expected outcome:", intent.expectedOutcome] : []),
+    ...(intent?.acceptanceCriteria ? ["", "Acceptance criteria:", intent.acceptanceCriteria] : []),
     "",
     "Agent operating policy:",
     ...buildAgentPolicyPromptLines(resolvedPolicy, setupAgentId),

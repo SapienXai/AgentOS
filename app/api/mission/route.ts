@@ -80,6 +80,8 @@ export async function GET(request: Request) {
 
 const missionSchema = z.object({
   mission: z.string().min(1),
+  expectedOutcome: z.string().trim().max(500).optional(),
+  acceptanceCriteria: z.string().trim().max(1500).optional(),
   requestId: z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/).optional(),
   agentId: z.string().optional(),
   workspaceId: z.string().optional(),

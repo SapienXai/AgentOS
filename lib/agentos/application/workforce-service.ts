@@ -1,10 +1,20 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { getHumanControlInbox } from "@/lib/openclaw/application/human-control-inbox-service";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
+import {
+  inspectWorkspaceDeliverable,
+  isWorkspaceDeliverablePath,
+  listWorkspaceDeliverablePaths,
+  MAX_MISSION_DELIVERABLES,
+  readWorkspaceDeliverable
+} from "@/lib/openclaw/application/workspace-file-service";
+import { missionRequestsFileArtifact } from "@/lib/openclaw/domains/mission-dispatch";
 import {
   readMissionDispatchRecords,
   type MissionDispatchRecord
@@ -19,12 +29,13 @@ import type {
   MissionControlSnapshot,
   RuntimeRecord,
   RuntimeStatus,
-  RuntimeCreatedFile,
   TaskDetailRecord,
   TaskFeedEvent,
   TaskRecord
 } from "@/lib/agentos/contracts";
 import { redactSecretText } from "@/lib/security/redaction";
+import { readTaskReview } from "@/lib/agentos/application/task-review-service";
+import { resolveTaskReviewKey } from "@/lib/agentos/workforce/task-review";
 import {
   deriveMissionTitle,
   isMissionStateCriticalHumanControlType,
@@ -33,6 +44,7 @@ import {
 } from "@/lib/agentos/workforce/mission-state";
 import type {
   WorkforceArtifact,
+  WorkforceDeliverable,
   WorkforceMissionListResponse,
   WorkforceMissionProjection,
   WorkforceMissionServiceInput,
@@ -53,6 +65,7 @@ type MissionBuildContext = {
   seed: MissionSeed;
   humanControlItems: AttentionItem[];
   detail: TaskDetailRecord | null;
+  artifacts?: WorkforceArtifact[];
 };
 
 export async function getWorkforceMissionList(
@@ -109,12 +122,35 @@ export async function getWorkforceMissionDetail(
     }
   }
 
-  return buildMissionProjection({
+  const workspaceId = seed.record?.workspaceId ?? rootTask?.workspaceId;
+  const workspace = snapshot.workspaces.find((candidate) => candidate.id === workspaceId);
+  const [artifacts, review] = await Promise.all([
+    workspace && detail ? loadMissionArtifacts(workspace.path, detail, seed) : [],
+    input.actorId && rootTask ? readTaskReview(input.actorId, resolveTaskReviewKey(rootTask)) : null
+  ]);
+
+  const mission = buildMissionProjection({
     snapshot,
     seed,
     humanControlItems: missionAttention(seed, inbox.items),
-    detail
+    detail,
+    artifacts
   });
+  if (mission.deliverable && review && Date.parse(review.reviewedAt) >= (rootTask?.updatedAt ?? 0)) {
+    mission.deliverable.review = { status: review.status, reviewedAt: review.reviewedAt };
+  }
+  return mission;
+}
+
+export async function downloadWorkforceMissionArtifact(missionId: string, artifactId: string) {
+  const snapshot = await getMissionControlSnapshot();
+  const mission = await getWorkforceMissionDetail(missionId, { snapshot });
+  const artifact = mission?.artifacts.find((candidate) => candidate.id === artifactId && candidate.availability === "available");
+  const workspace = snapshot.workspaces.find((candidate) => candidate.id === mission?.workspaceId);
+  if (!artifact || !workspace) return null;
+
+  const bytes = await readWorkspaceDeliverable(workspace.path, artifact.path);
+  return bytes ? { bytes, filename: path.posix.basename(artifact.path) } : null;
 }
 
 export function buildMissionSeeds(tasks: TaskRecord[], records: MissionDispatchRecord[], visibleSnapshot?: MissionControlSnapshot): MissionSeed[] {
@@ -179,7 +215,8 @@ export function isMissionSeedVisible(seed: MissionSeed, snapshot: MissionControl
 }
 
 export function isMissionTask(task: TaskRecord) {
-  if (typeof task.metadata.operationJobId === "string" || task.metadata.source === "cron" || task.metadata.kind === "cron") {
+  if (task.metadata.nativeDelegatedSession === true || typeof task.metadata.operationJobId === "string" ||
+    task.metadata.source === "cron" || task.metadata.kind === "cron") {
     return false;
   }
   return Boolean(
@@ -197,7 +234,10 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
   const dispatchRuntimeStatus = seed.record ? resolveMissionDispatchRuntimeStatus(seed.record, Date.now()) : null;
   const childTasks = seed.tasks.filter((task) => task.id !== rootTask?.id && hasNativeAncestor(task, seed, seed.tasks));
   const childTaskIds = new Set(childTasks.flatMap((task) => [task.id, readString(task.metadata.openClawTaskId)]).filter((value): value is string => Boolean(value)));
-  const rootRuntimeStatuses = runtimeStatuses.filter((runtime) => !runtime.taskId || !childTaskIds.has(runtime.taskId));
+  const childRuntimeIds = new Set(childTasks.flatMap((task) => task.runtimeIds));
+  const rootRuntimeStatuses = runtimeStatuses.filter((runtime) =>
+    !childRuntimeIds.has(runtime.id) && (!runtime.taskId || !childTaskIds.has(runtime.taskId))
+  );
   const connection = resolveConnection(snapshot);
   const derivedRootStatus = rootTask?.status ?? (
     seed.record && (seed.record.observation.runtimeId || seed.record.runner.lastHeartbeatAt)
@@ -234,13 +274,18 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
   const error = seed.record?.error ? redactSecretText(seed.record.error) : rootTask?.status === "stalled" ? redactSecretText(rootTask.subtitle) : null;
   const workTree = buildWorkTree(seed, snapshot, state, primaryAgentName);
   const timeline = buildTimeline({ context, state, title, primaryAgentName, workTree, createdAt, startedAt, completedAt, result });
-  const artifacts = buildArtifacts(detail, seed);
+  const artifacts = context.artifacts ?? [];
+  const expectedOutcome = seed.record?.expectedOutcome ?? null;
+  const acceptanceCriteria = seed.record?.acceptanceCriteria ?? null;
+  const deliverable = buildDeliverable(state, [goal, expectedOutcome, acceptanceCriteria].filter(Boolean).join("\n"), result, detail, artifacts);
   const runtime = buildRuntimeReference(seed, detail, runtimeStatuses);
 
   return {
     id: seed.id,
     title,
     goal,
+    expectedOutcome: expectedOutcome ? redactSecretText(expectedOutcome) : null,
+    acceptanceCriteria: acceptanceCriteria ? redactSecretText(acceptanceCriteria) : null,
     state,
     stateLabel: workforceMissionStateLabel(state),
     workspaceId,
@@ -256,7 +301,7 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
     primaryAgentName,
     dispatchId: seed.record?.id ?? rootTask?.dispatchId ?? null,
     rootTaskId: rootTask?.id ?? null,
-    summary: detail?.outputs.find((output) => output.finalText?.trim())?.finalText?.trim() || (seed.record ? resolveMissionDispatchCompletionDetail(seed.record) : rootTask?.subtitle || null),
+    summary: result ? redactSecretText(result) : seed.record ? redactSecretText(resolveMissionDispatchCompletionDetail(seed.record) ?? "") || null : rootTask?.subtitle || null,
     result: result ? redactSecretText(result) : null,
     error,
     connection,
@@ -265,6 +310,7 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
     humanControlItems,
     timeline,
     artifacts,
+    deliverable,
     runtime,
     availableActions: {
       canCancel: ["queued", "starting", "running", "waiting-human", "waiting-worker", "blocked", "reconnecting"].includes(state) && Boolean(rootTask || seed.record),
@@ -409,51 +455,89 @@ function buildTimeline(input: {
   return events.sort((left, right) => Date.parse(left.at) - Date.parse(right.at) || left.id.localeCompare(right.id));
 }
 
-function buildArtifacts(detail: TaskDetailRecord | null, seed: MissionSeed): WorkforceArtifact[] {
-  const sourceFiles = [
-    ...(detail?.createdFiles ?? []),
-    ...(detail?.outputs.flatMap((output) => output.createdFiles) ?? [])
-  ];
-  const seen = new Set<string>();
-  const allowedRoots = [
-    seed.record?.outputDir,
-    seed.record?.workspacePath,
-    ...seed.tasks.flatMap((task) => [task.metadata.outputDir, task.metadata.workspacePath])
-  ]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => path.resolve(value));
-  return sourceFiles.map((file) => projectSafeArtifactFile(file, allowedRoots)).filter((file): file is NonNullable<typeof file> => Boolean(file)).filter((file) => {
-    const key = file.path || file.displayPath;
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).map((file, index) => ({
-    ...file,
-    id: `artifact:${index}:${file.path}`,
-    category: artifactCategory(file.displayPath || file.path),
-    source: "openclaw-runtime" as const,
-    taskId: detail?.task.id ?? seed.tasks[0]?.id ?? null,
-    runtimeId: detail?.outputs[0]?.runtimeId ?? seed.record?.observation.runtimeId ?? null
+async function loadMissionArtifacts(workspacePath: string, detail: TaskDetailRecord, seed: MissionSeed): Promise<WorkforceArtifact[]> {
+  const realWorkspacePath = await realpath(workspacePath).catch(() => null);
+  const roots = [path.resolve(workspacePath), ...(realWorkspacePath ? [realWorkspacePath] : [])];
+  const files = new Map<string, { runtimeId: string | null; source: WorkforceArtifact["source"] }>();
+
+  // Output records are already scoped to the mission's native runs. Other
+  // references are accepted only in the mission's assigned output directory.
+  const outputDirectory = seed.record?.outputDirRelative;
+  for (const output of detail.outputs) {
+    for (const file of output.createdFiles) {
+      const relative = toWorkspaceDeliverablePath(file.path, roots);
+      if (relative && files.size < MAX_MISSION_DELIVERABLES) {
+        files.set(relative, { runtimeId: output.runtimeId, source: "openclaw-runtime" });
+      }
+    }
+  }
+  if (outputDirectory) {
+    const discovered = await listWorkspaceDeliverablePaths(workspacePath, outputDirectory);
+    const referenced = detail.createdFiles.map((file) => toWorkspaceDeliverablePath(file.path, roots))
+      .filter((file): file is string => Boolean(file?.startsWith(`${outputDirectory}/`)));
+    for (const relative of [...discovered, ...referenced]) {
+      if (files.size === MAX_MISSION_DELIVERABLES) break;
+      if (!files.has(relative)) files.set(relative, { runtimeId: null, source: "workspace-output" });
+    }
+  }
+
+  return Promise.all([...files].map(async ([relative, origin]) => {
+    const bytes = await inspectWorkspaceDeliverable(workspacePath, relative);
+    return {
+      id: createHash("sha256").update(seed.id).update("\0").update(relative).digest("hex").slice(0, 24),
+      path: relative,
+      displayPath: path.posix.basename(relative),
+      category: artifactCategory(relative),
+      source: origin.source,
+      taskId: detail.task.id,
+      runtimeId: origin.runtimeId,
+      availability: bytes === null ? "unavailable" : "available",
+      bytes
+    };
   }));
 }
 
-function projectSafeArtifactFile(file: RuntimeCreatedFile, allowedRoots: string[]): RuntimeCreatedFile | null {
-  const rawPath = file.path?.trim();
-  const displayPath = file.displayPath?.trim() || rawPath;
-  if (!rawPath && !displayPath) return null;
-  const candidate = rawPath || displayPath!;
-  if (/^https?:\/\//i.test(candidate)) return { ...file, path: candidate, displayPath: candidate };
-  if (path.isAbsolute(candidate)) {
-    const resolved = path.resolve(candidate);
-    const root = allowedRoots.find((allowedRoot) => resolved === allowedRoot || resolved.startsWith(`${allowedRoot}${path.sep}`));
-    if (!root) return null;
-    const relative = path.relative(root, resolved).split(path.sep).join("/");
-    if (!relative || relative === ".." || relative.startsWith("../")) return null;
-    return { ...file, path: relative, displayPath: relative };
+function toWorkspaceDeliverablePath(candidate: string, roots: string[]) {
+  const value = candidate.trim();
+  if (redactSecretText(value) !== value) return null;
+  const relative = path.isAbsolute(value)
+    ? roots.map((root) => path.relative(root, value).split(path.sep).join("/")).find(isWorkspaceDeliverablePath)
+    : value.replace(/^\.\//, "");
+  return relative && isWorkspaceDeliverablePath(relative) ? relative : null;
+}
+
+function buildDeliverable(
+  state: WorkforceMissionProjection["state"],
+  goal: string,
+  result: string | null,
+  detail: TaskDetailRecord | null,
+  artifacts: WorkforceArtifact[]
+): WorkforceDeliverable | null {
+  const artifactCount = artifacts.filter((artifact) => artifact.availability === "available").length;
+  const summary = result ? redactSecretText(result) : null;
+  const evidence = (detail?.integrity.issues ?? []).map((issue) => redactSecretText(issue.title));
+  const hasOutput = Boolean(summary || artifactCount);
+  const terminal = state === "completed" || state === "failed" || state === "cancelled";
+  if (!terminal && !artifactCount) return null;
+
+  if (artifacts.some((artifact) => artifact.availability === "unavailable")) {
+    evidence.push("Some reported files are missing or unavailable.");
   }
-  const relative = candidate.replaceAll("\\", "/");
-  if (relative.startsWith("/") || relative.split("/").some((part) => part === "..")) return null;
-  return { ...file, path: relative, displayPath: relative };
+  if (state === "failed" || state === "cancelled") {
+    return { outcome: hasOutput ? "partial" : "failed", summary, evidence, artifactCount };
+  }
+  if (!terminal) return { outcome: "partial", summary, evidence, artifactCount };
+  if (!detail) return { outcome: "unverified", summary, evidence, artifactCount };
+
+  if (missionRequestsFileArtifact(goal) && !artifactCount) {
+    evidence.push("No accessible file was verified for the requested deliverable.");
+    return { outcome: hasOutput ? "partial" : "unverified", summary, evidence, artifactCount };
+  }
+  if (!hasOutput) return { outcome: "unverified", summary, evidence, artifactCount };
+  if (evidence.length > 0 || /^(?:send|email|publish|submit|delete|deploy|book|purchase|buy)\b/i.test(goal.trim())) {
+    return { outcome: "needs-review", summary, evidence, artifactCount };
+  }
+  return { outcome: "delivered", summary, evidence, artifactCount };
 }
 
 function buildRuntimeReference(seed: MissionSeed, detail: TaskDetailRecord | null, runtimes: RuntimeRecord[]) {
@@ -525,7 +609,11 @@ function resolveParentId(task: TaskRecord, rootTask: TaskRecord | null, tasks: T
   if (explicit) return tasks.find((candidate) => candidate.id === explicit || readString(candidate.metadata.openClawTaskId) === explicit)?.id ?? null;
   const parentKey = readString(task.metadata.ownerKey) || readString(task.metadata.requesterSessionKey);
   if (!parentKey) return null;
-  const parent = tasks.find((candidate) => candidate.key === parentKey || readString(candidate.metadata.openClawSessionKey) === parentKey);
+  const matches = tasks.filter((candidate) => candidate.id !== task.id &&
+    (!task.workspaceId || candidate.workspaceId === task.workspaceId) &&
+    (candidate.key === parentKey || readString(candidate.metadata.openClawSessionKey) === parentKey));
+  if (task.metadata.nativeDelegatedSession === true && matches.length !== 1) return null;
+  const parent = matches[0];
   if (parent && parent.id !== task.id) return parent.id;
   if (rootTask && (rootTask.key === parentKey || readString(rootTask.metadata.openClawSessionKey) === parentKey) && rootTask.id !== task.id) return rootTask.id;
   return null;
@@ -574,7 +662,6 @@ function artifactCategory(pathValue: string): WorkforceArtifact["category"] {
   if (lower.endsWith(".md") || lower.endsWith(".doc") || lower.endsWith(".docx")) return "document";
   if (lower.endsWith(".pdf") || lower.endsWith(".csv") || lower.endsWith(".xlsx")) return "report";
   if (lower.endsWith(".ts") || lower.endsWith(".tsx") || lower.endsWith(".js") || lower.endsWith(".py")) return "code-output";
-  if (lower.startsWith("http://") || lower.startsWith("https://")) return "link";
   return "file";
 }
 

@@ -593,7 +593,8 @@ function normalizeAgentModelIdForUpdate(modelId: string | null | undefined): str
 function resolveAgentToolPolicyInput(
   requested: AgentUpdateInput["toolPolicy"] | AgentCreateInput["toolPolicy"],
   fileAccess: AgentPolicy["fileAccess"],
-  current: OpenClawAgent["toolPolicy"]
+  current: OpenClawAgent["toolPolicy"],
+  fileAccessWasExplicit = false
 ) {
   const baseline = requested === undefined ? current ?? {} : requested ?? {};
 
@@ -601,7 +602,8 @@ function resolveAgentToolPolicyInput(
     ...baseline,
     fs: {
       ...(baseline.fs ?? {}),
-      workspaceOnly: fileAccess === "workspace-only"
+      workspaceOnly: fileAccess === "workspace-only" || requested?.fs?.workspaceOnly === true ||
+        (!fileAccessWasExplicit && baseline.fs?.workspaceOnly === true)
     }
   };
 }
@@ -834,7 +836,9 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
       model: nextModelId,
       heartbeat,
       skills: uniqueStrings([...nextDeclaredSkills, policySkillId]),
-      tools: resolveAgentToolPolicyInput(input.toolPolicy, policy.fileAccess, agent.toolPolicy),
+      tools: input.toolPolicy === undefined && input.policy?.fileAccess === undefined
+        ? undefined
+        : resolveAgentToolPolicyInput(input.toolPolicy, policy.fileAccess, agent.toolPolicy, input.policy?.fileAccess !== undefined),
       sandbox: input.sandbox,
       memorySearch: input.memorySearch,
       identity: {
@@ -1522,13 +1526,6 @@ async function syncAgentPolicySkills(
         model: normalizeOptionalValue(agent.modelId),
         heartbeat: agent.heartbeat.enabled && agent.heartbeat.every ? { every: agent.heartbeat.every } : null,
         skills: [...filterAgentPolicySkills(agent.skills), policySkillId],
-        tools: agent.tools.includes("fs.workspaceOnly")
-          ? {
-              fs: {
-                workspaceOnly: true
-              }
-            }
-          : null,
         identity: {
           name: agent.identityName ?? agent.name,
           emoji: agent.identity.emoji,

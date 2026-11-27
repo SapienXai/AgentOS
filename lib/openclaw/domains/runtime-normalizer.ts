@@ -35,21 +35,29 @@ export function mapSessionCatalogEntryToRuntime(
   const taskId = extractRuntimeKeyToken(session.key, "task");
   const stage = extractRuntimeKeyToken(session.key, "stage");
   const modelId = resolveSessionModelId(session, config?.model || agent?.model);
-  const status = resolveRuntimeStatus(stage, session.key, session.ageMs);
+  const parentKey = typeof session.parentSessionKey === "string" ? session.parentSessionKey.trim() : "";
+  const spawnedBy = typeof session.spawnedBy === "string" ? session.spawnedBy.trim() : "";
+  const requesterSessionKey = extractRuntimeKeyToken(session.key, "subagent") &&
+    (!parentKey || !spawnedBy || parentKey === spawnedBy) && (parentKey || spawnedBy) !== session.key
+    ? parentKey || spawnedBy
+    : "";
+  const delegatedStatus = requesterSessionKey ? resolveDelegatedSessionStatus(session) : null;
+  const status = delegatedStatus ?? resolveRuntimeStatus(stage, session.key, session.ageMs);
   const runtimeId = createRuntimeId(session);
   const taskLabel = taskId ? taskId.slice(0, 8) : null;
   const isAgentChatSession = session.origin === "agent-chat";
+  const delegatedTitle = requesterSessionKey && typeof session.label === "string" ? session.label.trim() : "";
 
   return {
     id: runtimeId,
     source: "session",
     key: session.key || "unknown-session",
-    title: isAgentChatSession
+    title: delegatedTitle || (isAgentChatSession
       ? "Agent chat session"
       : taskLabel
       ? `${prettifyAgentName(agentId)} · ${taskLabel}`
-      : `${prettifyAgentName(agentId)} session`,
-    subtitle: isAgentChatSession ? "direct chat" : taskLabel ? `task ${taskLabel} · ${stage || "running"}` : "main session",
+      : `${prettifyAgentName(agentId)} session`),
+    subtitle: requesterSessionKey ? "Delegated work" : isAgentChatSession ? "direct chat" : taskLabel ? `task ${taskLabel} · ${stage || "running"}` : "main session",
     status,
     updatedAt: session.updatedAt ?? null,
     ageMs: session.ageMs ?? null,
@@ -60,6 +68,7 @@ export function mapSessionCatalogEntryToRuntime(
     modelOverrideSource: session.modelOverrideSource,
     sessionId: session.sessionId,
     taskId,
+    runId: requesterSessionKey && typeof session.lastRunId === "string" ? session.lastRunId : undefined,
     tokenUsage:
       typeof session.totalTokens === "number" || typeof session.inputTokens === "number"
         ? {
@@ -78,9 +87,33 @@ export function mapSessionCatalogEntryToRuntime(
       routedMission: session.routedMission ?? null,
       dispatchSubmittedAt: session.dispatchSubmittedAt ?? null,
       stage: stage ?? null,
-      historical: false
+      historical: false,
+      ...(requesterSessionKey ? {
+        requesterSessionKey,
+        openClawSessionKey: session.key,
+        nativeDelegatedSession: true,
+        nativeDelegatedSessionStatus: delegatedStatus,
+        startedAt: typeof session.startedAt === "number" && Number.isFinite(session.startedAt) ? session.startedAt : null
+      } : {})
     }
   };
+}
+
+function resolveDelegatedSessionStatus(session: SessionsPayload["sessions"][number]): RuntimeRecord["status"] | null {
+  if (session.subagentRunState === "paused") return "idle";
+  if (session.subagentRunState === "interrupted") return "stalled";
+  if (session.hasActiveSubagentRun === true || session.subagentRunState === "active") return "running";
+
+  switch (session.status) {
+    case "queued": return "queued";
+    case "running": return "running";
+    case "done": return "completed";
+    case "failed":
+    case "interrupted":
+    case "timed_out": return "stalled";
+    case "killed": return "cancelled";
+    default: return null;
+  }
 }
 
 function resolveSessionModelId(

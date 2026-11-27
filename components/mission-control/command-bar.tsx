@@ -113,7 +113,7 @@ export function CommandBar({
 }) {
   const [mission, setMission] = useState("");
   const [targetAgentId, setTargetAgentId] = useState<string>("");
-  const [thinking, setThinking] = useState<ThinkingLevel>("medium");
+  const [thinking, setThinking] = useState<ThinkingLevel>("off");
   const [executionMode, setExecutionMode] = useState<NonNullable<MissionSubmission["executionMode"]>>("standard");
   const [browserAccountId, setBrowserAccountId] = useState<string | null>(null);
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
@@ -240,7 +240,7 @@ export function CommandBar({
     const storedDraft = readComposerDraft(draftScopeKey);
     skipDraftSaveRef.current = true;
     setMission(storedDraft?.mission ?? "");
-    setThinking(storedDraft?.thinking ?? "medium");
+    setThinking(storedDraft?.thinking ?? "off");
     setExecutionMode(storedDraft?.executionMode ?? "standard");
     setBrowserAccountId(storedDraft?.browserAccountId ?? null);
     setScheduleMode(storedDraft?.scheduleMode ?? "now");
@@ -1100,7 +1100,7 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 
     return {
       mission: parsed.mission,
-      thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "medium",
+      thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "off",
       executionMode: parsed.executionMode === "isolated-worktree" ? "isolated-worktree" : "standard",
       browserAccountId: typeof parsed.browserAccountId === "string" ? parsed.browserAccountId : null,
       scheduleMode: isScheduleMode(parsed.scheduleMode) ? parsed.scheduleMode : "now",
@@ -1121,7 +1121,7 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 function writeComposerDraft(scopeKey: string, draft: DraftRecord) {
   try {
     if (
-      !draft.mission.trim() && draft.thinking === "medium" && draft.executionMode === "standard" && !draft.browserAccountId &&
+      !draft.mission.trim() && draft.thinking === "off" && draft.executionMode === "standard" && !draft.browserAccountId &&
       draft.scheduleMode === "now" && draft.cronExpression === "0 9 * * 1-5" &&
       draft.recurrence === "weekdays" && draft.recurrenceTime === "09:00" &&
       draft.intervalMinutes === "60" && !draft.runAt &&

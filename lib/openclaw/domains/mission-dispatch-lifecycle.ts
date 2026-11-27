@@ -62,6 +62,8 @@ export type MissionDispatchPayload = {
   clientRequestId: string | null;
   agentId: string;
   mission: string;
+  expectedOutcome?: string;
+  acceptanceCriteria?: string;
   routedMission: string;
   thinking: NonNullable<MissionSubmission["thinking"]>;
   requestedModelId: string | null;
@@ -115,6 +117,8 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     cancellation: null,
     operatorHistory: [],
     mission: payload.mission,
+    expectedOutcome: payload.expectedOutcome,
+    acceptanceCriteria: payload.acceptanceCriteria,
     routedMission: payload.routedMission,
     thinking: payload.thinking,
     requestedModelId: payload.requestedModelId,
@@ -1061,6 +1065,8 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
     return {
       id: parsed.id,
       clientRequestId: typeof parsed.clientRequestId === "string" ? parsed.clientRequestId : null,
+      expectedOutcome: typeof parsed.expectedOutcome === "string" ? parsed.expectedOutcome.slice(0, 500) : undefined,
+      acceptanceCriteria: typeof parsed.acceptanceCriteria === "string" ? parsed.acceptanceCriteria.slice(0, 1500) : undefined,
       status,
       agentId: parsed.agentId,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,

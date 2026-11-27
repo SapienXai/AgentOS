@@ -516,7 +516,7 @@ function extractEmailsFromValues(values: Array<string | null | undefined>) {
   return [...emails];
 }
 
-function missionRequestsFileArtifact(value: string | null) {
+export function missionRequestsFileArtifact(value: string | null) {
   if (!value) {
     return false;
   }

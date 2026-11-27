@@ -7,8 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { getWorkforceMissionDetail, getWorkforceMissionList } from "@/lib/agentos/application/workforce-service";
-import { clearMissionControlCaches, getMissionControlSnapshot, submitMission } from "@/lib/agentos/control-plane";
+import { downloadWorkforceMissionArtifact, getWorkforceMissionDetail, getWorkforceMissionList } from "@/lib/agentos/application/workforce-service";
+import type { WorkforceArtifact } from "@/lib/agentos/workforce/types";
+import { abortMissionTask, clearMissionControlCaches, createAgent, getMissionControlSnapshot, submitMission } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter, setOpenClawAdapterForTesting } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resetOpenClawGatewayClient, setOpenClawGatewayClientForTesting } from "@/lib/openclaw/client/gateway-client-factory";
@@ -18,6 +19,7 @@ import { resolveMissionDispatchResultText } from "@/lib/openclaw/domains/mission
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
+import { settleSessionsPayloadFromOpenClaw } from "@/lib/openclaw/application/mission-control/payload-loader";
 import { parseRuntimeOutputFromSessionHistory } from "@/lib/openclaw/domains/runtime-transcript";
 import {
   getHumanControlInbox,
@@ -350,6 +352,48 @@ async function main() {
       ? { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "OpenClaw executed the native write tool and Workforce projected the bounded runtime-created artifact." }
       : { status: "SKIPPED", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "The product-path mission completed, but no bounded runtime-created artifact was exposed by the native task/session projection." };
 
+    const sourceWorkspace = artifactSnapshot.workspaces.find((workspace) => workspace.path === workspaceDir ||
+      workspace.id === artifactDetail.workspaceId);
+    assert.ok(sourceWorkspace);
+    await mkdir(path.join(workspaceDir, "docs"), { recursive: true });
+    await writeFile(path.join(workspaceDir, "docs", "studio-data.csv"), "region,count\nnorth,12\nsouth,8\n");
+    const hire = await createAgent({
+      id: "studio-researcher",
+      workspaceId: sourceWorkspace.id,
+      name: "Studio Researcher",
+      modelId: selectedModel
+    }, mutationOptions());
+    const researchMission = await submitMission({
+      mission: "Read the studio source data, find the combined count, and produce a Markdown brief and CSV summary. WORKFORCE_ACCEPTANCE_RESEARCH",
+      expectedOutcome: "A usable Markdown brief and a CSV summary",
+      acceptanceCriteria: "Both files cite or reproduce the studio source and give the correct combined count.",
+      requestId: `workforce-research-${Date.now()}`,
+      workspaceId: sourceWorkspace.id,
+      agentId: hire.agentId
+    }, mutationOptions());
+    assert.ok(researchMission.dispatchId);
+    const research = await waitForDispatchTerminal(researchMission.dispatchId, async () => {
+      await getMissionControlSnapshot({ force: true });
+    });
+    assert.ok(research.sessionKey);
+    cleanupRefs.sessionKeys.push(research.sessionKey);
+    const researchDetail = await getWorkforceMissionDetail(research.id, {
+      snapshot: await getMissionControlSnapshot({ force: true })
+    });
+    assert.equal(research.status, "completed", research.error ?? undefined);
+    assert.match(researchDetail?.result ?? "", /combined count is 20/i);
+    assert.equal(researchDetail?.deliverable?.artifactCount, 2);
+    assert.equal(researchDetail?.expectedOutcome, "A usable Markdown brief and a CSV summary");
+    for (const [file, expected] of [["studio-brief.md", "combined count is 20"], ["studio-summary.csv", "total,20"]]) {
+      const artifact: WorkforceArtifact | undefined = researchDetail?.artifacts.find((entry) => entry.displayPath === file);
+      assert.ok(artifact);
+      const download = await downloadWorkforceMissionArtifact(research.id, artifact.id);
+      assert.ok(download);
+      assert.ok(new TextDecoder().decode(download.bytes).includes(expected));
+      assert.equal(await downloadWorkforceMissionArtifact(artifactDispatchId, artifact.id), null);
+    }
+    evidence.checks["default-employee-research-deliverable"] = { status: "PASS", evidence: ["APPLICATION_PATH", "OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS], detail: "A new default employee read a controlled workspace source, calculated its total, and wrote Markdown and CSV. Both downloads contained the correct result and an unrelated mission could not retrieve them." };
+
     const delegationRequestId = `workforce-delegation-${Date.now()}`;
     const delegationPromise = submitMission({
       mission: "WORKFORCE_ACCEPTANCE_DELEGATION",
@@ -367,7 +411,7 @@ async function main() {
         const delegationDetail = await getWorkforceMissionDetail(delegationRecord.id, { snapshot: delegationSnapshot });
         observedWaitingWorker ||= delegationList.missions.find((mission) => mission.id === delegationRecord.id)?.state === "waiting-worker";
         observedWaitingWorker ||= delegationDetail?.state === "waiting-worker";
-        if (["completed", "stalled", "cancelled"].includes(delegationRecord.status)) break;
+        if (observedWaitingWorker || ["stalled", "cancelled"].includes(delegationRecord.status)) break;
       }
       await wait(150);
     }
@@ -375,31 +419,120 @@ async function main() {
     assert.ok(delegationMission.dispatchId);
     const delegationRecord = await readMissionDispatchRecordById(delegationMission.dispatchId);
     assert.ok(delegationRecord);
-    const delegationTaskPayload = await client.listTasks({ sessionKey }, { timeoutMs: TIMEOUT_MS });
+    assert.ok(delegationRecord.sessionKey);
+    const delegationTaskPayload = await client.listTasks({ sessionKey: delegationRecord.sessionKey }, { timeoutMs: TIMEOUT_MS }).catch(() => undefined);
     const delegationTaskRuntimes = mapOpenClawTaskListToRuntimes(delegationTaskPayload, {
       agentConfig: [{ id: "main", workspace: workspaceDir }],
       agentsList: [{ id: "main", workspace: workspaceDir }],
       resolveWorkspaceId: () => "disposable-workspace"
     });
     const delegationChildRuntimes = delegationTaskRuntimes.filter((runtime) => typeof runtime.metadata.parentTaskId === "string" && runtime.metadata.parentTaskId.length > 0);
-    if (delegationChildRuntimes.length > 0) {
-      evidence.checks.delegation = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Native sessions_spawn produced a task row with exact parentTaskId evidence through the AgentOS Mission path." };
-      evidence.checks["waiting-worker"] = observedWaitingWorker
-        ? { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Mission list and detail both observed the parent-idle/child-running state as waiting-worker." }
-        : { status: "SKIPPED", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Native child evidence was present, but the bounded observation did not capture a stable parent-idle/child-running interval." };
-    } else {
-      evidence.checks.delegation = { status: "SKIPPED", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "The deterministic sessions_spawn attempt completed without an exposed native task/child row; no synthetic delegation was created." };
-      evidence.checks["waiting-worker"] = { status: "SKIPPED", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "The exact runtime exposed no native child task to drive this state." };
+    const childDeadline = Date.now() + 15_000;
+    let observedNativeChild = false;
+    let observedProjectedChild = false;
+    let delegationDiagnostic = {};
+    while (Date.now() < childDeadline && !observedProjectedChild) {
+      const nativeSessions = await client.listSessions({ limit: 100 }, readOptions());
+      const child = nativeSessions.sessions.find((entry) =>
+        entry.spawnedBy === delegationRecord.sessionKey && entry.status === "done" && typeof entry.key === "string"
+      );
+      if (child && typeof child.key === "string") {
+        observedNativeChild = true;
+        cleanupRefs.sessionKeys.push(child.key);
+        const current = await getMissionControlSnapshot({ force: true });
+        const detail = await getWorkforceMissionDetail(delegationRecord.id, { snapshot: current });
+        const item = detail?.workTree.find((work) => work.relationship === "delegated" && work.state === "completed");
+        const projected = current.tasks.find((task) => task.id === item?.taskId);
+        observedProjectedChild = projected?.metadata.openClawSessionKey === child.key;
+        const childTask = current.tasks.find((task) => task.metadata.openClawSessionKey === child.key);
+        const rootTask = current.tasks.find((task) => task.id === detail?.rootTaskId);
+        delegationDiagnostic = {
+          nativeParentMatches: child.parentSessionKey === child.spawnedBy,
+          nativeUpdatedAt: typeof child.updatedAt === "number",
+          runtimeFound: current.runtimes.some((runtime) => runtime.key === child.key),
+          sessionIdFound: current.runtimes.some((runtime) => runtime.sessionId === child.sessionId),
+          runtimeCount: current.runtimes.length,
+          snapshotMode: current.mode,
+          nativeRuntimeTagged: current.runtimes.some((runtime) => runtime.key === child.key && runtime.metadata.nativeDelegatedSession === true),
+          childTaskStatus: childTask?.status ?? null,
+          childParentMatches: childTask?.metadata.requesterSessionKey === delegationRecord.sessionKey,
+          sameWorkspace: Boolean(rootTask && childTask && rootTask.workspaceId === childTask.workspaceId),
+          rootSessionMatches: rootTask?.metadata.openClawSessionKey === delegationRecord.sessionKey,
+          missionWorkItems: detail?.workTree.map((work) => ({ relationship: work.relationship, state: work.state }))
+        };
+      }
+      if (!observedProjectedChild) await wait(250);
     }
+    assert.ok(observedNativeChild, "Native Gateway sessions.list did not expose the expected completed child.");
+    if (!observedProjectedChild) {
+      const productSessions = await settleSessionsPayloadFromOpenClaw([{ id: "main", workspace: workspaceDir }]);
+      delegationDiagnostic = {
+        ...delegationDiagnostic,
+        productSessionCount: productSessions.status === "fulfilled" ? productSessions.value.sessions.length : null,
+        productSessionHasChild: productSessions.status === "fulfilled" && productSessions.value.sessions.some((entry) => entry.spawnedBy === delegationRecord.sessionKey)
+      };
+    }
+    assert.ok(observedProjectedChild, `Workforce did not link the native child: ${JSON.stringify(delegationDiagnostic)}`);
+    evidence.checks.delegation = { status: "PASS", evidence: ["APPLICATION_PATH", "OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS], detail: "The submitted mission spawned a native child. Workforce linked the completed child using its exact Gateway session and requester keys." };
+    evidence.checks["waiting-worker"] = observedWaitingWorker
+      ? { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Workforce observed the parent-idle and child-running interval as waiting for a worker." }
+      : { status: "SKIPPED", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "The bounded observation did not capture a stable parent-idle and child-running interval." };
 
     const nativeTasks = buildTaskRecords(delegationTaskRuntimes, []);
     const nativeChildren = delegationChildRuntimes;
     evidence.runtimeTaskLedger = {
-      taskListRead: true,
+      taskListRead: Boolean(delegationTaskPayload),
       taskCount: nativeTasks.length,
       taskIds: delegationTaskRuntimes.map((runtime) => runtime.taskId).filter(Boolean),
       childCount: nativeChildren.length
     };
+
+    const cancelMission = await submitMission({
+      mission: "WORKFORCE_ACCEPTANCE_CANCEL",
+      requestId: `workforce-cancel-${Date.now()}`,
+      agentId: "main",
+      thinking: "off"
+    }, mutationOptions());
+    assert.ok(cancelMission.dispatchId);
+    const cancelRecord = await readMissionDispatchRecordById(cancelMission.dispatchId);
+    assert.ok(cancelRecord?.sessionKey);
+    cleanupRefs.sessionKeys.push(cancelRecord.sessionKey);
+    const cancelSnapshot = await getMissionControlSnapshot({ force: true });
+    const cancelTask = cancelSnapshot.tasks.find((task) => task.dispatchId === cancelMission.dispatchId);
+    const cancelled = await abortMissionTask(cancelTask?.id ?? cancelMission.dispatchId, "Stop the disposable fixture run.", cancelMission.dispatchId, mutationOptions());
+    assert.equal(cancelled.cancellationStatus, "confirmed", cancelled.summary);
+    const cancelledDetail = await getWorkforceMissionDetail(cancelMission.dispatchId, {
+      snapshot: await getMissionControlSnapshot({ force: true })
+    });
+    assert.equal(cancelledDetail?.state, "cancelled");
+    evidence.checks.cancellation = { status: "PASS", evidence: ["APPLICATION_PATH", "OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS], detail: "The normal task control path aborted an exact running native session and projected the confirmed outcome." };
+
+    const failingMission = await submitMission({
+      mission: "WORKFORCE_ACCEPTANCE_DELEGATION_FAILURE",
+      requestId: `workforce-child-failure-${Date.now()}`,
+      agentId: "main",
+      thinking: "off"
+    }, mutationOptions());
+    assert.ok(failingMission.dispatchId);
+    const failingRecord = await readMissionDispatchRecordById(failingMission.dispatchId);
+    assert.ok(failingRecord?.sessionKey);
+    cleanupRefs.sessionKeys.push(failingRecord.sessionKey);
+    const failureDeadline = Date.now() + 20_000;
+    let observedChildFailure = false;
+    while (!observedChildFailure && Date.now() < failureDeadline) {
+      const native = await client.listSessions({ limit: 50 }, readOptions());
+      const child = native.sessions.find((entry) => entry.spawnedBy === failingRecord.sessionKey);
+      if (child?.status === "failed" && typeof child.key === "string") {
+        cleanupRefs.sessionKeys.push(child.key);
+        const current = await getMissionControlSnapshot({ force: true });
+        const mission = await getWorkforceMissionDetail(failingMission.dispatchId, { snapshot: current });
+        const failure = mission?.workTree.find((item) => item.relationship === "delegated" && item.state === "failed");
+        observedChildFailure = current.tasks.some((task) => task.id === failure?.taskId && task.metadata.openClawSessionKey === child.key);
+      }
+      if (!observedChildFailure) await wait(250);
+    }
+    assert.ok(observedChildFailure, "The controlled provider failure did not appear on the native child and Workforce task tree.");
+    evidence.checks["child-failure"] = { status: "PASS", evidence: ["APPLICATION_PATH", "OPENCLAW_NATIVE_GATEWAY", LIVE_EVIDENCE_CLASS], detail: "A controlled provider rejection was observed as failure on the native child session and the linked Workforce item." };
 
     await runHumanControlJourneys(client, evidence, cleanupRefs);
     const missionQuestion = await client.callNative<Record<string, unknown>>("question.request", {
@@ -446,8 +579,6 @@ async function main() {
     assert.equal(rebuiltDetail?.result, finalResult);
     evidence.checks["agentos-restart-projection"] = { status: "PASS", evidence: ["APPLICATION_PATH", LIVE_EVIDENCE_CLASS], detail: "Workforce projection rebuilt from the persisted product-path dispatch and native session after Gateway restart." };
 
-    evidence.checks["cancellation"] = { status: "SKIPPED", evidence: LIVE_EVIDENCE_CLASS, detail: "No native task identity was exposed by this turn, so no unrelated session was cancelled." };
-    evidence.checks["child-failure"] = { status: "SKIPPED", evidence: LIVE_EVIDENCE_CLASS, detail: "No native child task was exposed by the safe deterministic turn." };
   } catch (error) {
     evidence.failure = sanitizeText(error instanceof Error ? error.message : "Workforce acceptance failed.");
     throw error;

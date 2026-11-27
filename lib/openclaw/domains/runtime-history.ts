@@ -27,14 +27,19 @@ export function mergeRuntimeHistory(
     const historicalRuntime = {
       ...runtime,
       status:
-        runtime.status === "stalled"
+        runtime.metadata.nativeDelegatedSession === true && (runtime.status === "running" || runtime.status === "queued")
+          ? "idle"
+          : runtime.status === "stalled"
           ? "stalled"
           : runtime.status === "cancelled"
             ? "cancelled"
             : "completed",
       metadata: {
         ...runtime.metadata,
-        historical: true
+        historical: true,
+        ...(runtime.metadata.nativeDelegatedSession === true && (runtime.status === "running" || runtime.status === "queued")
+          ? { nativeDelegatedSessionStatus: "idle" }
+          : {})
       }
     } satisfies RuntimeRecord;
 
@@ -79,6 +84,10 @@ function pruneRuntimeHistory(runtimes: RuntimeRecord[]) {
     }
 
     for (const runtime of sorted.filter(isOperatorVisibleAgentMessage).slice(0, 8)) {
+      retained.set(runtime.id, runtime);
+    }
+
+    for (const runtime of sorted.filter((entry) => entry.metadata.nativeDelegatedSession === true).slice(0, 8)) {
       retained.set(runtime.id, runtime);
     }
 

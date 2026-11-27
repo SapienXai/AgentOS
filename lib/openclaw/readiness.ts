@@ -49,6 +49,16 @@ export function resolveMissionDispatchReadinessError(
   return null;
 }
 
+/** A lightweight employee summary from the same snapshot used for dispatch. */
+export function resolveEmployeeWorkReadiness(snapshot: MissionControlSnapshot, modelId: string | null | undefined) {
+  if (!snapshot.diagnostics.rpcOk) return { state: "unknown", label: "Runtime connection unavailable" } as const;
+  if (resolveOpenClawSystemReadinessIssue(snapshot)) return { state: "needs-setup", label: "Runtime setup needs attention" } as const;
+  const modelIssue = resolveOpenClawModelReadinessIssue(snapshot, modelId === "unassigned" ? null : modelId);
+  if (!modelIssue) return { state: "ready", label: "Ready for a task" } as const;
+  if (modelId?.includes("@")) return { state: "unknown", label: "Model access will be checked on start" } as const;
+  return { state: "needs-setup", label: "Connect a model" } as const;
+}
+
 export function resolveWorkspaceCreationReadinessError(
   snapshot: MissionControlSnapshot,
   requestedModelId?: string | null

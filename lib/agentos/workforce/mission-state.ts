@@ -37,16 +37,19 @@ export function resolveWorkforceMissionState(input: WorkforceMissionStateInput):
   const hasActiveRoot = rootStatus !== null && activeStatuses.has(rootStatus);
   const hasActiveChild = childStatuses.some((status) => activeStatuses.has(status));
   const hasActiveRuntime = activeRuntimeStatuses.some((status) => activeStatuses.has(status));
+  const rootCompleted = rootStatus === "completed" ||
+    (rootStatus === null && (input.authoritativeCompletion || input.dispatchStatus === "completed"));
 
   // Native root terminal truth is stronger than stale sidecar or attention
   // records. A completed/cancelled mission must remain terminal while the
   // Gateway is temporarily unavailable.
   if (rootStatus !== "completed" && (rootStatus === "cancelled" || input.dispatchStatus === "cancelled")) return "cancelled";
-  if (rootStatus === "completed" || (rootStatus === null && (input.authoritativeCompletion || input.dispatchStatus === "completed"))) return "completed";
+  if (rootCompleted && !hasActiveChild) return "completed";
   if (pendingHumanControl.some((type) => type === "approval" || type === "question")) return "waiting-human";
   if (pendingHumanControl.some((type) => type === "blocked" || type === "runtime-issue" || type === "needs-setup")) return "blocked";
   if (input.authoritativeFailure || input.dispatchStatus === "stalled" || rootStatus === "stalled") return "failed";
   if (input.connection === "reconnecting") return "reconnecting";
+  if (rootCompleted && hasActiveChild) return "waiting-worker";
   if (hasActiveChild && !hasActiveRoot && !hasActiveRuntime) return "waiting-worker";
   if (hasActiveRoot || hasActiveRuntime) return "running";
   if (

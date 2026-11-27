@@ -7,6 +7,8 @@ import {
 } from "@/lib/agentos/application/workforce-service";
 import type { MissionControlSnapshot, RuntimeRecord, TaskRecord } from "@/lib/agentos/contracts";
 import type { MissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
+import { mapSessionCatalogEntryToRuntime } from "@/lib/openclaw/domains/runtime-normalizer";
+import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 
 function task(input: Partial<TaskRecord> & Pick<TaskRecord, "id" | "status">): TaskRecord {
   return {
@@ -131,6 +133,40 @@ test("hidden dispatch sidecars are not converted into user-visible missions", ()
 
   const visible = dispatch();
   assert.equal(buildMissionSeeds([], [visible], current).length, 1);
+});
+
+test("session-only delegation preserves native lineage without creating a second mission", () => {
+  const parentKey = "agent:worker-a:mission-1";
+  const root = task({
+    id: "root-record",
+    status: "idle",
+    dispatchId: "dispatch-1",
+    metadata: { openClawSessionKey: parentKey }
+  });
+  const childRuntime = mapSessionCatalogEntryToRuntime({
+    key: "agent:worker-b:subagent:child-1",
+    sessionId: "child-session",
+    spawnedBy: parentKey,
+    parentSessionKey: parentKey,
+    label: "Check source data",
+    lastRunId: "native-run",
+    subagentRunState: "active",
+    status: "running"
+  }, [], [{ id: "worker-b", workspace: "/tmp/visible" }], { resolveWorkspaceId: () => "workspace-visible" });
+  const [child] = buildTaskRecords([childRuntime], []);
+  assert.ok(child);
+  assert.equal(child.title, "Check source data");
+  assert.deepEqual(child.runIds, ["native-run"]);
+  const current = snapshot([root, child], [childRuntime]);
+  const seeds = buildMissionSeeds(current.tasks, [dispatch()], current);
+  assert.equal(seeds.length, 1);
+  const projection = buildMissionProjection({ snapshot: current, seed: seeds[0]!, humanControlItems: [], detail: null });
+  assert.equal(projection.state, "waiting-worker");
+  assert.deepEqual(projection.workTree.map(({ relationship, parentId }) => [relationship, parentId]), [
+    ["primary", null], ["delegated", root.id]
+  ]);
+  const hiddenParent = snapshot([{ ...root, workspaceId: "workspace-hidden" }, child], [childRuntime]);
+  assert.equal(buildMissionSeeds(hiddenParent.tasks, [dispatch()], hiddenParent)[0]?.tasks.length, 1);
 });
 
 test("same evidence produces the same state for list and detail projection paths", () => {

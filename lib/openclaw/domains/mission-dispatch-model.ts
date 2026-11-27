@@ -25,6 +25,8 @@ type MissionCommandPayloadLike = {
 export type MissionDispatchRecordLike = {
   id: string;
   clientRequestId?: string | null;
+  expectedOutcome?: string;
+  acceptanceCriteria?: string;
   status: MissionDispatchStatus | string;
   agentId: string;
   sessionId: string | null;

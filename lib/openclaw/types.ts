@@ -1132,6 +1132,7 @@ export type EffectiveCapabilityEvidence = {
     provider: string;
     connected: boolean | null;
     accountId?: string | null;
+    scope?: "instance";
   };
   policy?: {
     denied: boolean | null;
@@ -1713,6 +1714,8 @@ export interface DiscoveredSurfaceRoute {
 
 export interface MissionSubmission {
   mission: string;
+  expectedOutcome?: string;
+  acceptanceCriteria?: string;
   requestId?: string;
   agentId?: string;
   workspaceId?: string;

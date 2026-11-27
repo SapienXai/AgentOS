@@ -35,7 +35,8 @@ export function MissionConnectionEdge({
   const composerFocused = Boolean(data?.composerFocused);
   const taskFocused = Boolean(data?.taskFocused);
   const surfaceTether = Boolean(data?.surfaceTether);
-  const edgeActive = Boolean(animated) || composerFocused || taskFocused || surfaceTether;
+  const observedActivity = Boolean(animated);
+  const edgeActive = observedActivity || composerFocused || taskFocused || surfaceTether;
   const strokeWidth = resolveStrokeWidth(style?.strokeWidth, edgeActive);
   const glowStrokeWidth = strokeWidth + (composerFocused ? 5 : taskFocused ? 4.6 : surfaceTether ? 4.8 : 4);
   const motionPathId = `mission-edge-motion-${sanitizeDomId(id)}`;
@@ -88,7 +89,7 @@ export function MissionConnectionEdge({
         path={edgePath}
         className={cn(
           "mission-edge__path mission-edge__path--glow",
-          edgeActive && "mission-edge__path--animated",
+          observedActivity && "mission-edge__path--animated",
           composerFocused && "mission-edge__path--composer",
           surfaceTether && "mission-edge__path--surface-tether",
           selected && "mission-edge__path--selected"
@@ -100,7 +101,7 @@ export function MissionConnectionEdge({
         path={edgePath}
         className={cn(
           "mission-edge__path mission-edge__path--core",
-          edgeActive && "mission-edge__path--animated",
+          observedActivity && "mission-edge__path--animated",
           composerFocused && "mission-edge__path--composer",
           surfaceTether && "mission-edge__path--surface-tether",
           selected && "mission-edge__path--selected"
@@ -109,7 +110,7 @@ export function MissionConnectionEdge({
         markerEnd={surfaceTether ? undefined : markerEnd}
         style={coreStyle}
       />
-      {edgeActive ? (
+      {observedActivity ? (
         <path
           id={motionPathId}
           d={edgePath}

@@ -114,7 +114,7 @@ export function PageHeader({
   children
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   icon?: ReactNode;
   surfaceTheme?: OperationsSurfaceTheme;
   primaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; title?: string };
@@ -132,7 +132,7 @@ export function PageHeader({
           {icon}
           <div className="min-w-0">
             <h1 className="workforce-heading font-display font-semibold text-foreground">{title}</h1>
-            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">{subtitle}</p>
+            {subtitle ? <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">{subtitle}</p> : null}
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 [&>button]:flex-1 sm:w-auto sm:[&>button]:flex-none">

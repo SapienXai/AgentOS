@@ -1255,9 +1255,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               >
                 {statusLabel}
               </Badge>
-              {data.taskFocused ? (
-                <Badge variant="default" data-agent-status="working" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
-                  Working now
+              {data.taskFocused && activeTaskCount > 0 ? (
+                <Badge variant="default" data-agent-status="working" title={data.activeTaskTitle} className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
+                  Active task
                 </Badge>
               ) : null}
               {backgroundAttentionCount > 0 ? (
@@ -1266,7 +1266,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   onClick={(event) => { event.stopPropagation(); setBackgroundActivityOpen(true); }}>Needs attention · {backgroundAttentionCount}</button>
               ) : null}
               {showLiveTaskChip ? (
-                <Badge variant="success" data-agent-status="live" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
+                <Badge variant="success" data-agent-status="live" title={data.activeTaskTitle} className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   {activeTaskCount} live task{activeTaskCount === 1 ? "" : "s"}
                 </Badge>
               ) : null}
@@ -1300,7 +1300,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
 
           <div className="mt-2.5">
-            <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
+            <p className="line-clamp-2 text-[12px] leading-5 text-slate-300" title={data.activeTaskTitle}>{data.activeTaskTitle || purposeLabel}</p>
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">

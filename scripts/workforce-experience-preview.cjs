@@ -19,6 +19,7 @@ const matchedCanvas = process.argv.includes("--matched-canvas");
 const connect = process.argv.includes("--connect");
 const verifyNativeKnowledge = process.argv.includes("--native-knowledge");
 const verifyNativeMcp = process.argv.includes("--native-mcp");
+const livingWorkforce = process.argv.includes("--living-workforce");
 const suggested = process.argv.includes("--suggested");
 const fresh = connect || suggested || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
@@ -67,7 +68,9 @@ async function run() {
     const config = path.join(root, "openclaw.json");
     const mcpReceipt = path.join(root, "mcp-receipts.jsonl");
     const mainWorkspace = fresh ? path.join(state, "workspace") : path.join(root, "main");
-    const defaultModel = "agentos-fixture/" + fixture.modelId;
+    const fixtureProvider = livingWorkforce ? "openai" : "agentos-fixture";
+    const defaultModel = fixtureProvider + "/" + fixture.modelId;
+    const fixtureApiKey = "sk-agentos-workforce-fixture-00000000";
     await mkdir(state);
     await mkdir(mainWorkspace, { recursive: true });
     await writeFile(path.join(mainWorkspace, "AGENTS.md"), "# Fixture instructions\nUse the isolated sample workspace only.\n");
@@ -93,7 +96,9 @@ async function run() {
           proof_http: { url: mcpHttp.url, transport: "streamable-http" }
         } }
       } : {}),
-      ...(connect ? {} : { models: { mode: "merge", providers: { "agentos-fixture": { baseUrl: fixture.baseUrl, api: "openai-completions", apiKey: "fixture-only", models: [{ id: fixture.modelId, name: "Fixture model", input: ["text"], contextWindow: 32768, maxTokens: 256 }] } } } }),
+      ...(connect ? {} : { models: { mode: "merge", providers: { [fixtureProvider]: { baseUrl: fixture.baseUrl, api: "openai-completions",
+        apiKey: livingWorkforce ? { source: "env", provider: "default", id: "OPENAI_API_KEY" } : "fixture-only",
+        models: [{ id: fixture.modelId, name: "Fixture model", input: ["text"], contextWindow: 32768, maxTokens: 256 }] } } } }),
       ...(verifyNativeKnowledge ? { memory: { search: {
         provider: "openai", model: "text-embedding-3-small", fallback: "none",
         remote: { baseUrl: fixture.baseUrl, apiKey: "fixture-only" }
@@ -104,7 +109,8 @@ async function run() {
       PATH: process.env.PATH, HOME: root, USERPROFILE: root, TMPDIR: root, NODE_ENV: "production",
       OPENCLAW_CONFIG_PATH: config, OPENCLAW_STATE_DIR: state, OPENCLAW_GATEWAY_TOKEN: token, OPENCLAW_GATEWAY_PORT: String(gatewayPort), OPENCLAW_BIN: openclaw,
       AGENTOS_OPENCLAW_GATEWAY_URL: gatewayUrl, AGENTOS_OPENCLAW_GATEWAY_TOKEN: token, AGENTOS_RUNTIME_DIR: path.join(root, "agentos"),
-      AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control"), AGENTOS_API_TOKEN: appToken
+      AGENTOS_MISSION_CONTROL_ROOT: path.join(root, "mission-control"), AGENTOS_API_TOKEN: appToken,
+      ...(livingWorkforce ? { OPENAI_API_KEY: fixtureApiKey } : {})
     };
     function start(args, overrides = {}) {
       const child = spawn(process.execPath, args, { env: { ...env, ...overrides }, cwd: repo, stdio:["ignore","pipe","pipe"] });
@@ -250,13 +256,40 @@ async function run() {
       return;
     }
     let taskId = null;
+    let artifactHref = null;
     if (worker) {
+      if (livingWorkforce) {
+        nativeClient = connectNative();
+        await nativeClient.callNative("models.authSetApiKey", {
+          provider: "openai", agentId: worker.id, apiKey: fixtureApiKey
+        }, { safety: "mutation", timeoutMs: 10000 });
+        const workspace = snap.workspaces.find(entry => entry.id === first.workspaceId);
+        assert(workspace?.path);
+        await mkdir(path.join(workspace.path, "docs"), { recursive: true });
+        await writeFile(path.join(workspace.path, "docs", "studio-data.csv"), "region,count\nnorth,12\nsouth,8\n");
+      }
       const task = await fetch(base + "/api/mission", {method:"POST", headers, body:JSON.stringify({
-        mission:"Draft a short research brief for the studio.", workspaceId:first.workspaceId, agentId:worker.id, requestId:"workforce-preview-research"
+        mission: "Draft a short research brief for the studio.", workspaceId:first.workspaceId, agentId:worker.id, requestId:"workforce-preview-research",
+        ...(livingWorkforce ? { expectedOutcome: "A Markdown brief and CSV summary of the studio source data.",
+          acceptanceCriteria: "Both outputs report the combined count and cite the source." } : {})
       })});
       const result = await task.json();
       assert(task.ok && result.dispatchId, `Fixture task admission failed (${task.status}).`);
       taskId = result.dispatchId;
+      if (livingWorkforce) {
+        assert.notEqual(result.status, "stalled", result.summary);
+        let observedTask = null;
+        await expect.poll(async () => {
+          const detail = await (await fetch(base + "/api/missions/" + encodeURIComponent(taskId), {headers})).json();
+          observedTask = { state: detail.state, outcome: detail.deliverable?.outcome,
+            result: detail.result?.slice(0, 240), evidence: detail.deliverable?.evidence, fixtureCalls: fixture.stats.completionCount };
+          const artifact = detail.artifacts?.find(item => item.displayPath === "studio-summary.csv" && item.availability === "available");
+          if (artifact) artifactHref = "/api/missions/" + encodeURIComponent(taskId) + "?artifact=" + artifact.id;
+          return detail.deliverable?.artifactCount ?? 0;
+        }, { timeout: 45000, intervals: [500, 1000, 2000] }).toBe(2).catch(() => {
+          throw new Error("Research fixture did not produce both deliverables: " + JSON.stringify(observedTask));
+        });
+      }
     }
     console.log(first ? "Disposable fixture: Fieldwork Studio and Northline Press." : "Disposable fixture: no company workspaces.");
     browser = await chromium.launch({ headless: !serve });
@@ -637,6 +670,11 @@ async function run() {
         await record("assign-task", async () => {
           await page.getByRole("button", {name:"Assign task", exact:true}).click();
           await expect(page.getByRole("dialog", {name:"Assign task", exact:true})).toBeVisible();
+          if (livingWorkforce) {
+            await page.getByText("Result details", {exact:false}).click();
+            await expect(page.getByLabel("Expected outcome", {exact:true})).toBeVisible();
+            await expect(page.getByLabel("How to check the result", {exact:true})).toBeVisible();
+          }
         });
         await record("needs-you", async () => {
           await go("/missions?view=needs-you");
@@ -649,7 +687,27 @@ async function run() {
         if (taskId) await record("task-detail", async () => {
           await go(`/missions/${encodeURIComponent(taskId)}`);
           await expect(page.getByText("Draft a short research brief for the studio.", {exact:true}).first()).toBeVisible();
+          if (livingWorkforce) {
+            await expect(page.locator("#deliverable").getByText("The combined count is 20.", {exact:false})).toBeVisible();
+          }
         });
+        if (taskId && livingWorkforce) {
+          await record("deliverable-download", async () => {
+            const link = page.getByRole("link", {name:"Download studio-summary.csv"});
+            await expect(link).toBeVisible();
+            const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+            assert.equal(download.suggestedFilename(), "studio-summary.csv");
+            assert.match(await readFile(await download.path(), "utf8"), /total,20/);
+          });
+          if (theme === "light" && size === stageSizes.at(-1)) {
+            await record("deliverable-review", async () => {
+              await page.getByRole("button", {name:"Accept result", exact:true}).click();
+              await expect(page.locator("#deliverable").getByRole("status")).toContainText("Accepted");
+              await page.reload();
+              await expect(page.locator("#deliverable").getByRole("status")).toContainText("Accepted");
+            });
+          }
+        }
         for (const [name, route, heading] of [["knowledge", "/knowledge", "Knowledge"], ["integrations", "/integrations", "Integrations"],
           ["settings", "/settings", "Settings"], ["runtime", "/settings#runtime", "Runtime"]]) {
           await record(name, async () => {
@@ -932,6 +990,10 @@ async function run() {
       const member = await createManagedAgentOsUser({ username: "fixture-member", password }, env);
       const memberLogin = await loginToInstance({ username: "fixture-member", password, rateKey:"workforce-browser" }, env);
       const memberHeaders = { Cookie: INSTANCE_PROTECTION_COOKIE + "=" + memberLogin.session };
+      if (artifactHref) {
+        assert.equal((await fetch(base + artifactHref)).status, 401);
+        assert.equal((await fetch(base + artifactHref, {headers:memberHeaders})).status, 403);
+      }
       for (const route of ["/chat", "/team", "/knowledge", "/missions", "/integrations", "/settings"]) {
         const denied = await fetch(base + route, { redirect:"manual", headers: memberHeaders });
         assert([303,307].includes(denied.status), `Member navigation ${route}: ${denied.status}`);

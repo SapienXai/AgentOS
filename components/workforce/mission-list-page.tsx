@@ -218,7 +218,9 @@ export function TaskViewNavigation({ view, attentionCount }: { view: TaskView; a
 
 function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onSubmitted }: { open: boolean; onOpenChange: (open: boolean) => void; snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; onSubmitted: (missionId: string) => Promise<void> }) {
   const [goal, setGoal] = useState("");
-  const request = useRef<{ goal: string; agentId: string; id: string } | null>(null);
+  const [expectedOutcome, setExpectedOutcome] = useState("");
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState("");
+  const request = useRef<{ signature: string; id: string } | null>(null);
   const [agentId, setAgentId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +229,8 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
   useEffect(() => {
     if (!open) return;
     setGoal("");
+    setExpectedOutcome("");
+    setAcceptanceCriteria("");
     request.current = null;
     setAgentId("");
     setError(null);
@@ -249,8 +253,11 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
       return;
     }
     if (submitting) return;
-    if (request.current?.goal !== mission || request.current.agentId !== assignee) {
-      request.current = { goal: mission, agentId: assignee, id: `task:${crypto.randomUUID()}` };
+    const workspaceId = activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === assignee)?.workspaceId;
+    const intent = { mission, agentId: assignee, workspaceId, expectedOutcome: expectedOutcome.trim(), acceptanceCriteria: acceptanceCriteria.trim() };
+    const signature = JSON.stringify(intent);
+    if (request.current?.signature !== signature) {
+      request.current = { signature, id: `task:${crypto.randomUUID()}` };
     }
     setSubmitting(true);
     setError(null);
@@ -259,10 +266,8 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mission,
-          requestId: request.current.id,
-          agentId: assignee,
-          workspaceId: activeWorkspaceId ?? eligibleAgents.find((agent) => agent.id === assignee)?.workspaceId
+          ...intent,
+          requestId: request.current.id
         })
       });
       const result = (await response.json()) as { dispatchId?: string; error?: string };
@@ -297,6 +302,21 @@ function NewMissionDialog({ open, onOpenChange, snapshot, activeWorkspaceId, onS
             </select>
             <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Only employees in the current workspace are available here.</p>
           </div>
+          <details className="workforce-disclosure">
+            <summary>Result details <span className="text-muted-foreground">(optional)</span></summary>
+            <div className="space-y-3 pt-3">
+              <div>
+                <Label htmlFor="mission-outcome">Expected outcome</Label>
+                <Textarea id="mission-outcome" className="mt-2 min-h-16 text-base sm:text-sm" value={expectedOutcome}
+                  onChange={(event) => setExpectedOutcome(event.target.value)} maxLength={500} disabled={submitting} />
+              </div>
+              <div>
+                <Label htmlFor="mission-criteria">How to check the result</Label>
+                <Textarea id="mission-criteria" className="mt-2 min-h-16 text-base sm:text-sm" value={acceptanceCriteria}
+                  onChange={(event) => setAcceptanceCriteria(event.target.value)} maxLength={1500} disabled={submitting} />
+              </div>
+            </div>
+          </details>
           {snapshot.diagnostics.health !== "healthy" ? <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--status-warning)/0.30)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>AI runtime needs attention. Starting a task checks the connection first.</span></div> : null}
           {error ? <p className="text-sm text-[hsl(var(--status-danger-foreground))]" role="alert">{error}</p> : null}
           <Link className="inline-flex min-h-10 items-center text-sm font-medium text-primary hover:underline" href="/missions?view=scheduled">Set up recurring work</Link>

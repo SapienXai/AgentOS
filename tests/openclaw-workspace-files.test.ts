@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -7,6 +7,9 @@ import { afterEach, test } from "node:test";
 import {
   listWorkspaceManagedFiles,
   listWorkspaceManagedFilesForPath,
+  listWorkspaceDeliverablePaths,
+  inspectWorkspaceDeliverable,
+  readWorkspaceDeliverable,
   readWorkspaceManagedFile,
   writeWorkspaceManagedFile,
   readWorkspaceManagedFileForPath,
@@ -19,6 +22,27 @@ const tempRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("workspace deliverables are confined to regular files with bounded source discovery", async () => {
+  const workspace = await createWorkspaceRoot();
+  const external = await createWorkspaceRoot();
+  await mkdir(path.join(workspace, "deliverables", "run"), { recursive: true });
+  await writeFile(path.join(workspace, "deliverables", "run", "report.csv"), "total\n12\n");
+  await writeFile(path.join(external, "private.csv"), "private");
+  await symlink(path.join(external, "private.csv"), path.join(workspace, "deliverables", "run", "linked.csv"));
+  await symlink(external, path.join(workspace, "deliverables", "run", "elsewhere"), "dir");
+  await link(path.join(external, "private.csv"), path.join(workspace, "deliverables", "run", "hardlinked.csv"));
+  const relative = "deliverables/run/report.csv";
+  assert.ok((await listWorkspaceDeliverablePaths(workspace, "deliverables/run")).includes(relative));
+  assert.equal(await inspectWorkspaceDeliverable(workspace, relative), 9);
+  assert.equal(new TextDecoder().decode(await readWorkspaceDeliverable(workspace, relative) ?? undefined), "total\n12\n");
+  for (const unsafe of ["../private.csv", "deliverables/run/../private.csv", "deliverables/run/linked.csv",
+    "deliverables/run/elsewhere/private.csv", "deliverables/run/hardlinked.csv", "deliverables/run/.env"]) {
+    assert.equal(await readWorkspaceDeliverable(workspace, unsafe), null, unsafe);
+  }
+  await rm(path.join(workspace, relative));
+  assert.equal(await readWorkspaceDeliverable(workspace, relative), null);
 });
 
 test("a managed source preserves the first of two concurrent edits to the same revision", async () => {

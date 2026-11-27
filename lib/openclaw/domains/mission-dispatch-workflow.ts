@@ -51,7 +51,7 @@ export type MissionDispatchWorkflowDependencies = {
 
 const missionSubmissionLocks = new Map<string, Promise<void>>();
 
-async function hasReadyNativeModelProfile(agentId: string, modelRef: string, options: OpenClawCommandOptions) {
+async function hasReadyNativeMissionModel(agentId: string, modelRef: string, options: OpenClawCommandOptions) {
   // OpenClaw publishes model keys and the selected auth profile separately.
   // Match the complete reference so another account cannot satisfy the check.
   const catalog = await getOpenClawAdapter().listModels(
@@ -61,11 +61,11 @@ async function hasReadyNativeModelProfile(agentId: string, modelRef: string, opt
 
   return catalog?.models.some((model) =>
     model.available === true && !model.missing && !model.disabled &&
-    catalog.providerOutcomes?.some((outcome) =>
+    (model.key === modelRef || catalog.providerOutcomes?.some((outcome) =>
       outcome.status === "ready" && outcome.profileId &&
       outcome.provider === model.key.split("/", 1)[0] &&
       `${model.key}@${outcome.profileId}` === modelRef
-    )
+    ))
   ) ?? false;
 }
 
@@ -110,6 +110,9 @@ async function submitMissionDispatchOnce(
   gatewayOptions: OpenClawCommandOptions
 ): Promise<MissionResponse> {
   const mission = input.mission.trim();
+  const expectedOutcome = input.expectedOutcome?.trim().slice(0, 500) || undefined;
+  const acceptanceCriteria = input.acceptanceCriteria?.trim().slice(0, 1500) || undefined;
+  const thinking = input.thinking ?? "off";
   const executionMode: NativeWorkExecutionMode = input.executionMode ?? "standard";
 
   if (!mission) {
@@ -143,10 +146,12 @@ async function submitMissionDispatchOnce(
       const existingBrowserAccountId = existing.browserAccountId ?? existing.browserBinding?.accountId ?? null;
       const sameIntent =
         existing.mission === mission &&
+        existing.expectedOutcome === expectedOutcome &&
+        existing.acceptanceCriteria === acceptanceCriteria &&
         existing.agentId === agentId &&
         existing.workspaceId === (missionWorkspace?.id ?? null) &&
         (!input.workspaceId || input.workspaceId === existing.workspaceId) &&
-        existing.thinking === (input.thinking ?? "medium") &&
+        (existing.thinking === thinking || (input.thinking === undefined && existing.thinking === "medium")) &&
         (existing.executionMode ?? "standard") === executionMode &&
         existingBrowserAccountId === requestedBrowserAccountId;
       const visibleSnapshot = await deps.getMissionControlSnapshot({ includeHidden: false });
@@ -159,6 +164,9 @@ async function submitMissionDispatchOnce(
       }
       return missionResponseFromDispatchRecord(existing);
     }
+  }
+  if (missionAgent && input.workspaceId && missionAgent.workspaceId !== input.workspaceId) {
+    throw new Error("Choose an employee from the selected workspace.");
   }
   if (
     input.browserAccount &&
@@ -177,10 +185,14 @@ async function submitMissionDispatchOnce(
     : [];
   const setupAgentId =
     workspaceAgents.find((entry) => entry.policy.preset === "setup" && entry.id !== missionAgent?.id)?.id ?? null;
-  const outputPlan = missionWorkspace
+  const requestedModelId = missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null;
+  const readinessError = resolveMissionDispatchReadinessError(snapshot, requestedModelId);
+  const hasNativeModelEvidence = readinessError && requestedModelId &&
+    !resolveOpenClawSystemReadinessIssue(snapshot) &&
+    await hasReadyNativeMissionModel(agentId, requestedModelId, gatewayOptions);
+  const outputPlan = missionWorkspace && (!readinessError || hasNativeModelEvidence)
     ? await prepareMissionOutputPlan(missionWorkspace.path, mission)
     : null;
-  const thinking = input.thinking ?? "medium";
   const workspaceSurfacePrompt = renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot);
   const routedMission = outputPlan
     ? composeMissionWithOutputRouting(
@@ -189,19 +201,17 @@ async function submitMissionDispatchOnce(
         missionAgent?.policy,
         setupAgentId,
         workspaceSurfacePrompt,
-        missionAgent ? { id: missionAgent.id, name: missionAgent.name } : null
+        missionAgent ? { id: missionAgent.id, name: missionAgent.name } : null,
+        { expectedOutcome, acceptanceCriteria }
       )
     : mission;
-  const requestedModelId = missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null;
-  const readinessError = resolveMissionDispatchReadinessError(snapshot, requestedModelId);
-  const hasNativeModelEvidence = readinessError && requestedModelId?.includes("@") &&
-    !resolveOpenClawSystemReadinessIssue(snapshot) &&
-    await hasReadyNativeModelProfile(agentId, requestedModelId, gatewayOptions);
 
   let dispatchRecord = createMissionDispatchRecord({
     clientRequestId: requestId,
     agentId,
     mission,
+    expectedOutcome,
+    acceptanceCriteria,
     routedMission,
     thinking,
     requestedModelId,

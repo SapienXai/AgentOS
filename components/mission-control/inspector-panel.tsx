@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -645,11 +646,19 @@ function InspectorPanelContent({
                   ) : null}
 
                   {visibleActiveTab === "result" && selectedTask ? (
-                    <TaskResultContent
-                      task={selectedTask}
-                      taskDetail={effectiveTaskDetail}
-                      basePath={resolveTaskWorkspacePath(snapshot, selectedTask, effectiveTaskDetail?.runs)}
-                    />
+                    <>
+                      {selectedTask.dispatchId ? (
+                        <Link href={`/missions/${encodeURIComponent(selectedTask.dispatchId)}#deliverable`}
+                          className="mb-3 inline-flex min-h-10 items-center rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-accent">
+                          Open deliverable
+                        </Link>
+                      ) : null}
+                      <TaskResultContent
+                        task={selectedTask}
+                        taskDetail={effectiveTaskDetail}
+                        basePath={resolveTaskWorkspacePath(snapshot, selectedTask, effectiveTaskDetail?.runs)}
+                      />
+                    </>
                   ) : null}
 
                   {visibleActiveTab === "files" && selectedTask ? (

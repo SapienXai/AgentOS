@@ -1,4 +1,5 @@
 import type { AttentionItem, MissionControlSnapshot, RuntimeCreatedFile } from "@/lib/agentos/contracts";
+import type { TaskReviewResolution } from "@/lib/agentos/workforce/task-review";
 
 export type WorkforceMissionState =
   | "queued"
@@ -63,9 +64,19 @@ export type WorkforceTimelineEvent = {
 export type WorkforceArtifact = RuntimeCreatedFile & {
   id: string;
   category: "document" | "file" | "link" | "report" | "code-output" | "other";
-  source: "openclaw-runtime";
+  source: "openclaw-runtime" | "workspace-output";
   taskId: string | null;
   runtimeId: string | null;
+  availability: "available" | "unavailable";
+  bytes: number | null;
+};
+
+export type WorkforceDeliverable = {
+  outcome: "delivered" | "partial" | "needs-review" | "unverified" | "failed";
+  summary: string | null;
+  evidence: string[];
+  artifactCount: number;
+  review?: Pick<TaskReviewResolution, "status" | "reviewedAt">;
 };
 
 export type WorkforceMissionActions = {
@@ -78,6 +89,8 @@ export type WorkforceMissionProjection = {
   id: string;
   title: string;
   goal: string;
+  expectedOutcome: string | null;
+  acceptanceCriteria: string | null;
   state: WorkforceMissionState;
   stateLabel: string;
   workspaceId: string | null;
@@ -102,6 +115,7 @@ export type WorkforceMissionProjection = {
   humanControlItems: AttentionItem[];
   timeline: WorkforceTimelineEvent[];
   artifacts: WorkforceArtifact[];
+  deliverable: WorkforceDeliverable | null;
   runtime: WorkforceRuntimeReference;
   availableActions: WorkforceMissionActions;
 };
@@ -126,4 +140,5 @@ export type WorkforceMissionServiceInput = {
   state?: WorkforceMissionState | null;
   agentId?: string | null;
   detail?: boolean;
+  actorId?: string;
 };
