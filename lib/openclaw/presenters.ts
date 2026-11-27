@@ -152,7 +152,7 @@ export function compactPath(value: string) {
   return value.replace(/^\/Users\/[^/]+/, "~");
 }
 
-const missionRoutingMarkers = [/^Task output routing:/i, /^Agent operating policy:/i];
+const missionRoutingMarkers = [/^Task output routing:/i, /^Agent operating policy:/i, /^Agent workspace context:/i];
 
 export function stripMissionRouting(value: string) {
   const normalized = value.replace(/\r\n/g, "\n").trim();

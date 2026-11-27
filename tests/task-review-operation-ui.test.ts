@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("needs-review task badge opens the review workflow", async () => {
+test("needs-review task action opens the review workflow", async () => {
   const source = await readFile("components/mission-control/nodes/task-node.tsx", "utf8");
 
-  assert.match(source, /aria-label=\{`\$\{hasReviewResolution \? "Open review record" : "Review task result"\}/);
-  assert.match(source, /data\.onReviewTask\?\.\(displayTask\)/);
-  assert.match(source, /badgeLabel === "needs review"/);
+  assert.match(source, /primaryAction === "review-result" && !failureDetail\) \{\s*data\.onReviewTask\?\.\(displayTask\)/);
+  assert.match(source, /label=\{hasReviewResolution \? "Review record" : "Review result"\}/);
 });
 
 test("collapsed task cards keep runtime metrics out of the primary presentation", async () => {

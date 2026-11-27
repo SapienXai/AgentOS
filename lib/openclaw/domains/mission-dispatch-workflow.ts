@@ -3,6 +3,7 @@ import {
   prepareMissionOutputPlan
 } from "@/lib/openclaw/domains/mission-routing";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
+import { DEFAULT_TASK_THINKING, findTaskReasoningModel, readTaskThinkingRejection, resolveBalancedTaskThinking } from "@/lib/openclaw/task-reasoning";
 import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
@@ -51,7 +52,7 @@ export type MissionDispatchWorkflowDependencies = {
 
 const missionSubmissionLocks = new Map<string, Promise<void>>();
 
-async function hasReadyNativeMissionModel(agentId: string, modelRef: string, options: OpenClawCommandOptions) {
+async function findReadyNativeMissionModel(agentId: string, modelRef: string, options: OpenClawCommandOptions) {
   // OpenClaw publishes model keys and the selected auth profile separately.
   // Match the complete reference so another account cannot satisfy the check.
   const catalog = await getOpenClawAdapter().listModels(
@@ -59,14 +60,14 @@ async function hasReadyNativeMissionModel(agentId: string, modelRef: string, opt
     { ...options, timeoutMs: 8_000, allowCliFallback: false }
   ).catch(() => null);
 
-  return catalog?.models.some((model) =>
+  return catalog?.models.find((model) =>
     model.available === true && !model.missing && !model.disabled &&
     (model.key === modelRef || catalog.providerOutcomes?.some((outcome) =>
       outcome.status === "ready" && outcome.profileId &&
       outcome.provider === model.key.split("/", 1)[0] &&
       `${model.key}@${outcome.profileId}` === modelRef
     ))
-  ) ?? false;
+  );
 }
 
 export async function submitMissionDispatch(
@@ -112,7 +113,7 @@ async function submitMissionDispatchOnce(
   const mission = input.mission.trim();
   const expectedOutcome = input.expectedOutcome?.trim().slice(0, 500) || undefined;
   const acceptanceCriteria = input.acceptanceCriteria?.trim().slice(0, 1500) || undefined;
-  const thinking = input.thinking ?? "off";
+  const thinking = input.thinking ?? DEFAULT_TASK_THINKING;
   const executionMode: NativeWorkExecutionMode = input.executionMode ?? "standard";
 
   if (!mission) {
@@ -151,7 +152,7 @@ async function submitMissionDispatchOnce(
         existing.agentId === agentId &&
         existing.workspaceId === (missionWorkspace?.id ?? null) &&
         (!input.workspaceId || input.workspaceId === existing.workspaceId) &&
-        (existing.thinking === thinking || (input.thinking === undefined && existing.thinking === "medium")) &&
+        (existing.thinking === thinking || (input.thinking === undefined && existing.thinking === "off")) &&
         (existing.executionMode ?? "standard") === executionMode &&
         existingBrowserAccountId === requestedBrowserAccountId;
       const visibleSnapshot = await deps.getMissionControlSnapshot({ includeHidden: false });
@@ -187,9 +188,17 @@ async function submitMissionDispatchOnce(
     workspaceAgents.find((entry) => entry.policy.preset === "setup" && entry.id !== missionAgent?.id)?.id ?? null;
   const requestedModelId = missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null;
   const readinessError = resolveMissionDispatchReadinessError(snapshot, requestedModelId);
-  const hasNativeModelEvidence = readinessError && requestedModelId &&
-    !resolveOpenClawSystemReadinessIssue(snapshot) &&
-    await hasReadyNativeMissionModel(agentId, requestedModelId, gatewayOptions);
+  const snapshotModel = findTaskReasoningModel(snapshot.models, requestedModelId);
+  const shouldReadNativeModel = requestedModelId &&
+    (readinessError || (thinking === DEFAULT_TASK_THINKING && !snapshotModel?.thinkingLevels?.length)) &&
+    !resolveOpenClawSystemReadinessIssue(snapshot);
+  const nativeModel = shouldReadNativeModel
+    ? await findReadyNativeMissionModel(agentId, requestedModelId, gatewayOptions)
+    : undefined;
+  const hasNativeModelEvidence = Boolean(nativeModel);
+  const effectiveThinking = thinking === DEFAULT_TASK_THINKING
+    ? resolveBalancedTaskThinking(nativeModel ?? snapshotModel)
+    : thinking;
   const outputPlan = missionWorkspace && (!readinessError || hasNativeModelEvidence)
     ? await prepareMissionOutputPlan(missionWorkspace.path, mission)
     : null;
@@ -397,7 +406,7 @@ async function submitMissionDispatchOnce(
           sessionKey: canonicalSessionKey,
           sessionId: dispatchRecord.sessionId ?? undefined,
           message: routedMission,
-          thinking,
+          thinking: effectiveThinking,
           timeoutSeconds: 45,
           workspace: missionWorkspace?.path ?? null,
           dispatchId: dispatchRecord.id,
@@ -409,7 +418,9 @@ async function submitMissionDispatchOnce(
       );
       admissionConfirmed = true;
       const now = new Date().toISOString();
-      const nextStatus = resolveGatewayMissionDispatchStatus(payload.status);
+      const reasoningError = readTaskThinkingRejection(payload.summary, ...extractMissionCommandPayloads(payload).map(({ text }) => text));
+      const runtimeStatus = resolveGatewayMissionDispatchStatus(payload.status);
+      const nextStatus = reasoningError && runtimeStatus === "completed" ? "stalled" : runtimeStatus;
       dispatchRecord = {
         ...dispatchRecord,
         sessionId: payload.sessionId ?? dispatchRecord.sessionId,
@@ -431,9 +442,9 @@ async function submitMissionDispatchOnce(
           ...payload,
           sessionKey: payload.sessionKey ?? canonicalSessionKey
         },
-        error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null,
+        error: nextStatus === "stalled" ? reasoningError ?? resolveGatewayMissionDispatchError(payload) : null,
         initialAdmissionError: nextStatus === "stalled"
-          ? resolveGatewayMissionDispatchError(payload)
+          ? reasoningError ?? resolveGatewayMissionDispatchError(payload)
           : dispatchRecord.initialAdmissionError ?? null
       };
       await writeMissionDispatchRecord(dispatchRecord);

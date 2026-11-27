@@ -50,6 +50,7 @@ import {
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewSummary
 } from "@/components/mission-control/task-review-state";
+import { readTaskThinkingRejection } from "@/lib/openclaw/task-reasoning";
 import { resolveTaskDispatchIssueDetail } from "@/components/mission-control/task-node-status";
 import {
   useInspectorRuntimeOutput,
@@ -2856,9 +2857,11 @@ function TaskResultContent({
   taskDetail: TaskDetailRecord | null;
   basePath?: string | null;
 }) {
-  const result = readTaskResultPreview(taskDetail?.task ?? task);
+  const visibleTask = taskDetail?.task ?? task;
+  const result = readTaskResultPreview(visibleTask);
+  const reasoningIssue = readTaskThinkingRejection(resolveTaskDispatchIssueDetail(visibleTask), result);
   const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
-  const stateLabel = task.status === "completed"
+  const stateLabel = reasoningIssue ? "Failed" : task.status === "completed"
     ? "Done"
     : task.status === "stalled"
       ? "Review"
@@ -2866,12 +2869,20 @@ function TaskResultContent({
 
   return (
     <InfoCard icon={FileJson} title="Task result" value={stateLabel}>
-      {result ? (
+      {reasoningIssue ? (
+        <>
+          <p>The model rejected the reasoning setting. Use Retry with Balanced on the canvas to review and submit the task again.</p>
+          <details className="text-xs">
+            <summary className="cursor-pointer font-medium">Technical details</summary>
+            <p className="mt-2 break-words">{reasoningIssue}</p>
+          </details>
+        </>
+      ) : result ? (
         <TaskTextPanel label="Latest result" text={result} basePath={basePath} />
       ) : (
         <p>No activity captured yet.</p>
       )}
-      {integrity.issues.length > 0 ? (
+      {!reasoningIssue && integrity.issues.length > 0 ? (
         <div className="rounded-[12px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-900 dark:text-amber-100">
           <p className="font-medium">Result needs review</p>
           <p className="mt-1">{integrity.issues[0]?.detail}</p>

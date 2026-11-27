@@ -19,21 +19,18 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Sparkles,
   Trash2,
   X
 } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 import type { TaskCardInspectorContext, TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
-  FRESH_NODE_BADGE_CLASSES,
   type TaskNodeToneInput,
   resolveTaskNodeBadgeVariant,
   resolveTaskNodeSurfaceTone,
-  resolveTaskNodeTokenTone,
   resolveTaskNodeVisualTone
 } from "@/components/mission-control/node-visual-tones";
 import {
@@ -46,12 +43,10 @@ import {
   isWaitingForOutputCopy,
   readTaskResultPreview,
   resolveTaskCardPrimaryAction,
-  resolveTaskCardEvidencePresentation,
   resolveTaskReviewPresentation,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import {
-  ExpandableTaskResult,
   TaskFollowUpComposer,
   formatFollowUpDetail,
   type SubmittedTaskFollowUp
@@ -66,7 +61,8 @@ import {
   resolveTaskFollowUpDisplayMessage
 } from "@/lib/openclaw/domains/task-follow-up-records";
 import { resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
-import { compactMissionText } from "@/lib/openclaw/presenters";
+import { readTaskThinkingRejection } from "@/lib/openclaw/task-reasoning";
+import { compactMissionText, stripMissionRouting } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type TaskFlowNode = Node<TaskNodeData, "task">;
@@ -83,6 +79,7 @@ type TaskWorkspaceTab = {
 };
 
 export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
+  const reduceMotion = useReducedMotion();
   const [menuOpen, setMenuOpen] = useState(false);
   const [operationAction, setOperationAction] = useState<"run" | "retry" | "pause" | "resume" | "delete" | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -253,9 +250,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
         visibleReviewStatus: null
       }
     : toneInput;
-  const tone = resolveTaskNodeTokenTone(displayedToneInput);
-  const badgeVariant = resolveTaskNodeBadgeVariant(displayedToneInput);
-  const badgeLabel = activeFollowUp && activeFollowUpStatus
+  const failureDetail = activeFollowUp ? null : readTaskThinkingRejection(
+    reviewPresentation.technicalDetail, readTaskResultPreview(displayTask), displayTask.subtitle
+  );
+  const badgeVariant = failureDetail ? "danger" : resolveTaskNodeBadgeVariant(displayedToneInput);
+  const badgeLabel = failureDetail ? "Failed" : activeFollowUp && activeFollowUpStatus
     ? resolveTaskBadgeLabel(null, activeFollowUpStatus, false, activeFollowUpStatus === "cancelled", Boolean(activeFollowUpOutput?.finalText || activeFollowUp?.summary))
     : visibleReviewStatus
     ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
@@ -287,15 +286,14 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     : resolveTaskFooterLabel(bootstrapStage, displayTask.liveRunCount, isAborted);
   const latestFeedEvent = displayedFeed[displayedFeed.length - 1] ?? (activeFollowUp ? null : latestLocalEvent) ?? null;
   const showsLiveActivity =
-    !isAborted &&
+    !failureDetail && !isAborted &&
     !completedNeedsReview &&
     (activeFollowUp
       ? activeFollowUpStatus === "running" || activeFollowUpStatus === "queued"
       : isPendingCreation ||
         displayTask.status === "running" ||
-        displayTask.liveRunCount > 0 ||
-      Boolean(latestFeedEvent && /working|waiting for output/i.test(latestFeedEvent.title)));
-  const activityLabel = latestFeedEvent?.title || footerLabel;
+        displayTask.status === "queued" ||
+        displayTask.liveRunCount > 0);
   const activitySummary =
     compactMissionText(latestFeedEvent?.detail, 88) ||
     (activeFollowUp
@@ -338,7 +336,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const displayPromptText = activeFollowUp
     ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
     : promptText;
-  const displayResultTitle = activeFollowUp ? "Follow-up result" : reviewPresentation.evidenceLabel;
   const displayResultEvidenceLabel = activeFollowUp ? "Follow-up result" : reviewPresentation.evidenceLabel;
   const displayResultText = activeFollowUp
     ? resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
@@ -346,27 +343,39 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const activeInspectorContext = activeFollowUp
     ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, effectiveActiveFollowUpIndex ?? 0, currentCardNumber)
     : null;
-  const cardSummary = compactMissionText(
-    isLiveTask || isPendingCreation ? activitySummary : displayResultText || activitySummary,
-    164
-  ) || activitySummary;
-  const cardEvidencePresentation = activeFollowUp
-    ? {
-        label: showsLiveActivity ? "Live activity" : "Latest result",
-        prioritizeActivity: showsLiveActivity && Boolean(latestFeedEvent)
-      }
-    : resolveTaskCardEvidencePresentation({
-        hasActivity: Boolean(latestFeedEvent),
-        hasLiveActivity: showsLiveActivity,
-        deliveryUnconfirmed: reviewPresentation.deliveryUnconfirmed
-      });
-  const activityPreview = compactMissionText(
-    [activityLabel, activitySummary].filter(Boolean).join(" · "),
-    164
+  const activityFeed = displayedFeed.filter((event) => event.kind !== "user" && event.title !== "Mission");
+  const latestWorkEvent = activityFeed.findLast((event) =>
+    event.kind === "tool" || event.kind === "artifact" || event.kind === "warning"
   );
-  const cardEvidenceText = cardEvidencePresentation.prioritizeActivity
-    ? activityPreview || cardSummary
-    : cardSummary;
+  let cardSummary = compactMissionText(displayResultText, 148) || "Open the task to see what happened.";
+  if (failureDetail) {
+    cardSummary = "The model rejected the reasoning setting. You can review the task and retry with Balanced.";
+  } else if (isAborted) {
+    cardSummary = "This task was stopped. You can reuse it from the task menu.";
+  } else if (reviewPresentation.deliveryUnconfirmed) {
+    cardSummary = "Delivery is unconfirmed. Review the last activity before trying again.";
+  } else if (showsLiveActivity) {
+    cardSummary = bootstrapStage === "admission-unknown"
+      ? "Checking whether the agent received the task. Open activity before trying again."
+      : readTaskActivitySummary(latestWorkEvent) ?? (isPendingCreation || displayTask.status === "queued"
+        ? "Waiting for the agent to start."
+        : "The agent is working on this task.");
+  } else if (!activeFollowUp && (operationPaused || isRecurringOperation) && !hasOperationResult) {
+    cardSummary = operationPaused ? "The schedule is paused." : operationSchedule ?? "Waiting for the next scheduled run.";
+  } else if (!activeFollowUp && displayTask.status === "stalled" && !hasRuntimeOutputEvidence) {
+    cardSummary = "The task stopped before an answer arrived. Open details to see what happened.";
+  }
+  const retryWithBalanced = Boolean(failureDetail && data.onReply && !operationJobId);
+  const canFollowUp = followUpAvailability.available && !failureDetail;
+  const openTaskDirection = () => {
+    if (data.onInspect) {
+      data.onInspect(data.task, "direction", activeInspectorContext);
+    } else {
+      setExpanded(true);
+      setComposerExpanded(true);
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    }
+  };
   const isCompactMonitor = systemOwnedMonitor !== null && !expanded && !composerExpanded;
   const monitorTitle = systemOwnedMonitor === "heartbeat" ? "Heartbeat" : "Skill Workshop";
 
@@ -440,21 +449,21 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     <motion.div
       ref={cardRef}
       initial={
-        isPendingCreation
+        reduceMotion ? false : isPendingCreation
           ? { opacity: 0, scale: 0.92, y: -10 }
           : isJustCreated
             ? { opacity: 0, scale: 0.96, y: 10 }
             : { opacity: 0, x: 10 }
       }
       animate={
-        isPendingCreation
+        reduceMotion ? { opacity: 1 } : isPendingCreation
           ? { opacity: 1, scale: 1, y: 0 }
           : isJustCreated
             ? { opacity: 1, scale: [1, 1.015, 1], y: 0 }
             : { opacity: 1, x: 0 }
       }
       transition={
-        isJustCreated
+        reduceMotion ? { duration: 0 } : isJustCreated
           ? {
               duration: 0.7,
               times: [0, 0.45, 1]
@@ -462,10 +471,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           : undefined
       }
       className={cn(
-        "group relative max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[18px] border p-1.5 backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform,width] duration-200",
-        isCompactMonitor ? "w-[206px] rounded-[13px] p-1" : "w-[400px] rounded-[18px]",
+        "group relative max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[18px] border backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform,width] duration-200",
+        isCompactMonitor ? "w-[206px] rounded-[13px]" : "w-[400px] rounded-[18px]",
         surfaceTone.outer,
-        data.emphasis ? "opacity-100" : "opacity-76",
+        data.emphasis ? "opacity-100" : "opacity-90",
         (composerExpanded || expanded) && "z-30 shadow-[0_22px_58px_rgba(0,0,0,0.3)]"
       )}
       style={taskCardStyle}
@@ -475,18 +484,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           className="absolute inset-y-3 left-0 w-0.5 rounded-r-full"
           style={{ backgroundColor: `rgb(${agentThemeRgb})`, boxShadow: `0 0 14px rgba(${agentThemeRgb}, 0.46)` }}
         />
-        <div
-          className="absolute inset-x-0 top-0 h-px"
-          style={{ backgroundColor: `rgba(${agentThemeRgb}, ${surfaceTheme === "light" ? 0.62 : 0.78})` }}
-        />
-        <div
-          className="absolute -right-8 -top-8 h-24 w-24 rounded-full blur-3xl"
-          style={{ backgroundColor: `rgba(${agentThemeRgb}, ${surfaceTheme === "light" ? 0.1 : 0.14})` }}
-        />
       </div>
 
       <div className="relative z-10">
-        {isPendingCreation ? (
+        {isPendingCreation && !reduceMotion ? (
         <motion.div
           className="pointer-events-none absolute inset-[-8px] rounded-[18px] border"
           style={{ borderColor: `rgba(${agentThemeRgb}, 0.28)` }}
@@ -502,61 +503,24 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
         />
 
-        <div className={cn("relative z-20 rounded-[13px] border px-3 py-2.5", isCompactMonitor && "rounded-[11px] px-2 py-1.5", surfaceTone.panel)}>
-          <div className="min-w-0">
-          <div className="flex items-start justify-between gap-2.5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border",
-                    isCompactMonitor && "h-6 w-6 rounded-[7px]",
-                    resolveTaskIconClass(visualTone.key, surfaceTheme)
-                  )}
-                >
-                  {systemOwnedMonitor ? <RefreshCw className={cn("h-3.5 w-3.5", isCompactMonitor && "h-3 w-3")} /> : <ClipboardList className="h-3.5 w-3.5" />}
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex h-1.5 w-1.5 shrink-0 rounded-full",
-                    isCompactMonitor && "h-1 w-1",
-                    visualTone.dot,
-                    showsLiveActivity && "motion-safe:animate-pulse"
-                  )}
-                />
-                <span className={cn("truncate text-[10px] font-semibold uppercase tracking-[0.16em]", isCompactMonitor && "text-[8px] tracking-[0.12em]", surfaceTone.mutedText)}>
-                  {systemOwnedMonitor ? "Monitor" : activeFollowUp ? "Follow-up" : "Task"} · <span className={cn("normal-case tracking-normal", surfaceTone.text)}>{displayTask.primaryAgentName || "OpenClaw"}</span>
-                </span>
-                {data.locked ? <Lock className={cn("h-3 w-3", surfaceTone.mutedText)} /> : null}
-              </div>
-            {!isCompactMonitor ? <p className={cn("mt-0.5 truncate text-[10px] leading-4", surfaceTone.mutedText)}>{activityLabel}</p> : null}
+        <div className={cn("relative z-20 px-4 py-3", isCompactMonitor && "px-2.5 py-2")}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {systemOwnedMonitor ? <RefreshCw aria-hidden="true" className="size-3.5 shrink-0" /> : <ClipboardList aria-hidden="true" className={cn("size-3.5 shrink-0", surfaceTone.mutedText)} />}
+              <span className={cn("truncate text-[11px] font-medium", surfaceTone.mutedText)}>
+                {systemOwnedMonitor ? "Monitor" : displayTask.primaryAgentName || "OpenClaw"}
+              </span>
+              {data.locked ? <Lock aria-label="Locked" className={cn("size-3 shrink-0", surfaceTone.mutedText)} /> : null}
             </div>
-
             <div className="nodrag nopan relative flex shrink-0 items-center gap-1.5" ref={menuRef}>
-              {data.onReviewTask && (completedNeedsReview || hasReviewResolution || badgeLabel === "needs review") ? (
-                <button
-                  type="button"
-                  aria-label={`${hasReviewResolution ? "Open review record" : "Review task result"}: ${displayTask.title}`}
-                  title={hasReviewResolution ? "Open review record" : "See what needs review and choose an action"}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    data.onReviewTask?.(displayTask);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  className="nodrag nopan rounded-[8px] transition-[filter,transform] hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                >
-                  <Badge variant={badgeVariant} className="max-w-[132px] cursor-pointer truncate rounded-[8px] px-2 py-1 text-[9px]">
-                    {badgeLabel}
-                  </Badge>
-                </button>
-              ) : (
-                <Badge variant={badgeVariant} className="max-w-[132px] truncate rounded-[8px] px-2 py-1 text-[9px]">
-                  {badgeLabel}
-                </Badge>
-              )}
+              <Badge variant={badgeVariant} className="max-w-[128px] rounded-full px-2 py-0.5 text-[9px] tracking-normal">
+                {badgeLabel}
+              </Badge>
               <button
                 type="button"
                 aria-label="Task actions"
+                aria-expanded={menuOpen}
+                onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
                 onClick={(event) => {
                   event.stopPropagation();
                   setMenuOpen((current) => !current);
@@ -581,6 +545,17 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                       onClick={() => {
                         data.onReviewTask?.(displayTask);
                         setMenuOpen(false);
+                      }}
+                    />
+                  ) : null}
+                  {!isCompactMonitor && !retryWithBalanced && canFollowUp ? (
+                    <TaskMenuButton
+                      icon={MessageSquare}
+                      label={showsLiveActivity ? "Give direction" : "Continue task"}
+                      surfaceTheme={surfaceTheme}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        openTaskDirection();
                       }}
                     />
                   ) : null}
@@ -675,102 +650,59 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </div>
           </div>
 
-          <h3 className={cn("mt-2.5 line-clamp-2 font-display text-[1rem] font-semibold leading-[1.28]", isCompactMonitor && "mt-1.5 text-[0.8rem] leading-4 line-clamp-1", surfaceTone.text)}>
-            {isCompactMonitor ? monitorTitle : displayPromptText}
+          <h3 className={cn("mt-2 line-clamp-2 break-words font-display text-base font-semibold leading-snug", isCompactMonitor && "mt-1 line-clamp-1 text-sm", surfaceTone.text)}>
+            {isCompactMonitor ? monitorTitle : compactMissionText(displayPromptText, 120)}
           </h3>
 
-          <div className={cn("mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[9px]", isCompactMonitor && "hidden", surfaceTone.mutedText)}>
-            {dispatchSubmittedAt ? (
-              <span title={new Date(dispatchSubmittedAt).toLocaleString()}>
-                {isLiveTask ? "Elapsed" : "Started"} <span className={surfaceTone.text}>{isLiveTask
-                  ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
-                  : formatTimelineDate(dispatchSubmittedAt)}</span>
-              </span>
-            ) : null}
-          </div>
+          {!isCompactMonitor ? (
+            <p className={cn(
+              "mt-2 line-clamp-2 break-words text-xs leading-[1.55]",
+              surfaceTheme === "light"
+                ? failureDetail ? "text-rose-800" : "text-[#624f43]"
+                : failureDetail ? "text-rose-200" : "text-slate-300"
+            )}>
+              {cardSummary}
+            </p>
+          ) : null}
 
-          <div className={cn("mt-2 flex flex-wrap items-center gap-1.5", isCompactMonitor && "mt-1")}>
-            {displayTask.warningCount > 0 && !hasReviewResolution ? (
-              <Badge variant="warning" className="rounded-[8px] px-2 py-1 text-[9px]">
-                {displayTask.warningCount} review{displayTask.warningCount === 1 ? "" : "s"}
-              </Badge>
-            ) : null}
-            {isJustCreated ? (
-              <Badge variant="default" className={cn(FRESH_NODE_BADGE_CLASSES, "rounded-[8px] px-2 py-1 text-[9px]")}>
-                <Sparkles className="h-3 w-3" />
-                new
-              </Badge>
-            ) : null}
-            {operationSchedule ? (
-              <span className={cn("inline-flex max-w-full items-center gap-1 rounded-[8px] border px-2 py-1 text-[9px]", isCompactMonitor && "rounded-[6px] px-1.5 py-0.5 text-[8px]", surfaceTone.subtleButton)} title={operationSchedule}>
-                <CalendarClock className="h-3 w-3 shrink-0" />
-                <span className="truncate">{operationSchedule}</span>
-              </span>
-            ) : null}
+          <div className={cn("mt-3 flex min-w-0 items-center gap-2", isCompactMonitor && "mt-1")}>
             {!isCompactMonitor ? (
-              <span className={cn("text-[9px] uppercase tracking-[0.14em]", tone, surfaceTheme === "light" && resolveLightTaskStatusTextClass(visualTone.key))}>
-                {footerLabel}
+              <button
+                type="button"
+                className={cn(
+                  "nodrag nopan inline-flex min-h-9 items-center rounded-[8px] px-3 text-[11px] font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                  resolvePrimaryActionClass(primaryAction, surfaceTheme)
+                )}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (retryWithBalanced) {
+                    data.onReply?.(data.task);
+                  } else if (primaryAction === "review-result" && !failureDetail) {
+                    data.onReviewTask?.(displayTask);
+                  } else if (data.onInspect) {
+                    data.onInspect(
+                      data.task,
+                      showsLiveActivity ? "output" : displayResultText || failureDetail ? "result" : "overview",
+                      activeInspectorContext
+                    );
+                  } else {
+                    setExpanded(true);
+                  }
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {retryWithBalanced ? "Retry with Balanced"
+                  : failureDetail ? "View issue"
+                  : showsLiveActivity ? "View activity"
+                  : formatPrimaryActionLabel(primaryAction)}
+              </button>
+            ) : null}
+            {!isCompactMonitor && displayTask.artifactCount > 0 && !showsLiveActivity && !activeFollowUp ? (
+              <span className={cn("shrink-0 text-[11px]", surfaceTone.mutedText)}>
+                {displayTask.artifactCount} {displayTask.artifactCount === 1 ? "file" : "files"}
               </span>
             ) : null}
-          </div>
-
-          <div className={cn("mt-2", isCompactMonitor && "hidden")}>
-            <p className={cn("text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200/80")}>
-              {cardEvidencePresentation.label}
-            </p>
-            <p className={cn("mt-1 line-clamp-2 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#624f43]" : "text-slate-300")}>
-              {cardEvidenceText}
-            </p>
-          </div>
-
-          <div className={cn("mt-3 flex items-center gap-1.5", isCompactMonitor && "mt-1")}>
-            {!isCompactMonitor ? <button
-              type="button"
-              className={cn("nodrag nopan inline-flex h-8 items-center rounded-[9px] px-2.5 text-[10px] font-semibold transition-colors", resolvePrimaryActionClass(primaryAction, surfaceTheme))}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (primaryAction === "review-result") {
-                  data.onReviewTask?.(displayTask);
-                  return;
-                }
-
-                data.onInspect?.(
-                  data.task,
-                  primaryAction === "view-details"
-                    ? "overview"
-                    : primaryAction === "view-result"
-                      ? "result"
-                      : "output",
-                  activeInspectorContext
-                );
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              {formatPrimaryActionLabel(primaryAction)}
-            </button> : null}
-            {!isCompactMonitor ? <button
-              type="button"
-              disabled={!followUpAvailability.available}
-              title={followUpAvailability.reason ?? followUpAvailability.warning ?? "Continue this task in its existing OpenClaw session."}
-              className={cn(
-                "nodrag nopan inline-flex h-8 items-center rounded-[9px] border px-2.5 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45",
-                surfaceTone.subtleButton
-              )}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (data.onInspect) {
-                  data.onInspect(data.task, "direction", activeInspectorContext);
-                } else {
-                  setExpanded(true);
-                  setComposerExpanded(true);
-                  requestAnimationFrame(() => composerInputRef.current?.focus());
-                }
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              {displayTask.status === "running" ? "Give direction" : "Continue task"}
-            </button> : null}
-            {!isCompactMonitor && operationSchedule && operationJobId ? (
+            {expanded && !isCompactMonitor && operationSchedule && operationJobId ? (
               <OperationScheduleControl
                 jobId={operationJobId}
                 label={operationSchedule}
@@ -807,18 +739,15 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               {expanded ? <X className="h-3.5 w-3.5" /> : <ChevronDown className={cn("h-3.5 w-3.5", isCompactMonitor && "h-3 w-3")} />}
             </button>
           </div>
-
-          </div>
         </div>
 
         {expanded ? (
           <motion.div
             id={feedPanelId}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className={cn("nodrag nopan mt-1.5 overflow-hidden rounded-[13px] border px-2.5 py-2.5 nowheel", surfaceTone.panel)}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: reduceMotion ? 0 : 0.15 }}
+            className={cn("nodrag nopan mx-3 mb-3 overflow-hidden rounded-[10px] border p-3 nowheel", surfaceTone.panel)}
             onClick={(e) => e.stopPropagation()}
           >
             {followUps.length > 0 ? (
@@ -835,13 +764,12 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 onSelect={(tab) => selectTaskTab(tab.index)}
               />
             ) : null}
-            <ExpandableTaskResult
-              title={displayResultTitle}
-              result={displayResultText}
-              compact
-              density="dense"
-              className="mb-2"
-            />
+            {failureDetail ? (
+              <details className={cn("mb-3 text-xs", surfaceTone.text)}>
+                <summary className="cursor-pointer py-1 font-medium">Technical details</summary>
+                <p className="mt-1 break-words leading-relaxed">{failureDetail}</p>
+              </details>
+            ) : null}
             {operationJobId ? (
               <OperationRunTimeline
                 entries={operationRunHistory}
@@ -860,21 +788,21 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 </div>
               ) : null}
               <ScrollArea className="h-[108px] w-full pr-3">
-                {loading && displayedFeed.length === 0 ? (
+                {loading && activityFeed.length === 0 ? (
                   <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
                     Connecting to feed...
                   </div>
-                ) : error && displayedFeed.length === 0 ? (
+                ) : error && activityFeed.length === 0 ? (
                   <div className={cn("rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
                     {error}
                   </div>
-                ) : displayedFeed.length === 0 ? (
+                ) : activityFeed.length === 0 ? (
                   <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
                     {activeFollowUp ? "No follow-up events yet." : "No events yet."}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2.5">
-                    {displayedFeed.map((event) => (
+                    {activityFeed.map((event) => (
                       <div key={event.id} className="group/item relative pl-3">
                         <div
                           className={cn(
@@ -892,7 +820,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                         </div>
                         <div className="mt-0.5">
                           <InteractiveContent
-                            text={event.detail}
+                            text={event.kind === "status" ? stripMissionRouting(event.detail) : event.detail}
                             className={cn("text-[10px] leading-relaxed", surfaceTheme === "light" ? "text-[#806958] group-hover/item:text-[#514136]" : "text-slate-400 group-hover/item:text-slate-300")}
                             url={"url" in event ? event.url : null}
                             filePath={"filePath" in event ? event.filePath : null}
@@ -1507,58 +1435,18 @@ function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
     .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
 }
 
-function resolveTaskIconClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"], surfaceTheme: "dark" | "light") {
-  if (surfaceTheme === "dark") {
-    return resolveDarkTaskIconClass(key);
-  }
-
-  switch (key) {
-    case "aborted":
-      return "border-rose-200 bg-rose-50 text-rose-600";
-    case "review":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "live":
-      return "border-cyan-200 bg-cyan-50 text-cyan-700";
-    case "success":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "fresh":
-      return "border-sky-200 bg-sky-50 text-sky-700";
-    default:
-      return "border-[#e2d1c5] bg-[#faf2eb] text-[#70594a]";
-  }
-}
-
-function resolveDarkTaskIconClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
-  switch (key) {
-    case "aborted":
-      return "border-rose-300/20 bg-rose-400/[0.09] text-rose-100";
-    case "review":
-      return "border-amber-300/[0.22] bg-amber-400/[0.1] text-amber-100";
-    case "live":
-      return "border-cyan-300/20 bg-cyan-300/[0.09] text-cyan-100";
-    case "success":
-      return "border-emerald-300/[0.18] bg-emerald-300/[0.07] text-emerald-100";
-    case "fresh":
-      return "border-sky-300/20 bg-sky-300/[0.08] text-sky-100";
-    default:
-      return "border-white/[0.08] bg-white/[0.045] text-slate-200";
-  }
-}
-
-function resolveLightTaskStatusTextClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
-  switch (key) {
-    case "aborted":
-      return "text-rose-700";
-    case "review":
-      return "text-amber-700";
-    case "live":
-      return "text-cyan-700";
-    case "success":
-      return "text-emerald-700";
-    case "fresh":
-      return "text-sky-700";
-    default:
-      return "text-[#8f7868]";
+function readTaskActivitySummary(event?: TaskFeedEvent) {
+  if (!event) return null;
+  if (event.isError || event.kind === "warning") return "The agent reported an issue. Check activity for details.";
+  if (event.kind === "artifact") return "The agent added a file.";
+  switch (event.toolName) {
+    case "read": return "Latest activity: reading a workspace file.";
+    case "write":
+    case "edit": return "Latest activity: updating a workspace file.";
+    case "web_search":
+    case "web_fetch":
+    case "browser": return "Latest activity: checking online sources.";
+    default: return "The agent is using tools to complete the task.";
   }
 }
 

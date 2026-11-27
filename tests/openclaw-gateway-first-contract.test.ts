@@ -28,6 +28,7 @@ import {
   abortMissionDispatchTask,
   submitMissionDispatch
 } from "@/lib/openclaw/domains/mission-dispatch-workflow";
+import { readMissionDispatchRecordById, writeMissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
@@ -343,7 +344,10 @@ test("mission dispatch recognizes a configured model with its exact native auth 
       catalogReads.push({ agentId: input?.agentId, view: input?.view });
       assert.equal(options?.allowCliFallback, false);
       return {
-        models: [{ key: modelKey, name: "GPT-6.2 Sol", input: "text", contextWindow: null, local: false, available: true, tags: [], missing: false }],
+        models: [{
+          key: modelKey, name: "GPT-6.2 Sol", input: "text", contextWindow: null, local: false, available: true, tags: [], missing: false,
+          thinkingLevels: [{ id: "medium", label: "Balanced" }]
+        }],
         providerOutcomes: [{ provider: "openai", status: "ready", profileId: catalogProfileId }]
       };
     },
@@ -351,7 +355,8 @@ test("mission dispatch recognizes a configured model with its exact native auth 
       sessionCreates++;
       return { key: input.key, sessionId: "profile-bound-session" };
     },
-    async runAgentTurn() {
+    async runAgentTurn(input) {
+      assert.equal(input.thinking, "medium");
       return { runId: "profile-bound-run", status: "running" };
     }
   }));
@@ -378,6 +383,36 @@ test("mission dispatch recognizes a configured model with its exact native auth 
   assert.match(offline.summary ?? "", /system readiness/);
   assert.equal(catalogReads.length, 2);
   assert.equal(sessionCreates, 1);
+});
+
+test("a native reasoning rejection stays failed even when returned as a completed turn", async () => {
+  const rejection = 'Thinking level "off" is not supported for openai/gpt-6.2-sol. Use one of: minimal, low, medium, high, xhigh, max, ultra.';
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({ protocolVersion: 4, methods: ["chat.send"] }));
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async createSession(input) {
+      return { key: input.key, sessionId: "reasoning-rejection" };
+    },
+    async runAgentTurn(input) {
+      assert.equal(input.thinking, "off");
+      return { runId: "rejected-turn", status: "completed", payloads: [{ text: rejection, mediaUrl: null }] };
+    }
+  }));
+
+  const response = await submitMissionDispatch({ mission: "Draft a brief", thinking: "off" }, {
+    getMissionControlSnapshot: async () => createSnapshot(),
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  });
+  trackMissionDispatch(response.dispatchId);
+  assert.equal(response.status, "stalled");
+  assert.equal(response.summary, rejection);
+  assert.ok(response.dispatchId);
+
+  const record = await readMissionDispatchRecordById(response.dispatchId);
+  assert.ok(record);
+  await writeMissionDispatchRecord({ ...record, status: "completed", error: null });
+  assert.equal((await readMissionDispatchRecordById(response.dispatchId))?.error, rejection);
+  assert.equal((await readMissionDispatchRecordById(response.dispatchId))?.status, "stalled");
 });
 
 test("mission dispatch returns after Gateway admission without waiting for execution", async () => {

@@ -10,6 +10,7 @@ import { extractAgentChatMessagesFromSessionHistory } from "@/lib/openclaw/agent
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { automationExecutionIdentityFromCron } from "@/lib/openclaw/domains/execution-identity";
+import { DEFAULT_TASK_THINKING, findTaskReasoningModel, resolveBalancedTaskThinking } from "@/lib/openclaw/task-reasoning";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 
@@ -96,12 +97,16 @@ export async function createOperation(
     const agent = snapshot.agents.find((entry) => entry.id === input.agentId);
     if (!agent || agent.workspaceId !== input.workspaceId) throw new Error("Owner agent must belong to the selected workspace.");
     const safety = normalizeSafety(input.safety);
+    const thinking = input.thinking ?? DEFAULT_TASK_THINKING;
+    const resolvedThinking = thinking === DEFAULT_TASK_THINKING
+      ? resolveBalancedTaskThinking(findTaskReasoningModel(snapshot.models, input.model || agent.modelId))
+      : thinking;
     return await withRegistryMutation(async () => {
       await requireMutationCapability();
       await assertSafety(input.agentId, input.workspaceId, safety);
       const payload = await getOpenClawAdapter().call<Record<string, unknown>>(
         "cron.add",
-        buildOpenClawCronAddParams(input),
+        buildOpenClawCronAddParams({ ...input, thinking: resolvedThinking }),
         gatewayOptions
       );
       const job = record(payload.job);

@@ -167,6 +167,9 @@ function createContextAdapter(state: ReturnType<typeof createAdapterState>): Ope
     async getStatus() {
       return { version: "9.9.9" };
     },
+    async listModels(): ReturnType<OpenClawAdapter["listModels"]> {
+      return { models: [] };
+    },
     async addAgent(input) {
       state.addAgentInputs.push(input);
       state.agentConfig.push({

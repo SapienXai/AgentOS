@@ -9,11 +9,13 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 import { matchesMissionText } from "@/lib/openclaw/runtime-matching";
+import { readTaskThinkingRejection } from "@/lib/openclaw/task-reasoning";
 import {
   buildMissionDispatchTranscriptRuntime as buildMissionDispatchTranscriptRuntimeFromRuntime
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
 import {
   createMissionDispatchResultFromRuntimeOutput,
+  extractMissionCommandPayloads,
   extractMissionDispatchSessionId,
   extractMissionDispatchTokenUsage,
   isMissionCommandPayload,
@@ -296,7 +298,6 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     }
 
     const finishedAt = timestampFromUnix(runtime.updatedAt);
-    const nextStatus = normalizeRuntimeTerminalStatus(runtime.status);
     const outputRuntime = {
       ...runtime,
       agentId: runtime.agentId ?? latestRecord.agentId,
@@ -305,6 +306,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     const terminalOutput = outputRuntime.agentId && outputRuntime.sessionId
       ? await readRuntimeOutputForMissionDispatchRecord(latestRecord, outputRuntime)
       : null;
+    const terminalError = terminalOutput?.errorMessage || readTaskThinkingRejection(terminalOutput?.finalText, runtime.subtitle);
+    const runtimeStatus = normalizeRuntimeTerminalStatus(runtime.status);
+    const nextStatus = terminalError && runtimeStatus === "completed" ? "stalled" : runtimeStatus;
     const terminalOutputResult = terminalOutput && (
       Boolean(terminalOutput.finalText?.trim()) || hasMeaningfulTokenUsage(terminalOutput.tokenUsage)
     )
@@ -332,7 +336,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
         : terminalOutputResult ?? latestRecord.result ?? terminalResult,
       error:
         nextStatus === "stalled"
-          ? latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
+          ? terminalError || latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
           : null
     } satisfies MissionDispatchRecordLike;
 
@@ -355,8 +359,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
   }
 
   const finalizedFromTranscript = Boolean(output.finalTimestamp && output.stopReason && output.stopReason !== "toolUse");
+  const reasoningError = readTaskThinkingRejection(output.finalText);
   const stalledFromTranscript =
-    Boolean(output.errorMessage) || output.stopReason === "error" || output.stopReason === "aborted";
+    Boolean(output.errorMessage || reasoningError) || output.stopReason === "error" || output.stopReason === "aborted";
 
   if (!finalizedFromTranscript && !stalledFromTranscript) {
     return;
@@ -388,7 +393,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
       : runtimeResult ?? latestRecord.result,
     error:
       nextStatus === "stalled"
-        ? output.errorMessage || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
+        ? output.errorMessage || reasoningError || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
         : null
   } satisfies MissionDispatchRecordLike;
 
@@ -411,8 +416,9 @@ async function backfillCompletedMissionDispatchResultFromRuntime(
   }
 
   const result = createMissionDispatchResultFromRuntimeOutput(runtime, output);
+  const reasoningError = readTaskThinkingRejection(output.finalText, runtime.subtitle);
 
-  if (!result || (!output.finalText?.trim() && !output.tokenUsage)) {
+  if (!reasoningError && (!result || (!output.finalText?.trim() && !output.tokenUsage))) {
     return null;
   }
 
@@ -422,18 +428,19 @@ async function backfillCompletedMissionDispatchResultFromRuntime(
     return null;
   }
 
-  if (resolveMissionDispatchResultText(latestRecord) && hasMeaningfulMissionDispatchTokenUsage(latestRecord)) {
+  if (!reasoningError && resolveMissionDispatchResultText(latestRecord) && hasMeaningfulMissionDispatchTokenUsage(latestRecord)) {
     return null;
   }
 
   const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt) ?? latestRecord.updatedAt;
 
-  const nextResult = latestRecord.result
+  const nextResult = result && latestRecord.result
     ? mergeMissionDispatchResult(latestRecord.result, result)
-    : result;
+    : result ?? latestRecord.result;
 
   const nextRecord = {
     ...latestRecord,
+    ...(reasoningError ? { status: "stalled" as const, error: reasoningError } : {}),
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
     runner: {
       ...latestRecord.runner,
@@ -892,6 +899,7 @@ function isCompletedRuntimeOutput(output: RuntimeOutputRecord) {
     output.status === "available" &&
       output.finalText?.trim() &&
       !output.errorMessage &&
+      !readTaskThinkingRejection(output.finalText) &&
       stopReason &&
       stopReason !== "toolUse" &&
       stopReason !== "error" &&
@@ -1061,13 +1069,17 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
     }
 
     const status = normalizeMissionDispatchStatus(parsed.status);
+    const result = isMissionCommandPayload(parsed.result) ? parsed.result : null;
+    const reasoningError = status === "completed" ? readTaskThinkingRejection(
+      result?.summary, ...extractMissionCommandPayloads(result).map(({ text }) => text)
+    ) : null;
 
     return {
       id: parsed.id,
       clientRequestId: typeof parsed.clientRequestId === "string" ? parsed.clientRequestId : null,
       expectedOutcome: typeof parsed.expectedOutcome === "string" ? parsed.expectedOutcome.slice(0, 500) : undefined,
       acceptanceCriteria: typeof parsed.acceptanceCriteria === "string" ? parsed.acceptanceCriteria.slice(0, 1500) : undefined,
-      status,
+      status: reasoningError ? "stalled" : status,
       agentId: parsed.agentId,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,
       sessionKey: typeof parsed.sessionKey === "string" ? parsed.sessionKey : null,
@@ -1103,8 +1115,8 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
         runtimeId: typeof parsed.observation?.runtimeId === "string" ? parsed.observation.runtimeId : null,
         observedAt: typeof parsed.observation?.observedAt === "string" ? parsed.observation.observedAt : null
       },
-      result: isMissionCommandPayload(parsed.result) ? parsed.result : null,
-      error: typeof parsed.error === "string" ? parsed.error : null
+      result,
+      error: reasoningError ?? (typeof parsed.error === "string" ? parsed.error : null)
     } satisfies MissionDispatchRecord;
   } catch {
     return null;

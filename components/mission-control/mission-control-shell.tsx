@@ -4905,7 +4905,12 @@ export function MissionControlShell({
             }}
             onReplyTask={(task) => {
               const prompt = resolveTaskPrompt(task);
+              const agent = uiSnapshot.agents.find((entry) => entry.id === task.primaryAgentId);
+              if (agent) setActiveWorkspaceId(agent.workspaceId);
+              pendingComposerBlurRef.current = false;
+              setIsInspectorOpen(false);
               setIsComposerVisible(true);
+              setIsComposerActive(true);
               setComposeIntent({
                 id: `reply:${task.id}:${Date.now()}`,
                 mission: prompt,

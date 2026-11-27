@@ -17,6 +17,7 @@ import { shouldPreserveComposerOnBlur } from "@/components/mission-control/comma
 import { removePendingMissionRequest, writePendingMissionRequest } from "@/components/mission-control/mission-control-shell.utils";
 import type { MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/agentos/contracts";
 import type { SecureBrowserAccountView } from "@/components/operations/accounts/secure-browser-connect-client";
+import { DEFAULT_TASK_THINKING } from "@/lib/openclaw/task-reasoning";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ type ComposerSuggestion = {
 };
 type DraftRecord = {
   mission: string;
+  reasoningVersion?: 1;
   thinking: ThinkingLevel;
   executionMode: NonNullable<MissionSubmission["executionMode"]>;
   browserAccountId: string | null;
@@ -112,8 +114,9 @@ export function CommandBar({
   onOperationScheduled?: (event: ScheduledOperationStart) => void;
 }) {
   const [mission, setMission] = useState("");
-  const [targetAgentId, setTargetAgentId] = useState<string>("");
-  const [thinking, setThinking] = useState<ThinkingLevel>("off");
+  const [targetAgentId, setTargetAgentId] = useState(composeIntent?.agentId ?? "");
+  const [loadedDraftScopeKey, setLoadedDraftScopeKey] = useState<string | null>(null);
+  const [thinking, setThinking] = useState<ThinkingLevel>(DEFAULT_TASK_THINKING);
   const [executionMode, setExecutionMode] = useState<NonNullable<MissionSubmission["executionMode"]>>("standard");
   const [browserAccountId, setBrowserAccountId] = useState<string | null>(null);
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
@@ -135,7 +138,6 @@ export function CommandBar({
   const autoSelectionScopeRef = useRef<string | null>(null);
   const handledComposeIntentIdRef = useRef<string | null>(null);
   const skipDraftSaveRef = useRef(false);
-  const suspendDraftHydrationForScopeRef = useRef<string | null>(null);
 
   const targetWorkspace =
     snapshot.workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? snapshot.workspaces[0];
@@ -186,6 +188,12 @@ export function CommandBar({
 
   useEffect(() => {
     const selectionScope = `${activeWorkspaceId ?? "all"}:${selectedNodeId ?? "none"}:${availableAgents.map((agent) => agent.id).join(",")}`;
+    const requestedAgentId = composeIntent?.id !== handledComposeIntentIdRef.current ? composeIntent?.agentId : undefined;
+    if (requestedAgentId && availableAgents.some((agent) => agent.id === requestedAgentId)) {
+      autoSelectionScopeRef.current = selectionScope;
+      setTargetAgentId(requestedAgentId);
+      return;
+    }
     const preferredAgent = resolvePreferredAgentId(snapshot, activeWorkspaceId, selectedNodeId);
     if (autoSelectionScopeRef.current !== selectionScope) {
       autoSelectionScopeRef.current = selectionScope;
@@ -203,7 +211,7 @@ export function CommandBar({
           : availableAgents[0]?.id ?? ""
       );
     }
-  }, [snapshot, activeWorkspaceId, selectedNodeId, targetAgentId, availableAgents]);
+  }, [snapshot, activeWorkspaceId, selectedNodeId, targetAgentId, availableAgents, composeIntent]);
 
   useEffect(() => {
     const mediaQuery = globalThis.matchMedia("(min-width: 1024px)");
@@ -232,15 +240,10 @@ export function CommandBar({
       return;
     }
 
-    if (suspendDraftHydrationForScopeRef.current === draftScopeKey) {
-      suspendDraftHydrationForScopeRef.current = null;
-      return;
-    }
-
     const storedDraft = readComposerDraft(draftScopeKey);
     skipDraftSaveRef.current = true;
     setMission(storedDraft?.mission ?? "");
-    setThinking(storedDraft?.thinking ?? "off");
+    setThinking(storedDraft?.thinking ?? DEFAULT_TASK_THINKING);
     setExecutionMode(storedDraft?.executionMode ?? "standard");
     setBrowserAccountId(storedDraft?.browserAccountId ?? null);
     setScheduleMode(storedDraft?.scheduleMode ?? "now");
@@ -251,6 +254,7 @@ export function CommandBar({
     setRunAt(storedDraft?.runAt ?? "");
     setTimezone(storedDraft?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"));
     setComposeSuggestion(null);
+    setLoadedDraftScopeKey(draftScopeKey);
   }, [draftScopeKey]);
 
   useEffect(() => {
@@ -265,6 +269,7 @@ export function CommandBar({
 
     writeComposerDraft(draftScopeKey, {
       mission,
+      reasoningVersion: 1,
       thinking,
       executionMode,
       browserAccountId,
@@ -320,28 +325,18 @@ export function CommandBar({
   }, []);
 
   useEffect(() => {
-    if (!composeIntent) {
+    if (!composeIntent || handledComposeIntentIdRef.current === composeIntent.id || loadedDraftScopeKey !== draftScopeKey) {
       return;
     }
 
-    if (handledComposeIntentIdRef.current === composeIntent.id) {
-      return;
-    }
+    if (composeIntent.agentId && composeIntent.agentId !== effectiveTargetAgentId &&
+        availableAgents.some((agent) => agent.id === composeIntent.agentId)) return;
 
     handledComposeIntentIdRef.current = composeIntent.id;
     const incomingMission = composeIntent.mission.trim();
 
     if (!incomingMission) {
       return;
-    }
-
-    const nextScopeKey = buildDraftScopeKey(
-      targetWorkspace?.id ?? activeWorkspaceId ?? null,
-      composeIntent.agentId ?? effectiveTargetAgentId
-    );
-
-    if (nextScopeKey) {
-      suspendDraftHydrationForScopeRef.current = nextScopeKey;
     }
 
     const shouldAutoApply = mission.trim().length === 0 || mission.trim() === incomingMission;
@@ -355,10 +350,7 @@ export function CommandBar({
 
     if (shouldAutoApply) {
       setMission(incomingMission);
-    }
-
-    if (composeIntent.agentId) {
-      setTargetAgentId(composeIntent.agentId);
+      if (composeIntent.sourceKind === "reply") resetRetryOptions();
     }
 
     requestAnimationFrame(() => {
@@ -367,7 +359,7 @@ export function CommandBar({
         textareaRef.current?.setSelectionRange(incomingMission.length, incomingMission.length);
       }
     });
-  }, [composeIntent, mission, activeWorkspaceId, effectiveTargetAgentId, targetWorkspace?.id]);
+  }, [composeIntent, mission, availableAgents, draftScopeKey, effectiveTargetAgentId, loadedDraftScopeKey]);
 
   const handleTargetAgentChange = (value: string) => {
     setIsCompactAfterSubmit(false);
@@ -575,6 +567,13 @@ export function CommandBar({
     } finally { setIsSubmitting(false); }
   };
 
+  function resetRetryOptions() {
+    setThinking(DEFAULT_TASK_THINKING);
+    setExecutionMode("standard");
+    setBrowserAccountId(null);
+    setScheduleMode("now");
+  }
+
   const applyMissionSnippet = (
     snippet: string,
     options: {
@@ -738,9 +737,10 @@ export function CommandBar({
                     type="button"
                     className={cn("transition-colors", isLightTheme ? "text-[#5d4535] hover:text-[#241a14]" : "text-slate-200 hover:text-white")}
                     onClick={() =>
-                      applyMissionSnippet(composeSuggestion.mission, {
-                        mode: "replace"
-                      })
+                      {
+                        if (composeSuggestion.sourceKind === "reply") resetRetryOptions();
+                        applyMissionSnippet(composeSuggestion.mission, { mode: "replace" });
+                      }
                     }
                   >
                     Replace
@@ -879,7 +879,7 @@ export function CommandBar({
                       : "border-white/[0.08] bg-white/[0.025]"
                   )}>
                     <span className={cn("mr-1 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Reasoning</span>
-                    {(["off", "minimal", "low", "medium", "high"] as ThinkingLevel[]).map((level) => <button key={level} type="button" onClick={() => setThinking(level)} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", thinking === level ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{level === "medium" ? "Balanced" : level}</button>)}
+                    {(["off", "minimal", "low", "medium", "high"] as ThinkingLevel[]).map((level) => <button key={level} type="button" aria-pressed={thinking === level} onClick={() => setThinking(level)} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", thinking === level ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{level === "medium" ? "Balanced" : level}</button>)}
                     <span className={cn("ml-2 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Execution</span>
                     {([ ["Standard", "standard"], ["Isolated worktree", "isolated-worktree"] ] as const).map(([label, value]) => <button key={value} type="button" onClick={() => setExecutionMode(value)} aria-pressed={executionMode === value} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", executionMode === value ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{label}</button>)}
                   </div>
@@ -1100,7 +1100,8 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 
     return {
       mission: parsed.mission,
-      thinking: isThinkingLevel(parsed.thinking) ? parsed.thinking : "off",
+      thinking: isThinkingLevel(parsed.thinking) && (parsed.thinking !== "off" || parsed.reasoningVersion === 1)
+        ? parsed.thinking : DEFAULT_TASK_THINKING,
       executionMode: parsed.executionMode === "isolated-worktree" ? "isolated-worktree" : "standard",
       browserAccountId: typeof parsed.browserAccountId === "string" ? parsed.browserAccountId : null,
       scheduleMode: isScheduleMode(parsed.scheduleMode) ? parsed.scheduleMode : "now",
@@ -1121,7 +1122,7 @@ function readComposerDraft(scopeKey: string): DraftRecord | null {
 function writeComposerDraft(scopeKey: string, draft: DraftRecord) {
   try {
     if (
-      !draft.mission.trim() && draft.thinking === "off" && draft.executionMode === "standard" && !draft.browserAccountId &&
+      !draft.mission.trim() && draft.thinking === DEFAULT_TASK_THINKING && draft.executionMode === "standard" && !draft.browserAccountId &&
       draft.scheduleMode === "now" && draft.cronExpression === "0 9 * * 1-5" &&
       draft.recurrence === "weekdays" && draft.recurrenceTime === "09:00" &&
       draft.intervalMinutes === "60" && !draft.runAt &&

@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { EmptyState, InspectorPanelFrame, KeyValue, OperationsPageLayout, PageHeader, SectionCard, StatCard, StatGrid, StatusBadge } from "@/components/operations/operations-ui";
 import type { OperationJob, OperationsSnapshot } from "@/lib/agentos/operations/types";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { DEFAULT_TASK_THINKING } from "@/lib/openclaw/task-reasoning";
 import { cn } from "@/lib/utils";
 import { SuggestedWorkPanel } from "@/components/operations/operations/suggested-work-panel";
 
@@ -228,7 +229,7 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const selectedAgent = agents.find((agent) => agent.id === agentId) ?? null;
   const [model, setModel] = useState(selectedAgent?.modelId === "unassigned" ? "" : selectedAgent?.modelId ?? "");
-  const [thinking, setThinking] = useState<"off" | "minimal" | "low" | "medium" | "high" | "xhigh">("off");
+  const [thinking, setThinking] = useState<"off" | "minimal" | "low" | "medium" | "high" | "xhigh">(DEFAULT_TASK_THINKING);
   const [expression, setExpression] = useState("0 9 * * 1-5");
   const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [concurrency, setConcurrency] = useState<"allow" | "forbid" | "replace">("forbid");
