@@ -200,7 +200,9 @@ jobs:
           trap 'kill "$app" 2>/dev/null || true; wait "$app" 2>/dev/null || true' EXIT
           for attempt in {1..75}; do
             kill -0 "$app" || exit 1
-            for child in $(pgrep -P "$app" -x node || true); do
+            for child in $(pgrep -P "$app" || true); do
+              binary=$(readlink "/proc/$child/exe" 2>/dev/null || true)
+              [[ "$binary" == */agentos-runtime/node/bin/node ]] || continue
               listeners=$(ss -H -ltnp | awk -v child="$child" '$0 ~ ("pid=" child ",") {print $4}')
               for address in $listeners; do
                 [[ "$address" == 127.0.0.1:* ]] || exit 1
@@ -214,6 +216,8 @@ jobs:
             done
             sleep 1
           done
+          echo "Installed Desktop did not expose a ready loopback server within 75 seconds." >&2
+          ps -o pid=,ppid=,comm= --ppid "$app" || true
           exit 1
           EOF
           sha256sum "${installers[0]}" | cut -d ' ' -f 1 > desktop-linux-x86_64-deb.txt
