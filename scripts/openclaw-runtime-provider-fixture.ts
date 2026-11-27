@@ -271,13 +271,13 @@ function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknow
   }
 
   if (/WORKFORCE_ACCEPTANCE_CANCEL/i.test(prompt)) {
-    return { content: "AGENTOS_FIXTURE_CANCEL_REPLY", delayMs: 8_000 };
+    return { content: "AGENTOS_FIXTURE_CANCEL_REPLY", delayMs: 14_000 };
   }
 
   if (/WORKFORCE_ACCEPTANCE_CHILD/i.test(prompt)) {
     return {
       content: "AGENTOS_FIXTURE_CHILD_REPLY",
-      delayMs: 7_000
+      delayMs: 14_000
     };
   }
 

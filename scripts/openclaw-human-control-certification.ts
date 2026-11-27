@@ -8,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import { OPENCLAW_STATIC_METHOD_SCOPES } from "@/lib/openclaw/identity/contract";
 import {
@@ -133,10 +133,10 @@ async function main() {
     if (client && approvalId) await client.callNative("exec.approval.resolve", { id: approvalId, decision: "deny" }, { timeoutMs: TIMEOUT_MS }, mutationPolicy()).catch(() => {});
     subscription?.close();
     client?.close("human control certification cleanup");
-    await stopProcess(gateway).catch(() => {});
+    await stopDisposableProcess(gateway).catch(() => {});
     await rm(root, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup.disposableStateRemoved = "PASS";
-    evidence.cleanup.gatewayStopped = gateway?.exitCode !== null ? "PASS" : "FAIL";
+    evidence.cleanup.gatewayStopped = isDisposableProcessStopped(gateway) ? "PASS" : "FAIL";
     evidence.events.observed = [...observedEvents];
     evidence.result = "PASS";
     evidence.result = containsFail(evidence) ? "FAIL" : "PASS";
@@ -194,16 +194,15 @@ async function startGateway(resources: { homeDir: string; stateDir: string; work
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Disposable Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
+    if (isDisposableProcessStopped(child)) throw new Error(`Disposable Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
     try { if ((await fetch(`http://127.0.0.1:${resources.port}/healthz`)).ok) return child; } catch {}
     await wait(250);
   }
-  await stopProcess(child);
+  await stopDisposableProcess(child);
   throw new Error(`Disposable Gateway did not become ready. ${sanitizeText(output)}`);
 }
 async function readPackageIdentity() { const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as { version?: string }; const info = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "dist/build-info.json"), "utf8")) as { commit?: string }; const hash = createHash("sha256"); for (const file of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(file); hash.update(await readFile(path.join(PACKAGE_ROOT, file))); } return { version: pkg.version ?? "", sourceCommit: info.commit ?? null, packageHash: hash.digest("hex") }; }
 async function reservePort() { return await new Promise<number>((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const address = server.address(); const port = typeof address === "object" && address ? address.port : 0; server.close((error) => error ? reject(error) : resolve(port)); }); }); }
-async function stopProcess(child: ChildProcess | null) { if (!child || child.exitCode !== null) return; child.kill("SIGTERM"); await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), wait(10_000)]); if (child.exitCode === null) child.kill("SIGKILL"); }
 function wait(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 async function readGitHead() { return (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: process.cwd() })).stdout.trim(); }
 function asRecord(value: unknown): Record<string, unknown> | null { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }

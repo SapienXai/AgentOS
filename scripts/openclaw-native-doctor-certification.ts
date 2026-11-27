@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 import { readInstalledOpenClawSdkVersions } from "@/scripts/lib/openclaw-sdk-versions";
 import {
   comparePinnedMethodScopes,
@@ -136,10 +136,10 @@ async function main() {
     evidence.skips.push(`Disposable native Doctor runtime did not complete: ${sanitize(error instanceof Error ? error.message : String(error))}`);
   } finally {
     client?.close("native Doctor certification complete");
-    await stopProcess(gateway).catch(() => {});
+    await stopDisposableProcess(gateway).catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup.status = "complete";
-    evidence.cleanup.gatewayProcessStopped = gateway?.exitCode !== null;
+    evidence.cleanup.gatewayProcessStopped = isDisposableProcessStopped(gateway);
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
   }
 
@@ -423,13 +423,13 @@ async function startGateway(input: { packageRoot: string; homeDir: string; state
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Disposable OpenClaw Gateway exited (${child.exitCode}). ${sanitize(output)}`);
+    if (isDisposableProcessStopped(child)) throw new Error(`Disposable OpenClaw Gateway exited (${child.exitCode}). ${sanitize(output)}`);
     try {
       if ((await fetch(`http://127.0.0.1:${input.port}/healthz`)).ok) return child;
     } catch {}
     await wait(250);
   }
-  await stopProcess(child);
+  await stopDisposableProcess(child);
   throw new Error(`Disposable OpenClaw Gateway did not become ready. ${sanitize(output)}`);
 }
 
@@ -476,16 +476,6 @@ async function reservePort() {
       server.close((error) => error ? reject(error) : resolve(port));
     });
   });
-}
-
-async function stopProcess(child: ChildProcess | null) {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    wait(10_000)
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
 }
 
 async function readGitHead() { return (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: process.cwd() })).stdout.trim(); }

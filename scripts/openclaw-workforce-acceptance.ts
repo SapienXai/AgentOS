@@ -28,7 +28,7 @@ import {
   resolveAttentionItem
 } from "@/lib/openclaw/application/human-control-inbox-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 import { REQUIRED_WORKFORCE_PRODUCT_CHECKS } from "@/scripts/lib/workforce-certification-requirements";
 import {
   OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
@@ -402,7 +402,7 @@ async function main() {
       thinking: "off"
     }, mutationOptions());
     let observedWaitingWorker = false;
-    const delegationObservationDeadline = Date.now() + 20_000;
+    const delegationObservationDeadline = Date.now() + 27_000;
     while (Date.now() < delegationObservationDeadline) {
       const delegationRecord = (await readMissionDispatchRecords()).find((record) => record.clientRequestId === delegationRequestId);
       if (delegationRecord) {
@@ -561,7 +561,7 @@ async function main() {
 
     client.close("workforce acceptance reconnect");
     client = null;
-    await stopProcess(gateway);
+    await stopDisposableProcess(gateway);
     gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
     client = createClient(port, token, "0.1.0-agentos-workforce-acceptance-reconnect", stateDir);
     setOpenClawGatewayClientForTesting(client);
@@ -594,10 +594,10 @@ async function main() {
     setOpenClawAdapterForTesting(null);
     resetOpenClawGatewayClient("workforce acceptance cleanup");
     restoreEnvironment(parentEnvironment);
-    await stopProcess(gateway).catch(() => {});
+    await stopDisposableProcess(gateway).catch(() => {});
     await fixture.close().catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
-    evidence.cleanup = { disposableRootRemoved: !(await pathExists(disposableRoot)), gatewayStopped: gateway?.exitCode !== null, productionGatewayTouched: false };
+    evidence.cleanup = { disposableRootRemoved: !(await pathExists(disposableRoot)), gatewayStopped: isDisposableProcessStopped(gateway), productionGatewayTouched: false };
     for (const checkId of REQUIRED_WORKFORCE_PRODUCT_CHECKS) {
       if (evidence.checks[checkId]?.status !== "PASS") {
         evidence.checks[checkId] = {
@@ -818,11 +818,11 @@ async function startGateway(input: { packageRoot: string; stateDir: string; work
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Disposable Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
+    if (isDisposableProcessStopped(child)) throw new Error(`Disposable Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
     try { if ((await fetch(`http://127.0.0.1:${input.port}/healthz`)).ok) return child; } catch {}
     await wait(250);
   }
-  await stopProcess(child);
+  await stopDisposableProcess(child);
   throw new Error(`Disposable Gateway did not become ready. ${sanitizeText(output)}`);
 }
 
@@ -875,7 +875,6 @@ function readOptions() { return { timeoutMs: TIMEOUT_MS, safety: "read" as const
 function summarizeChecks(checks: Record<string, { status: CheckStatus }>) { return Object.values(checks).reduce((summary, check) => { if (check.status === "PASS") summary.passed += 1; else if (check.status === "FAIL") summary.failed += 1; else summary.skipped += 1; return summary; }, { passed: 0, skipped: 0, failed: 0 }); }
 async function readPackageIdentity(packageRoot: string) { const pkg = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as { version?: string }; const buildInfo = JSON.parse(await readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8")) as { commit?: string; buildId?: string }; const hash = createHash("sha256"); for (const file of ["package.json", "openclaw.mjs", "dist/build-info.json"]) { hash.update(file); hash.update(await readFile(path.join(packageRoot, file))); } return { version: pkg.version ?? "", sourceCommit: buildInfo.commit ?? "", buildId: buildInfo.buildId ?? "", packageHash: hash.digest("hex") }; }
 async function reservePort() { return await new Promise<number>((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const address = server.address(); const port = typeof address === "object" && address ? address.port : 0; server.close((error) => error ? reject(error) : resolve(port)); }); }); }
-async function stopProcess(child: ChildProcess | null) { if (!child || child.exitCode !== null) return; child.kill("SIGTERM"); await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), wait(10_000)]); if (child.exitCode === null) child.kill("SIGKILL"); }
 async function pathExists(candidate: string) { try { await readFile(candidate); return true; } catch { return false; } }
 async function readGitHead() { return (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: process.cwd() })).stdout.trim(); }
 function asRecord(value: unknown): Record<string, unknown> | null { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }

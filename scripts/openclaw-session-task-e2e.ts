@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import { buildDirectAgentChatSessionKey, directAgentChatSubmissionId } from "@/lib/openclaw/domains/agent-chat-sessions";
 import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
@@ -383,7 +383,7 @@ async function main() {
 
     client.close("session/task restart continuity");
     client = null;
-    await stopProcess(gateway);
+    await stopDisposableProcess(gateway);
     gateway = await startGateway({
       packageRoot,
       homeDir,
@@ -437,12 +437,12 @@ async function main() {
       await cleanupClient.callNative("sessions.delete", { key: sessionKey, deleteTranscript: true }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
       cleanupClient.close("session/task cleanup complete");
     }
-    await stopProcess(gateway).catch(() => {});
+    await stopDisposableProcess(gateway).catch(() => {});
     await fixture.close().catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup.status = "complete";
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
-    evidence.cleanup.gatewayProcessStopped = gateway.exitCode !== null;
+    evidence.cleanup.gatewayProcessStopped = isDisposableProcessStopped(gateway);
     evidence.gate = success && evidence.cleanup.disposableRootRemoved && evidence.cleanup.gatewayProcessStopped
       ? `OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} SESSION/TASK ALIGNMENT GATE: PASS`
       : `OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} SESSION/TASK ALIGNMENT GATE: FAIL`;
@@ -812,11 +812,11 @@ async function startGateway(input: {
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Isolated OpenClaw Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
+    if (isDisposableProcessStopped(child)) throw new Error(`Isolated OpenClaw Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
     try { if ((await fetch(`http://127.0.0.1:${input.port}/healthz`)).ok) return child; } catch {}
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  await stopProcess(child);
+  await stopDisposableProcess(child);
   throw new Error(`Isolated OpenClaw Gateway did not become ready. ${sanitizeText(output)}`);
 }
 
@@ -840,15 +840,6 @@ async function reservePort() {
       server.close((error) => error ? reject(error) : resolve(port));
     });
   });
-}
-async function stopProcess(child: ChildProcess) {
-  if (child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, 10_000))
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
 }
 async function pathExists(candidate: string) { try { await readFile(candidate); return true; } catch (error) { return error instanceof Error && "code" in error && error.code !== "ENOENT"; } }
 function sanitizeText(value: string) { return value.replace(/agentos-session-task-e2e-[A-Za-z0-9._-]+/g, "[REDACTED_TOKEN]").replace(/\/Users\/[^\s"']+/g, "[LOCAL_PATH]").replace(/\/tmp\/[^\s"']+/g, "[DISPOSABLE_PATH]").slice(0, 320); }

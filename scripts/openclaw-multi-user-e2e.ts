@@ -16,7 +16,7 @@ import {
   resetManagedAgentOsUserPassword
 } from "@/lib/agentos/application/agentos-account-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 import {
   OPENCLAW_CERTIFICATION_TARGET_BUILD as OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_CERTIFICATION_TARGET_COMMIT as OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
@@ -310,11 +310,11 @@ async function main() {
     }
     client.close("multi-user E2E cleanup");
     await resetInstanceProtection(env).catch(() => {});
-    await stopProcess(gateway).catch(() => { evidence.cleanup.status = "failed"; });
+    await stopDisposableProcess(gateway).catch(() => { evidence.cleanup.status = "failed"; });
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => { evidence.cleanup.status = "failed"; });
     evidence.cleanup.status = evidence.cleanup.status === "failed" ? "failed" : "complete";
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
-    evidence.cleanup.gatewayProcessStopped = gateway.exitCode !== null;
+    evidence.cleanup.gatewayProcessStopped = isDisposableProcessStopped(gateway);
     evidence.gate = success && evidence.cleanup.status === "complete" && evidence.cleanup.disposableRootRemoved && evidence.cleanup.gatewayProcessStopped
       ? `AGENTOS / OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} MULTI-USER GATE: PASS`
       : `AGENTOS / OPENCLAW ${OPENCLAW_IDENTITY_CONTRACT_VERSION} MULTI-USER GATE: FAIL`;
@@ -352,11 +352,11 @@ async function startGateway(input: { packageRoot: string; stateDir: string; work
   child.stderr?.on("data", (chunk: Buffer | string) => { output = `${output}${chunk.toString()}`.slice(-8_000); });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Isolated OpenClaw Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
+    if (isDisposableProcessStopped(child)) throw new Error(`Isolated OpenClaw Gateway exited (${child.exitCode}). ${sanitizeText(output)}`);
     try { if ((await fetch(`http://127.0.0.1:${input.port}/healthz`)).ok) return child; } catch {}
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  await stopProcess(child);
+  await stopDisposableProcess(child);
   throw new Error(`Isolated OpenClaw Gateway did not become ready. ${sanitizeText(output)}`);
 }
 
@@ -373,10 +373,18 @@ async function readGitBranch() { return (await execFileAsync("git", ["branch", "
 async function reservePort() {
   return await new Promise<number>((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const address = server.address(); const port = typeof address === "object" && address ? address.port : 0; server.close((error) => error ? reject(error) : resolve(port)); }); });
 }
-async function stopProcess(child: ChildProcess) { if (child.exitCode !== null) return; child.kill("SIGTERM"); await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), new Promise<void>((resolve) => setTimeout(resolve, 10_000))]); if (child.exitCode === null) child.kill("SIGKILL"); }
 async function pathExists(candidate: string) { try { await readFile(candidate); return true; } catch (error) { return error instanceof Error && "code" in error && error.code !== "ENOENT"; } }
 function summarizeIdentity(identity: { requestedRole: string | null; role: string | null; requestedScopes: string[]; grantedScopes: string[]; grantedScopesKnown: boolean; deviceId: string | null; connectionId: string | null; authenticated: boolean; source: string }): IdentitySummary { return { requestedRole: identity.requestedRole, role: identity.role, requestedScopes: identity.requestedScopes, grantedScopes: identity.grantedScopes, grantedScopesKnown: identity.grantedScopesKnown, deviceId: identity.deviceId, connectionId: identity.connectionId, authenticated: identity.authenticated, source: identity.source }; }
 function sanitizeText(value: string) { return value.replace(/agentos-multi-user-e2e-[A-Za-z0-9._-]+/g, "[REDACTED_TOKEN]").replace(/\/Users\/[^\s"']+/g, "[LOCAL_PATH]").replace(/\/tmp\/[^\s"']+/g, "[DISPOSABLE_PATH]").slice(0, 320); }
-function sanitizeEvidence(value: unknown): unknown { if (typeof value === "string") return sanitizeText(value); if (Array.isArray(value)) return value.map(sanitizeEvidence); if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeEvidence(nested)])); return value; }
+function sanitizeEvidence(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeText(value);
+  if (Array.isArray(value)) return value.map(sanitizeEvidence);
+  if (!value || typeof value !== "object") return value;
+
+  const evidence = value as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(evidence).map(([key, nested]) => [
+    key, evidence.id === "gateway-owner" && key === "label" ? "[LOCAL_OWNER]" : sanitizeEvidence(nested)
+  ]));
+}
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : "OpenClaw multi-user E2E failed."); process.exitCode = 1; });

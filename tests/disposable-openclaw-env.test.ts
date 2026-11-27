@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { test } from "node:test";
 
-import { createDisposableOpenClawEnvironment } from "@/scripts/lib/disposable-openclaw-env";
+import { createDisposableOpenClawEnvironment, isDisposableProcessStopped, stopDisposableProcess } from "@/scripts/lib/disposable-openclaw-env";
 
 test("disposable OpenClaw environments omit host credentials and test-mode overrides", () => {
   const previous = {
@@ -34,6 +35,14 @@ test("disposable OpenClaw environments omit host credentials and test-mode overr
     restoreEnvironment("VITEST", previous.vitest);
     restoreEnvironment("HOME", previous.home);
   }
+});
+
+test("disposable cleanup waits for a signaled child to exit", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  assert.equal(isDisposableProcessStopped(child), false);
+  await stopDisposableProcess(child);
+  assert.equal(isDisposableProcessStopped(child), true);
+  await stopDisposableProcess(child);
 });
 
 function restoreEnvironment(name: string, value: string | undefined) {
