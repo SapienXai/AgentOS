@@ -8,31 +8,53 @@
   "releaseArtifact": {
     "runId": 46001081875,
     "id": 15199123798,
-    "sha256": "9f99b49c94c26d576df4d421de790701c13c1a5888e7bc6c10fcc94872f5d79b"
+    "sha256": "9f99b49c94c26d576df4d421de790701c13c1a5888e7bc6c10fcc94872f5d79b",
+    "cliArchiveProofs": {
+      "darwin-arm64": "b8bf1dded8c9ae57032a0daf70ded4f99bc07307e4ea24d32f4bb4317a8ad3df",
+      "darwin-x64": "1756d2210a9be5684212ccf6f7641f96efee6e93252ff5e247935fd9d753972d",
+      "linux-x64": "bb878ad62194e0aa3a82cb6165d9903628a955fdaf92cde8c2ddf2b01d76f7a5",
+      "win32-x64": "5a8392ad25514d0a9a8c8d8df2165fc44c61bb874efe6f9c772663e4839e8a41"
+    }
   },
   "checks": {
     "cli-macos-arm64": {
       "cleanInstall": {
         "status": "PASS",
         "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466931"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027675"
       }
     },
     "cli-macos-x64": {
       "cleanInstall": {
         "status": "PASS",
         "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466813"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027536"
       }
     },
     "cli-windows-x64": {
       "cleanInstall": {
         "status": "PASS",
         "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466846"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027474"
       }
     },
     "cli-linux-x64": {
       "cleanInstall": {
         "status": "PASS",
         "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466826"
+      },
+      "updateCheck": {
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027645"
       }
     },
     "macos-arm64": {
@@ -43,8 +65,8 @@
     },
     "windows-x64": {
       "packagedLaunch": {
-        "status": "BLOCKED",
-        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46001081875/job/140514466854"
+        "status": "PASS",
+        "evidence": "https://github.com/SapienXai/AgentOS/actions/runs/46009983434/job/140543027420"
       }
     },
     "linux-x64-deb": {
