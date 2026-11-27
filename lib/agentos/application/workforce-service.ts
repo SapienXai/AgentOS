@@ -270,7 +270,11 @@ export function buildMissionProjection(context: MissionBuildContext): WorkforceM
   const startedAt = seed.record?.runner.startedAt || (rootTask && rootTask.status !== "queued" ? createdAt : null);
   const completedAt = seed.record?.runner.finishedAt || (state === "completed" ? toIso(rootTask?.updatedAt) : null);
   const updatedAt = latestTimestamp(seed.record?.updatedAt, rootTask?.updatedAt, ...seed.tasks.map((task) => task.updatedAt));
-  const result = detail?.outputs.find((output) => output.finalText?.trim())?.finalText?.trim() || (seed.record ? resolveMissionDispatchResultText(seed.record) : null);
+  // The runtime output list also contains newer conversation turns. The
+  // dispatch integrity check scopes the outcome to the task's original work.
+  const result = seed.record
+    ? detail?.integrity.finalResponseText?.trim() || resolveMissionDispatchResultText(seed.record)
+    : detail?.outputs.find((output) => output.finalText?.trim())?.finalText?.trim() || null;
   const error = seed.record?.error ? redactSecretText(seed.record.error) : rootTask?.status === "stalled" ? redactSecretText(rootTask.subtitle) : null;
   const workTree = buildWorkTree(seed, snapshot, state, primaryAgentName);
   const timeline = buildTimeline({ context, state, title, primaryAgentName, workTree, createdAt, startedAt, completedAt, result });

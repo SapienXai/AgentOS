@@ -5,7 +5,7 @@ import {
   buildMissionProjection,
   buildMissionSeeds
 } from "@/lib/agentos/application/workforce-service";
-import type { MissionControlSnapshot, RuntimeRecord, TaskRecord } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot, RuntimeRecord, TaskDetailRecord, TaskRecord } from "@/lib/agentos/contracts";
 import type { MissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { mapSessionCatalogEntryToRuntime } from "@/lib/openclaw/domains/runtime-normalizer";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
@@ -178,4 +178,31 @@ test("same evidence produces the same state for list and detail projection paths
   const detailState = buildMissionProjection({ snapshot: current, seed, humanControlItems: [], detail: null }).state;
   assert.equal(listState, detailState);
   assert.equal(listState, "running");
+});
+
+test("a follow-up reply does not become the completed mission's result", () => {
+  const root = task({ id: "root-record", status: "completed", dispatchId: "dispatch-1" });
+  const current = snapshot([root]);
+  const original = "The verified workspace total is 54 orders and the reserve is 162 USD.";
+  const reply = "54 orders.";
+  const detail: TaskDetailRecord = {
+    task: root, runs: [], createdFiles: [], warnings: [], liveFeed: [],
+    outputs: [{
+      runtimeId: "runtime:follow-up", status: "available", finalText: reply, finalTimestamp: null,
+      stopReason: "stop", errorMessage: null, items: [], createdFiles: [], warnings: [], warningSummary: null
+    }],
+    integrity: {
+      status: "verified", outputDir: null, outputDirRelative: null, outputDirExists: false,
+      outputFileCount: 0, transcriptTurnCount: 1, matchingTranscriptTurnCount: 1,
+      finalResponseText: original, finalResponseSource: "runtime", dispatchSessionId: null,
+      sessionMismatch: false, toolNames: [], emails: [], issues: []
+    }
+  };
+  const [seed] = buildMissionSeeds(current.tasks, [dispatch({ status: "completed" })], current);
+  assert.ok(seed);
+
+  const projection = buildMissionProjection({ snapshot: current, seed, humanControlItems: [], detail });
+  assert.equal(projection.state, "completed");
+  assert.equal(projection.result, original);
+  assert.equal(projection.deliverable?.summary, original);
 });
