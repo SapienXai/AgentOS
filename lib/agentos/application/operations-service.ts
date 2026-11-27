@@ -88,15 +88,16 @@ export async function createOperation(
   gatewayOptions: OpenClawCommandOptions = {},
   requestContext: OperationRequestContext = {}
 ) {
-  return withRegistryMutation(async () => {
-    const requestId = randomUUID();
-    try {
+  const requestId = randomUUID();
+  try {
+    // A snapshot projects cron results and can acquire the operations registry lock.
+    const { getMissionControlSnapshot } = await import("@/lib/openclaw/application/mission-control-service");
+    const snapshot = await getMissionControlSnapshot({ force: true });
+    const agent = snapshot.agents.find((entry) => entry.id === input.agentId);
+    if (!agent || agent.workspaceId !== input.workspaceId) throw new Error("Owner agent must belong to the selected workspace.");
+    const safety = normalizeSafety(input.safety);
+    return await withRegistryMutation(async () => {
       await requireMutationCapability();
-      const { getMissionControlSnapshot } = await import("@/lib/openclaw/application/mission-control-service");
-      const snapshot = await getMissionControlSnapshot({ force: true });
-      const agent = snapshot.agents.find((entry) => entry.id === input.agentId);
-      if (!agent || agent.workspaceId !== input.workspaceId) throw new Error("Owner agent must belong to the selected workspace.");
-      const safety = normalizeSafety(input.safety);
       await assertSafety(input.agentId, input.workspaceId, safety);
       const payload = await getOpenClawAdapter().call<Record<string, unknown>>(
         "cron.add",
@@ -121,8 +122,11 @@ export async function createOperation(
       registry.audit.unshift(audit("create", jobId, "accepted", declarationKey ? "OpenClaw cron job converged by declaration key." : "OpenClaw cron job created.", requestId, requestContext));
       await writeRegistry(registry);
       return { ok: true, jobId, requestId, declarationKey };
-    } catch (error) { await appendAudit(audit("create", null, "failed", message(error), requestId, requestContext)); throw error; }
-  });
+    });
+  } catch (error) {
+    await withRegistryMutation(() => appendAudit(audit("create", null, "failed", message(error), requestId, requestContext)));
+    throw error;
+  }
 }
 
 export async function operateOperation(
@@ -142,14 +146,15 @@ export async function operateOperation(
       const call: [string, Record<string, unknown>] = action === "delete" ? ["cron.remove", { id: jobId }]
         : action === "run" || action === "retry" ? ["cron.run", { id: jobId, mode: "force" }]
         : ["cron.update", { id: jobId, patch: { enabled: action === "resume" } }];
-      await getOpenClawAdapter().call<unknown>(call[0], call[1], gatewayOptions);
+      const response = await getOpenClawAdapter().call<unknown>(call[0], call[1], gatewayOptions);
       if (action === "delete") {
         delete registry.jobs[jobId];
         delete registry.results[jobId];
       }
       registry.audit.unshift(audit(action, jobId, "accepted", `OpenClaw ${call[0]} accepted.`, requestId, requestContext));
       await writeRegistry(registry);
-      return { ok: true, requestId };
+      const runId = call[0] === "cron.run" ? string(record(response).runId) : null;
+      return runId ? { ok: true, requestId, runId } : { ok: true, requestId };
     } catch (error) { await appendAudit(audit(action, jobId, "failed", message(error), requestId, requestContext)); throw error; }
   });
 }

@@ -140,6 +140,7 @@ function OperationJobRow({ job, runs, snapshot, surfaceTheme, expanded, selected
           </div>
 
           {latestRun?.error || latestRun?.output || job.latestOutput ? <div className={cn("mt-2 rounded-lg border px-3 py-2 text-[11px] leading-5", latestRun?.error ? "border-destructive/20 bg-destructive/[0.05] text-destructive" : "border-border bg-card text-muted-foreground")}><span className="mr-2 font-semibold uppercase tracking-[0.12em]">{latestRun?.error ? "Latest error" : "Latest result"}</span><span className="line-clamp-2">{latestRun?.error ?? latestRun?.output ?? job.latestOutput}</span></div> : null}
+          {expanded ? <div className="mt-3 xl:hidden"><JobRunHistory runs={runs} /></div> : null}
         </div>
       </div>
     </div>
@@ -158,9 +159,6 @@ function JobDetail({ job, runs, busy, onAction }: {
   busy: boolean;
   onAction: (action: "run" | "pause" | "resume" | "retry" | "disable" | "cancel" | "delete", job: OperationJob) => Promise<void>;
 }) {
-  const ordered = [...runs].sort((left, right) =>
-    Date.parse(right.startedAt ?? right.endedAt ?? "") - Date.parse(left.startedAt ?? left.endedAt ?? "")
-  );
   return (
     <div className="space-y-4">
       <div>
@@ -182,26 +180,7 @@ function JobDetail({ job, runs, busy, onAction }: {
           {job.enabled ? "Pause" : "Resume"}
         </Button>
       </div>
-      <SectionCard title="Run history">
-        {ordered.length ? (
-          <div className="divide-y divide-border">
-            {ordered.slice(0, 12).map((run, index) => (
-              <details key={run.id} open={index === 0 || undefined} className="px-3 py-2.5">
-                <summary className="flex min-h-9 cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    {index === 0 ? "Latest run" : run.startedAt ? formatDateTime(run.startedAt) : "Previous run"}
-                  </span>
-                  <StatusBadge label={run.status} tone={tone(run.status)} />
-                </summary>
-                <p className={cn("whitespace-pre-wrap break-words pb-1 text-sm leading-relaxed", run.error ? "text-destructive" : "text-muted-foreground")}>
-                  {run.error || run.output || "The scheduler has no saved result for this run."}
-                </p>
-              </details>
-            ))}
-          </div>
-        ) : <p className="p-3 text-sm text-muted-foreground">No run history is available yet.</p>}
-      </SectionCard>
+      <JobRunHistory runs={runs} />
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer py-1 font-medium">Scheduler details</summary>
         <KeyValue label="Concurrency" value={job.safety?.concurrency ?? "Managed by OpenClaw"} />
@@ -211,6 +190,36 @@ function JobDetail({ job, runs, busy, onAction }: {
     </div>
   );
 }
+
+function JobRunHistory({ runs }: { runs: OperationsSnapshot["runs"] }) {
+  const ordered = [...runs].sort((left, right) =>
+    Date.parse(right.startedAt ?? right.endedAt ?? "") - Date.parse(left.startedAt ?? left.endedAt ?? "")
+  );
+
+  return (
+    <SectionCard title="Run history">
+      {ordered.length ? (
+        <div className="divide-y divide-border">
+          {ordered.slice(0, 12).map((run, index) => (
+            <details key={run.id} open={index === 0 || undefined} className="px-3 py-2.5">
+              <summary className="flex min-h-9 cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  {index === 0 ? "Latest run" : run.startedAt ? formatDateTime(run.startedAt) : "Previous run"}
+                </span>
+                <StatusBadge label={run.status} tone={tone(run.status)} />
+              </summary>
+              <p className={cn("whitespace-pre-wrap break-words pb-1 text-sm leading-relaxed", run.error ? "text-destructive" : "text-muted-foreground")}>
+                {run.error || run.output || "The scheduler has no saved result for this run."}
+              </p>
+            </details>
+          ))}
+        </div>
+      ) : <p className="p-3 text-sm text-muted-foreground">No run history is available yet.</p>}
+    </SectionCard>
+  );
+}
+
 function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }: { snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; onClose: () => void; onCreated: () => Promise<void> }) {
   const agents = snapshot.agents.filter((agent) => !activeWorkspaceId || agent.workspaceId === activeWorkspaceId);
   const [name, setName] = useState("");
@@ -219,7 +228,7 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const selectedAgent = agents.find((agent) => agent.id === agentId) ?? null;
   const [model, setModel] = useState(selectedAgent?.modelId === "unassigned" ? "" : selectedAgent?.modelId ?? "");
-  const [thinking, setThinking] = useState<"off" | "minimal" | "low" | "medium" | "high" | "xhigh">("medium");
+  const [thinking, setThinking] = useState<"off" | "minimal" | "low" | "medium" | "high" | "xhigh">("off");
   const [expression, setExpression] = useState("0 9 * * 1-5");
   const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [concurrency, setConcurrency] = useState<"allow" | "forbid" | "replace">("forbid");

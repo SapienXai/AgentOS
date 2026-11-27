@@ -973,6 +973,76 @@ async function run() {
       }
     }
 
+    if (livingWorkforce && worker && first) {
+      const jobName = "Studio source check";
+      const jobPrompt = "AGENTOS_SYNTHETIC_CRON_PROMPT: Return a short recurring studio source check.";
+      const nativeReply = "AGENTOS_FIXTURE_CRON_REPLY";
+      const sizes = [{ theme: "dark", width: 1440, height: 900 }, { theme: "light", width: 390, height: 844 }];
+      for (const { theme, width, height } of sizes) {
+        const viewport = { width, height };
+        const context = await browser.newContext({
+          viewport, colorScheme: theme, reducedMotion: "reduce", isMobile: width < 600, hasTouch: width < 600
+        });
+        try {
+          await context.addCookies([{ name: INSTANCE_PROTECTION_COOKIE, value: owner.session, url: base }]);
+          await context.addInitScript(({ theme, scopeKey, workspaceId }) => {
+            localStorage.setItem("mission-control-surface-theme", theme);
+            sessionStorage.setItem(scopeKey, workspaceId);
+          }, { theme, scopeKey, workspaceId: first.workspaceId });
+          const page = await context.newPage();
+          const schedulePath = base + "/missions?view=scheduled";
+          await page.goto(schedulePath, { waitUntil: "domcontentloaded" });
+          const job = page.getByRole("article").filter({ hasText: jobName });
+          const operationResponse = () => page.waitForResponse(response => response.url() === base + "/api/operations" && response.request().method() === "POST");
+          if (width === 1440) {
+            await page.getByRole("button", { name: "Schedule task", exact: true }).click();
+            const dialog = page.getByRole("dialog");
+            await dialog.getByPlaceholder("Morning operations brief").fill(jobName);
+            await dialog.getByPlaceholder("Describe the outcome", { exact: false }).fill(jobPrompt);
+            const [created] = await Promise.all([
+              operationResponse(),
+              dialog.getByRole("button", { name: "Create operation" }).click()
+            ]);
+            const { jobId } = await created.json();
+            assert(created.ok() && jobId, "The browser could not create a native schedule.");
+            await expect(job).toBeVisible();
+            const runIds = new Set();
+            for (let index = 0; index < 2; index++) {
+              const [admitted] = await Promise.all([
+                operationResponse(),
+                job.getByRole("button", { name: `Run ${jobName} once now` }).click()
+              ]);
+              const { runId } = await admitted.json();
+              assert(admitted.ok() && runId && !runIds.has(runId), "The run did not return a new native ID.");
+              runIds.add(runId);
+              await expect.poll(async () => {
+                const { entries } = await nativeClient.listCronRuns({ id: jobId, runId, limit: 10 });
+                return entries?.find(entry => entry.runId === runId)?.status;
+              }, { timeout: 30000 }).toBe("ok");
+            }
+            await page.reload({ waitUntil: "domcontentloaded" });
+          }
+          await expect(job).toBeVisible();
+          await job.getByRole("button", { name: new RegExp("^" + jobName) }).click();
+          const history = page.locator("section").filter({ has: page.getByText("Run history", { exact: true }) }).filter({ visible: true });
+          await expect(history).toBeVisible();
+          const runs = history.locator("details");
+          await expect(runs).toHaveCount(2);
+          await expect(runs.first().getByText(nativeReply, { exact: true })).toBeVisible();
+          await runs.last().locator("summary").click();
+          await expect(runs.last().getByText(nativeReply, { exact: true })).toBeVisible();
+          await history.scrollIntoViewIfNeeded();
+          await page.screenshot({ path: path.join(output, `${theme}-${width}-recurring-history.jpg`), type: "jpeg", quality: 82, animations: "disabled" });
+          report.push({ theme, viewport, name: "native-recurring-history", result: "PASS" });
+        } catch (error) {
+          const problem = error.message.split("\n").slice(0, 6).join("\n");
+          report.push({ theme, viewport, name: "native-recurring-history", result: "FAIL", problem });
+        } finally {
+          await context.close();
+        }
+      }
+    }
+
     await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
     if (!fresh && !baseline && !matchedCanvas) {
       for (const route of ["/chat", "/team", "/knowledge", "/missions", "/integrations", "/settings"]) {
