@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-capability-truthfulness-skills-runtime-certification",
-  "generatedAt": "2026-11-26T12:06:01.037Z",
+  "generatedAt": "2026-11-27T06:58:31.569Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "certifiedCodeHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "certifiedCodeHead": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
     "openClaw": {
       "release": "2026.11.10",
       "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -76,7 +76,7 @@
       "enabled": true,
       "seedMethod": "skills.library.save",
       "seed": "PASS",
-      "skillId": "96b9eab8-6914-4728-81f9-df644228dcb5",
+      "skillId": "be9805d6-3e00-4cfc-819d-a48b64cf10b7",
       "revision": "caa23bc1754c04f9298bf007b9d92eba5344f0f2688c08c1f6541de54817d257",
       "read": "PASS",
       "revisionIdentity": "PASS",
@@ -168,9 +168,9 @@
     "observed": [
       "plugins.changed",
       "chat.metadata.changed",
-      "update.available",
       "skills.changed",
       "health",
+      "update.available",
       "sessions.changed"
     ],
     "cacheInvalidation": "covered by event-bridge contract tests",
@@ -189,7 +189,7 @@
     },
     "oneRpcPerTool": false,
     "rootDashboardFullResolution": false,
-    "observedTimingMs": 239
+    "observedTimingMs": 25
   },
   "security": {
     "credentialsExposed": false,

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-26T12:04:34.966Z",
+  "generatedAt": "2026-11-27T06:57:19.865Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "codeCommitUnderTest": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -172,7 +172,7 @@
     {
       "label": "Owner A",
       "actorIdClassification": "stable-uuid",
-      "actorId": "f8808db3-6dac-48d6-ac74-537a7d8dce52",
+      "actorId": "a8b72162-b8da-48bf-a09e-547ad23f2647",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "owner"
@@ -180,7 +180,7 @@
     {
       "label": "Member B",
       "actorIdClassification": "stable-uuid",
-      "actorId": "3515591d-e205-4246-9ee1-ca4c10309d87",
+      "actorId": "bfec36a4-6c64-4835-8a32-478352f835dc",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "member"
@@ -221,7 +221,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "3c6af61d-157f-4647-9a79-8433fa615c48",
+        "connectionId": "4791ceb8-e7fe-45d3-a32f-094b275c8bbb",
         "authenticated": true,
         "source": "native-handshake"
       },
@@ -239,8 +239,8 @@
           "type": "profile",
           "id": "gateway-owner"
         },
-        "label": "Kazım Akgül",
-        "avatarUrl": "/api/users/gateway-owner/avatar?v=1795694675233"
+        "label": "[LOCAL_OWNER]",
+        "avatarUrl": "/api/users/gateway-owner/avatar?v=1795762639869"
       },
       "owner": {
         "actor": {
@@ -250,8 +250,8 @@
             "type": "profile",
             "id": "gateway-owner"
           },
-          "label": "Kazım Akgül",
-          "avatarUrl": "/api/users/gateway-owner/avatar?v=1795694675233"
+          "label": "[LOCAL_OWNER]",
+          "avatarUrl": "/api/users/gateway-owner/avatar?v=1795762639869"
         }
       },
       "visibility": "shared",

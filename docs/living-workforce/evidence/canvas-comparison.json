@@ -1,0 +1,390 @@
+{
+  "baseline": "3b655e38aa5ddbaff973aab9e8905d4cad44d972",
+  "candidateBrowserRevision": "e59ad260",
+  "captures": [
+    {
+      "capture": "dark-1440-canvas",
+      "viewport": [
+        1440,
+        900,
+        1
+      ],
+      "canvasSize": {
+        "width": 1440,
+        "height": 900
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(158.242px, 20.3542px) scale(0.876974)",
+      "afterTransform": "translate(154.711px, 19.1333px) scale(0.877778)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "dark-390-canvas",
+      "viewport": [
+        390,
+        844,
+        1
+      ],
+      "canvasSize": {
+        "width": 390,
+        "height": 788
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(-74.48px, 187.36px) scale(0.42)",
+      "afterTransform": "translate(-74.48px, 187.36px) scale(0.42)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 358,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "dark-820-canvas",
+      "viewport": [
+        820,
+        1180,
+        1
+      ],
+      "canvasSize": {
+        "width": 820,
+        "height": 1124
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(23.6px, 266.8px) scale(0.6)",
+      "afterTransform": "translate(23.6px, 266.8px) scale(0.6)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "dark-844-canvas",
+      "viewport": [
+        844,
+        390,
+        1
+      ],
+      "canvasSize": {
+        "width": 844,
+        "height": 334
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(151.52px, -39.64px) scale(0.42)",
+      "afterTransform": "translate(151.52px, -39.64px) scale(0.42)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "light-1440-canvas",
+      "viewport": [
+        1440,
+        900,
+        1
+      ],
+      "canvasSize": {
+        "width": 1440,
+        "height": 900
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(154.711px, 19.1333px) scale(0.877778)",
+      "afterTransform": "translate(154.71px, 19.1333px) scale(0.877779)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "light-390-canvas",
+      "viewport": [
+        390,
+        844,
+        1
+      ],
+      "canvasSize": {
+        "width": 390,
+        "height": 788
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(-74.48px, 187.36px) scale(0.42)",
+      "afterTransform": "translate(-74.48px, 187.36px) scale(0.42)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 358,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "light-820-canvas",
+      "viewport": [
+        820,
+        1180,
+        1
+      ],
+      "canvasSize": {
+        "width": 820,
+        "height": 1124
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(23.6px, 266.8px) scale(0.6)",
+      "afterTransform": "translate(23.6px, 266.8px) scale(0.6)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    },
+    {
+      "capture": "light-844-canvas",
+      "viewport": [
+        844,
+        390,
+        1
+      ],
+      "canvasSize": {
+        "width": 844,
+        "height": 334
+      },
+      "matchingCanvasSize": true,
+      "matchingNodeLayout": true,
+      "beforeTransform": "translate(151.52px, -39.64px) scale(0.42)",
+      "afterTransform": "translate(151.52px, -39.64px) scale(0.42)",
+      "nodeLayout": [
+        {
+          "type": "react-flow__node-workspace",
+          "position": "translate(44px, 42px)",
+          "width": 1200,
+          "height": 900
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(96px, 160px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-task",
+          "position": "translate(424px, 170px)",
+          "width": 400,
+          "height": 285
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(110px, 284px)",
+          "width": 272,
+          "height": 436
+        },
+        {
+          "type": "react-flow__node-agent",
+          "position": "translate(124px, 408px)",
+          "width": 272,
+          "height": 436
+        }
+      ]
+    }
+  ]
+}

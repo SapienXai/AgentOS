@@ -1,0 +1,114 @@
+{
+  "agentosCodeCommit": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
+  "suites": [
+    {
+      "suite": "fresh-baseline-e2e",
+      "artifact": "fresh-baseline",
+      "exitCode": 1,
+      "seconds": 54.68
+    },
+    {
+      "suite": "identity-e2e",
+      "artifact": "identity-authorization",
+      "exitCode": 0,
+      "seconds": 25.41
+    },
+    {
+      "suite": "multi-user-e2e",
+      "artifact": "multi-user",
+      "exitCode": 0,
+      "seconds": 6.69
+    },
+    {
+      "suite": "lifecycle-e2e",
+      "artifact": "lifecycle-certification",
+      "exitCode": 0,
+      "seconds": 92.24
+    },
+    {
+      "suite": "multi-user-collaboration-certification",
+      "artifact": "multi-user-identity-collaboration",
+      "exitCode": 0,
+      "seconds": 17.58
+    },
+    {
+      "suite": "automation-e2e",
+      "artifact": "automation-cron-alignment",
+      "exitCode": 0,
+      "seconds": 24.14
+    },
+    {
+      "suite": "session-task-e2e",
+      "artifact": "session-task-alignment",
+      "exitCode": 0,
+      "seconds": 17.1
+    },
+    {
+      "suite": "official-lifecycle-cert",
+      "artifact": "official-gateway-lifecycle-certification",
+      "exitCode": 0,
+      "seconds": 13.73
+    },
+    {
+      "suite": "native-work-cert",
+      "artifact": "native-work-hardening",
+      "exitCode": 0,
+      "seconds": 19.69
+    },
+    {
+      "suite": "capability-truthfulness-skills-cert",
+      "artifact": "skills-effective-capabilities",
+      "exitCode": 0,
+      "seconds": 8.89
+    },
+    {
+      "suite": "native-memory-cert",
+      "artifact": "native-memory",
+      "exitCode": 0,
+      "seconds": 25.44
+    },
+    {
+      "suite": "workforce-e2e",
+      "artifact": "workforce-acceptance",
+      "exitCode": 0,
+      "seconds": 78.47
+    },
+    {
+      "suite": "native-doctor-cert",
+      "artifact": "doctor-update-recovery",
+      "exitCode": 0,
+      "seconds": 5.65
+    },
+    {
+      "suite": "human-control-cert",
+      "artifact": "human-control-inbox",
+      "exitCode": 0,
+      "seconds": 5.29
+    },
+    {
+      "suite": "native-doctor-hardening-cert",
+      "artifact": "doctor-update-recovery-hardening",
+      "exitCode": 0,
+      "seconds": 5.7
+    },
+    {
+      "suite": "official-transport-cert",
+      "artifact": "official-transport-certification",
+      "exitCode": 0,
+      "seconds": 5.99
+    },
+    {
+      "suite": "official-production-cert",
+      "artifact": "final-official-runtime-certification",
+      "exitCode": 0
+    }
+  ],
+  "retries": [
+    {
+      "suite": "fresh-baseline-e2e",
+      "artifact": "fresh-baseline",
+      "exitCode": 0,
+      "seconds": 26.67
+    }
+  ]
+}

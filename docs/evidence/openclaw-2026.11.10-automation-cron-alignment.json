@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-26T12:04:51.472Z",
+  "generatedAt": "2026-11-27T06:57:28.909Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "codeCommitUnderTest": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -94,18 +94,18 @@
   "automationIdentity": {
     "automationId": "agentos:automation:e2e",
     "declarationKey": "agentos:automation:e2e",
-    "cronJobId": "fa654aeb-3f3e-4426-8fd8-f7d891cb4a3f",
+    "cronJobId": "dcea9f01-1582-4b46-aadf-20f3178142e2",
     "cronRunIds": [
-      "cron-request.dc848667-03aa-4306-b90c-e6836af46e1b",
-      "cron-request.eda94053-4734-4cb7-ac7f-5c5feb2b594c"
+      "cron-request.bf25cfdf-186c-4ba4-aafb-41c84e79cc63",
+      "cron-request.e51e2652-fb8d-419c-81a5-89821797910d"
     ],
     "sessionKeys": [
-      "agent:main:cron:fa654aeb-3f3e-4426-8fd8-f7d891cb4a3f:run:8c8d981d-dc70-4527-a961-aed2c4ab13d9",
-      "agent:main:cron:fa654aeb-3f3e-4426-8fd8-f7d891cb4a3f:run:290e1d3a-bbc1-4054-9cc8-4ab3c4ae78d1"
+      "agent:main:cron:dcea9f01-1582-4b46-aadf-20f3178142e2:run:08661167-5ab9-46ed-88d3-8ba48760ef29",
+      "agent:main:cron:dcea9f01-1582-4b46-aadf-20f3178142e2:run:87b310b9-d8cf-4342-bb6c-1dd7ed759b39"
     ],
     "sessionIds": [
-      "8c8d981d-dc70-4527-a961-aed2c4ab13d9",
-      "290e1d3a-bbc1-4054-9cc8-4ab3c4ae78d1"
+      "08661167-5ab9-46ed-88d3-8ba48760ef29",
+      "87b310b9-d8cf-4342-bb6c-1dd7ed759b39"
     ],
     "provenance": "authoritative job + run identities; AgentOS key is correlated"
   },
@@ -128,7 +128,7 @@
   },
   "runChecks": [
     {
-      "runId": "cron-request.dc848667-03aa-4306-b90c-e6836af46e1b",
+      "runId": "cron-request.bf25cfdf-186c-4ba4-aafb-41c84e79cc63",
       "status": "ok",
       "completionStatus": "succeeded",
       "sessionKeyPresent": true,
@@ -136,7 +136,7 @@
       "exactRunFilter": true
     },
     {
-      "runId": "cron-request.eda94053-4734-4cb7-ac7f-5c5feb2b594c",
+      "runId": "cron-request.e51e2652-fb8d-419c-81a5-89821797910d",
       "status": "ok",
       "completionStatus": "succeeded",
       "sessionKeyPresent": true,

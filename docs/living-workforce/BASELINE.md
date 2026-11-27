@@ -24,3 +24,5 @@ OpenClaw 2026.11.10 (source `6ea542fd97e2876aa4c871ccc494ed5419a03c5c`) was test
 A second adapted run verified that the child exposed by native `sessions.list` had the exact parent in `spawnedBy`, the requested label, and `status: done`.
 
 The pinned AgentOS session normalizer derives state from the session key and age. It does not carry native `parentSessionKey`, `spawnedBy`, or `subagentRunState` into runtime metadata. Workforce reads task parent IDs and requester session keys. The native parent evidence should be preserved at the session normalization boundary and bound to the authorized mission session before it is presented on the work tree or Canvas.
+
+The readiness probe was repaired for the later benchmark runs. The baseline completed both representative workloads with raw evidence in the [acceptance report](FINAL_ACCEPTANCE.md).

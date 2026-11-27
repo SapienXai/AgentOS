@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-workforce-acceptance",
-  "generatedAt": "2026-11-26T12:05:26.577Z",
+  "generatedAt": "2026-11-27T06:57:53.196Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "agentosCommit": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+    "agentosCommit": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
     "openClaw": {
       "version": "2026.11.10",
       "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -101,12 +101,12 @@
     "persistedSidecar": true,
     "missionListFromPersistedSidecar": true,
     "missionDetailFromPersistedSidecar": true,
-    "requestId": "workforce-product-path-1795694737641",
-    "dispatchId": "dispatch-49e2d212-30b8-42c3-80fd-bacdffa43620",
+    "requestId": "workforce-product-path-1795762678254",
+    "dispatchId": "dispatch-d4e7ae4a-8438-4d94-a526-bd4de7b230b0",
     "agentId": "main",
     "workspaceId": "workspace",
-    "sessionKey": "agent:main:explicit:dispatch-49e2d212-30b8-42c3-80fd-bacdffa43620",
-    "runId": "dispatch-49e2d212-30b8-42c3-80fd-bacdffa43620"
+    "sessionKey": "agent:main:explicit:dispatch-d4e7ae4a-8438-4d94-a526-bd4de7b230b0",
+    "runId": "dispatch-d4e7ae4a-8438-4d94-a526-bd4de7b230b0"
   },
   "concurrentAdmission": {
     "unrelatedRequestCount": 2,
@@ -196,21 +196,49 @@
       ],
       "detail": "OpenClaw executed the native write tool and Workforce projected the bounded runtime-created artifact."
     },
-    "delegation": {
-      "status": "SKIPPED",
+    "default-employee-research-deliverable": {
+      "status": "PASS",
       "evidence": [
         "APPLICATION_PATH",
+        "OPENCLAW_NATIVE_GATEWAY",
         "LIVE_DISPOSABLE_2026_11_10"
       ],
-      "detail": "The deterministic sessions_spawn attempt completed without an exposed native task/child row; no synthetic delegation was created."
+      "detail": "A new default employee read a controlled workspace source, calculated its total, and wrote Markdown and CSV. Both downloads contained the correct result and an unrelated mission could not retrieve them."
+    },
+    "delegation": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_11_10"
+      ],
+      "detail": "The submitted mission spawned a native child. Workforce linked the completed child using its exact Gateway session and requester keys."
     },
     "waiting-worker": {
-      "status": "SKIPPED",
+      "status": "PASS",
       "evidence": [
         "APPLICATION_PATH",
         "LIVE_DISPOSABLE_2026_11_10"
       ],
-      "detail": "The exact runtime exposed no native child task to drive this state."
+      "detail": "Workforce observed the parent-idle and child-running interval as waiting for a worker."
+    },
+    "cancellation": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_11_10"
+      ],
+      "detail": "The normal task control path aborted an exact running native session and projected the confirmed outcome."
+    },
+    "child-failure": {
+      "status": "PASS",
+      "evidence": [
+        "APPLICATION_PATH",
+        "OPENCLAW_NATIVE_GATEWAY",
+        "LIVE_DISPOSABLE_2026_11_10"
+      ],
+      "detail": "A controlled provider rejection was observed as failure on the native child session and the linked Workforce item."
     },
     "multiple-human-control": {
       "status": "PASS",
@@ -245,16 +273,6 @@
         "LIVE_DISPOSABLE_2026_11_10"
       ],
       "detail": "Workforce projection rebuilt from the persisted product-path dispatch and native session after Gateway restart."
-    },
-    "cancellation": {
-      "status": "SKIPPED",
-      "evidence": "LIVE_DISPOSABLE_2026_11_10",
-      "detail": "No native task identity was exposed by this turn, so no unrelated session was cancelled."
-    },
-    "child-failure": {
-      "status": "SKIPPED",
-      "evidence": "LIVE_DISPOSABLE_2026_11_10",
-      "detail": "No native child task was exposed by the safe deterministic turn."
     }
   },
   "runtimeTaskLedger": {
@@ -269,19 +287,14 @@
     "productionGatewayTouched": false
   },
   "certification": {
-    "status": "PRODUCT_PATH_CERTIFIED_WITH_UPSTREAM_TASK_GAPS",
-    "capabilityRoutingReady": false,
-    "skippedLiveChecks": [
-      "delegation",
-      "waiting-worker",
-      "cancellation",
-      "child-failure"
-    ]
+    "status": "FULLY_CERTIFIED",
+    "capabilityRoutingReady": true,
+    "skippedLiveChecks": []
   },
   "failure": null,
   "summary": {
-    "passed": 15,
-    "skipped": 4,
+    "passed": 20,
+    "skipped": 0,
     "failed": 0
   }
 }
