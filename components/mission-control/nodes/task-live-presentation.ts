@@ -95,7 +95,7 @@ export function resolveLiveTaskState(task: WorkItemRecord, detail: TaskDetailRec
   if (attention.some((item) => item.type === "question")) return "Waiting";
   if (attention.some((item) => item.type === "blocked" || item.type === "needs-setup")) return "Blocked";
   if (task.status === "queued") return "Queued";
-  if (task.status === "running" && task.metadata.nativeSessionActive !== false) return "Running";
+  if (task.status === "running" && task.metadata.nativeSessionActive === true) return "Running";
   return "Status unknown";
 }
 

@@ -59,9 +59,12 @@ test("a historical live run does not reactivate a terminal task", () => {
   assert.equal(resolveLiveTaskState({ ...task, status: "cancelled", liveRunCount: 1 }, null, []), "Cancelled");
 });
 
-test("a disconnected or idle native session does not prove an active task", () => {
-  assert.equal(resolveLiveTaskState({ ...task, status: "running", liveRunCount: 1,
-    metadata: { nativeSessionActive: false } }, null, []), "Status unknown");
+test("Running needs confirmed native session activity", () => {
+  const projected = { ...task, status: "running" as const, liveRunCount: 1 };
+  for (const nativeSessionActive of [undefined, null, false]) {
+    assert.equal(resolveLiveTaskState({ ...projected, metadata: { nativeSessionActive } }, null, []), "Status unknown");
+  }
+  assert.equal(resolveLiveTaskState({ ...projected, metadata: { nativeSessionActive: true } }, null, []), "Running");
 });
 
 test("conversation uses verified files and one copy of the final assistant response", () => {
