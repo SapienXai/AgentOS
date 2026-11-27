@@ -25,6 +25,7 @@ type FixtureResponse = {
   content?: string;
   toolCall?: FixtureToolCall;
   delayMs?: number;
+  chunkDelayMs?: number;
 };
 
 export async function createOpenClawRuntimeProviderFixture(input: {
@@ -129,7 +130,7 @@ async function handleRequest(
     }
 
     if (stream) {
-      writeStreamingResponse(response, modelId, fixtureResponse);
+      await writeStreamingResponse(response, modelId, fixtureResponse);
       return;
     }
 
@@ -165,6 +166,10 @@ async function handleRequest(
 }
 
 function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknown): FixtureResponse {
+  if (/Validate the live task stream for the evening edition\./i.test(prompt)) {
+    return { delayMs: 3_500, chunkDelayMs: 9_000,
+      content: "The first source is verified. I am comparing it with the editorial ledger. The evening edition matches the source totals and is ready for review." };
+  }
   const mcpProof = [...prompt.matchAll(/WORKFORCE_MCP_PROOF (stdio|http) ([a-f0-9-]{36})/g)].at(-1);
   if (mcpProof && Array.isArray(messages)) {
     const [, transport, requestId] = mcpProof;
@@ -314,7 +319,7 @@ function readMessageContent(content: unknown): string {
   return "";
 }
 
-function writeStreamingResponse(response: ServerResponse, modelId: string, fixtureResponse: FixtureResponse) {
+async function writeStreamingResponse(response: ServerResponse, modelId: string, fixtureResponse: FixtureResponse) {
   response.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -329,6 +334,8 @@ function writeStreamingResponse(response: ServerResponse, modelId: string, fixtu
     const splitAt = Math.max(1, Math.floor(content.length / 2));
     const chunks = [content.slice(0, splitAt), content.slice(splitAt)];
     response.write(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: { role: "assistant", content: chunks[0] }, finish_reason: null }] })}\n\n`);
+    if (fixtureResponse.chunkDelayMs) await wait(fixtureResponse.chunkDelayMs);
+    if (response.destroyed) return;
     response.write(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: { content: chunks[1] }, finish_reason: null }] })}\n\n`);
     response.write(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
   }

@@ -1,0 +1,112 @@
+.task {
+  --task-surface: #fafaff;
+  --task-panel: #f9f9fe;
+  --task-line: #dce1ed;
+  --task-text: #111725;
+  --task-muted: #526078;
+  --task-tool: #f0f2f8;
+  --task-field: #fbfbff;
+  --task-message: #edf0fb;
+  --task-user: #e9e1ff;
+  --task-accent: #6243c8;
+  --task-danger: #b1233a;
+  --task-good: #077648;
+  --task-good-bg: #dcf5e8;
+  --task-warn: #98511b;
+  --task-warn-bg: #fff0d9;
+  --task-bad-bg: #ffe8ed;
+  --task-shadow: 0 5px 15px #242f5414, 0 19px 43px #101c4710;
+  color: var(--task-text);
+}
+
+.task[data-task-theme="dark"] {
+  --task-surface: #141b2a;
+  --task-panel: #111827;
+  --task-line: #303a4e;
+  --task-text: #f5f7ff;
+  --task-muted: #a9b6ce;
+  --task-tool: #1a2335;
+  --task-field: #101725;
+  --task-message: #202943;
+  --task-user: #32274e;
+  --task-accent: #c3adff;
+  --task-danger: #ffacba;
+  --task-good: #75e4b1;
+  --task-good-bg: #15392f;
+  --task-warn: #ffd392;
+  --task-warn-bg: #423120;
+  --task-bad-bg: #422332;
+  --task-shadow: 0 7px 20px #03071340, 0 25px 50px #03071355;
+}
+
+.card {
+  background: var(--task-surface);
+  border: 1px solid var(--task-line);
+  box-shadow: var(--task-shadow);
+  transition: border-color 160ms ease, box-shadow 160ms ease, opacity 140ms ease;
+}
+
+.card:hover {
+  border-color: #8a6bf4a0;
+}
+
+.card:focus-within,
+.card[data-selected="true"] {
+  border-color: #8a6bf4;
+  box-shadow: 0 0 0 1px #8a6bf426, var(--task-shadow);
+}
+
+.panel {
+  background: var(--task-panel);
+  border: 1px solid var(--task-line);
+  box-shadow: var(--task-shadow);
+  opacity: 0;
+  clip-path: inset(0 0 74% 0 round 18px);
+  scale: .97;
+  visibility: hidden;
+  transform-origin: top left;
+  pointer-events: none;
+  transition: opacity 140ms ease, scale 180ms cubic-bezier(.22,.61,.36,1), clip-path 220ms cubic-bezier(.22,.61,.36,1), visibility 220ms;
+}
+
+.panel[data-open="true"] {
+  opacity: 1;
+  clip-path: inset(0 round 22px);
+  scale: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+:global(.react-flow__node-task):has(.task[data-task-expanded="true"]) {
+  z-index: 180 !important;
+}
+
+.progress {
+  background: var(--task-line);
+  height: 4px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.progress::after {
+  display: block;
+  content: "";
+  width: 38%;
+  height: 100%;
+  background: #14b97b;
+  border-radius: inherit;
+  animation: work 1.7s cubic-bezier(.37,0,.63,1) infinite alternate;
+}
+
+.progress[data-queued="true"]::after { background: #8a6bf4; }
+
+@keyframes work {
+  from { transform: translateX(-25%); }
+  to { transform: translateX(190%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .panel { transition: none; }
+  .panel { scale: 1; }
+  .progress::after { animation: none; }
+}

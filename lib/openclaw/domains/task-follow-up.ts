@@ -27,6 +27,11 @@ export type TaskFollowUpContext = {
   confidence: "high" | "medium" | "none";
 };
 
+export function hasScopedTaskSession(context: TaskFollowUpContext) {
+  return Boolean(context.sessionId && context.sessionKey?.startsWith("agent:") &&
+    !context.sessionKey.endsWith(":main") && context.confidence !== "none");
+}
+
 const FOLLOW_UP_LIMIT = 11_600;
 const SECTION_LIMITS = {
   operator: 3_000,

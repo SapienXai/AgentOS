@@ -606,7 +606,9 @@ export async function resolveAttentionItem(
   if (parsed.kind === "exec" || parsed.kind === "plugin") {
     const decision = action === "deny" ? "deny" : action === "approve" ? "allow-once" : null;
     if (!decision) throw new Error("This approval action is not supported.");
-    const list = parsed.kind === "exec" ? adapter.listNativeExecApprovals : adapter.listNativePluginApprovals;
+    const list = parsed.kind === "exec"
+      ? adapter.listNativeExecApprovals?.bind(adapter)
+      : adapter.listNativePluginApprovals?.bind(adapter);
     if (!list) throw new Error("Native approval actions are unavailable.");
     const before = await list({}, { ...commandOptions, timeoutMs: 8_000 });
     if (!readApprovalRecords({ status: "fulfilled", value: before }).some((approval) => approval.id === parsed.nativeId && isActionableApprovalRecord(approval))) {

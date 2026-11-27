@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode, type Ref } from "react";
-import { ChevronDown, Loader2, MessageSquare, Send } from "lucide-react";
+import { useRef, useState, type ComponentType, type ReactNode, type Ref } from "react";
+import { ArrowUp, ChevronDown, Loader2, MessageSquare, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -248,7 +248,8 @@ export function TaskFollowUpComposer({
   expanded = false,
   className,
   compact = false,
-  density = "default"
+  density = "default",
+  liveConversation = false
 }: {
   task: TaskRecord;
   latestResult?: string | null;
@@ -266,9 +267,12 @@ export function TaskFollowUpComposer({
   className?: string;
   compact?: boolean;
   density?: "default" | "dense";
+  liveConversation?: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ text: string; error?: boolean } | null>(null);
+  const pendingInput = useRef<{ action: "continue" | "steer"; prompt: string; key: string } | null>(null);
   const availability = resolveTaskFollowUpAvailability(task);
   const trimmedMessage = message.trim();
   const disabledReason =
@@ -277,6 +281,7 @@ export function TaskFollowUpComposer({
     (!trimmedMessage ? "Enter a follow-up before sending." : null);
   const disabled = Boolean(disabledReason);
   const dense = density === "dense";
+  const liveTask = task.status === "running" || task.status === "queued" || task.liveRunCount > 0;
 
   const submitFollowUp = async () => {
     if (disabled || submitting) {
@@ -284,9 +289,10 @@ export function TaskFollowUpComposer({
     }
 
     setSubmitting(true);
+    setFeedback(null);
 
     try {
-      const prompt = buildTaskFollowUpPrompt({
+      const prompt = liveConversation ? trimmedMessage : buildTaskFollowUpPrompt({
         task,
         operatorMessage: trimmedMessage,
         latestResult,
@@ -294,13 +300,18 @@ export function TaskFollowUpComposer({
         createdFiles,
         outputSummary
       });
-      const followUpKey = createFollowUpIdempotencyKey(task);
+      const previous = pendingInput.current;
+      const retry = previous?.prompt === prompt ? previous : null;
+      const action = retry?.action ?? (liveConversation && liveTask ? "steer" : "continue");
+      const followUpKey = retry?.key ?? createFollowUpIdempotencyKey(task);
+      pendingInput.current = { prompt, action, key: followUpKey };
       const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "continue",
+          action,
           message: prompt,
+          ...(liveConversation ? { taskSessionOnly: true } : {}),
           dispatchId: task.dispatchId ?? null,
           idempotencyKey: followUpKey
         })
@@ -312,6 +323,7 @@ export function TaskFollowUpComposer({
       }
 
       const continuation = readTaskControlContinuation(payload);
+      pendingInput.current = null;
       setMessage("");
       const followUp = {
         id: `follow-up:${task.id}:${followUpKey}`,
@@ -325,20 +337,59 @@ export function TaskFollowUpComposer({
         status: continuation.status,
         summary: continuation.summary
       };
-      toast.success(`${intentLabel} accepted.`, {
-        description: continuation.warning ||
-          "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
-      });
+      if (liveConversation) {
+        setFeedback({ text: continuation.queued
+          ? "Instruction queued by OpenClaw."
+          : action === "steer" ? "Instruction accepted. It may wait for the current step to finish." : "OpenClaw accepted the follow-up." });
+      } else {
+        toast.success(`${intentLabel} accepted.`, {
+          description: continuation.warning ||
+            "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
+        });
+      }
       await onSubmitted?.(followUp);
       await onControlComplete?.();
     } catch (error) {
-      toast.error(`${intentLabel} failed.`, {
-        description: error instanceof Error ? error.message : "Unknown task continuation error."
-      });
+      const description = error instanceof Error ? error.message : "Unable to send the instruction.";
+      if (liveConversation) setFeedback({ text: description, error: true });
+      else toast.error(`${intentLabel} failed.`, { description });
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (liveConversation) {
+    return (
+      <div className="space-y-1.5">
+        <form className="flex items-end gap-2 rounded-2xl border border-[var(--task-line)] bg-[var(--task-field)] p-1.5 transition-colors focus-within:border-violet-500" onSubmit={(event) => {
+          event.preventDefault();
+          void submitFollowUp();
+        }}>
+          <Textarea
+            ref={textareaRef}
+            aria-label="Additional task instruction"
+            placeholder={placeholder ?? "Add an instruction…"}
+            value={message}
+            maxLength={4000}
+            disabled={submitting || !availability.available}
+            onChange={(event) => { setMessage(event.target.value); setFeedback(null); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            rows={1}
+            className="nowheel max-h-24 min-h-10 resize-none border-0 bg-transparent px-2 py-2.5 text-base text-inherit shadow-none [field-sizing:content] placeholder:text-[var(--task-muted)] focus-visible:ring-0 sm:text-sm"
+          />
+          <button type="submit" disabled={disabled} aria-label="Send task instruction" className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-600 text-white outline-offset-2 transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-violet-500 disabled:opacity-40">
+            {submitting ? <Loader2 className="size-4 motion-safe:animate-spin" /> : <ArrowUp className="size-[19px]" />}
+          </button>
+        </form>
+        {availability.reason || feedback ? <p role={feedback?.error ? "alert" : "status"} className={cn("px-1 text-xs", feedback?.error ? "text-[var(--task-danger)]" : "text-[var(--task-muted)]")}>{availability.reason || feedback?.text}</p> : null}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -381,7 +432,7 @@ export function TaskFollowUpComposer({
             onFocus={() => onExpandRequest?.()}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 void submitFollowUp();
               }
@@ -503,6 +554,7 @@ function readTaskControlContinuation(payload: TaskControlApiResponse | null) {
       readString(result.sessionId) ?? readString(control?.target?.sessionId) ?? readString(control?.target?.sessionKey)
     ),
     status: readString(result.status),
+    queued: result.queued === true || result.status === "queued",
     summary: readString(result.summary) ?? readPayloadSummary(result)
   };
 }

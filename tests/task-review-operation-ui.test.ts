@@ -5,8 +5,8 @@ import test from "node:test";
 test("needs-review task action opens the review workflow", async () => {
   const source = await readFile("components/mission-control/nodes/task-node.tsx", "utf8");
 
-  assert.match(source, /primaryAction === "review-result" && !failureDetail\) \{\s*data\.onReviewTask\?\.\(displayTask\)/);
-  assert.match(source, /label=\{hasReviewResolution \? "Review record" : "Review result"\}/);
+  assert.match(source, /state === "Needs review" && data\.onReviewTask/);
+  assert.match(source, /onClick=\{\(\) => data\.onReviewTask\?\.\(task\)\}>Review result/);
 });
 
 test("collapsed task cards keep runtime metrics out of the primary presentation", async () => {
@@ -14,8 +14,8 @@ test("collapsed task cards keep runtime metrics out of the primary presentation"
 
   assert.doesNotMatch(source, /taskTokenCount|taskRunCount|tokens reported by OpenClaw|Tokens not reported/);
   assert.match(source, /Elapsed/);
-  assert.match(source, /Give direction/);
-  assert.match(source, /Continue task/);
+  assert.match(source, /Open task conversation/);
+  assert.match(source, /<TaskFollowUpComposer task=\{task\} liveConversation/);
 });
 
 test("scheduled task review uses real OpenClaw operation actions", async () => {

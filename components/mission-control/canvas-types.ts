@@ -136,6 +136,7 @@ export type RuntimeNodeData = Record<string, unknown> & {
 
 export type TaskNodeData = Record<string, unknown> & {
   task: WorkItemRecord;
+  employee?: import("@/lib/agentos/contracts").AgentRecord;
   surfaceTheme?: "dark" | "light";
   agentThemeRgb?: string;
   workspacePath?: string;

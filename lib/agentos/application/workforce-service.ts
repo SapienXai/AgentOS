@@ -125,7 +125,7 @@ export async function getWorkforceMissionDetail(
   const workspaceId = seed.record?.workspaceId ?? rootTask?.workspaceId;
   const workspace = snapshot.workspaces.find((candidate) => candidate.id === workspaceId);
   const [artifacts, review] = await Promise.all([
-    workspace && detail ? loadMissionArtifacts(workspace.path, detail, seed) : [],
+    workspace && detail ? loadMissionArtifacts(workspace.path, detail, seed.id, seed.record?.outputDirRelative) : [],
     input.actorId && rootTask ? readTaskReview(input.actorId, resolveTaskReviewKey(rootTask)) : null
   ]);
 
@@ -455,14 +455,13 @@ function buildTimeline(input: {
   return events.sort((left, right) => Date.parse(left.at) - Date.parse(right.at) || left.id.localeCompare(right.id));
 }
 
-async function loadMissionArtifacts(workspacePath: string, detail: TaskDetailRecord, seed: MissionSeed): Promise<WorkforceArtifact[]> {
+export async function loadMissionArtifacts(workspacePath: string, detail: TaskDetailRecord, missionId: string, outputDirectory?: string | null): Promise<WorkforceArtifact[]> {
   const realWorkspacePath = await realpath(workspacePath).catch(() => null);
   const roots = [path.resolve(workspacePath), ...(realWorkspacePath ? [realWorkspacePath] : [])];
   const files = new Map<string, { runtimeId: string | null; source: WorkforceArtifact["source"] }>();
 
   // Output records are already scoped to the mission's native runs. Other
   // references are accepted only in the mission's assigned output directory.
-  const outputDirectory = seed.record?.outputDirRelative;
   for (const output of detail.outputs) {
     for (const file of output.createdFiles) {
       const relative = toWorkspaceDeliverablePath(file.path, roots);
@@ -484,7 +483,7 @@ async function loadMissionArtifacts(workspacePath: string, detail: TaskDetailRec
   return Promise.all([...files].map(async ([relative, origin]) => {
     const bytes = await inspectWorkspaceDeliverable(workspacePath, relative);
     return {
-      id: createHash("sha256").update(seed.id).update("\0").update(relative).digest("hex").slice(0, 24),
+      id: createHash("sha256").update(missionId).update("\0").update(relative).digest("hex").slice(0, 24),
       path: relative,
       displayPath: path.posix.basename(relative),
       category: artifactCategory(relative),

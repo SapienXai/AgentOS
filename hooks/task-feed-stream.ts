@@ -1,5 +1,6 @@
 export type TaskFeedStreamHandlers = {
   onTask: (event: MessageEvent<string>) => void;
+  onLive?: (event: MessageEvent<string>) => void;
   onError: (event: MessageEvent<string>) => void;
   onReady: (event: MessageEvent<string>) => void;
   onDisconnect: () => void;
@@ -14,6 +15,7 @@ type SharedTaskFeedStream = {
   eventSource: EventSource;
   subscribers: Set<TaskFeedStreamHandlers>;
   taskListener: EventListener;
+  liveListener: EventListener;
   errorListener: EventListener;
   readyListener: EventListener;
   disconnectListener: ((this: EventSource, event: Event) => unknown) | null;
@@ -79,6 +81,7 @@ function createSharedStream(url: string, createEventSource: TaskFeedEventSourceF
     eventSource: createEventSource(url),
     subscribers: new Set(),
     taskListener: () => undefined,
+    liveListener: () => undefined,
     errorListener: () => undefined,
     readyListener: () => undefined,
     disconnectListener: null
@@ -92,6 +95,9 @@ function attachSharedStreamListeners(stream: SharedTaskFeedStream) {
     for (const subscriber of stream.subscribers) {
       subscriber.onTask(event as MessageEvent<string>);
     }
+  };
+  stream.liveListener = (event) => {
+    for (const subscriber of stream.subscribers) subscriber.onLive?.(event as MessageEvent<string>);
   };
   stream.errorListener = (event) => {
     for (const subscriber of stream.subscribers) {
@@ -110,6 +116,7 @@ function attachSharedStreamListeners(stream: SharedTaskFeedStream) {
   };
 
   stream.eventSource.addEventListener("task", stream.taskListener);
+  stream.eventSource.addEventListener("task-live", stream.liveListener);
   stream.eventSource.addEventListener("task-error", stream.errorListener);
   stream.eventSource.addEventListener("ready", stream.readyListener);
   stream.eventSource.onerror = stream.disconnectListener;
@@ -117,6 +124,7 @@ function attachSharedStreamListeners(stream: SharedTaskFeedStream) {
 
 function detachSharedStream(stream: SharedTaskFeedStream) {
   stream.eventSource.removeEventListener("task", stream.taskListener);
+  stream.eventSource.removeEventListener("task-live", stream.liveListener);
   stream.eventSource.removeEventListener("task-error", stream.errorListener);
   stream.eventSource.removeEventListener("ready", stream.readyListener);
   stream.eventSource.onerror = null;

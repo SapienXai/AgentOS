@@ -1,120 +1,149 @@
 "use client";
 
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  CalendarClock,
-  ClipboardList,
-  ChevronDown,
-  Copy,
-  CornerDownLeft,
-  EyeOff,
-  Lock,
-  LockOpen,
-  MessageSquare,
-  MoreHorizontal,
-  Pause,
-  Play,
-  Plus,
-  RefreshCw,
-  Trash2,
-  X
+  AlertTriangle, Ban, CalendarClock, Check, CheckCircle2, Circle, Clock3, Copy,
+  CornerDownLeft, EyeOff, FileText, Lock, LockOpen, MoreHorizontal, Pause, Play, RefreshCw, Square, Trash2, X
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { useReducedMotion } from "motion/react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { TaskCardInspectorContext, TaskNodeData } from "@/components/mission-control/canvas-types";
+import type { TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
-import {
-  type TaskNodeToneInput,
-  resolveTaskNodeBadgeVariant,
-  resolveTaskNodeSurfaceTone,
-  resolveTaskNodeVisualTone
-} from "@/components/mission-control/node-visual-tones";
-import {
-  resolveEffectiveTaskReviewStatus,
-  resolveTaskReviewBadgeLabel,
-  resolveTaskReviewFooterLabel
-} from "@/components/mission-control/task-review-state";
-import {
-  hasTaskRuntimeOutputEvidence,
-  isWaitingForOutputCopy,
-  readTaskResultPreview,
-  resolveTaskCardPrimaryAction,
-  resolveTaskReviewPresentation,
-  resolveTaskBadgeLabel
-} from "@/components/mission-control/task-node-status";
-import {
-  TaskFollowUpComposer,
-  formatFollowUpDetail,
-  type SubmittedTaskFollowUp
-} from "@/components/mission-control/task-follow-up";
-import { Badge } from "@/components/ui/badge";
+import { resolveTaskNodeVisualTone } from "@/components/mission-control/node-visual-tones";
+import { TaskFollowUpComposer, type SubmittedTaskFollowUp } from "@/components/mission-control/task-follow-up";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { useTaskFeed } from "@/hooks/use-task-feed";
-import type { RuntimeActivityRecord, RuntimeOutputRecord, TaskFeedEvent } from "@/lib/agentos/contracts";
-import {
-  mergeTaskFollowUps,
-  readTaskFollowUpsFromMetadata,
-  resolveTaskFollowUpDisplayMessage
-} from "@/lib/openclaw/domains/task-follow-up-records";
-import { resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
-import { readTaskThinkingRejection } from "@/lib/openclaw/task-reasoning";
-import { compactMissionText, stripMissionRouting } from "@/lib/openclaw/presenters";
+import type { TaskFeedEvent } from "@/lib/agentos/contracts";
+import { hasScopedTaskSession, resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
+import { mergeTaskFollowUps, readTaskFollowUpsFromMetadata, resolveTaskFollowUpDisplayMessage } from "@/lib/openclaw/domains/task-follow-up-records";
 import { cn } from "@/lib/utils";
+import {
+  buildTaskConversation, isSameTaskMessage, readTaskCardUpdate, readTaskFailure, resolveLiveTaskState, validTimestamp, type LiveTaskState
+} from "./task-live-presentation";
+import styles from "./task-live-card.module.css";
+
+const TaskLiveConversation = dynamic(() => import("./task-live-conversation").then((module) => module.TaskLiveConversation), {
+  loading: () => <p role="status" className="grid flex-1 place-content-center text-sm text-[var(--task-muted)]">Opening the task conversation…</p>
+});
 
 type TaskFlowNode = Node<TaskNodeData, "task">;
-const FOLLOW_UP_STALE_MS = 90_000;
+type OperationAction = "run" | "retry" | "pause" | "resume" | "delete";
 
-type TaskWorkspaceTab = {
-  id: string;
-  index: number | null;
-  kind: "task" | "follow-up";
-  label: string;
-  title: string;
-  statusLabel: string;
-  hasLiveActivity: boolean;
-};
+const controlClass = "nodrag nopan inline-grid size-9 shrink-0 place-items-center rounded-xl border border-[var(--task-line)] text-[var(--task-muted)] outline-offset-2 transition-colors hover:bg-[var(--task-tool)] hover:text-[var(--task-text)] focus-visible:outline-2 focus-visible:outline-violet-500";
+const recoveryClass = "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500";
+const dateFormat: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 
-export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
+export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
+  const flow = useReactFlow();
   const reduceMotion = useReducedMotion();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [operationAction, setOperationAction] = useState<"run" | "retry" | "pause" | "resume" | "delete" | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const expandButton = useRef<HTMLButtonElement>(null);
+  const collapseButton = useRef<HTMLButtonElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const conversationScroller = useRef<HTMLDivElement>(null);
+  const closedScrollOffset = useRef<number | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const [operationAction, setOperationAction] = useState<OperationAction | null>(null);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
-  const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
-  const operationSchedule =
-    typeof data.task.metadata.scheduleLabel === "string" ? data.task.metadata.scheduleLabel : null;
-  const operationJobId =
-    typeof data.task.metadata.operationJobId === "string" ? data.task.metadata.operationJobId : null;
-  const operationPaused = data.task.metadata.operationStatus === "paused";
-  const systemOwnedMonitor =
-    data.task.metadata.systemOwnedMonitor === "heartbeat" ||
-    data.task.metadata.systemOwnedMonitor === "skill-collection-review"
-      ? data.task.metadata.systemOwnedMonitor
-      : null;
-  const shouldStreamFeed =
-    expanded || selected;
+  const [resolvedAttention, setResolvedAttention] = useState<string[]>([]);
+  const optimisticFeed = useMemo(() => readTaskFeedEvents(data.task.metadata.optimisticEvents), [data.task.metadata.optimisticEvents]);
+  const shouldStreamFeed = expanded || selected;
+  const { feed, detail, loading, error, streamNotice, assistantUpdates, toolUpdates, attention, artifacts } = useTaskFeed(data.task.id, shouldStreamFeed, {
+    dispatchId: data.task.dispatchId,
+    optimisticFeed,
+    liveConversation: true
+  });
+  const task = detail && (expanded || (detail.task.updatedAt ?? 0) >= (data.task.updatedAt ?? 0)) ? detail.task : data.task;
+  const pendingAttention = useMemo(() => attention.filter(({ id }) => !resolvedAttention.includes(id)), [attention, resolvedAttention]);
+  const conversation = useMemo(() => buildTaskConversation(task, detail, feed, assistantUpdates, toolUpdates, artifacts), [task, detail, feed, assistantUpdates, toolUpdates, artifacts]);
+  const followUps = useMemo(() => {
+    const history = readTaskFollowUpsFromMetadata(task.metadata).filter((attempt) =>
+      resolveTaskFollowUpDisplayMessage(attempt)?.trim() !== (task.mission ?? task.title).trim());
+    return mergeTaskFollowUps(history, localFollowUps);
+  }, [task.metadata, task.mission, task.title, localFollowUps]);
+  const entries = useMemo(() => {
+    const receipts = followUps.flatMap((followUp) => {
+      const text = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
+      if (conversation.some((entry) => entry.kind === "user" && isSameTaskMessage(entry.text, entry.timestamp, text, followUp.createdAt))) return [];
+      return [{ id: followUp.id, title: "You", kind: "user" as const, text, timestamp: followUp.createdAt }];
+    });
+    return receipts.length ? [...conversation, ...receipts].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : conversation;
+  }, [conversation, followUps]);
 
-  const optimisticFeed = useMemo(
-    () => readTaskFeedEvents(data.task.metadata.optimisticEvents),
-    [data.task.metadata.optimisticEvents]
-  );
-  const operateSchedule = async (action: "run" | "retry" | "pause" | "resume" | "delete") => {
-    if (!operationJobId) return;
+  const failure = readTaskFailure(task, detail);
+  const state = resolveLiveTaskState(task, detail, pendingAttention);
+  const taskUpdate = readTaskCardUpdate(task, state, entries, pendingAttention, failure);
+  const surfaceTheme = data.surfaceTheme ?? "dark";
+  const agentName = task.primaryAgentName || data.employee?.name || "OpenClaw";
+  const monitor = task.metadata.systemOwnedMonitor === "heartbeat" ? "Heartbeat"
+    : task.metadata.systemOwnedMonitor === "skill-collection-review" ? "Skill Workshop" : null;
+  const title = monitor ?? (task.mission?.trim() || task.title.trim() || "Untitled task");
+  const available = resolveTaskFollowUpAvailability(task);
+  const progress = state === "Running" || state === "Queued";
+  const schedulable = typeof task.metadata.operationJobId === "string" ? task.metadata.operationJobId : null;
+  const scheduleLabel = typeof task.metadata.scheduleLabel === "string" ? task.metadata.scheduleLabel : null;
+  const schedulePaused = task.metadata.operationStatus === "paused";
+  const hasFailedSchedule = Boolean(task.metadata.lastRunStatus === "error" || task.metadata.operationLastError);
+  const canStop = data.onAbortTask && (task.status === "running" || task.status === "queued");
+  const timeSource = task.metadata.dispatchSubmittedAt ?? task.metadata.startedAt ?? task.metadata.createdAt;
+  const start = validTimestamp(typeof timeSource === "string" || typeof timeSource === "number" ? timeSource : null);
+  const panelId = `task-live-${id}`;
+  const headingId = `${panelId}-heading`;
+  const tone = resolveTaskNodeVisualTone({
+    status: task.status,
+    isAborted: state === "Cancelled",
+    completedNeedsReview: state === "Needs review",
+    visibleReviewStatus: null,
+    isJustCreated: Boolean(data.justCreated),
+    isPendingCreation: Boolean(data.pendingCreation)
+  });
+
+  function openConversation() {
+    setOpened(true);
+    setExpanded(true);
+    const pane = root.current?.closest(".react-flow");
+    const internal = flow.getInternalNode(id);
+    if (!pane || !internal) return;
+    const view = pane.getBoundingClientRect();
+    const rect = root.current?.getBoundingClientRect();
+    const zoom = flow.getZoom();
+    const mobile = view.width < 620;
+    const width = Math.min(620, window.innerWidth - 40);
+    const height = Math.min(590, window.innerHeight - 146);
+    const fits = rect && rect.left >= view.left + 12 && rect.top >= view.top + 72 &&
+      rect.left + width * zoom <= view.right - (view.width >= 1024 ? 68 : 16) && rect.top + height * zoom <= view.bottom - 24;
+    if (fits && !mobile && zoom >= .75) return;
+    const position = internal.internals.positionAbsolute;
+    const targetZoom = Math.min(1, (view.width - 24) / width, (view.height - 32) / height);
+    if (targetZoom >= .42) {
+      void flow.setCenter(position.x + width / 2, position.y + height / 2, { zoom: targetZoom, duration: reduceMotion ? 0 : 250 });
+    }
+  }
+
+  function closeConversation() {
+    closedScrollOffset.current = conversationScroller.current?.scrollTop ?? null;
+    setExpanded(false);
+    requestAnimationFrame(() => expandButton.current?.focus({ preventScroll: true }));
+  }
+
+  useEffect(() => {
+    if (expanded) collapseButton.current?.focus({ preventScroll: true });
+  }, [expanded]);
+
+  const operateSchedule = async (action: OperationAction) => {
+    if (!schedulable || operationAction) return;
     if (action === "delete" && !window.confirm("Delete this schedule permanently? This removes the OpenClaw job and cannot be undone.")) return;
     setOperationAction(action);
     try {
-      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, jobId: operationJobId }) });
+      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, jobId: schedulable }) });
       const result = await response.json() as { error?: string };
       if (!response.ok || result.error) throw new Error(result.error || "OpenClaw rejected the schedule change.");
-      setMenuOpen(false);
       await data.onRefresh?.();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Schedule action failed.");
@@ -122,1357 +151,225 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       setOperationAction(null);
     }
   };
-  const reviewFeed = useMemo(
-    () => readTaskFeedEvents(data.task.metadata.reviewEvents),
-    [data.task.metadata.reviewEvents]
-  );
-  const operationFeed = useMemo(
-    () => readTaskFeedEvents(data.task.metadata.operationFeed),
-    [data.task.metadata.operationFeed]
-  );
-  const operationRunHistory = useMemo(
-    () => readOperationRunTimeline(data.task.metadata.operationFeed, data.task.metadata.operationRunHistory, data.task.metadata.operationRecoveryHistory),
-    [data.task.metadata.operationFeed, data.task.metadata.operationRunHistory, data.task.metadata.operationRecoveryHistory]
-  );
-  const latestLocalEvent =
-    reviewFeed.length > 0 && isTaskFeedEvent(reviewFeed[reviewFeed.length - 1])
-      ? reviewFeed[reviewFeed.length - 1]
-      : optimisticFeed.length > 0 && isTaskFeedEvent(optimisticFeed[optimisticFeed.length - 1])
-      ? optimisticFeed[optimisticFeed.length - 1]
-      : null;
-  const { feed, detail, loading, error, streamNotice } = useTaskFeed(data.task.id, shouldStreamFeed, {
-    dispatchId: data.task.dispatchId,
-    optimisticFeed
-  });
-  const mergedFeed = useMemo(
-    () => mergeTaskFeedEvents(feed, reviewFeed, operationFeed),
-    [feed, reviewFeed, operationFeed]
-  );
-  const visibleFeed = useMemo(
-    () => mergedFeed.filter((event) => !isRunnerLogTaskEvent(event)),
-    [mergedFeed]
-  );
-  const displayTask = mergeLocalTaskReviewMetadata(detail?.task, data.task);
-  const persistedFollowUps = useMemo(
-    () => readTaskFollowUpsFromMetadata(displayTask.metadata),
-    [displayTask.metadata]
-  );
-  const followUps = useMemo(
-    () => mergeTaskFollowUps(localFollowUps, persistedFollowUps),
-    [localFollowUps, persistedFollowUps]
-  );
-  const integrity = detail?.integrity ?? null;
-  const reviewPresentation = resolveTaskReviewPresentation(displayTask, integrity);
-  const bootstrapStage =
-    typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
-  const dispatchSubmittedAt =
-    typeof displayTask.metadata.dispatchSubmittedAt === "string"
-      ? displayTask.metadata.dispatchSubmittedAt
-      : null;
-  const isPendingCreation = detail
-    ? isPendingTaskBootstrapStage(bootstrapStage)
-    : Boolean(data.pendingCreation || isPendingTaskBootstrapStage(bootstrapStage));
-  const isJustCreated = Boolean(data.justCreated);
-  const isAborted = isTaskAborted(displayTask);
-  const isAbortable = isTaskAbortable(displayTask);
-  const isLiveTask = displayTask.status === "running" || displayTask.status === "queued" || displayTask.liveRunCount > 0;
-  const isRecurringOperation =
-    (displayTask.metadata.recurrence === "every" || displayTask.metadata.recurrence === "cron") &&
-    displayTask.metadata.operationStatus === "scheduled";
-  const hasOperationResult = typeof displayTask.metadata.resultPreview === "string" && displayTask.metadata.resultPreview.trim().length > 0;
-  const missingFinalResponse = !hasOperationResult && Boolean(
-    integrity?.issues.some((issue) => issue.id === "missing-final-response")
-  );
-  const partialFinalResponse = Boolean(
-    integrity?.issues.some((issue) => issue.id === "partial-final-response")
-  );
-  const hasRuntimeOutputEvidence = hasTaskRuntimeOutputEvidence(displayTask, visibleFeed);
-  const stalledWithCapturedOutput =
-    partialFinalResponse || (displayTask.status === "stalled" && hasRuntimeOutputEvidence);
-  const latestEvidenceEvent = findLatestOutputEvidenceEvent(visibleFeed);
-  const reviewStatus = resolveEffectiveTaskReviewStatus(displayTask, {
-    nowMs: data.relativeTimeReferenceMs,
-    hasLiveActivity: isLiveTask || isPendingCreation,
-    latestEvidenceAt: latestEvidenceEvent?.timestamp ?? null
-  });
-  const visibleReviewStatus =
-    reviewStatus && reviewStatus === "continued" && isLiveTask ? null : reviewStatus;
-  const hasReviewResolution = Boolean(reviewStatus);
-  const hasReviewableIntegrity = !hasOperationResult && (
-    integrity
-      ? integrity.status === "warning" ||
-        integrity.status === "error" ||
-        (displayTask.status === "stalled" && hasRuntimeOutputEvidence)
-      : stalledWithCapturedOutput
-  );
-  const completedNeedsReview = Boolean(
-    (displayTask.status === "completed" || stalledWithCapturedOutput) &&
-      hasReviewableIntegrity &&
-      !hasReviewResolution
-  );
-  const bootstrapElapsedLabel = isPendingCreation
-    ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
-    : null;
-  const effectiveActiveFollowUpIndex =
-    activeFollowUpIndex !== null && activeFollowUpIndex < followUps.length ? activeFollowUpIndex : null;
-  const activeFollowUp =
-    effectiveActiveFollowUpIndex !== null ? followUps[effectiveActiveFollowUpIndex] ?? null : null;
-  const activeFollowUpRuntimes = activeFollowUp ? resolveFollowUpRuntimes(activeFollowUp, detail?.runs ?? []) : [];
-  const activeFollowUpRuntime = resolveRepresentativeFollowUpRuntime(activeFollowUpRuntimes);
-  const activeFollowUpOutputs =
-    detail?.outputs.filter((output) => activeFollowUpRuntimes.some((runtime) => runtime.id === output.runtimeId)) ?? [];
-  const activeFollowUpOutput = resolveBestFollowUpOutput(activeFollowUpOutputs);
-  const realDisplayedFeed = activeFollowUp
-    ? filterFollowUpFeed(activeFollowUp, activeFollowUpRuntimes, visibleFeed)
-    : visibleFeed;
-  const displayedFeed =
-    activeFollowUp && realDisplayedFeed.length === 0
-      ? createFollowUpOptimisticFeed(activeFollowUp)
-      : realDisplayedFeed;
-  const activeFollowUpStatus = activeFollowUp
-    ? resolveFollowUpStatus(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
-    : null;
-  const toneInput: TaskNodeToneInput = {
-    completedNeedsReview,
-    isAborted,
-    isJustCreated,
-    isPendingCreation,
-    status: displayTask.status,
-    visibleReviewStatus
-  };
-  const displayedToneInput: TaskNodeToneInput = activeFollowUp && activeFollowUpStatus
-    ? {
-        completedNeedsReview: false,
-        isAborted: activeFollowUpStatus === "cancelled",
-        isJustCreated: false,
-        isPendingCreation: false,
-        status: activeFollowUpStatus,
-        visibleReviewStatus: null
-      }
-    : toneInput;
-  const failureDetail = activeFollowUp ? null : readTaskThinkingRejection(
-    reviewPresentation.technicalDetail, readTaskResultPreview(displayTask), displayTask.subtitle
-  );
-  const badgeVariant = failureDetail ? "danger" : resolveTaskNodeBadgeVariant(displayedToneInput);
-  const badgeLabel = failureDetail ? "Failed" : activeFollowUp && activeFollowUpStatus
-    ? resolveTaskBadgeLabel(null, activeFollowUpStatus, false, activeFollowUpStatus === "cancelled", Boolean(activeFollowUpOutput?.finalText || activeFollowUp?.summary))
-    : visibleReviewStatus
-    ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
-    : operationPaused
-    ? "paused"
-    : isRecurringOperation && !isLiveTask
-    ? "scheduled"
-    : missingFinalResponse
-    ? "no result"
-    : reviewPresentation.badgeLabel && completedNeedsReview
-    ? reviewPresentation.badgeLabel
-    : completedNeedsReview
-      ? "needs review"
-      : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted, hasRuntimeOutputEvidence);
-  const footerLabel = activeFollowUp
-    ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
-    : visibleReviewStatus
-    ? resolveTaskReviewFooterLabel(visibleReviewStatus)
-    : operationPaused
-    ? "schedule paused"
-    : isRecurringOperation && !isLiveTask
-    ? "scheduled · next run pending"
-    : reviewPresentation.footerLabel && completedNeedsReview
-    ? reviewPresentation.footerLabel
-    : stalledWithCapturedOutput
-    ? "partial output needs review"
-    : missingFinalResponse
-    ? "completed without a final answer"
-    : resolveTaskFooterLabel(bootstrapStage, displayTask.liveRunCount, isAborted);
-  const latestFeedEvent = displayedFeed[displayedFeed.length - 1] ?? (activeFollowUp ? null : latestLocalEvent) ?? null;
-  const showsLiveActivity =
-    !failureDetail && !isAborted &&
-    !completedNeedsReview &&
-    (activeFollowUp
-      ? activeFollowUpStatus === "running" || activeFollowUpStatus === "queued"
-      : isPendingCreation ||
-        displayTask.status === "running" ||
-        displayTask.status === "queued" ||
-        displayTask.liveRunCount > 0);
-  const activitySummary =
-    compactMissionText(latestFeedEvent?.detail, 88) ||
-    (activeFollowUp
-      ? compactMissionText(resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput), 72) || footerLabel
-      : isPendingCreation
-      ? [footerLabel, bootstrapElapsedLabel ? `${bootstrapElapsedLabel} elapsed` : null].filter(Boolean).join(" · ")
-      : compactMissionText(displayTask.subtitle, 72) || footerLabel);
-  const promptText = readTaskPromptText(displayTask);
-  const rawResultPreview = readTaskResultPreview(displayTask);
-  const resultPreview = missingFinalResponse
-    ? "No final answer was captured from OpenClaw for this task."
-    : stalledWithCapturedOutput && isWaitingForOutputCopy(rawResultPreview)
-      ? "Partial runtime evidence captured. Review the live feed for the latest tool output."
-      : rawResultPreview;
-  const feedPanelId = `task-feed-${data.task.id}`;
-  const visualTone = resolveTaskNodeVisualTone(displayedToneInput);
-  const surfaceTheme = data.surfaceTheme ?? "dark";
-  const surfaceTone = resolveTaskNodeSurfaceTone(surfaceTheme);
-  const agentThemeRgb = data.agentThemeRgb ?? "14, 165, 233";
-  const taskCardStyle = {
-    borderColor: `rgba(${agentThemeRgb}, ${selected ? 0.62 : surfaceTheme === "light" ? 0.32 : 0.28})`,
-    ...(selected
-      ? {
-          boxShadow:
-            surfaceTheme === "light"
-              ? `0 0 0 1px rgba(${agentThemeRgb}, 0.18), 0 22px 52px rgba(${agentThemeRgb}, 0.18)`
-              : `0 0 0 1px rgba(${agentThemeRgb}, 0.2), 0 22px 52px rgba(${agentThemeRgb}, 0.24)`
-        }
-      : {})
-  } as CSSProperties;
-  const followUpAvailability = resolveTaskFollowUpAvailability(displayTask);
-  const resolvedPrimaryAction = resolveTaskCardPrimaryAction({
-    status: displayTask.status,
-    completedNeedsReview
-  });
-  const primaryAction = resolvedPrimaryAction === "review-result" && !data.onReviewTask
-    ? "view-details"
-    : resolvedPrimaryAction;
-  const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
-  const displayPromptText = activeFollowUp
-    ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
-    : promptText;
-  const displayResultEvidenceLabel = activeFollowUp ? "Follow-up result" : reviewPresentation.evidenceLabel;
-  const displayResultText = activeFollowUp
-    ? resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
-    : resultPreview;
-  const activeInspectorContext = activeFollowUp
-    ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, effectiveActiveFollowUpIndex ?? 0, currentCardNumber)
-    : null;
-  const activityFeed = displayedFeed.filter((event) => event.kind !== "user" && event.title !== "Mission");
-  const latestWorkEvent = activityFeed.findLast((event) =>
-    event.kind === "tool" || event.kind === "artifact" || event.kind === "warning"
-  );
-  let cardSummary = compactMissionText(displayResultText, 148) || "Open the task to see what happened.";
-  if (failureDetail) {
-    cardSummary = "The model rejected the reasoning setting. You can review the task and retry with Balanced.";
-  } else if (isAborted) {
-    cardSummary = "This task was stopped. You can reuse it from the task menu.";
-  } else if (reviewPresentation.deliveryUnconfirmed) {
-    cardSummary = "Delivery is unconfirmed. Review the last activity before trying again.";
-  } else if (showsLiveActivity) {
-    cardSummary = bootstrapStage === "admission-unknown"
-      ? "Checking whether the agent received the task. Open activity before trying again."
-      : readTaskActivitySummary(latestWorkEvent) ?? (isPendingCreation || displayTask.status === "queued"
-        ? "Waiting for the agent to start."
-        : "The agent is working on this task.");
-  } else if (!activeFollowUp && (operationPaused || isRecurringOperation) && !hasOperationResult) {
-    cardSummary = operationPaused ? "The schedule is paused." : operationSchedule ?? "Waiting for the next scheduled run.";
-  } else if (!activeFollowUp && displayTask.status === "stalled" && !hasRuntimeOutputEvidence) {
-    cardSummary = "The task stopped before an answer arrived. Open details to see what happened.";
-  }
-  const retryWithBalanced = Boolean(failureDetail && data.onReply && !operationJobId);
-  const canFollowUp = followUpAvailability.available && !failureDetail;
-  const openTaskDirection = () => {
-    if (data.onInspect) {
-      data.onInspect(data.task, "direction", activeInspectorContext);
-    } else {
-      setExpanded(true);
-      setComposerExpanded(true);
-      requestAnimationFrame(() => composerInputRef.current?.focus());
-    }
-  };
-  const isCompactMonitor = systemOwnedMonitor !== null && !expanded && !composerExpanded;
-  const monitorTitle = systemOwnedMonitor === "heartbeat" ? "Heartbeat" : "Skill Workshop";
 
-  useEffect(() => {
-    if (!expanded && !composerExpanded) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!cardRef.current?.contains(event.target as globalThis.Node)) {
-        setExpanded(false);
-        setComposerExpanded(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [expanded, composerExpanded]);
-
-  const tabs: TaskWorkspaceTab[] = [
-    {
-      id: "task",
-      index: null,
-      kind: "task",
-      label: "Task 1",
-      title: compactMissionText(promptText, 36) || "Original task",
-      statusLabel: displayTask.status,
-      hasLiveActivity: !activeFollowUp && showsLiveActivity
-    },
-    ...followUps.map((followUp, index) => ({
-      id: followUp.runId || followUp.id,
-      index,
-      kind: "follow-up" as const,
-      label: "Follow-up",
-      title: compactMissionText(resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message, 34) || "Follow-up",
-      statusLabel: normalizeRuntimeStatus(followUp.status) ?? "running",
-      hasLiveActivity: activeFollowUp?.id === followUp.id && showsLiveActivity
-    }))
-  ];
-  const activeTabId = activeFollowUp ? activeFollowUp.runId || activeFollowUp.id : "task";
-  const selectTaskTab = (nextIndex: number | null) => {
-    setActiveFollowUpIndex(nextIndex);
-    data.onActiveCardChange?.(
-      data.task,
-      nextIndex === null
-        ? null
-        : buildTaskCardInspectorContext(
-            data.task.id,
-            followUps[nextIndex]!,
-            nextIndex,
-            nextIndex + 2
-          )
+  const renderActions = (close: () => void) => {
+    const run = (action: OperationAction) => { close(); void operateSchedule(action); };
+    return (
+      <>
+        {data.onInspect ? <TaskMenuButton icon={FileText} label="Task details" surfaceTheme={surfaceTheme}
+          onClick={() => { close(); data.onInspect?.(data.task, "overview"); }} /> : null}
+        {data.onReviewTask && (state === "Needs review" || state === "Failed" || task.metadata.reviewStatus) ?
+          <TaskMenuButton icon={state === "Needs review" ? AlertTriangle : CheckCircle2} label={task.metadata.reviewStatus ? "Review record" : "Review result"} surfaceTheme={surfaceTheme}
+            onClick={() => { close(); data.onReviewTask?.(task); }} /> : null}
+        {data.onReply && !monitor ? <TaskMenuButton icon={CornerDownLeft} label={state === "Failed" ? "Prepare retry" : "Reuse as new task"} surfaceTheme={surfaceTheme}
+          onClick={() => { close(); if (expanded) closeConversation(); data.onReply?.(data.task); }} /> : null}
+        {data.onCopyPrompt && !monitor ? <TaskMenuButton icon={Copy} label="Copy & edit prompt" surfaceTheme={surfaceTheme}
+          onClick={() => { close(); if (expanded) closeConversation(); data.onCopyPrompt?.(data.task); }} /> : null}
+        {schedulable ? <>
+          <TaskMenuButton icon={Play} label="Run now" disabled={operationAction !== null || schedulePaused} surfaceTheme={surfaceTheme} onClick={() => run("run")} />
+          {hasFailedSchedule ? <TaskMenuButton icon={RefreshCw} label="Retry failed run" disabled={operationAction !== null || schedulePaused} surfaceTheme={surfaceTheme} onClick={() => run("retry")} /> : null}
+          <TaskMenuButton icon={schedulePaused ? Play : Pause} label={schedulePaused ? "Resume schedule" : "Pause schedule"} disabled={operationAction !== null} surfaceTheme={surfaceTheme} onClick={() => run(schedulePaused ? "resume" : "pause")} />
+          <TaskMenuButton icon={Trash2} label="Delete schedule" disabled={operationAction !== null} destructive surfaceTheme={surfaceTheme} onClick={() => run("delete")} />
+        </> : null}
+        {canStop ? <TaskMenuButton icon={Ban} label="Stop task" destructive surfaceTheme={surfaceTheme} onClick={() => { close(); data.onAbortTask?.(data.task); }} /> : null}
+        {data.onHide ? <TaskMenuButton icon={EyeOff} label="Hide task" surfaceTheme={surfaceTheme} onClick={() => { close(); data.onHide?.(data.task); }} /> : null}
+        {data.onToggleLock ? <TaskMenuButton icon={data.locked ? LockOpen : Lock} label={data.locked ? "Unlock" : "Lock"} surfaceTheme={surfaceTheme}
+          onClick={() => { close(); data.onToggleLock?.(data.task); }} /> : null}
+      </>
     );
   };
-  useEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as globalThis.Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [menuOpen]);
+  const recovery = failure && state === "Failed" ? (
+    <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.06] p-3 text-sm">
+      <p className="flex items-center gap-2 font-semibold text-[var(--task-danger)]"><AlertTriangle aria-hidden="true" className="size-4" /> Task failed</p>
+      <p className="mt-1 leading-relaxed text-[var(--task-muted)]">{failure.summary}</p>
+      {failure.technical ? <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Technical details</summary>
+        <p className="mt-1 break-all leading-relaxed text-[var(--task-muted)]">{failure.technical}</p></details> : null}
+      {schedulable && hasFailedSchedule && !schedulePaused ? <button type="button" className={cn(recoveryClass, "mt-3")} disabled={operationAction !== null} onClick={() => void operateSchedule("retry")}>Retry failed run</button> :
+        data.onReply && !schedulable ? <button type="button" className={cn(recoveryClass, "mt-3")} onClick={() => { closeConversation(); data.onReply?.(data.task); }}>
+          <RefreshCw className="size-3.5" aria-hidden="true" />{failure.reasoning ? "Retry with Balanced" : "Prepare retry"}
+        </button> : null}
+    </div>
+  ) : state === "Needs review" && data.onReviewTask ? (
+    <button type="button" className={recoveryClass} onClick={() => data.onReviewTask?.(task)}>Review result</button>
+  ) : null;
+  const attempts = schedulable || (detail?.runs.length ?? 0) > 1 || followUps.length ? (
+    <details className="mb-3 rounded-xl border border-[var(--task-line)] bg-[var(--task-surface)] text-xs">
+      <summary className="cursor-pointer px-3 py-2.5 font-semibold">Run history</summary>
+      <div className="px-3 pb-3">
+        {schedulable ? <OperationRunTimeline entries={readOperationRunTimeline(task.metadata.operationFeed, task.metadata.operationRunHistory, task.metadata.operationRecoveryHistory)}
+          nextRunAt={typeof task.metadata.nextRunAt === "string" ? task.metadata.nextRunAt : null}
+          scheduleLabel={scheduleLabel} surfaceTheme={surfaceTheme} /> :
+          <ul className="space-y-2">
+            {detail?.runs.map((run, index) => <li key={run.id} className="flex items-center justify-between gap-3">
+              <span>{run.source === "turn" ? "Attempt" : "Run"} {index + 1} · {run.status === "stalled" ? "Failed" : run.status === "completed" ? "Completed" : run.status}</span>
+              <span className="text-[var(--task-muted)]">{formatTime(validTimestamp(run.updatedAt))}</span>
+            </li>)}
+            {followUps.map((attempt, index) => {
+              const message = resolveTaskFollowUpDisplayMessage(attempt) ?? attempt.message;
+              return <li key={attempt.id}>
+                <details>
+                  <summary className="cursor-pointer truncate py-1 font-semibold">Follow-up {index + 1} · {message}</summary>
+                  {attempt.summary ? <p className="mt-1 whitespace-pre-wrap break-words text-[var(--task-muted)]">{attempt.summary}</p> : null}
+                  {data.onInspect ? <button type="button" className="mt-1 rounded px-1 py-1 font-semibold text-[var(--task-accent)] hover:underline"
+                    onClick={() => {
+                      closeConversation();
+                      data.onInspect?.(data.task, "result", { taskId: task.id, cardNumber: index + 2, followUpIndex: index,
+                        runId: attempt.runId, sessionId: attempt.sessionId, status: attempt.status, createdAt: attempt.createdAt, message });
+                    }}>Inspect this follow-up</button> : null}
+                </details>
+              </li>;
+            })}
+          </ul>}
+        {schedulable && scheduleLabel ? <OperationScheduleControl jobId={schedulable} label={scheduleLabel}
+          cronExpression={typeof task.metadata.cronExpression === "string" ? task.metadata.cronExpression : null}
+          timezone={typeof task.metadata.timezone === "string" ? task.metadata.timezone : null}
+          scheduleKind={task.metadata.recurrence === "at" || task.metadata.recurrence === "every" || task.metadata.recurrence === "cron" ? task.metadata.recurrence : null}
+          triggerAt={typeof task.metadata.triggerAt === "string" ? task.metadata.triggerAt : null}
+          intervalMs={typeof task.metadata.intervalMs === "number" ? task.metadata.intervalMs : null}
+          surfaceTheme={surfaceTheme} onSaved={() => { void data.onRefresh?.(); }} /> : null}
+      </div>
+    </details>
+  ) : null;
 
   return (
-    <motion.div
-      ref={cardRef}
-      initial={
-        reduceMotion ? false : isPendingCreation
-          ? { opacity: 0, scale: 0.92, y: -10 }
-          : isJustCreated
-            ? { opacity: 0, scale: 0.96, y: 10 }
-            : { opacity: 0, x: 10 }
-      }
-      animate={
-        reduceMotion ? { opacity: 1 } : isPendingCreation
-          ? { opacity: 1, scale: 1, y: 0 }
-          : isJustCreated
-            ? { opacity: 1, scale: [1, 1.015, 1], y: 0 }
-            : { opacity: 1, x: 0 }
-      }
-      transition={
-        reduceMotion ? { duration: 0 } : isJustCreated
-          ? {
-              duration: 0.7,
-              times: [0, 0.45, 1]
-            }
-          : undefined
-      }
-      className={cn(
-        "group relative max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[18px] border backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform,width] duration-200",
-        isCompactMonitor ? "w-[206px] rounded-[13px]" : "w-[400px] rounded-[18px]",
-        surfaceTone.outer,
-        data.emphasis ? "opacity-100" : "opacity-90",
-        (composerExpanded || expanded) && "z-30 shadow-[0_22px_58px_rgba(0,0,0,0.3)]"
-      )}
-      style={taskCardStyle}
-    >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
-        <div
-          className="absolute inset-y-3 left-0 w-0.5 rounded-r-full"
-          style={{ backgroundColor: `rgb(${agentThemeRgb})`, boxShadow: `0 0 14px rgba(${agentThemeRgb}, 0.46)` }}
-        />
-      </div>
-
-      <div className="relative z-10">
-        {isPendingCreation && !reduceMotion ? (
-        <motion.div
-          className="pointer-events-none absolute inset-[-8px] rounded-[18px] border"
-          style={{ borderColor: `rgba(${agentThemeRgb}, 0.28)` }}
-          animate={{ opacity: [0.18, 0.42, 0.18], scale: [0.985, 1.02, 0.985] }}
-          transition={{ duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-        />
-        ) : null}
-
-        <Handle
-          type="target"
-          id="target-left"
-          position={Position.Left}
-          className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
-        />
-
-        <div className={cn("relative z-20 px-4 py-3", isCompactMonitor && "px-2.5 py-2")}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              {systemOwnedMonitor ? <RefreshCw aria-hidden="true" className="size-3.5 shrink-0" /> : <ClipboardList aria-hidden="true" className={cn("size-3.5 shrink-0", surfaceTone.mutedText)} />}
-              <span className={cn("truncate text-[11px] font-medium", surfaceTone.mutedText)}>
-                {systemOwnedMonitor ? "Monitor" : displayTask.primaryAgentName || "OpenClaw"}
-              </span>
-              {data.locked ? <Lock aria-label="Locked" className={cn("size-3 shrink-0", surfaceTone.mutedText)} /> : null}
-            </div>
-            <div className="nodrag nopan relative flex shrink-0 items-center gap-1.5" ref={menuRef}>
-              <Badge variant={badgeVariant} className="max-w-[128px] rounded-full px-2 py-0.5 text-[9px] tracking-normal">
-                {badgeLabel}
-              </Badge>
-              <button
-                type="button"
-                aria-label="Task actions"
-                aria-expanded={menuOpen}
-                onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMenuOpen((current) => !current);
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
-                className={cn("nodrag nopan inline-flex h-7 w-7 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-
-              {menuOpen ? (
-                <div
-                  className={cn("nodrag nopan absolute right-0 top-[calc(100%+8px)] z-[70] min-w-[176px] rounded-[12px] border p-1.5 backdrop-blur-xl", surfaceTone.menu)}
-                  onClick={(event) => event.stopPropagation()}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  {data.onReviewTask && (completedNeedsReview || hasReviewResolution || badgeLabel === "needs review") ? (
-                    <TaskMenuButton
-                      icon={hasReviewResolution ? CheckCircle2 : AlertTriangle}
-                      label={hasReviewResolution ? "Review record" : "Review result"}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => {
-                        data.onReviewTask?.(displayTask);
-                        setMenuOpen(false);
-                      }}
-                    />
-                  ) : null}
-                  {!isCompactMonitor && !retryWithBalanced && canFollowUp ? (
-                    <TaskMenuButton
-                      icon={MessageSquare}
-                      label={showsLiveActivity ? "Give direction" : "Continue task"}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => {
-                        setMenuOpen(false);
-                        openTaskDirection();
-                      }}
-                    />
-                  ) : null}
-                  <TaskMenuButton
-                      icon={CornerDownLeft}
-                      label="Reuse as new task"
-                      surfaceTheme={surfaceTheme}
-                    onClick={() => {
-                      data.onReply?.(data.task);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  <TaskMenuButton
-                      icon={Copy}
-                      label="Copy & edit prompt"
-                      surfaceTheme={surfaceTheme}
-                    onClick={() => {
-                      data.onCopyPrompt?.(data.task);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  <TaskMenuButton
-                      icon={EyeOff}
-                      label="Hide"
-                      surfaceTheme={surfaceTheme}
-                    onClick={() => {
-                      data.onHide?.(data.task);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  {operationJobId ? <>
-                    <TaskMenuButton
-                      icon={Play}
-                      label={operationAction === "run" ? "Starting…" : "Run now"}
-                      disabled={operationAction !== null || operationPaused}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => void operateSchedule("run")}
-                    />
-                    {(displayTask.metadata.lastRunStatus === "error" || displayTask.metadata.operationLastError) ? (
-                      <TaskMenuButton
-                        icon={RefreshCw}
-                        label={operationAction === "retry" ? "Retrying…" : "Retry failed run"}
-                        disabled={operationAction !== null || operationPaused}
-                        surfaceTheme={surfaceTheme}
-                        onClick={() => void operateSchedule("retry")}
-                      />
-                    ) : null}
-                    <TaskMenuButton
-                      icon={operationPaused ? Play : Pause}
-                      label={operationAction === (operationPaused ? "resume" : "pause") ? "Updating…" : operationPaused ? "Resume schedule" : "Pause schedule"}
-                      disabled={operationAction !== null}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => void operateSchedule(operationPaused ? "resume" : "pause")}
-                    />
-                    <TaskMenuButton
-                      icon={Trash2}
-                      label={operationAction === "delete" ? "Deleting…" : "Delete schedule"}
-                      destructive
-                      disabled={operationAction !== null}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => void operateSchedule("delete")}
-                    />
-                  </> : null}
-                  {data.onAbortTask && (isAbortable || isAborted) ? (
-                    <TaskMenuButton
-                      icon={Ban}
-                      label={isAborted ? "Aborted" : "Abort task"}
-                      destructive
-                      disabled={!isAbortable}
-                      surfaceTheme={surfaceTheme}
-                      onClick={() => {
-                        if (!isAbortable) {
-                          return;
-                        }
-
-                        data.onAbortTask?.(data.task);
-                        setMenuOpen(false);
-                      }}
-                    />
-                  ) : null}
-                  <TaskMenuButton
-                      icon={data.locked ? LockOpen : Lock}
-                      label={data.locked ? "Unlock" : "Lock"}
-                      surfaceTheme={surfaceTheme}
-                    onClick={() => {
-                      data.onToggleLock?.(data.task);
-                      setMenuOpen(false);
-                    }}
-                  />
-                </div>
-              ) : null}
-            </div>
+    <div ref={root} className={cn(styles.task, "relative max-w-[calc(100vw-40px)]", monitor ? "w-[206px]" : "w-[400px]")}
+      data-task-theme={surfaceTheme} data-task-expanded={expanded} data-testid="live-task-node">
+      <Handle type="target" id="target-left" position={Position.Left} className={cn("!size-2.5 !border-0", tone.handle)} />
+      <div className={cn(styles.card, "relative grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-2.5 rounded-[18px] px-3.5 pb-3 pt-3", expanded && "invisible", !data.emphasis && !selected && "opacity-90")}
+        data-selected={selected} inert={expanded}
+        onPointerDown={(event) => { pressOrigin.current = { x: event.clientX, y: event.clientY }; }}
+        onClick={(event) => {
+          const origin = pressOrigin.current;
+          if (origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 6 &&
+              !(event.target instanceof Element && event.target.closest("button, a"))) openConversation();
+        }}>
+        <EmployeeAvatar agent={data.employee} name={agentName} className={cn("mt-0.5 size-10 rounded-[12px] text-xs", monitor && "size-7")} />
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{agentName}</span>
+            <TaskStatus status={state} />
+            <TaskActions>{renderActions}</TaskActions>
           </div>
-
-          <h3 className={cn("mt-2 line-clamp-2 break-words font-display text-base font-semibold leading-snug", isCompactMonitor && "mt-1 line-clamp-1 text-sm", surfaceTone.text)}>
-            {isCompactMonitor ? monitorTitle : compactMissionText(displayPromptText, 120)}
-          </h3>
-
-          {!isCompactMonitor ? (
-            <p className={cn(
-              "mt-2 line-clamp-2 break-words text-xs leading-[1.55]",
-              surfaceTheme === "light"
-                ? failureDetail ? "text-rose-800" : "text-[#624f43]"
-                : failureDetail ? "text-rose-200" : "text-slate-300"
-            )}>
-              {cardSummary}
-            </p>
-          ) : null}
-
-          <div className={cn("mt-3 flex min-w-0 items-center gap-2", isCompactMonitor && "mt-1")}>
-            {!isCompactMonitor ? (
-              <button
-                type="button"
-                className={cn(
-                  "nodrag nopan inline-flex min-h-9 items-center rounded-[8px] px-3 text-[11px] font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-                  resolvePrimaryActionClass(primaryAction, surfaceTheme)
-                )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (retryWithBalanced) {
-                    data.onReply?.(data.task);
-                  } else if (primaryAction === "review-result" && !failureDetail) {
-                    data.onReviewTask?.(displayTask);
-                  } else if (data.onInspect) {
-                    data.onInspect(
-                      data.task,
-                      showsLiveActivity ? "output" : displayResultText || failureDetail ? "result" : "overview",
-                      activeInspectorContext
-                    );
-                  } else {
-                    setExpanded(true);
-                  }
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                {retryWithBalanced ? "Retry with Balanced"
-                  : failureDetail ? "View issue"
-                  : showsLiveActivity ? "View activity"
-                  : formatPrimaryActionLabel(primaryAction)}
-              </button>
-            ) : null}
-            {!isCompactMonitor && displayTask.artifactCount > 0 && !showsLiveActivity && !activeFollowUp ? (
-              <span className={cn("shrink-0 text-[11px]", surfaceTone.mutedText)}>
-                {displayTask.artifactCount} {displayTask.artifactCount === 1 ? "file" : "files"}
-              </span>
-            ) : null}
-            {expanded && !isCompactMonitor && operationSchedule && operationJobId ? (
-              <OperationScheduleControl
-                jobId={operationJobId}
-                label={operationSchedule}
-                cronExpression={typeof data.task.metadata.cronExpression === "string" ? data.task.metadata.cronExpression : null}
-                timezone={typeof data.task.metadata.timezone === "string" ? data.task.metadata.timezone : null}
-                scheduleKind={data.task.metadata.recurrence === "at" || data.task.metadata.recurrence === "every" || data.task.metadata.recurrence === "cron" ? data.task.metadata.recurrence : null}
-                triggerAt={typeof data.task.metadata.triggerAt === "string" ? data.task.metadata.triggerAt : null}
-                intervalMs={typeof data.task.metadata.intervalMs === "number" ? data.task.metadata.intervalMs : null}
-                surfaceTheme={surfaceTheme}
-                onSaved={() => data.onInspect?.(data.task, "overview", activeInspectorContext)}
-              />
-            ) : null}
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={feedPanelId}
-              className={cn("nodrag nopan ml-auto inline-flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", isCompactMonitor && "h-6 w-6 rounded-[7px]", surfaceTone.subtleButton)}
-              aria-label={
-                expanded
-                  ? systemOwnedMonitor
-                    ? "Collapse monitor details"
-                    : "Hide activity and details"
-                  : systemOwnedMonitor
-                    ? "Expand monitor details"
-                    : "Show activity and details"
-              }
-              title={expanded ? "Hide activity" : systemOwnedMonitor ? "Expand monitor details" : "Show activity and details"}
-              onClick={(event) => {
-                event.stopPropagation();
-                setExpanded((current) => !current);
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              {expanded ? <X className="h-3.5 w-3.5" /> : <ChevronDown className={cn("h-3.5 w-3.5", isCompactMonitor && "h-3 w-3")} />}
-            </button>
-          </div>
+          <button ref={expandButton} type="button" aria-expanded={expanded} aria-controls={opened ? panelId : undefined} aria-label={monitor ? "Expand monitor details" : `Open task conversation: ${title}`}
+            className="nodrag nopan mt-0.5 block w-full rounded-md text-left outline-offset-4 focus-visible:outline-2 focus-visible:outline-violet-500"
+            onClick={(event) => { event.stopPropagation(); openConversation(); }}>
+            <h3 className="line-clamp-2 break-words text-[15px] font-semibold leading-snug tracking-[-.015em]">{title}</h3>
+            <div className="mt-1.5 flex items-center gap-2 text-[13px] leading-5 text-[var(--task-muted)]">
+              <p className="min-w-0 flex-1 truncate">{taskUpdate}</p>
+              <TaskTiming start={start} updatedAt={task.updatedAt} active={progress} compact />
+            </div>
+          </button>
+          {progress ? <TaskProgress queued={state === "Queued"} /> : null}
         </div>
+      </div>
 
-        {expanded ? (
-          <motion.div
-            id={feedPanelId}
-            initial={reduceMotion ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: reduceMotion ? 0 : 0.15 }}
-            className={cn("nodrag nopan mx-3 mb-3 overflow-hidden rounded-[10px] border p-3 nowheel", surfaceTone.panel)}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {followUps.length > 0 ? (
-              <TaskWorkspaceTabs
-                activeTabId={activeTabId}
-                tabs={tabs}
-                surfaceTheme={surfaceTheme}
-                addDisabled={!followUpAvailability.available}
-                addTitle={followUpAvailability.reason ?? followUpAvailability.warning ?? "Continue this task in its existing OpenClaw session."}
-                onAdd={() => {
-                  setComposerExpanded(true);
-                  requestAnimationFrame(() => composerInputRef.current?.focus());
-                }}
-                onSelect={(tab) => selectTaskTab(tab.index)}
-              />
-            ) : null}
-            {failureDetail ? (
-              <details className={cn("mb-3 text-xs", surfaceTone.text)}>
-                <summary className="cursor-pointer py-1 font-medium">Technical details</summary>
-                <p className="mt-1 break-words leading-relaxed">{failureDetail}</p>
-              </details>
-            ) : null}
-            {operationJobId ? (
-              <OperationRunTimeline
-                entries={operationRunHistory}
-                nextRunAt={typeof data.task.metadata.nextRunAt === "string" ? data.task.metadata.nextRunAt : null}
-                scheduleLabel={operationSchedule}
-                surfaceTheme={surfaceTheme}
-              />
-            ) : null}
-            <div>
-              <p className={cn("mb-2 text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTone.mutedText)}>
-                {reviewPresentation.deliveryUnconfirmed && !activeFollowUp ? "Captured activity feed" : "Activity feed"}
-              </p>
-              {streamNotice ? (
-                <div className={cn("mb-2 rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
-                  {streamNotice}
-                </div>
-              ) : null}
-              <ScrollArea className="h-[108px] w-full pr-3">
-                {loading && activityFeed.length === 0 ? (
-                  <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
-                    Connecting to feed...
-                  </div>
-                ) : error && activityFeed.length === 0 ? (
-                  <div className={cn("rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
-                    {error}
-                  </div>
-                ) : activityFeed.length === 0 ? (
-                  <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
-                    {activeFollowUp ? "No follow-up events yet." : "No events yet."}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {activityFeed.map((event) => (
-                      <div key={event.id} className="group/item relative pl-3">
-                        <div
-                          className={cn(
-                            "absolute left-0 top-1.5 h-1.5 w-1.5 rounded-full",
-                            resolveFeedEventColor(event.kind, event.isError)
-                          )}
-                        />
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className={cn("text-[10px] font-medium", surfaceTheme === "light" ? "text-[#514136]" : "text-slate-300")}>
-                            {event.title}
-                          </span>
-                          <span className={cn("shrink-0 text-[9px]", surfaceTone.mutedText)}>
-                            {formatTimeOnly(event.timestamp)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5">
-                          <InteractiveContent
-                            text={event.kind === "status" ? stripMissionRouting(event.detail) : event.detail}
-                            className={cn("text-[10px] leading-relaxed", surfaceTheme === "light" ? "text-[#806958] group-hover/item:text-[#514136]" : "text-slate-400 group-hover/item:text-slate-300")}
-                            url={"url" in event ? event.url : null}
-                            filePath={"filePath" in event ? event.filePath : null}
-                            displayPath={"displayPath" in event ? event.displayPath : null}
-                            basePath={data.workspacePath}
-                            compact
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
-            {composerExpanded ? (
-              <TaskFollowUpComposer
-                task={displayTask}
-                latestResult={displayResultText}
-                latestResultLabel={activeFollowUp ? undefined : displayResultEvidenceLabel}
-                createdFiles={detail?.createdFiles}
-                outputSummary={activitySummary}
-                placeholder={activeFollowUp ? undefined : reviewPresentation.followUpPlaceholder}
-                compact
-                density="dense"
-                expanded
-                textareaRef={composerInputRef}
-                className="nodrag nopan mt-2"
-                onSubmitted={(followUp) => {
-                  const nextIndex = followUps.length;
-                  setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
-                  setActiveFollowUpIndex(nextIndex);
-                  data.onActiveCardChange?.(data.task, buildTaskCardInspectorContext(data.task.id, followUp, nextIndex, nextIndex + 2));
-                }}
-              />
-            ) : null}
-          </motion.div>
+      {opened ? <section id={panelId} aria-labelledby={headingId} inert={!expanded} data-open={expanded}
+        className={cn(styles.panel, "nodrag nopan nowheel absolute left-0 top-0 z-30 flex h-[min(590px,calc(100dvh-146px))] min-h-[240px] w-[min(620px,calc(100vw-40px))] flex-col overflow-hidden rounded-[22px]")}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); closeConversation(); } }}>
+        <header className="shrink-0 border-b border-[var(--task-line)] px-3 pb-3 pt-3 sm:px-5 sm:pt-4">
+          <div className="flex items-center gap-2.5">
+            <EmployeeAvatar agent={data.employee} name={agentName} className="size-10 rounded-[12px] text-sm" />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold sm:text-base">{agentName}</span>
+            {canStop ? <button type="button" aria-label="Stop task" title="Stop task" className={cn(controlClass, "text-[var(--task-danger)]")} onClick={() => data.onAbortTask?.(data.task)}><Square className="size-3.5" fill="currentColor" /></button> : null}
+            <TaskActions>{renderActions}</TaskActions>
+            <button ref={collapseButton} type="button" aria-label="Collapse task conversation" title="Collapse task conversation" className={controlClass} onClick={closeConversation}><X className="size-4" /></button>
+          </div>
+          <h3 id={headingId} className="mt-2.5 line-clamp-2 break-words text-[20px] font-semibold leading-tight tracking-[-.023em] sm:text-[23px]">{title}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--task-muted)]">
+            <TaskStatus status={state} />
+            {start ? <span className="inline-flex items-center gap-1.5"><CalendarClock aria-hidden="true" className="size-3.5" /> Started {formatTime(start)}</span> : null}
+            <TaskTiming start={start} updatedAt={task.updatedAt} active={progress} />
+          </div>
+          {progress ? <TaskProgress queued={state === "Queued"} /> : null}
+        </header>
+        <TaskLiveConversation visible={expanded} scroller={conversationScroller} closedOffset={closedScrollOffset} entries={entries} attention={pendingAttention}
+          agent={data.employee} agentName={agentName}
+          loading={loading} notice={error ?? streamNotice}
+          emptyText={state === "Queued" ? "The task is queued in OpenClaw." : state === "Running" ? "Waiting for the agent’s first update." : "OpenClaw has no messages for this task."}
+          history={{ taskId: task.id, dispatchId: task.dispatchId, cursor: detail?.taskHistory?.nextCursor ?? null }}
+          recovery={recovery} attempts={attempts} onAttentionResolved={(id) => setResolvedAttention((current) => [...current, id])} />
+        {available.available && hasScopedTaskSession(available.context) && !failure?.reasoning && !monitor ? (
+          <footer className="shrink-0 border-t border-[var(--task-line)] px-3 py-3 sm:px-5">
+            <TaskFollowUpComposer task={task} liveConversation submitLabel="Send task instruction" textareaRef={textarea}
+              onSubmitted={(followUp) => setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]))} />
+          </footer>
         ) : null}
-      </div>
-    </motion.div>
-  );
-}
-
-function TaskWorkspaceTabs({
-  activeTabId,
-  tabs,
-  onAdd,
-  onSelect,
-  surfaceTheme,
-  addDisabled = false,
-  addTitle = "Focus follow-up composer"
-}: {
-  activeTabId: string;
-  tabs: TaskWorkspaceTab[];
-  onAdd: () => void;
-  onSelect: (tab: TaskWorkspaceTab) => void;
-  surfaceTheme: "dark" | "light";
-  addDisabled?: boolean;
-  addTitle?: string;
-}) {
-  const activeIndex = Math.max(tabs.findIndex((tab) => tab.id === activeTabId), 0);
-  const selectByOffset = (offset: number) => {
-    const nextTab = tabs[(activeIndex + offset + tabs.length) % tabs.length];
-    if (nextTab) {
-      onSelect(nextTab);
-    }
-  };
-
-  return (
-    <div
-      className="relative z-20 mb-1.5 flex items-end gap-1.5 pb-px"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div
-        role="tablist"
-        aria-label="Task workspace tabs"
-        className={cn(
-          "min-w-0 items-end gap-2",
-          tabs.length <= 7 ? "grid flex-1" : "flex min-w-max overflow-x-auto"
-        )}
-        style={tabs.length <= 7 ? { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` } : undefined}
-      >
-        {tabs.map((tab) => {
-          const active = tab.id === activeTabId;
-          const Icon = tab.kind === "task" ? ClipboardList : MessageSquare;
-          const isLight = surfaceTheme === "light";
-
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              title={`${tab.label}: ${tab.title}`}
-              className={cn(
-                "group/tab relative flex h-[50px] cursor-grab items-center gap-2 rounded-t-[14px] border px-2.5 text-left outline-none transition-all duration-200 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-cyan-200/45",
-                tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[150px] max-w-[220px] shrink-0",
-                active
-                  ? isLight
-                    ? "border-[#b9a18d] bg-[#f9eee6] text-[#3b2d24] shadow-[0_-8px_24px_rgba(107,75,55,0.10)]"
-                    : "border-cyan-200/28 bg-cyan-300/[0.09] text-white shadow-[0_-10px_34px_rgba(45,212,191,0.13)]"
-                  : isLight
-                    ? "border-[#e6d7cd] bg-white/[0.58] text-[#7d6656] hover:border-[#cda98f] hover:bg-[#faf1ea]"
-                    : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
-              )}
-              onClick={() => onSelect(tab)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight") {
-                  event.preventDefault();
-                  selectByOffset(1);
-                } else if (event.key === "ArrowLeft") {
-                  event.preventDefault();
-                  selectByOffset(-1);
-                } else if (event.key === "Home") {
-                  event.preventDefault();
-                  if (tabs[0]) {
-                    onSelect(tabs[0]);
-                  }
-                } else if (event.key === "End") {
-                  event.preventDefault();
-                  const lastTab = tabs[tabs.length - 1];
-                  if (lastTab) {
-                    onSelect(lastTab);
-                  }
-                }
-              }}
-            >
-              <span
-                className={cn(
-                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border transition-colors",
-                  active
-                    ? isLight
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
-                    : isLight
-                      ? "border-[#e7d8ce] bg-white/60 text-[#927968] group-hover/tab:text-[#5d493c]"
-                      : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? (isLight ? "text-emerald-700" : "text-emerald-200") : (isLight ? "text-[#8d7463]" : "text-slate-400"))}>
-                  {tab.hasLiveActivity ? (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)] motion-safe:animate-pulse" />
-                  ) : null}
-                  <span className="truncate">{tab.label}</span>
-                  <span className={cn("h-1 w-1 rounded-full", tabStatusDotClassName(tab.statusLabel))} />
-                </span>
-                <span className={cn("mt-0.5 block truncate text-[10px] font-semibold leading-4", isLight ? "text-[#413229]" : "text-slate-100")}>
-                  {tab.title}
-                </span>
-              </span>
-              <span
-                className={cn(
-                  "absolute inset-x-3 bottom-0 h-0.5 rounded-full transition-all duration-200",
-                  active ? (isLight ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.34)]" : "bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.75)]") : "bg-transparent"
-                )}
-              />
-            </button>
-          );
-        })}
-      </div>
-      <button
-        type="button"
-        disabled={addDisabled}
-        aria-label="Focus follow-up composer"
-        title={addTitle}
-        className={cn(
-          "nodrag nopan mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45 disabled:cursor-not-allowed disabled:opacity-45",
-          surfaceTheme === "light"
-            ? "border-[#e1d1c6] bg-white/70 text-[#70594a] hover:border-[#cda98f] hover:bg-[#fbf1e9]"
-            : "border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_8px_18px_rgba(0,0,0,0.16)] hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
-        )}
-        onClick={onAdd}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <Plus className="h-4 w-4" />
-      </button>
+      </section> : null}
     </div>
   );
 }
 
-function tabStatusDotClassName(status: string) {
-  switch (status) {
-    case "completed":
-      return "bg-emerald-300";
-    case "running":
-    case "queued":
-      return "bg-cyan-300";
-    case "stalled":
-      return "bg-amber-300";
-    case "cancelled":
-      return "bg-rose-300";
-    default:
-      return "bg-slate-500";
-  }
-}
-
-function isPendingTaskBootstrapStage(bootstrapStage: string | null) {
+function TaskActions({ children }: { children: (dismiss: () => void) => React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as globalThis.Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
   return (
-    bootstrapStage === "submitting" ||
-    bootstrapStage === "admission-unknown" ||
-    bootstrapStage === "accepted" ||
-    bootstrapStage === "waiting-for-heartbeat" ||
-    bootstrapStage === "waiting-for-runtime" ||
-    bootstrapStage === "runtime-observed"
+    <div ref={ref} className="nodrag nopan relative shrink-0" onKeyDown={(event) => {
+      if (event.key !== "Escape" || !open) return;
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    }}>
+      <button ref={trigger} type="button" aria-expanded={open} aria-label="Task actions"
+        className={cn(controlClass, "size-8 border-transparent")} onClick={(event) => { event.stopPropagation(); setOpen(!open); }}><MoreHorizontal className="size-[18px]" /></button>
+      {open ? <div className="absolute right-0 top-[calc(100%+5px)] z-40 w-[178px] rounded-xl border border-[var(--task-line)] bg-[var(--task-surface)] p-1.5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}>{children(() => setOpen(false))}</div> : null}
+    </div>
   );
 }
 
-function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: number, isAborted: boolean) {
-  if (isAborted) {
-    return "dispatch aborted";
-  }
-
-  switch (bootstrapStage) {
-    case "submitting":
-      return "confirming session and run admission";
-    case "admission-unknown":
-      return "admission unconfirmed · refresh before retrying";
-    case "accepted":
-      return "dispatch accepted";
-    case "waiting-for-heartbeat":
-      return "waiting for first heartbeat";
-    case "waiting-for-runtime":
-      return "waiting for first OpenClaw runtime";
-    case "runtime-observed":
-      return "waiting for output";
-    case "stalled":
-      return "working silently";
-    default:
-      return liveRunCount > 0 ? `${liveRunCount} live run${liveRunCount === 1 ? "" : "s"}` : "no live runs right now";
-  }
+function TaskStatus({ status }: { status: LiveTaskState }) {
+  const success = status === "Running" || status === "Completed";
+  const warning = status === "Needs approval" || status === "Blocked" || status === "Needs review";
+  const failed = status === "Failed";
+  const Icon = status === "Completed" ? Check : failed || warning ? AlertTriangle : Circle;
+  return <span className={cn("inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold leading-none",
+    success ? "bg-[var(--task-good-bg)] text-[var(--task-good)]" : warning ? "bg-[var(--task-warn-bg)] text-[var(--task-warn)]" :
+      failed ? "bg-[var(--task-bad-bg)] text-[var(--task-danger)]" : "bg-[var(--task-tool)] text-[var(--task-muted)]")}>
+    <Icon className={cn("size-3 shrink-0", status === "Running" && "size-2 fill-current")} aria-hidden="true" />{status}
+  </span>;
 }
 
-function readTaskPromptText(task: TaskFlowNode["data"]["task"]) {
-  return task.mission?.trim() || task.title.trim() || "Untitled task";
+function TaskProgress({ queued }: { queued: boolean }) {
+  return <div role="progressbar" aria-label={queued ? "Waiting for task start" : "Task in progress"} data-queued={queued} className={cn(styles.progress, "mt-2.5")} />;
 }
 
-function formatElapsedFromIso(value: string | null, referenceTimeMs: number) {
-  if (!value) {
-    return null;
-  }
-
-  const timestamp = Date.parse(value);
-
-  if (Number.isNaN(timestamp)) {
-    return null;
-  }
-
-  const elapsedMs = Math.max(referenceTimeMs - timestamp, 0);
-  const seconds = Math.floor(elapsedMs / 1000);
-
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+function TaskTiming({ start, updatedAt, active, compact = false }: { start: string | null; updatedAt: number | null; active: boolean; compact?: boolean }) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active || !start) return;
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [active, start]);
+  const end = active && now ? now : Date.parse(validTimestamp(updatedAt) ?? "");
+  if (!start || !Number.isFinite(end)) return null;
+  const elapsed = Math.max(0, Math.floor((end - Date.parse(start)) / 1000));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor(elapsed / 60) % 60;
+  const seconds = elapsed % 60;
+  return <span className="inline-flex shrink-0 items-center gap-1 tabular-nums text-[var(--task-muted)]" title="Elapsed time">
+    {!compact ? <Clock3 className="size-3.5" aria-hidden="true" /> : null}
+    {hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, "0")}s` : `${seconds}s`}
+  </span>;
 }
 
-function resolveFollowUpRuntimes(followUp: SubmittedTaskFollowUp, runs: RuntimeActivityRecord[]) {
-  const runId = followUp.runId?.trim();
-
-  if (runId) {
-    const exactMatches = runs.filter((runtime) => runtime.runId === runId || runtime.id === runId || readMetadataString(runtime.metadata, "runId") === runId);
-
-    if (exactMatches.length > 0) {
-      return exactMatches.sort((left, right) => timestampNumberToMs(right.updatedAt) - timestampNumberToMs(left.updatedAt));
-    }
-  }
-
-  const createdAtMs = Date.parse(followUp.createdAt);
-  const sessionId = followUp.sessionId?.trim();
-  const candidates = runs
-    .filter((runtime) => {
-      const runtimeUpdatedAt = timestampNumberToMs(runtime.updatedAt);
-      const afterFollowUp = Number.isNaN(createdAtMs) || runtimeUpdatedAt === 0 || runtimeUpdatedAt >= createdAtMs - 5000;
-      const sameSession = !sessionId || runtime.sessionId === sessionId || runtime.key.includes(sessionId);
-      return afterFollowUp && sameSession;
-    })
-    .sort((left, right) => timestampNumberToMs(right.updatedAt) - timestampNumberToMs(left.updatedAt));
-
-  return candidates;
+function formatTime(value: string | null) {
+  return value ? new Date(value).toLocaleTimeString("en-US", dateFormat) : null;
 }
 
-function resolveRepresentativeFollowUpRuntime(runtimes: RuntimeActivityRecord[]) {
-  return (
-    runtimes.find((runtime) => hasMeaningfulRuntimeSubtitle(runtime)) ??
-    runtimes.find((runtime) => runtime.status === "completed") ??
-    runtimes[0] ??
-    null
-  );
-}
-
-function resolveBestFollowUpOutput(outputs: RuntimeOutputRecord[]) {
-  return (
-    outputs.find((output) => output.finalText?.trim()) ??
-    outputs.find((output) => output.errorMessage?.trim()) ??
-    outputs[0] ??
-    null
-  );
-}
-
-function filterFollowUpFeed(
-  followUp: SubmittedTaskFollowUp,
-  runtimes: RuntimeActivityRecord[],
-  feed: TaskFeedEvent[]
-) {
-  if (runtimes.length > 0) {
-    const runtimeIds = new Set(runtimes.map((runtime) => runtime.id));
-    const runIds = new Set(runtimes.map((runtime) => runtime.runId).filter((value): value is string => Boolean(value)));
-    return feed.filter((event) => {
-      if (event.runtimeId && runtimeIds.has(event.runtimeId)) {
-        return true;
-      }
-
-      return Boolean(event.runtimeId && runIds.has(event.runtimeId));
-    });
-  }
-
-  const createdAtMs = Date.parse(followUp.createdAt);
-  if (Number.isNaN(createdAtMs)) {
-    return [];
-  }
-
-  return feed.filter((event) => {
-    const eventTimestamp = Date.parse(event.timestamp);
-    return !Number.isNaN(eventTimestamp) && eventTimestamp >= createdAtMs - 5000;
-  });
-}
-
-function createFollowUpOptimisticFeed(followUp: SubmittedTaskFollowUp): TaskFeedEvent[] {
-  return [
-    {
-      id: `${followUp.id}:submitted`,
-      kind: "user",
-      timestamp: followUp.createdAt,
-      title: followUp.runId ? "Follow-up run started" : "Follow-up accepted",
-      detail: followUp.runId
-        ? `OpenClaw accepted this follow-up as run ${followUp.runId}. Waiting for live output.`
-        : "OpenClaw accepted this follow-up. Waiting for the run to appear in the live feed.",
-      runtimeId: followUp.runId ?? undefined
-    }
-  ];
-}
-
-function resolveFollowUpStatus(
-  followUp: SubmittedTaskFollowUp,
-  runtime: RuntimeActivityRecord | null,
-  output: RuntimeOutputRecord | null | undefined,
-  runtimes: RuntimeActivityRecord[] = []
-) {
-  const status = normalizeRuntimeStatus(followUp.status);
-  if (status && status !== "running") {
-    return status;
-  }
-
-  if (output?.finalText || followUp.summary) {
-    return "completed";
-  }
-
-  if (runtime?.status === "completed" && hasMeaningfulRuntimeSubtitle(runtime)) {
-    return "completed";
-  }
-
-  if (runtimes.some((entry) => entry.status === "cancelled")) {
-    return "cancelled";
-  }
-
-  if (runtimes.some((entry) => entry.status === "stalled")) {
-    return "stalled";
-  }
-
-  if (runtimes.some((entry) => entry.status === "completed")) {
-    return "completed";
-  }
-
-  if (runtime?.status === "queued" || runtimes.some((entry) => entry.status === "queued")) {
-    return "queued";
-  }
-
-  if (runtimes.some((entry) => entry.status === "running") && isFollowUpRuntimeGroupStale(runtimes)) {
-    return "stalled";
-  }
-
-  return "running";
-}
-
-function isFollowUpRuntimeGroupStale(runtimes: RuntimeActivityRecord[]) {
-  const latestUpdatedAt = Math.max(...runtimes.map((runtime) => timestampNumberToMs(runtime.updatedAt)));
-  return latestUpdatedAt > 0 && Date.now() - latestUpdatedAt > FOLLOW_UP_STALE_MS;
-}
-
-function resolveFollowUpResultText(
-  followUp: SubmittedTaskFollowUp,
-  runtime: RuntimeActivityRecord | null,
-  output: RuntimeOutputRecord | null | undefined
-) {
-  const finalText = output?.finalText?.trim();
-  if (finalText) {
-    return finalText;
-  }
-
-  const errorMessage = output?.errorMessage?.trim();
-  if (errorMessage) {
-    return errorMessage;
-  }
-
-  const runtimeSubtitle = runtime?.subtitle?.trim();
-  if (runtime && runtimeSubtitle && hasMeaningfulRuntimeSubtitle(runtime)) {
-    return runtimeSubtitle;
-  }
-
-  const message = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
-
-  if (runtime || followUp.runId) {
-    return [
-      "Operator follow-up:",
-      message,
-      "",
-      "OpenClaw accepted this follow-up and AgentOS is tracking the live run.",
-      "No agent answer has been captured yet."
-    ].join("\n");
-  }
-
-  return formatFollowUpDetail(followUp);
-}
-
-function resolveFollowUpFooterLabel(
-  followUp: SubmittedTaskFollowUp,
-  runtime: RuntimeActivityRecord | null,
-  output: RuntimeOutputRecord | null | undefined,
-  runtimes: RuntimeActivityRecord[] = []
-) {
-  const status = resolveFollowUpStatus(followUp, runtime, output, runtimes);
-
-  switch (status) {
-    case "queued":
-      return "follow-up queued";
-    case "running":
-      return "follow-up running";
-    case "completed":
-      return "follow-up completed";
-    case "stalled":
-      return "follow-up stalled";
-    case "cancelled":
-      return "follow-up cancelled";
-    default:
-      return "follow-up";
-  }
-}
-
-function buildTaskCardInspectorContext(
-  taskId: string,
-  followUp: SubmittedTaskFollowUp,
-  followUpIndex: number,
-  cardNumber: number
-): TaskCardInspectorContext {
-  const message = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
-  return {
-    taskId,
-    cardNumber,
-    followUpIndex,
-    message,
-    runId: followUp.runId ?? null,
-    sessionId: followUp.sessionId ?? null,
-    status: followUp.status ?? null,
-    summary: followUp.summary ?? null,
-    createdAt: followUp.createdAt
-  };
-}
-
-function normalizeRuntimeStatus(value: string | null | undefined): RuntimeActivityRecord["status"] | null {
-  switch (value) {
-    case "queued":
-    case "running":
-    case "idle":
-    case "completed":
-    case "stalled":
-    case "cancelled":
-      return value;
-    case "timeout":
-    case "timed_out":
-    case "failed":
-    case "error":
-      return "stalled";
-    default:
-      return null;
-  }
-}
-
-function timestampNumberToMs(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return 0;
-  }
-
-  return value > 1_000_000_000_000 ? value : value * 1000;
-}
-
-function readMetadataString(metadata: Record<string, unknown>, key: string) {
-  const value = metadata[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function hasMeaningfulRuntimeSubtitle(runtime: RuntimeActivityRecord) {
-  const value = runtime.subtitle.trim().toLowerCase();
-  return Boolean(value && !["chat", "agent", "sessions.changed", "session.message", "openclaw runtime event", "gateway runtime event"].includes(value));
-}
-
-function resolveFeedEventColor(kind: string, isError?: boolean) {
-  if (isError) return "bg-red-400";
-  switch (kind) {
-    case "status":
-      return "bg-slate-400";
-    case "assistant":
-      return "bg-cyan-400";
-    case "tool":
-      return "bg-indigo-400";
-    case "artifact":
-      return "bg-emerald-400";
-    case "warning":
-      return "bg-amber-400";
-    case "user":
-      return "bg-pink-400";
-    default:
-      return "bg-slate-500";
-  }
-}
-
-function readTaskFeedEvents(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [] as TaskFeedEvent[];
-  }
-
-  return value
-    .filter(isTaskFeedEvent)
-    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-}
-
-function mergeTaskFeedEvents(...eventGroups: TaskFeedEvent[][]) {
-  const byId = new Map<string, TaskFeedEvent>();
-
-  for (const event of eventGroups.flat()) {
-    byId.set(event.id, event);
-  }
-
-  return [...byId.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
-}
-
-function mergeLocalTaskReviewMetadata(
-  streamedTask: TaskFlowNode["data"]["task"] | undefined,
-  localTask: TaskFlowNode["data"]["task"]
-) {
-  if (!streamedTask) {
-    return localTask;
-  }
-
-  const reviewMetadata = Object.fromEntries(
-    ["reviewStatus", "reviewAction", "reviewedAt", "reviewEvents"]
-      .map((key) => [key, localTask.metadata[key]])
-      .filter(([, value]) => value !== undefined)
-  );
-
-  if (Object.keys(reviewMetadata).length === 0) {
-    return streamedTask;
-  }
-
-  return {
-    ...streamedTask,
-    metadata: {
-      ...streamedTask.metadata,
-      ...reviewMetadata
-    }
-  };
-}
-
-function formatTimeOnly(iso: string) {
-  try {
-    const date = new Date(iso);
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    });
-  } catch {
-    return "";
-  }
-}
-
-function isTaskFeedEvent(value: unknown): value is TaskFeedEvent {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as TaskFeedEvent).id === "string" &&
-    typeof (value as TaskFeedEvent).kind === "string" &&
-    typeof (value as TaskFeedEvent).timestamp === "string" &&
-    typeof (value as TaskFeedEvent).title === "string" &&
-    typeof (value as TaskFeedEvent).detail === "string"
-  );
-}
-
-function isRunnerLogTaskEvent(event: TaskFeedEvent) {
-  return event.id.startsWith("runner-log:");
-}
-
-function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
-  return [...feed]
-    .reverse()
-    .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
-}
-
-function readTaskActivitySummary(event?: TaskFeedEvent) {
-  if (!event) return null;
-  if (event.isError || event.kind === "warning") return "The agent reported an issue. Check activity for details.";
-  if (event.kind === "artifact") return "The agent added a file.";
-  switch (event.toolName) {
-    case "read": return "Latest activity: reading a workspace file.";
-    case "write":
-    case "edit": return "Latest activity: updating a workspace file.";
-    case "web_search":
-    case "web_fetch":
-    case "browser": return "Latest activity: checking online sources.";
-    default: return "The agent is using tools to complete the task.";
-  }
-}
-
-function formatPrimaryActionLabel(action: ReturnType<typeof resolveTaskCardPrimaryAction>) {
-  switch (action) {
-    case "open-live-activity":
-      return "Open live activity";
-    case "view-result":
-      return "View result";
-    case "review-result":
-      return "Review result";
-    default:
-      return "View details";
-  }
-}
-
-function resolvePrimaryActionClass(action: ReturnType<typeof resolveTaskCardPrimaryAction>, surfaceTheme: "dark" | "light") {
-  if (action === "review-result") {
-    return surfaceTheme === "light"
-      ? "bg-amber-600 text-white hover:bg-amber-700"
-      : "bg-amber-300 text-amber-950 hover:bg-amber-200";
-  }
-
-  return surfaceTheme === "light"
-    ? "bg-[#342820] text-white hover:bg-[#4b382d]"
-    : "bg-white text-slate-950 hover:bg-slate-100";
+function readTaskFeedEvents(value: unknown): TaskFeedEvent[] {
+  return Array.isArray(value) ? value.filter((item): item is TaskFeedEvent => Boolean(item && typeof item === "object" && typeof item.id === "string" && typeof item.detail === "string" && typeof item.timestamp === "string")) : [];
 }
 
 type OperationRunTimelineEntry = {
@@ -1661,23 +558,4 @@ function TaskMenuButton({
       <span>{label}</span>
     </button>
   );
-}
-
-function resolveTaskDispatchStatus(task: TaskFlowNode["data"]["task"]) {
-  return typeof task.metadata.dispatchStatus === "string" ? task.metadata.dispatchStatus : null;
-}
-
-function isTaskAborted(task: TaskFlowNode["data"]["task"]) {
-  const dispatchStatus = resolveTaskDispatchStatus(task);
-  const runtimeStatus = task.status as string;
-  return dispatchStatus === "cancelled" || dispatchStatus === "aborted" || runtimeStatus === "cancelled" || runtimeStatus === "aborted";
-}
-
-function isTaskAbortable(task: TaskFlowNode["data"]["task"]) {
-  if (isTaskAborted(task)) {
-    return false;
-  }
-
-  const runtimeStatus = task.status as string;
-  return runtimeStatus === "running" || runtimeStatus === "queued";
 }

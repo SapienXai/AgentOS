@@ -1403,7 +1403,7 @@ test("Mission Control keeps model assignment in the agent connection menu and mo
 
   assert.match(agentNodeSource, /label="Change Model"/);
   assert.match(agentNodeSource, /data\.onConfigureModel\?\.\(data\.agent\.id\)/);
-  assert.match(taskNodeSource, /isCompactMonitor \? "w-\[206px\]/);
+  assert.match(taskNodeSource, /monitor \? "w-\[206px\]/);
   assert.match(taskNodeSource, /aria-label=\{[\s\S]*?"Expand monitor details"/);
 });
 

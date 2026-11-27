@@ -377,6 +377,7 @@ export function buildCanvasGraph(
           selected: false,
           data: {
             task,
+            employee: agent,
             surfaceTheme,
             agentThemeRgb,
             workspacePath: workspace.path,

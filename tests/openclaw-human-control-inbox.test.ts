@@ -497,8 +497,9 @@ test("inbox reads native attention families in parallel without per-item calls",
 test("ambiguous native approval resolution reconciles without a blind retry", async () => {
   let listCalls = 0;
   let resolveCalls = 0;
-  const result = await resolveAttentionItem("approval:exec:approval-1", "approve", {}, {
-    listNativeExecApprovals: async () => {
+  const adapter = {
+    async listNativeExecApprovals() {
+      assert.equal(this, adapter);
       listCalls += 1;
       return listCalls === 1 ? { approvals: [{ id: "approval-1", request: {} }] } : { approvals: [] };
     },
@@ -506,7 +507,8 @@ test("ambiguous native approval resolution reconciles without a blind retry", as
       resolveCalls += 1;
       throw new Error("Gateway request timed out after send");
     }
-  } as never);
+  };
+  const result = await resolveAttentionItem("approval:exec:approval-1", "approve", {}, adapter as never);
   assert.deepEqual(result, { reconciled: true, status: "resolved" });
   assert.equal(resolveCalls, 1);
   assert.equal(listCalls, 2);

@@ -1451,6 +1451,7 @@ export interface RuntimeOutputItem {
   timestamp: string;
   text: string;
   toolName?: string;
+  toolCallId?: string;
   stopReason?: string | null;
   errorMessage?: string | null;
   isError?: boolean;
@@ -1793,6 +1794,26 @@ export type TaskDetailStreamEvent =
   | {
       type: "task";
       detail: TaskDetailRecord;
+      attention?: AttentionItem[];
+      artifacts?: TaskStreamArtifact[];
+    }
+  | {
+      type: "assistant";
+      runId: string;
+      sequence: number | null;
+      text: string;
+      replace: boolean;
+      timestamp: string;
+      done: boolean;
+    }
+  | {
+      type: "tool";
+      runId: string;
+      toolCallId: string;
+      name: string;
+      phase: "start" | "result";
+      failed: boolean;
+      timestamp: string;
     }
   | {
       type: "ready";
@@ -1803,6 +1824,8 @@ export type TaskDetailStreamEvent =
       type: "error";
       error: string;
     };
+
+export type TaskStreamArtifact = { id: string; label: string; href?: string; timestamp: string };
 
 export type OpenClawOnboardingPhase =
   | "detecting"

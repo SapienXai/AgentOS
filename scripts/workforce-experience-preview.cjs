@@ -20,6 +20,7 @@ const connect = process.argv.includes("--connect");
 const verifyNativeKnowledge = process.argv.includes("--native-knowledge");
 const verifyNativeMcp = process.argv.includes("--native-mcp");
 const livingWorkforce = process.argv.includes("--living-workforce");
+const liveTaskCard = process.argv.includes("--live-task-card");
 const suggested = process.argv.includes("--suggested");
 const fresh = connect || suggested || process.argv.includes("--fresh");
 const { enableInstanceProtection, loginToInstance, INSTANCE_PROTECTION_COOKIE } = require(repo + "/lib/security/instance-protection.ts");
@@ -538,6 +539,132 @@ async function run() {
           await page.locator(".react-flow").first().screenshot({ path: path.join(output, key + "-canvas-region.png"), animations: "disabled" });
           await writeFile(path.join(output, key + "-canvas.json"), JSON.stringify(graph, null, 2) + "\n");
         });
+
+        if (liveTaskCard && livingWorkforce) {
+          const research = page.getByRole("button", { name: /Open task conversation: Draft a short research brief/ });
+          const card = page.getByTestId("live-task-node").filter({ has: page.locator('button[aria-label^="Open task conversation: Draft a short research brief"]') });
+          const graphPosition = () => card.locator("xpath=..").evaluate((node) => node.style.transform);
+          let position;
+          await record("task-card-compact", async () => {
+            await expect(research).toBeInViewport();
+            await expect(card.getByText("Completed", { exact: true })).toBeVisible();
+            position = await graphPosition();
+          });
+          await record("task-card-conversation", async () => {
+            const openedAt = performance.now();
+            await research.click();
+            const conversation = card.getByRole("region", { name: "Task conversation" });
+            await expect(conversation.getByText(/The combined count is 20/)).toHaveCount(1, { timeout: 15_000 });
+            await expect(conversation.getByRole("link", { name: "Download studio-summary.csv" })).toBeVisible();
+            timings["task-card-conversation"] = Math.round(performance.now() - openedAt);
+            await expect(card.getByRole("textbox", { name: "Additional task instruction" })).toBeInViewport({ ratio: .95 });
+            assert.equal(await graphPosition(), position, "Expanding the card moved its canvas node.");
+            await conversation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+          });
+          await record("task-card-collapse-restore", async () => {
+            const draft = card.getByRole("textbox", { name: "Additional task instruction" });
+            const conversation = card.getByRole("region", { name: "Task conversation" });
+            const scrollOffset = () => conversation.evaluate((element) => element.scrollTop);
+            await conversation.evaluate((element) => { element.scrollTop = 16; });
+            const before = await scrollOffset();
+            await draft.fill("A draft that stays on this task.");
+            const close = card.getByRole("button", { name: "Collapse task conversation" });
+            await close.press("Escape");
+            await expect(research).toBeFocused();
+            await research.press("Enter");
+            await expect(draft).toHaveValue("A draft that stays on this task.");
+            await expect.poll(scrollOffset).toBe(before);
+            assert.equal(await graphPosition(), position, "Reopening the card moved its canvas node.");
+            await draft.fill("");
+            await close.click();
+          });
+          if (theme === "dark" && size.width === 1440) {
+            const goal = "Validate the live task stream for the evening edition.";
+            await record("task-card-native-stream", async () => {
+              const dispatched = await fetch(base + "/api/mission", { method: "POST", headers, body: JSON.stringify({
+                mission: goal, workspaceId: first.workspaceId, agentId: worker.id, requestId: "live-card-stream" }) });
+              const result = await dispatched.json();
+              assert(dispatched.ok && result.dispatchId, "Native test task was not admitted.");
+              await go("/mission-control");
+              const openTask = page.getByRole("button", { name: `Open task conversation: ${goal}`, exact: true });
+              await openTask.press("Enter", { timeout: 10_000 });
+              const panel = page.getByRole("region", { name: goal, exact: true });
+              await expect(panel.getByRole("progressbar", { name: "Task in progress" })).toBeVisible({ timeout: 8_000 });
+              await expect(panel.locator('[data-task-message="streaming"]')).toContainText("The first source is verified.", { timeout: 12_000 });
+              await screenshot("task-card-streaming-partial");
+              const message = "Keep the editorial scope to a single edition.";
+              await panel.getByRole("textbox", { name: "Additional task instruction" }).fill(message);
+              const control = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/control"));
+              await panel.getByRole("button", { name: "Send task instruction" }).click();
+              const response = await control;
+              const receipt = await response.json();
+              assert.equal(response.request().postDataJSON().action, "steer");
+              assert(response.ok() && receipt.result?.target?.sessionKey?.endsWith(result.dispatchId), receipt.error || "Native instruction targeted a different task.");
+              await expect(panel.getByText(message, { exact: true })).toBeVisible();
+              const sessionKey = receipt.result.target.sessionKey;
+              const question = await nativeClient.callNative("question.request", {
+                sessionKey, agentId: worker.id, questions: [{ questionId: "edition", header: "Edition", question: "Which edition should be checked?", options: [{ label: "Evening" }, { label: "Morning" }] }], timeoutMs: 30_000
+              }, { timeoutMs: 5_000, allowCliFallback: false });
+              assert(question.id, "OpenClaw did not create the fixture question.");
+              await panel.getByRole("button", { name: "Evening", exact: true }).click({ timeout: 15_000 });
+              const answered = page.waitForResponse((request) => request.request().method() === "POST" && request.url().endsWith("/api/human-control/action"));
+              await panel.getByRole("button", { name: "Answer", exact: true }).click();
+              const answerResponse = await answered;
+              assert(answerResponse.ok(), (await answerResponse.json()).error || "OpenClaw rejected the question answer.");
+              const resolved = await nativeClient.callNative("question.waitAnswer", { id: question.id, timeoutMs: 5_000 }, { timeoutMs: 8_000 });
+              assert.equal(resolved.status, "answered");
+              const approval = await nativeClient.callNative("exec.approval.request", {
+                sessionKey, agentId: worker.id, command: "echo AGENTOS_TASK_CARD_APPROVAL_PROOF", ask: "always",
+                twoPhase: true, requireDeliveryRoute: false, suppressDelivery: true
+              }, { timeoutMs: 5_000, allowCliFallback: false });
+              assert(approval.id, "OpenClaw did not create the fixture approval.");
+              const approvalCard = panel.getByRole("region", { name: "Approval required", exact: true });
+              await expect(approvalCard).toBeVisible({ timeout: 10_000 });
+              await screenshot("task-card-approval");
+              await approvalCard.getByRole("button", { name: "Deny", exact: true }).click();
+              await expect(approvalCard).toBeHidden();
+              const approvals = await nativeClient.callNative("exec.approval.list", {}, { timeoutMs: 5_000 });
+              assert(!approvals.some((entry) => entry.id === approval.id), "The denied native approval is still pending.");
+              await expect(panel.getByText(/The evening edition matches the source totals/).first()).toBeVisible({ timeout: 20_000 });
+            });
+            await record("task-card-native-cancellation", async () => {
+              const cancelGoal = "WORKFORCE_ACCEPTANCE_CANCEL — Stop this isolated research run.";
+              const admitted = await fetch(base + "/api/mission", { method: "POST", headers, body: JSON.stringify({
+                mission: cancelGoal, workspaceId: first.workspaceId, agentId: worker.id, requestId: "live-card-cancel" }) });
+              assert(admitted.ok, "The cancellation fixture task was not admitted.");
+              await go("/mission-control");
+              const openTask = page.getByRole("button", { name: `Open task conversation: ${cancelGoal}`, exact: true });
+              await openTask.press("Enter", { timeout: 10_000 });
+              const panel = page.getByRole("region", { name: cancelGoal, exact: true });
+              await panel.getByRole("button", { name: "Stop task", exact: true }).click({ timeout: 8_000 });
+              const confirmation = page.getByRole("dialog", { name: "Stop task?", exact: true });
+              const stopped = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/abort"));
+              await confirmation.getByRole("button", { name: "Stop task", exact: true }).click();
+              const receipt = await (await stopped).json();
+              assert.equal(receipt.result?.cancellationStatus, "confirmed");
+              await expect(panel.getByText("Cancelled", { exact: true })).toBeVisible({ timeout: 12_000 });
+              await expect(panel.getByRole("progressbar")).toHaveCount(0);
+            });
+            await record("task-card-native-failure-retry", async () => {
+              const failureGoal = "WORKFORCE_ACCEPTANCE_CHILD_PROVIDER_ERROR — Check a source with a rejected provider request.";
+              const admitted = await fetch(base + "/api/mission", { method: "POST", headers, body: JSON.stringify({
+                mission: failureGoal, workspaceId: first.workspaceId, agentId: worker.id, requestId: "live-card-provider-error" }) });
+              assert(admitted.ok, "The provider-error fixture task was not admitted.");
+              await go("/mission-control");
+              const openTask = page.getByRole("button", { name: `Open task conversation: ${failureGoal}`, exact: true });
+              await openTask.press("Enter", { timeout: 10_000 });
+              const panel = page.getByRole("region", { name: failureGoal, exact: true });
+              await expect(panel.getByText("Failed", { exact: true })).toBeVisible({ timeout: 15_000 });
+              await screenshot("task-card-failed");
+              await panel.getByRole("button", { name: "Prepare retry", exact: true }).click();
+              await expect(page.getByRole("textbox", { name: "What should this agent accomplish?" })).toHaveValue(failureGoal);
+              await page.getByRole("button", { name: "Task options", exact: true }).click();
+              await expect(page.getByRole("button", { name: "Balanced", exact: true })).toHaveAttribute("aria-pressed", "true");
+            });
+          }
+          await context.close();
+          continue;
+        }
 
         await record("canvas-zoom", async () => {
           const transform = page.locator(".react-flow__viewport");

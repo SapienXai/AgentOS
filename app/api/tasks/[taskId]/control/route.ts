@@ -15,6 +15,7 @@ const controlRequestSchema = z.object({
   action: z.enum(["steer", "inject", "continue"]),
   message: z.string().trim().min(1).max(12000),
   dispatchId: z.string().trim().min(1).optional().nullable(),
+  taskSessionOnly: z.boolean().optional(),
   idempotencyKey: z.string().trim().min(1).max(240).optional().nullable()
 });
 

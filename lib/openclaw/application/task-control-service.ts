@@ -8,8 +8,9 @@ import {
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
-import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
+import { hasScopedTaskSession, resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
 import { readExecutionIdentity } from "@/lib/openclaw/domains/execution-identity";
+import { findTaskReasoningModel, resolveBalancedTaskThinking } from "@/lib/openclaw/task-reasoning";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
@@ -20,6 +21,7 @@ export interface RunningTaskControlInput {
   message: string;
   dispatchId?: string | null;
   idempotencyKey?: string | null;
+  taskSessionOnly?: boolean;
 }
 
 export interface RunningTaskControlResult {
@@ -50,7 +52,7 @@ export interface RunningTaskControlTarget {
 }
 
 type TaskControlAdapter = Pick<OpenClawAdapter, "steerSession" | "injectChat"> &
-  Partial<Pick<OpenClawAdapter, "runAgentTurn">>;
+  Partial<Pick<OpenClawAdapter, "runAgentTurn" | "listSessions">>;
 
 type TaskControlDeps = {
   adapter?: TaskControlAdapter;
@@ -73,8 +75,22 @@ export async function controlRunningTaskSession(
 
   const loadTaskDetail = deps.getTaskDetail ?? getTaskDetail;
   const taskDetail = await loadTaskDetail(taskId, { dispatchId: input.dispatchId ?? null });
+  if (input.taskSessionOnly && !hasScopedTaskSession(resolveTaskFollowUpContext(taskDetail.task))) {
+    throw new Error("OpenClaw has not confirmed a dedicated session for this task.");
+  }
   const target = resolveRunningTaskControlTarget(taskDetail);
   const adapter = deps.adapter ?? getOpenClawAdapter();
+
+  if (input.taskSessionOnly) {
+    if (!target.sessionKey || !target.sessionId || !adapter.listSessions) {
+      throw new Error("The task session could not be verified. Open the task again before sending.");
+    }
+    const { sessions } = await adapter.listSessions({ search: target.sessionKey, agentId: target.agentId ?? undefined, limit: 5 },
+      { ...gatewayOptions, allowCliFallback: false, timeoutMs: 5_000 });
+    if (!sessions.some((session) => session.key === target.sessionKey && session.sessionId === target.sessionId)) {
+      throw new Error("The OpenClaw task session changed. Reopen the task before sending.");
+    }
+  }
 
   if (input.action === "continue") {
     const result = await continueTaskSession(taskDetail, target, message, input, adapter, deps, gatewayOptions);
@@ -144,7 +160,7 @@ async function steerSession(
   const result = await adapter.steerSession(
     {
       key: target.sessionKey,
-      sessionId: target.sessionKey ? null : target.sessionId,
+      sessionId: input.taskSessionOnly || !target.sessionKey ? target.sessionId : null,
       agentId: target.agentId,
       message,
       idempotencyKey: resolveControlIdempotencyKey({
@@ -198,6 +214,8 @@ async function continueTaskSession(
     includeHidden: true
   }).catch(() => null);
   const dispatchId = taskDetail.task.dispatchId ?? null;
+  const agent = snapshot?.agents.find((entry) => entry.id === target.agentId);
+  const thinking = resolveBalancedTaskThinking(findTaskReasoningModel(snapshot?.models ?? [], agent?.modelId));
   const idempotencyKey = resolveContinuationIdempotencyKey({
     taskId: taskDetail.task.id,
     dispatchId,
@@ -210,7 +228,7 @@ async function continueTaskSession(
       sessionKey: target.sessionKey ?? undefined,
       sessionId: target.sessionId ?? undefined,
       message,
-      thinking: "medium",
+      thinking,
       timeoutSeconds: 45,
       workspace: resolveTaskWorkspacePath(taskDetail, snapshot),
       dispatchId,

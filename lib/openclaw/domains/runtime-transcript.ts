@@ -443,6 +443,7 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
             : role === "toolResult"
             ? entry.message.toolName?.trim() || extractToolNameFromTranscriptText(text)
             : undefined,
+        toolCallId: itemRole === "toolCall" ? toolCall?.id ?? undefined : role === "toolResult" ? entry.message.toolCallId : undefined,
         stopReason: role === "assistant" ? entry.message.stopReason ?? null : null,
         errorMessage,
         isWarning: Boolean(warningMessage),
@@ -501,6 +502,19 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
       }
 
       currentTurn.items.push(item);
+      if (role === "assistant" && Array.isArray(entry.message.content)) {
+        currentTurn.items.push(...entry.message.content.flatMap((block, index): RuntimeOutputItem[] =>
+          block.type === "toolCall" && typeof block.name === "string" && block.name.trim() &&
+          (itemRole !== "toolCall" || block.id !== toolCall?.id) ? [{
+            id: `${item.id}:tool:${index}`,
+            role: "toolCall",
+            timestamp: item.timestamp,
+            text: `Called ${block.name.trim()}`,
+            toolName: block.name.trim(),
+            toolCallId: block.id
+          }] : []
+        ));
+      }
       currentTurn.updatedAt = item.timestamp;
       currentTurn.errorMessage ||= errorMessage;
 
