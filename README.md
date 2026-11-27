@@ -350,6 +350,23 @@ https://192.168.1.124:8443 {
 
 Trust the Caddy local CA certificate on your phone before opening the link or scanning the QR code. Open **Settings → Access** at `http://localhost:3000` to turn on local network access. Keep the plain HTTP upstream bound to loopback and leave the private HTTPS port unforwarded on the router. For external hostnames, prefer a built AgentOS server so Next.js development-only asset and hot-reload origin rules do not affect mobile access.
 
+#### Private remote access with Tailscale
+
+Tailscale is optional. Install it on the AgentOS host and on the devices that need access. Connect them to the same tailnet and enable MagicDNS and HTTPS Certificates in Tailscale. Leave the host and AgentOS running and signed in to Tailscale.
+
+1. Start AgentOS on an explicit, stable IPv4 loopback port. For example, after `pnpm build`, run `pnpm start --hostname 127.0.0.1 --port 3000`. Keep this port dedicated to AgentOS while its Serve route is enabled.
+2. Set up Instance Protection and sign in as the owner from the host. In **Settings → Access → Remote Access — Tailscale**, choose **Enable remote access** and wait for the status check.
+3. Open the reported HTTPS link or scan the QR code on another Tailscale device. Sign in with your AgentOS account. AgentOS checks HTTPS from the host. Test the link from the phone to confirm its separate network path and access policy.
+4. Use **Disable remote access** to revoke AgentOS sign-in at the managed address and remove its Serve route. If Tailscale is disconnected, reconnect and retry removal. Disable the route before changing AgentOS’s listening port or turning off Instance Protection.
+
+AgentOS reads status with the official Tailscale CLI. Managed changes use the daemon’s Serve configuration revision so concurrent changes and existing OpenClaw, Funnel, and third-party routes are preserved. Tailscale owns HTTPS and connectivity. The feature does not configure the OpenClaw Gateway, Tailscale network policy, or public exposure.
+
+Managed operations require a Tailscale installation with an accessible native daemon socket and a supported Serve configuration revision. AgentOS supports the normal socket for Linux, the open-source macOS daemon, and the protected Windows daemon pipe where the AgentOS process has permission. macOS GUI variants and other installations without a supported socket can use Tailscale Serve manually. Inspect `tailscale serve status`, choose an unused HTTPS port, and follow the [official Serve guide](https://tailscale.com/docs/reference/tailscale-cli/serve) with your AgentOS loopback target. Add the resulting HTTPS address under **Trusted HTTPS addresses**. If the desktop app assigns a new port on each launch, use AgentOS CLI or a source server on a fixed port for persistent remote access.
+
+OpenClaw’s [native Tailscale integration](https://docs.openclaw.ai/gateway/tailscale) separately publishes the Gateway and its Control UI. AgentOS manages only its web UI route.
+
+To verify your setup from a phone, sign in, reload to check the session, and try a streamed chat, a task in Mission Control, and a Knowledge file. Switch the phone from Wi-Fi to cellular with Tailscale connected and reopen the same link. Restart the AgentOS host, reopen the link again, then disable remote access from the host and confirm that the phone’s existing session can no longer use that address.
+
 Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and persistent trusted hosts, including the documented Railway container, but not serverless-only deployment. Desktop-only actions such as revealing a host file in Finder do not become remote desktop features on Railway.
 
 ## Compatibility

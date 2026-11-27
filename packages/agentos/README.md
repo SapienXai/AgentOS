@@ -79,6 +79,12 @@ Security:
 - API routes are centrally protected, and remote Gateway URLs are blocked by default unless explicitly allowed with `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1`.
 - Sensitive local config/auth files are written with owner-only permissions where applicable.
 
+### Private remote access
+
+Run AgentOS on a fixed loopback port, for example `agentos start --host 127.0.0.1 --port 3000`. Enable Instance Protection and sign in as the owner on the host. Under **Settings → Access → Remote Access — Tailscale**, enable remote access and open the reported HTTPS link on a device connected to the same Tailscale network.
+
+For MagicDNS, HTTPS Certificates, manual Serve setup and revocation, see the [private remote access guide](https://github.com/SapienXai/AgentOS#private-remote-access-with-tailscale).
+
 Compatibility:
 
 - Requires Node.js 24.22.1+ or 26.12.1+; Node.js 26.12.1+ is recommended.
