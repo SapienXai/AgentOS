@@ -2,16 +2,16 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.10-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-27T11:04:00.424Z",
-  "certifiedAt": "2026-11-27T11:04:00.424Z",
-  "agentosHead": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
+  "generatedAt": "2026-11-27T11:26:59.081Z",
+  "certifiedAt": "2026-11-27T11:26:59.081Z",
+  "agentosHead": "ab3ec4f7970c8f793de1f5aa5895c66b5594f6fc",
   "openclawVersion": "2026.11.10",
   "openclawSourceSha": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
   "upstreamEvidenceHashes": {},
   "contractAudit": null,
   "compatibility": {
     "report": {
-      "generatedAt": "2026-11-27T11:04:00.080Z",
+      "generatedAt": "2026-11-27T11:26:58.758Z",
       "target": {
         "name": "simulated-stable",
         "kind": "simulated",
@@ -3801,8 +3801,8 @@
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
-    "evidenceCommit": "3074e8fb8453f60eab721448a1de5a8393c7fb3e",
+    "certifiedCodeHead": "ab3ec4f7970c8f793de1f5aa5895c66b5594f6fc",
+    "evidenceCommit": "4679f5e01d5d9dc33cb0e9b07e081d1a6c5e4f7b",
     "branch": "main",
     "node": "v24.22.1",
     "openClaw": {
