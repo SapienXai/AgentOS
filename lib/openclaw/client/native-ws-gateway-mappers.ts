@@ -134,6 +134,7 @@ export function buildChatHistoryParams(input: OpenClawSessionHistoryInput = {}) 
   return {
     sessionKey: reference.key,
     limit: input.limit,
+    ...(input.inputRunIds?.length ? { inputRunIds: input.inputRunIds } : {}),
     cursor: input.cursor ?? undefined
   };
 }
@@ -184,7 +185,7 @@ export function buildSessionSteerParams(input: OpenClawSessionSteerInput) {
     agentId: input.agentId?.trim() || undefined,
     sessionId: input.sessionId?.trim() || undefined,
     message: input.message,
-    queueMode: "steer" as const,
+    queueMode: input.queueMode ?? ("steer" as const),
     idempotencyKey: input.idempotencyKey?.trim() || createRequestId()
   };
 }

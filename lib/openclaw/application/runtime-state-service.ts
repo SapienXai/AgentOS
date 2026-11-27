@@ -19,6 +19,7 @@ import {
 } from "@/lib/openclaw/domains/runtime-normalizer";
 import { mapOpenClawTaskStatus } from "@/lib/openclaw/domains/task-status";
 import { workspaceIdFromPath } from "@/lib/openclaw/domains/workspace-id";
+import { redactSecretText } from "@/lib/security/redaction";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { RuntimeCreatedFile, RuntimeRecord } from "@/lib/openclaw/types";
 
@@ -149,6 +150,22 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   const payloadMetadata = readNestedRecord(payload, "metadata");
   const eventName = readString(frame.event) ?? readString(payload.type) ?? "event";
   const task = eventName === "task" ? readNestedRecord(payload, "task") : null;
+  const eventData = readNestedRecord(payload, "data");
+  const executionPhase = eventName === "chat" ? readString(payload.state)
+    : eventName === "agent" && payload.stream === "lifecycle" ? readString(eventData?.phase) : null;
+  const executionStatus = executionPhase === "final" ? "completed"
+    : executionPhase === "error" ? "stalled"
+    : executionPhase === "aborted" ? "cancelled"
+    : executionPhase === "delta" || executionPhase === "start" ? "running"
+    : executionPhase === "end" ? "idle" : null;
+  const message = isRecord(payload.message) ? payload.message : null;
+  const finalText = executionPhase === "final" && message?.role === "assistant" && Array.isArray(message.content)
+    ? redactSecretText(message.content.filter((block) => isRecord(block) && block.type === "text" && typeof block.text === "string")
+      .map((block) => block.text as string).join("\n\n").slice(0, 32_000)).trim() : "";
+  if (!payload.status && (eventName === "session.message" || eventName === "sessions.changed")) {
+    // These notifications request reconciliation. They do not establish a run.
+    return null;
+  }
   const sessionKey =
     readString(payload.sessionKey) ??
     readString(payload.key) ??
@@ -172,8 +189,9 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     readString(task?.taskId) ??
     readString(task?.id);
   const artifactId = readString(payload.artifactId) ?? readString(readNestedRecord(payload, "artifact")?.id);
-  const timestamp = readTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt ?? task?.updatedAt ?? task?.endedAt ?? task?.createdAt);
-  const status = normalizeStatus(readString(payload.status) ?? readString(task?.status) ?? eventName);
+  const timestamp = readTimestamp(payload.timestamp ?? message?.timestamp ?? payload.ts ?? payload.updatedAt ?? task?.updatedAt ??
+    task?.endedAt ?? task?.createdAt) ?? (executionStatus ? Date.now() : null);
+  const status = executionStatus ?? normalizeStatus(readString(payload.status) ?? readString(task?.status) ?? eventName);
   const workspacePath = readWorkspacePath(payload);
   const workspaceId = readString(payload.workspaceId) ?? (workspacePath ? workspaceIdFromPath(workspacePath) : null);
   const text =
@@ -219,6 +237,8 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
         readString(payloadMetadata?.origin) ??
         "openclaw-gateway-event",
       event: eventName,
+      nativeExecutionPhase: executionPhase,
+      ...(finalText && finalText !== "NO_REPLY" ? { nativeFinalText: finalText } : {}),
       channel: readString(payload.channel) ?? null,
       approvalId: readString(payload.approvalId) ?? null,
       artifactId: artifactId ?? null,

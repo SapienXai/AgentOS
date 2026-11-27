@@ -131,6 +131,20 @@ test("terminal admission runtime persists the native result before exposing comp
   assert.equal(reconciled?.result?.result?.payloads?.[0]?.text, "Task completed successfully.");
 });
 
+test("a final Gateway reply is persisted when only the admission receipt is on disk", async () => {
+  const root = await createTemporaryRoot();
+  const record = createDispatchRecord(root);
+  await writeMissionDispatchRecord(record);
+  setOpenClawAdapterForTesting({ getSessionHistory: async () => ({ messages: [] }) } as unknown as OpenClawAdapter);
+
+  const runtime = createRuntime({ status: "completed", runId: "native-run-1", sessionId: undefined });
+  runtime.metadata.nativeFinalText = "The verified final reply.";
+  const reconciled = await reconcileMissionDispatchRuntimeState(record, runtime);
+  assert.equal(reconciled?.status, "completed");
+  assert.equal(reconciled?.result?.payloads?.[0].text, "The verified final reply.");
+  assert.equal(reconciled?.result?.sessionId, record.result?.sessionId);
+});
+
 test("terminal native failures keep their captured partial output", async () => {
   const root = await createTemporaryRoot();
   const record = createDispatchRecord(root);

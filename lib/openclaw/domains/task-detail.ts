@@ -305,8 +305,8 @@ function reconcileTaskRecordWithRuns(
 
   return {
     ...task,
-    updatedAt: latestRuntime?.updatedAt ?? task.updatedAt,
-    ageMs: latestRuntime?.ageMs ?? task.ageMs,
+    updatedAt: task.updatedAt ?? latestRuntime?.updatedAt ?? null,
+    ageMs: task.ageMs ?? latestRuntime?.ageMs ?? null,
     primaryRuntimeId: task.primaryRuntimeId && runtimeIds.includes(task.primaryRuntimeId)
       ? task.primaryRuntimeId
       : latestRuntime?.id ?? task.primaryRuntimeId,
@@ -315,7 +315,7 @@ function reconcileTaskRecordWithRuns(
     sessionIds,
     runtimeCount: runtimeIds.length,
     updateCount: sortedRuns.filter((runtime) => runtime.source === "turn").length,
-    liveRunCount: sortedRuns.filter((runtime) => runtime.status === "running" || runtime.status === "queued").length,
+    liveRunCount: task.liveRunCount,
     artifactCount: createdFiles.length,
     warningCount: warnings.length,
     tokenUsage: aggregateTaskDetailRuntimeTokenUsage(sortedRuns) ?? task.tokenUsage,

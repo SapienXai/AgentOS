@@ -44,7 +44,8 @@ export type MissionDispatchRecordLike = {
   operatorHistory?: Array<{
     id: string;
     idempotencyKey: string | null;
-    kind: "steer" | "continue" | "inject";
+    kind: "steer" | "continue" | "inject" | "message";
+    status?: "queued" | "accepted";
     message: string;
     requestedAt: string;
     acceptedAt: string;
@@ -246,7 +247,7 @@ export function resolveMissionDispatchRuntimeStatus(
   if (record.status === "running") {
     const heartbeatAt = Date.parse(record.runner.lastHeartbeatAt || record.updatedAt);
     return !Number.isNaN(heartbeatAt) && nowMs - heartbeatAt > missionDispatchHeartbeatStallMs
-      ? "stalled"
+      ? "idle"
       : "running";
   }
 
@@ -374,9 +375,11 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       requestedModelId: extractMissionDispatchRequestedModelId(record),
       dispatchSubmittedAt: record.submittedAt,
       dispatchRunnerStartedAt: record.runner.startedAt,
+      dispatchRunnerFinishedAt: record.runner.finishedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchResultText: resolveMissionDispatchResultText(record),
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
       browserAccountId: record.browserBinding?.accountId ?? null,

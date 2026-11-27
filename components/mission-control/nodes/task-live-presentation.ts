@@ -19,19 +19,70 @@ export type TaskConversationEntry = {
   durationMs?: number;
   failed?: boolean;
   streaming?: boolean;
+  delivery?: string;
 };
 
-export type LiveTaskState = "Queued" | "Running" | "Waiting" | "Needs approval" | "Blocked" | "Completed" | "Failed" | "Cancelled" | "Scheduled" | "Paused" | "Needs review";
+export type TaskMessageReceipt = {
+  id: string;
+  message: string;
+  timestamp: string;
+  status: "sending" | "queued" | "accepted" | "rejected" | "unconfirmed";
+  runId?: string;
+};
+
+export function attachTaskMessageReceipts(
+  entries: TaskConversationEntry[],
+  task: WorkItemRecord,
+  local: TaskMessageReceipt[],
+  updates: TaskAssistantUpdate[],
+  detail: TaskDetailRecord | null
+) {
+  const receipts = new Map(local.map((receipt) => [receipt.id, receipt]));
+  const history = task.metadata.operatorHistory;
+  if (Array.isArray(history)) {
+    for (const entry of history) {
+      if (entry?.kind !== "message" || typeof entry.idempotencyKey !== "string" ||
+          typeof entry.message !== "string" || typeof entry.requestedAt !== "string") continue;
+      receipts.set(entry.idempotencyKey, { id: entry.idempotencyKey, message: entry.message,
+        timestamp: receipts.get(entry.idempotencyKey)?.timestamp ?? entry.requestedAt,
+        status: entry.status === "queued" ? "queued" : "accepted",
+        runId: typeof entry.runId === "string" ? entry.runId : undefined });
+    }
+  }
+  if (!receipts.size) return entries;
+  const next = [...entries];
+  const matched = new Set<number>();
+  for (const receipt of receipts.values()) {
+    const update = receipt.runId ? updates.find((entry) => entry.runId === receipt.runId) : null;
+    const run = receipt.runId ? detail?.runs.find((entry) => entry.runId === receipt.runId) : null;
+    const activity = receipt.runId ? detail?.messageActivity?.[receipt.runId] : null;
+    const index = next.findIndex((entry, position) => entry.kind === "user" && !matched.has(position) &&
+      isSameTaskMessage(entry.text, entry.timestamp, receipt.message, receipt.timestamp));
+    const delivery = update?.outcome === "error" || run?.status === "stalled" ? "Reply failed"
+      : update?.outcome === "aborted" || run?.status === "cancelled" || activity === "cancelled" ? "Reply cancelled"
+      : update?.text ? (update.done ? "Responded" : "Responding…")
+      : activity === "processing" || run?.status === "running" ? "Processing"
+      : activity === "recorded" ? "Recorded by OpenClaw"
+      : activity === "queued" ? "Queued"
+      : index !== -1 ? "Recorded by OpenClaw"
+      : receipt.status === "sending" ? "Sending…" : receipt.status === "queued" ? "Queued"
+      : receipt.status === "unconfirmed" ? "Delivery unconfirmed" : receipt.status === "rejected" ? "Failed to send" : "Accepted by OpenClaw";
+    if (index === -1) {
+      matched.add(next.length);
+      next.push({ id: `receipt:${receipt.id}`, kind: "user", title: "You", text: receipt.message,
+        timestamp: receipt.timestamp, delivery });
+    } else {
+      matched.add(index);
+      next[index] = { ...next[index], id: `receipt:${receipt.id}`, delivery };
+    }
+  }
+  return next.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+}
+
+export type LiveTaskState = "Queued" | "Running" | "Waiting" | "Needs approval" | "Blocked" | "Completed" | "Failed" | "Cancelled" | "Scheduled" | "Paused" | "Needs review" | "Status unknown";
 
 export function resolveLiveTaskState(task: WorkItemRecord, detail: TaskDetailRecord | null, attention: AttentionItem[]): LiveTaskState {
   const error = readTaskFailure(task, detail);
-  const isActive = task.status === "running" || task.status === "queued" || task.liveRunCount > 0;
-  if (isActive) {
-    if (attention.some((item) => item.type === "approval")) return "Needs approval";
-    if (attention.some((item) => item.type === "question")) return "Waiting";
-    if (attention.some((item) => item.type === "blocked" || item.type === "needs-setup")) return "Blocked";
-    return task.status === "queued" && !task.liveRunCount ? "Queued" : "Running";
-  }
   if (task.status === "cancelled") return "Cancelled";
   if (error || task.status === "stalled") return "Failed";
   if (task.metadata.operationStatus === "paused") return "Paused";
@@ -40,18 +91,25 @@ export function resolveLiveTaskState(task: WorkItemRecord, detail: TaskDetailRec
     if (detail?.integrity.status === "error" && !detail.integrity.finalResponseText) return "Needs review";
     return "Completed";
   }
-  return "Waiting";
+  if (attention.some((item) => item.type === "approval")) return "Needs approval";
+  if (attention.some((item) => item.type === "question")) return "Waiting";
+  if (attention.some((item) => item.type === "blocked" || item.type === "needs-setup")) return "Blocked";
+  if (task.status === "queued") return "Queued";
+  if (task.status === "running" && task.metadata.nativeSessionActive !== false) return "Running";
+  return "Status unknown";
 }
 
 export function readTaskFailure(task: WorkItemRecord, detail: TaskDetailRecord | null) {
+  const primary = detail?.outputs.find((output) => output.runtimeId === task.primaryRuntimeId);
+  if (task.status === "completed" && primary?.stopReason === "stop" && primary.finalText &&
+      !primary.errorMessage && !readTaskThinkingRejection(primary.finalText)) return null;
   const dispatchIssue = resolveTaskDispatchIssueDetail(task, detail?.integrity);
   const reasoning = readTaskThinkingRejection(dispatchIssue, stringValue(task.metadata.resultPreview), task.subtitle,
     detail?.integrity.finalResponseText);
   if (reasoning) return { summary: "The model rejected the reasoning setting.", technical: reasoning, reasoning: true };
   if (task.status === "running" || task.status === "queued" || task.status === "cancelled") return null;
-  const primary = detail?.outputs.find((output) => output.runtimeId === task.primaryRuntimeId) ??
-    (detail?.outputs.length === 1 ? detail.outputs[0] : null);
-  const terminalError = primary?.stopReason === "error" || primary?.stopReason === "aborted" ? primary.errorMessage || primary.finalText : null;
+  const output = primary ?? (detail?.outputs.length === 1 ? detail.outputs[0] : null);
+  const terminalError = output?.stopReason === "error" || output?.stopReason === "aborted" ? output.errorMessage || output.finalText : null;
   const issue = dispatchIssue || terminalError || (task.status === "completed" && !detail?.integrity.finalResponseText
     ? stringValue(task.metadata.dispatchError) : null);
   if (!issue) {
@@ -81,7 +139,11 @@ export function buildTaskConversation(task: WorkItemRecord, detail: TaskDetailRe
     entries.push(entry);
   };
 
-  for (const output of detail?.outputs ?? []) {
+  const conversation = detail?.conversation;
+  const outputs = conversation?.length
+    ? [{ runtimeId: task.primaryRuntimeId ?? "", items: conversation }]
+    : detail?.outputs ?? [];
+  for (const output of outputs) {
     for (const item of output.items) {
       if (item.role === "user") {
         const text = readTaskOperatorMessage(item.text);
@@ -94,7 +156,7 @@ export function buildTaskConversation(task: WorkItemRecord, detail: TaskDetailRe
       }
       const runtime = runtimeById.get(output.runtimeId);
       if (item.role === "assistant") {
-        if (!readTaskThinkingRejection(item.text)) append({
+        if (!item.isError && !readTaskThinkingRejection(item.text)) append({
           id: item.id, kind: "assistant", title: "Agent", text: item.text, timestamp: item.timestamp, agentId: runtime?.agentId
         });
         continue;
@@ -109,13 +171,13 @@ export function buildTaskConversation(task: WorkItemRecord, detail: TaskDetailRe
   }
 
   for (const item of feed) {
-    if (item.kind === "user" && item.title !== "Mission") {
+    if (item.kind === "user" && item.title !== "Mission" && item.title !== "Task message sent") {
       const text = readTaskOperatorMessage(item.detail);
       if (text && !entries.some((entry) => entry.kind === "user" && isSameTaskMessage(entry.text, entry.timestamp, text, item.timestamp))) {
         append({ id: item.id, kind: "user", title: "You", text, timestamp: item.timestamp });
       }
     }
-    if (item.kind === "assistant" && !readTaskThinkingRejection(item.detail) && !entries.some((entry) =>
+    if (item.kind === "assistant" && !item.isError && !readTaskThinkingRejection(item.detail) && !entries.some((entry) =>
       entry.kind === "assistant" && normalize(entry.text).startsWith(normalize(item.detail).replace(/…$/, "")))) {
       append({ id: item.id, kind: "assistant", title: item.title, text: item.detail, timestamp: item.timestamp, agentId: item.agentId });
     }
@@ -136,8 +198,10 @@ export function buildTaskConversation(task: WorkItemRecord, detail: TaskDetailRe
     append({ id: "stream:" + update.runId, kind: "assistant", title: "Agent", text: update.text,
       timestamp: update.timestamp, streaming: !update.done });
   }
-  const finalText = detail?.integrity.finalResponseText || stringValue(task.metadata.finalResponseText) || stringValue(task.metadata.resultPreview);
-  const timestamp = validTimestamp(task.updatedAt);
+  const originalResult = stringValue(task.metadata.dispatchResultText);
+  const finalText = originalResult || detail?.integrity.finalResponseText || stringValue(task.metadata.finalResponseText);
+  const timestamp = validTimestamp(originalResult ? stringValue(task.metadata.dispatchRunnerFinishedAt) : task.updatedAt)
+    ?? validTimestamp(task.updatedAt);
   if (task.status === "completed" && finalText && timestamp && !isWaitingForOutputCopy(finalText) &&
       !readTaskThinkingRejection(finalText) && !entries.some((entry) => entry.kind === "assistant" &&
         (normalize(entry.text).startsWith(normalize(finalText).replace(/…$/, "")) || normalize(finalText).startsWith(normalize(entry.text))))) {
@@ -175,13 +239,14 @@ export function isSameTaskMessage(left: string, leftTime: string, right: string,
 
 export function readTaskCardUpdate(task: WorkItemRecord, state: LiveTaskState, entries: TaskConversationEntry[], attention: AttentionItem[], failure: ReturnType<typeof readTaskFailure>) {
   if (failure && state === "Failed") return failure.summary;
-  if (attention.length && (state === "Needs approval" || state === "Blocked" || state === "Waiting")) return attention[0].title;
+  if (attention.length && state !== "Cancelled") return attention[0].title;
   const latest = entries.findLast((entry) => entry.kind !== "user");
   if (latest?.kind === "tool" && state === "Running") return latest.toolPhase === "start" ? latest.title : `${latest.title} ${latest.failed ? "reported an issue" : "returned"}`;
-  const text = entries.findLast((entry) => entry.kind === "assistant")?.text ?? stringValue(task.metadata.finalResponseText)
-    ?? stringValue(task.metadata.resultPreview);
+  const text = state === "Completed"
+    ? stringValue(task.metadata.dispatchResultText) ?? stringValue(task.metadata.finalResponseText) ?? stringValue(task.metadata.resultPreview)
+    : entries.findLast((entry) => entry.kind === "assistant")?.text ?? stringValue(task.metadata.resultPreview);
   if (text && (state === "Running" || state === "Completed" || state === "Needs review") &&
-      !isWaitingForOutputCopy(text) && !/^(agent|chat|session\.message|sessions\.changed)$/i.test(text.trim())) {
+      !isWaitingForOutputCopy(text) && !/^(dispatch runner finished\b|(?:agent|chat|session\.message|sessions\.changed)$)/i.test(text.trim())) {
     return compactMissionText(text.replace(/\[([^\]]+)\]\(https?:[^\s)]+\)/g, "$1").replace(/\*\*|__|`/g, ""), 125);
   }
   if (task.artifactCount && state === "Completed") return `${task.artifactCount} ${task.artifactCount === 1 ? "file" : "files"} created`;
@@ -189,8 +254,9 @@ export function readTaskCardUpdate(task: WorkItemRecord, state: LiveTaskState, e
   if (state === "Queued") return "Waiting for the agent to start.";
   if (state === "Cancelled") return "Execution stopped.";
   if (state === "Scheduled" || state === "Paused") return stringValue(task.metadata.scheduleLabel) ?? "OpenClaw schedule";
-  if (state === "Completed") return "Open the task to review the outcome.";
+  if (state === "Completed") return "No result has been captured.";
   if (state === "Needs review") return "No verified final answer was captured.";
+  if (state === "Status unknown") return "OpenClaw has not confirmed the execution state.";
   return "Waiting for an OpenClaw update.";
 }
 

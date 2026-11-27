@@ -41,6 +41,7 @@ export function resolveCanonicalTaskStatus(input: {
   if (input.dispatchStatus && ["completed", "stalled", "cancelled"].includes(input.dispatchStatus)) {
     return input.dispatchStatus;
   }
+  if (input.dispatchStatus === "idle") return "idle";
 
   if (input.runtimeStatuses.includes("running")) return "running";
   if (input.runtimeStatuses.includes("cancelled")) return "cancelled";

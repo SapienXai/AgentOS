@@ -166,6 +166,14 @@ async function handleRequest(
 }
 
 function resolveFixtureResponse(prompt: string, messages: unknown, tools: unknown): FixtureResponse {
+  const check = [...prompt.matchAll(/Verify follow-up receipt (alpha|beta)\./gi)].at(-1)?.[1]?.toLowerCase();
+  if (check) return { content: `The ${check} receipt was processed.` };
+  if (/Summarize the verified result in one sentence for the archive\./i.test(prompt)) {
+    return { content: "Archive summary: the evening edition matched the verified source totals." };
+  }
+  if (/Keep the editorial scope to a single edition\./i.test(prompt)) {
+    return { content: "I kept the editorial scope to the evening edition only." };
+  }
   if (/Validate the live task stream for the evening edition\./i.test(prompt)) {
     return { delayMs: 3_500, chunkDelayMs: 9_000,
       content: "The first source is verified. I am comparing it with the editorial ledger. The evening edition matches the source totals and is ready for review." };

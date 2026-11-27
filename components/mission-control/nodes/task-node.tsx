@@ -12,16 +12,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import { resolveTaskNodeVisualTone } from "@/components/mission-control/node-visual-tones";
-import { TaskFollowUpComposer, type SubmittedTaskFollowUp } from "@/components/mission-control/task-follow-up";
+import { TaskMessageComposer } from "./task-message-composer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmployeeAvatar } from "@/components/workforce/employee-avatar";
 import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { TaskFeedEvent } from "@/lib/agentos/contracts";
 import { hasScopedTaskSession, resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
-import { mergeTaskFollowUps, readTaskFollowUpsFromMetadata, resolveTaskFollowUpDisplayMessage } from "@/lib/openclaw/domains/task-follow-up-records";
+import { readTaskFollowUpsFromMetadata, resolveTaskFollowUpDisplayMessage } from "@/lib/openclaw/domains/task-follow-up-records";
 import { cn } from "@/lib/utils";
 import {
-  buildTaskConversation, isSameTaskMessage, readTaskCardUpdate, readTaskFailure, resolveLiveTaskState, validTimestamp, type LiveTaskState
+  attachTaskMessageReceipts, buildTaskConversation, isSameTaskMessage, readTaskCardUpdate, readTaskFailure, resolveLiveTaskState, validTimestamp, type LiveTaskState, type TaskMessageReceipt
 } from "./task-live-presentation";
 import styles from "./task-live-card.module.css";
 
@@ -49,31 +49,31 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
   const [expanded, setExpanded] = useState(false);
   const [opened, setOpened] = useState(false);
   const [operationAction, setOperationAction] = useState<OperationAction | null>(null);
-  const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
+  const [localReceipts, setLocalReceipts] = useState<TaskMessageReceipt[]>([]);
   const [resolvedAttention, setResolvedAttention] = useState<string[]>([]);
   const optimisticFeed = useMemo(() => readTaskFeedEvents(data.task.metadata.optimisticEvents), [data.task.metadata.optimisticEvents]);
-  const shouldStreamFeed = expanded || selected;
+  const shouldStreamFeed = expanded;
   const { feed, detail, loading, error, streamNotice, assistantUpdates, toolUpdates, attention, artifacts } = useTaskFeed(data.task.id, shouldStreamFeed, {
     dispatchId: data.task.dispatchId,
     optimisticFeed,
     liveConversation: true
   });
-  const task = detail && (expanded || (detail.task.updatedAt ?? 0) >= (data.task.updatedAt ?? 0)) ? detail.task : data.task;
+  const useDetailTask = detail && (detail.task.updatedAt ?? 0) >= (data.task.updatedAt ?? 0);
+  const task = useDetailTask ? detail.task : data.task;
   const pendingAttention = useMemo(() => attention.filter(({ id }) => !resolvedAttention.includes(id)), [attention, resolvedAttention]);
   const conversation = useMemo(() => buildTaskConversation(task, detail, feed, assistantUpdates, toolUpdates, artifacts), [task, detail, feed, assistantUpdates, toolUpdates, artifacts]);
   const followUps = useMemo(() => {
-    const history = readTaskFollowUpsFromMetadata(task.metadata).filter((attempt) =>
+    return readTaskFollowUpsFromMetadata(task.metadata).filter((attempt) =>
       resolveTaskFollowUpDisplayMessage(attempt)?.trim() !== (task.mission ?? task.title).trim());
-    return mergeTaskFollowUps(history, localFollowUps);
-  }, [task.metadata, task.mission, task.title, localFollowUps]);
+  }, [task.metadata, task.mission, task.title]);
   const entries = useMemo(() => {
     const receipts = followUps.flatMap((followUp) => {
       const text = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
       if (conversation.some((entry) => entry.kind === "user" && isSameTaskMessage(entry.text, entry.timestamp, text, followUp.createdAt))) return [];
       return [{ id: followUp.id, title: "You", kind: "user" as const, text, timestamp: followUp.createdAt }];
     });
-    return receipts.length ? [...conversation, ...receipts].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : conversation;
-  }, [conversation, followUps]);
+    return attachTaskMessageReceipts([...conversation, ...receipts], detail?.task ?? task, localReceipts, assistantUpdates, detail);
+  }, [conversation, followUps, task, detail, localReceipts, assistantUpdates]);
 
   const failure = readTaskFailure(task, detail);
   const state = resolveLiveTaskState(task, detail, pendingAttention);
@@ -84,7 +84,7 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
     : task.metadata.systemOwnedMonitor === "skill-collection-review" ? "Skill Workshop" : null;
   const title = monitor ?? (task.mission?.trim() || task.title.trim() || "Untitled task");
   const available = resolveTaskFollowUpAvailability(task);
-  const progress = state === "Running" || state === "Queued";
+  const progress = state === "Running" && !error && !streamNotice;
   const schedulable = typeof task.metadata.operationJobId === "string" ? task.metadata.operationJobId : null;
   const scheduleLabel = typeof task.metadata.scheduleLabel === "string" ? task.metadata.scheduleLabel : null;
   const schedulePaused = task.metadata.operationStatus === "paused";
@@ -92,6 +92,9 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
   const canStop = data.onAbortTask && (task.status === "running" || task.status === "queued");
   const timeSource = task.metadata.dispatchSubmittedAt ?? task.metadata.startedAt ?? task.metadata.createdAt;
   const start = validTimestamp(typeof timeSource === "string" || typeof timeSource === "number" ? timeSource : null);
+  const finishedAt = typeof task.metadata.dispatchRunnerFinishedAt === "string" ? Date.parse(task.metadata.dispatchRunnerFinishedAt) : NaN;
+  const timingEnd = ["Completed", "Cancelled", "Failed", "Needs review"].includes(state) && Number.isFinite(finishedAt)
+    ? finishedAt : task.updatedAt;
   const panelId = `task-live-${id}`;
   const headingId = `${panelId}-heading`;
   const tone = resolveTaskNodeVisualTone({
@@ -256,10 +259,10 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
             <h3 className="line-clamp-2 break-words text-[15px] font-semibold leading-snug tracking-[-.015em]">{title}</h3>
             <div className="mt-1.5 flex items-center gap-2 text-[13px] leading-5 text-[var(--task-muted)]">
               <p className="min-w-0 flex-1 truncate">{taskUpdate}</p>
-              <TaskTiming start={start} updatedAt={task.updatedAt} active={progress} compact />
+              <TaskTiming start={start} updatedAt={timingEnd} active={progress} compact />
             </div>
           </button>
-          {progress ? <TaskProgress queued={state === "Queued"} /> : null}
+          {progress ? <TaskProgress /> : null}
         </div>
       </div>
 
@@ -279,9 +282,9 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
           <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--task-muted)]">
             <TaskStatus status={state} />
             {start ? <span className="inline-flex items-center gap-1.5"><CalendarClock aria-hidden="true" className="size-3.5" /> Started {formatTime(start)}</span> : null}
-            <TaskTiming start={start} updatedAt={task.updatedAt} active={progress} />
+            <TaskTiming start={start} updatedAt={timingEnd} active={progress} />
           </div>
-          {progress ? <TaskProgress queued={state === "Queued"} /> : null}
+          {progress ? <TaskProgress /> : null}
         </header>
         <TaskLiveConversation visible={expanded} scroller={conversationScroller} closedOffset={closedScrollOffset} entries={entries} attention={pendingAttention}
           agent={data.employee} agentName={agentName}
@@ -291,8 +294,8 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskFlowNode>) {
           recovery={recovery} attempts={attempts} onAttentionResolved={(id) => setResolvedAttention((current) => [...current, id])} />
         {available.available && hasScopedTaskSession(available.context) && !failure?.reasoning && !monitor ? (
           <footer className="shrink-0 border-t border-[var(--task-line)] px-3 py-3 sm:px-5">
-            <TaskFollowUpComposer task={task} liveConversation submitLabel="Send task instruction" textareaRef={textarea}
-              onSubmitted={(followUp) => setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]))} />
+            <TaskMessageComposer key={task.id} task={task} textareaRef={textarea}
+              onReceipt={(receipt) => setLocalReceipts((current) => [...current.filter(({ id }) => id !== receipt.id), receipt].slice(-50))} />
           </footer>
         ) : null}
       </section> : null}
@@ -339,8 +342,8 @@ function TaskStatus({ status }: { status: LiveTaskState }) {
   </span>;
 }
 
-function TaskProgress({ queued }: { queued: boolean }) {
-  return <div role="progressbar" aria-label={queued ? "Waiting for task start" : "Task in progress"} data-queued={queued} className={cn(styles.progress, "mt-2.5")} />;
+function TaskProgress() {
+  return <div role="progressbar" aria-label="Task in progress" className={cn(styles.progress, "mt-2.5")} />;
 }
 
 function TaskTiming({ start, updatedAt, active, compact = false }: { start: string | null; updatedAt: number | null; active: boolean; compact?: boolean }) {

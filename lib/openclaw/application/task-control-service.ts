@@ -11,10 +11,14 @@ import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
 import { hasScopedTaskSession, resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
 import { readExecutionIdentity } from "@/lib/openclaw/domains/execution-identity";
 import { findTaskReasoningModel, resolveBalancedTaskThinking } from "@/lib/openclaw/task-reasoning";
+import { classifyNativeMutationError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
-export type RunningTaskControlAction = "steer" | "inject" | "continue";
+export type RunningTaskControlAction = "steer" | "inject" | "continue" | "message";
+
+export class TaskMessageDeliveryUnknown extends Error {}
 
 export interface RunningTaskControlInput {
   action: RunningTaskControlAction;
@@ -75,13 +79,18 @@ export async function controlRunningTaskSession(
 
   const loadTaskDetail = deps.getTaskDetail ?? getTaskDetail;
   const taskDetail = await loadTaskDetail(taskId, { dispatchId: input.dispatchId ?? null });
-  if (input.taskSessionOnly && !hasScopedTaskSession(resolveTaskFollowUpContext(taskDetail.task))) {
+  const scoped = input.taskSessionOnly || input.action === "message";
+  if (scoped && !hasScopedTaskSession(resolveTaskFollowUpContext(taskDetail.task))) {
     throw new Error("OpenClaw has not confirmed a dedicated session for this task.");
   }
   const target = resolveRunningTaskControlTarget(taskDetail);
   const adapter = deps.adapter ?? getOpenClawAdapter();
 
-  if (input.taskSessionOnly) {
+  if (input.action === "message" && taskDetail.task.dispatchId &&
+      (!target.agentId || target.sessionKey !== buildAgentSessionKey(target.agentId, taskDetail.task.dispatchId))) {
+    throw new Error("OpenClaw has not confirmed a dedicated session for this task.");
+  }
+  if (scoped) {
     if (!target.sessionKey || !target.sessionId || !adapter.listSessions) {
       throw new Error("The task session could not be verified. Open the task again before sending.");
     }
@@ -89,6 +98,23 @@ export async function controlRunningTaskSession(
       { ...gatewayOptions, allowCliFallback: false, timeoutMs: 5_000 });
     if (!sessions.some((session) => session.key === target.sessionKey && session.sessionId === target.sessionId)) {
       throw new Error("The OpenClaw task session changed. Reopen the task before sending.");
+    }
+  }
+
+  if (input.action === "message") {
+    try {
+      const control = await steerSession(adapter, target, message, { ...input, taskSessionOnly: true },
+        taskDetail.task.id, gatewayOptions);
+      // A missing native acknowledgement cannot establish whether the input ran.
+      if (!control.result.runId) throw new TaskMessageDeliveryUnknown();
+      (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
+      return { ok: true, action: input.action, taskId: taskDetail.task.id, target, ...control };
+    } catch (error) {
+      if (error instanceof TaskMessageDeliveryUnknown ||
+          classifyNativeMutationError(error).disposition === "ambiguous-outcome") {
+        throw new TaskMessageDeliveryUnknown("OpenClaw did not confirm delivery. Check this conversation before sending again.");
+      }
+      throw error;
     }
   }
 
@@ -163,6 +189,7 @@ async function steerSession(
       sessionId: input.taskSessionOnly || !target.sessionKey ? target.sessionId : null,
       agentId: target.agentId,
       message,
+      ...(input.action === "message" ? { queueMode: "followup" as const } : {}),
       idempotencyKey: resolveControlIdempotencyKey({
         taskId,
         dispatchId: input.dispatchId ?? null,

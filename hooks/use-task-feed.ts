@@ -91,7 +91,9 @@ export function useTaskFeed(
         }
 
         const eventBridge = data.eventBridge;
-        const message = eventBridge && eventBridge.mode !== "live"
+        const message = data.sessionConnection === "reconnecting" ? "Reconnecting to OpenClaw…"
+          : data.sessionConnection === "unavailable" ? "Live session updates are unavailable. Showing saved activity."
+          : eventBridge && eventBridge.mode !== "live"
           ? [eventBridge.message, eventBridge.recovery].filter(Boolean).join(" ")
           : null;
 
@@ -156,7 +158,9 @@ export function mergeTaskAssistantUpdate(turns: TaskAssistantUpdate[], update: T
   const next = {
     ...update,
     timestamp: previous?.timestamp ?? update.timestamp,
-    text: (update.done && !update.text ? previous?.text ?? "" : update.replace ? update.text : (previous?.text ?? "") + update.text).slice(0, 32_000)
+    text: (update.outcome === "error" || update.outcome === "aborted" ? ""
+      : update.done && !update.text ? previous?.text ?? ""
+      : update.replace ? update.text : (previous?.text ?? "") + update.text).slice(0, 32_000)
   };
   return [...turns.filter((turn) => turn.runId !== update.runId), next].slice(-16);
 }

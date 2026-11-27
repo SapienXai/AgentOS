@@ -54,6 +54,16 @@ test("old reasoning rejection cannot appear as a completed result in the live ca
   assert.equal(buildTaskConversation({ ...task, metadata: { finalResponseText: rejection } }, null, [], []).length, 0);
 });
 
+test("a historical live run does not reactivate a terminal task", () => {
+  assert.equal(resolveLiveTaskState({ ...task, liveRunCount: 1 }, null, []), "Completed");
+  assert.equal(resolveLiveTaskState({ ...task, status: "cancelled", liveRunCount: 1 }, null, []), "Cancelled");
+});
+
+test("a disconnected or idle native session does not prove an active task", () => {
+  assert.equal(resolveLiveTaskState({ ...task, status: "running", liveRunCount: 1,
+    metadata: { nativeSessionActive: false } }, null, []), "Status unknown");
+});
+
 test("conversation uses verified files and one copy of the final assistant response", () => {
   const finalText = "The source is verified.";
   const entries = buildTaskConversation({ ...task, metadata: { finalResponseText: finalText } }, null, [
@@ -65,4 +75,9 @@ test("conversation uses verified files and one copy of the final assistant respo
     { id: "file-a", label: "source.csv", timestamp, href: "/api/missions/task-a?artifact=file-a" }
   ]);
   assert.deepEqual(entries.map(({ kind, text }) => [kind, text]), [["assistant", finalText], ["artifact", "source.csv"]]);
+});
+
+test("a completed task does not present runtime status copy as an assistant reply", () => {
+  const completed = { ...task, metadata: { resultPreview: "Dispatch runner finished · deliverables/example" } };
+  assert.deepEqual(buildTaskConversation(completed, null, [], []), []);
 });

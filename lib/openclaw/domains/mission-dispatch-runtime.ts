@@ -9,6 +9,7 @@ import {
   resolveMissionDispatchBootstrapStage,
   resolveMissionDispatchCompletionDetail,
   resolveMissionDispatchIntegrityWarning,
+  resolveMissionDispatchResultText,
   resolveMissionDispatchOutputFile,
   resolveMissionDispatchRuntimeStatus,
   resolveMissionDispatchSubtitle,
@@ -301,8 +302,10 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
   const modelId = runtime.modelId ?? extractMissionDispatchModelId(record) ?? undefined;
   const sessionKey = readMissionDispatchSessionKey(record);
   const currentExecution = isCurrentAcceptedContinuationRuntime(runtime, record);
+  const recordedOutcomeMatchesRun = Boolean(runtime.runId && runtime.runId === record.result?.runId &&
+    ["ok", "completed", "failed", "error", "cancelled"].includes(record.result?.status ?? ""));
   const nextStatus =
-    !currentExecution && isMissionDispatchTerminalStatus(record.status)
+    (!currentExecution || recordedOutcomeMatchesRun) && isMissionDispatchTerminalStatus(record.status)
       ? record.status
       : runtime.status;
 
@@ -337,15 +340,17 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       ...runtime.metadata,
       dispatchId: record.id,
       clientRequestId: record.clientRequestId ?? null,
-      dispatchStatus: currentExecution ? runtime.status : record.status,
+      dispatchStatus: currentExecution ? nextStatus : resolveMissionDispatchRuntimeStatus(record, Date.now()),
       admissionState: record.admissionState ?? null,
       initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
+      dispatchRunnerFinishedAt: record.runner.finishedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchResultText: resolveMissionDispatchResultText(record),
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
       currentExecution,
@@ -407,15 +412,17 @@ export function buildMissionDispatchTranscriptRuntime(
       sessionKey,
       pendingCreation: runtimeStatus === "queued" || runtimeStatus === "running",
       bootstrapStage: resolveMissionDispatchBootstrapStage(record, runtimeStatus),
-      dispatchStatus: record.status,
+      dispatchStatus: runtimeStatus,
       admissionState: record.admissionState ?? null,
       initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
+      dispatchRunnerFinishedAt: record.runner.finishedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchResultText: resolveMissionDispatchResultText(record),
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
       currentExecution: false,
@@ -554,15 +561,17 @@ export function createMissionDispatchRuntime(
       sessionKey,
       pendingCreation: runtimeStatus === "queued" || runtimeStatus === "running",
       bootstrapStage,
-      dispatchStatus: record.status,
+      dispatchStatus: runtimeStatus,
       admissionState: record.admissionState ?? null,
       initialAdmissionError: record.initialAdmissionError ?? null,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
       dispatchRunnerStartedAt: record.runner.startedAt,
+      dispatchRunnerFinishedAt: record.runner.finishedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      dispatchResultText: resolveMissionDispatchResultText(record),
       dispatchCancellation: record.cancellation ?? null,
       operatorHistory: record.operatorHistory ?? [],
       currentExecution: false,

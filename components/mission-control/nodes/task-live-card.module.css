@@ -98,8 +98,6 @@
   animation: work 1.7s cubic-bezier(.37,0,.63,1) infinite alternate;
 }
 
-.progress[data-queued="true"]::after { background: #8a6bf4; }
-
 @keyframes work {
   from { transform: translateX(-25%); }
   to { transform: translateX(190%); }

@@ -221,7 +221,8 @@ export async function getRuntimeOutputForResolvedRuntime(
 export function parseRuntimeOutputFromSessionHistory(
   runtime: RuntimeRecord,
   payload: unknown,
-  workspacePath?: string
+  workspacePath?: string,
+  options: { conversation?: boolean; exactDispatchTurn?: boolean } = {}
 ): RuntimeOutputRecord {
   const messages = readSessionHistoryMessages(payload);
 
@@ -244,7 +245,8 @@ export function parseRuntimeOutputFromSessionHistory(
       const timestamp = readSessionHistoryTimestamp(message) ?? readSessionHistoryTimestamp(record);
       return JSON.stringify({
         type: "message",
-        id: readSessionHistoryString(message.id) ?? readSessionHistoryString(record.id) ?? `history:${index}`,
+        id: readSessionHistoryString(message.id) ?? readSessionHistoryString(record.id) ??
+          (isRecord(record.__openclaw) ? readSessionHistoryString(record.__openclaw.id) : null) ?? `history:${index}`,
         ...(timestamp ? { timestamp } : {}),
         message: {
           ...record,
@@ -261,7 +263,12 @@ export function parseRuntimeOutputFromSessionHistory(
     );
   }
 
-  return parseRuntimeOutput(runtime, normalizedTranscript.join("\n"), workspacePath);
+  const raw = normalizedTranscript.join("\n");
+  if (!options.conversation) return parseRuntimeOutput(runtime, raw, workspacePath, options);
+  const turns = filterTranscriptTurnsForRuntime(runtime, extractTranscriptTurns(raw, runtime, workspacePath));
+  const latest = turns.at(-1);
+  if (!latest) return createMissingRuntimeOutput(runtime, "OpenClaw returned no messages after this task began.");
+  return { ...runtimeOutputFromTurn(runtime, latest), items: turns.flatMap((turn) => turn.items) };
 }
 
 export function parseRuntimeOutputFromTaskHistory(
@@ -646,16 +653,19 @@ function createMissingRuntimeOutput(runtime: RuntimeRecord, errorMessage: string
   };
 }
 
-export function parseRuntimeOutput(runtime: RuntimeRecord, raw: string, workspacePath?: string): RuntimeOutputRecord {
+export function parseRuntimeOutput(runtime: RuntimeRecord, raw: string, workspacePath?: string,
+  options: { exactDispatchTurn?: boolean } = {}): RuntimeOutputRecord {
   const turns = filterTranscriptTurnsForRuntime(runtime, extractTranscriptTurns(raw, runtime, workspacePath));
 
-  if (runtime.source === "turn") {
+  if (runtime.source === "turn" || options.exactDispatchTurn) {
     const turnId = typeof runtime.metadata.turnId === "string" ? runtime.metadata.turnId : null;
-    const turn = turnId ? turns.find((entry) => entry.id === turnId) : resolveRuntimeMissionTurn(runtime, turns);
+    const exactTurn = turnId ? turns.find((entry) => entry.id === turnId) : null;
+    const turn = exactTurn ?? (!turnId || options.exactDispatchTurn ? resolveRuntimeMissionTurn(runtime, turns) : null);
 
     if (turn) {
       return runtimeOutputFromTurn(runtime, turn);
     }
+    if (options.exactDispatchTurn) return createMissingRuntimeOutput(runtime, "The current task attempt is not in the session history.");
   }
 
   const latestTurn = turns.at(-1);

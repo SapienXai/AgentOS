@@ -46,7 +46,7 @@ export function resolveTaskFollowUpAvailability(task: Pick<
 >): TaskFollowUpAvailability {
   const context = resolveTaskFollowUpContext(task);
 
-  if (!isTaskFollowUpStatus(task.status)) {
+  if (!isTaskFollowUpStatus(task.status) && !(task.status === "idle" && hasScopedTaskSession(context))) {
     return {
       available: false,
       reason: "Follow-up is available for queued, running, stalled, or completed tasks.",

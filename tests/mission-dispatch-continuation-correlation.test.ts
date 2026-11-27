@@ -112,6 +112,14 @@ test("a later accepted continuation becomes the task's current execution and res
   assert.equal(task?.metadata.openClawSessionId, "canonical-session-1");
   assert.equal((task?.metadata.executionIdentity as Record<string, unknown>)?.sessionId, "canonical-session-1");
   assert.equal(task?.metadata.operatorHistory instanceof Array, true);
+
+  const completed = { ...dispatch, status: "completed" as const,
+    result: { runId: continuationRun.runId, status: "ok" } };
+  const staleRunning = { ...continuationRun, status: "running" as const };
+  const reconciled = annotateMissionDispatchMetadata([staleRunning], [completed]);
+  const [finished] = buildTaskRecords(reconciled, []);
+  assert.equal(finished.status, "completed");
+  assert.equal(finished.liveRunCount, 0);
 });
 
 test("a requested session key does not become a fabricated session id in the task projection", () => {

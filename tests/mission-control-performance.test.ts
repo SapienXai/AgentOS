@@ -33,10 +33,10 @@ test("runtime stream uses event-first status updates with bounded reconciliation
   assert.match(bridgeSource, /invalidateMissionControlSnapshot\?\.\(frame\.event\);[\s\S]*?notifyBridgeEventSubscribers\(frame\)/);
 });
 
-test("Task detail streams are limited to selected or expanded cards", async () => {
+test("Task detail streams are limited to expanded cards", async () => {
   const source = await readFile("components/mission-control/nodes/task-node.tsx", "utf8");
 
-  assert.match(source, /const shouldStreamFeed\s*=\s*expanded\s*\|\|\s*selected/);
+  assert.match(source, /const shouldStreamFeed\s*=\s*expanded;/);
   assert.doesNotMatch(source, /data\.task\.status\s*===\s*"running"\s*\|\|\s*data\.task\.status\s*===\s*"stalled"/);
 });
 

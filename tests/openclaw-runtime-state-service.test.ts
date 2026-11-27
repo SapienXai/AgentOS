@@ -193,3 +193,15 @@ test("Gateway event normalizer preserves AgentOS direct chat origin metadata", (
   assert.equal(runtime.sessionId, undefined);
   assert.equal(runtime.metadata.openClawSessionKey, "agent:agent-1:explicit:chat-session");
 });
+
+test("native chat terminal states are not projected as an active run", () => {
+  const payload = { sessionKey: "agent:worker:explicit:mission", runId: "native-run" };
+  for (const [state, status] of [["final", "completed"], ["aborted", "cancelled"], ["error", "stalled"]] as const) {
+    const runtime = normalizeOpenClawGatewayEventToRuntime({
+      type: "event", event: "chat", payload: { ...payload, state }
+    });
+    assert.equal(runtime?.status, status);
+    assert.ok(runtime?.updatedAt);
+  }
+  assert.equal(normalizeOpenClawGatewayEventToRuntime({ type: "event", event: "session.message", payload }), null);
+});

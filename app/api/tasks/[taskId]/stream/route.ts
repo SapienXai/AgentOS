@@ -9,6 +9,8 @@ import {
 import type { OpenClawGatewayEventFrame, OpenClawGatewayEventSubscription } from "@/lib/openclaw/client/gateway-client";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { projectTaskAssistantFrame, projectTaskToolFrame, resolveTaskLiveTarget } from "@/lib/openclaw/domains/task-live-events";
+import { parseRuntimeOutputFromSessionHistory } from "@/lib/openclaw/domains/runtime-transcript";
+import { getCachedOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { getHumanControlInbox } from "@/lib/openclaw/application/human-control-inbox-service";
 import { loadMissionArtifacts } from "@/lib/agentos/application/workforce-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -43,6 +45,7 @@ export async function GET(
   let nativeSessionSubscription: OpenClawGatewayEventSubscription | undefined;
   let nativeSessionKey: string | null = null;
   let liveTarget: ReturnType<typeof resolveTaskLiveTarget> = null;
+  const pendingChatSnapshots = new Map<string, OpenClawGatewayEventFrame>();
   let attention: AttentionItem[] | undefined;
   let lastAttentionSync = 0;
   let abortListener: (() => void) | undefined;
@@ -146,7 +149,16 @@ export async function GET(
         if (!liveConversation) return;
         liveTarget = resolveTaskLiveTarget(detail);
         const nextKey = liveTarget?.sessionKey ?? null;
-        if (nextKey === nativeSessionKey) return;
+        if (nextKey === nativeSessionKey) {
+          for (const [runId, frame] of pendingChatSnapshots) {
+            const entry = liveTarget ? projectTaskAssistantFrame(frame, liveTarget) : null;
+            if (!entry) continue;
+            pendingChatSnapshots.delete(runId);
+            sendEvent("task-live", entry);
+          }
+          return;
+        }
+        pendingChatSnapshots.clear();
         nativeSessionSubscription?.close();
         nativeSessionSubscription = undefined;
         nativeSessionKey = nextKey;
@@ -164,6 +176,14 @@ export async function GET(
                 if (allowed && nativeSessionKey === nextKey) sendEvent("task-live", entry);
               });
             }
+            // An acknowledgement can reach the API just after a first native text snapshot.
+            // Keep only replaceable snapshots and release them after verifying the run identity.
+            const payload = frame.payload as { runId?: unknown; sessionKey?: unknown; message?: unknown } | null;
+            if (!entry && frame.event === "chat" && payload?.sessionKey === nextKey &&
+                typeof payload.runId === "string" && payload.message) {
+              if (pendingChatSnapshots.size >= 8) pendingChatSnapshots.delete(pendingChatSnapshots.keys().next().value!);
+              pendingChatSnapshots.set(payload.runId, frame);
+            }
             if ((entry?.type === "assistant" && entry.done) || (entry?.type === "tool" && entry.phase === "result") ||
                 frame.event === "session.message" || (frame.event === "chat" && !entry)) {
               refreshController?.scheduleEventRefresh();
@@ -171,13 +191,23 @@ export async function GET(
           },
           onConnectionStateChange: (state) => {
             if (state === "connected") refreshController?.scheduleEventRefresh();
+            const sessionConnection = state === "connected" || state === "reconnecting" ? state : null;
+            if (sessionConnection) {
+              void canContinue().then((allowed) => {
+                if (allowed && nativeSessionKey === nextKey) sendEvent("ready", { type: "ready", ok: true, sessionConnection });
+              });
+            }
           }
         }, { allowCliFallback: false });
         void pending.then((subscription) => {
           if (closed || nativeSessionKey !== nextKey) subscription.close();
           else nativeSessionSubscription = subscription;
         }).catch(() => {
-          // Persisted history remains available through task refreshes.
+          void canContinue().then((allowed) => {
+            if (allowed && nativeSessionKey === nextKey) {
+              sendEvent("ready", { type: "ready", ok: false, sessionConnection: "unavailable" });
+            }
+          });
         });
       };
 
@@ -195,7 +225,10 @@ export async function GET(
           if (!(await canContinue())) return;
           indexTaskDetailIds(detail, relatedIds);
           syncLiveSession(detail);
-          const artifacts = liveConversation ? await readTaskArtifacts(detail) : undefined;
+          const [artifacts, conversation] = liveConversation
+            ? await Promise.all([readTaskArtifacts(detail), readNativeConversation(detail)])
+            : [undefined, undefined];
+          if (conversation) Object.assign(detail, conversation);
           if (!(await canContinue())) return;
           sendEvent("task", { type: "task", detail, attention, artifacts });
           if (liveConversation && Date.now() - lastAttentionSync >= 10_000) {
@@ -216,6 +249,30 @@ export async function GET(
             type: "error",
             error: redactErrorMessage(error, "Unable to load task detail.")
           });
+        }
+      };
+
+      const readNativeConversation = async (detail: TaskDetailRecord) => {
+        const target = resolveTaskLiveTarget(detail);
+        const runtime = detail.runs.find((run) => run.id === detail.task.primaryRuntimeId) ?? detail.runs[0];
+        if (!target?.dedicated || !target.sessionId || !runtime) return;
+        const workspace = visibleSnapshot.workspaces.find((entry) => entry.id === detail.task.workspaceId);
+        try {
+          const receiptRunIds = readMessageRunIds(detail, target);
+          const inputRunIds = getCachedOpenClawCapabilityMatrix()?.supportedCapabilities?.includes("chat-input-custody-v1")
+            ? receiptRunIds : undefined;
+          const payload = await getOpenClawAdapter().getSessionHistory(
+            { sessionKey: target.sessionKey, limit: 100, inputRunIds },
+            { allowCliFallback: false, timeoutMs: 3_000 }
+          );
+          if (payload.sessionId !== target.sessionId || payload.sessionKey !== target.sessionKey) return;
+          return {
+            conversation: parseRuntimeOutputFromSessionHistory(runtime, payload, workspace?.path, { conversation: true }).items,
+            messageActivity: readNativeMessageActivity(payload, receiptRunIds)
+          };
+        } catch {
+          // Preserve the previous task output when native history is temporarily unavailable.
+          return undefined;
         }
       };
 
@@ -269,6 +326,28 @@ export async function GET(
       Connection: "keep-alive"
     }
   });
+}
+
+function readMessageRunIds(detail: TaskDetailRecord, target: NonNullable<ReturnType<typeof resolveTaskLiveTarget>>) {
+  const history = detail.task.metadata.operatorHistory;
+  if (!Array.isArray(history)) return [];
+  return history.flatMap((entry) => entry?.kind === "message" && entry.sessionId === target.sessionId &&
+    entry.sessionKey === target.sessionKey && typeof entry.runId === "string" ? [entry.runId] : []).slice(-50);
+}
+
+function readNativeMessageActivity(payload: Record<string, unknown>, runIds: string[]): TaskDetailRecord["messageActivity"] {
+  const receipts = Array.isArray(payload.inputReceipts) ? payload.inputReceipts : [];
+  const sessionInfo = payload.sessionInfo as { hasActiveRun?: boolean; activeRunIds?: string[] } | undefined;
+  const active = sessionInfo?.hasActiveRun === true && Array.isArray(sessionInfo.activeRunIds)
+    ? new Set(sessionInfo.activeRunIds) : new Set<string>();
+  const result: NonNullable<TaskDetailRecord["messageActivity"]> = Object.create(null);
+  for (const runId of runIds) {
+    const receipt = receipts.find((entry) => entry?.runId === runId);
+    if (receipt?.cancelled === true) result[runId] = "cancelled";
+    else if (receipt?.state === "pending" && receipt.queued === true) result[runId] = "queued";
+    else if (receipt?.state === "consumed") result[runId] = active.has(runId) ? "processing" : "recorded";
+  }
+  return result;
 }
 
 function indexTaskDetailIds(detail: TaskDetailRecord, ids: Set<string>) {

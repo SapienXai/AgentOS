@@ -188,10 +188,12 @@ function ConversationRow({ entry, agent, agentName }: {
           {isUser ? "You" : entry.agentId && entry.agentId !== agent?.id ? entry.title : agentName}
           {label ? <time dateTime={entry.timestamp} className="text-[11px] font-normal tabular-nums text-[var(--task-muted)]">{label}</time> : null}
         </p>
-        <div data-task-message={entry.streaming ? "streaming" : undefined} className={cn("max-w-full rounded-2xl px-3 py-2 text-[14px] leading-[1.55] [overflow-wrap:anywhere]", isUser ? "bg-[var(--task-user)]" : "bg-[var(--task-message)]")}>
+        <div data-task-message={entry.streaming ? "streaming" : undefined} className={cn("max-w-full rounded-2xl text-[14px] leading-[1.55] [overflow-wrap:anywhere]", isUser ? "bg-[var(--task-user)] px-3 py-2" : "px-1")}>
           {entry.streaming ? <p className="whitespace-pre-wrap">{entry.text}<span className="ml-1 inline-block h-[0.85em] w-0.5 rounded-full bg-[var(--task-accent)] motion-safe:animate-pulse" aria-hidden="true" /></p> :
             <AgentChatMessageContent text={entry.text} className="!leading-[1.55] !text-inherit" />}
         </div>
+        {entry.delivery ? <p className="mt-1 px-1 text-right text-[11px] text-[var(--task-muted)]"
+          aria-live="polite">{entry.delivery}</p> : null}
       </div>
     </li>
   );

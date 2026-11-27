@@ -15,7 +15,7 @@ test("collapsed task cards keep runtime metrics out of the primary presentation"
   assert.doesNotMatch(source, /taskTokenCount|taskRunCount|tokens reported by OpenClaw|Tokens not reported/);
   assert.match(source, /Elapsed/);
   assert.match(source, /Open task conversation/);
-  assert.match(source, /<TaskFollowUpComposer task=\{task\} liveConversation/);
+  assert.match(source, /<TaskMessageComposer key=\{task.id\} task=\{task\}/);
 });
 
 test("scheduled task review uses real OpenClaw operation actions", async () => {

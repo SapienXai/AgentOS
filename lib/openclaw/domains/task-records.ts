@@ -88,6 +88,9 @@ export function buildTaskRecord(
   const openClawTaskId = resolveOpenClawTaskId(sortedRuntimes);
   const sessionKey = resolveTaskSessionKey(sortedRuntimes);
   const sessionId = resolveTaskSessionId(sortedRuntimes, sessionIds);
+  const nativeSessionActive = sortedRuntimes.find((runtime) => runtime.sessionId === sessionId &&
+    (runtime.key === sessionKey || runtime.metadata.nativeSessionKey === sessionKey) &&
+    typeof runtime.metadata.nativeSessionActive === "boolean")?.metadata.nativeSessionActive ?? null;
   const continuationConfidence = resolveTaskContinuationConfidence(provenance, sessionKey, sessionId);
   const executionIdentity = resolveTaskExecutionIdentity(sortedRuntimes, {
     dispatchId: dispatchId ?? null,
@@ -160,6 +163,7 @@ export function buildTaskRecord(
       continuationConfidence,
       continuationSessionId: sessionId,
       continuationSessionKey: sessionKey,
+      nativeSessionActive,
       continuationSource: provenance,
       primaryAgentId: primaryAgentId ?? null,
       workspaceId: workspaceId ?? null,
@@ -192,6 +196,8 @@ export function buildTaskRecord(
         typeof primaryRuntime?.metadata.dispatchRunnerStartedAt === "string"
           ? primaryRuntime.metadata.dispatchRunnerStartedAt
           : null,
+      dispatchRunnerFinishedAt: firstMetadataString(sortedRuntimes, "dispatchRunnerFinishedAt"),
+      dispatchResultText: firstMetadataString(sortedRuntimes, "dispatchResultText"),
       dispatchHeartbeatAt:
         typeof primaryRuntime?.metadata.dispatchHeartbeatAt === "string"
           ? primaryRuntime.metadata.dispatchHeartbeatAt
@@ -618,7 +624,7 @@ function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: Runtim
   const nativeTaskStatus = resolveNativeTaskStatus(runtimes);
   if (
     (nativeTaskStatus && isTerminalTaskStatus(resolveCanonicalTaskStatus({ nativeTaskStatus, runtimeStatuses: [] }))) ||
-    (!nativeTaskStatus && dispatchStatus && isTerminalTaskStatus(dispatchStatus))
+    (!nativeTaskStatus && dispatchStatus && (isTerminalTaskStatus(dispatchStatus) || dispatchStatus === "idle"))
   ) {
     return 0;
   }
@@ -649,6 +655,7 @@ function resolveTaskDispatchStatus(runtimes: RuntimeRecord[]): RuntimeRecord["st
   if (statuses.includes("completed")) {
     return "completed";
   }
+  if (statuses.includes("idle")) return "idle";
 
   if (statuses.includes("running")) {
     return "running";

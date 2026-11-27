@@ -598,7 +598,7 @@ async function run() {
               await panel.getByRole("button", { name: "Send task instruction" }).click();
               const response = await control;
               const receipt = await response.json();
-              assert.equal(response.request().postDataJSON().action, "steer");
+              assert.equal(response.request().postDataJSON().action, "message");
               assert(response.ok() && receipt.result?.target?.sessionKey?.endsWith(result.dispatchId), receipt.error || "Native instruction targeted a different task.");
               await expect(panel.getByText(message, { exact: true })).toBeVisible();
               const sessionKey = receipt.result.target.sessionKey;
@@ -626,6 +626,42 @@ async function run() {
               const approvals = await nativeClient.callNative("exec.approval.list", {}, { timeoutMs: 5_000 });
               assert(!approvals.some((entry) => entry.id === approval.id), "The denied native approval is still pending.");
               await expect(panel.getByText(/The evening edition matches the source totals/).first()).toBeVisible({ timeout: 20_000 });
+              await expect(panel.getByText("I kept the editorial scope to the evening edition only.", { exact: true })).toBeVisible({ timeout: 25_000 });
+              await expect(panel.getByText("Completed", { exact: true })).toBeVisible({ timeout: 15_000 });
+              await expect(panel.getByRole("progressbar")).toHaveCount(0);
+              const followUp = "Summarize the verified result in one sentence for the archive.";
+              await panel.getByRole("textbox", { name: "Additional task instruction" }).fill(followUp);
+              const sentFollowUp = page.waitForResponse((entry) => entry.request().method() === "POST" && entry.url().endsWith("/control"));
+              await panel.getByRole("button", { name: "Send task instruction" }).click();
+              const followUpResponse = await sentFollowUp;
+              const followUpReceipt = await followUpResponse.json();
+              assert(followUpResponse.ok(), followUpReceipt.error || "The completed task follow-up was rejected.");
+              assert.equal(followUpReceipt.result.target.sessionKey, sessionKey);
+              assert.equal(followUpReceipt.result.target.sessionId, receipt.result.target.sessionId);
+              const archiveSummary = "Archive summary: the evening edition matched the verified source totals.";
+              await expect(panel.getByText(archiveSummary, { exact: true })).toBeVisible({ timeout: 25_000 });
+              await expect(panel.getByText("Completed", { exact: true })).toBeVisible();
+              await expect(panel.getByText(/Dispatch runner finished/i)).toHaveCount(0);
+              await screenshot("task-card-completed-with-follow-up");
+              const completedDuration = await panel.locator('[title="Elapsed time"]').textContent();
+              assert(completedDuration && completedDuration !== "0s", "The completed duration used admission time instead of execution time.");
+              await page.reload();
+              await openTask.press("Enter", { timeout: 15_000 });
+              await expect(panel.getByText(archiveSummary, { exact: true })).toBeVisible({ timeout: 15_000 });
+              await expect(panel.getByText(/The evening edition matches the source totals/).first()).toBeVisible();
+              await expect(panel.getByText("Completed", { exact: true })).toBeVisible();
+              await expect(panel.locator('[title="Elapsed time"]')).toHaveText(completedDuration);
+              await expect(panel.getByText(/Dispatch runner finished/i)).toHaveCount(0);
+              const composer = panel.getByRole("textbox", { name: "Additional task instruction" });
+              await composer.fill("Verify follow-up receipt alpha.");
+              await composer.press("Enter");
+              await composer.fill("Verify follow-up receipt beta.");
+              await composer.press("Enter");
+              for (const name of ["alpha", "beta"]) {
+                await expect(panel.getByText(`Verify follow-up receipt ${name}.`, { exact: true })).toBeVisible();
+                await expect(panel.getByText(`The ${name} receipt was processed.`, { exact: true })).toBeVisible({ timeout: 20_000 });
+              }
+              await expect(panel.getByText("Completed", { exact: true })).toBeVisible();
             });
             await record("task-card-native-cancellation", async () => {
               const cancelGoal = "WORKFORCE_ACCEPTANCE_CANCEL — Stop this isolated research run.";

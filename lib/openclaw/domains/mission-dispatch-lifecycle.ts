@@ -153,10 +153,16 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
 
 export async function writeMissionDispatchRecord(record: MissionDispatchRecordLike) {
   const filePath = missionDispatchRecordPath(record.id);
-  const tempPath = `${filePath}.${process.pid}.tmp`;
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(tempPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-  await rename(tempPath, filePath);
+  await writeFile(tempPath, `${JSON.stringify({ ...record,
+    operatorHistory: record.operatorHistory?.filter((entry) => entry.kind !== "message")
+  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    await rename(tempPath, filePath);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
 }
 
 export async function launchMissionDispatchRunner(record: MissionDispatchRecord) {
@@ -293,11 +299,10 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
   if (isTerminalRuntimeStatus(runtime.status) && missionDispatchRuntimeMatchesRecord(record, runtime)) {
     const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
 
-    if (isMissionDispatchTerminalStatus(latestRecord.status)) {
+    if (isMissionDispatchTerminalStatus(latestRecord.status) || !missionDispatchRuntimeMatchesRecord(latestRecord, runtime)) {
       return;
     }
 
-    const finishedAt = timestampFromUnix(runtime.updatedAt);
     const outputRuntime = {
       ...runtime,
       agentId: runtime.agentId ?? latestRecord.agentId,
@@ -306,7 +311,11 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     const terminalOutput = outputRuntime.agentId && outputRuntime.sessionId
       ? await readRuntimeOutputForMissionDispatchRecord(latestRecord, outputRuntime)
       : null;
-    const terminalError = terminalOutput?.errorMessage || readTaskThinkingRejection(terminalOutput?.finalText, runtime.subtitle);
+    const finishedAt = terminalOutput?.finalTimestamp ??
+      timestampFromUnix(typeof runtime.metadata.endedAt === "number" ? runtime.metadata.endedAt : runtime.updatedAt);
+    const nativeFinalText = typeof runtime.metadata.nativeFinalText === "string" ? runtime.metadata.nativeFinalText : null;
+    const terminalError = (terminalOutput?.status === "available" ? terminalOutput.errorMessage : null) ||
+      readTaskThinkingRejection(terminalOutput?.finalText, nativeFinalText, runtime.subtitle);
     const runtimeStatus = normalizeRuntimeTerminalStatus(runtime.status);
     const nextStatus = terminalError && runtimeStatus === "completed" ? "stalled" : runtimeStatus;
     const terminalOutputResult = terminalOutput && (
@@ -317,6 +326,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     const terminalResult = nextStatus === "completed"
       ? createMissionDispatchResultFromTerminalRuntime(runtime)
       : null;
+    const observedResult = terminalOutputResult ?? terminalResult;
 
     const nextRecord = {
       ...latestRecord,
@@ -331,9 +341,9 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
         runtimeId: runtime.id,
         observedAt: finishedAt
       },
-      result: terminalOutputResult && latestRecord.result
-        ? mergeMissionDispatchResult(latestRecord.result, terminalOutputResult)
-        : terminalOutputResult ?? latestRecord.result ?? terminalResult,
+      result: observedResult && latestRecord.result
+        ? mergeMissionDispatchResult(latestRecord.result, observedResult)
+        : observedResult ?? latestRecord.result,
       error:
         nextStatus === "stalled"
           ? terminalError || latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
@@ -358,10 +368,12 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     return;
   }
 
-  const finalizedFromTranscript = Boolean(output.finalTimestamp && output.stopReason && output.stopReason !== "toolUse");
+  const finalizedFromTranscript = output.status === "available" && Boolean(output.finalTimestamp &&
+    output.stopReason && output.stopReason !== "toolUse");
   const reasoningError = readTaskThinkingRejection(output.finalText);
   const stalledFromTranscript =
-    Boolean(output.errorMessage || reasoningError) || output.stopReason === "error" || output.stopReason === "aborted";
+    output.status === "available" &&
+    (Boolean(output.errorMessage || reasoningError) || output.stopReason === "error" || output.stopReason === "aborted");
 
   if (!finalizedFromTranscript && !stalledFromTranscript) {
     return;
@@ -369,7 +381,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
 
   const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
 
-  if (isMissionDispatchTerminalStatus(latestRecord.status)) {
+  if (isMissionDispatchTerminalStatus(latestRecord.status) || isMissionDispatchRuntimeFromOlderExecution(latestRecord, runtime)) {
     return;
   }
 
@@ -444,7 +456,7 @@ async function backfillCompletedMissionDispatchResultFromRuntime(
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
     runner: {
       ...latestRecord.runner,
-      finishedAt: latestRecord.runner.finishedAt ?? finishedAt,
+      finishedAt: maxIsoTimestamp(latestRecord.runner.finishedAt, finishedAt),
       lastHeartbeatAt: maxIsoTimestamp(latestRecord.runner.lastHeartbeatAt, finishedAt)
     },
     result: nextResult
@@ -554,7 +566,8 @@ async function readRuntimeOutputForMissionDispatchRecord(
 ): Promise<RuntimeOutputRecord | null> {
   const sessionId = runtime.sessionId ?? extractMissionDispatchSessionId(record);
 
-  if (!runtime.agentId || !sessionId) {
+  const expectedSession = extractMissionDispatchSessionId(record);
+  if (!runtime.agentId || !sessionId || (expectedSession && sessionId !== expectedSession)) {
     return null;
   }
 
@@ -583,7 +596,8 @@ async function readRuntimeOutputForMissionDispatchRecord(
       }
     } satisfies RuntimeRecord;
 
-    const output = parseRuntimeOutputFromTranscript(transcriptRuntime, raw, record.workspacePath ?? undefined);
+    const output = parseRuntimeOutputFromTranscript(transcriptRuntime, raw, record.workspacePath ?? undefined,
+      { exactDispatchTurn: true });
 
     if (hasMeaningfulTokenUsage(output.tokenUsage)) {
       return output;
@@ -613,8 +627,10 @@ async function readRuntimeOutputFromGatewaySessionHistory(
   try {
     const payload = await getOpenClawAdapter().getSessionHistory(
       { sessionKey, limit: 200 },
-      { timeoutMs: 8_000 }
+      { timeoutMs: 8_000, allowCliFallback: false }
     );
+    if ((payload.sessionId && payload.sessionId !== runtime.sessionId) ||
+        (payload.sessionKey && payload.sessionKey !== sessionKey)) return null;
     const historyRuntime = {
       ...runtime,
       sessionId: runtime.sessionId ?? extractMissionDispatchSessionId(record) ?? undefined,
@@ -630,7 +646,8 @@ async function readRuntimeOutputFromGatewaySessionHistory(
         sessionKey
       }
     } satisfies RuntimeRecord;
-    const output = parseRuntimeOutputFromSessionHistory(historyRuntime, payload, record.workspacePath ?? undefined);
+    const output = parseRuntimeOutputFromSessionHistory(historyRuntime, payload, record.workspacePath ?? undefined,
+      { exactDispatchTurn: true });
 
     return output.items.length > 0 ? output : null;
   } catch {
@@ -962,10 +979,11 @@ function normalizeRuntimeTerminalStatus(status: RuntimeRecord["status"]): Missio
 }
 
 function createMissionDispatchResultFromTerminalRuntime(runtime: RuntimeRecord): MissionDispatchCommandPayloadLike {
+  const finalText = typeof runtime.metadata.nativeFinalText === "string" ? runtime.metadata.nativeFinalText : null;
   return {
     runId: runtime.runId || `runtime:${runtime.id}`,
     status: "completed",
-    summary: runtime.subtitle || "completed",
+    ...(finalText ? { payloads: [{ text: finalText, mediaUrl: null }] } : {}),
     meta: {
       agentId: runtime.agentId,
       sessionId: runtime.sessionId,
@@ -1091,7 +1109,10 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
             ? parsed.error
             : null,
       cancellation: normalizeMissionCancellation(parsed.cancellation),
-      operatorHistory: normalizeMissionOperatorHistory(parsed.operatorHistory),
+      operatorHistory: [
+        ...normalizeMissionOperatorHistory(parsed.operatorHistory),
+        ...(await readMissionMessageReceipts(filePath))
+      ],
       mission: parsed.mission,
       routedMission: parsed.routedMission,
       thinking: normalizeMissionThinking(parsed.thinking),
@@ -1153,7 +1174,7 @@ function normalizeMissionOperatorHistory(value: unknown): NonNullable<MissionDis
     const candidate = entry as Record<string, unknown>;
     if (
       typeof candidate.id !== "string" ||
-      (candidate.kind !== "steer" && candidate.kind !== "continue" && candidate.kind !== "inject") ||
+      (candidate.kind !== "steer" && candidate.kind !== "continue" && candidate.kind !== "inject" && candidate.kind !== "message") ||
       typeof candidate.message !== "string" ||
       typeof candidate.requestedAt !== "string" ||
       typeof candidate.acceptedAt !== "string"
@@ -1162,6 +1183,7 @@ function normalizeMissionOperatorHistory(value: unknown): NonNullable<MissionDis
       id: candidate.id,
       idempotencyKey: typeof candidate.idempotencyKey === "string" ? candidate.idempotencyKey : null,
       kind: candidate.kind,
+      status: candidate.status === "queued" ? "queued" : "accepted",
       message: candidate.message.slice(0, 12_000),
       requestedAt: candidate.requestedAt,
       acceptedAt: candidate.acceptedAt,
@@ -1172,15 +1194,38 @@ function normalizeMissionOperatorHistory(value: unknown): NonNullable<MissionDis
   });
 }
 
+async function readMissionMessageReceipts(dispatchPath: string) {
+  try {
+    const raw = await readFile(`${dispatchPath}.messages`, "utf8");
+    return normalizeMissionOperatorHistory(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+const pendingReceiptWrites = new Map<string, Promise<unknown>>();
+
 export async function appendMissionDispatchOperatorInstruction(input: {
   dispatchId: string;
   idempotencyKey?: string | null;
-  kind: "steer" | "continue" | "inject";
+  kind: "steer" | "continue" | "inject" | "message";
+  status?: "queued" | "accepted";
   message: string;
   sessionKey?: string | null;
   sessionId?: string | null;
   runId?: string | null;
 }) {
+  const previous = pendingReceiptWrites.get(input.dispatchId);
+  const write = (previous ?? Promise.resolve()).catch(() => undefined).then(() => persistOperatorInstruction(input));
+  pendingReceiptWrites.set(input.dispatchId, write);
+  try {
+    return await write;
+  } finally {
+    if (pendingReceiptWrites.get(input.dispatchId) === write) pendingReceiptWrites.delete(input.dispatchId);
+  }
+}
+
+async function persistOperatorInstruction(input: Parameters<typeof appendMissionDispatchOperatorInstruction>[0]) {
   const record = await readMissionDispatchRecordById(input.dispatchId);
   if (!record) return null;
   const idempotencyKey = input.idempotencyKey?.trim() || null;
@@ -1194,6 +1239,7 @@ export async function appendMissionDispatchOperatorInstruction(input: {
     id: `instruction-${randomUUID()}`,
     idempotencyKey,
     kind: input.kind,
+    status: input.status,
     message: input.message.trim().slice(0, 12_000),
     requestedAt: now,
     acceptedAt: now,
@@ -1201,6 +1247,19 @@ export async function appendMissionDispatchOperatorInstruction(input: {
     sessionId: input.sessionId?.trim() || record.sessionId || null,
     runId: input.runId?.trim() || null
   } satisfies NonNullable<MissionDispatchRecord["operatorHistory"]>[number];
+  if (input.kind === "message") {
+    // The dispatch runner owns lifecycle writes. Receipts must survive those writes.
+    const file = `${missionDispatchRecordPath(input.dispatchId)}.messages`;
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    const receipts = (record.operatorHistory ?? []).filter((entry) => entry.kind === "message");
+    await writeFile(temp, JSON.stringify([...receipts, instruction].slice(-50)), { encoding: "utf8", mode: 0o600 });
+    try {
+      await rename(temp, file);
+    } finally {
+      await rm(temp, { force: true });
+    }
+    return instruction;
+  }
   const nextRecord = {
     ...record,
     updatedAt: now,

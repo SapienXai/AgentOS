@@ -86,6 +86,8 @@ export function mapSessionCatalogEntryToRuntime(
       mission: session.mission ?? null,
       routedMission: session.routedMission ?? null,
       dispatchSubmittedAt: session.dispatchSubmittedAt ?? null,
+      nativeSessionActive: typeof session.hasActiveRun === "boolean" ? session.hasActiveRun : null,
+      nativeSessionKey: session.key ?? null,
       stage: stage ?? null,
       historical: false,
       ...(requesterSessionKey ? {

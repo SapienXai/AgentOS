@@ -14,6 +14,9 @@ export async function writeGatewayRuntimeRecord(root: string, runtime: RuntimeRe
     .catch(() => undefined)
     .then(async () => {
       const current = await readGatewayRuntimeRecord(filePath);
+      const terminal = current?.status === "completed" || current?.status === "cancelled" || current?.status === "stalled";
+      if (terminal && current?.runId && current.runId === runtime.runId &&
+          (runtime.status === "running" || runtime.status === "queued")) return;
       if (
         current &&
         typeof current.updatedAt === "number" &&

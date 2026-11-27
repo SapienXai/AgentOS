@@ -7,11 +7,15 @@ export function resolveTaskLiveTarget(detail: TaskDetailRecord) {
   const { task } = detail;
   const context = resolveTaskFollowUpContext(task);
   if (!context.sessionKey || !context.agentId || !hasScopedTaskSession(context)) return null;
+  const receipts = task.metadata.operatorHistory;
+  const receiptRuns = Array.isArray(receipts) ? receipts.flatMap((entry) =>
+    entry?.sessionKey === context.sessionKey && entry.sessionId === context.sessionId &&
+    typeof entry.runId === "string" ? [entry.runId] : []) : [];
 
   return {
     sessionKey: context.sessionKey,
     sessionId: context.sessionId,
-    runIds: new Set([...task.runIds, ...detail.runs.map((run) => run.runId).filter(Boolean)]),
+    runIds: new Set([...task.runIds, ...detail.runs.map((run) => run.runId).filter(Boolean), ...receiptRuns]),
     dedicated: Boolean(task.dispatchId && context.sessionKey === buildAgentSessionKey(context.agentId, task.dispatchId))
   };
 }
@@ -42,10 +46,11 @@ export function projectTaskAssistantFrame(
     type: "assistant",
     runId: payload.runId,
     sequence: typeof payload.seq === "number" && Number.isSafeInteger(payload.seq) ? payload.seq : null,
-    text: text.slice(0, 32_000),
+    text: state === "error" || state === "aborted" ? "" : text.slice(0, 32_000),
     replace: snapshot !== null || payload.replace === true || state !== "delta",
     timestamp: new Date().toISOString(),
-    done: state !== "delta"
+    done: state !== "delta",
+    ...(state !== "delta" ? { outcome: state } : {})
   };
 }
 

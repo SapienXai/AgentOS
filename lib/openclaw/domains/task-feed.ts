@@ -299,7 +299,7 @@ export async function buildMissionDispatchFeed(
       ? "Continue task requested"
       : instruction.kind === "steer"
         ? "Direction sent"
-        : "Session message added";
+        : instruction.kind === "message" ? "Task message sent" : "Session message added";
     const instructionDetail = summarizeText(instruction.message, 220);
     events.push({
       id: `${record.id}:${instruction.id}:requested`,

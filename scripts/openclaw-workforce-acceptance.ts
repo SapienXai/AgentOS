@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -57,7 +56,8 @@ async function main() {
     packageHash: identity.packageHash
   });
 
-  const disposableRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-workforce-"));
+  const disposableRoot = process.env.AGENTOS_WORKFORCE_TEST_ROOT;
+  if (!disposableRoot) throw new Error("Launch acceptance with pnpm openclaw:workforce-e2e.");
   const stateDir = path.join(disposableRoot, "state");
   const workspaceDir = path.join(disposableRoot, "workspace");
   const configPath = path.join(disposableRoot, "openclaw.json");
@@ -68,7 +68,6 @@ async function main() {
   let client: GatewayClient | null = null;
   let sessionKey: string | null = null;
   const parentEnvironment = captureEnvironment([
-    "AGENTOS_MISSION_CONTROL_ROOT",
     "AGENTOS_OPENCLAW_GATEWAY_URL",
     "AGENTOS_OPENCLAW_GATEWAY_TOKEN",
     "OPENCLAW_GATEWAY_URL",
@@ -86,7 +85,6 @@ async function main() {
     await writeConfig(configPath, workspaceDir, fixture.baseUrl, fixture.modelId, token);
     gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
     client = createClient(port, token, "0.1.0-agentos-workforce-acceptance", stateDir);
-    process.env.AGENTOS_MISSION_CONTROL_ROOT = path.join(disposableRoot, "mission-control");
     process.env.AGENTOS_OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${port}`;
     process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = token;
     process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${port}`;

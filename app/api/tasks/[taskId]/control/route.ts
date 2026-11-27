@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { controlRunningTaskSession } from "@/lib/agentos/control-plane";
+import { TaskMessageDeliveryUnknown } from "@/lib/openclaw/application/task-control-service";
 import { writeTaskReview } from "@/lib/agentos/application/task-review-service";
 import { appendMissionDispatchOperatorInstruction } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const controlRequestSchema = z.object({
-  action: z.enum(["steer", "inject", "continue"]),
+  action: z.enum(["steer", "inject", "continue", "message"]),
   message: z.string().trim().min(1).max(12000),
   dispatchId: z.string().trim().min(1).optional().nullable(),
   taskSessionOnly: z.boolean().optional(),
@@ -42,6 +43,10 @@ export async function POST(
       },
       { status: 400 }
     );
+  }
+
+  if (parseResult.data.action === "message" && !parseResult.data.idempotencyKey) {
+    return NextResponse.json({ error: "A message identifier is required." }, { status: 400 });
   }
 
   const authorization = await requireAgentOsOpenClawPreflight(request, {
@@ -83,7 +88,8 @@ export async function POST(
           message: parseResult.data.message,
           sessionKey: result.target.sessionKey,
           sessionId: result.target.sessionId,
-          runId
+          runId,
+          status: result.result.status === "queued" || result.result.queued === true ? "queued" : "accepted"
         });
       } catch {
         historyPersistenceWarning = "OpenClaw accepted the instruction, but AgentOS could not save its task history receipt.";
@@ -112,6 +118,9 @@ export async function POST(
       historyPersistenceWarning
     }));
   } catch (error) {
+    if (error instanceof TaskMessageDeliveryUnknown) {
+      return NextResponse.json({ error: error.message, delivery: "unconfirmed" }, { status: 503 });
+    }
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to control the running task.")

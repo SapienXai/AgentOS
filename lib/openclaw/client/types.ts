@@ -1115,6 +1115,7 @@ export interface OpenClawDescribeSessionInput extends OpenClawSessionReferenceIn
 export interface OpenClawSessionHistoryInput extends OpenClawSessionReferenceInput {
   limit?: number;
   cursor?: string | number | null;
+  inputRunIds?: string[];
 }
 
 export interface OpenClawSessionExportInput extends OpenClawSessionReferenceInput {
@@ -1908,6 +1909,7 @@ export interface OpenClawSessionSteerInput {
   agentId?: string | null;
   message: string;
   idempotencyKey?: string | null;
+  queueMode?: "steer" | "followup";
 }
 
 export interface OpenClawChatInjectInput {

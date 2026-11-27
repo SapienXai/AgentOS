@@ -29,7 +29,7 @@ type MissionDispatchRecord = {
   sessionId?: string | null;
   sessionKey?: string | null;
   operatorHistory?: Array<{
-    kind: "steer" | "continue" | "inject";
+    kind: "steer" | "continue" | "inject" | "message";
     acceptedAt: string;
     runId: string | null;
     sessionKey: string | null;

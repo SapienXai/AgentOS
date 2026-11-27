@@ -1609,6 +1609,9 @@ export interface TaskDetailRecord {
   warnings: string[];
   integrity: TaskIntegrityRecord;
   taskHistory?: TaskHistoryRecord | null;
+  /** Bounded native conversation for a verified dedicated task session. */
+  conversation?: RuntimeOutputRecord["items"];
+  messageActivity?: Record<string, "queued" | "recorded" | "processing" | "cancelled">;
 }
 
 export type RelationshipKind = "contains" | "uses-model" | "active-run";
@@ -1805,6 +1808,7 @@ export type TaskDetailStreamEvent =
       replace: boolean;
       timestamp: string;
       done: boolean;
+      outcome?: "final" | "aborted" | "error";
     }
   | {
       type: "tool";
@@ -1819,6 +1823,7 @@ export type TaskDetailStreamEvent =
       type: "ready";
       ok: boolean;
       eventBridge?: OpenClawEventBridgeStreamStatus;
+      sessionConnection?: "connected" | "reconnecting" | "unavailable";
     }
   | {
       type: "error";
