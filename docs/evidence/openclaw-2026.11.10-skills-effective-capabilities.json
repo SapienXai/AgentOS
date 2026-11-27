@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-capability-truthfulness-skills-runtime-certification",
-  "generatedAt": "2026-11-27T06:58:31.569Z",
+  "generatedAt": "2026-11-27T07:10:40.585Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "certifiedCodeHead": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
+    "certifiedCodeHead": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
     "openClaw": {
       "release": "2026.11.10",
       "source": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -76,7 +76,7 @@
       "enabled": true,
       "seedMethod": "skills.library.save",
       "seed": "PASS",
-      "skillId": "be9805d6-3e00-4cfc-819d-a48b64cf10b7",
+      "skillId": "ae557692-e289-4fd2-ac9e-e6724f5ec17c",
       "revision": "caa23bc1754c04f9298bf007b9d92eba5344f0f2688c08c1f6541de54817d257",
       "read": "PASS",
       "revisionIdentity": "PASS",
@@ -189,7 +189,7 @@
     },
     "oneRpcPerTool": false,
     "rootDashboardFullResolution": false,
-    "observedTimingMs": 25
+    "observedTimingMs": 85
   },
   "security": {
     "credentialsExposed": false,

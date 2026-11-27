@@ -1,6 +1,6 @@
 # Living Workforce acceptance
 
-The tested code is `3c2be27082586372b52162d27d2a89d5b9a22c9c` on `main`, using AgentOS 0.11.0 and the exact OpenClaw 2026.11.10 runtime, source `6ea542fd97e2876aa4c871ccc494ed5419a03c5c`. Living Workforce is the working 0.12 milestone.
+The tested code is `72283a611f0bb83cb4252e60e3bac2e637d49e35` on `main`, using AgentOS 0.11.0 and the exact OpenClaw 2026.11.10 runtime, source `6ea542fd97e2876aa4c871ccc494ed5419a03c5c`. Living Workforce is the working 0.12 milestone.
 
 ## From assignment to result
 
@@ -70,7 +70,7 @@ Native identity, runtime, authorization, task, cron, memory, skills, transport, 
 | OpenClaw aggregate and provenance freshness | 18 artifacts passed. The freshness gate reports documentation-only changes after the certified code revision. |
 | GitHub Actions | [CI on main](https://github.com/SapienXai/AgentOS/actions/workflows/ci.yml?query=branch%3Amain) |
 
-Evidence was first bound at `a9d7a3c1`. The Git code history is `beb1e3ba` for Workforce and native dispatch, `6c278fb3` and `58bcc976` for scheduled work, `e59ad260` for browser coverage and `3c2be270` for fixture reliability. The production browser build was made from `58bcc976`. Later code commits only change test scripts and fixtures. Certificate artifacts are committed after the tested code so the freshness gate can bind both revisions.
+The [native run manifest](evidence/native-certification-runs.json) records the isolated fresh-baseline retry. The Git code history is `beb1e3ba` for Workforce and native dispatch, `6c278fb3` and `58bcc976` for scheduled work, `e59ad260` for browser coverage `3c2be270` for fixture reliability, and `72283a61` for isolated dispatch workspaces. The production browser build was made from `58bcc976`. Later code commits only change test scripts and fixtures. The first GitHub CI run exposed a dispatch test fixture that relied on pre-existing paths. The suite now creates and removes unique local directories. Certificate artifacts are committed after the tested code so the freshness gate can bind both revisions.
 
 ## Local reproduction
 
