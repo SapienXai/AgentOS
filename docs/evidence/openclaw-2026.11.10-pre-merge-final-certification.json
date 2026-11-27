@@ -2,21 +2,21 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.10-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-26T12:09:32.423Z",
-  "certifiedAt": "2026-11-26T12:09:32.423Z",
-  "agentosHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
+  "generatedAt": "2026-11-27T07:01:49.222Z",
+  "certifiedAt": "2026-11-27T07:01:49.222Z",
+  "agentosHead": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
   "openclawVersion": "2026.11.10",
   "openclawSourceSha": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
   "upstreamEvidenceHashes": {},
   "contractAudit": null,
   "compatibility": {
     "report": {
-      "generatedAt": "2026-11-26T12:07:46.408Z",
+      "generatedAt": "2026-11-27T07:01:38.782Z",
       "target": {
         "name": "simulated-stable",
         "kind": "simulated",
         "label": "Simulated OpenClaw 2026.11.5 stable Gateway",
-        "aliasUsed": null,
+        "aliasUsed": "test-gateway-stable",
         "version": "2026.11.5",
         "gatewayUrl": null,
         "runtimeStartedBy": "script",
@@ -25,7 +25,7 @@
       },
       "targetName": "simulated-stable",
       "targetKind": "simulated",
-      "targetAliasUsed": null,
+      "targetAliasUsed": "test-gateway-stable",
       "gatewayUrl": null,
       "openClawVersionSource": "assumed",
       "runtimeStartedBy": "script",
@@ -3792,26 +3792,17 @@
     }
   },
   "runtimeAcceptance": null,
-  "telegramBrowserAcceptance": {
-    "passed": true,
-    "stepsPassed": 26,
-    "stepsTotal": 26
-  },
-  "discordBrowserAcceptance": {
-    "passed": true
-  },
-  "liveTelegram": {
-    "classification": "BLOCKED_BY_ENVIRONMENT",
-    "reason": "Disposable browser fixtures do not use live Telegram credentials."
-  },
+  "telegramBrowserAcceptance": null,
+  "discordBrowserAcceptance": null,
+  "liveTelegram": null,
   "knownExceptions": [
     "Compatibility degraded optional surfaces: Agent identity sync, Channel logs, Channel provisioning, Channel removal, Config patch, Device access repair, Device token lifecycle, Environment preparation, Gateway restart control, Gmail webhook setup, Model auth order, Model authentication, Model scan, Native plugin discovery catalog, Node pairing, Secret reload and resolution, Session recovery, Setup wizard, Update status.",
     "Compatibility unsupported optional surfaces: Browser profiles, GitHub profile and session publication, Managed worktrees, Operator questions, Session collaboration and ownership, Skills library, Task assignment, Task history, Task suggestions."
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "2eef392a4238dda9a31f7ade182b2b8b0df68f30",
-    "evidenceCommit": "593ff2d8fa61e946be0bdcc5e9862f4b829185d6",
+    "certifiedCodeHead": "3c2be27082586372b52162d27d2a89d5b9a22c9c",
+    "evidenceCommit": "a9d7a3c102d49c6ad3e1ba19d9e8aab845d03785",
     "branch": "main",
     "node": "v24.22.1",
     "openClaw": {
@@ -3983,7 +3974,7 @@
       "workforce": {
         "path": "docs/evidence/openclaw-2026.11.10-workforce-acceptance.json",
         "status": "PASS",
-        "skips": 4,
+        "skips": 0,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
@@ -4052,7 +4043,7 @@
       }
     }
   },
-  "skips": 88,
+  "skips": 84,
   "expectedAuthorizationDenials": 69,
   "production": {
     "status": "not-tested",
@@ -4125,7 +4116,7 @@
     "workforce": {
       "path": "docs/evidence/openclaw-2026.11.10-workforce-acceptance.json",
       "status": "PASS",
-      "skips": 4,
+      "skips": 0,
       "environmentLimited": 0,
       "expectedDenials": 0
     },
@@ -4196,7 +4187,7 @@
   "classification": {
     "pass": 18,
     "fail": 0,
-    "skipped": 88,
+    "skipped": 84,
     "environmentLimited": 0,
     "expectedAuthorizationDenials": 69,
     "productionGatewayTouched": false,
