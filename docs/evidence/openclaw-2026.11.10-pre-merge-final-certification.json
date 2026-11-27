@@ -2,21 +2,21 @@
   "schemaVersion": 2,
   "artifactType": "openclaw-2026.11.10-pre-merge-final-certification",
   "phase": "pre-merge-final-certification",
-  "generatedAt": "2026-11-27T07:13:09.766Z",
-  "certifiedAt": "2026-11-27T07:13:09.766Z",
-  "agentosHead": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
+  "generatedAt": "2026-11-27T11:04:00.424Z",
+  "certifiedAt": "2026-11-27T11:04:00.424Z",
+  "agentosHead": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
   "openclawVersion": "2026.11.10",
   "openclawSourceSha": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
   "upstreamEvidenceHashes": {},
   "contractAudit": null,
   "compatibility": {
     "report": {
-      "generatedAt": "2026-11-27T07:01:38.782Z",
+      "generatedAt": "2026-11-27T11:04:00.080Z",
       "target": {
         "name": "simulated-stable",
         "kind": "simulated",
         "label": "Simulated OpenClaw 2026.11.5 stable Gateway",
-        "aliasUsed": "test-gateway-stable",
+        "aliasUsed": null,
         "version": "2026.11.5",
         "gatewayUrl": null,
         "runtimeStartedBy": "script",
@@ -25,7 +25,7 @@
       },
       "targetName": "simulated-stable",
       "targetKind": "simulated",
-      "targetAliasUsed": "test-gateway-stable",
+      "targetAliasUsed": null,
       "gatewayUrl": null,
       "openClawVersionSource": "assumed",
       "runtimeStartedBy": "script",
@@ -3801,8 +3801,8 @@
   ],
   "provenance": {
     "repository": "SapienXai/AgentOS",
-    "certifiedCodeHead": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
-    "evidenceCommit": "6087beabe0921c18e3fcca4549ac1a2554061729",
+    "certifiedCodeHead": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
+    "evidenceCommit": "3074e8fb8453f60eab721448a1de5a8393c7fb3e",
     "branch": "main",
     "node": "v24.22.1",
     "openClaw": {
@@ -4023,14 +4023,14 @@
       "doctor": {
         "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery.json",
         "status": "PASS",
-        "skips": 2,
+        "skips": 4,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
       "doctor-hardening": {
         "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
         "status": "PASS",
-        "skips": 2,
+        "skips": 4,
         "environmentLimited": 0,
         "expectedDenials": 0
       },
@@ -4043,7 +4043,7 @@
       }
     }
   },
-  "skips": 84,
+  "skips": 88,
   "expectedAuthorizationDenials": 69,
   "production": {
     "status": "not-tested",
@@ -4165,14 +4165,14 @@
     "doctor": {
       "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery.json",
       "status": "PASS",
-      "skips": 2,
+      "skips": 4,
       "environmentLimited": 0,
       "expectedDenials": 0
     },
     "doctor-hardening": {
       "path": "docs/evidence/openclaw-2026.11.10-doctor-update-recovery-hardening.json",
       "status": "PASS",
-      "skips": 2,
+      "skips": 4,
       "environmentLimited": 0,
       "expectedDenials": 0
     },
@@ -4187,7 +4187,7 @@
   "classification": {
     "pass": 18,
     "fail": 0,
-    "skipped": 84,
+    "skipped": 88,
     "environmentLimited": 0,
     "expectedAuthorizationDenials": 69,
     "productionGatewayTouched": false,
