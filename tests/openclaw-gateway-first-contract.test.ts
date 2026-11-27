@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { after, afterEach, before, test } from "node:test";
 
 import {
   clearOpenClawCapabilityMatrixCacheForTesting,
@@ -31,6 +32,20 @@ import { controlRunningTaskSession } from "@/lib/openclaw/application/task-contr
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
 const createdMissionDispatchIds = new Set<string>();
+let contractRoot: string;
+let contractWorkspace: string;
+let secondContractWorkspace: string;
+
+before(async () => {
+  contractRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-gateway-contract-"));
+  contractWorkspace = path.join(contractRoot, "workspace");
+  secondContractWorkspace = path.join(contractRoot, "workspace-two");
+  await Promise.all([mkdir(contractWorkspace), mkdir(secondContractWorkspace)]);
+});
+
+after(async () => {
+  if (contractRoot) await rm(contractRoot, { recursive: true, force: true });
+});
 
 afterEach(async () => {
   resetOpenClawEventBridgeForTesting();
@@ -813,7 +828,7 @@ test("task continuation runs a new turn on the existing dispatch session", async
       sessionId: "session-1",
       message: "Continue from here",
       dispatchId: "dispatch-1",
-      workspace: "/tmp/agentos-contract-workspace"
+      workspace: contractWorkspace
     }
   );
   assert.match(call.idempotencyKey ?? "", /^dispatch-1:continue:/);
@@ -1358,7 +1373,7 @@ function createSnapshot(): MissionControlSnapshot {
       loaded: true,
       rpcOk: true,
       health: "healthy",
-      workspaceRoot: "/tmp",
+      workspaceRoot: contractRoot,
       configuredWorkspaceRoot: null,
       dashboardUrl: "http://127.0.0.1:18789/",
       gatewayUrl: "ws://127.0.0.1:18789",
@@ -1422,7 +1437,7 @@ function createSnapshot(): MissionControlSnapshot {
       id: "workspace-1",
       name: "Workspace",
       slug: "workspace",
-      path: "/tmp/agentos-contract-workspace",
+      path: contractWorkspace,
       kind: "workspace",
       agentIds: ["agent-1"],
       modelIds: [],
@@ -1450,7 +1465,7 @@ function createSnapshot(): MissionControlSnapshot {
       id: "agent-1",
       name: "Agent",
       workspaceId: "workspace-1",
-      workspacePath: "/tmp/agentos-contract-workspace",
+      workspacePath: contractWorkspace,
       modelId: "openai/test",
       isDefault: true,
       status: "ready",
@@ -1539,7 +1554,7 @@ function createSnapshotWithSecondTarget(): MissionControlSnapshot {
     id: "workspace-2",
     name: "Workspace Two",
     slug: "workspace-two",
-    path: "/tmp/agentos-contract-workspace-two",
+    path: secondContractWorkspace,
     agentIds: ["agent-2"]
   });
   snapshot.agents.push({
@@ -1547,7 +1562,7 @@ function createSnapshotWithSecondTarget(): MissionControlSnapshot {
     id: "agent-2",
     name: "Agent Two",
     workspaceId: "workspace-2",
-    workspacePath: "/tmp/agentos-contract-workspace-two",
+    workspacePath: secondContractWorkspace,
     isDefault: false
   });
   return snapshot;
