@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { evaluateAgentOsApiRequest, evaluateAuthenticatedAgentOsApiRequest } from "@/lib/security/api-auth";
 import { getInstanceProtectionStatus, readInstanceSessionCookie, readManagedRemoteOrigins } from "@/lib/security/instance-protection";
+import { checkTailscaleIngress, denyTailscaleIngress } from "@/lib/security/instance-protection-route";
 
 const publicInstanceApiPaths = new Set([
   "/api/auth/status",
@@ -19,6 +20,8 @@ const publicPwaShellPaths = new Set(["/site.webmanifest", "/sw.js"]);
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isApiRequest = pathname.startsWith("/api/");
+  const ingress = await checkTailscaleIngress(request);
+  if (!ingress.allowed) return denyTailscaleIngress();
 
   if (publicInstanceApiPaths.has(pathname) || publicPwaShellPaths.has(pathname) || pathname === "/login") {
     return NextResponse.next();
@@ -48,7 +51,7 @@ export async function proxy(request: NextRequest) {
       );
     }
 
-    const loginUrl = request.nextUrl.clone();
+    const loginUrl = ingress.origin ? new URL(ingress.origin) : request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
     const returnTo = `${pathname}${request.nextUrl.search}`;

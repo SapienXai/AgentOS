@@ -2,10 +2,12 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
-import { isLocalOperatorHostRequest, parseHttpsOrigin } from "@/lib/security/local-operator";
+import { isLocalOperatorHostRequest, parseHttpsOrigin, readTrustedOperatorOrigins } from "@/lib/security/local-operator";
+import { changeTailscaleAccess, getTailscaleUpstream, inspectTailscaleAccess } from "@/lib/security/tailscale-access";
+import { isTailscaleName } from "@/lib/security/tailscale-native";
 import {
   EMPTY_REMOTE_ACCESS, getLanHttpsOrigins, MAX_REMOTE_ORIGINS,
-  type RemoteAccessChange, type RemoteAccessSettings
+  type RemoteAccessChange, type RemoteAccessSettings, type TailscaleRoute
 } from "@/lib/security/remote-access-policy";
 import {
   createPasswordSalt,
@@ -117,6 +119,9 @@ export async function readInstanceProtectionState(
     if (parsed.version !== 2 || !isStableActorId(parsed.actorId)) {
       throw new Error("Instance Protection state is invalid.");
     }
+
+    const tailscale = parsed.remoteAccess?.tailscale;
+    if (tailscale && !validTailscaleRoute(tailscale)) throw new Error("Instance Protection state is invalid.");
 
     const lockedActorId = parsed.lockedActorId === undefined || parsed.lockedActorId === null ? null : parsed.lockedActorId;
     const lockedAt = parsed.lockedAt === undefined || parsed.lockedAt === null ? null : parsed.lockedAt;
@@ -407,6 +412,9 @@ export async function disableInstanceProtection(
     if (!(await verifyPassword(currentPassword, state.passwordSalt, state.passwordHash))) {
       throw new InstanceProtectionError("Current password is incorrect.", 401, "invalid-current-password");
     }
+    if (state.remoteAccess?.tailscale) {
+      throw new InstanceProtectionError("Disable the managed Tailscale route in Access before turning off Instance Protection.", 409, "tailscale-route-managed");
+    }
     const store = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
     if (!store) {
       throw new InstanceProtectionError("AgentOS user accounts are not initialized.", 409, "orphaned-security-state");
@@ -443,7 +451,45 @@ export async function readManagedRemoteOrigins(request: { url: string; headers: 
   const settings = (await readInstanceProtectionState())?.remoteAccess;
   if (!settings) return [];
   const origins = Array.isArray(settings.origins) ? settings.origins.filter((value) => typeof value === "string") : [];
+  if (settings.tailscale?.enabled && settings.tailscale.target === getTailscaleUpstream()) {
+    origins.push(settings.tailscale.origin);
+  }
   return settings.lanEnabled === true ? [...origins, ...getLanHttpsOrigins()] : origins;
+}
+
+export function isTailscaleOriginApproved(origin: string, state: InstanceProtectionState | null, env = process.env) {
+  if (!state) return false;
+  const access = state.remoteAccess;
+  const route = access?.tailscale;
+  if (route?.origin === origin) return route.enabled && route.target === getTailscaleUpstream(env);
+  return (Array.isArray(access?.origins) && access.origins.includes(origin)) || readTrustedOperatorOrigins(env).has(origin);
+}
+
+function validTailscaleRoute(route: TailscaleRoute) {
+  const origin = typeof route.origin === "string" ? parseHttpsOrigin(route.origin) : null;
+  return origin?.origin === route.origin && isTailscaleName(origin.hostname) &&
+    typeof route.enabled === "boolean" && typeof route.nodeId === "string" && route.nodeId.length > 0 &&
+    typeof route.target === "string" && /^http:\/\/127\.0\.0\.1(?::[1-9]\d{0,4})?$/.test(route.target) &&
+    typeof route.marker === "string" && /^\/\.well-known\/agentos-serve-[0-9a-f-]{36}$/.test(route.marker);
+}
+
+export function manageInstanceTailscaleAccess(cookie: string | null, action?: "enable" | "disable", env = process.env) {
+  return withProtectionMutation(env, async () => {
+    const state = await readInstanceProtectionState(env);
+    const session = state ? await resolveActiveInstanceSession(cookie, state, env) : null;
+    if (!state || session?.user.role !== "owner") {
+      throw new InstanceProtectionError("Sign in locally as the AgentOS owner to manage Tailscale.", 403, "owner-required");
+    }
+    const access = state.remoteAccess ?? EMPTY_REMOTE_ACCESS;
+    const target = getTailscaleUpstream(env);
+    if (!action) return inspectTailscaleAccess(access.tailscale, target);
+    return changeTailscaleAccess({
+      action, route: access.tailscale, upstream: target,
+      persist: async (route) => {
+        await writeInstanceProtectionState({ ...state, remoteAccess: { ...access, tailscale: route } }, env);
+      }
+    });
+  });
 }
 
 export function manageInstanceRemoteAccess(cookie: string | null, change?: RemoteAccessChange, env = process.env) {

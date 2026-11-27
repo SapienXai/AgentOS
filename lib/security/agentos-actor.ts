@@ -4,11 +4,13 @@ import { NextResponse } from "next/server";
 
 import { hasValidAgentOsApiToken } from "@/lib/security/api-auth";
 import {
+  isTailscaleOriginApproved,
   readInstanceProtectionState,
   readInstanceSessionCookie,
   resolveActiveInstanceSession,
 } from "@/lib/security/instance-protection";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
+import { classifyTailscaleRequest } from "@/lib/security/tailscale-request";
 
 export type AgentOsActorKind = "instance-operator" | "desktop-operator" | "service" | "internal-service";
 
@@ -64,6 +66,9 @@ export async function resolveAgentOsActorContext(
   }
 
   const state = await readInstanceProtectionState(env);
+  // SSE permission checks reuse the original request after proxy entry.
+  const tailnet = classifyTailscaleRequest(request);
+  if (tailnet === "deny" || (tailnet && !isTailscaleOriginApproved(tailnet.origin, state, env))) return null;
 
   if (state) {
     const activeSession = await resolveActiveInstanceSession(readInstanceSessionCookie(request.headers), state, env);

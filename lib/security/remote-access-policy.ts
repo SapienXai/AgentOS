@@ -1,6 +1,24 @@
 import { networkInterfaces } from "node:os";
 
-export type RemoteAccessSettings = { origins: string[]; lanEnabled: boolean };
+export type TailscaleRoute = {
+  origin: string;
+  nodeId: string;
+  target: string;
+  marker: string;
+  enabled: boolean;
+};
+
+export type TailscaleAccessView = {
+  status: "not-installed" | "unavailable" | "disconnected" | "setup-required" | "manual" |
+    "ready" | "active" | "configured" | "conflict" | "cleanup-required";
+  message: string;
+  canEnable: boolean;
+  canDisable: boolean;
+  origin?: string;
+  installUrl: string;
+};
+
+export type RemoteAccessSettings = { origins: string[]; lanEnabled: boolean; tailscale?: TailscaleRoute };
 export type RemoteAccessChange = { action: "add" | "remove"; origin: string } | { action: "lan"; enabled: boolean };
 
 export const EMPTY_REMOTE_ACCESS: RemoteAccessSettings = { origins: [], lanEnabled: false };
