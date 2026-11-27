@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-runtime-certification",
-  "generatedAt": "2026-11-27T07:12:00.887Z",
+  "generatedAt": "2026-11-27T11:01:37.939Z",
   "provenance": {
-    "agentosCertifiedCodeHead": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
+    "agentosCertifiedCodeHead": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
     "openclawRelease": "2026.11.10",
     "openclawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
     "openclawBuildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
@@ -4282,7 +4282,7 @@
       "blockerCount": 0,
       "warningCount": 33,
       "unknownCount": 17,
-      "error": "OpenClaw contract source returned HTTP 403."
+      "error": "OpenClaw compatibility evidence exceeded the safe response size limit."
     },
     "evidenceBridge": {
       "schemaVersion": 2,
@@ -13639,9 +13639,9 @@
   ],
   "runtime": {
     "schemaVersion": 2,
-    "generatedAt": "2026-11-27T07:11:54.329Z",
+    "generatedAt": "2026-11-27T11:01:24.035Z",
     "targetVersion": "2026.11.10",
-    "gatewayUrl": "ws://127.0.0.1:56155/",
+    "gatewayUrl": "ws://127.0.0.1:49165/",
     "installedVersion": "2026.11.10",
     "buildId": "2026.11.10-release-6ea542fd97e2-2026-11-24T23-17-47.129Z",
     "protocolVersion": 4,

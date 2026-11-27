@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-27T07:10:00.882Z",
+  "generatedAt": "2026-11-27T10:58:50.265Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
+    "codeCommitUnderTest": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.11.10",
     "openClawSourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",

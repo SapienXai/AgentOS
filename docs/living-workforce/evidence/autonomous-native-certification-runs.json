@@ -1,0 +1,119 @@
+{
+  "agentosCodeCommit": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
+  "suites": [
+    {
+      "suite": "identity-e2e",
+      "artifact": "identity-authorization",
+      "exitCode": 0,
+      "seconds": 25.29
+    },
+    {
+      "suite": "multi-user-e2e",
+      "artifact": "multi-user",
+      "exitCode": 1,
+      "seconds": 25.98
+    },
+    {
+      "suite": "fresh-baseline-e2e",
+      "artifact": "fresh-baseline",
+      "exitCode": 1,
+      "seconds": 84.56
+    },
+    {
+      "suite": "multi-user-collaboration-certification",
+      "artifact": "multi-user-identity-collaboration",
+      "exitCode": 0,
+      "seconds": 33.06
+    },
+    {
+      "suite": "session-task-e2e",
+      "artifact": "session-task-alignment",
+      "exitCode": 0,
+      "seconds": 43.21
+    },
+    {
+      "suite": "automation-e2e",
+      "artifact": "automation-cron-alignment",
+      "exitCode": 0,
+      "seconds": 48.44
+    },
+    {
+      "suite": "official-production-cert",
+      "artifact": "final-official-runtime-certification",
+      "exitCode": 0,
+      "seconds": 23.44
+    },
+    {
+      "suite": "lifecycle-e2e",
+      "artifact": "lifecycle-certification",
+      "exitCode": 0,
+      "seconds": 167.25
+    },
+    {
+      "suite": "official-lifecycle-cert",
+      "artifact": "official-gateway-lifecycle-certification",
+      "exitCode": 0,
+      "seconds": 13.65
+    },
+    {
+      "suite": "capability-truthfulness-skills-cert",
+      "artifact": "skills-effective-capabilities",
+      "exitCode": 0,
+      "seconds": 11.82
+    },
+    {
+      "suite": "native-work-cert",
+      "artifact": "native-work-hardening",
+      "exitCode": 0,
+      "seconds": 18.41
+    },
+    {
+      "suite": "native-doctor-cert",
+      "artifact": "doctor-update-recovery",
+      "exitCode": 0,
+      "seconds": 7.43
+    },
+    {
+      "suite": "native-doctor-hardening-cert",
+      "artifact": "doctor-update-recovery-hardening",
+      "exitCode": 0,
+      "seconds": 7.17
+    },
+    {
+      "suite": "native-memory-cert",
+      "artifact": "native-memory",
+      "exitCode": 0,
+      "seconds": 23.9
+    },
+    {
+      "suite": "human-control-cert",
+      "artifact": "human-control-inbox",
+      "exitCode": 0,
+      "seconds": 5.95
+    },
+    {
+      "suite": "official-transport-cert",
+      "artifact": "official-transport-certification",
+      "exitCode": 0,
+      "seconds": 5.86
+    },
+    {
+      "suite": "workforce-e2e",
+      "artifact": "workforce-acceptance",
+      "exitCode": 0,
+      "seconds": 86.37
+    },
+    {
+      "suite": "multi-user-e2e",
+      "artifact": "multi-user",
+      "exitCode": 0,
+      "seconds": 6.68
+    },
+    {
+      "suite": "fresh-baseline-e2e",
+      "artifact": "fresh-baseline",
+      "exitCode": 0,
+      "seconds": 38.42
+    }
+  ]
+}

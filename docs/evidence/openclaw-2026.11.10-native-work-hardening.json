@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "artifactType": "openclaw-native-work-hardening-certification",
-  "generatedAt": "2026-11-27T07:10:23.580Z",
+  "generatedAt": "2026-11-27T11:00:05.917Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "main",
-    "codeCommitUnderTest": "72283a611f0bb83cb4252e60e3bac2e637d49e35",
+    "codeCommitUnderTest": "f8d3a4277f478c8118595db7d2abcb9cd8af19b0",
     "openClaw": {
       "version": "2026.11.10",
       "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
@@ -165,12 +165,12 @@
     "cleanup": true
   },
   "observations": {
-    "sessionKey": "agent:main:dashboard:b3717948-102e-485e-be05-4301d9e6bb51",
+    "sessionKey": "agent:main:dashboard:6d5bf579-ce87-40ff-9630-bb4ca2e06389",
     "sessionIdPresent": true,
-    "worktreeId": "c8579288-6059-454c-937a-e06827f7dd15",
+    "worktreeId": "b012ece4-df2f-484e-bcef-ee766c06de18",
     "worktreePathReported": true,
-    "suggestionId": "task_d4d1f78d-4083-49d1-94b5-4b340e37a3e4",
-    "acceptedSessionKey": "agent:main:dashboard:38000c00-01ea-4566-a8b4-468c7b711fde",
+    "suggestionId": "task_a3ad8b28-4436-45c9-8f56-c9d6654d4faf",
+    "acceptedSessionKey": "agent:main:dashboard:e04b1c48-cec0-4b68-9c56-9e72c92709b4",
     "eventNames": [
       "worktrees.branches.changed",
       "plugins.changed",

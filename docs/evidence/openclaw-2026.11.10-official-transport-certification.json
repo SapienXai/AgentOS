@@ -4,7 +4,7 @@
     "version": "2026.11.10",
     "sourceCommit": "6ea542fd97e2876aa4c871ccc494ed5419a03c5c",
     "protocol": 4,
-    "gatewayUrl": "ws://127.0.0.1:56107/"
+    "gatewayUrl": "ws://127.0.0.1:65476/"
   },
   "identity": {
     "clientName": "gateway-client",
@@ -13,7 +13,7 @@
   },
   "handshake": {
     "serverVersion": "2026.11.10",
-    "connectionId": "5bdcabe3-8904-4510-9edb-bf9934d5611e",
+    "connectionId": "99906cb1-aede-4ebc-a02b-99c993c2fe35",
     "grantedRole": "operator",
     "grantedScopes": [
       "operator.admin",
@@ -75,6 +75,6 @@
   },
   "eventCount": 5,
   "sequenceGaps": [],
-  "startedAt": "2026-11-27T07:11:30.846Z",
-  "completedAt": "2026-11-27T07:11:31.192Z"
+  "startedAt": "2026-11-27T11:00:49.305Z",
+  "completedAt": "2026-11-27T11:00:49.708Z"
 }
