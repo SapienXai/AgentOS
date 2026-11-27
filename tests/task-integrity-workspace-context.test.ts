@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildTaskIntegrityRecord } from "@/lib/openclaw/domains/mission-dispatch";
+import { parseRuntimeOutputFromSessionHistory } from "@/lib/openclaw/domains/runtime-transcript";
 import type { MissionControlSnapshot, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
 
 test("task integrity warns when task and runtime workspace context diverge", async () => {
@@ -73,6 +74,44 @@ test("task integrity preserves the OpenClaw dispatch stall error", async () => {
     integrity.issues.some((issue) => issue.id === "dispatch-stalled" && issue.detail === "OpenClaw Gateway wait timed out during gateway_draining."),
     true
   );
+});
+
+test("task integrity reads the original mission from scoped Gateway history", async () => {
+  const submittedAt = "2026-06-01T00:00:00.000Z";
+  const runtime = createRuntime({
+    runId: "dispatch-1",
+    status: "completed",
+    metadata: { dispatchId: "dispatch-1", dispatchSubmittedAt: submittedAt }
+  });
+  const task = createTask({ status: "completed" });
+  const assess = async (prompt: string, sessionId = runtime.sessionId) => buildTaskIntegrityRecord({
+    task,
+    runs: [runtime],
+    outputs: [parseRuntimeOutputFromSessionHistory({ ...runtime, sessionId }, { messages: [
+      { role: "user", content: prompt, timestamp: submittedAt },
+      { role: "toolResult", toolName: "read", content: "Verified source", timestamp: submittedAt },
+      { role: "assistant", content: "The source confirms the result.", stopReason: "stop", timestamp: submittedAt }
+    ] })],
+    createdFiles: [],
+    dispatchRecord: {
+      id: "dispatch-1", agentId: "agent-1", mission: task.mission!, routedMission: task.mission!,
+      submittedAt, updatedAt: submittedAt, status: "completed", observation: {}
+    },
+    snapshot: {
+      ...createSnapshot({ workspaces: ["workspace-1"], agents: [{ id: "agent-1", workspaceId: "workspace-1" }] }),
+      mode: "live"
+    }
+  });
+
+  const original = await assess("Check runtime context");
+  assert.equal(original.issues.some((issue) => issue.id === "missing-transcript"), false);
+  assert.equal(original.finalResponseText, "The source confirms the result.");
+  assert.deepEqual(original.toolNames, ["read"]);
+
+  const followUp = await assess("Summarize the result in one sentence");
+  assert.equal(followUp.issues.some((issue) => issue.id === "missing-transcript"), true);
+  assert.equal(followUp.finalResponseText, null);
+  assert.equal((await assess("Check runtime context", "unrelated-session")).finalResponseText, null);
 });
 
 function createTask(overrides: Partial<TaskRecord> = {}): TaskRecord {

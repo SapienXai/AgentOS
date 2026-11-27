@@ -150,16 +150,27 @@ export async function buildTaskIntegrityRecord(input: {
     [...matchingTranscriptTurns].sort(
       (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
     )[0] ?? null;
+  // Task detail already reads the normalized native session history when the
+  // legacy transcript file is absent. Reuse evidence for this exact dispatch.
+  const matchingOutput = !latestMatchingTurn && dispatchRecord && snapshot.mode === "live"
+    ? findMissionHistoryOutput(dispatchRecord, input.runs, input.outputs)
+    : null;
   const runtimeFinalText = latestMatchingTurn?.finalText?.trim() || null;
+  const historyFinalText = matchingOutput?.finalText?.trim() || null;
   const dispatchResultText = dispatchRecord ? resolveMissionDispatchResultText(dispatchRecord) : null;
-  const finalResponseText = runtimeFinalText || dispatchResultText || null;
-  const finalResponseSource = runtimeFinalText ? "runtime" : dispatchResultText ? "dispatch" : "none";
-  const sessionMismatch = Boolean(dispatchRecord && transcriptTurns.length > 0 && matchingTranscriptTurns.length === 0);
-  const toolNames = collectTranscriptToolNamesFromTranscript(matchingTranscriptTurns);
+  const finalResponseText = runtimeFinalText || dispatchResultText || historyFinalText || null;
+  const finalResponseSource = runtimeFinalText ? "runtime" : dispatchResultText ? "dispatch" : historyFinalText ? "runtime" : "none";
+  const transcriptTurnCount = Math.max(transcriptTurns.length, matchingOutput ? 1 : 0);
+  const matchingTranscriptTurnCount = matchingTranscriptTurns.length + (matchingOutput ? 1 : 0);
+  const sessionMismatch = Boolean(dispatchRecord && transcriptTurnCount > 0 && matchingTranscriptTurnCount === 0);
+  const toolNames = matchingOutput
+    ? uniqueStrings(matchingOutput.items.flatMap((item) => item.toolName ? [item.toolName] : []))
+    : collectTranscriptToolNamesFromTranscript(matchingTranscriptTurns);
   const emails = extractEmailsFromValues([
     finalResponseText,
     dispatchResultText,
-    ...matchingTranscriptTurns.flatMap((turn) => turn.items.map((item) => item.text))
+    ...matchingTranscriptTurns.flatMap((turn) => turn.items.map((item) => item.text)),
+    ...(matchingOutput?.items.map((item) => item.text) ?? [])
   ]);
   const issues: TaskIntegrityRecord["issues"] = [];
   const workspaceContextIssue = resolveWorkspaceContextIssue({
@@ -202,7 +213,7 @@ export async function buildTaskIntegrityRecord(input: {
     });
   }
 
-  if (task.status === "completed" && transcriptTurns.length === 0) {
+  if (task.status === "completed" && transcriptTurnCount === 0) {
     issues.push({
       id: "missing-transcript",
       severity: "warning",
@@ -271,7 +282,7 @@ export async function buildTaskIntegrityRecord(input: {
     });
   }
 
-  if (task.status === "completed" && expectsExternalLookup && matchingTranscriptTurns.length > 0 && toolNames.length === 0) {
+  if (task.status === "completed" && expectsExternalLookup && matchingTranscriptTurnCount > 0 && toolNames.length === 0) {
     issues.push({
       id: "missing-tool-evidence",
       severity: "warning",
@@ -299,8 +310,8 @@ export async function buildTaskIntegrityRecord(input: {
     outputDirRelative: dispatchRecord?.outputDirRelative ?? null,
     outputDirExists: outputDirInspection.exists,
     outputFileCount: outputDirInspection.fileCount,
-    transcriptTurnCount: transcriptTurns.length,
-    matchingTranscriptTurnCount: matchingTranscriptTurns.length,
+    transcriptTurnCount,
+    matchingTranscriptTurnCount,
     finalResponseText,
     finalResponseSource,
     dispatchSessionId: dispatchRecord ? resolveMissionDispatchIntegritySessionId(dispatchRecord, input.runs) : null,
@@ -309,6 +320,18 @@ export async function buildTaskIntegrityRecord(input: {
     emails,
     issues
   };
+}
+
+function findMissionHistoryOutput(record: MissionDispatchRecord, runs: RuntimeRecord[], outputs: RuntimeOutputRecord[]) {
+  const originalRunId = extractMissionDispatchString(getMissionDispatchResult(record), "runId") || record.id;
+  const run = runs.find((entry) => entry.runId === originalRunId && entry.agentId === record.agentId && entry.sessionId);
+  if (!run) return null;
+
+  return outputs.find((output) => {
+    if (output.runtimeId !== run.id || output.sessionId !== run.sessionId || output.status !== "available") return false;
+    const prompt = output.items[0];
+    return prompt?.role === "user" && matchesMissionText(prompt.text, record.mission);
+  }) ?? null;
 }
 
 async function readMissionDispatchTranscriptTurns(
