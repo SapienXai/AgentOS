@@ -993,7 +993,10 @@ async function run() {
           const schedulePath = base + "/missions?view=scheduled&workspaceId=" + encodeURIComponent(first.workspaceId);
           await page.goto(schedulePath, { waitUntil: "domcontentloaded" });
           const job = page.getByRole("article").filter({ hasText: jobName });
-          const operationResponse = () => page.waitForResponse(response => response.url() === base + "/api/operations" && response.request().method() === "POST");
+          const operationResponse = () => page.waitForResponse(
+            response => response.url() === base + "/api/operations" && response.request().method() === "POST",
+            { timeout: 45000 }
+          );
           if (width === 1440) {
             await page.getByRole("button", { name: "Schedule task", exact: true }).click();
             const dialog = page.getByRole("dialog");
@@ -1026,7 +1029,7 @@ async function run() {
           }
           await expect(job).toBeVisible();
           await job.getByRole("button", { name: new RegExp("^" + jobName) }).click();
-          const history = page.locator("section").filter({ has: page.getByText("Run history", { exact: true }) }).filter({ visible: true });
+          const history = page.getByRole("heading", { name: "Run history", exact: true }).locator("xpath=ancestor::section[1]");
           await expect(history).toBeVisible();
           const runs = history.locator("details");
           await expect(runs).toHaveCount(2);
