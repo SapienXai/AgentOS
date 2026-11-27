@@ -194,7 +194,9 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   const status = executionStatus ?? normalizeStatus(readString(payload.status) ?? readString(task?.status) ?? eventName);
   const workspacePath = readWorkspacePath(payload);
   const workspaceId = readString(payload.workspaceId) ?? (workspacePath ? workspaceIdFromPath(workspacePath) : null);
+  const chatError = eventName === "chat" && executionPhase === "error" ? readString(payload.errorMessage) : null;
   const text =
+    (chatError ? redactSecretText(chatError).slice(0, 1000) : null) ??
     readString(payload.text) ??
     readString(payload.message) ??
     readString(payload.summary) ??

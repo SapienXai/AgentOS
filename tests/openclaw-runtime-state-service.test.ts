@@ -198,10 +198,13 @@ test("native chat terminal states are not projected as an active run", () => {
   const payload = { sessionKey: "agent:worker:explicit:mission", runId: "native-run" };
   for (const [state, status] of [["final", "completed"], ["aborted", "cancelled"], ["error", "stalled"]] as const) {
     const runtime = normalizeOpenClawGatewayEventToRuntime({
-      type: "event", event: "chat", payload: { ...payload, state }
+      type: "event", event: "chat", payload: {
+        ...payload, state, ...(state === "error" ? { errorMessage: "The model request exceeded its time limit." } : {})
+      }
     });
     assert.equal(runtime?.status, status);
     assert.ok(runtime?.updatedAt);
+    if (state === "error") assert.equal(runtime?.subtitle, "The model request exceeded its time limit.");
   }
   assert.equal(normalizeOpenClawGatewayEventToRuntime({ type: "event", event: "session.message", payload }), null);
 });
